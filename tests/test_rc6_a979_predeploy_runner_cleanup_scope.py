@@ -120,5 +120,12 @@ def test_predeploy_containers_have_explicit_creation_cleanup() -> None:
     assert 'cid="$(docker create "$IMAGE")"' in source
     assert 'trap \'docker rm -f "$cid" >/dev/null 2>&1 || true\' EXIT' in source
     assert 'docker run --rm --pull never' in source
-    assert 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID"' in source
+    # A980: predictable names do not prove ownership: a failed create from an
+    # existing foreign name must not let the EXIT trap erase that container.
+    assert 'docker rm -f "porota-native-cases-$GITHUB_RUN_ID"' not in source
+    assert 'docker rm "$rc6_name"' not in source
+    assert 'docker start -a "$rc6_name"' not in source
+    assert 'docker inspect -f \'{{.State.ExitCode}}|{{.State.OOMKilled}}\' "$rc6_name"' not in source
+    assert 'rc6_container_id="$(docker create --name "$rc6_name"' in source
+    assert 'docker rm "$rc6_container_id"' in source
     assert 'trap cleanup_native_proof EXIT' in source
