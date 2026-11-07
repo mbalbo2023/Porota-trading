@@ -50,7 +50,8 @@ def test_dashboard_bootstrap_dependencies_and_storage_cleanup_are_deploy_guards(
     assert "SAFE_PREFLIGHT_RECLAIM=" in source
     assert "CURRENT_STATE_V2=GREEN" in source
     assert "SPACE_RECOVERED=" in source
-    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN" in source
+    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED" in source
+    assert "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN" not in source
 
 
 def test_dashboard_is_recreated_directly_from_verified_candidate():

@@ -394,7 +394,7 @@ class RootlessPromotionPrehostContainmentTests(unittest.TestCase):
         # in a local subprocess. An unexpected executor must fail before launch.
         for line in shell.splitlines():
             command = line.strip()
-            if command:
+            if command and not command.startswith('#'):
                 self.assertTrue(command.startswith(('rm ', 'echo ', 'set ')), command)
 
         with tempfile.TemporaryDirectory(prefix='rc6-a982-foreign-') as temp:

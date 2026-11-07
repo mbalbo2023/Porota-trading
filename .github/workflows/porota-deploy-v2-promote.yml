@@ -3375,6 +3375,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
-          rm -f "$HOME/.ssh/porota_rc6_deploy"
-          echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+          set -Eeuo pipefail
+          # A806 holds before artifacts/SSH credentials are staged. Never
+          # remove historical fixed /tmp names (or HOME paths) without an
+          # independent, exact runner-artifact ownership proof. Those names
+          # may belong to another attempt or tenant on a shared host.
+          echo 'POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED|no_independent_runner_artifact_ownership|delete_attempts=0'

@@ -29,12 +29,13 @@ _EXACT_GATE_RUN = (
     "exit 79\n"
 )
 _EXACT_RUNNER_CLEANUP = (
-    'rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json '
-    '/tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz '
-    '/tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json '
-    '/tmp/porota-host-policy-v2.json\n'
-    'rm -f "$HOME/.ssh/porota_rc6_deploy"\n'
-    'echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"\n'
+    'set -Eeuo pipefail\n'
+    '# A806 holds before artifacts/SSH credentials are staged. Never\n'
+    '# remove historical fixed /tmp names (or HOME paths) without an\n'
+    '# independent, exact runner-artifact ownership proof. Those names\n'
+    '# may belong to another attempt or tenant on a shared host.\n'
+    "echo 'POROTA_DEPLOY_V2_RUNNER_CLEANUP=DEFERRED_UNVERIFIED|"
+    "no_independent_runner_artifact_ownership|delete_attempts=0'\n"
 )
 
 _HOST_CONTACT = re.compile(
