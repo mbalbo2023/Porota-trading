@@ -63,6 +63,30 @@ jobs:
             'python3 -B - --expected-id 594077619 --expected-region nyc1' \
             < scripts/rc6_droplet_identity_guard.py
 
+      - name: Prove sudo inherited FD capability before host promotion
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # A786: the actual nested sudo image-cleanup needs closefrom_override.
+          # Probe only an inherited read-only /dev/null descriptor: no Docker,
+          # PPI, provider calls, DB/systemd mutation, or host file creation.
+          RESULT="$(timeout 30 ssh -i "$HOME/.ssh/rc6_a205_ro" \
+            -o BatchMode=yes -o ConnectTimeout=10 -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DO_USER@$DO_HOST" 'bash -s' <<'HOST'
+          # RC6_A786_BEGIN_SUDO_FD_PROBE
+          set -Eeuo pipefail
+          exec {rc6_probe_fd}</dev/null
+          sudo -n -C "$((rc6_probe_fd + 1))" env \
+            "RC6_A786_FD=$rc6_probe_fd" PYTHONDONTWRITEBYTECODE=1 \
+            python3 -B -c 'import os,stat; fd=int(os.environ["RC6_A786_FD"]); assert stat.S_ISCHR(os.fstat(fd).st_mode); print("RC6_A786_SUDO_FD=GREEN|host_written=NO")'
+          exec {rc6_probe_fd}<&-
+          # RC6_A786_END_SUDO_FD_PROBE
+          HOST
+          )"
+          test "$RESULT" = 'RC6_A786_SUDO_FD=GREEN|host_written=NO'
+          echo "$RESULT"
+
       - name: Classify PAPER book barrier and exact candidate COLD2 recovery without writes
         shell: bash
         run: |
@@ -156,4 +180,5 @@ jobs:
           if [ -f "$HOME/.ssh/rc6_a205_ro" ]; then
             shred -u "$HOME/.ssh/rc6_a205_ro"
           fi
+
 
