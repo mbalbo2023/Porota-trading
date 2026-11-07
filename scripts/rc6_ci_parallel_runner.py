@@ -14,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 from pathlib import Path
+import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,9 +30,50 @@ from scripts.rc6_ci_junit_quorum import JunitQuorumRed, verify_parallel
 class ParallelRunnerRed(ValueError):
     """Missing, inconsistent or unsuccessful offline pytest evidence."""
 
+    def __init__(self, message: str = "RC6_PARALLEL_RUNNER_RED",
+                 diagnostic: dict | None = None):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
 
 def _red() -> None:
     raise ParallelRunnerRed("RC6_PARALLEL_RUNNER_RED")
+
+
+def _sanitized_timeout_trace(raw: str | bytes | None) -> dict:
+    """Retain bounded source frame labels, never runner paths or test output."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str):
+        raw = ""
+    frames = []
+    for match in re.finditer(r'File "([^"\n]+)", line ([0-9]{1,7}) in ([A-Za-z_<>][A-Za-z0-9_<>]{0,79})',
+                             raw):
+        path = match.group(1).replace("\\", "/")
+        filename = path.rsplit("/", 1)[-1]
+        if (not any(segment in path for segment in ("/tests/", "/scripts/")) or
+                re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}[.]py", filename) is None):
+            filename = "external.py"
+        frames.append({"file": filename, "line": int(match.group(2)),
+                       "function": match.group(3)})
+        if len(frames) >= 16:
+            break
+    return {"faulthandler_seen": "Timeout (" in raw, "frames": frames}
+
+
+def _pytest_argv(python: str, args: list[str], *,
+                 trace_after: int | float = 420) -> list[str]:
+    """Run pytest via its normal main() with a bounded stack-only timer."""
+    if (not isinstance(trace_after, (int, float)) or
+            not 0 < trace_after <= 3600):
+        _red()
+    bootstrap = (
+        "import faulthandler,sys;"
+        f"faulthandler.dump_traceback_later({trace_after!r},repeat=False,file=sys.stderr);"
+        "import pytest;"
+        "raise SystemExit(pytest.main(sys.argv[1:]))"
+    )
+    return [python, "-c", bootstrap, *args]
 
 
 def _invoke(argv: list[str], *, cwd: Path, env: dict,
@@ -38,10 +81,43 @@ def _invoke(argv: list[str], *, cwd: Path, env: dict,
     # Captured stdout/stderr are never printed or returned: private test
     # failures may accidentally contain identifiers or host-sensitive values.
     try:
-        return subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
-                              text=True, timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+        process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True,
+                                   start_new_session=True)
+    except OSError:
         _red()
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired as expired:
+        # TimeoutExpired may contain bytes even when Popen(text=True), and
+        # the resumed communicate() result already includes earlier output.
+        raw_stderr = expired.stderr
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            _, remaining = process.communicate(timeout=1)
+            if remaining is not None:
+                raw_stderr = remaining
+        except subprocess.TimeoutExpired as later:
+            if later.stderr is not None:
+                raw_stderr = later.stderr
+        finally:
+            # A descendant may have closed both pipes or ignored TERM even
+            # after its parent exits. Always terminate the owned process group.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                _, remaining = process.communicate(timeout=2)
+                if remaining is not None:
+                    raw_stderr = remaining
+            except subprocess.TimeoutExpired:
+                _red()
+        raise ParallelRunnerRed(diagnostic=_sanitized_timeout_trace(raw_stderr))
 
 
 def _verify_checkout(repo: Path, candidate_sha: str, source_tree_sha: str) -> None:
@@ -114,9 +190,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         temp_dir = Path(temp)
         collected = temp_dir / "collected.json"
         collect_env = {**env_base, "RC6_CI_MANIFEST_PATH": str(collected)}
-        collect = _invoke([python, "-m", "pytest", *plugin,
-                           "--collect-only", "-q", *args],
-                          cwd=repo, env=collect_env)
+        collect = _invoke(_pytest_argv(python, [*plugin, "--collect-only", "-q", *args]),
+                          cwd=repo, env=collect_env, timeout=180)
         if collect.returncode != 0 or not collected.is_file() or collected.is_symlink():
             _red()
         try:
@@ -137,10 +212,10 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             xml_path = runner_dir / "junit.xml"
             isolated_base = runner_dir / "basetemp"
             env = {**env_base, "RC6_CI_MANIFEST_PATH": str(executed)}
-            result = _invoke([python, "-m", "pytest", *plugin, "-q",
-                              "-o", "xfail_strict=true",
-                              f"--junitxml={xml_path}", f"--basetemp={isolated_base}",
-                              "--", *groups[i]], cwd=repo, env=env)
+            result = _invoke(_pytest_argv(python, [*plugin, "-q", "--durations=20",
+                              "-o", "xfail_strict=true", f"--junitxml={xml_path}",
+                              f"--basetemp={isolated_base}", "--", *groups[i]]),
+                             cwd=repo, env=env, timeout=720)
             if not executed.is_file() or executed.is_symlink():
                 _red()
             try:
@@ -181,7 +256,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         proof = run(args.source_sha, args.source_tree_sha, repo=args.repo,
                     shard_count=args.shards, output_junit=args.output_junit)
-    except (ParallelRunnerRed, OSError, ValueError):
+    except ParallelRunnerRed as exc:
+        if exc.diagnostic is not None:
+            print("RC6_PARALLEL_TIMEOUT_DIAG=" + json.dumps(
+                exc.diagnostic, separators=(",", ":"), sort_keys=True), file=sys.stderr)
+        print("RC6_PARALLEL_PILOT=RED|automatic_go=NO", file=sys.stderr)
+        return 2
+    except (OSError, ValueError):
         print("RC6_PARALLEL_PILOT=RED|automatic_go=NO", file=sys.stderr)
         return 2
     print("RC6_PARALLEL_PILOT=" + json.dumps(proof, separators=(",", ":"), sort_keys=True))
