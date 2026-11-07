@@ -50,8 +50,7 @@ class Docker:
             valid_labels = ({'porota.predeploy': 'v2', 'porota.commit': commit}
                             if commit is not None else {})
             return json.dumps([{'Id':identity,'RepoTags':aliases,
-                                'RepoDigests':['porota-trading-bot@sha256:'+'f'*64]
-                                if identity == STALE else [],
+                                'RepoDigests':[],
                                 'Config': {'Labels': self.labels.get(identity, valid_labels)}}])
         if args[0] == 'tag':
             assert args == ('tag', CURRENT, clean.STABLE)
@@ -77,6 +76,8 @@ def host(tmp_path, monkeypatch):
     (root/'data/deploy/.deploy-quiescence.lock').touch()
     monkeypatch.setattr(clean, 'ROOT', root)
     monkeypatch.setattr(clean, 'docker', backend)
+    # Legacy algorithm simulation only, never a production authority switch.
+    monkeypatch.setattr(clean, 'require_exclusive_docker_namespace', lambda: None)
     monkeypatch.setattr(clean, 'admission', lambda: {
         'current_image':CURRENT,'candidate_sha':NEW_SHA,'ppi':{},'owned':{},'critical':()})
     monkeypatch.setattr(clean.shutil, 'disk_usage', lambda _: SimpleNamespace(free=1234))
@@ -180,7 +181,7 @@ def test_current_image_foreign_alias_or_digest_blocks_retag(host, monkeypatch):
         return doc
 
     monkeypatch.setattr(clean, 'image', image_with_foreign_digest)
-    with pytest.raises(ValueError, match='RUNTIME_IMAGE_ALIAS_UNVERIFIED'):
+    with pytest.raises(ValueError, match='OCI_OWNERSHIP_UNVERIFIED'):
         clean.cleanup()
     assert not any(args[0] == 'tag' for args in host.calls)
 
