@@ -85,7 +85,7 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.paper_page(compact=True)
@@ -103,6 +103,14 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert "Último reporte" in health
     assert "PPI Sandbox" in health
     assert "OPENBYMADATA" in health
+    with store.connect() as connection:
+        connection.execute("UPDATE observer_state SET real_orders_sent=2 WHERE id=1")
+    # The home-page card (not paper_page's mode-only banner) owns the
+    # canonical local counter; it must show a nonzero counter as critical.
+    with_positive = bg_paper_dashboard.home_page()
+    assert "real_orders_sent=2 · ALERTA" in with_positive
+    assert "card-red" in with_positive
+    assert "órdenes reales: NINGUNA" not in with_positive
 
 
 def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
@@ -185,6 +193,19 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             assert "estado actual NO_VERIFICADO" in fresh.text
             assert "órdenes reales: NINGUNA" not in fresh.text
             assert "R" * 40 not in fresh.text
+        # An observed local value >0 remains critical even with the same
+        # synthetic fresh heartbeat; never hide it behind the mode banner.
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET real_orders_sent=2 WHERE id=1")
+        for path in ("/vivo", "/observacion", "/testing"):
+            alert = cliente.get(path)
+            assert alert.status_code == 200
+            assert "real_orders_sent=2 · ALERTA" in alert.text
+            assert "contador de órdenes reales distinto de cero" in alert.text
+            assert "órdenes reales: NINGUNA" not in alert.text
+            assert "R" * 40 not in alert.text
+        with sqlite3.connect(db) as conn:
+            conn.execute("UPDATE observer_state SET real_orders_sent=0 WHERE id=1")
         history = cliente.get('/api/paper/caucion-allocations')
         assert history.status_code == 200
         assert history.json()['state'] == 'EMPTY'
