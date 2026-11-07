@@ -1,0 +1,161 @@
+name: RC6 A848 Exact OFFHOST Collection Diagnostic RED Only
+
+on:
+  push:
+    branches:
+      - integration/rc6-a848-collect-only-20261107
+    paths:
+      - .github/workflows/rc6-a848-collect-only-diagnostic.yml
+      - tests/test_rc6_a848_collect_only_workflow.py
+
+permissions:
+  contents: read
+
+jobs:
+  collect-only:
+    if: >-
+      ${{ github.repository == 'mbalbo2023/Porota-trading' &&
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/integration/rc6-a848-collect-only-20261107' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 35bfe0888b32ead66a63c94502bc0a3292b27e16
+          persist-credentials: false
+      - name: Verify pinned historical source and event are distinct
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = "mbalbo2023/Porota-trading"
+          test "$GITHUB_REF" = "refs/heads/integration/rc6-a848-collect-only-20261107"
+          test -n "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "35bfe0888b32ead66a63c94502bc0a3292b27e16"
+          test "$(git rev-parse 'HEAD^{tree}')" = "9b48a25db351f9691a8164207fcfc2d6233ebcf9"
+          test "$GITHUB_SHA" != "35bfe0888b32ead66a63c94502bc0a3292b27e16"
+          grep -q 'MODE = "PRODUCTION_PAPER"' _version.py
+          grep -q 'REAL_ORDER_CAPABILITY = "BLOCKED"' _version.py
+          git diff --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install locked offline test dependencies
+        run: python -m pip install -q -r requirements.lock.txt
+      - name: Collect exact source node IDs privately
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import sys
+          import tempfile
+          import time
+
+          from scripts import rc6_ci_parallel_runner as runner
+          from scripts import rc6_ci_shard_quorum as shards
+          from scripts import rc6_ci_pytest_identity as identity
+
+          SOURCE_SHA = "35bfe0888b32ead66a63c94502bc0a3292b27e16"
+          SOURCE_TREE = "9b48a25db351f9691a8164207fcfc2d6233ebcf9"
+          EXPECTED_CASES = 7438
+          EXPECTED_COLLECTION_SHA256 = "49b6a886908707e8a1f5afe7b904cb374523094e499e3d320c85784d7ef9dd6d"
+          EXPECTED_SHARD1_COUNT = 1860
+          EXPECTED_SHARD1_SHA256 = "df71467995a879b1da2c1c2c882e293b1d827c5014deccf153d3a7086c53ce21"
+
+          def collect():
+              event_sha = os.environ["GITHUB_SHA"]
+              if (not re.fullmatch(r"[0-9a-f]{40}", event_sha) or
+                      event_sha == SOURCE_SHA or
+                      os.environ["GITHUB_REF"] !=
+                          "refs/heads/integration/rc6-a848-collect-only-20261107" or
+                      os.environ["GITHUB_REPOSITORY"] != "mbalbo2023/Porota-trading"):
+                  raise ValueError("invalid diagnostic event")
+
+              repo = Path(".").resolve(strict=True)
+              runner._verify_checkout(repo, SOURCE_SHA, SOURCE_TREE)
+              test_args = runner._test_args(repo)
+              start = time.monotonic()
+              with tempfile.TemporaryDirectory(
+                      dir=os.environ["RUNNER_TEMP"],
+                      prefix="rc6-a848-private-") as temporary:
+                  manifest_path = Path(temporary) / "collected-private.json"
+                  env = os.environ.copy()
+                  env.pop("PYTEST_ADDOPTS", None)
+                  env.pop("PYTEST_PLUGINS", None)
+                  env.update({
+                      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                      "RC6_CI_IDENTITY_PROOF": "1",
+                      "RC6_CI_SOURCE_SHA": SOURCE_SHA,
+                      "RC6_CI_SOURCE_TREE_SHA": SOURCE_TREE,
+                      "RC6_CI_MANIFEST_PATH": str(manifest_path),
+                  })
+                  command = runner._pytest_argv(
+                      sys.executable,
+                      ["-p", "scripts.rc6_ci_pytest_identity", "--collect-only",
+                       "-q", *test_args],
+                      trace_after=30)
+                  # The existing runner kills the entire pytest process group
+                  # on timeout and buffers stdout/stderr without printing either.
+                  result = runner._invoke(command, cwd=repo, env=env, timeout=60)
+                  if (result.returncode != 0 or
+                          not manifest_path.is_file() or
+                          manifest_path.is_symlink() or
+                          manifest_path.stat().st_size > 8 * 1024 * 1024):
+                      raise ValueError("collection not complete")
+                  manifest = shards._validate_manifest(
+                      json.loads(manifest_path.read_text(encoding="utf-8")))
+                  if (manifest["source_sha"] != SOURCE_SHA or
+                          manifest["source_tree_sha"] != SOURCE_TREE or
+                          manifest["discovered"] != EXPECTED_CASES or
+                          manifest["collection_sha256"] != EXPECTED_COLLECTION_SHA256):
+                      raise ValueError("exact collection drift")
+                  groups = shards.partition(manifest, 4)
+                  if len(groups[1]) != EXPECTED_SHARD1_COUNT:
+                      raise ValueError("shard1 count drift")
+                  shard1_input = json.dumps(
+                      [identity.nodeid_digest(nodeid) for nodeid in groups[1]],
+                      sort_keys=True, separators=(",", ":")).encode("ascii")
+                  if hashlib.sha256(shard1_input).hexdigest() != EXPECTED_SHARD1_SHA256:
+                      raise ValueError("shard1 membership drift")
+                  snapshots = [
+                      {"index": index, "count": len(group),
+                       "first_node_sha256": identity.nodeid_digest(group[0]),
+                       "last_node_sha256": identity.nodeid_digest(group[-1])}
+                      for index, group in enumerate(groups)
+                  ]
+              return {
+                  "status": "RED_COLLECTION_ONLY_OFFHOST",
+                  "event_sha": event_sha,
+                  "source_sha": SOURCE_SHA,
+                  "source_tree_sha": SOURCE_TREE,
+                  "collection_sha256": EXPECTED_COLLECTION_SHA256,
+                  "discovered": EXPECTED_CASES,
+                  "shards": snapshots,
+                  "shard1_assigned_count": EXPECTED_SHARD1_COUNT,
+                  "shard1_assigned_nodeids_sha256": EXPECTED_SHARD1_SHA256,
+                  "collection_elapsed_ms": round((time.monotonic() - start) * 1000),
+                  "automatic_go": False,
+                  "runtime_authority": False,
+                  "host_written": False,
+                  "test_bodies_executed": False,
+              }
+
+          try:
+              receipt = collect()
+          except Exception:
+              # Never show raw pytest paths, node IDs, logs or private manifest.
+              print("RC6_A848_COLLECTION=RED|cause=COLLECT_OR_CONTRACT|raw=NO",
+                    file=sys.stderr)
+              raise SystemExit(77)
+          print("RC6_A848_COLLECTION=" +
+                json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+          raise SystemExit(77)  # Always RED; this is not a test or release gate.
+          PY
