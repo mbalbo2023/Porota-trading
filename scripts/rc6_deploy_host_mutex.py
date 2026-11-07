@@ -35,7 +35,7 @@ PHASES = frozenset({
     'timers_restored', 'backup_retire', 'finalize', 'cleanup_contract',
     'cleanup_recover', 'cleanup_admin_resume', 'cleanup_restore',
     'cleanup_payload', 'cleanup_final',
-    'cleanup_presuspend',
+    'cleanup_presuspend', 'orphan_gc',
 })
 FINAL_PHASES = frozenset({'finalize', 'cleanup_final', 'cleanup_presuspend'})
 IDENTITY = re.compile(r'[0-9a-f]{40}')
@@ -317,6 +317,9 @@ def run(argv: list[str]) -> int:
     observe = phase == 'classify'
     reconcile = phase == 'reconcile'
     presuspend = phase == 'cleanup_presuspend'
+    # After failure cleanup has retired the barrier, orphan GC still needs the
+    # SAME root mutex, without creating a fresh deploy attempt barrier.
+    orphan_gc = phase == 'orphan_gc'
     user = pwd.getpwnam(argv[0])
     if user.pw_uid == 0:
         raise RuntimeError('MUTEX_REMOTE_USER_MUST_BE_UNPRIVILEGED')
@@ -334,6 +337,8 @@ def run(argv: list[str]) -> int:
                        '--expected-fingerprint' not in command or
                        '--policy-b64' not in command):
         raise RuntimeError('PRESUSPEND_PROOF_COMMAND_INVALID')
+    if orphan_gc and (argv[1] != 'root' or command != ['python3', '-B', '-']):
+        raise RuntimeError('ORPHAN_GC_COMMAND_INVALID')
     fd = open_lock(LOCK_DIR)
     try:
         _enable_subreaper()
@@ -341,6 +346,8 @@ def run(argv: list[str]) -> int:
             _reconcile_exact_a138_idle(LOCK_DIR, identity)
             return 0
         existing = _read_barrier(LOCK_DIR)
+        if orphan_gc and existing is not None:
+            raise RuntimeError('ORPHAN_GC_BARRIER_RETAINED')
         if presuspend:
             stage = STAGING_DIR / ('porota-deploy-v2-' + '-'.join(identity))
             if stage.exists() or stage.is_symlink():
@@ -363,10 +370,14 @@ def run(argv: list[str]) -> int:
         if not allow_contract_lifecycle:
             if _contract_writers():
                 raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
-        if not observe and not (presuspend and existing is None):
+        if not observe and not orphan_gc and not (presuspend and existing is None):
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
         env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
+        env['RC6_DEPLOY_MUTEX_PROOF'] = json.dumps({
+            'candidate': identity[0], 'run': identity[1],
+            'attempt': identity[2], 'phase': phase},
+            sort_keys=True, separators=(',', ':'))
         if argv[1] == 'user':
             env.update(HOME=user.pw_dir, USER=user.pw_name, LOGNAME=user.pw_name)
         def drop_privileges() -> None:
@@ -390,7 +401,7 @@ def run(argv: list[str]) -> int:
                 _contract_only(LOCK_DIR, identity, phase)
                 raise RuntimeError('CONTRACT_WRITER_REQUIRES_EXACT_STOP')
             raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
-        if not observe and not (presuspend and existing is None):
+        if not observe and not orphan_gc and not (presuspend and existing is None):
             _finish(LOCK_DIR, identity, phase,
                     result.returncode == 0 and phase in FINAL_PHASES)
         if presuspend and result.returncode == 0:
@@ -415,3 +426,4 @@ def main() -> int:
 
 if __name__ == '__main__':
     raise SystemExit(main())
+

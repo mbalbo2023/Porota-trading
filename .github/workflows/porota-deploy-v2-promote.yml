@@ -1120,9 +1120,17 @@ jobs:
             echo "RC6_PRECLEAN_OLD_CRITICAL_IMAGE_DEFERRED=$CRIT_IMAGE"
             echo "RC6_PRECLEAN_CRITICAL_IMAGE_RECONCILED=GREEN|image=$CURRENT_IMAGE"
           fi
-          # Execute only the exact checkout's bounded reference-safe cleanup.
+          # A779: exact checkout helper under the real /run/lock owner FD.
+          # Nested sudo may close inherited FDs. Preserve only the owner FD
+          # via closefrom_override (-C), or fail closed before Docker deletion.
           # This is pretransfer housekeeping, never a product installation.
-          sudo -n timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
+          RC6_GOVERNED_FD="${RC6_DEPLOY_MUTEX_FD:-}"
+          [[ "$RC6_GOVERNED_FD" =~ ^[3-9][0-9]{0,2}$ ]]
+          test "$RC6_GOVERNED_FD" -le 255
+          sudo -n -C "$((RC6_GOVERNED_FD + 1))" env \
+            "RC6_DEPLOY_MUTEX_FD=$RC6_GOVERNED_FD" \
+            "RC6_DEPLOY_MUTEX_PROOF=${RC6_DEPLOY_MUTEX_PROOF:?}" \
+            timeout 120 python3 -c "import base64; exec(compile(base64.b64decode('$IMAGE_CLEANUP_B64'), '<rc6-pretransfer-cleanup>', 'exec'))"
           PPI_AFTER="$(
             for unit in $(systemctl list-unit-files --no-legend 2>/dev/null | awk 'tolower($1) ~ /ppi/ && tolower($1) ~ /watch/ {print $1}' | sort); do
               printf '%s|%s|%s\n' "$unit" "$(systemctl is-enabled "$unit" 2>/dev/null || true)" "$(systemctl is-active "$unit" 2>/dev/null || true)"
@@ -2522,10 +2530,22 @@ jobs:
           # enumerates every container, including stopped foreign containers.
           # Only immutable Porota candidate *tags* can be removed; all volumes,
           # networks, shared layers/build cache and foreign apps are preserved.
-          set +e
-          RC6_CLEANUP_JSON="$(sudo -n timeout 120 python3 "$REPO/scripts/rc6_pretransfer_image_cleanup.py")"
-          RC6_CLEANUP_RC=$?
-          set -e
+          RC6_GOVERNED_FD="${RC6_DEPLOY_MUTEX_FD:-}"
+          if [[ "$RC6_GOVERNED_FD" =~ ^[3-9][0-9]{0,2}$ ]] &&
+             [ "$RC6_GOVERNED_FD" -le 255 ]; then
+            # If sudo closes the inherited owner FD, or rejects -C, the
+            # helper returns RED without deleting anything. No fallback.
+            set +e
+            RC6_CLEANUP_JSON="$(sudo -n -C "$((RC6_GOVERNED_FD + 1))" env \
+              "RC6_DEPLOY_MUTEX_FD=$RC6_GOVERNED_FD" \
+              "RC6_DEPLOY_MUTEX_PROOF=${RC6_DEPLOY_MUTEX_PROOF:?}" \
+              timeout 120 python3 "$REPO/scripts/rc6_pretransfer_image_cleanup.py")"
+            RC6_CLEANUP_RC=$?
+            set -e
+          else
+            RC6_CLEANUP_JSON='{"schema":"RC6_PRETRANSFER_IMAGE_CLEANUP_V1","status":"RED","reason":"GOVERNED_MUTEX_FD_MISSING"}'
+            RC6_CLEANUP_RC=2
+          fi
           printf '%s\n' "$RC6_CLEANUP_JSON" | sudo -n tee \
             "$REPO/data/deploy/last-deploy-candidate-cleanup.json" >/dev/null
           echo "RC6_SHARED_HOST_CANDIDATE_CLEANUP_RC=$RC6_CLEANUP_RC"
@@ -3293,8 +3313,8 @@ jobs:
           # Reuse the tested pretransfer helper, NOT docker prune. It verifies
           # PAPER/0, all three running containers, every image owner and tag,
           # including stopped-container refs, immediately before each removal.
-          # Lock the same root-owned host inode used by the promoter without
-          # creating another attempt record or restarting a service.
+          # Canonical host mutex directly passes its held /run/lock FD to the
+          # helper. orphan_gc requires ABSENT barrier and never creates one.
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
           RECEIPT="$(timeout --signal=TERM --kill-after=10s 180s ssh -T \
             -i "$HOME/.ssh/porota_rc6_deploy" -o BatchMode=yes \
@@ -3302,7 +3322,7 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o ConnectTimeout=10 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
             "$DO_USER@$DO_HOST" \
-            'sudo -n flock -n -E 73 /run/lock/porota-rc6-deploy-v2.lock sh -c '\''test ! -e /run/lock/porota-rc6-deploy-v2-attempt.json && exec env PYTHONDONTWRITEBYTECODE=1 python3 -B -'\''' \
+            "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase orphan_gc python3 -B -" \
             < scripts/rc6_pretransfer_image_cleanup.py)"
           echo "RC6_FAILED_DEPLOY_ORPHAN_CLEANUP=$RECEIPT"
           python3 - "$RECEIPT" <<'PY'
@@ -3358,3 +3378,4 @@ jobs:
           rm -rf /tmp/porota-frozen-v2 /tmp/porota-frozen-v2.zip /tmp/porota-frozen-candidate.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json
           rm -f "$HOME/.ssh/porota_rc6_deploy"
           echo "POROTA_DEPLOY_V2_RUNNER_CLEANUP=GREEN"
+
