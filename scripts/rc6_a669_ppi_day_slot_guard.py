@@ -29,8 +29,8 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "6aeefcd76f34fd23c5fbe118dc440c14357c623c"
-PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+ENGINE_GIT_BLOB = "c8fd25c6190966dba45541f72465872cb3b83ae6"
+PRODUCT_SHA = "eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
 SESSIONS_GIT_BLOB = "bfcaf3909b5afde2a3e0e2f56b3aeaefc047d422"
@@ -289,3 +289,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

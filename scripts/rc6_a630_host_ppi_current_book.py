@@ -32,9 +32,13 @@ SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
 PER_GET_CLOCK_FIELDS = frozenset({
     "current_received_at_utc", "book_received_at_utc", "pair_completed_at_utc",
 })
-PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+PRODUCT_SHA = "eefcf6d8c93f3eddfc23bd471d9d5b41d9a31a9f"
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 PPI_HOST = "clientapi.portfoliopersonal.com"
+# A689 is supplied in-memory from the same immutable Actions checkout as this
+# streamed engine. No source file is installed on the current product image.
+# Fail closed on missing, corrupted or substituted helper bytes.
+A689_HELPER_SHA256 = "89b3a3c686e5754566f1945033edb1ace5fe34954b1ebf20b19b0790d3744aac"
 MAX_BODY = 128 * 1024
 MAX_LEVELS = 200
 MAX_AGE_MS = 120_000
@@ -63,6 +67,7 @@ REASONS = frozenset({
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
     "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT", "RECEIPT_INVALID",
+    "A689_DURABLE_SLOT_CAS_HOLD",
 })
 
 
@@ -527,6 +532,42 @@ def unverified_transport_receipt(reason="HOST_PREFLIGHT_OR_RUNTIME_HOLD"):
             "source_pit_verified": False}
 
 
+def _claim_a689_before_provider(target):
+    """Durable CAS in the SAME process as provider calls; never a skipped step.
+
+    A670's authenticated SSH session forwards the runner's checked context.
+    All target/slot/clock, pinned helper bytes and Porota data bind checks are
+    repeated inside the product container, before even importing the reader.
+    """
+    slot = os.environ.get("RC6_A689_SLOT", "")
+    if slot not in SLOTS or target != SLOTS[slot]:
+        raise ValueError("SLOT_OR_DAY_HOLD")
+    encoded = os.environ.get("RC6_A689_SOURCE_B64", "")
+    if not isinstance(encoded, str) or not 1 <= len(encoded) <= 48_000:
+        raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+    try:
+        source = base64.b64decode(encoded, validate=True)
+        if len(source) > 36_000 or sha256(source).hexdigest() != A689_HELPER_SHA256:
+            raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+        # Deliberately no filesystem import and no __file__: the old product
+        # image cannot contain a source file added to a later GitHub checkout.
+        module = {"__name__": "rc6_a689_slot_cas"}
+        exec(compile(source, "<pinned-A689-module>", "exec"), module)
+        claim_once = module["claim_once"]
+        result = claim_once(
+            art_date=os.environ.get("RC6_A689_ART_DATE", ""), slot=slot,
+            run_id=os.environ.get("RC6_A689_RUN_ID", ""),
+            run_attempt=os.environ.get("RC6_A689_RUN_ATTEMPT", ""),
+            control_sha=os.environ.get("RC6_A689_CONTROL_SHA", ""),
+            repository=os.environ.get("RC6_A689_REPOSITORY", ""),
+            control_ref=os.environ.get("RC6_A689_CONTROL_REF", ""),
+            event_name=os.environ.get("RC6_A689_EVENT_NAME", ""))
+        if result["state"] != "CLAIMED_DURABLE":
+            raise ValueError("A689_DURABLE_SLOT_CAS_HOLD")
+    except Exception as exc:
+        raise ValueError("A689_DURABLE_SLOT_CAS_HOLD") from exc
+
+
 def capture_two(target, credentials, shared_budget, reader_factory,
                 *, clock=None, http_limiter=None, adapter_guard=None,
                 budget_reason=None):
@@ -728,11 +769,21 @@ def container_main():
             budget, budget_reason = (_existing_shared_budget() if credentials is not None
                                      else (None, "PPI_KEYPAIR_UNAVAILABLE"))
             if credentials and budget:
-                from bd_ppi_readonly_guard import ProductionMarketReader
+                try:
+                    _claim_a689_before_provider(target)
+                except Exception:
+                    # Current run has not called PPI; prior attempts might have.
+                    # Never retry a committed claim even after a crash.
+                    receipt = _base_receipt(target)
+                    receipt["reason"] = "A689_DURABLE_SLOT_CAS_HOLD"
+                else:
+                    from bd_ppi_readonly_guard import ProductionMarketReader
+                    receipt = capture_two(target, credentials, budget,
+                                          ProductionMarketReader,
+                                          budget_reason=budget_reason)
             else:
-                ProductionMarketReader = None
-            receipt = capture_two(target, credentials, budget, ProductionMarketReader,
-                                  budget_reason=budget_reason)
+                receipt = capture_two(target, credentials, budget, None,
+                                      budget_reason=budget_reason)
         if not verify_receipt(receipt, target):
             raise ValueError("RECEIPT_INVALID")
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
@@ -757,3 +808,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
