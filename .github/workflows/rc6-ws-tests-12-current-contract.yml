@@ -116,18 +116,22 @@ jobs:
                    f"/run/user/{uid}/docker.sock", f"/run/user/{uid}/podman/podman.sock",
                    f"/run/user/{uid}/containerd/containerd.sock",
                    f"/run/user/{uid}/buildkit/buildkitd.sock"]
-          for path in paths:
+          safe_codes = {errno.EACCES, errno.EPERM, errno.ENOENT, errno.ENOTDIR,
+                        errno.ECONNREFUSED, errno.ETIMEDOUT, errno.EAGAIN,
+                        errno.ECONNRESET, errno.ENXIO, errno.EIO, errno.ENOTSOCK}
+          for category, path in enumerate(paths):
               try:
                   info = os.stat(path)
               except FileNotFoundError:
                   continue
-              except OSError:
-                  print("NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED")
+              except OSError as exc:
+                  code = exc.errno if exc.errno in safe_codes else -1
+                  print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=stat|category={category}|errno={code}")
                   raise SystemExit(79)
               if not stat.S_ISSOCK(info.st_mode):
                   continue
               if os.access(path, os.W_OK):
-                  print("NETWORK_ISOLATION=RED|reason=PLAN_HOST_UNIX_SOCKET_WRITABLE")
+                  print(f"NETWORK_ISOLATION=RED|reason=PLAN_HOST_UNIX_SOCKET_WRITABLE|stage=writability|category={category}|errno=0")
                   raise SystemExit(79)
               sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
               sock.settimeout(1)
@@ -136,10 +140,11 @@ jobs:
               except OSError as exc:
                   if exc.errno not in {errno.EACCES, errno.EPERM,
                                        errno.ECONNREFUSED, errno.ENOENT}:
-                      print("NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED")
+                      code = exc.errno if exc.errno in safe_codes else -1
+                      print(f"NETWORK_ISOLATION=RED|reason=PLAN_UNIX_SOCKET_UNVERIFIED|stage=connect|category={category}|errno={code}")
                       raise SystemExit(79)
               else:
-                  print("NETWORK_ISOLATION=RED|reason=PLAN_HOST_SOCKET_CONNECTABLE")
+                  print(f"NETWORK_ISOLATION=RED|reason=PLAN_HOST_SOCKET_CONNECTABLE|stage=connect|category={category}|errno=0")
                   raise SystemExit(79)
               finally:
                   sock.close()
@@ -343,18 +348,22 @@ jobs:
                    f"/run/user/{uid}/docker.sock", f"/run/user/{uid}/podman/podman.sock",
                    f"/run/user/{uid}/containerd/containerd.sock",
                    f"/run/user/{uid}/buildkit/buildkitd.sock"]
-          for path in paths:
+          safe_codes = {errno.EACCES, errno.EPERM, errno.ENOENT, errno.ENOTDIR,
+                        errno.ECONNREFUSED, errno.ETIMEDOUT, errno.EAGAIN,
+                        errno.ECONNRESET, errno.ENXIO, errno.EIO, errno.ENOTSOCK}
+          for category, path in enumerate(paths):
               try:
                   info = os.stat(path)
               except FileNotFoundError:
                   continue
-              except OSError:
-                  print("NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED")
+              except OSError as exc:
+                  code = exc.errno if exc.errno in safe_codes else -1
+                  print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=stat|category={category}|errno={code}")
                   raise SystemExit(79)
               if not stat.S_ISSOCK(info.st_mode):
                   continue
               if os.access(path, os.W_OK):
-                  print("NETWORK_ISOLATION=RED|reason=HOST_UNIX_SOCKET_WRITABLE")
+                  print(f"NETWORK_ISOLATION=RED|reason=HOST_UNIX_SOCKET_WRITABLE|stage=writability|category={category}|errno=0")
                   raise SystemExit(79)
               sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
               sock.settimeout(1)
@@ -363,10 +372,11 @@ jobs:
               except OSError as exc:
                   if exc.errno not in {errno.EACCES, errno.EPERM,
                                        errno.ECONNREFUSED, errno.ENOENT}:
-                      print("NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED")
+                      code = exc.errno if exc.errno in safe_codes else -1
+                      print(f"NETWORK_ISOLATION=RED|reason=UNIX_SOCKET_UNVERIFIED|stage=connect|category={category}|errno={code}")
                       raise SystemExit(79)
               else:
-                  print("NETWORK_ISOLATION=RED|reason=HOST_SOCKET_CONNECTABLE")
+                  print(f"NETWORK_ISOLATION=RED|reason=HOST_SOCKET_CONNECTABLE|stage=connect|category={category}|errno=0")
                   raise SystemExit(79)
               finally:
                   sock.close()

@@ -306,8 +306,11 @@ def test_a883_local_nnp_process_attests_linux_kernel_bit():
 
 
 @pytest.mark.parametrize("scenario,reason", [
-    ("writable", "HOST_UNIX_SOCKET_WRITABLE"),
-    ("connectable", "HOST_SOCKET_CONNECTABLE")])
+    ("writable", "stage=writability|category=0|errno=0"),
+    ("connectable", "stage=connect|category=0|errno=0"),
+    ("stat_eacces", "stage=stat|category=0|errno=13"),
+    ("stat_unknown", "stage=stat|category=0|errno=-1"),
+    ("connect_eagain", "stage=connect|category=0|errno=11")])
 def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, reason):
     """Exercise exact YAML guard with simulated daemon, no actual socket/network."""
     data, _ = workflow()
@@ -320,13 +323,19 @@ def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, rea
         block = script.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         assert block.startswith("import errno, os, socket, stat\n")
         start = block.index("paths = [")
-        end = block.index("\nfor path in paths:", start)
+        end = block.index("\nsafe_codes = {", start)
         stub = ("\nclass FakeInfo: st_mode = stat.S_IFSOCK | 0o777\n"
-                "os.stat = lambda path: FakeInfo()\n"
+                "def fake_stat(path):\n"
+                + ("    raise OSError(errno.EACCES, 'denied')\n"
+                   if scenario == "stat_eacces" else
+                   "    raise OSError(5678, '/private/fake/path')\n"
+                   if scenario == "stat_unknown" else "    return FakeInfo()\n") +
+                "os.stat = fake_stat\n"
                 f"os.access = lambda path, mode: {scenario == 'writable'}\n"
                 "class FakeSock:\n"
                 "    def settimeout(self, timeout): pass\n"
-                "    def connect(self, path): pass\n"
+                + ("    def connect(self, path): raise OSError(errno.EAGAIN, 'busy')\n"
+                   if scenario == "connect_eagain" else "    def connect(self, path): pass\n") +
                 "    def close(self): pass\n"
                 "socket.socket = lambda *args: FakeSock()\n")
         block = (block[:start] + "paths = [" + json.dumps("/emulated/daemon.sock") +
@@ -336,6 +345,8 @@ def test_a883_host_unix_socket_access_is_fail_closed_for_both_jobs(scenario, rea
                                 timeout=5)
         assert result.returncode == 79, (job_name, result.stdout, result.stderr)
         assert reason in result.stdout
+        assert "/private" not in result.stdout
+        assert "/emulated" not in result.stdout
 
 
 def test_a875_push_has_no_other_matching_workflow_in_current_tree():
