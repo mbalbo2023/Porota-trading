@@ -15,12 +15,92 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import tempfile
+import time
 
-from scripts.rc6_ci_shard_quorum import manifest
+from scripts.rc6_ci_shard_quorum import manifest, _sha
 
 
 PROPERTY = "rc6_nodeid_sha256"
+_progress = None
+
+
+class _ProgressWriter:
+    """Explicit diagnostic-only, fsynced hash events; no report text or paths."""
+
+    def __init__(self, path, source_sha, source_tree_sha, segment_sha256):
+        self.fd = None
+        self.binding = {"source_sha": _sha(source_sha),
+                        "source_tree_sha": _sha(source_tree_sha),
+                        "segment_sha256": _sha(segment_sha256, 64)}
+        self.path = Path(path)
+        self.fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT |
+                          os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        self.identity = os.fstat(self.fd)
+        self.sequence = 0
+        self.started = time.monotonic()
+
+    def append(self, nodeid, phase, outcome):
+        if (phase not in {"start", "setup", "call", "teardown", "finish"} or
+                outcome not in {"none", "passed", "failed", "skipped"}):
+            raise RuntimeError("RC6_PYTEST_PROGRESS_INVALID")
+        value = {**self.binding, "sequence": self.sequence,
+                 "nodeid_sha256": nodeid_digest(nodeid), "phase": phase,
+                 "outcome": outcome,
+                 "elapsed_ms": round((time.monotonic() - self.started) * 1000)}
+        current = os.stat(self.path, follow_symlinks=False)
+        owned = os.fstat(self.fd)
+        if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1 or owned.st_nlink != 1 or
+                (current.st_dev, current.st_ino) != (self.identity.st_dev, self.identity.st_ino)):
+            raise RuntimeError("RC6_PYTEST_PROGRESS_TARGET_CHANGED")
+        raw = (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+        if os.write(self.fd, raw) != len(raw):
+            raise RuntimeError("RC6_PYTEST_PROGRESS_SHORT_WRITE")
+        os.fsync(self.fd)
+        self.sequence += 1
+
+    def close(self):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def __del__(self):
+        self.close()
+
+
+def pytest_sessionstart(session):
+    global _progress
+    if _progress is not None:
+        _progress.close()
+    _progress = None
+    path = os.environ.get("RC6_CI_PROGRESS_PATH")
+    if _enabled() and path and os.environ.get("RC6_CI_PROGRESS_PID") == str(os.getpid()):
+        _progress = _ProgressWriter(path, os.environ.get("RC6_CI_SOURCE_SHA", ""),
+            os.environ.get("RC6_CI_SOURCE_TREE_SHA", ""),
+            os.environ.get("RC6_CI_SEGMENT_SHA256", ""))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    global _progress
+    if _progress is not None:
+        _progress.close()
+        _progress = None
+
+
+def pytest_runtest_logstart(nodeid, location):
+    if _progress is not None:
+        _progress.append(nodeid, "start", "none")
+
+
+def pytest_runtest_logreport(report):
+    if _progress is not None:
+        _progress.append(report.nodeid, report.when, report.outcome)
+
+
+def pytest_runtest_logfinish(nodeid, location):
+    if _progress is not None:
+        _progress.append(nodeid, "finish", "none")
 
 
 def _enabled() -> bool:
@@ -53,6 +133,8 @@ def pytest_collection_finish(session):
     candidate = os.environ.get("RC6_CI_SOURCE_SHA", "")
     tree = os.environ.get("RC6_CI_SOURCE_TREE_SHA", "")
     proof = manifest(candidate, tree, [item.nodeid for item in session.items])
+    if _progress is not None and proof["collection_sha256"] != _progress.binding["segment_sha256"]:
+        raise RuntimeError("RC6_PYTEST_PROGRESS_COLLECTION_MISMATCH")
     path = Path(path_text)
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise RuntimeError("RC6_PYTEST_MANIFEST_TARGET_UNSAFE")
