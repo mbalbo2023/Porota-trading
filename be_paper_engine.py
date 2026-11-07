@@ -2805,17 +2805,13 @@ class PaperBroker:
             root = dict(root)
             if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
                 return False
+            # A BONOS/LETRAS/OBLIGACIONES PAPER sale must have its own atomic
+            # native FI ledger. The generic spot writer is never its executor:
+            # a lot may have no FI economic-event row yet, and a future native
+            # authorizer must not accidentally grant generic SELL cash credit.
+            if family_name(root['asset_class']) in {'BONOS', 'LETRAS', 'OBLIGACIONES'}:
+                return False
             current, prior = spot_ledger.partition(c,root)
-            # A redeemed FI lot cannot be sold through the generic equity
-            # close path: that would credit principal a second time and label
-            # an issuer redemption as an exchange fill. Native FI sale and
-            # maturity-close ledgers need their own separately certified owner.
-            fi_view = self._fi_position_at(c, root, at)
-            if fi_view is not None:
-                from rc6_fixed_income_portfolio_bridge import native_exit_authorized
-                allowed, _ = native_exit_authorized(c, root['paper_id'], at)
-                if not allowed:
-                    return False
             # Snapshot viejo: no consumir otra porción con un reintento ciego.
             if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
