@@ -214,3 +214,33 @@ def test_native_success_uses_only_created_id(tmp_path: Path) -> None:
     assert foreign_alive
     assert any(s.startswith("rm ") and s.endswith("b" * 64) for s in calls)
     assert not any("porota-native-" in s for s in calls if s.startswith("rm "))
+
+
+def test_predeploy_uses_one_private_runner_staging_root_not_global_tmp() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    assert "/tmp/porota-" not in source
+    data = yaml.safe_load(source)
+    steps = data["jobs"]["artifact-gate"]["steps"]
+    bootstrap = [s for s in steps if s.get("name") == "Initialize private runner staging"]
+    assert len(bootstrap) == 1
+    assert "RUNNER_TEMP" in bootstrap[0]["run"]
+    assert "mkdir -m 700" in bootstrap[0]["run"]
+    assert "GITHUB_ENV" in bootstrap[0]["run"]
+    cleanup = _predeploy_cleanup()
+    assert "# RC6_A980_PRIVATE_STAGE_BEGIN" in cleanup
+    assert "# RC6_A980_PRIVATE_STAGE_END" in cleanup
+    assert "rm -rf /tmp" not in cleanup
+
+
+def test_predeploy_uploads_only_exact_named_evidence_not_writable_directories() -> None:
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    steps = data["jobs"]["artifact-gate"]["steps"]
+    for name in ("Upload predeploy evidence", "Upload sanitized RCA diagnostic (never promotion input)"):
+        step = next(s for s in steps if s.get("name") == name)
+        paths = step["with"]["path"].splitlines()
+        assert paths
+        for path in paths:
+            path = path.strip()
+            assert path and not path.endswith("/")
+            assert "*" not in path and "!" not in path
+            assert "${{ runner.temp }}/porota-v2-" in path
