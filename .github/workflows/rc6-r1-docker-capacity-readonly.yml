@@ -6,17 +6,26 @@ on:
   workflow_dispatch:
     inputs:
       expected_deployed_sha:
-        description: Exact last observed physical product SHA
-        required: true
+        description: Exact last observed physical product SHA (required in legacy capacity mode only)
+        required: false
         type: string
+        default: ''
       inspect_rc6_timers:
         description: Include bounded READ_ONLY evidence for 16 versioned RC6 timers
         required: false
         type: boolean
         default: false
+      rootless_metadata_only:
+        description: Inspect only Porota's dedicated private rootless UID/socket/data-root (no global Docker)
+        required: false
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
-    paths: ['.github/workflows/rc6-r1-docker-capacity-readonly.yml']
+    paths:
+      - '.github/workflows/rc6-r1-docker-capacity-readonly.yml'
+      - 'scripts/rc6_rootless_metadata_readonly.py'
+      - 'tests/test_rc6_rootless_metadata_readonly.py'
 
 permissions:
   contents: read
@@ -52,6 +61,7 @@ jobs:
           assert 'inspect_rc6_timers:' in source and 'porota-byma-morning-watch-rc6.timer' in timer
           print('RC6_R1_DOCKER_RO_OFFHOST=GREEN')
           PY
+          python3 -m unittest tests.test_rc6_rootless_metadata_readonly -q
 
   host_readonly:
     needs: contracts
@@ -67,13 +77,18 @@ jobs:
       SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       EXPECTED_DEPLOY_SHA: ${{ inputs.expected_deployed_sha }}
+      ROOTLESS_METADATA_ONLY: ${{ inputs.rootless_metadata_only }}
     steps:
       - uses: actions/checkout@v4
       - name: Bound SHA and runner-only SSH credentials
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$EXPECTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$ROOTLESS_METADATA_ONLY" == "true" ]]; then
+            [[ -z "$EXPECTED_DEPLOY_SHA" || "$EXPECTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          else
+            [[ "$EXPECTED_DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          fi
           test -n "$DO_HOST" && test -n "$DO_USER"
           test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           install -m 700 -d "$RUNNER_TEMP/rc6_r1_capacity"
@@ -81,6 +96,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
           chmod 600 "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
       - name: Read filesystem and Docker metadata only (max 35 seconds)
+        if: ${{ !inputs.rootless_metadata_only }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -237,7 +253,7 @@ jobs:
               out.write('```json\n'+json.dumps(data,sort_keys=True,indent=2)+'\n```\n')
           PY
       - name: Inspect RC6 timer contract READ_ONLY
-        if: ${{ inputs.inspect_rc6_timers }}
+        if: ${{ !inputs.rootless_metadata_only && inputs.inspect_rc6_timers }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -366,8 +382,61 @@ jobs:
               out.write('### RC6 R1 scheduler — physical READ_ONLY (not deploy readiness)\n\n')
               out.write('```json\n'+json.dumps(data,sort_keys=True,indent=2)+'\n```\n')
           PY
+      - name: Read private Porota rootless metadata only
+        if: ${{ inputs.rootless_metadata_only }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Explicit account+socket in the streamed probe; no sudo, no default
+          # /var/run/docker.sock and no Docker/global image/container inventory.
+          ssh -i "$RUNNER_TEMP/rc6_r1_capacity/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_r1_capacity/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'test "$(id -u)" = "$(id -u porota-rc6)" && test "$(id -u)" -ge 1000 && timeout 20 python3 -B -' \
+            < scripts/rc6_rootless_metadata_readonly.py \
+            > "$RUNNER_TEMP/rc6_r1_capacity/rootless.json"
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          raw = Path(os.environ['RUNNER_TEMP']) / 'rc6_r1_capacity/rootless.json'
+          if raw.stat().st_size > 8192:
+              raise SystemExit('RC6_R1_ROOTLESS_RO=NO_VERIFICADO|RECEIPT_BOUND')
+          data = json.loads(raw.read_text())
+          core = {'schema', 'state', 'read_only', 'mutations', 'provider_gets',
+                  'rootless_certified'}
+          positive = core | {'porota_private_account', 'porota_private_socket',
+                             'porota_rootless_engine', 'porota_private_data_root',
+                             'foreign_docker_inspected'}
+          negative = core | {'reason'}
+          if (data.get('schema') != 'rc6.r1.rootless-private-readonly.v1'
+                  or data.get('read_only') is not True
+                  or type(data.get('mutations')) is not int or data['mutations'] != 0
+                  or type(data.get('provider_gets')) is not int or data['provider_gets'] != 0
+                  or data.get('rootless_certified') is not False):
+              raise SystemExit('RC6_R1_ROOTLESS_RO=NO_VERIFICADO|RECEIPT_INVALID')
+          if data.get('state') == 'NO_VERIFICADO' and set(data) == negative:
+              reason = data['reason']
+              if not isinstance(reason, str) or not re.fullmatch(r'[A-Z_]{1,48}', reason):
+                  reason = 'HOST_PROBE_FAILED'
+              raise SystemExit('RC6_R1_ROOTLESS_RO=NO_VERIFICADO|' + reason)
+          if (data.get('state') != 'READ_ONLY_OBSERVED_NOT_CERTIFIED'
+                  or set(data) != positive
+                  or not all(data[field] is True for field in (
+                      'porota_private_account', 'porota_private_socket',
+                      'porota_rootless_engine', 'porota_private_data_root'))
+                  or data.get('foreign_docker_inspected') is not False):
+              raise SystemExit('RC6_R1_ROOTLESS_RO=NO_VERIFICADO|RECEIPT_INVALID')
+          print(json.dumps(data, sort_keys=True, separators=(',', ':')))
+          print('RC6_R1_ROOTLESS_RO=READ_ONLY_OBSERVED_NOT_CERTIFIED')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('### Porota private rootless — metadata only, NOT a deploy certificate\n\n')
+              out.write('```json\n' + json.dumps(data, sort_keys=True, indent=2) + '\n```\n')
+          PY
       - name: Runner-only SSH cleanup
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json" "$RUNNER_TEMP/rc6_r1_capacity/timers.json"
+          rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json" "$RUNNER_TEMP/rc6_r1_capacity/timers.json" "$RUNNER_TEMP/rc6_r1_capacity/rootless.json"
