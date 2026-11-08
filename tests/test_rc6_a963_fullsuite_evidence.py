@@ -207,6 +207,63 @@ def test_existing_full_job_preserves_suite_plan_behind_custody_hold():
                    for s in steps)
 
 
+@pytest.mark.parametrize("job_name,step_name,log_name", [
+    ("focal", "Reconciled legacy assertions", "focal.raw.log"),
+    ("full-suite", "Full suite", "pytest.raw.log"),
+])
+@pytest.mark.parametrize("pytest_exit", [0, 7])
+def test_pytest_output_stays_private_even_on_failure(
+    tmp_path, job_name, step_name, log_name, pytest_exit,
+):
+    """No fixture data escapes via either QA step's public Actions log."""
+    repo = Path(__file__).resolve().parents[1]
+    workflow = yaml.load(
+        (repo / ".github/workflows/rc6-ws-tests-12-current-contract.yml").read_text(),
+        Loader=yaml.BaseLoader,
+    )
+    script = next(
+        step["run"] for step in workflow["jobs"][job_name]["steps"]
+        if step.get("name") == step_name
+    )
+    runner_temp = tmp_path / "runner"
+    private = runner_temp / "rc6-a963-private"
+    private.mkdir(parents=True, mode=0o700)
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    fake_pytest = binaries / "pytest"
+    fake_pytest.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os,sys\n"
+        "print('PRIVATE_A963_TEST_STDOUT')\n"
+        "print('PRIVATE_A963_TEST_STDERR', file=sys.stderr)\n"
+        "sys.exit(int(os.environ['FAKE_PYTEST_RC']))\n",
+        encoding="utf-8",
+    )
+    fake_pytest.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{binaries}:{os.environ.get('PATH', '')}",
+        "RUNNER_TEMP": str(runner_temp),
+        "GITHUB_SHA": "a" * 40,
+        "FAKE_PYTEST_RC": str(pytest_exit),
+    }
+    process = subprocess.run(
+        ["bash", "-c", script], cwd=repo, env=env,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert process.returncode == pytest_exit
+    public = process.stdout + process.stderr
+    assert "PRIVATE_A963_TEST_STDOUT" not in public
+    assert "PRIVATE_A963_TEST_STDERR" not in public
+    log = private / log_name
+    assert log.is_file()
+    assert "PRIVATE_A963_TEST_STDOUT" in log.read_text(encoding="utf-8")
+    assert "PRIVATE_A963_TEST_STDERR" in log.read_text(encoding="utf-8")
+    assert log.stat().st_mode & 0o777 == 0o600
+    if job_name == "full-suite":
+        assert (private / "pytest.rc").read_text(encoding="utf-8") == f"{pytest_exit}\n"
+
+
 def test_real_pytest_collection_and_execution_emit_exact_hashed_properties(tmp_path):
     repo = Path(__file__).resolve().parents[1]
     probe = tmp_path / "test_a963_probe.py"

@@ -131,6 +131,74 @@ def test_untracked_python_in_extracted_image_is_not_ignored(tmp_path):
     assert result["untracked_image_runtime_files"] == ["surprise_worker.py"]
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".aws/credentials",
+        ".ssh/id_ed25519",
+        "broker_access.pem",
+        "ops/secrets/client.key",
+        ".env.production",
+        "service-account.p12",
+        "credentials.json",
+        "config/client_secret.json",
+    ],
+)
+def test_untracked_sensitive_extra_in_extracted_image_fails_closed(tmp_path, name):
+    repo, image, sha = _fixture(tmp_path)
+    _write(image, name, b"unreviewed credential material\n")
+    result = _guard(repo, image, sha)
+    assert result["status"] == "FAILED"
+    assert result["untracked_image_sensitive_files"] == [name]
+
+
+@pytest.mark.parametrize("name", ["broker_access.pem", "config/client_secret.json"])
+def test_untracked_sensitive_source_checkout_fails_closed(tmp_path, name):
+    repo, image, sha = _fixture(tmp_path)
+    _write(repo, name, b"unreviewed credential material\n")
+    result = _guard(repo, image, sha)
+    assert result["status"] == "FAILED"
+    assert result["untracked_sensitive_files"] == [name]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [".env", ".env.production", ".secrets/broker-token.txt", "Secret.txt"],
+)
+def test_gitignored_sensitive_source_checkout_fails_closed(tmp_path, name):
+    repo, image, _ = _fixture(tmp_path)
+    _write(repo, ".gitignore", b".env\n.env.*\n!.env.example\n.secrets/\nSecret.txt\nvenv/\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "ignore local credentials")
+    sha = _git(repo, "rev-parse", "HEAD")
+    _write(repo, name, b"locally ignored credential material\n")
+    assert _git(repo, "check-ignore", name) == name
+    result = _guard(repo, image, sha)
+    assert result["status"] == "FAILED"
+    assert result["ignored_sensitive_files"] == [name]
+
+
+def test_gitignored_dependency_certificate_does_not_block_source_checkout(tmp_path):
+    repo, image, _ = _fixture(tmp_path)
+    _write(repo, ".gitignore", b"venv/\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "ignore local venv")
+    sha = _git(repo, "rev-parse", "HEAD")
+    name = "venv/lib/python3.12/site-packages/certifi/cacert.pem"
+    _write(repo, name, b"public CA certificate fixture\n")
+    result = _guard(repo, image, sha)
+    assert result["status"] == "GREEN"
+    assert result["ignored_sensitive_files"] == []
+
+
+def test_untracked_env_example_is_not_mistaken_for_credential(tmp_path):
+    repo, image, sha = _fixture(tmp_path)
+    _write(image, ".env.example", b"PUBLIC_SAMPLE=example\n")
+    result = _guard(repo, image, sha)
+    assert result["status"] == "GREEN"
+    assert result["untracked_image_sensitive_files"] == []
+
+
 def test_untracked_compiled_native_binary_keeps_separate_abi_guard(tmp_path):
     repo, image, _ = _fixture(tmp_path)
     native_c = b"PyMODINIT_FUNC PyInit__rc6_json_bound(void) { return 0; }\n"

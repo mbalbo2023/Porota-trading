@@ -54,7 +54,24 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH=. pytest -q             tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada             tests/test_rc6_operational_scope.py             tests/test_rc6_table_headers_visible_sticky.py
+          # A998: keep focal test output private just like the FULL test output.
+          umask 077
+          private="$RUNNER_TEMP/rc6-a963-private"
+          mkdir -m 700 -p "$private"
+          test -d "$private" && test ! -L "$private"
+          test ! -e "$private/focal.raw.log" && test ! -L "$private/focal.raw.log"
+          set +e
+          PYTHONPATH=. pytest -q \
+            tests/test_candle_archive_v17.py::test_panel_no_presenta_muestras_como_cobertura_validada \
+            tests/test_rc6_operational_scope.py \
+            tests/test_rc6_table_headers_visible_sticky.py \
+            > "$private/focal.raw.log" 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            echo '::error::RC6_FOCAL_FAILED_PRIVATE_OUTPUT'
+            exit "$rc"
+          fi
           echo WS_TESTS_12_FOCAL=GREEN
 
   full-suite:
@@ -116,17 +133,29 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          # A998: candidate tests can print account-like data or injected
+          # fixture nodeids. Never stream pytest stdout/stderr into the public
+          # Actions log; the trusted publisher will use sanitized receipts
+          # only after separately verified OCI/UID custody.
+          umask 077
+          private="$RUNNER_TEMP/rc6-a963-private"
+          test -d "$private" && test ! -L "$private"
+          test ! -e "$private/pytest.raw.log" && test ! -L "$private/pytest.raw.log"
           export RC6_CI_IDENTITY_PROOF=1
           export RC6_CI_SOURCE_SHA="$GITHUB_SHA"
           export RC6_CI_SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
           export RC6_CI_MANIFEST_PATH="$RUNNER_TEMP/rc6-a963-private/executed.json"
           set +e
           PYTHONPATH=. pytest -q -p scripts.rc6_ci_pytest_identity -o xfail_strict=true \
-            --junitxml="$RUNNER_TEMP/rc6-a963-private/junit.xml"
+            --junitxml="$RUNNER_TEMP/rc6-a963-private/junit.xml" \
+            > "$private/pytest.raw.log" 2>&1
           rc=$?
           set -e
           printf '%s\n' "$rc" > "$RUNNER_TEMP/rc6-a963-private/pytest.rc"
-          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+          if [ "$rc" -ne 0 ]; then
+            echo '::error::RC6_FULLSUITE_FAILED_PRIVATE_OUTPUT'
+            exit "$rc"
+          fi
           echo WS_TESTS_12_FULL_SUITE=GREEN
       - name: Sanitize FULL evidence
         if: ${{ always() && steps.execution_custody.outcome == 'success' && steps.oci_diagnostic.outcome == 'success' }}

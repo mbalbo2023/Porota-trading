@@ -30,6 +30,20 @@ RUNTIME_EXACT = {
     "POROTA_SECTOR_MAP_V1.csv",
 }
 RUNTIME_METADATA_PREFIXES = ("ops/policy/", "ops/state/")
+SENSITIVE_EXTRA_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".p8", ".jks", ".kdbx"}
+SENSITIVE_EXTRA_NAMES = {
+    ".netrc", ".npmrc", ".pypirc", ".git-credentials",
+    "credentials", "credentials.json", "client_secret.json",
+    "secret.txt", "acceso_dashboard_droplet.txt",
+    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+}
+SENSITIVE_EXTRA_DIRS = {".aws", ".ssh", ".gnupg", ".secrets", "secrets"}
+# Local virtualenvs and generated caches can legitimately contain publicly
+# distributed CA .pem certificates; none of these directories belongs to the
+# frozen Docker build context. They are not credential leakage evidence.
+IGNORED_LOCAL_CACHE_DIRS = {
+    "venv", ".venv", "__pycache__", ".pytest_cache", ".hypothesis", "htmlcov",
+}
 
 
 def is_runtime_relevant(path: str) -> bool:
@@ -47,6 +61,22 @@ def is_runtime_relevant(path: str) -> bool:
     if path.startswith("systemd/") or path.startswith("ops/systemd/"):
         return True
     return False
+
+
+def is_sensitive_untracked_extra(path: str) -> bool:
+    """Fail closed if an untracked image addition looks like credential material.
+
+    This does not inspect or print file contents, and deliberately keeps the
+    existing runtime relevance / generated native extension rules separate.
+    """
+    parts = tuple(part.lower() for part in Path(path).parts)
+    name = parts[-1] if parts else ""
+    return bool(
+        name in SENSITIVE_EXTRA_NAMES
+        or (name.startswith(".env") and name != ".env.example")
+        or Path(name).suffix in SENSITIVE_EXTRA_SUFFIXES
+        or any(part in SENSITIVE_EXTRA_DIRS for part in parts[:-1])
+    )
 
 
 def git_tracked_runtime_files(repo_root: Path) -> list[str]:
@@ -152,8 +182,10 @@ def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
     Required runtime files (including ops/policy) remain a separate strict
     completeness check. Intentional .dockerignore omissions such as docs/data
     are not treated as runtime inputs. Untracked runtime inputs and dirty Git
-    worktrees fail closed. Generated native .so files have no tracked blob and
-    retain their independent native_extension_closure / ABI verification.
+    worktrees fail closed. Additional untracked credential-like files also
+    fail closed, even if they are not Python or other runtime source. Generated
+    native .so files have no tracked blob and retain their independent
+    native_extension_closure / ABI verification.
     """
     if re.fullmatch(r"[0-9a-f]{40}", candidate_sha) is None:
         raise SourceImageProvenanceError("CANDIDATE_SHA_INVALID")
@@ -167,6 +199,18 @@ def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
         repo_root, "ls-files", "--others", "--exclude-standard", "-z",
     ).split(b"\0") if p]
     untracked_runtime = sorted(p for p in untracked if is_runtime_relevant(p))
+    untracked_sensitive = sorted(p for p in untracked if is_sensitive_untracked_extra(p))
+    # `--exclude-standard` intentionally hides .env/.secrets via .gitignore.
+    # Query ignored files by name as a separate fail-closed checkout proof,
+    # without opening sensitive bytes or falsely blocking virtualenv CA roots.
+    ignored = [p.decode("utf-8") for p in _git_bytes(
+        repo_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+    ).split(b"\0") if p]
+    ignored_sensitive = sorted(
+        p for p in ignored
+        if (Path(p).parts and Path(p).parts[0].lower() not in IGNORED_LOCAL_CACHE_DIRS
+            and is_sensitive_untracked_extra(p))
+    )
 
     rows = _git_bytes(repo_root, "ls-tree", "-rz", "--full-tree", candidate_sha)
     tracked: dict[str, str] = {}
@@ -204,6 +248,10 @@ def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
         if is_runtime_relevant(rel) and rel not in tracked
         and rel not in generated_native
     )
+    untracked_image_sensitive = sorted(
+        rel for rel in image
+        if rel not in tracked and is_sensitive_untracked_extra(rel)
+    )
     mismatches: list[dict[str, str]] = []
     verified = 0
     for rel, oid in sorted(tracked.items()):
@@ -225,6 +273,8 @@ def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
     return {
         "status": "GREEN" if not (mismatches or tracked_dirty or staged_dirty or
                                       untracked_runtime or untracked_image_runtime or
+                                      untracked_sensitive or ignored_sensitive or
+                                      untracked_image_sensitive or
                                       tracked_aliases or image_aliases or not verified) else "FAILED",
         "candidate_sha": candidate_sha,
         "source": "COMMITTED_GIT_BLOB_NOT_WORKTREE",
@@ -233,6 +283,9 @@ def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
         "dirty_tracked_files": sorted(set(tracked_dirty + staged_dirty)),
         "untracked_runtime_files": untracked_runtime,
         "untracked_image_runtime_files": untracked_image_runtime,
+        "untracked_sensitive_files": untracked_sensitive,
+        "ignored_sensitive_files": ignored_sensitive,
+        "untracked_image_sensitive_files": untracked_image_sensitive,
         "runtime_gitlinks_or_symlinks": sorted(set(tracked_aliases)),
         "image_symlink_paths": image_aliases,
     }
