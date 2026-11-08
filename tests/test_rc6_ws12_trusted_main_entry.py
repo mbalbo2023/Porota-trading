@@ -35,7 +35,7 @@ def valid_context():
         "GITHUB_SHA": "a" * 40,
         "RC6_CANDIDATE_SHA": "b" * 40,
         "RC6_CANDIDATE_TREE_SHA": "c" * 40,
-        "RC6_RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_ENVIRONMENT": "github-hosted",
         "GITHUB_RUN_ID": "123456789",
         "GITHUB_RUN_ATTEMPT": "1",
     }
@@ -59,7 +59,7 @@ def test_main_dispatch_is_accepted_only_as_hold(capsys):
     {"GITHUB_REF_PROTECTED": "TRUE"},
     {"GITHUB_WORKFLOW_REF": "mbalbo2023/Porota-trading/.github/workflows/rc6-ws-tests-12-current-contract.yml@refs/heads/feature"},
     {"GITHUB_WORKFLOW_SHA": "d" * 40},
-    {"RC6_RUNNER_ENVIRONMENT": "self-hosted"},
+    {"RUNNER_ENVIRONMENT": "self-hosted"},
     {"GITHUB_RUN_ID": "0"},
     {"GITHUB_RUN_ATTEMPT": "0"},
     {"RC6_CANDIDATE_SHA": "main"},
@@ -88,9 +88,14 @@ def test_workflow_uses_single_protected_main_entry_before_any_candidate_executio
     assert len(doc["jobs"]) == 1
     job = next(iter(doc["jobs"].values()))
     assert job["runs-on"] == "ubuntu-24.04"
+    # `runner` context is unavailable in jobs.<job_id>.env. GitHub must be
+    # able to parse this workflow before any job can enforce HOLD=79.
+    assert "runner.environment" not in json.dumps(job.get("env", {}))
+    assert not any(key.startswith(("GITHUB_", "RUNNER_")) for key in job.get("env", {}))
     steps = job["steps"]
     assert steps[0]["name"] == "Reject untrusted workflow provenance before checkout"
     assert "GITHUB_WORKFLOW_SHA" in steps[0]["run"]
+    assert "RUNNER_ENVIRONMENT" in steps[0]["run"]
     assert "exit 79" in steps[0]["run"]
     assert steps[1]["uses"] == "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
     assert steps[1]["with"] == {

@@ -20,9 +20,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
-      GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
-      RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
       RC6_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       RC6_CANDIDATE_TREE_SHA: ${{ inputs.candidate_tree_sha }}
     steps:
@@ -37,7 +34,7 @@ jobs:
                 "$GITHUB_WORKFLOW_REF" != 'mbalbo2023/Porota-trading/.github/workflows/rc6-ws-tests-12-current-contract.yml@refs/heads/main' ||
                 ! "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ||
                 "$GITHUB_WORKFLOW_SHA" != "$GITHUB_SHA" ||
-                "$RC6_RUNNER_ENVIRONMENT" != 'github-hosted' ]]; then
+                "${RUNNER_ENVIRONMENT:-}" != 'github-hosted' ]]; then
             echo 'RC6_WS12_CONTROL=UNTRUSTED_CONTEXT|qa_certified=false|automatic_go=false'
             exit 79
           fi

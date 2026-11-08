@@ -27,7 +27,7 @@ def context_is_main_dispatch(context: Mapping[str, str]) -> bool:
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_REF_PROTECTED": "true",
         "GITHUB_WORKFLOW_REF": WORKFLOW_REF,
-        "RC6_RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_ENVIRONMENT": "github-hosted",
     }
     if any(context.get(key) != value for key, value in expected.items()):
         return False
