@@ -1,0 +1,55 @@
+name: RC6 WS TESTS 12 Trusted Main Entry (HOLD)
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact candidate commit SHA (data only)
+        required: true
+        type: string
+      candidate_tree_sha:
+        description: Exact candidate tree SHA (data only)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-entry-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RC6_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      RC6_CANDIDATE_TREE_SHA: ${{ inputs.candidate_tree_sha }}
+    steps:
+      - name: Reject untrusted workflow provenance before checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_REPOSITORY" != 'mbalbo2023/Porota-trading' ||
+                "$GITHUB_EVENT_NAME" != 'workflow_dispatch' ||
+                "$GITHUB_REF" != 'refs/heads/main' ||
+                "${GITHUB_REF_PROTECTED:-}" != 'true' ||
+                "$GITHUB_WORKFLOW_REF" != 'mbalbo2023/Porota-trading/.github/workflows/rc6-ws-tests-12-current-contract.yml@refs/heads/main' ||
+                ! "$GITHUB_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ||
+                "$GITHUB_WORKFLOW_SHA" != "$GITHUB_SHA" ||
+                "${RUNNER_ENVIRONMENT:-}" != 'github-hosted' ]]; then
+            echo 'RC6_WS12_CONTROL=UNTRUSTED_CONTEXT|qa_certified=false|automatic_go=false'
+            exit 79
+          fi
+      # Fetch only the same protected main commit that supplied this workflow.
+      # Pinned official checkout v4.2.2 commit; never checkout candidate.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Verify control checkout; preserve QA HOLD
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$GITHUB_WORKFLOW_SHA" ]]; then
+            echo 'RC6_WS12_CONTROL=TRUSTED_CHECKOUT_MISMATCH|qa_certified=false|automatic_go=false'
+            exit 79
+          fi
+          python3 -I -S scripts/rc6_ci_ws12_main_entry.py
