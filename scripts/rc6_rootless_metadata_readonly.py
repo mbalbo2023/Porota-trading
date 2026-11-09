@@ -268,6 +268,35 @@ def _login_rootless_toolchain():
         return False
 
 
+def _trusted_root_metadata(path, kind, *, executable=False):
+    """Do not follow untrusted leaf symlinks or accept writable OS metadata."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return (kind(info.st_mode) and info.st_uid == 0
+            and not stat.S_IMODE(info.st_mode) & 0o022
+            # Launcher is a shell script: UID1000 needs world read+execute,
+            # not merely owner-root execute bits.
+            and (not executable or (stat.S_IMODE(info.st_mode) & 0o005) == 0o005))
+
+
+def _login_rootless_launcher_present():
+    """Presence only: a trusted launcher does not prove a running daemon."""
+    return (_trusted_root_metadata('/usr', stat.S_ISDIR)
+            and _trusted_root_metadata('/usr/bin', stat.S_ISDIR)
+            and _trusted_root_metadata('/usr/bin/dockerd-rootless.sh',
+                                       stat.S_ISREG, executable=True))
+
+
+def _login_linger_record_present(account):
+    """Trust only the root-owned systemd linger marker; run no commands."""
+    parents = ('/var', '/var/lib', '/var/lib/systemd', '/var/lib/systemd/linger')
+    return (all(_trusted_root_metadata(path, stat.S_ISDIR) for path in parents)
+            and _trusted_root_metadata(parents[-1] + '/' + account.pw_name,
+                                       stat.S_ISREG))
+
+
 def _login_userns_ready():
     try:
         def integer(path):
@@ -314,9 +343,12 @@ def collect_current_login_readonly():
     account = _current_login_account()
     bus, default_absent, project_absent = _login_runtime_inventory(account)
     rootless_tools = _login_rootless_toolchain()
+    rootless_launcher = _login_rootless_launcher_present()
+    linger_record = _login_linger_record_present(account)
     subids = _login_subids_ready(account)
     userns = _login_userns_ready()
-    ready = all((bus, default_absent, project_absent, rootless_tools, subids, userns))
+    ready = all((bus, default_absent, project_absent, rootless_tools,
+                 rootless_launcher, linger_record, subids, userns))
     return {
         "schema": CURRENT_LOGIN_SCHEMA,
         "state": "NO_VERIFICADO",
@@ -327,6 +359,8 @@ def collect_current_login_readonly():
         "runtime_directory_private": True,
         "user_manager_socket_present": bus,
         "rootless_tools_present": rootless_tools,
+        "rootless_launcher_present": rootless_launcher,
+        "user_linger_record_present": linger_record,
         "subuids_assigned": subids, "userns_enabled": userns,
         "default_socket_absent": default_absent,
         "project_socket_namespace_absent": project_absent,

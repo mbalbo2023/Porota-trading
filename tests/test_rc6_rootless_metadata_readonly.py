@@ -8,6 +8,7 @@ from pathlib import Path
 import stat
 import sys
 import subprocess
+import tempfile
 import textwrap
 import time
 from types import SimpleNamespace
@@ -258,6 +259,15 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
             "/home/private-operator-name": _entry(stat.S_IFDIR, mode=0o750, uid=1000),
             "/run/user/1000": _entry(stat.S_IFDIR, mode=0o700, uid=1000),
             "/run/user/1000/bus": _entry(stat.S_IFSOCK, mode=0o660, uid=1000),
+            "/usr": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/usr/bin": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/usr/bin/dockerd-rootless.sh": _entry(stat.S_IFREG, mode=0o755, uid=0),
+            "/var": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/var/lib": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/var/lib/systemd": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/var/lib/systemd/linger": _entry(stat.S_IFDIR, mode=0o755, uid=0),
+            "/var/lib/systemd/linger/private-operator-name": _entry(
+                stat.S_IFREG, mode=0o644, uid=0),
         }
 
     def inspect(self, *, uid=1000, subids=True, tooling=True, userns=True):
@@ -297,6 +307,8 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
             "runtime_directory_private": True,
             "user_manager_socket_present": True,
             "rootless_tools_present": True,
+            "rootless_launcher_present": True,
+            "user_linger_record_present": True,
             "subuids_assigned": True,
             "userns_enabled": True,
             "default_socket_absent": True,
@@ -358,6 +370,76 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
                 self.assertFalse(observed["ready_for_private_rootless_review"])
                 self.assertFalse(observed["rootless_certified"])
 
+    def test_missing_or_untrusted_rootless_launcher_is_not_install_readiness(self):
+        path = "/usr/bin/dockerd-rootless.sh"
+        original = self.paths[path]
+        alternatives = (
+            None,
+            _entry(stat.S_IFLNK, mode=0o755, uid=0),
+            _entry(stat.S_IFREG, mode=0o755, uid=1000),
+            _entry(stat.S_IFREG, mode=0o775, uid=0),
+            _entry(stat.S_IFREG, mode=0o644, uid=0),
+            _entry(stat.S_IFREG, mode=0o700, uid=0),
+            _entry(stat.S_IFREG, mode=0o711, uid=0),
+        )
+        for entry in alternatives:
+            with self.subTest(entry=entry):
+                if entry is None:
+                    self.paths.pop(path, None)
+                else:
+                    self.paths[path] = entry
+                observed = self.inspect()
+                self.assertFalse(observed["rootless_launcher_present"])
+                self.assertFalse(observed["ready_for_private_rootless_review"])
+                self.assertFalse(observed["rootless_certified"])
+        self.paths[path] = original
+        self.assertTrue(self.inspect()["rootless_launcher_present"])
+
+    def test_launcher_parent_must_be_trusted_before_reporting_available(self):
+        parent = '/usr'
+        original = self.paths[parent]
+        for entry in (None,
+                      _entry(stat.S_IFLNK, mode=0o755, uid=0),
+                      _entry(stat.S_IFDIR, mode=0o777, uid=0),
+                      _entry(stat.S_IFDIR, mode=0o755, uid=1000)):
+            with self.subTest(entry=entry):
+                if entry is None:
+                    self.paths.pop(parent, None)
+                else:
+                    self.paths[parent] = entry
+                try:
+                    observed = self.inspect()
+                    self.assertFalse(observed['rootless_launcher_present'])
+                    self.assertFalse(observed['ready_for_private_rootless_review'])
+                finally:
+                    self.paths[parent] = original
+
+    def test_linger_marker_is_only_trusted_root_owned_file_metadata(self):
+        directory = "/var/lib/systemd/linger"
+        marker = directory + "/private-operator-name"
+        cases = (
+            (marker, None),
+            (marker, _entry(stat.S_IFLNK, mode=0o777, uid=0)),
+            (marker, _entry(stat.S_IFREG, mode=0o644, uid=1000)),
+            (marker, _entry(stat.S_IFREG, mode=0o666, uid=0)),
+            (directory, _entry(stat.S_IFLNK, mode=0o755, uid=0)),
+            (directory, _entry(stat.S_IFDIR, mode=0o777, uid=0)),
+        )
+        for path, entry in cases:
+            with self.subTest(path=path, entry=entry):
+                original = self.paths[path]
+                if entry is None:
+                    self.paths.pop(path)
+                else:
+                    self.paths[path] = entry
+                try:
+                    observed = self.inspect()
+                    self.assertFalse(observed["user_linger_record_present"])
+                    self.assertFalse(observed["ready_for_private_rootless_review"])
+                    self.assertFalse(observed["rootless_certified"])
+                finally:
+                    self.paths[path] = original
+
     def test_current_login_subid_metadata_only_accepts_exclusive_65536_ranges(self):
         def check(uid_text, gid_text):
             with mock.patch.object(probe, "_login_subid_text",
@@ -379,6 +461,57 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
 
 
 class CurrentLoginWorkflowTests(unittest.TestCase):
+    def test_runner_receipt_rejects_missing_launcher_or_linger_without_certifying(self):
+        job = WORKFLOW.read_text().split('\n  current_login_readonly:\n', 1)[1]
+        consumer = job.split('\n      - name: Read current login OS metadata without Docker or sudo\n', 1)[1]
+        consumer = consumer.split('\n      - name: Runner-only current-login credential cleanup\n', 1)[0]
+        parser = textwrap.dedent(consumer.split("          python3 - <<'PY'\n", 1)[1]
+                                 .split('\n          PY', 1)[0])
+        positive = {
+            'schema': 'rc6.r1.current-login-capability-readonly.v1',
+            'state': 'NO_VERIFICADO', 'read_only': True,
+            'mutations': 0, 'provider_gets': 0, 'docker_queries': 0,
+            'socket_connections': 0, 'sudo_executed': False,
+            'rootless_certified': False, 'foreign_docker_inspected': False,
+            'principal_nonroot_unique': True, 'runtime_directory_private': True,
+            'user_manager_socket_present': True, 'rootless_tools_present': True,
+            'rootless_launcher_present': True, 'user_linger_record_present': True,
+            'subuids_assigned': True, 'userns_enabled': True,
+            'default_socket_absent': True,
+            'project_socket_namespace_absent': True,
+            'ready_for_private_rootless_review': True,
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            dest = Path(temp) / 'rc6_current_login_ro'
+            dest.mkdir()
+            receipt_file = dest / 'receipt.json'
+            summary_file = Path(temp) / 'summary.md'
+            env = dict(os.environ, RUNNER_TEMP=temp, GITHUB_STEP_SUMMARY=str(summary_file))
+
+            def run(data):
+                receipt_file.write_text(json.dumps(data), encoding='utf-8')
+                return subprocess.run([sys.executable, '-I', '-B', '-c', parser],
+                                      text=True, capture_output=True, timeout=4, env=env)
+
+            success = run(positive)
+            self.assertEqual(success.returncode, 0, success.stderr)
+            self.assertIn('PREREQUISITES_READY_NOT_CERTIFIED|CERT2=NO_VERIFICADO',
+                          success.stdout)
+            for missing in ('rootless_launcher_present', 'user_linger_record_present'):
+                with self.subTest(missing=missing):
+                    incomplete = dict(positive, **{missing: False,
+                                                   'ready_for_private_rootless_review': False})
+                    result = run(incomplete)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('PREREQUISITES_INCOMPLETE|CERT2=NO_VERIFICADO',
+                                  result.stderr + result.stdout)
+                    absent = dict(positive)
+                    del absent[missing]
+                    result = run(absent)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('RECEIPT_INVALID|CERT2=NO_VERIFICADO',
+                                  result.stderr + result.stdout)
+
     def test_explicit_opt_in_skips_entire_legacy_rootful_and_dedicated_host_job(self):
         source = WORKFLOW.read_text()
         self.assertIn("current_login_capability_only:", source)
