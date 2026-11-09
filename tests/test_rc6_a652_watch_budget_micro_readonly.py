@@ -144,17 +144,244 @@ class TestA652MicroReadOnly(unittest.TestCase):
                 self.assertNotIn(raw, bucket)
         self.assertEqual(a652._error_bucket("sensitive-ticker: PPI_🔥"), "OTHER")
 
-    def test_v2_schema_never_reinterprets_historical_v1_evidence(self):
-        self.assertTrue(a652.HOST_SCHEMA.endswith(".v2"))
-        self.assertTrue(a652.RECEIPT_SCHEMA.endswith(".v2"))
-        legacy = {"schema": "rc6.a652.watch-budget-scanner-host-ro.v1",
-                  "read_only": True, "provider_gets": 0,
-                  "budget_leases": 0, "orders_called": False,
-                  "ppi_watch_mutations": 0, "host_file_writes": 0,
-                  "scanner": {"state": "OBSERVED"}, "budget": {}, "watch": {}}
-        report = a652.build_receipt(legacy)
-        self.assertEqual(report["state"], "INCOMPLETE_NO_GO")
-        self.assertEqual(report["host"]["state"], "NO_VERIFICADO")
+    def test_v3_schema_never_reinterprets_historical_v1_v2_evidence(self):
+        self.assertTrue(a652.HOST_SCHEMA.endswith(".v3"))
+        self.assertTrue(a652.RECEIPT_SCHEMA.endswith(".v3"))
+        for version in ("v1", "v2"):
+            with self.subTest(historical_version=version):
+                legacy = {"schema": "rc6.a652.watch-budget-scanner-host-ro." + version,
+                          "read_only": True, "provider_gets": 0,
+                          "budget_leases": 0, "orders_called": False,
+                          "ppi_watch_mutations": 0, "host_file_writes": 0,
+                          "scanner": {"state": "OBSERVED"}, "budget": {}, "watch": {}}
+                report = a652.build_receipt(legacy)
+                self.assertEqual(report["state"], "INCOMPLETE_NO_GO")
+                self.assertEqual(report["host"]["state"], "NO_VERIFICADO")
+
+    def test_host_recomputes_claimed_reconciliations_before_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            self.assertEqual(raw["scanner"]["events"]["selection_reconciliation"],
+                             "MISMATCH_REQUIRES_RCA")
+            raw["scanner"]["events"]["selection_reconciliation"] = "MATCH"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            raw["scanner"]["events"]["selection_reconciliation"] = "MISMATCH_REQUIRES_RCA"
+            raw["scanner"]["events"]["metric_reconciliation"] = "MATCH"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            raw["scanner"]["events"]["metric_reconciliation"] = "MISMATCH_REQUIRES_RCA"
+            raw["scanner"]["cycle"]["selected_count"] = 999
+            raw["scanner"]["events"]["selection_reconciliation"] = "MATCH"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+
+    def test_truncation_requires_literal_boolean_and_never_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            raw["scanner"]["events"]["sample_truncated"] = "SECRET_NOT_BOOLEAN"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            raw["scanner"]["events"]["sample_truncated"] = True
+            raw["scanner"]["events"]["selection_reconciliation"] = "MATCH"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            raw["scanner"]["events"]["selection_reconciliation"] = "SAMPLED_TRUNCATED"
+            raw["scanner"]["events"]["metric_reconciliation"] = "MATCH"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            raw["scanner"]["events"]["metric_reconciliation"] = "SAMPLED_TRUNCATED"
+            self.assertEqual(a652.build_receipt(raw)["host"]["state"], "NO_VERIFICADO")
+            # A truly truncated sample must contain all MAX_EVENTS bounded rows.
+
+    def test_rejected_reason_histogram_tallies_a652_1_ok_12_rejected_7_errors(self):
+        """Synthetic future cycle only: historical A652 rejects remain unclassifiable."""
+        reasons = (
+            "RECEIPT_STALE_OR_FUTURE", "LAST_IS_NOT_A_TRADE",
+            "BOOK_TIME_MISSING", "BOOK_TIME_FUTURE", "BOOK_STALE",
+            "TRADE_TIME_MISSING", "TRADE_TIME_FUTURE", "TRADE_STALE",
+            "INVALID_OR_NAIVE_TIMESTAMP",
+            "BOOK_TIME_STALE", "BOOK_STALE_AND_SECRET", "PRIVATE_REASON_SECRETXYZ",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("UPDATE universe_cycle_metrics SET selected_count=20, "
+                          "successful_count=1, failed_count=7")
+                c.execute("DELETE FROM paper_events")
+                for reason in reasons:
+                    c.execute("INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                              ("2026-11-04T19:31:00+00:00", "DATA_REJECTED",
+                               "AL30: " + reason))
+                for reason in ("PPI_INSTRUMENT_NOT_FOUND",) + ("PPI_SECRET_EXCEPTION",) * 6:
+                    c.execute("INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                              ("2026-11-04T19:32:00+00:00", "DATA_ERROR",
+                               "AL30: " + reason))
+                c.commit()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            events = raw["scanner"]["events"]
+            self.assertEqual(events["sampled"], 19)
+            self.assertFalse(events["sample_truncated"])
+            self.assertEqual(events["counts"]["DATA_REJECTED"], 12)
+            self.assertEqual(events["counts"]["DATA_ERROR"], 7)
+            self.assertEqual(events["metric_reconciliation"], "MATCH")
+            self.assertEqual(events["selection_reconciliation"], "MATCH")
+            expected = {reason: 1 for reason in reasons[:9]}
+            expected["UNKNOWN"] = 3
+            self.assertEqual(events["data_rejected_reasons"], expected)
+            receipt = a652.build_receipt(raw)
+            self.assertEqual(receipt["host"]["events"]["data_rejected_reasons"], expected)
+            self.assertEqual(receipt["host"]["events"]["selection_reconciliation"], "MATCH")
+            output = json.dumps(receipt)
+            for secret in ("AL30", "PRIVATE_REASON_SECRETXYZ", "PPI_SECRET_EXCEPTION",
+                           "BOOK_TIME_STALE", "BOOK_STALE_AND_SECRET"):
+                self.assertNotIn(secret, output)
+            self.assertEqual(receipt["probe_provider_gets"], 0)
+            self.assertEqual(receipt["probe_real_orders"], 0)
+            self.assertFalse(receipt["paper_ready"])
+
+    def test_db_query_bounds_untrusted_detail_before_python_receives_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                          ("2026-11-04T19:31:00+00:00", "DATA_REJECTED",
+                           "AL30: BOOK_STALE" + "SECRET" * 3000))
+                c.commit()
+                statements = []
+                c.set_trace_callback(statements.append)
+                events = a652._events(c, "2026-11-04T19:30:00+00:00",
+                                      "2026-11-04T19:35:00+00:00")
+            self.assertEqual(events["data_rejected_reasons"]["UNKNOWN"], 1)
+            self.assertEqual(events["counts"]["DATA_REJECTED"], 1)
+            normalized_sql = " ".join(stmt.lower().replace(" ", "") for stmt in statements)
+            self.assertIn("substr(cast(detailasblob),1,2049)", normalized_sql)
+            self.assertNotIn("SECRET", json.dumps(events))
+
+    def test_sqlite_embedded_nul_cannot_turn_poisoned_detail_into_valid_bucket(self):
+        """SQLite TEXT substr may stop at NUL: classify the full bounded BLOB."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("DELETE FROM paper_events")
+                for kind, poisoned in (
+                    ("DATA_REJECTED", "AL30: BOOK_STALE\x00SECRET"),
+                    ("DATA_ERROR", "AL30: PPI_HTTP_403\x00SECRET"),
+                ):
+                    c.execute("INSERT INTO paper_events(event_at,event_type,detail) "
+                              "VALUES(?,?,?)",
+                              ("2026-11-04T19:31:00+00:00", kind, poisoned))
+                c.commit()
+                events = a652._events(c, "2026-11-04T19:30:00+00:00",
+                                      "2026-11-04T19:35:00+00:00")
+            self.assertEqual(events["counts"]["DATA_REJECTED"], 1)
+            self.assertEqual(events["counts"]["DATA_ERROR"], 1)
+            self.assertEqual(events["data_rejected_reasons"]["UNKNOWN"], 1)
+            self.assertEqual(events["data_rejected_reasons"]["BOOK_STALE"], 0)
+            self.assertEqual(events["data_error_reasons"]["OTHER"], 1)
+            self.assertEqual(events["data_error_reasons"]["PPI_HTTP_4XX"], 0)
+            self.assertNotIn("SECRET", json.dumps(events))
+
+    def test_sqlite_invalid_utf8_or_control_bytes_are_classified_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("DELETE FROM paper_events")
+                payloads = (b"AL30: BOOK_STALE\xff", b"AL30: BOOK_STALE\n",
+                            b"AL30: BOOK_STALE\t", b"AL30: BOOK_STALE\x7f")
+                c.executemany(
+                    "INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                    [("2026-11-04T19:31:00+00:00", "DATA_REJECTED",
+                      sqlite3.Binary(payload)) for payload in payloads])
+                c.commit()
+                events = a652._events(c, "2026-11-04T19:30:00+00:00",
+                                      "2026-11-04T19:35:00+00:00")
+            self.assertEqual(events["data_rejected_reasons"]["UNKNOWN"], len(payloads))
+            self.assertEqual(events["data_rejected_reasons"]["BOOK_STALE"], 0)
+            self.assertEqual(sum(events["data_rejected_reasons"].values()), len(payloads))
+
+    def test_rejected_histogram_counter_forgery_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            raw["scanner"]["events"]["data_rejected_reasons"]["BOOK_STALE"] = 5
+            receipt = a652.build_receipt(raw)
+            self.assertEqual(receipt["host"]["state"], "NO_VERIFICADO")
+            self.assertFalse(receipt["paper_ready"])
+
+    def test_rejected_detail_without_exact_known_suffix_is_unknown(self):
+        for detail in (None, 17, "", "AL30: ", "BOOK_STALE", ": BOOK_STALE",
+                       "evil: BOOK_STALE", "secret\nforged: BOOK_STALE",
+                       "secret: injected: BOOK_STALE", "ÁL30: BOOK_STALE",
+                       "AL30\x00: BOOK_STALE", "AL30\n: BOOK_STALE",
+                       "AL30: TRADE_STALE_SECRET", "AL30: TRADE_STALE ",
+                       "AL30: PRIVATE_REASON_🔥", "A" * 70 + ": BOOK_STALE",
+                       "secret" * 700):
+            with self.subTest(detail_kind=type(detail).__name__):
+                self.assertEqual(a652._rejection_bucket(detail), "UNKNOWN")
+        self.assertEqual(a652._rejection_bucket("AL30: BOOK_STALE"),
+                         "BOOK_STALE")
+
+    def test_rejected_reasons_must_be_complete_bounded_integer_histogram(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            for invalid in (None, True, 9999999):
+                with self.subTest(invalid=invalid):
+                    raw["scanner"]["events"]["data_rejected_reasons"]["UNKNOWN"] = invalid
+                    receipt = a652.build_receipt(raw)
+                    self.assertEqual(receipt["host"]["state"], "NO_VERIFICADO")
+
+    def test_rejected_sample_truncation_never_claims_selected_reconciliation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("DELETE FROM paper_events")
+                c.execute("UPDATE universe_cycle_metrics SET selected_count=514, "
+                          "successful_count=1, failed_count=0")
+                c.executemany(
+                    "INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                    [("2026-11-04T19:31:00+00:00", "DATA_REJECTED",
+                      "AL30: TRADE_STALE") for _ in range(513)])
+                c.commit()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            events = raw["scanner"]["events"]
+            self.assertEqual(events["sampled"], 512)
+            self.assertTrue(events["sample_truncated"])
+            self.assertEqual(events["selection_reconciliation"], "SAMPLED_TRUNCATED")
+            self.assertEqual(events["data_rejected_reasons"]["TRADE_STALE"], 512)
+            self.assertEqual(
+                a652.build_receipt(raw)["host"]["events"]["selection_reconciliation"],
+                "SAMPLED_TRUNCATED")
+
+    def test_selection_count_mismatch_requires_rca_even_with_known_error_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("UPDATE universe_cycle_metrics SET selected_count=7, "
+                          "successful_count=0, failed_count=5")
+                c.execute("INSERT INTO paper_events(event_at,event_type,detail) VALUES(?,?,?)",
+                          ("2026-11-04T19:31:00+00:00", "DATA_REJECTED",
+                           "AL30: BOOK_TIME_FUTURE"))
+                c.commit()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            self.assertEqual(raw["scanner"]["events"]["selection_reconciliation"],
+                             "MISMATCH_REQUIRES_RCA")
+            self.assertEqual(a652.build_receipt(raw)["host"]["events"]["selection_reconciliation"],
+                             "MISMATCH_REQUIRES_RCA")
 
     def test_future_cycle_new_buckets_only_aggregate_no_raw_names(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -294,6 +521,26 @@ class TestA652MicroReadOnly(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(result["state"], "INCOMPLETE_NO_GO")
             self.assertEqual(result["host"]["state"], "NO_VERIFICADO")
+
+    def test_runner_rejects_nonstandard_json_numeric_constants_even_in_discarded_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                valid_raw = a652.host_probe(db=db, runner=fake_systemctl)
+            self.assertEqual(a652.build_receipt(valid_raw)["host"]["state"], "OBSERVED")
+            source = Path(directory) / "untrusted-remote.json"
+            output = Path(directory) / "sanitized.json"
+            raw_text = json.dumps(valid_raw)
+            for nonstandard in ("NaN", "Infinity", "-Infinity"):
+                with self.subTest(nonstandard=nonstandard):
+                    source.write_text(raw_text[:-1] + ',"discarded_secret":' + nonstandard + '}',
+                                      encoding="utf-8")
+                    rc = a652.main(["--sanitize", str(source), str(output)])
+                    receipt = json.loads(output.read_text(encoding="utf-8"))
+                    self.assertEqual(rc, 2)
+                    self.assertEqual(receipt["host"]["state"], "NO_VERIFICADO")
+                    self.assertNotIn("discarded_secret", json.dumps(receipt))
 
     def test_runner_rejects_oversized_raw_stdout(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -23,8 +23,8 @@ import time
 from urllib.parse import quote
 
 
-HOST_SCHEMA = "rc6.a652.watch-budget-scanner-host-ro.v2"
-RECEIPT_SCHEMA = "rc6.a652.watch-budget-micro-sanitized.v2"
+HOST_SCHEMA = "rc6.a652.watch-budget-scanner-host-ro.v3"
+RECEIPT_SCHEMA = "rc6.a652.watch-budget-micro-sanitized.v3"
 DATA_ROOT = Path("/opt/porota-trading/data")
 DB = DATA_ROOT / "paper_v17/observer_v17.db"
 MAX_EVENTS = 512
@@ -35,6 +35,12 @@ ERROR_BUCKETS = ("PPI_BUDGET_BACKPRESSURE", "PPI_SESSION_INVALID",
                  "PPI_TIMEOUT_EXCEPTION", "PPI_NETWORK_EXCEPTION",
                  "PPI_SCHEMA_OR_TYPE_EXCEPTION", "PPI_LOCAL_OS_EXCEPTION",
                  "PPI_OTHER_CLASSIFIED", "OTHER")
+# Product Quote.time_error exact labels. Never export raw DATA_REJECTED detail
+# or infer which one applied in historical v1/v2 receipts without this probe.
+REJECTION_BUCKETS = ("RECEIPT_STALE_OR_FUTURE", "LAST_IS_NOT_A_TRADE",
+                     "BOOK_TIME_MISSING", "BOOK_TIME_FUTURE", "BOOK_STALE",
+                     "TRADE_TIME_MISSING", "TRADE_TIME_FUTURE", "TRADE_STALE",
+                     "INVALID_OR_NAIVE_TIMESTAMP", "UNKNOWN")
 SCANNER_STATES = {"OBSERVED", "NO_VERIFICADO"}
 WATCH_STATES = {"ENUMERATED_NO_MATCH", "ENUMERATED_UNREGISTERED_CANDIDATE",
                 "ENUMERATED_AMBIGUOUS", "ENUMERATION_UNAVAILABLE"}
@@ -45,6 +51,7 @@ AUTH_STATES = {"OK", "ERROR", "UNKNOWN"}
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9_.@-]{1,128}\.service$")
 _HTTP_CODE = re.compile(r"^PPI_HTTP_([1-5][0-9]{2})$")
 _SAFE_CLASS = re.compile(r"^PPI_[A-Z0-9_]{1,64}$")
+_SAFE_SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9._/-]{0,63}")
 _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 
 # Product bd_ppi_readonly_guard.classify_read_error's last fallback stores
@@ -81,6 +88,10 @@ def _reject_duplicate_keys(pairs):
             raise ValueError("DUPLICATE_JSON_KEY")
         result[key] = value
     return result
+
+
+def _reject_nonstandard_json_constant(_constant):
+    raise ValueError("NON_STANDARD_JSON_CONSTANT")
 
 
 def _enum(value, allowed):
@@ -207,24 +218,70 @@ def _error_bucket(detail):
     return "PPI_OTHER_CLASSIFIED" if _SAFE_CLASS.fullmatch(suffix) else "OTHER"
 
 
+def _rejection_bucket(detail):
+    """Accept only the producer's ASCII ticker + exact time_error framing."""
+    if not isinstance(detail, str) or len(detail) > 2048:
+        return "UNKNOWN"
+    symbol, sep, reason = detail.partition(": ")
+    if not sep or not _SAFE_SYMBOL.fullmatch(symbol):
+        return "UNKNOWN"
+    return reason if reason in REJECTION_BUCKETS[:-1] else "UNKNOWN"
+
+
+def _bounded_detail_text(raw):
+    """Decode bounded SQLite BLOB, refusing NUL/control and invalid UTF-8."""
+    if not isinstance(raw, bytes) or len(raw) > 2048:
+        return None
+    try:
+        value = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return None
+    return None if any(ord(char) < 32 or ord(char) == 127 for char in value) else value
+
+
+def _expected_reconciliations(cycle, counts, truncated):
+    """Shared producer/receiver arithmetic; never trust a host's MATCH claim."""
+    if type(truncated) is not bool:
+        return None
+    if truncated:
+        return "SAMPLED_TRUNCATED", "SAMPLED_TRUNCATED"
+    selected = cycle.get("selected_count")
+    successful = cycle.get("successful_count")
+    failed = cycle.get("failed_count")
+    errors = counts.get("DATA_ERROR")
+    rejected = counts.get("DATA_REJECTED")
+    if not all(type(value) is int and value >= 0 for value in
+               (selected, successful, failed, errors, rejected)):
+        return None
+    return (
+        "MATCH" if errors == failed else "MISMATCH_REQUIRES_RCA",
+        "MATCH" if selected == successful + errors + rejected else
+        "MISMATCH_REQUIRES_RCA",
+    )
+
+
 def _events(conn, start, finish):
     """Only last cycle; never export symbols, detail, raw errors or quotes."""
     report = {"state": "NO_VERIFICADO", "sampled": 0,
               "sample_truncated": False,
               "counts": {name: 0 for name in ALLOWED_EVENT_TYPES},
-              "data_error_reasons": {name: 0 for name in ERROR_BUCKETS}}
+              "data_error_reasons": {name: 0 for name in ERROR_BUCKETS},
+              "data_rejected_reasons": {name: 0 for name in REJECTION_BUCKETS}}
     rows = conn.execute(
-        "SELECT event_type, detail FROM paper_events "
+        "SELECT event_type, substr(CAST(detail AS BLOB),1,2049) FROM paper_events "
         "WHERE event_at >= ? AND event_at <= ? "
         "AND event_type IN ('DATA_ERROR','DATA_REJECTED','HTTP_BLOCKED','PPI_SESSION_INVALID') "
         "ORDER BY id DESC LIMIT ?", (start, finish, MAX_EVENTS + 1)).fetchall()
     report["sample_truncated"] = len(rows) > MAX_EVENTS
-    for event_type, detail in rows[:MAX_EVENTS]:
+    for event_type, detail_raw in rows[:MAX_EVENTS]:
         if event_type not in ALLOWED_EVENT_TYPES:
             raise ValueError("EVENT_UNEXPECTED_TYPE")
         report["counts"][event_type] += 1
+        detail = _bounded_detail_text(detail_raw)
         if event_type == "DATA_ERROR":
             report["data_error_reasons"][_error_bucket(detail)] += 1
+        elif event_type == "DATA_REJECTED":
+            report["data_rejected_reasons"][_rejection_bucket(detail)] += 1
     report["sampled"] = min(len(rows), MAX_EVENTS)
     report["state"] = "OBSERVED"
     return report
@@ -303,11 +360,11 @@ def _db_probe(db=DB, *, enforce_ro_mount=True):
                 "runtime_real_orders_sent": _bounded_int(row[6]),
                 "http_counter_semantics": "PRE_SEND_COUNTER_NOT_PROVIDER_SUCCESS"}
         result["events"] = _events(conn, begin, finish)
-        error_count = result["events"]["counts"]["DATA_ERROR"]
-        result["events"]["metric_reconciliation"] = (
-            "SAMPLED_TRUNCATED" if result["events"]["sample_truncated"] else
-            "MATCH" if error_count == result["cycle"]["failed_count"] else
-            "MISMATCH_REQUIRES_RCA")
+        metric, selection = _expected_reconciliations(
+            result["cycle"], result["events"]["counts"],
+            result["events"]["sample_truncated"])
+        result["events"]["metric_reconciliation"] = metric
+        result["events"]["selection_reconciliation"] = selection
         result["state"] = "OBSERVED"
         result["reason"] = "AGGREGATE_ONLY_NO_PROVIDER_OR_ADMISSION_AUTHORITY"
     except (OSError, sqlite3.Error, ValueError, TypeError, AttributeError):
@@ -392,13 +449,19 @@ def _sanitized_host(raw):
         raise ValueError("EVENTS_NOT_OBJECT")
     out["events"] = {"state": _enum(events.get("state"), SCANNER_STATES)}
     if out["events"]["state"] == "OBSERVED":
+        if type(events.get("sample_truncated")) is not bool:
+            raise ValueError("SAMPLE_TRUNCATED_NOT_BOOLEAN")
         out["events"]["sampled"] = _bounded_int(events.get("sampled"), MAX_EVENTS)
-        out["events"]["sample_truncated"] = events.get("sample_truncated") is True
+        out["events"]["sample_truncated"] = events["sample_truncated"]
         out["events"]["metric_reconciliation"] = _enum(
             events.get("metric_reconciliation"), {
                 "SAMPLED_TRUNCATED", "MATCH", "MISMATCH_REQUIRES_RCA"})
+        out["events"]["selection_reconciliation"] = _enum(
+            events.get("selection_reconciliation"), {
+                "SAMPLED_TRUNCATED", "MATCH", "MISMATCH_REQUIRES_RCA"})
         for field, allowed in (("counts", ALLOWED_EVENT_TYPES),
-                               ("data_error_reasons", ERROR_BUCKETS)):
+                               ("data_error_reasons", ERROR_BUCKETS),
+                               ("data_rejected_reasons", REJECTION_BUCKETS)):
             values = events.get(field, {})
             if not isinstance(values, dict):
                 raise ValueError("EVENT_BUCKETS_NOT_OBJECT")
@@ -406,9 +469,28 @@ def _sanitized_host(raw):
                                     for key in allowed}
         if (out["events"]["sampled"] is None or
                 out["events"]["metric_reconciliation"] == "UNKNOWN" or
-                any(value is None for section in ("counts", "data_error_reasons")
+                out["events"]["selection_reconciliation"] == "UNKNOWN" or
+                any(value is None for section in ("counts", "data_error_reasons",
+                                                  "data_rejected_reasons")
                     for value in out["events"][section].values())):
             raise ValueError("EVENT_AGGREGATES_UNVERIFIED")
+        if (sum(out["events"]["counts"].values()) != out["events"]["sampled"] or
+                sum(out["events"]["data_error_reasons"].values()) !=
+                out["events"]["counts"]["DATA_ERROR"] or
+                sum(out["events"]["data_rejected_reasons"].values()) !=
+                out["events"]["counts"]["DATA_REJECTED"]):
+            raise ValueError("EVENT_BUCKET_TOTAL_MISMATCH")
+        if (out["events"]["sample_truncated"] and
+                out["events"]["sampled"] != MAX_EVENTS):
+            raise ValueError("EVENT_TRUNCATED_SAMPLE_INCOMPLETE")
+        if out["cycle"]["state"] != "OBSERVED":
+            raise ValueError("EVENT_CYCLE_UNVERIFIED")
+        expected = _expected_reconciliations(
+            out["cycle"], out["events"]["counts"], out["events"]["sample_truncated"])
+        if expected is None or expected != (
+                out["events"]["metric_reconciliation"],
+                out["events"]["selection_reconciliation"]):
+            raise ValueError("EVENT_RECONCILIATION_INCONSISTENT")
     out["watch"] = {"state": _enum(watch.get("state"), WATCH_STATES),
                     "candidate_units": _bounded_int(watch.get("candidate_units"), 64),
                     "active_candidates": _bounded_int(watch.get("active_candidates"), 64),
@@ -504,7 +586,8 @@ def main(argv=None):
             if host_file.stat().st_size > 16384:
                 raise ValueError("RAW_RESPONSE_UNBOUNDED")
             host_raw = json.loads(host_file.read_text(encoding="utf-8"),
-                                  object_pairs_hook=_reject_duplicate_keys)
+                                  object_pairs_hook=_reject_duplicate_keys,
+                                  parse_constant=_reject_nonstandard_json_constant)
         except (OSError, ValueError, UnicodeError):
             host_raw = {}
         receipt = build_receipt(host_raw,
