@@ -70,6 +70,18 @@ class HostHelperCommandContractTest(unittest.TestCase):
                 with self.assertRaises(helper.CustodyHold):
                     helper.parse_command(unbound)
 
+    def test_verify_image_requires_same_prefixed_immutable_id_as_manager(self):
+        tag = "porota-trading-bot:17.0.0-rc6-candidate-" + "a" * 40
+        digest = "sha256:" + "8" * 64
+        cmd = helper.parse_command(("manager", "verify-image", tag, digest,
+                                    "--attempt", "f" * 32))
+        self.assertEqual(cmd.expectations, (tag, digest))
+        for rejected in ("8" * 64, "sha256:" + "0" * 63, "boca:latest"):
+            with self.subTest(rejected=rejected):
+                with self.assertRaises(helper.CustodyHold):
+                    helper.parse_command(("manager", "verify-image", tag, rejected,
+                                          "--attempt", "f" * 32))
+
     def test_critical_stage_command_matches_manager_contract(self):
         sha = "a" * 40
         command = helper.parse_command(("critical", "describe-stage-intent",
@@ -191,7 +203,8 @@ class _Session:
 
     def verify_pending_birth(self, role):
         self.events.append(("verify", role))
-        return {"State": {"Status": "running"}}
+        return {"Id": "b" * 64, "Image": "sha256:" + "8" * 64,
+                "State": {"Status": "running"}}
 
     def seal_generation(self):
         self.events.append(("seal",))
@@ -206,7 +219,14 @@ class _Session:
 
     def authorize_operation(self, role, operation):
         self.events.append(("operation", role, operation))
-        self.state = "exited" if operation == "stop" else "running"
+        self.state = {"stop": "exited", "start": "running",
+                      "remove": "removed"}[operation]
+
+    def authorize_newborn_operation(self, role, operation, *argv, capture=False):
+        self.events.append(("newborn-operation", role, operation, argv, capture))
+        path = argv[1]
+        digest = self.source_digest.get(path, "0" * 64)
+        return type("Result", (), {"stdout": digest + "  " + path + "\n"})()
 
 
 class _Custody:
@@ -222,6 +242,10 @@ class _Custody:
         self.calls.append("continuity")
         return self.session
 
+    def _daemon_identity(self):
+        self.calls.append("daemon-identity")
+        return "daemon-rootful-rc6"
+
 
 class _ApprovedAuthority:
     def __init__(self, phase="GENESIS"):
@@ -235,7 +259,20 @@ class _ApprovedAuthority:
         self.run_attempt = "1"
         self.artifact_digest = "sha256:" + "d" * 64
         self.image_id = "sha256:" + "8" * 64
+        self.image_tag = "porota-trading-bot:17.0.0-rc6-candidate-" + "a" * 40
+        self.daemon_id = "daemon-rootful-rc6"
+        self.observer_source_digests = {
+            "/app/cf_intraday_scalping.py": "1" * 64,
+            "/app/co_market_sessions_hf6.py": "2" * 64,
+        }
+        self.preflight_error = None
         self.staged = []
+
+    def preflight_launch_profiles(self):
+        self.calls.append(("preflight-launch-profiles",))
+        if self.preflight_error is not None:
+            raise helper.CustodyHold(self.preflight_error)
+        return True
 
     def stage_protector(self, *, source, expected_mainpid):
         self.staged.append((source, expected_mainpid))
@@ -260,7 +297,8 @@ class HostHelperBirthContractTest(unittest.TestCase):
 
     def docker(self, command, *, capture=False):
         self.commands.append((tuple(command), capture))
-        return type("Result", (), {"stdout": self.cid + "\n"})()
+        output = self.authority.image_id if command[:2] == ("docker", "image") else self.cid
+        return type("Result", (), {"stdout": output + "\n"})()
 
     def controller(self, authority=None):
         return helper.HostHelperController(authority or self.authority,
@@ -279,6 +317,190 @@ class HostHelperBirthContractTest(unittest.TestCase):
         self.assertIn("LEGACY", str(caught.exception))
         self.assertEqual(self.commands, [])
 
+    def test_verify_image_needs_root_tag_image_and_daemon_not_mutators(self):
+        tag = self.authority.image_tag
+        image = self.authority.image_id
+        cmd = lambda t, d: helper.parse_command((
+            "manager", "verify-image", t, d, "--attempt", "f" * 32))
+        self.assertEqual(self.controller().dispatch(cmd(tag, image)), "RC6_CUSTODY=OK")
+        self.assertEqual(self.commands, [(('docker', 'image', 'inspect', '--format',
+                                          '{{.Id}}', tag), True)])
+        for tag2, digest2 in ((tag + "x", image), (tag, "sha256:" + "7" * 64)):
+            self.commands.clear()
+            with self.subTest(tag=tag2, digest=digest2):
+                with self.assertRaises(helper.CustodyHold):
+                    self.controller().dispatch(cmd(tag2, digest2))
+                self.assertEqual(self.commands, [])
+        self.custody._daemon_identity = lambda: "unexpected-daemon"
+        with self.assertRaises(helper.CustodyHold):
+            self.controller().dispatch(cmd(tag, image))
+
+    def test_verify_image_mismatched_actual_tag_does_not_pass(self):
+        cmd = helper.parse_command(("manager", "verify-image",
+                                    self.authority.image_tag, self.authority.image_id,
+                                    "--attempt", "f" * 32))
+        self.docker = lambda _args, capture=False: type("Result", (), {
+            "stdout": "sha256:" + "7" * 64 + "\n"})()
+        with self.assertRaises(helper.CustodyHold):
+            self.controller().dispatch(cmd)
+
+    def test_verify_image_full_prelaunch_blocks_before_any_docker_mutation(self):
+        cmd = helper.parse_command(("manager", "verify-image",
+                                    self.authority.image_tag, self.authority.image_id,
+                                    "--attempt", "f" * 32))
+        for reason in ("OBSERVER_SOURCE_CLOSURE_NOT_APPROVED",
+                       "ENV_CONTROL_KEY_FORBIDDEN", "ENV_SEAL_DIGEST_MISMATCH"):
+            self.authority.preflight_error = reason
+            self.commands.clear()
+            with self.subTest(reason=reason):
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(cmd)
+                self.assertEqual(caught.exception.reason, reason)
+                self.assertEqual(self.commands, [],
+                                 "Preflight MUST HOLD before Docker image inspection")
+
+    def test_verify_newborn_requires_proven_running_exact_image(self):
+        cmd = helper.parse_command(("manager", "verify-newborn", "observer",
+                                    "--attempt", "f" * 32))
+        self.assertEqual(self.controller().dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual(self.session.events, [("verify", "observer")])
+        for mismatch in ({"Id": "x", "Image": self.authority.image_id,
+                          "State": {"Status": "running"}},
+                         {"Id": "b" * 64, "Image": "sha256:" + "0" * 64,
+                          "State": {"Status": "running"}},
+                         {"Id": "b" * 64, "Image": self.authority.image_id,
+                          "State": {"Status": "created"}}):
+            self.session.events.clear()
+            self.session.verify_pending_birth = lambda _role: mismatch
+            with self.subTest(mismatch=mismatch):
+                with self.assertRaises(helper.CustodyHold):
+                    self.controller().dispatch(cmd)
+                self.assertEqual(self.commands, [])
+
+    def test_retire_only_continuity_sealed_exact_cid_stop_then_remove(self):
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        cmd = helper.parse_command(("manager", "retire", "observer",
+                                    "--attempt", "f" * 32))
+        self.assertEqual(self.controller(approved).dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual(self.session.events, [
+            ("verify-sealed", "observer"), ("operation", "observer", "stop"),
+            ("verify-sealed", "observer"), ("operation", "observer", "remove")])
+        self.assertEqual([call[0][1] for call in self.commands], ["image"])
+
+    def test_retire_exited_only_remove_and_bad_state_hold(self):
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        cmd = helper.parse_command(("manager", "retire", "dashboard",
+                                    "--attempt", "f" * 32))
+        self.session.state = "exited"
+        self.assertEqual(self.controller(approved).dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual(self.session.events, [("verify-sealed", "dashboard"),
+                                              ("operation", "dashboard", "remove")])
+        self.session.events.clear()
+        self.session.state = "created"
+        with self.assertRaises(helper.CustodyHold):
+            self.controller(approved).dispatch(cmd)
+        self.assertEqual(self.session.events, [("verify-sealed", "dashboard")])
+
+    def test_stop_observer_only_continuity_sealed_and_idempotent(self):
+        cmd = helper.parse_command(("manager", "stop", "observer",
+                                    "--attempt", "f" * 32))
+        with self.assertRaises(helper.CustodyHold):
+            self.controller().dispatch(cmd)
+        self.assertEqual(self.session.events, [])
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        self.assertEqual(self.controller(approved).dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual(self.session.events, [
+            ("verify-sealed", "observer"), ("operation", "observer", "stop"),
+            ("verify-sealed", "observer")])
+        self.session.events.clear()
+        self.assertEqual(self.controller(approved).dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual(self.session.events, [("verify-sealed", "observer")])
+
+    def test_verify_observer_sources_needs_root_approved_two_hashes(self):
+        cmd = helper.parse_command(("manager", "verify-observer-sources",
+                                    "--attempt", "f" * 32))
+        self.authority.observer_source_digests = None
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller().dispatch(cmd)
+        self.assertEqual(caught.exception.reason,
+                         "OBSERVER_SOURCE_CLOSURE_NOT_APPROVED")
+        self.assertEqual(self.session.events, [])
+        sources = {"/app/cf_intraday_scalping.py": "1" * 64,
+                   "/app/co_market_sessions_hf6.py": "2" * 64}
+        self.authority.observer_source_digests = sources
+        self.session.source_digest = sources
+        self.assertEqual(self.controller().dispatch(cmd), "RC6_CUSTODY=OK")
+        self.assertEqual([e[3] for e in self.session.events if e[0] == "newborn-operation"],
+                         [("/usr/bin/sha256sum", "/app/cf_intraday_scalping.py"),
+                          ("/usr/bin/sha256sum", "/app/co_market_sessions_hf6.py")])
+        self.session.events.clear()
+        self.session.source_digest = {path: "0" * 64 for path in sources}
+        with self.assertRaises(helper.CustodyHold):
+            self.controller().dispatch(cmd)
+
+    def test_complete_manager_genesis_protocol_uses_only_typed_root_oci(self):
+        sources = {"/app/cf_intraday_scalping.py": "1" * 64,
+                   "/app/co_market_sessions_hf6.py": "2" * 64}
+        self.authority.observer_source_digests = sources
+        self.session.source_digest = sources
+        controller = self.controller()
+        attempt = ("--attempt", "f" * 32)
+        protocol = (
+            ("manager", "begin"),
+            ("manager", "verify-image", self.authority.image_tag,
+             self.authority.image_id, *attempt),
+            ("manager", "birth", "dashboard", *attempt),
+            ("manager", "verify-newborn", "dashboard", *attempt),
+            ("manager", "birth", "observer", *attempt),
+            ("manager", "verify-newborn", "observer", *attempt),
+            ("manager", "verify-observer-sources", *attempt),
+        )
+        results = [controller.dispatch(helper.parse_command(argv)) for argv in protocol]
+        self.assertTrue(results[0].startswith("RC6_CUSTODY=GENESIS\n"))
+        self.assertEqual(results[1:], ["RC6_CUSTODY=OK"] * (len(protocol) - 1))
+        self.assertEqual([c[0][1] for c in self.commands],
+                         ["image", "image", "create", "image", "create"])
+        self.assertEqual([e for e in self.session.events if e[0] == "start"],
+                         [("start", "dashboard"), ("start", "observer")])
+        self.assertEqual(len([e for e in self.session.events
+                              if e[0] == "newborn-operation"]), 2)
+        for response in results:
+            self.assertNotIn(self.cid, response)
+
+    def test_all_manager_mutations_require_fresh_root_attempt(self):
+        for argv in (("manager", "verify-image", self.authority.image_tag,
+                      self.authority.image_id),
+                     ("manager", "retire", "observer"),
+                     ("manager", "birth", "observer"),
+                     ("manager", "verify-newborn", "observer"),
+                     ("manager", "verify-observer-sources"),
+                     ("manager", "stop", "observer")):
+            with self.subTest(argv=argv):
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(helper.parse_command(
+                        (*argv, "--attempt", "0" * 32)))
+                self.assertEqual(caught.exception.reason,
+                                 "ATTEMPT_CHANGED_OR_UNVERIFIED")
+                self.assertEqual(self.session.events, [])
+                self.assertEqual(self.commands, [])
+
+    def test_retire_unresolved_journal_is_not_replayed_as_second_mutation(self):
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        original = self.session.authorize_operation
+
+        def unresolved(role, operation):
+            if operation == "stop":
+                raise helper.CustodyHold("PRIOR_OPERATION_UNRESOLVED")
+            original(role, operation)
+
+        self.session.authorize_operation = unresolved
+        cmd = helper.parse_command(("manager", "retire", "dashboard",
+                                    "--attempt", "f" * 32))
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller(approved).dispatch(cmd)
+        self.assertEqual(caught.exception.reason, "PRIOR_OPERATION_UNRESOLVED")
+        self.assertNotIn(("operation", "dashboard", "remove"), self.session.events)
+
     def test_birth_dashboard_uses_root_profile_and_records_cid_from_birth(self):
         status = self.controller().dispatch(helper.parse_command(("manager", "birth", "dashboard",
                                                                  "--attempt", "f" * 32)))
@@ -286,8 +508,8 @@ class HostHelperBirthContractTest(unittest.TestCase):
         self.assertEqual(self.session.events,
                          [("prepare", "dashboard"), ("record", "dashboard", self.cid),
                           ("start", "dashboard"), ("verify", "dashboard")])
-        self.assertEqual(len(self.commands), 1)
-        command, capture = self.commands[0]
+        self.assertEqual([c[0][1] for c in self.commands], ["image", "create"])
+        command, capture = self.commands[-1]
         self.assertTrue(capture)
         self.assertEqual(command[:2], ("docker", "create"))
         self.assertIn("--cidfile", command)
@@ -298,6 +520,11 @@ class HostHelperBirthContractTest(unittest.TestCase):
         self.assertEqual(command[-2], self.authority.image_id)
 
     def test_birth_mismatch_is_halted_before_any_container_start(self):
+        self.authority.observer_source_digests = {
+            "/app/cf_intraday_scalping.py": "1" * 64,
+            "/app/co_market_sessions_hf6.py": "2" * 64,
+        }
+
         def mismatch(_role, _cid):
             raise helper.CustodyHold("BIRTH_IMAGE_ID_MISMATCH")
 
@@ -305,14 +532,114 @@ class HostHelperBirthContractTest(unittest.TestCase):
         with self.assertRaises(helper.CustodyHold):
             self.controller().dispatch(helper.parse_command((
                 "manager", "birth", "observer", "--attempt", "f" * 32)))
-        self.assertEqual(len(self.commands), 1)
-        self.assertEqual(self.commands[0][0][:2], ("docker", "create"))
+        self.assertEqual([c[0][1] for c in self.commands], ["image", "create"])
+        self.assertEqual(self.commands[-1][0][:2], ("docker", "create"))
         self.assertNotIn(("start", "observer"), self.session.events)
+
+    def test_observer_missing_or_malformed_root_source_closure_cannot_be_born(self):
+        cmd = helper.parse_command(("manager", "birth", "observer",
+                                    "--attempt", "f" * 32))
+        complete = {"/app/cf_intraday_scalping.py": "1" * 64,
+                    "/app/co_market_sessions_hf6.py": "2" * 64}
+        for closure in (None, {}, {"/app/cf_intraday_scalping.py": "1" * 64},
+                        complete | {"/app/unapproved.py": "f" * 64},
+                        complete | {"/app/co_market_sessions_hf6.py": "LIVE"}):
+            with self.subTest(closure=closure):
+                self.authority.observer_source_digests = closure
+                self.session.events.clear()
+                self.commands.clear()
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(cmd)
+                self.assertEqual(caught.exception.reason,
+                                 "OBSERVER_SOURCE_CLOSURE_NOT_APPROVED")
+                self.assertEqual(self.session.events, [],
+                                 "Must HOLD before prepare_birth and A1079 start")
+                self.assertEqual(self.commands, [],
+                                 "Must not even CREATE an unverified observer")
+
+    def test_all_births_require_common_root_source_preflight(self):
+        self.authority.observer_source_digests = None
+        for args in (("manager", "birth", "dashboard", "--attempt", "f" * 32),
+                     ("critical", "birth")):
+            with self.subTest(args=args):
+                with self.assertRaises(helper.CustodyHold):
+                    self.controller().dispatch(helper.parse_command(args))
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.session.events, [])
+        self.authority.observer_source_digests = {
+            "/app/cf_intraday_scalping.py": "1" * 64,
+            "/app/co_market_sessions_hf6.py": "2" * 64,
+        }
+        self.assertEqual(self.controller().dispatch(helper.parse_command((
+            "manager", "birth", "dashboard", "--attempt", "f" * 32))),
+            "RC6_CUSTODY=OK")
+        self.session.events.clear()
+        self.commands.clear()
+        self.assertEqual(self.controller().dispatch(helper.parse_command((
+            "critical", "birth"))), "RC6_CUSTODY=OK")
+
+    def test_direct_continuity_retire_rechecks_prelaunch_before_cid_mutation(self):
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        cmd = helper.parse_command(("manager", "retire", "observer",
+                                    "--attempt", "f" * 32))
+        for error in ("ENV_CONTROL_KEY_FORBIDDEN",
+                      "ENV_SEAL_DIGEST_MISMATCH",
+                      "OBSERVER_SOURCE_CLOSURE_NOT_APPROVED"):
+            approved.observer_source_digests = self.authority.observer_source_digests
+            approved.preflight_error = error
+            with self.subTest(error=error):
+                self.session.events.clear()
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller(approved).dispatch(cmd)
+                self.assertEqual(caught.exception.reason, error)
+                self.assertEqual(self.session.events, [],
+                                 "Cannot stop a predecessor before trusted prelaunch")
+        approved.preflight_error = None
+        approved.observer_source_digests = None
+        with self.assertRaises(helper.CustodyHold):
+            self.controller(approved).dispatch(cmd)
+        self.assertEqual(self.session.events, [])
+
+    def test_direct_retire_denied_if_daemon_or_immutable_image_changed(self):
+        approved = _ApprovedAuthority(phase="CONTINUITY")
+        cmd = helper.parse_command(("manager", "retire", "dashboard",
+                                    "--attempt", "f" * 32))
+        self.custody._daemon_identity = lambda: "unrelated-rootless-daemon"
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller(approved).dispatch(cmd)
+        self.assertEqual(caught.exception.reason, "IMAGE_DAEMON_CHANGED")
+        self.assertEqual(self.session.events, [])
+        self.custody._daemon_identity = lambda: approved.daemon_id
+
+        def fake_image(command, capture=False):
+            self.commands.append((tuple(command), capture))
+            return type("Result", (), {"stdout": "sha256:" + "0" * 64 + "\n"})()
+
+        self.docker = fake_image
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller(approved).dispatch(cmd)
+        self.assertEqual(caught.exception.reason, "IMAGE_TAG_BINDING_CHANGED")
+        self.assertEqual(self.session.events, [])
+        self.assertEqual([args[0][1] for args in self.commands], ["image"])
+
+    def test_env_mutation_after_verify_image_holds_on_birth_before_docker(self):
+        verify = helper.parse_command(("manager", "verify-image",
+                                       self.authority.image_tag, self.authority.image_id,
+                                       "--attempt", "f" * 32))
+        self.assertEqual(self.controller().dispatch(verify), "RC6_CUSTODY=OK")
+        self.commands.clear()
+        self.authority.preflight_error = "ENV_SEAL_DIGEST_MISMATCH"
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller().dispatch(helper.parse_command((
+                "manager", "birth", "observer", "--attempt", "f" * 32)))
+        self.assertEqual(caught.exception.reason, "ENV_SEAL_DIGEST_MISMATCH")
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.session.events, [])
 
     def test_critical_birth_is_created_not_started(self):
         status = self.controller().dispatch(helper.parse_command(("critical", "birth")))
         self.assertEqual(status, "RC6_CUSTODY=OK")
-        self.assertEqual(self.commands[0][0][1], "create")
+        self.assertEqual([c[0][1] for c in self.commands], ["image", "create"])
         self.assertEqual(self.session.events[:2],
                          [("prepare", "critical"), ("record", "critical", self.cid)])
 
@@ -629,6 +956,98 @@ class HostHelperApprovedProfileTest(unittest.TestCase):
             with self.subTest(field=field):
                 with self.assertRaises(helper.CustodyHold):
                     self.approved(broken)
+
+    def test_only_trusted_source_hash_closure_can_enable_observer_exec(self):
+        root_hashes = {"/app/cf_intraday_scalping.py": "1" * 64,
+                       "/app/co_market_sessions_hf6.py": "2" * 64}
+        trusted = json.loads(json.dumps(self.profile))
+        trusted["observer_source_sha256"] = root_hashes
+        self.assertEqual(self.approved(trusted).observer_source_digests, root_hashes)
+        for malformed in (
+            {"/app/cf_intraday_scalping.py": "1" * 64},
+            root_hashes | {"/app/custom_plugin.py": "f" * 64},
+            root_hashes | {"/app/co_market_sessions_hf6.py": "x" * 64},
+        ):
+            with self.subTest(hashes=malformed):
+                bad = json.loads(json.dumps(self.profile))
+                bad["observer_source_sha256"] = malformed
+                with self.assertRaises(helper.CustodyHold):
+                    self.approved(bad)
+
+    def test_prelaunch_validates_all_sealed_env_and_source_before_retire(self):
+        root_hashes = {"/app/cf_intraday_scalping.py": "1" * 64,
+                       "/app/co_market_sessions_hf6.py": "2" * 64}
+        trusted = json.loads(json.dumps(self.profile))
+        trusted["observer_source_sha256"] = root_hashes
+        approved = self.approved(trusted)
+        raw = (b"POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n"
+               b"REAL_ORDERS_ALLOWED=false\nMARKET_OPEN_HOUR=10\n"
+               b"MARKET_OPEN_MINUTE=30\n")
+        approved.roles["dashboard"]["env_sha256"] = hashlib.sha256(raw).hexdigest()
+        approved.roles["observer"]["env_sha256"] = hashlib.sha256(raw).hexdigest()
+        with mock.patch.object(helper, "_read_root_owned", return_value=raw) as root_read:
+            self.assertTrue(approved.preflight_launch_profiles())
+        self.assertEqual(root_read.call_count, 2)
+
+        modified = raw + b"LD_PRELOAD=/app/data/evil.so\n"
+        approved.roles["dashboard"]["env_sha256"] = hashlib.sha256(modified).hexdigest()
+        with mock.patch.object(helper, "_read_root_owned", return_value=modified):
+            with self.assertRaises(helper.CustodyHold) as caught:
+                approved.preflight_launch_profiles()
+        self.assertEqual(caught.exception.reason, "ENV_CONTROL_KEY_FORBIDDEN")
+
+    def test_profiles_reject_executable_environment_injection(self):
+        for key, value in (
+            ("LD_PRELOAD", "/app/data/evil.so"),
+            ("LD_LIBRARY_PATH", "/app/data/lib"),
+            ("PATH", "/app/data/bin:/usr/bin"),
+            ("PYTHONPATH", "/app/data"),
+            ("PYTHONHOME", "/app/data"),
+            ("BASH_ENV", "/app/data/evil.sh"),
+            ("SHELLOPTS", "xtrace"),
+        ):
+            profile = json.loads(json.dumps(self.profile))
+            profile["roles"]["observer"]["environment"][key] = value
+            with self.subTest(key=key):
+                with self.assertRaises(helper.CustodyHold):
+                    self.approved(profile)
+
+    def test_sealed_env_rejects_executable_control_keys_despite_paper_values(self):
+        safe = (b"POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n"
+                b"REAL_ORDERS_ALLOWED=false\nMARKET_OPEN_HOUR=10\n"
+                b"MARKET_OPEN_MINUTE=30\n")
+        for key, value in (
+            ("LD_PRELOAD", "/app/data/evil.so"),
+            ("LD_LIBRARY_PATH", "/app/data/lib"),
+            ("PATH", "/app/data/bin:/usr/bin"),
+            ("PYTHONPATH", "/app/data"),
+            ("PYTHONHOME", "/app/data"),
+            ("BASH_ENV", "/app/data/startup.sh"),
+            ("ENV", "/app/data/startup.sh"),
+            ("SHELLOPTS", "xtrace"),
+            ("BASH_FUNC_run%%", "() { /app/data/evil; }"),
+        ):
+            hostile = safe + (key + "=" + value + "\n").encode()
+            with mock.patch.object(helper, "_read_root_owned", return_value=hostile):
+                with self.subTest(key=key):
+                    with self.assertRaises(helper.CustodyHold) as caught:
+                        helper._verify_root_sealed_env(
+                            self.sealed_env + "observer.env",
+                            hashlib.sha256(hostile).hexdigest())
+                    self.assertIn(caught.exception.reason,
+                                  ("ENV_CONTROL_KEY_FORBIDDEN", "ENV_SEAL_KEY_UNSAFE"))
+
+    def test_source_closure_cannot_hide_mutable_code_mounts(self):
+        for role in ("dashboard", "observer"):
+            for target in ("/app/cf_intraday_scalping.py", "/app",
+                           "/app/co_market_sessions_hf6.py"):
+                profile = json.loads(json.dumps(self.profile))
+                profile["roles"][role]["mounts"].append({
+                    "source": "/opt/porota-trading/custom-runtime",
+                    "target": target, "readonly": False})
+                with self.subTest(role=role, target=target):
+                    with self.assertRaises(helper.CustodyHold):
+                        self.approved(profile)
 
     def test_profiles_reject_foreign_mounts_and_real_order_flags(self):
         bad_mount = json.loads(json.dumps(self.profile))

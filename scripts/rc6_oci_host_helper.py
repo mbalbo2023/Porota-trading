@@ -59,6 +59,17 @@ _CRITICAL_SIMPLE = frozenset({"birth", "attest-exclusivity"})
 _HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _TAG = re.compile(r"[A-Za-z0-9_./:-]{1,160}\Z")
+_IMMUTABLE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_OBSERVER_SOURCE_PATHS = (
+    "/app/cf_intraday_scalping.py", "/app/co_market_sessions_hf6.py",
+)
+_EXEC_ENV_CONTROL_KEYS = frozenset({
+    "PATH", "ENV", "BASH_ENV", "BASHOPTS", "SHELLOPTS", "IFS", "CDPATH",
+    "GCONV_PATH", "HOME", "SHELL", "RUBYOPT", "NODE_OPTIONS", "PERL5OPT",
+    "PERL5LIB", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+    "PYTHONINSPECT", "PYTHONWARNINGS", "PYTHONUSERBASE",
+    "PYTHONPYCACHEPREFIX", "PYTHONBREAKPOINT",
+})
 INSTALLED_EXECUTABLE = "/usr/local/sbin/porota-rc6-oci-custody"
 INSTALLED_CUSTODY_FILE = "/usr/local/libexec/porota-rc6-custody/rc6_runtime_oci_custody.py"
 INSTALLED_PROFILES_FILE = "/var/lib/porota-rc6-oci-custody/host-launch-profiles.json"
@@ -74,6 +85,16 @@ _APPROVAL_KEYS = frozenset({
 def _require(condition, reason="CLI_SHAPE"):
     if not condition:
         raise CustodyHold(reason)
+
+
+def _reject_executable_env_control(key, value):
+    """No PATH/interpreter/preload overrides from sealed or profile envs."""
+    _require(type(key) is str and type(value) is str and
+             key not in _EXEC_ENV_CONTROL_KEYS and
+             not key.startswith(("LD_", "BASH_FUNC_", "GIT_CONFIG_")) and
+             not (key.startswith("PYTHON") and key != "PYTHONDONTWRITEBYTECODE") and
+             (key != "PYTHONDONTWRITEBYTECODE" or value == "1"),
+             "ENV_CONTROL_KEY_FORBIDDEN")
 
 
 def _validate_protected_inode(inode, *, expected_kind):
@@ -200,9 +221,12 @@ class ApprovedLaunchProfiles:
                 "critical": "/code/fm_critical_approval_unix_runtime_rc6.py"}
 
     def __init__(self, doc, *, candidate_sha, artifact_digest, image_id, generation):
-        _require(type(doc) is dict and set(doc) == {
+        _require(type(doc) is dict and set(doc) in ({
             "schema_version", "candidate_sha", "artifact_digest", "image_tag",
-            "root_stage", "roles"} and doc["schema_version"] == 1 and
+            "root_stage", "roles"}, {
+            "schema_version", "candidate_sha", "artifact_digest", "image_tag",
+            "root_stage", "roles", "observer_source_sha256"}) and
+            doc["schema_version"] == 1 and
             doc["candidate_sha"] == candidate_sha and
             doc["artifact_digest"] == artifact_digest and
             type(doc["image_tag"]) is str and
@@ -225,6 +249,17 @@ class ApprovedLaunchProfiles:
                  "PROFILE_GENERATION")
         for role, profile in roles.items():
             self._verify_profile(role, profile, root, generation)
+        # Optional artifact-closure hashes are trusted ONLY when included in
+        # the installed root-owned profiles file pinned by the approval SHA.
+        # An older manifest without this proof remains a targeted HOLD79.
+        source_hashes = doc.get("observer_source_sha256")
+        if source_hashes is not None:
+            _require(type(source_hashes) is dict and
+                     set(source_hashes) == set(_OBSERVER_SOURCE_PATHS) and
+                     all(type(value) is str and _HEX64.fullmatch(value)
+                         for value in source_hashes.values()),
+                     "PROFILE_OBSERVER_SOURCE_CLOSURE")
+        self.observer_source_digests = source_hashes
         self.image_tag = doc["image_tag"]
         self.image_id = image_id
         self.root = root
@@ -264,6 +299,7 @@ class ApprovedLaunchProfiles:
                      environment.get("MARKET_OPEN_MINUTE") == "30",
                      "PROFILE_BYMA_1030_REQUIRED")
         for key, value in environment.items():
+            _reject_executable_env_control(key, value)
             _require(type(key) is str and type(value) is str and
                      re.fullmatch(r"[A-Z][A-Z0-9_]{0,80}", key) and
                      len(value) <= 512 and "\n" not in value and
@@ -276,7 +312,7 @@ class ApprovedLaunchProfiles:
             _require(key in ("POROTA_RUNTIME_MODE", "SERVER_TIMEZONE", "DATA_DIR",
                              "REAL_ORDERS_ALLOWED",
                              "PPI_PRODUCTION_SECRET_FILE", "PYTHONDONTWRITEBYTECODE",
-                             "PYTHONPATH") or key.startswith(("PAPER_", "MARKET_", "PPI_")),
+                             ) or key.startswith(("PAPER_", "MARKET_", "PPI_")),
                      "PROFILE_ENV_NOT_ALLOWLISTED")
             if key == "POROTA_RUNTIME_MODE":
                 _require(value == "PRODUCTION_PAPER", "PROFILE_NOT_PAPER")
@@ -296,12 +332,19 @@ class ApprovedLaunchProfiles:
                       source.startswith("/opt/porota-control-plane-rc6/") or
                       source.startswith("/run/porota-critical-approval-rc6/")) and
                      (target == "/app/data" or target == "/app/operator" or
-                      target == "/code" or target.startswith("/app/") or
+                      target == "/code" or
                       target.startswith("/run/secrets/") or
                       target.startswith("/run/control/")), "PROFILE_MOUNT_SCOPE")
             if target.startswith("/run/secrets/") or target == "/app/operator" or \
                     target == "/code":
                 _require(mount["readonly"], "PROFILE_SECRET_OR_CODE_WRITABLE")
+
+    def preflight_launch_profiles(self):
+        """Read-only closure check before retirement of any sealed predecessor."""
+        for role in ("dashboard", "observer"):
+            profile = self.roles[role]
+            _verify_root_sealed_env(profile["env_file"], profile["env_sha256"])
+        return True
 
     def launch_argv(self, role, *, name, cidfile, labels):
         _require(role in self._PROGRAM and type(labels) in (tuple, list) and
@@ -355,6 +398,7 @@ class InstalledApprovedAuthority(ApprovedLaunchProfiles):
         self.run_id = approval["run_id"]
         self.run_attempt = approval["run_attempt"]
         self.artifact_digest = approval["artifact_digest"]
+        self.daemon_id = approval["daemon_id"]
         self.unit_template_sha256 = approval["unit_template_sha256"]
         self.attempt_token = derive_attempt_token(approval)
 
@@ -459,6 +503,7 @@ def _verify_root_sealed_env(path, expected_sha256):
         _require(line and "=" in line and "\x00" not in line and
                  "\r" not in line, "ENV_SEAL_LINE")
         key, value = line.split("=", 1)
+        _reject_executable_env_control(key, value)
         _require(re.fullmatch(r"[A-Z][A-Z0-9_]{0,80}", key) and
                  key not in found and len(value) <= 1024 and
                  (key == "REAL_ORDERS_ALLOWED" or
@@ -533,7 +578,7 @@ def parse_command(argv):
         if verb == "verify-image":
             _require(len(remaining) == 2 and
                      _TAG.fullmatch(remaining[0]) and
-                     _HEX64.fullmatch(remaining[1]))
+                     _IMMUTABLE_ID.fullmatch(remaining[1]))
             return Command(namespace, verb, expectations=remaining,
                            attempt_token=attempt)
         raise CustodyHold("CLI_SHAPE")
@@ -592,9 +637,30 @@ class HostHelperController:
             return self.custody.begin_genesis()
         return self.custody.begin_attempt()
 
+    def _preflight_approved_profiles(self):
+        # This is repeated for verify-image, retire and EACH birth, closing
+        # both direct-CLI retire bypass and env swap after image verification.
+        self._require_observer_source_closure()
+        check = getattr(self.authority, "preflight_launch_profiles", None)
+        _require(callable(check), "ROOT_PRELAUNCH_PREFLIGHT_UNAVAILABLE")
+        _require(check() is True, "ROOT_PRELAUNCH_PREFLIGHT_UNVERIFIED")
+        _require(type(self.authority.image_tag) is str and
+                 type(self.authority.image_id) is str and
+                 _IMMUTABLE_ID.fullmatch(self.authority.image_id) and
+                 callable(getattr(self.custody, "_daemon_identity", None)) and
+                 self.custody._daemon_identity() == self.authority.daemon_id,
+                 "IMAGE_DAEMON_CHANGED")
+        observed = self.docker(("docker", "image", "inspect", "--format", "{{.Id}}",
+                                self.authority.image_tag), capture=True)
+        output = getattr(observed, "stdout", None)
+        _require(type(output) is str and len(output) <= 128 and
+                 output.strip() == self.authority.image_id,
+                 "IMAGE_TAG_BINDING_CHANGED")
+
     def _birth(self, session, role):
         # The caller has no image, mount, environment, socket, or name input.
         # The approved authority builds a fixed per-role OCI launch profile.
+        self._preflight_approved_profiles()
         cidfile = str(session.prepare_birth(role))
         name = session.birth_name(role)
         labels = session.birth_labels(role)
@@ -625,6 +691,94 @@ class HostHelperController:
             session.verify_pending_birth(role)
         return "RC6_CUSTODY=OK"
 
+    def _verify_image(self, command):
+        tag, image_id = command.expectations
+        _require(tag == self.authority.image_tag and
+                 image_id == self.authority.image_id and
+                 _IMMUTABLE_ID.fullmatch(image_id),
+                 "IMAGE_ROOT_APPROVAL_MISMATCH")
+        self._preflight_approved_profiles()
+        # The verified tag remains only an expectation; CREATE always uses
+        # the independent root-approved immutable image ID, never a tag.
+        return "RC6_CUSTODY=OK"
+
+    def _verify_newborn(self, session, role):
+        # A1079 proves CIDFILE, labels, source artifact, rootful daemon,
+        # original CREATE provenance and immutable image under its root lock.
+        observed = session.verify_pending_birth(role)
+        _require(type(observed) is dict and
+                 type(observed.get("Id")) is str and
+                 _HEX64.fullmatch(observed["Id"]) and
+                 observed.get("Image") == self.authority.image_id and
+                 type(observed.get("State")) is dict and
+                 observed["State"].get("Status") == "running",
+                 "NEWBORN_IDENTITY_OR_STATE_UNVERIFIED")
+        return "RC6_CUSTODY=OK"
+
+    @staticmethod
+    def _verified_sealed_state(session, role):
+        # Only A1079 can resolve an exact prior sealed CID. Docker names,
+        # caller-supplied CIDs and a synthetic genesis inventory are forbidden.
+        observed = session.verify_role(role)
+        _require(type(observed) is dict and
+                 type(observed.get("Id")) is str and
+                 _HEX64.fullmatch(observed["Id"]) and
+                 type(observed.get("State")) is dict and
+                 observed["State"].get("Status") in ("running", "exited"),
+                 "SEALED_ROLE_STATE_UNVERIFIED")
+        return observed["Id"], observed["State"]["Status"]
+
+    def _retire_sealed(self, session, role):
+        _require(self.authority.phase == "CONTINUITY",
+                 "LEGACY_UNTRUSTED_NO_MUTATION")
+        self._preflight_approved_profiles()
+        original_cid, state = self._verified_sealed_state(session, role)
+        if state == "running":
+            session.authorize_operation(role, "stop")
+            stopped_cid, state = self._verified_sealed_state(session, role)
+            _require(stopped_cid == original_cid and state == "exited",
+                     "RETIRE_STOP_POSTSTATE_UNVERIFIED")
+        # A1079 verifies the exact old sealed CID and journals REMOVE; no
+        # host-wide list, by-name remove or cleanup based on legacy labels.
+        session.authorize_operation(role, "remove")
+        return "RC6_CUSTODY=OK"
+
+    def _stop_sealed_observer(self, session):
+        _require(self.authority.phase == "CONTINUITY",
+                 "LEGACY_UNTRUSTED_NO_MUTATION")
+        original_cid, state = self._verified_sealed_state(session, "observer")
+        if state == "running":
+            session.authorize_operation("observer", "stop")
+            stopped_cid, state = self._verified_sealed_state(session, "observer")
+            _require(stopped_cid == original_cid and state == "exited",
+                     "OBSERVER_STOP_POSTSTATE_UNVERIFIED")
+        # Already exited is a read-only idempotent success only for a trusted
+        # sealed exact CID, never for a legacy name or an unverified absence.
+        return "RC6_CUSTODY=OK"
+
+    def _require_observer_source_closure(self):
+        hashes = getattr(self.authority, "observer_source_digests", None)
+        _require(type(hashes) is dict and
+                 set(hashes) == set(_OBSERVER_SOURCE_PATHS) and
+                 all(type(value) is str and _HEX64.fullmatch(value)
+                     for value in hashes.values()),
+                 "OBSERVER_SOURCE_CLOSURE_NOT_APPROVED")
+        return hashes
+
+    def _verify_observer_sources(self, session):
+        hashes = self._require_observer_source_closure()
+        self._verify_newborn(session, "observer")
+        for path in _OBSERVER_SOURCE_PATHS:
+            # A1079 permits precisely these two sha256sum exec argv profiles,
+            # resolves pending CID under lock and journals read-only execution.
+            observed = session.authorize_newborn_operation(
+                "observer", "exec", "/usr/bin/sha256sum", path, capture=True)
+            stdout = getattr(observed, "stdout", None)
+            _require(type(stdout) is str and len(stdout) <= 256 and
+                     stdout.rstrip("\n") == hashes[path] + "  " + path,
+                     "OBSERVER_SOURCE_HASH_MISMATCH")
+        return "RC6_CUSTODY=OK"
+
     def dispatch(self, command):
         _require(isinstance(command, Command), "CLI_SHAPE")
         session = self._session()
@@ -645,12 +799,19 @@ class HostHelperController:
         if command.namespace == "manager" and command.verb == "begin":
             return ("RC6_CUSTODY=" + self.authority.phase +
                     "\nRC6_CUSTODY_ATTEMPT=" + self.authority.attempt_token)
+        if command.namespace == "manager" and command.verb == "verify-image":
+            return self._verify_image(command)
+        if command.namespace == "manager" and command.verb == "verify-newborn":
+            return self._verify_newborn(session, command.role)
+        if command.namespace == "manager" and command.verb == "verify-observer-sources":
+            return self._verify_observer_sources(session)
+        if command.namespace == "manager" and command.verb == "stop":
+            return self._stop_sealed_observer(session)
         if command.verb in ("birth",) and command.namespace in ("manager", "critical"):
             role = command.role if command.namespace == "manager" else "critical"
             return self._birth(session, role)
         if command.namespace == "manager" and command.verb == "retire":
-            _require(self.authority.phase == "CONTINUITY",
-                     "LEGACY_UNTRUSTED_NO_MUTATION")
+            return self._retire_sealed(session, command.role)
         if command.namespace == "critical" and command.verb == "start-newborn":
             paper, source_sha, generation = command.expectations
             _require(paper == "true" and
