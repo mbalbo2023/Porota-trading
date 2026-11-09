@@ -757,7 +757,10 @@ jobs:
                                        'QUERY_UNVERIFIED','USER_BUS_UNVERIFIED'},
                   'LOGIND_PARSE': {'LOGIND_UNVERIFIED',
                                    'SYSTEMD_OUTPUT_UNVERIFIED'},
-                  'UNIT_FILES_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  # A1042: four bounded parser fault classes. Never print
+                  # the offending unit name, line, encoding or preset.
+                  'UNIT_FILES_PARSE': {'UNIT_FILES_ENCODING','UNIT_FILES_COLUMNS',
+                                       'UNIT_FILES_NAME','UNIT_FILES_STATE'},
                   'ACTIVE_UNITS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
                   'TARGET_DEPS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
                   'INVENTORY_UNKNOWN': {'INVENTORY_UNVERIFIED'},

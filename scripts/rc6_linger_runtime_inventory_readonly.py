@@ -28,7 +28,9 @@ REASON_ALLOWLIST = frozenset((
     'LOGIN_IDENTITY_UNVERIFIED', 'USER_BUS_UNVERIFIED',
     'QUERY_BOUND_INVALID', 'QUERY_TIMEOUT', 'QUERY_OUTPUT_BOUND',
     'QUERY_FAILED', 'QUERY_UNVERIFIED', 'SYSTEMD_OUTPUT_UNVERIFIED',
-    'LOGIND_UNVERIFIED', 'INVENTORY_UNVERIFIED'))
+    'LOGIND_UNVERIFIED', 'INVENTORY_UNVERIFIED',
+    'UNIT_FILES_ENCODING', 'UNIT_FILES_COLUMNS', 'UNIT_FILES_NAME',
+    'UNIT_FILES_STATE'))
 KNOWN_UNIT_STATES = frozenset(('enabled', 'enabled-runtime', 'disabled',
     'static', 'indirect', 'alias', 'masked', 'masked-runtime', 'generated',
     'transient', 'linked', 'linked-runtime', 'bad'))
@@ -230,14 +232,23 @@ def _decoded(raw):
 
 def _unit_files(raw):
     present = False
-    for line in _decoded(raw):
+    try:
+        lines = _decoded(raw)
+    except InventoryHold:
+        raise InventoryHold('UNIT_FILES_ENCODING') from None
+    for line in lines:
         line = line.strip()
         if not line or re.fullmatch(r'\d+ unit files listed\.', line):
             continue
         columns = line.split()
-        if (len(columns) not in (2, 3) or not UNIT.fullmatch(columns[0]) or
-                columns[1] not in KNOWN_UNIT_STATES):
-            raise InventoryHold('SYSTEMD_OUTPUT_UNVERIFIED')
+        if len(columns) not in (2, 3):
+            raise InventoryHold('UNIT_FILES_COLUMNS')
+        if not UNIT.fullmatch(columns[0]):
+            raise InventoryHold('UNIT_FILES_NAME')
+        if columns[1] not in KNOWN_UNIT_STATES:
+            raise InventoryHold('UNIT_FILES_STATE')
+        # The optional third column is a preset, NOT validated or certified
+        # by this scope. No new unit-file states/rows are admitted.
         if columns[1] in ('enabled', 'enabled-runtime'):
             present = True
     return 'PRESENT' if present else 'NONE_OBSERVED'
