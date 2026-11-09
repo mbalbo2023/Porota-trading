@@ -38,9 +38,10 @@ def proven_distinct_failed_successor(directory, generation, current_snapshot):
 
     A successor's identity cannot be pinned to a past host observation: another
     FAILED generation may replace it before Deploy V2. Read the CURRENT-bound
-    successor with its own manifest, receipt, hashed pack, unique failed report
-    and PAPER/0 guards. Partial quarantine is permitted only if its FAILED
-    queue remains durable and the successor inspector proves every byte.
+    successor with its own manifest, receipt, hashed pack, any required failed
+    verification report, and PAPER/0 guards. REPORT_WRITE cannot attest a
+    verified computed report. Partial quarantine is permitted only if its
+    FAILED queue remains durable and the successor inspector proves every byte.
     """
     if (not isinstance(current_snapshot, str) or
             re.fullmatch(r'[a-f0-9]{32}', current_snapshot) is None or
@@ -63,14 +64,22 @@ def proven_distinct_failed_successor(directory, generation, current_snapshot):
         return False
     report = evidence.get('failed_computed_report')
     pack_bytes = evidence.get('pack_bytes')
-    if (not isinstance(report, dict) or
-            not isinstance(report.get('sha256'), str) or
-            re.fullmatch(r'[a-f0-9]{64}', report['sha256']) is None or
-            not isinstance(report.get('name'), str) or
-            re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', report['name']) is None or
-            type(report.get('bytes')) is not int or
-            not 0 < report['bytes'] <= successor.MAX_COMPUTED or
-            type(pack_bytes) is not int or
+    if (evidence.get('failure_code'), evidence.get('failure_phase')) == (
+            'SHADOW_COLD_DISK_RESERVE_BREACHED', 'REPORT_WRITE'):
+        # Admit only the actually observed cause/phase. A disk-reserve
+        # REPORT_WRITE failure cannot attest a verified computed report; the
+        # inspector still validates every other FAILED/PAPER/0 binding.
+        if report is not None:
+            return False
+    elif (not isinstance(report, dict) or
+          not isinstance(report.get('sha256'), str) or
+          re.fullmatch(r'[a-f0-9]{64}', report['sha256']) is None or
+          not isinstance(report.get('name'), str) or
+          re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', report['name']) is None or
+          type(report.get('bytes')) is not int or
+          not 0 < report['bytes'] <= successor.MAX_COMPUTED):
+        return False
+    if (type(pack_bytes) is not int or
             not 0 < pack_bytes <= successor.MAX_PACK):
         return False
     return (evidence.get('snapshot_id') == current_snapshot and
