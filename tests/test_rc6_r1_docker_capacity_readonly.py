@@ -33,6 +33,7 @@ class PorotaOnlyHoldContract(unittest.TestCase):
                     receipt.write_text('{"reason":"PRIVATE_SENTINEL"}')
                 env = os.environ | {'RUNNER_TEMP': tmp, 'GITHUB_STEP_SUMMARY': str(root / 'summary'),
                     'ROOTLESS_METADATA_ONLY': 'false', 'EXPECTED_DEPLOY_SHA': 'a' * 40,
+                    'INSPECT_RC6_TIMERS': 'false',
                     'RC6_OWNER_RECEIPT': str(receipt), 'DO_HOST': 'PRIVATE_SENTINEL',
                     'DO_USER': 'fake', 'SSH_KEY': 'PRIVATE_SENTINEL', 'KNOWN_HOSTS': 'PRIVATE_SENTINEL'}
                 spies = 'ssh() { echo FORBIDDEN_CALL >&2; return 99; }; sudo() { echo FORBIDDEN_CALL >&2; return 99; }; docker() { echo FORBIDDEN_CALL >&2; return 99; };\n'
@@ -56,9 +57,47 @@ class PorotaOnlyHoldContract(unittest.TestCase):
 
     def test_rootless_mode_passes_gate_without_staging_credentials(self):
         result = subprocess.run(['bash', '-c', first_shell()], env=os.environ |
-            {'ROOTLESS_METADATA_ONLY': 'true'}, text=True, capture_output=True, timeout=5)
+            {'ROOTLESS_METADATA_ONLY': 'true', 'INSPECT_RC6_TIMERS': 'false'}, text=True, capture_output=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout + result.stderr, '')
+
+    def test_mode_matrix_is_categorical_before_host_access(self):
+        cases = [('false', 'false', 'OWNER_BINDING_UNVERIFIED'),
+                 ('false', 'true', 'TIMER_RECEIVER_UNVERIFIED'),
+                 ('true', 'true', 'MODE_CONFLICT'),
+                 ('TRUE', 'false', 'MODE_CONFLICT'),
+                 ('true', 'PRIVATE_SENTINEL', 'MODE_CONFLICT'),
+                 ('', '', 'MODE_CONFLICT')]
+        for rootless, timers, reason in cases:
+            with self.subTest(rootless=rootless, timers=timers), tempfile.TemporaryDirectory() as tmp:
+                env = os.environ | {'ROOTLESS_METADATA_ONLY': rootless,
+                    'INSPECT_RC6_TIMERS': timers, 'GITHUB_STEP_SUMMARY': tmp + '/summary'}
+                spies = 'ssh() { echo PRIVATE_SENTINEL >&2; return 255; }; sudo() { echo PRIVATE_SENTINEL >&2; return 1; }; docker() { echo PRIVATE_SENTINEL >&2; return 2; };\n'
+                result = subprocess.run(['bash', '-c', spies + first_shell()], env=env,
+                    text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, 2)
+                data = json.loads(result.stdout)
+                self.assertEqual(data['reason'], reason)
+                self.assertEqual([data[k] for k in ('mutations', 'provider_gets', 'docker_queries')], [0, 0, 0])
+                self.assertNotIn('PRIVATE_SENTINEL', result.stdout + result.stderr + Path(tmp + '/summary').read_text())
+
+    def test_gate_omission_and_exit_zero_mutants_expose_ssh_stderr(self):
+        # The actual shell must prevent a following host step. Both mutants
+        # demonstrate a causal failure, not a successful physical observation.
+        baseline = first_shell()
+        self.assertEqual(baseline.count('exit 2'), 1)
+        for shell, expected_rc, leaks in ((baseline, 2, False),
+                (baseline.replace('exit 2', 'exit 0'), 0, True), (':', 0, True)):
+            with self.subTest(mutant=leaks), tempfile.TemporaryDirectory() as tmp:
+                # Separate step subprocess mirrors Actions: exit0 permits the
+                # next step while exit2 prevents it. No real SSH is available.
+                env = os.environ | {'ROOTLESS_METADATA_ONLY': 'false',
+                    'INSPECT_RC6_TIMERS': 'false', 'GITHUB_STEP_SUMMARY': tmp + '/summary'}
+                command = 'ssh() { echo PRIVATE_SENTINEL >&2; };\n(\n' + shell + '\n) && ssh'
+                result = subprocess.run(['bash', '-c', command], env=env,
+                    text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, expected_rc)
+                self.assertEqual('PRIVATE_SENTINEL' in result.stderr, leaks)
 
     def test_other_modes_and_global_mutex_preserved(self):
         source = WORKFLOW.read_text()

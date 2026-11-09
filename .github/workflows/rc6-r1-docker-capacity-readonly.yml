@@ -1,13 +1,13 @@
 name: RC6 R1 Docker Capacity READ_ONLY
 
-# Manual, bounded host inventory. Never touches PPI, runtime, Docker objects,
-# data, locks or cleanup. Legacy host inventory holds the global deploy mutex;
-# current-login OS prerequisite metadata is disjoint and never locks deploy.
+# Shared Docker capacity and timer receiver are HOLD-only before host access.
+# Private rootless and OS prerequisite modes retain their existing contracts.
+# Host job holds the deploy mutex; current-login OS modes remain disjoint.
 on:
   workflow_dispatch:
     inputs:
       expected_deployed_sha:
-        description: Exact last observed physical product SHA (required in legacy capacity mode only)
+        description: Historical expected product SHA (shared capacity mode remains HOLD-only)
         required: false
         type: string
         default: ''
@@ -65,7 +65,8 @@ jobs:
           from pathlib import Path
           source=Path('.github/workflows/rc6-r1-docker-capacity-readonly.yml').read_text()
           for required in ('workflow_dispatch:', 'rc6-unified-paper-deploy',
-                           'docker', 'statvfs', 'expected_deployed_sha'):
+                           'OWNER_BINDING_UNVERIFIED', 'TIMER_RECEIVER_UNVERIFIED',
+                           'MODE_CONFLICT', 'expected_deployed_sha'):
               assert required in source, required
           host=source.split('\n  host_readonly:',1)[1].split('\n  current_login_readonly:',1)[0]
           for forbidden in ('docker prune', 'docker image rm', 'docker system prune',
@@ -99,6 +100,7 @@ jobs:
       KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       EXPECTED_DEPLOY_SHA: ${{ inputs.expected_deployed_sha }}
       ROOTLESS_METADATA_ONLY: ${{ inputs.rootless_metadata_only }}
+      INSPECT_RC6_TIMERS: ${{ inputs.inspect_rc6_timers }}
     steps:
       - uses: actions/checkout@v4
       - name: Require independent physical owner binding before any host access
@@ -106,18 +108,28 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "$ROOTLESS_METADATA_ONLY" == "true" ]]; then
-            exit 0
+            if [[ "$INSPECT_RC6_TIMERS" == "false" ]]; then
+              exit 0
+            fi
           fi
           # No authoritative current container-ID custody receipt exists.
           # Do not accept caller JSON, labels, names or a guessed host path.
           # Future scoped observation requires separately reviewed custody proof.
           python3 -I -B - <<'PY'
           import json, os
+          rootless = os.environ.get('ROOTLESS_METADATA_ONLY')
+          timers = os.environ.get('INSPECT_RC6_TIMERS')
+          if rootless not in ('true', 'false') or timers not in ('true', 'false') or rootless == 'true':
+              reason = 'MODE_CONFLICT'
+          elif timers == 'true':
+              reason = 'TIMER_RECEIVER_UNVERIFIED'
+          else:
+              reason = 'OWNER_BINDING_UNVERIFIED'
           receipt = {
               'schema': 'rc6.r1.docker-capacity-readonly.v2',
               'scope': 'POROTA_ONLY_PARTIAL',
               'state': 'NO_VERIFICADO',
-              'reason': 'OWNER_BINDING_UNVERIFIED',
+              'reason': reason,
               'mutations': 0, 'provider_gets': 0, 'docker_queries': 0,
               'global_capacity': 'NO_VERIFICADO',
               'cleanup_eligibility': 'NO_VERIFICADO',
