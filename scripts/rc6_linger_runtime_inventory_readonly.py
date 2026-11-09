@@ -403,8 +403,8 @@ def collect():
         ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
          'list-unit-files', '--all', '--type=service,socket,timer'),
         ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
-         'list-units', '--all', '--type=service,socket,timer'),
-        ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend', '--plain',
+         '--plain', '--full', 'list-units', '--all', '--type=service,socket,timer'),
+        ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend', '--plain', '--full',
          'list-dependencies', '--all', 'default.target'),
     )
     outputs = []
