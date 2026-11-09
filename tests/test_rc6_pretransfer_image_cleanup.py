@@ -172,6 +172,9 @@ def test_partial_removal_error_keeps_inventory_and_reclaimed_measurement(host, m
         if args == ('image','rm',ALIAS): raise clean.Rejected('SIMULATED_SECOND_TAG_FAILURE')
         return original(*args)
     monkeypatch.setattr(clean, 'docker', command)
+    # Unit fixture of the historical reference-race algorithm only. Real main
+    # remains HOLD79 before any global image inventory or Docker mutation.
+    monkeypatch.setattr(clean, 'require_root_owned_image_reference_proof', lambda: None)
     assert clean.main() == 2
     report = json.loads(capsys.readouterr().out)
     assert report['removed_tags'] == [TAG] and report['inventory']

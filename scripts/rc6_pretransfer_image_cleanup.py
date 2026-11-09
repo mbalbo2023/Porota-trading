@@ -26,6 +26,26 @@ class Rejected(RuntimeError):
     pass
 
 
+class OCIImageCustodyHold(Rejected):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('OCI_IMAGE_REFERENCE_CUSTODY_HOLD79')
+
+
+def require_root_owned_image_reference_proof():
+    # The Deploy V2 passes this file by stdin; do not import a candidate
+    # module as root. Only the fixed host-installed helper is an authority.
+    try:
+        subprocess.run(['sudo', '-n', '/usr/local/sbin/porota-rc6-oci-custody',
+                        'image', 'preflight-cleanup'], timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    # No direct Docker image rm/tag even if a spoofed helper prints GREEN.
+    raise OCIImageCustodyHold()
+
+
 def docker(*args):
     result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=10)
     if result.returncode:
@@ -157,18 +177,25 @@ def cleanup(report=None):
     return report
 
 
-def main():
+def main(argv=None):
+    if argv:
+        raise Rejected('CLEANUP_ARGUMENTS_INVALID')
     report = {'schema': 'RC6_PRETRANSFER_IMAGE_CLEANUP_V1', 'status': 'RED'}
+    hold = False
     try:
         with promotion_lock():
+            require_root_owned_image_reference_proof()
             cleanup(report)
+    except OCIImageCustodyHold as exc:
+        hold = True
+        report.update(status='RED', reason=str(exc), cleanup_deferred=True)
     except (Rejected, subprocess.TimeoutExpired, OSError, ValueError, TypeError, sqlite3.Error) as exc:
         report.update(status='RED', reason=str(exc) if isinstance(exc, Rejected) else type(exc).__name__)
         if 'disk_before' in report:
             report['disk_after'] = shutil.disk_usage('/').free
             report['space_recovered'] = report['disk_after'] - report['disk_before']
     print(json.dumps(report, sort_keys=True))
-    return 0 if report['status'] == 'GREEN' else 2
+    return 79 if hold else (0 if report['status'] == 'GREEN' else 2)
 
 
 if __name__ == '__main__':

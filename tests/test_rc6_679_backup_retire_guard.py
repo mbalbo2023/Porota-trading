@@ -48,6 +48,9 @@ def test_plan_drift_aborts_without_unlinking(tmp_path, monkeypatch):
 
 def test_apply_guard_accepts_masked_inactive_timer_exit_three(tmp_path, monkeypatch):
     candidate = 'a' * 40
+    # Historical fake-Docker replay only. The real apply path always refuses
+    # name-based observer exec until exact birth custody is installed.
+    monkeypatch.setattr(retire,'require_observer_exec_birth_attestation',lambda:None)
     state = tmp_path / 'data' / 'deploy'
     state.mkdir(parents=True)
     (state / 'CURRENT_STATE_V2.json').write_text(json.dumps({

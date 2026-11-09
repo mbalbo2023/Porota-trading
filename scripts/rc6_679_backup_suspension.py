@@ -29,6 +29,23 @@ PATTERNS = (
 )
 
 
+class BackupObserverCustodyHold(RuntimeError):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('BACKUP_OBSERVER_EXEC_NAME_HOLD79')
+
+
+def require_observer_exec_birth_attestation():
+    """Block legacy exec-by-NAME before any potentially destructive apply.
+
+    The observer's name/image is not an immutable birth proof. Its suspended
+    backup state will require a fixed, root-attested OCI helper probe rather
+    than an arbitrary Python command passed to Docker exec.
+    """
+    raise BackupObserverCustodyHold()
+
+
 def run(*args):
     return subprocess.run(args, check=True, text=True, capture_output=True,
                           timeout=15).stdout.strip()
@@ -43,6 +60,10 @@ def systemctl_state(command):
 
 
 def guard(candidate, apply=False):
+    if apply:
+        # Apply can delete backup files after this probe; HOLD79 before any
+        # state read, inventory/receipt write, or untrusted Docker exec.
+        require_observer_exec_birth_attestation()
     state = json.loads((ROOT / 'data/deploy/CURRENT_STATE_V2.json').read_text())
     if (state.get('mode') != 'PRODUCTION_PAPER' or
             type(state.get('real_orders_sent')) is not int or
@@ -137,7 +158,11 @@ def main():
     applying = args.apply_plan is not None
     if args.require_empty and not applying:
         raise RuntimeError('BACKUP_EMPTY_GATE_REQUIRES_APPLY')
-    before = guard(args.candidate_sha, apply=applying)
+    try:
+        before = guard(args.candidate_sha, apply=applying)
+    except BackupObserverCustodyHold as error:
+        print(str(error), flush=True)
+        return error.exit_code
     observed = inventory()
     if args.require_empty and observed:
         raise RuntimeError('BACKUP_RETIRE_NEW_FILES_NEED_REVIEW')
@@ -190,4 +215,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

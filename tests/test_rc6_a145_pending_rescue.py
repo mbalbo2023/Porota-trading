@@ -25,6 +25,8 @@ REAL_ADOPTED_CLOSE_PROOF = q.adopted_rescue_closed_proof
 
 @pytest.fixture
 def incident(tmp_path, monkeypatch):
+    # Historical fake-Docker transition; real drain is HOLD79 before receipt.
+    monkeypatch.setattr(q, 'require_legacy_drain_custody', lambda: None)
     root = tmp_path / "porota"
     folder = root / "data/deploy"
     folder.mkdir(parents=True)

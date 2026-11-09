@@ -15,6 +15,9 @@ NAME='porota-deploy-contract-'+CANDIDATE
 
 @pytest.fixture
 def host(tmp_path,monkeypatch):
+    # Historical algorithm tests use an in-memory fake Docker writer. Only
+    # this test fixture waives the default production HOLD79 admission gate.
+    monkeypatch.setattr(lifecycle,'require_contract_writer_birth_attestation',lambda:None)
     db=tmp_path/'observer.db'
     c=sqlite3.connect(db)
     c.execute('CREATE TABLE observer_state(id INTEGER,mode TEXT,real_orders_sent INTEGER)')
