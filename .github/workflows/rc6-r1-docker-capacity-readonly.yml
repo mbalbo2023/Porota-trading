@@ -703,11 +703,41 @@ jobs:
                   data.get('sudo_executed') is not False or
                   data.get('rootless_certified') is not False):
               raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
-          if set(data) == common | {'reason'}:
-              if not isinstance(data['reason'], str) or not re.fullmatch(
-                      r'[A-Z_]{1,48}', data['reason']):
+          if set(data) == common | {'reason','phase'}:
+              # The remote already computes a safe enum. Do not discard its
+              # evidence or reflect any host-controlled code without an exact
+              # allowlist and a reason/phase consistency check.
+              expected_pairs = {
+                  'PREFLIGHT': {'OS_IDENTITY_UNVERIFIED',
+                                'OS_BINARY_UNVERIFIED',
+                                'LOGIN_IDENTITY_UNVERIFIED',
+                                'USER_BUS_UNVERIFIED'},
+                  'LOGIND_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
+                                   'QUERY_OUTPUT_BOUND','QUERY_FAILED',
+                                   'QUERY_UNVERIFIED'},
+                  'UNIT_FILES_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
+                                       'QUERY_OUTPUT_BOUND','QUERY_FAILED',
+                                       'QUERY_UNVERIFIED'},
+                  'ACTIVE_UNITS_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
+                                        'QUERY_OUTPUT_BOUND','QUERY_FAILED',
+                                        'QUERY_UNVERIFIED'},
+                  'TARGET_DEPS_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
+                                       'QUERY_OUTPUT_BOUND','QUERY_FAILED',
+                                       'QUERY_UNVERIFIED'},
+                  'LOGIND_PARSE': {'LOGIND_UNVERIFIED',
+                                   'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  'UNIT_FILES_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  'ACTIVE_UNITS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  'TARGET_DEPS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  'INVENTORY_UNKNOWN': {'INVENTORY_UNVERIFIED'},
+              }
+              if (not isinstance(data['reason'], str) or
+                      not isinstance(data['phase'], str) or
+                      data['reason'] not in expected_pairs.get(data['phase'], set())):
                   raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
-              raise SystemExit('RC6_LINGER_INVENTORY=HOST_PREREQUISITES_UNVERIFIED|CERT2=NO_VERIFICADO')
+              raise SystemExit('RC6_LINGER_INVENTORY=HOST_PREREQUISITES_UNVERIFIED'
+                               '|PHASE=' + data['phase'] + '|REASON=' + data['reason'] +
+                               '|CERT2=NO_VERIFICADO')
           if (set(data) != expected or
                   data.get('linger_effective') not in ('YES','NO') or
                   any(data.get(k) not in ('PRESENT','NONE_OBSERVED') for k in (
