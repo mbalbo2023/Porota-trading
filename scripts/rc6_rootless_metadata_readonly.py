@@ -6,6 +6,7 @@ This file is streamed over the existing, host-pinned Actions SSH connection.
 """
 
 import json
+import grp
 import os
 from pathlib import Path
 import pwd
@@ -23,6 +24,9 @@ MAX_ENGINE_INFO = 16384
 CURRENT_LOGIN_SCHEMA = "rc6.r1.current-login-capability-readonly.v1"
 CURRENT_LOGIN_EXPECTED_UID = 1000  # operator-observed A1013, not an OS policy
 MAX_SUBID_BYTES = 131072
+DEDICATED_PREFLIGHT_SCHEMA = "rc6.r1.dedicated-account-preflight-readonly.v1"
+DEDICATED_LOGIN = "porotaadmin"
+MAX_PROC_NET_BYTES = 65536
 
 
 class ProbeError(Exception):
@@ -204,14 +208,22 @@ def _current_login_account():
 
 
 def _login_subid_text(path):
-    """Bounded root-owned metadata read; never print existing account ranges."""
+    """Bounded root-owned file read; never print existing account data."""
     fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         info = os.fstat(fd)
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
                 or stat.S_IMODE(info.st_mode) & 0o022 or info.st_size > MAX_SUBID_BYTES):
             raise ValueError("UNTRUSTED_SUBID_METADATA")
-        return os.read(fd, MAX_SUBID_BYTES + 1).decode("utf-8", "strict")
+        raw = bytearray()
+        while True:
+            chunk = os.read(fd, min(4096, MAX_SUBID_BYTES + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+            if len(raw) > MAX_SUBID_BYTES:
+                raise ValueError("UNTRUSTED_SUBID_BOUND")
+        return raw.decode("utf-8", "strict")
     finally:
         os.close(fd)
 
@@ -241,6 +253,9 @@ def _login_subids_ready(account):
             own = [(start, end) for name, start, end in records if name in owner_keys]
             other = [(start, end) for name, start, end in records if name not in owner_keys]
             if (not own or any(start < 65536 for start, _ in own)
+                    or any(left_start < right_end and right_start < left_end
+                           for index, (left_start, left_end) in enumerate(own)
+                           for right_start, right_end in own[index + 1:])
                     or any(not (end <= left or start >= right)
                            for start, end in own for left, right in other)
                     or not any(end - start >= 65536 for start, end in own)):
@@ -256,10 +271,12 @@ def _login_rootless_toolchain():
              "/usr/bin/dockerd-rootless-setuptool.sh", "/usr/bin/newuidmap",
              "/usr/bin/newgidmap", "/usr/bin/loginctl", "/usr/bin/systemctl")
     try:
+        if (not _trusted_root_metadata('/usr', stat.S_ISDIR) or
+                not _trusted_root_metadata('/usr/bin', stat.S_ISDIR)):
+            return False
         for path in paths:
-            info = os.stat(path)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
-                    or not info.st_mode & 0o111 or info.st_mode & 0o022):
+            info = os.lstat(path)
+            if not _root_metadata_trusted(info, stat.S_ISREG, executable=True):
                 return False
             if path.endswith(("newuidmap", "newgidmap")) and not info.st_mode & stat.S_ISUID:
                 return False
@@ -412,6 +429,287 @@ def main_current_login():
     return 0
 
 
+def _local_passwd_records():
+    """Use a trusted bounded local account map to cross-check NSS aliases."""
+    try:
+        raw = _login_subid_text('/etc/passwd')
+        lines = raw.splitlines()
+        if not lines or len(lines) > 1024:
+            raise ValueError('LOCAL_PASSWD_BOUND')
+        records = []
+        for line in lines:
+            fields = line.split(':')
+            if (len(fields) != 7 or not fields[0] or len(line) > 1024 or
+                    not re.fullmatch(r'[0-9]{1,10}', fields[2]) or
+                    not re.fullmatch(r'[0-9]{1,10}', fields[3])):
+                raise ValueError('LOCAL_PASSWD_FORMAT')
+            records.append((fields[0], int(fields[2]), int(fields[3]), fields[5]))
+        return records
+    except (OSError, UnicodeError, ValueError):
+        raise ProbeError('DEDICATED_PASSWD_UNVERIFIED') from None
+
+
+def _local_group_records():
+    """Cross-check the dedicated primary GID against trusted local group IDs."""
+    try:
+        lines = _login_subid_text('/etc/group').splitlines()
+        if not lines or len(lines) > 1024:
+            raise ValueError('LOCAL_GROUP_BOUND')
+        records = []
+        for line in lines:
+            fields = line.split(':')
+            if (len(fields) != 4 or len(line) > 1024 or
+                    not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_.-]{0,79}', fields[0]) or
+                    not re.fullmatch(r'[0-9]{1,10}', fields[2])):
+                raise ValueError('LOCAL_GROUP_FORMAT')
+            records.append((fields[0], int(fields[2])))
+        return records
+    except (OSError, UnicodeError, ValueError):
+        raise ProbeError('DEDICATED_GROUP_UNVERIFIED') from None
+
+
+def _dedicated_candidate(records, groups, login_gid):
+    """Lookup candidate only; absence is NOT permission to create an account."""
+    try:
+        target = pwd.getpwnam(PRIVATE_ACCOUNT)
+    except KeyError:
+        # Orphan local group reservations and NSS/passwd disagreements must
+        # not be advertised as a clean dedicated-account namespace.
+        if (any(name == PRIVATE_ACCOUNT for name, _, _, _ in records) or
+                any(name == PRIVATE_ACCOUNT for name, _ in groups)):
+            return 'UNVERIFIED', None
+        return 'ABSENT', None
+    except OSError:
+        return 'UNVERIFIED', None
+    if (target.pw_name != PRIVATE_ACCOUNT or target.pw_uid <= CURRENT_LOGIN_EXPECTED_UID or
+            target.pw_gid <= 1000 or target.pw_gid == login_gid or target.pw_dir not in (
+                '/var/lib/' + PRIVATE_ACCOUNT, '/home/' + PRIVATE_ACCOUNT)):
+        return 'UNVERIFIED', None
+    try:
+        by_uid = pwd.getpwuid(target.pw_uid)
+        by_gid = grp.getgrgid(target.pw_gid)
+        by_group_name = grp.getgrnam(PRIVATE_ACCOUNT)
+    except (KeyError, OSError):
+        return 'UNVERIFIED', None
+    if (by_uid.pw_name != PRIVATE_ACCOUNT or by_uid.pw_uid != target.pw_uid or
+            by_uid.pw_gid != target.pw_gid or by_uid.pw_dir != target.pw_dir or
+            by_gid.gr_name != PRIVATE_ACCOUNT or by_gid.gr_gid != target.pw_gid or
+            by_group_name.gr_name != PRIVATE_ACCOUNT or
+            by_group_name.gr_gid != target.pw_gid):
+        return 'UNVERIFIED', None
+    matches = [(name, uid, gid, home) for name, uid, gid, home in records
+               if name == PRIVATE_ACCOUNT or uid == target.pw_uid]
+    group_matches = [(name, gid) for name, gid in groups
+                     if name == PRIVATE_ACCOUNT or gid == target.pw_gid]
+    if (matches != [(PRIVATE_ACCOUNT, target.pw_uid, target.pw_gid, target.pw_dir)] or
+            group_matches != [(PRIVATE_ACCOUNT, target.pw_gid)]):
+        return 'UNVERIFIED', None
+    return 'PRESENT', target
+
+
+def _dedicated_home_status(account):
+    if account.pw_dir == '/var/lib/' + PRIVATE_ACCOUNT:
+        parents = ('/var', '/var/lib')
+    elif account.pw_dir == '/home/' + PRIVATE_ACCOUNT:
+        parents = ('/home',)
+    else:
+        return 'UNVERIFIED'
+    if not all(_trusted_root_metadata(path, stat.S_ISDIR) for path in parents):
+        return 'UNVERIFIED'
+    try:
+        info = os.lstat(account.pw_dir)
+    except FileNotFoundError:
+        return 'MISSING'
+    except OSError:
+        return 'UNVERIFIED'
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != account.pw_uid or
+            info.st_gid != account.pw_gid or stat.S_IMODE(info.st_mode) != 0o700):
+        return 'UNSAFE'
+    return 'PRIVATE'
+
+
+def _absent_dedicated_home_status():
+    """Account missing does not prove either reserved home path is unused."""
+    for parent in ('/var', '/var/lib', '/home'):
+        if not _trusted_root_metadata(parent, stat.S_ISDIR):
+            return 'UNVERIFIED'
+    observed = False
+    for path in ('/var/lib/' + PRIVATE_ACCOUNT, '/home/' + PRIVATE_ACCOUNT):
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return 'UNVERIFIED'
+        observed = True
+    return 'CANDIDATE_EXISTS' if observed else 'NOT_ASSIGNED'
+
+
+def _read_proc_net(path):
+    """Read only procfs net-table text; never create/inspect a socket."""
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError('PROC_NET_TYPE')
+        raw = bytearray()
+        while True:
+            chunk = os.read(fd, min(4096, MAX_PROC_NET_BYTES + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+            if len(raw) > MAX_PROC_NET_BYTES:
+                raise ValueError('PROC_NET_BOUND')
+        return bytes(raw)
+    finally:
+        os.close(fd)
+
+
+def _parse_proc_net_port(raw, addr_length):
+    if not isinstance(raw, bytes) or len(raw) > MAX_PROC_NET_BYTES:
+        raise ValueError('PROC_NET_BOUND')
+    lines = raw.decode('ascii', 'strict').splitlines()
+    expected_header = ['sl', 'local_address', None, 'st', 'tx_queue',
+                       'rx_queue', 'tr', 'tm->when', 'retrnsmt', 'uid',
+                       'timeout', 'inode']
+    header = lines[0].split() if lines else []
+    if (len(lines) > 1025 or len(header) != len(expected_header) or
+            header[2] not in ('rem_address', 'remote_address') or
+            header[:2] != expected_header[:2] or
+            header[3:] != expected_header[3:]):
+        raise ValueError('PROC_NET_FORMAT')
+    present = False
+    for line in lines[1:]:
+        columns = line.split()
+        if len(columns) < 12 or not re.fullmatch(r'[0-9]+:', columns[0]):
+            raise ValueError('PROC_NET_FORMAT')
+        local = columns[1].split(':')
+        remote = columns[2].split(':')
+        if (len(local) != 2 or len(remote) != 2 or
+                any(not re.fullmatch(r'[0-9A-Fa-f]{' + str(addr_length) + r'}', part[0])
+                    or not re.fullmatch(r'[0-9A-Fa-f]{4}', part[1])
+                    for part in (local, remote)) or
+                not re.fullmatch(r'[0-9A-Fa-f]{2}', columns[3]) or
+                int(columns[3], 16) not in range(1, 13) or
+                not re.fullmatch(r'[0-9A-Fa-f]{8}:[0-9A-Fa-f]{8}', columns[4]) or
+                not re.fullmatch(r'[0-9A-Fa-f]{2}:[0-9A-Fa-f]{8}', columns[5]) or
+                not re.fullmatch(r'[0-9A-Fa-f]{8}', columns[6]) or
+                any(not re.fullmatch(r'[0-9]{1,20}', field)
+                    for field in (columns[7],columns[8],columns[9],columns[10])) or
+                not re.fullmatch(r'[0-9A-Fa-f]{1,16}', columns[11]) or
+                any(not (index == 16 and field == '-1') and
+                    not re.fullmatch(r'[0-9A-Fa-f]{1,16}', field)
+                    for index, field in enumerate(columns[12:], 12))):
+            raise ValueError('PROC_NET_FORMAT')
+        # Linux proc_net_tcp documents signed -1 ONLY for ssthresh (field 17,
+        # zero-based 16); accepting it elsewhere would mask malformed rows.
+        # The kernel's TIME_WAIT short format has 12 fields; other states
+        # require the full 17-field extension to avoid a false empty proof.
+        if int(columns[3], 16) != 6 and len(columns) < 17:
+            raise ValueError('PROC_NET_FORMAT')
+        if int(local[1], 16) == 8000 and columns[3].upper() == '0A':
+            present = True
+    return present
+
+
+def _port_8000_listener():
+    """Network-namespace categorical snapshot, not owner or future-port proof."""
+    try:
+        pid1 = os.stat('/proc/1/ns/net')
+        current = os.stat('/proc/self/ns/net')
+        if (pid1.st_dev, pid1.st_ino) != (current.st_dev, current.st_ino):
+            return 'UNVERIFIED'
+        ipv4 = _parse_proc_net_port(_read_proc_net('/proc/self/net/tcp'), 8)
+        ipv6 = _parse_proc_net_port(_read_proc_net('/proc/self/net/tcp6'), 32)
+        return 'LISTEN_PRESENT' if ipv4 or ipv6 else 'NONE_OBSERVED'
+    except (OSError, UnicodeError, ValueError):
+        return 'UNVERIFIED'
+
+
+def collect_dedicated_preflight():
+    """UID1000 nonroot prerequisites only; no Docker/sudo/systemctl or API."""
+    if os.geteuid() != CURRENT_LOGIN_EXPECTED_UID:
+        raise ProbeError('DEDICATED_LOGIN_UNVERIFIED')
+    try:
+        login = pwd.getpwuid(CURRENT_LOGIN_EXPECTED_UID)
+        by_name = pwd.getpwnam(DEDICATED_LOGIN)
+        records = _local_passwd_records()
+        groups = _local_group_records()
+    except (KeyError, OSError):
+        raise ProbeError('DEDICATED_LOGIN_UNVERIFIED') from None
+    if (login.pw_name != DEDICATED_LOGIN or login.pw_uid != CURRENT_LOGIN_EXPECTED_UID or
+            login.pw_gid < 1000 or login.pw_dir != '/home/' + DEDICATED_LOGIN or
+            by_name.pw_name != DEDICATED_LOGIN or
+            by_name.pw_uid != CURRENT_LOGIN_EXPECTED_UID or
+            by_name.pw_gid != login.pw_gid or by_name.pw_dir != login.pw_dir or
+            [record for record in records if record[0] == DEDICATED_LOGIN or
+             record[1] == CURRENT_LOGIN_EXPECTED_UID] != [
+                 (DEDICATED_LOGIN, CURRENT_LOGIN_EXPECTED_UID,
+                  login.pw_gid, login.pw_dir)] or
+            not _trusted_root_metadata('/home', stat.S_ISDIR)):
+        raise ProbeError('DEDICATED_LOGIN_UNVERIFIED')
+    info = _lstat(login.pw_dir, 'DEDICATED_LOGIN_UNVERIFIED')
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != CURRENT_LOGIN_EXPECTED_UID
+            or info.st_gid != login.pw_gid or stat.S_IMODE(info.st_mode) & 0o022):
+        raise ProbeError('DEDICATED_LOGIN_UNVERIFIED')
+    account_state, candidate = _dedicated_candidate(records, groups, login.pw_gid)
+    home = (_absent_dedicated_home_status() if account_state == 'ABSENT'
+            else 'UNVERIFIED')
+    # Even an absent passwd/NSS account can have orphaned subuid/subgid ranges.
+    # Without a unique assigned UID, never infer those maps are free.
+    subids = 'UNVERIFIED'
+    uid_state = 'NOT_ASSIGNED' if account_state == 'ABSENT' else 'UNVERIFIED'
+    socket_state = 'NOT_ASSIGNED' if account_state == 'ABSENT' else 'UNVERIFIED'
+    if candidate is not None:
+        uid_state = 'DISTINCT'
+        home = _dedicated_home_status(candidate)
+        subids = 'AVAILABLE' if _login_subids_ready(candidate) else 'UNVERIFIED'
+        # UID1000 cannot inspect another account's 0700 /run/user path;
+        # in particular, no attempted read/connect to foreign Docker socket.
+        socket_state = 'NOT_INSPECTED'
+    return {
+        'schema': DEDICATED_PREFLIGHT_SCHEMA, 'state': 'NO_VERIFICADO',
+        'read_only': True, 'mutations': 0, 'docker_queries': 0,
+        # NSS may use external transports; this probe only promises that
+        # it does not itself open/connect to sockets. No false NSS claim.
+        'direct_socket_connections': 0, 'nss_socket_activity': 'UNVERIFIED',
+        'systemctl_queries': 0, 'sudo_executed': False,
+        'rootless_certified': False,
+        'dedicated_account': account_state, 'dedicated_uid': uid_state,
+        'dedicated_home': home, 'dedicated_subids': subids,
+        'dedicated_socket': socket_state,
+        'rootless_toolchain': ('AVAILABLE' if _login_rootless_toolchain()
+                               else 'UNVERIFIED'),
+        'rootless_launcher': ('AVAILABLE' if _login_rootless_launcher_present()
+                              else 'UNVERIFIED'),
+        'user_namespace': 'AVAILABLE' if _login_userns_ready() else 'UNVERIFIED',
+        'port_8000_listen': _port_8000_listener(),
+    }
+
+
+def main_dedicated_preflight():
+    try:
+        receipt = collect_dedicated_preflight()
+    except ProbeError as exc:
+        receipt = {
+            'schema': DEDICATED_PREFLIGHT_SCHEMA, 'state': 'NO_VERIFICADO',
+            'read_only': True, 'mutations': 0, 'docker_queries': 0,
+            'direct_socket_connections': 0, 'nss_socket_activity': 'UNVERIFIED',
+            'systemctl_queries': 0, 'sudo_executed': False,
+            'rootless_certified': False, 'reason': exc.reason,
+        }
+    except Exception:
+        receipt = {
+            'schema': DEDICATED_PREFLIGHT_SCHEMA, 'state': 'NO_VERIFICADO',
+            'read_only': True, 'mutations': 0, 'docker_queries': 0,
+            'direct_socket_connections': 0, 'nss_socket_activity': 'UNVERIFIED',
+            'systemctl_queries': 0, 'sudo_executed': False,
+            'rootless_certified': False, 'reason': 'DEDICATED_PROBE_UNVERIFIED',
+        }
+    print(json.dumps(receipt, sort_keys=True, separators=(',', ':')))
+    return 0
+
+
 def main():
     try:
         receipt = collect()
@@ -442,6 +740,8 @@ def main():
 if __name__ == "__main__":
     if sys.argv[1:] == ["--current-login"]:
         raise SystemExit(main_current_login())
+    if sys.argv[1:] == ["--dedicated-preflight"]:
+        raise SystemExit(main_dedicated_preflight())
     if len(sys.argv) != 1:
         raise SystemExit(79)
     raise SystemExit(main())
