@@ -84,7 +84,7 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.calls = []
         self.after_logind = None
 
-    def inspect(self, *, uid=1000, name='porotaadmin'):
+    def inspect(self, *, uid=1000, name='porotaadmin', through_main=False):
         probe = module()
         account = SimpleNamespace(pw_name=name, pw_uid=1000, pw_gid=1000,
                                   pw_dir='/home/' + name)
@@ -127,6 +127,11 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
               mock.patch.object(probe.pwd, 'getpwall', return_value=[account]),
               mock.patch.object(probe.os, 'lstat', side_effect=fake_lstat),
               mock.patch.object(probe, '_run_bounded_command', side_effect=fake_run)):
+            if through_main:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    exit_code = probe.main(['--linger-inventory'])
+                return exit_code, output.getvalue()
             return probe.collect()
 
     def test_private_uid_and_bounded_queries_never_export_unit_names(self):
@@ -557,6 +562,190 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.assertEqual(probe._unit_files(b'private.service enabled UNVALIDATED_PRESET\n'),
                          'PRESENT')
 
+    def test_systemd_unit_name_validator_accepts_bounded_escapes_and_all_unit_types(self):
+        probe = module()
+        types = ('service', 'socket', 'device', 'mount', 'automount', 'swap',
+                 'target', 'path', 'timer', 'slice', 'scope')
+        for suffix in types:
+            with self.subTest(suffix=suffix):
+                self.assertTrue(probe._valid_unit_name('private.' + suffix, probe.ALL_UNIT_TYPES))
+                self.assertTrue(probe._valid_unit_name(r'private\x2fhidden.' + suffix,
+                                                       probe.ALL_UNIT_TYPES))
+                self.assertTrue(probe._valid_unit_name(r'private\x2Fhidden.' + suffix,
+                                                       probe.ALL_UNIT_TYPES))
+        for allowed in ('systemd-networkd.service', '-.mount',
+                        'getty@.service', 'getty@tty1.service',
+                        'getty@tty@remote.service', 'foo@bar@baz.service',
+                        'worker@@instance.timer',
+                        r'private\x20space.service', r'private\xC3\xB1.service',
+                        r'private\x01.service', r'private\x09.service',
+                        r'private\x1f.service', r'private\x7F.service',
+                        r'private\xff.service',
+                        r'private\x2f\x2F.socket', 'a' * (255 - len('.service')) + '.service'):
+            with self.subTest(allowed=allowed[:48]):
+                self.assertTrue(probe._valid_unit_name(allowed, probe.ALL_UNIT_TYPES))
+        escaped_at_limit = ('a' * (255 - len('.service') - len(r'\x2f')) +
+                            r'\x2f.service')
+        self.assertEqual(len(escaped_at_limit), 255)
+        self.assertTrue(probe._valid_unit_name(escaped_at_limit, probe.ALL_UNIT_TYPES))
+        for bad in ('', '.service', '@.service', 'private', 'private.unknown',
+                    'private/device.service', 'private/thing.mount',
+                    r'private\x.service', r'private\X2F.service',
+                    r'private\x2.service', r'private\x2G.service',
+                    r'private\xGG.service', r'private\x00.service',
+                    'private\x00.service', 'private\t.service',
+                    'private\r.service', 'private\n.service',
+                    'private\x1b.service', 'private\x7f.service',
+                    'privateé.service',
+                    'a' * (256 - len('.service')) + '.service',
+                    'a' + escaped_at_limit):
+            with self.subTest(bad=repr(bad)[:48]):
+                self.assertFalse(probe._valid_unit_name(bad, probe.ALL_UNIT_TYPES))
+        # USER inventory lists only service/socket/timer despite the shared
+        # validator accepting 11 official types in dependency summaries.
+        for suffix in ('device', 'mount', 'target', 'scope'):
+            self.assertFalse(probe._valid_unit_name('private.' + suffix,
+                                                    probe.USER_UNIT_TYPES))
+
+    def test_escaped_unit_names_parse_consistently_across_three_systemd_queries(self):
+        probe = module()
+        self.assertEqual(probe._unit_files(
+            rb'private\x2fservice@tenant\x2Fone.service enabled enabled' + b'\n'),
+            'PRESENT')
+        self.assertEqual(probe._unit_files(
+            rb'private\x09service.service enabled -' + b'\n'), 'PRESENT')
+        self.assertEqual(probe._loaded_units(
+            rb'private\x2fservice@tenant@two.service loaded active running SAFE' + b'\n'),
+            ('PRESENT', 'NONE_OBSERVED', 'NONE_OBSERVED'))
+        self.assertEqual(probe._loaded_units(
+            rb'private\x7Fservice.service loaded active running SAFE' + b'\n'),
+            ('PRESENT', 'NONE_OBSERVED', 'NONE_OBSERVED'))
+        deps = b'default.target\n' + b'\n'.join(
+            (r'private\x2funit.' + suffix).encode('ascii') for suffix in (
+                'service', 'socket', 'device', 'mount', 'automount', 'swap',
+                'target', 'path', 'timer', 'slice', 'scope')) + b'\n'
+        self.assertEqual(probe._dependencies(deps), 'PRESENT')
+        self.assertEqual(probe._dependencies(b'default.target\n' +
+                                               rb'private\xFF.device' + b'\n'), 'PRESENT')
+
+    def test_documented_systemd_load_and_active_states_are_conservative(self):
+        probe = module()
+        self.assertEqual(probe._loaded_units(
+            b'private.service bad-setting maintenance waiting SAFE\n'),
+            ('PRESENT', 'NONE_OBSERVED', 'NONE_OBSERVED'))
+        self.assertEqual(probe._loaded_units(
+            b'private.service loaded refreshing running SAFE\n'),
+            ('PRESENT', 'NONE_OBSERVED', 'NONE_OBSERVED'))
+        with self.assertRaises(probe.InventoryHold):
+            probe._loaded_units(b'private.service UNKNOWN_LOAD active running SAFE\n')
+        with self.assertRaises(probe.InventoryHold):
+            probe._loaded_units(b'private.service loaded UNKNOWN_ACTIVE running SAFE\n')
+        with self.assertRaises(probe.InventoryHold) as caught:
+            probe._loaded_units(b'private.service bad active running SAFE\n')
+        self.assertEqual(str(caught.exception), 'ACTIVE_UNITS_LOAD')
+        # `bad` is a valid unit-file state, not an official LOAD state.
+        self.assertEqual(probe._unit_files(b'private.service bad -\n'),
+                         'NONE_OBSERVED')
+
+    def test_dependency_empty_root_and_exact_bound_are_distinct(self):
+        probe = module()
+        self.assertEqual(probe._dependencies(b'default.target\n' +
+                                              b'private.service\n' * 127), 'PRESENT')
+        for raw, reason in (
+                (b'', 'TARGET_DEPS_EMPTY'),
+                (b'   \n\t\n', 'TARGET_DEPS_EMPTY'),
+                (b'PRIVATE_ROOT.target\n', 'TARGET_DEPS_ROOT'),
+                (b'default.target\n' + b'private.service\n' * 128,
+                 'TARGET_DEPS_BOUND')):
+            with self.subTest(reason=reason):
+                with self.assertRaises(probe.InventoryHold) as caught:
+                    probe._dependencies(raw)
+                self.assertEqual(str(caught.exception), reason)
+
+    def test_escaped_inventory_through_real_collect_main_and_workflow_receiver(self):
+        self.responses['list-unit-files'] = (
+            rb'private\x2fescaped@tenant@one.service enabled enabled' + b'\n')
+        self.responses['list-units'] = (
+            rb'private\x2Fescaped@tenant@one.service bad-setting refreshing running SAFE' + b'\n')
+        self.responses['list-dependencies'] = (
+            b'default.target\n' + rb'private\x2fescaped.device' + b'\n')
+        code, raw_receipt = self.inspect(through_main=True)
+        self.assertEqual(code, 0)
+        receipt = json.loads(raw_receipt)
+        self.assertEqual(receipt['probe_extent'], 'FULL')
+        self.assertEqual(receipt['linger_effective'], 'NO')
+        self.assertEqual(receipt['systemd_dbus_state'], 'QUERIED_READONLY')
+        self.assertEqual(receipt['autostart_risk'], 'PRESENT')
+        self.assertEqual(receipt['enabled_user_units'], 'PRESENT')
+        self.assertEqual(receipt['active_user_services'], 'PRESENT')
+        self.assertEqual(receipt['default_target_dependencies'], 'PRESENT')
+        self.assertNotIn('private', raw_receipt)
+        self.assertNotIn(r'\x2f', raw_receipt)
+        self.assertEqual(len(self.calls), 4)
+        runner = run_receiver('Read bounded systemd user inventory',
+                              'linger.json', raw_receipt)
+        self.assertEqual(runner.returncode, 0, runner.stdout + runner.stderr)
+        self.assertIn('READ_ONLY_OBSERVED', runner.stdout + runner.stderr)
+        self.assertIn('LINGER_EFFECTIVE=NO', runner.stdout + runner.stderr)
+        self.assertIn('CERT2=NO_VERIFICADO', runner.stdout + runner.stderr)
+        self.assertNotIn('private', runner.stdout + runner.stderr)
+
+    def test_active_and_dependency_parse_failures_have_fixed_sanitized_categories(self):
+        probe = module()
+        invalid = (
+            ('list-units', b'private.service loaded active\xff running PRIVATE\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_ENCODING'),
+            ('list-units', b'private.service loaded active\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_COLUMNS'),
+            ('list-units', b'private/name.service loaded active running PRIVATE\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
+            ('list-units', b'private.service UNKNOWN_LOAD active running PRIVATE\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_LOAD'),
+            ('list-units', b'private.service loaded UNKNOWN_ACTIVE running PRIVATE\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_ACTIVE'),
+            ('list-dependencies', b'default.target\nprivate\xff.service\n',
+             'TARGET_DEPS_PARSE', 'TARGET_DEPS_ENCODING'),
+            ('list-dependencies', b'PRIVATE_ROOT.target\nprivate.service\n',
+             'TARGET_DEPS_PARSE', 'TARGET_DEPS_ROOT'),
+            ('list-dependencies', b'',
+             'TARGET_DEPS_PARSE', 'TARGET_DEPS_EMPTY'),
+            ('list-dependencies', b'default.target\n' + b'private.service\n' * 128,
+             'TARGET_DEPS_PARSE', 'TARGET_DEPS_BOUND'),
+            ('list-dependencies', b'default.target\nprivate/name.device\n',
+             'TARGET_DEPS_PARSE', 'TARGET_DEPS_NAME'),
+        )
+        for command, raw, phase, reason in invalid:
+            with self.subTest(reason=reason):
+                previous = self.responses[command]
+                self.responses[command] = raw
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.responses[command] = previous
+                self.assertEqual(caught.exception.phase, phase)
+                self.assertEqual(str(caught.exception), reason)
+                self.assertEqual(caught.exception.linger, 'NO')
+                self.assertEqual(caught.exception.systemd_dbus_state,
+                                 'INCOMPLETE_READONLY')
+                output = io.StringIO()
+                with (mock.patch.object(probe, 'collect', side_effect=caught.exception),
+                      contextlib.redirect_stdout(output)):
+                    self.assertEqual(probe.main(['--linger-inventory']), 0)
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(receipt['autostart_risk'], 'UNVERIFIED')
+                self.assertEqual({receipt[key] for key in probe.UNIT_FIELDS}, {'UNVERIFIED'})
+                self.assertNotIn('PRIVATE', output.getvalue())
+                result = run_receiver('Read bounded systemd user inventory',
+                                      'linger.json', output.getvalue())
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('PHASE=' + phase + '|REASON=' + reason,
+                              result.stdout + result.stderr)
+                self.assertIn('LINGER_EFFECTIVE=NO', result.stdout + result.stderr)
+                self.assertIn('CERT2=NO_VERIFICADO', result.stdout + result.stderr)
+                self.assertNotIn('PRIVATE', result.stdout + result.stderr)
+                self.assertNotIn('Traceback', result.stdout + result.stderr)
+
     def test_unit_files_rejects_malformed_late_rows_without_partial_success(self):
         probe = module()
         for invalid, reason in (
@@ -613,6 +802,50 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
 
 
 class LingerInventoryWorkflowTests(unittest.TestCase):
+    def test_a1043_parser_reason_enums_reject_forged_cross_stage_receipts(self):
+        probe = module()
+        base = probe._partial_receipt(probe.InventoryHold(
+            'ACTIVE_UNITS_NAME', 'ACTIVE_UNITS_PARSE', linger='NO',
+            user_runtime_status='METADATA_VALID', user_bus_status='METADATA_VALID',
+            bus_mode_other_bits='PRESENT', logind_status='PARSED_READONLY',
+            systemd_dbus_state='INCOMPLETE_READONLY'))
+        forged = (
+            dict(base, phase='TARGET_DEPS_PARSE'),
+            dict(base, phase='UNIT_FILES_PARSE'),
+            dict(base, reason='SYSTEMD_OUTPUT_UNVERIFIED'),
+            dict(base, reason='TARGET_DEPS_NAME'),
+            dict(base, reason='ACTIVE_UNITS_PRIVATE_HOST_VALUE'),
+            dict(base, reason=['ACTIVE_UNITS_NAME']),
+            dict(base, reason={'PRIVATE_HOST': 'ACTIVE_UNITS_NAME'}),
+            dict(base, user_bus_status=['METADATA_VALID']),
+            dict(base, user_bus_status={'PRIVATE_HOST': 'METADATA_VALID'}),
+            dict(base, rootless_certified=True),
+            dict(base, user_sockets='PRESENT'),
+            dict(base, logind_status='NOT_QUERIED'),
+            dict(base, PRIVATE_FIELD='PRIVATE_VALUE'),
+            {key: value for key, value in base.items() if key != 'phase'},
+        )
+        for bad in forged:
+            with self.subTest(bad=str(bad)[:48]):
+                receipt = run_receiver('Read bounded systemd user inventory',
+                                       'linger.json', json.dumps(bad))
+                self.assertNotEqual(receipt.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', receipt.stdout + receipt.stderr)
+                self.assertNotIn('PRIVATE_', receipt.stdout + receipt.stderr)
+                self.assertNotIn('Traceback', receipt.stdout + receipt.stderr)
+
+        raw = json.dumps(base)
+        for modified in (
+                raw.replace('"reason": "ACTIVE_UNITS_NAME"',
+                            '"reason": "TARGET_DEPS_NAME", "reason": "ACTIVE_UNITS_NAME"'),
+                raw.replace('"mutations": 0', '"mutations": NaN'),
+                raw.replace('"mutations": 0', '"mutations": Infinity')):
+            receipt = run_receiver('Read bounded systemd user inventory',
+                                   'linger.json', modified)
+            self.assertNotEqual(receipt.returncode, 0)
+            self.assertIn('RECEIPT_INVALID', receipt.stdout + receipt.stderr)
+            self.assertNotIn('Traceback', receipt.stdout + receipt.stderr)
+
     def test_unit_files_parse_categories_are_strictly_phase_bound_and_sanitized(self):
         probe = module()
         baseline = probe._partial_receipt(probe.InventoryHold(
@@ -832,8 +1065,8 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
             ('TARGET_DEPS_QUERY', 'QUERY_UNVERIFIED'),
             ('LOGIND_PARSE', 'LOGIND_UNVERIFIED'),
             ('UNIT_FILES_PARSE', 'UNIT_FILES_STATE'),
-            ('ACTIVE_UNITS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
-            ('TARGET_DEPS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
+            ('ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
+            ('TARGET_DEPS_PARSE', 'TARGET_DEPS_NAME'),
             ('INVENTORY_UNKNOWN', 'INVENTORY_UNVERIFIED'))
         for phase, reason in examples:
             with self.subTest(phase=phase):
