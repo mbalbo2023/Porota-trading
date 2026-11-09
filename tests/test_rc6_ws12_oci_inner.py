@@ -46,8 +46,9 @@ def test_full_and_subset_scopes_keep_automatic_root_discovery(source):
     assert "--ignore=test_a3_primary_readonly_hf6.py" in steps[2].argv
     assert "tests/" in steps[1].argv
     assert "--junitxml=/work/evidence/junit.xml" in steps[2].argv
-    assert "-p" in steps[2].argv
-    assert "scripts.rc6_ci_pytest_identity" in steps[2].argv
+    assert "-I" in steps[2].argv
+    assert "/control/scripts/rc6_ci_ws12_trusted_pytest_launch.py" in steps[2].argv
+    assert "-p" not in steps[2].argv
     assert "--runxfail" not in steps[2].argv
 
 
@@ -69,7 +70,7 @@ def test_environment_sanitizer_never_forwards_actions_tokens(source):
     inherited = {"GITHUB_TOKEN": "SYNTHETIC_SECRET", "ACTIONS_RUNTIME_TOKEN": "SECRET2",
                  "PYTEST_ADDOPTS": "--runxfail", "PYTEST_PLUGINS": "malicious", "PATH": "/evil"}
     out = inner.pytest_env(SHA, TREE, "/work/evidence/manifest.json", inherited)
-    assert set(out) == {"PATH", "LC_ALL", "HOME", "PYTHONPATH", "PYTHONDONTWRITEBYTECODE",
+    assert set(out) == {"PATH", "LC_ALL", "HOME", "PYTHONDONTWRITEBYTECODE",
                         "PYTEST_DISABLE_PLUGIN_AUTOLOAD", "RC6_CI_IDENTITY_PROOF",
                         "RC6_CI_SOURCE_SHA", "RC6_CI_SOURCE_TREE_SHA", "RC6_CI_MANIFEST_PATH"}
     assert out["PATH"] == "/usr/local/bin:/usr/bin:/bin"

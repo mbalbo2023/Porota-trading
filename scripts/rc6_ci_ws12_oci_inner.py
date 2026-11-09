@@ -89,7 +89,7 @@ def pytest_env(source_sha: str, tree: str, manifest: str,
     if Path(manifest).parent != evidence_root or ".." in Path(manifest).parts:
         raise InnerHold("OUTPUT_IDENTITY")
     return {"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C.UTF-8",
-            "HOME": "/work", "PYTHONPATH": "/src", "PYTHONDONTWRITEBYTECODE": "1",
+            "HOME": "/work", "PYTHONDONTWRITEBYTECODE": "1",
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "RC6_CI_IDENTITY_PROOF": "1",
             "RC6_CI_SOURCE_SHA": source_sha, "RC6_CI_SOURCE_TREE_SHA": tree,
             "RC6_CI_MANIFEST_PATH": manifest}
@@ -101,7 +101,9 @@ def plan(source_sha: str, tree: str, repo: Path, evidence: Path,
     args = productive_args(repo)
     if any(_HEX40.fullmatch(value) is None for value in (source_sha, tree)):
         raise InnerHold("SOURCE_IDENTITY")
-    prefix = (python, "-B", "-m", "pytest", "-p", "scripts.rc6_ci_pytest_identity",
+    # -I isolates imports and the bootstrap verifies reviewed plugin bytes from
+    # the exact candidate SHA/tree before exposing /src to pytest collection.
+    prefix = (python, "-I", "-B", "/control/scripts/rc6_ci_ws12_trusted_pytest_launch.py",
               "-q", "-o", "xfail_strict=true")
     return (
         Step("collect_full", (*prefix, "--collect-only", *args),

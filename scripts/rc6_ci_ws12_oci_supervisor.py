@@ -13,7 +13,10 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 import json
+import os
+from pathlib import Path
 import re
+import stat
 import tarfile
 from xml.etree import ElementTree as ET
 
@@ -29,6 +32,27 @@ class OCIHOLD(ValueError):
     """OCI or evidence input failed a fail-closed protected-main gate."""
 
 
+def _mount_source(raw: str) -> Path:
+    """Approve only existing canonical directory paths with no symlink parent."""
+    if (not isinstance(raw, str) or not raw.startswith("/") or
+            any(ch in raw for ch in ",\n\r\x00") or
+            any(part in ("", ".", "..") for part in raw.split("/")[1:])):
+        raise OCIHOLD("MOUNT_PATH_UNVERIFIED")
+    path = Path(raw)
+    current = Path("/")
+    try:
+        for part in path.parts[1:]:
+            current = current / part
+            mode = current.lstat().st_mode
+            if not stat.S_ISDIR(mode):
+                raise OCIHOLD("MOUNT_TYPE_UNVERIFIED")
+        if path.resolve(strict=True) != path:
+            raise OCIHOLD("MOUNT_RESOLVE_UNVERIFIED")
+    except (OSError, RuntimeError):
+        raise OCIHOLD("MOUNT_MISSING") from None
+    return path
+
+
 def admitted_image(image: str, *, approved: frozenset[str], docker=None) -> bool:
     """Only a main-reviewed immutable QA image, never a supplied mutable tag.
 
@@ -40,16 +64,22 @@ def admitted_image(image: str, *, approved: frozenset[str], docker=None) -> bool
 
 
 def container_args(*, candidate: str, control: str, image: str, sha: str,
-                   tree: str, run_id: str, attempt: str, nonce: str) -> list[str]:
+                   tree: str, run_id: str, attempt: str, nonce: str,
+                   approved: frozenset[str]) -> list[str]:
     """Construct an exact Docker create argv, no shell or host-writable mount."""
-    if (not admitted_image(image, approved=frozenset((image,))) or
+    if (not admitted_image(image, approved=approved) or
             any(_SHA40.fullmatch(value) is None for value in (sha, tree)) or
             _HEX64.fullmatch(nonce * 2) is None or
             not re.fullmatch(r"[1-9][0-9]{0,19}", run_id) or
             not re.fullmatch(r"[1-9][0-9]{0,19}", attempt)):
         raise OCIHOLD("SOURCE_OR_IMAGE_UNVERIFIED")
-    if (not candidate.startswith("/") or not control.startswith("/") or
-            candidate == control or any(ch in candidate + control for ch in ",\n\r")):
+    candidate_path = _mount_source(candidate)
+    control_path = _mount_source(control)
+    if (candidate_path == control_path or
+            candidate_path in control_path.parents or
+            control_path in candidate_path.parents or
+            os.stat(candidate_path).st_ino == os.stat(control_path).st_ino and
+            os.stat(candidate_path).st_dev == os.stat(control_path).st_dev):
         raise OCIHOLD("MOUNT_PATH_UNVERIFIED")
     labels = ["--label", "rc6.qa.custody=" + nonce,
               "--label", "rc6.qa.candidate=" + sha]
@@ -109,30 +139,45 @@ def _json(raw: bytes) -> object:
         raise OCIHOLD("JSON_INVALID") from None
 
 
-def _cases(raw: bytes) -> list[dict[str, str]]:
-    if (not isinstance(raw, bytes) or len(raw) > 64 * 1024 * 1024 or
+def _cases(raw: bytes, *, expected: int) -> list[dict[str, str]]:
+    if (not isinstance(raw, bytes) or len(raw) > 16 * 1024 * 1024 or
             b"<!DOCTYPE" in raw or b"<!ENTITY" in raw):
         raise OCIHOLD("JUNIT_BOUNDS")
     try:
         root = ET.fromstring(raw)
     except (ET.ParseError, UnicodeError, ValueError):
         raise OCIHOLD("JUNIT_INVALID") from None
-    if root.tag not in ("testsuite", "testsuites"):
+    if root.tag not in ("testsuite", "testsuites") or not 1 <= expected <= 100000:
         raise OCIHOLD("JUNIT_ROOT")
+    suites = [root] if root.tag == "testsuite" else list(root)
+    if not 1 <= len(suites) <= 32 or any(suite.tag != "testsuite" for suite in suites):
+        raise OCIHOLD("JUNIT_SUITE_STRUCTURE")
     result = []
-    for test in root.iter("testcase"):
-        properties = [item.get("value") for item in test.findall("./properties/property")
-                      if item.get("name") == "rc6_nodeid_sha256"]
-        if len(properties) != 1:
-            raise OCIHOLD("JUNIT_PROPERTY")
-        failures = [tag for tag in ("failure", "error", "skipped")
-                    if test.find(tag) is not None]
-        if len(failures) > 1:
-            raise OCIHOLD("JUNIT_OUTCOME")
-        result.append({"nodeid_sha256": properties[0],
-                       "outcome": failures[0] if failures else "passed"})
-        if len(result) > 100000:
-            raise OCIHOLD("JUNIT_ITEM_BOUNDS")
+    for suite in suites:
+        try:
+            declared = {key: int(suite.attrib[key])
+                        for key in ("tests", "failures", "errors", "skipped")}
+        except (KeyError, ValueError):
+            raise OCIHOLD("JUNIT_SUMMARY") from None
+        if (any(value < 0 or value > expected for value in declared.values()) or
+                any(suite.attrib[key] != str(value) for key, value in declared.items()) or
+                any(declared[key] for key in ("failures", "errors", "skipped"))):
+            raise OCIHOLD("JUNIT_SUMMARY")
+        cases = suite.findall("./testcase")
+        if declared["tests"] != len(cases) or len(result) + len(cases) > expected:
+            raise OCIHOLD("JUNIT_SUMMARY_COUNT")
+        for test in cases:
+            properties = [item.get("value") for item in test.findall("./properties/property")
+                          if item.get("name") == "rc6_nodeid_sha256"]
+            if len(properties) != 1:
+                raise OCIHOLD("JUNIT_PROPERTY")
+            failures = [tag for tag in ("failure", "error", "skipped")
+                        if test.find(tag) is not None]
+            if failures:
+                raise OCIHOLD("JUNIT_NOT_PASS")
+            result.append({"nodeid_sha256": properties[0], "outcome": "passed"})
+    if len(result) != expected:
+        raise OCIHOLD("JUNIT_EXACT_COUNT")
     return result
 
 
@@ -153,7 +198,8 @@ def review_private_files(*, full_collected: bytes, subset_collected: bytes,
     if full != executed:
         raise OCIHOLD("EXECUTED_COLLECTION_DRIFT")
     raw = {"full_manifest": full, "subset_manifest": _json(subset_collected),
-           "cases": _cases(junit), "pytest_exit_code": pytest_exit_code,
+           "cases": _cases(junit, expected=expected_full),
+           "pytest_exit_code": pytest_exit_code,
            "junit_sha256": hashlib.sha256(junit).hexdigest()}
     try:
         return review_evidence(
