@@ -1,7 +1,8 @@
 name: RC6 R1 Docker Capacity READ_ONLY
 
 # Manual, bounded host inventory. Never touches PPI, runtime, Docker objects,
-# data, locks or cleanup. The global deploy mutex prevents an inventory race.
+# data, locks or cleanup. Legacy host inventory holds the global deploy mutex;
+# current-login OS prerequisite metadata is disjoint and never locks deploy.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,11 @@ on:
         default: false
       rootless_metadata_only:
         description: Inspect only Porota's dedicated private rootless UID/socket/data-root (no global Docker)
+        required: false
+        type: boolean
+        default: false
+      current_login_capability_only:
+        description: Current nonroot login OS prerequisites only (never connect to Docker, sudo or any socket)
         required: false
         type: boolean
         default: false
@@ -65,7 +71,7 @@ jobs:
 
   host_readonly:
     needs: contracts
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.current_login_capability_only
     concurrency:
       group: rc6-unified-paper-deploy
       cancel-in-progress: false
@@ -440,3 +446,120 @@ jobs:
         shell: bash
         run: |
           rm -f "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts" "$RUNNER_TEMP/rc6_r1_capacity/raw.json" "$RUNNER_TEMP/rc6_r1_capacity/timers.json" "$RUNNER_TEMP/rc6_r1_capacity/rootless.json"
+
+  current_login_readonly:
+    needs: contracts
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.current_login_capability_only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      # Do not load repository code or any secret before proving that the
+      # workflow identity is the exact protected-main source under review.
+      - name: Validate current-login trusted context
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "${GITHUB_REPOSITORY:-}" != "mbalbo2023/Porota-trading" ||
+                "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ||
+                "${GITHUB_REF:-}" != "refs/heads/main" ||
+                "${GITHUB_REF_PROTECTED:-}" != "true" ||
+                "${GITHUB_WORKFLOW_REF:-}" != "mbalbo2023/Porota-trading/.github/workflows/rc6-r1-docker-capacity-readonly.yml@refs/heads/main" ||
+                ! "${GITHUB_WORKFLOW_SHA:-}" =~ ^[0-9a-f]{40}$ ||
+                "${GITHUB_WORKFLOW_SHA:-}" != "${GITHUB_SHA:-}" ||
+                "${RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_CURRENT_LOGIN_RO=UNTRUSTED_CONTEXT|CERT2=NO_VERIFICADO'
+            exit 79
+          fi
+      - name: Checkout exact trusted workflow commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Verify trusted checkout and offhost contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_WORKFLOW_SHA" ]]
+          python3 -m unittest tests.test_rc6_rootless_metadata_readonly -q
+      - name: Read current login OS metadata without Docker or sudo
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$DO_HOST" =~ ^[a-zA-Z0-9.-]{1,253}$ ]]
+          [[ "$DO_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+          [[ -n "$SSH_KEY" && -n "$KNOWN_HOSTS" ]]
+          install -m 700 -d "$RUNNER_TEMP/rc6_current_login_ro"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_current_login_ro/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_current_login_ro/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_current_login_ro/key" "$RUNNER_TEMP/rc6_current_login_ro/known_hosts"
+          # This streams a bounded Python metadata probe through the existing
+          # authenticated login. It never invokes Docker, sudo or socket.connect.
+          ssh -F /dev/null -i "$RUNNER_TEMP/rc6_current_login_ro/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_current_login_ro/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            '/usr/bin/timeout 25 /usr/bin/python3 -I -S -B - --current-login' \
+            < scripts/rc6_rootless_metadata_readonly.py \
+            > "$RUNNER_TEMP/rc6_current_login_ro/receipt.json" 2>/dev/null
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          raw = Path(os.environ['RUNNER_TEMP']) / 'rc6_current_login_ro/receipt.json'
+          if raw.stat().st_size > 4096:
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_BOUND|CERT2=NO_VERIFICADO')
+          data = json.loads(raw.read_text())
+          common = {'schema', 'state', 'read_only', 'mutations', 'provider_gets',
+                    'docker_queries', 'socket_connections', 'sudo_executed',
+                    'rootless_certified'}
+          positive = common | {'foreign_docker_inspected', 'principal_nonroot_unique',
+                    'runtime_directory_private', 'user_manager_socket_present',
+                    'rootless_tools_present', 'subuids_assigned', 'userns_enabled',
+                    'default_socket_absent', 'project_socket_namespace_absent',
+                    'ready_for_private_rootless_review'}
+          negative = common | {'reason'}
+          if (not isinstance(data, dict) or
+                  data.get('schema') != 'rc6.r1.current-login-capability-readonly.v1' or
+                  data.get('state') != 'NO_VERIFICADO' or
+                  data.get('read_only') is not True or
+                  any(type(data.get(k)) is not int or data[k] != 0 for k in
+                      ('mutations','provider_gets','docker_queries','socket_connections')) or
+                  data.get('sudo_executed') is not False or
+                  data.get('rootless_certified') is not False):
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          if set(data) == negative:
+              if not isinstance(data.get('reason'), str) or not re.fullmatch(
+                      r'[A-Z_]{1,48}', data['reason']):
+                  raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=PREREQUISITES_UNVERIFIED|CERT2=NO_VERIFICADO')
+          if (set(data) != positive or
+                  data.get('foreign_docker_inspected') is not False or
+                  any(type(data.get(k)) is not bool for k in positive - common -
+                      {'foreign_docker_inspected'})):
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          required = tuple(positive - common - {'foreign_docker_inspected',
+                             'ready_for_private_rootless_review'})
+          ready = all(data[field] for field in required)
+          if data['ready_for_private_rootless_review'] is not ready:
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          if not ready:
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=PREREQUISITES_INCOMPLETE|CERT2=NO_VERIFICADO')
+          print('RC6_CURRENT_LOGIN_RO=PREREQUISITES_READY_NOT_CERTIFIED|CERT2=NO_VERIFICADO')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('### RC6 current-login OS prerequisites (metadata READ_ONLY)\n\n')
+              out.write('Readiness metadata observed; no daemon queried, no socket connected, '
+                        'no host changes. No runtime/deployment certification.\n')
+          PY
+      - name: Runner-only current-login credential cleanup
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/rc6_current_login_ro/key" "$RUNNER_TEMP/rc6_current_login_ro/known_hosts" "$RUNNER_TEMP/rc6_current_login_ro/receipt.json"
