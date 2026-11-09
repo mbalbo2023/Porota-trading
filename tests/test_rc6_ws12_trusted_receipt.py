@@ -52,6 +52,10 @@ def test_full_and_subset_quorum_emit_hash_only_review_without_runtime_authority(
     assert summary["status"] == "READY_FOR_PHYSICAL_ATTESTATION"
     assert (summary["full_collected"], summary["full_executed"],
             summary["subset_collected"], summary["subset_executed"]) == (4, 4, 3, 3)
+    # The subset passed inside the single full-suite invocation; it was
+    # collected separately, but it was not run a second time.
+    assert summary["subset_execution_mode"] == "covered_by_full_execution"
+    assert summary["subset_independent_run"] is False
     assert summary["af_unix_passed"] is True
     assert summary["trusted_main_sha"] == T
     assert summary["candidate_sha"] == C

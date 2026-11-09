@@ -82,7 +82,7 @@ def review_evidence(raw: object, *, trusted_main_sha: str, candidate_sha: str,
                     candidate_tree_sha: str, qa_image_digest: str,
                     run_id: str, attempt: str, expected_full: int = 8125,
                     expected_subset: int = 8102) -> dict:
-    """Bind two actual test scopes; prohibit fake successes and raw node IDs.
+    """Bind full execution to exact subset membership; prohibit false quorums.
 
     Independent OCI provenance, sealing and artifact signature are external
     prerequisites.  They are NEVER inferred from this function succeeding.
@@ -139,6 +139,10 @@ def review_evidence(raw: object, *, trusted_main_sha: str, candidate_sha: str,
         "scope_subset": "tests/",
         "full_collected": len(full), "full_executed": len(observed_hashes),
         "subset_collected": len(subset), "subset_executed": len(subset),
+        # All subset node IDs passed inside the FULL run.  This does not
+        # claim a second, independent 8,102-case pytest invocation.
+        "subset_execution_mode": "covered_by_full_execution",
+        "subset_independent_run": False,
         "full_collection_sha256": full_digest,
         "subset_collection_sha256": subset_digest,
         "junit_sha256": junit_digest,

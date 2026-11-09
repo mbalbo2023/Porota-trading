@@ -140,9 +140,26 @@ def _json(raw: bytes) -> object:
 
 
 def _cases(raw: bytes, *, expected: int) -> list[dict[str, str]]:
-    if (not isinstance(raw, bytes) or len(raw) > 16 * 1024 * 1024 or
-            b"<!DOCTYPE" in raw or b"<!ENTITY" in raw):
+    if not isinstance(raw, bytes) or len(raw) > 16 * 1024 * 1024:
         raise OCIHOLD("JUNIT_BOUNDS")
+    try:
+        # ElementTree accepts e.g. UTF-16 DTDs that evade an ASCII byte
+        # search.  Normalise to strict UTF-8 before rejecting XML directives.
+        decoded = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise OCIHOLD("JUNIT_ENCODING") from None
+    if "<!" in decoded or "\x00" in decoded or "\ufeff" in decoded:
+        raise OCIHOLD("JUNIT_DECLARATION")
+    if decoded.startswith("<?xml"):
+        end = decoded.find("?>", 5, 256)
+        if end < 0:
+            raise OCIHOLD("JUNIT_DECLARATION")
+        declaration = decoded[5:end]
+        if re.search(r"\bencoding\b", declaration, flags=re.IGNORECASE):
+            encoding = re.search(r"\bencoding\s*=\s*(['\"])([^'\"]+)\1",
+                                 declaration, flags=re.IGNORECASE)
+            if encoding is None or encoding.group(2).lower() != "utf-8":
+                raise OCIHOLD("JUNIT_ENCODING")
     try:
         root = ET.fromstring(raw)
     except (ET.ParseError, UnicodeError, ValueError):

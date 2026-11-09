@@ -159,3 +159,24 @@ def test_publisher_parses_real_junit_not_candidate_success_flag():
             qa_image_digest=D, run_id="123", attempt="1",
             expected_full=4, expected_subset=3,
         )
+
+
+@pytest.mark.parametrize("with_dtd", [False, True])
+def test_junit_rejects_non_utf8_xml_even_if_elementtree_accepts_it(with_dtd):
+    """An alternate encoding must not evade raw-byte DTD checks."""
+    base = ('<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            '<testcase><properties><property name="rc6_nodeid_sha256" '
+            'value="' + 'a' * 64 + '"/></properties></testcase></testsuite>')
+    preamble = '<!DOCTYPE testsuite [<!ENTITY hidden "x">]>' if with_dtd else ''
+    xml = ('<?xml version="1.0" encoding="utf-16"?>' + preamble + base).encode("utf-16")
+    with pytest.raises(outer.OCIHOLD):
+        outer._cases(xml, expected=1)
+
+
+def test_junit_rejects_non_utf8_declared_encoding_even_with_ascii_payload():
+    xml = ('<?xml version="1.0" encoding="ISO-8859-1"?>'
+           '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+           '<testcase><properties><property name="rc6_nodeid_sha256" value="'
+           + 'a' * 64 + '"/></properties></testcase></testsuite>').encode("ascii")
+    with pytest.raises(outer.OCIHOLD):
+        outer._cases(xml, expected=1)
