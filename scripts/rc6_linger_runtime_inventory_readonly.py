@@ -22,7 +22,12 @@ ACCOUNT = 'porotaadmin'
 UID = 1000
 RUNTIME = '/run/user/1000'
 BUS = RUNTIME + '/bus'
-UNIT = re.compile(r'[A-Za-z0-9_.@:-]+\.(?:service|socket|timer)\Z')
+USER_UNIT_TYPES = frozenset(('service', 'socket', 'timer'))
+ALL_UNIT_TYPES = frozenset(('service', 'socket', 'device', 'mount',
+    'automount', 'swap', 'target', 'path', 'timer', 'slice', 'scope'))
+UNIT_NAME_CHARS = frozenset('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    '0123456789:_.-@')
+HEX_CHARS = frozenset('0123456789abcdefABCDEF')
 REASON_ALLOWLIST = frozenset((
     'OS_IDENTITY_UNVERIFIED', 'OS_BINARY_UNVERIFIED',
     'LOGIN_IDENTITY_UNVERIFIED', 'USER_BUS_UNVERIFIED',
@@ -30,12 +35,18 @@ REASON_ALLOWLIST = frozenset((
     'QUERY_FAILED', 'QUERY_UNVERIFIED', 'SYSTEMD_OUTPUT_UNVERIFIED',
     'LOGIND_UNVERIFIED', 'INVENTORY_UNVERIFIED',
     'UNIT_FILES_ENCODING', 'UNIT_FILES_COLUMNS', 'UNIT_FILES_NAME',
-    'UNIT_FILES_STATE'))
+    'UNIT_FILES_STATE', 'ACTIVE_UNITS_ENCODING', 'ACTIVE_UNITS_COLUMNS',
+    'ACTIVE_UNITS_NAME', 'ACTIVE_UNITS_LOAD', 'ACTIVE_UNITS_ACTIVE',
+    'TARGET_DEPS_ENCODING', 'TARGET_DEPS_EMPTY', 'TARGET_DEPS_ROOT', 'TARGET_DEPS_BOUND',
+    'TARGET_DEPS_NAME'))
 KNOWN_UNIT_STATES = frozenset(('enabled', 'enabled-runtime', 'disabled',
     'static', 'indirect', 'alias', 'masked', 'masked-runtime', 'generated',
     'transient', 'linked', 'linked-runtime', 'bad'))
 KNOWN_ACTIVE_STATES = frozenset(('active', 'inactive', 'activating',
-    'deactivating', 'reloading', 'failed'))
+    'deactivating', 'reloading', 'failed', 'maintenance', 'refreshing'))
+# systemctl(1): `bad` is a UNIT FILE state; LOAD uses `bad-setting`.
+KNOWN_LOAD_STATES = frozenset(('loaded', 'not-found',
+    'bad-setting', 'masked', 'error'))
 METADATA_STATES = frozenset(('MISSING', 'ACCESS_DENIED', 'SYMLINK',
     'WRONG_TYPE', 'WRONG_OWNER', 'UNSAFE_MODE', 'METADATA_VALID', 'UNVERIFIED'))
 BUS_OTHER_BITS = frozenset(('PRESENT', 'ABSENT', 'NOT_CHECKED'))
@@ -230,6 +241,40 @@ def _decoded(raw):
         raise InventoryHold('SYSTEMD_OUTPUT_UNVERIFIED') from None
 
 
+def _valid_unit_name(name, suffixes):
+    """Conservative ASCII systemd name subset; no decoding or output of names.
+
+    systemd.unit(5): <=255 ASCII characters including suffix, 11 suffixes,
+    literal C-style \\xHH escaping, optional @ template/instance. This is
+    intentionally NOT a claim of full upstream parser equivalence. Literal
+    escapes for byte 01..FF (including C0/DEL) are accepted but NEVER
+    decoded; actual control characters and NUL escapes are rejected.
+    """
+    if (type(name) is not str or not name.isascii() or
+            not 1 <= len(name) <= 255 or '.' not in name):
+        return False
+    prefix, suffix = name.rsplit('.', 1)
+    if not prefix or prefix[0] == '@' or suffix not in suffixes:
+        return False
+    index = 0
+    while index < len(prefix):
+        char = prefix[index]
+        if char == '\\':
+            pair = prefix[index + 2:index + 4]
+            if (prefix[index + 1:index + 2] != 'x' or len(pair) != 2 or
+                    any(digit not in HEX_CHARS for digit in pair)):
+                return False
+            byte_value = int(pair, 16)
+            if byte_value == 0:
+                return False
+            index += 4
+        elif char in UNIT_NAME_CHARS:
+            index += 1
+        else:
+            return False
+    return True
+
+
 def _unit_files(raw):
     present = False
     try:
@@ -243,7 +288,7 @@ def _unit_files(raw):
         columns = line.split()
         if len(columns) not in (2, 3):
             raise InventoryHold('UNIT_FILES_COLUMNS')
-        if not UNIT.fullmatch(columns[0]):
+        if not _valid_unit_name(columns[0], USER_UNIT_TYPES):
             raise InventoryHold('UNIT_FILES_NAME')
         if columns[1] not in KNOWN_UNIT_STATES:
             raise InventoryHold('UNIT_FILES_STATE')
@@ -256,15 +301,23 @@ def _unit_files(raw):
 
 def _loaded_units(raw):
     active_services = timers = sockets = False
-    for line in _decoded(raw):
+    try:
+        lines = _decoded(raw)
+    except InventoryHold:
+        raise InventoryHold('ACTIVE_UNITS_ENCODING') from None
+    for line in lines:
         line = line.strip()
         if not line or re.fullmatch(r'\d+ loaded units listed\.', line):
             continue
         columns = line.split(None, 4)
-        if (len(columns) < 4 or not UNIT.fullmatch(columns[0]) or
-                columns[1] not in ('loaded','not-found','bad','masked','error') or
-                columns[2] not in KNOWN_ACTIVE_STATES):
-            raise InventoryHold('SYSTEMD_OUTPUT_UNVERIFIED')
+        if len(columns) < 4:
+            raise InventoryHold('ACTIVE_UNITS_COLUMNS')
+        if not _valid_unit_name(columns[0], USER_UNIT_TYPES):
+            raise InventoryHold('ACTIVE_UNITS_NAME')
+        if columns[1] not in KNOWN_LOAD_STATES:
+            raise InventoryHold('ACTIVE_UNITS_LOAD')
+        if columns[2] not in KNOWN_ACTIVE_STATES:
+            raise InventoryHold('ACTIVE_UNITS_ACTIVE')
         name, _, active = columns[:3]
         if name.endswith('.service') and active != 'inactive':
             active_services = True
@@ -277,12 +330,20 @@ def _loaded_units(raw):
 
 
 def _dependencies(raw):
-    lines = [line.strip() for line in _decoded(raw) if line.strip()]
-    if not lines or lines[0] != 'default.target' or len(lines) > 128:
-        raise InventoryHold('SYSTEMD_OUTPUT_UNVERIFIED')
+    try:
+        lines = [line.strip() for line in _decoded(raw) if line.strip()]
+    except InventoryHold:
+        raise InventoryHold('TARGET_DEPS_ENCODING') from None
+    if not lines:
+        raise InventoryHold('TARGET_DEPS_EMPTY')
+    if lines[0] != 'default.target':
+        raise InventoryHold('TARGET_DEPS_ROOT')
+    # Maximum 128 nonblank rows including default.target, fail closed.
+    if len(lines) > 128:
+        raise InventoryHold('TARGET_DEPS_BOUND')
     for line in lines[1:]:
-        if not re.fullmatch(r'[A-Za-z0-9_.@:-]+\.[A-Za-z]+', line):
-            raise InventoryHold('SYSTEMD_OUTPUT_UNVERIFIED')
+        if not _valid_unit_name(line, ALL_UNIT_TYPES):
+            raise InventoryHold('TARGET_DEPS_NAME')
     return 'PRESENT' if len(lines) > 1 else 'NONE_OBSERVED'
 
 

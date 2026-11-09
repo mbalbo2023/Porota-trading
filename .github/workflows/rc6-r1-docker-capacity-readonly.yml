@@ -761,8 +761,14 @@ jobs:
                   # the offending unit name, line, encoding or preset.
                   'UNIT_FILES_PARSE': {'UNIT_FILES_ENCODING','UNIT_FILES_COLUMNS',
                                        'UNIT_FILES_NAME','UNIT_FILES_STATE'},
-                  'ACTIVE_UNITS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
-                  'TARGET_DEPS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
+                  # A1043: same strict, no-raw classifier for the bounded
+                  # active-unit and default.target dependency parsers.
+                  'ACTIVE_UNITS_PARSE': {'ACTIVE_UNITS_ENCODING',
+                                         'ACTIVE_UNITS_COLUMNS','ACTIVE_UNITS_NAME',
+                                         'ACTIVE_UNITS_LOAD','ACTIVE_UNITS_ACTIVE'},
+                  'TARGET_DEPS_PARSE': {'TARGET_DEPS_ENCODING','TARGET_DEPS_EMPTY',
+                                        'TARGET_DEPS_ROOT',
+                                        'TARGET_DEPS_BOUND','TARGET_DEPS_NAME'},
                   'INVENTORY_UNKNOWN': {'INVENTORY_UNVERIFIED'},
               }
               phase = data['phase']
