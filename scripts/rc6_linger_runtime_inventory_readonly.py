@@ -22,6 +22,12 @@ UID = 1000
 RUNTIME = '/run/user/1000'
 BUS = RUNTIME + '/bus'
 UNIT = re.compile(r'[A-Za-z0-9_.@:-]+\.(?:service|socket|timer)\Z')
+REASON_ALLOWLIST = frozenset((
+    'OS_IDENTITY_UNVERIFIED', 'OS_BINARY_UNVERIFIED',
+    'LOGIN_IDENTITY_UNVERIFIED', 'USER_BUS_UNVERIFIED',
+    'QUERY_BOUND_INVALID', 'QUERY_TIMEOUT', 'QUERY_OUTPUT_BOUND',
+    'QUERY_FAILED', 'QUERY_UNVERIFIED', 'SYSTEMD_OUTPUT_UNVERIFIED',
+    'LOGIND_UNVERIFIED', 'INVENTORY_UNVERIFIED'))
 KNOWN_UNIT_STATES = frozenset(('enabled', 'enabled-runtime', 'disabled',
     'static', 'indirect', 'alias', 'masked', 'masked-runtime', 'generated',
     'transient', 'linked', 'linked-runtime', 'bad'))
@@ -31,6 +37,10 @@ KNOWN_ACTIVE_STATES = frozenset(('active', 'inactive', 'activating',
 
 class InventoryHold(Exception):
     """Fail-closed with only a fixed, public-safe error category."""
+
+    def __init__(self, reason, phase='PREFLIGHT'):
+        super().__init__(reason)
+        self.phase = phase
 
 
 def _trusted_directory(path, owner, private=False):
@@ -198,14 +208,32 @@ def collect():
         ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend', '--plain',
          'list-dependencies', '--all', 'default.target'),
     )
-    outputs = [_run_bounded_command(command, env=env, timeout=5, max_bytes=16384)
-               for command in commands]
-    linger = _decoded(outputs[0])
-    if linger not in (['Linger=yes'], ['Linger=no']):
-        raise InventoryHold('LOGIND_UNVERIFIED')
-    enabled = _unit_files(outputs[1])
-    active, timers, sockets = _loaded_units(outputs[2])
-    deps = _dependencies(outputs[3])
+    outputs = []
+    for phase, command in zip(('LOGIND_QUERY', 'UNIT_FILES_QUERY',
+                               'ACTIVE_UNITS_QUERY', 'TARGET_DEPS_QUERY'), commands):
+        try:
+            outputs.append(_run_bounded_command(command, env=env, timeout=5,
+                                                max_bytes=16384))
+        except InventoryHold as exc:
+            raise InventoryHold(str(exc), phase) from None
+    try:
+        linger = _decoded(outputs[0])
+        if linger not in (['Linger=yes'], ['Linger=no']):
+            raise InventoryHold('LOGIND_UNVERIFIED')
+    except InventoryHold as exc:
+        raise InventoryHold(str(exc), 'LOGIND_PARSE') from None
+    try:
+        enabled = _unit_files(outputs[1])
+    except InventoryHold as exc:
+        raise InventoryHold(str(exc), 'UNIT_FILES_PARSE') from None
+    try:
+        active, timers, sockets = _loaded_units(outputs[2])
+    except InventoryHold as exc:
+        raise InventoryHold(str(exc), 'ACTIVE_UNITS_PARSE') from None
+    try:
+        deps = _dependencies(outputs[3])
+    except InventoryHold as exc:
+        raise InventoryHold(str(exc), 'TARGET_DEPS_PARSE') from None
     risk = ('PRESENT' if 'PRESENT' in (enabled, active, timers, sockets, deps)
             else 'UNVERIFIED')
     return {'schema': SCHEMA, 'state': 'NO_VERIFICADO', 'read_only': True,
@@ -227,15 +255,22 @@ def main(argv=None):
     except InventoryHold as exc:
         # Safe enum only; host exceptions and raw systemd output are never sent.
         reason = str(exc)
-        if not re.fullmatch(r'[A-Z_]{1,48}', reason):
+        if reason not in REASON_ALLOWLIST:
             reason = 'INVENTORY_UNVERIFIED'
+            phase = 'INVENTORY_UNKNOWN'
+        else:
+            phase = exc.phase if exc.phase in ('PREFLIGHT', 'LOGIND_QUERY',
+            'UNIT_FILES_QUERY', 'ACTIVE_UNITS_QUERY', 'TARGET_DEPS_QUERY',
+            'LOGIND_PARSE', 'UNIT_FILES_PARSE', 'ACTIVE_UNITS_PARSE',
+            'TARGET_DEPS_PARSE') else 'INVENTORY_UNKNOWN'
         result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
-                  'reason': reason, 'read_only': True, 'mutations': 0,
+                  'reason': reason, 'phase': phase, 'read_only': True, 'mutations': 0,
                   'docker_queries': 0, 'docker_socket_connections': 0,
                   'sudo_executed': False, 'rootless_certified': False}
     except Exception:
         result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
-                  'reason': 'INVENTORY_UNVERIFIED', 'read_only': True,
+                  'reason': 'INVENTORY_UNVERIFIED',
+                  'phase': 'INVENTORY_UNKNOWN', 'read_only': True,
                   'mutations': 0, 'docker_queries': 0,
                   'docker_socket_connections': 0, 'sudo_executed': False,
                   'rootless_certified': False}

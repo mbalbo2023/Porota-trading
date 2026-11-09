@@ -100,6 +100,8 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
             self.assertNotIn('SSH_KEY', env)
             for name, payload in self.responses.items():
                 if name in argv:
+                    if isinstance(payload, Exception):
+                        raise payload
                     return payload
             raise AssertionError('unreviewed command')
 
@@ -173,8 +175,14 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
                 saved = self.responses[name]
                 self.responses[name] = raw
                 try:
-                    with self.assertRaises(probe.InventoryHold):
+                    with self.assertRaises(probe.InventoryHold) as caught:
                         self.inspect()
+                    expected_phase = {
+                        'show-user': 'LOGIND_PARSE',
+                        'list-unit-files': 'UNIT_FILES_PARSE',
+                        'list-units': 'ACTIVE_UNITS_PARSE',
+                        'list-dependencies': 'TARGET_DEPS_PARSE'}[name]
+                    self.assertEqual(caught.exception.phase, expected_phase)
                 finally:
                     self.responses[name] = saved
 
@@ -186,6 +194,44 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_SECRET', out.getvalue())
         self.assertNotIn('porotaadmin', out.getvalue())
         self.assertIn('"state":"NO_VERIFICADO"', out.getvalue())
+        self.assertIn('"phase":"PREFLIGHT"', out.getvalue())
+
+        out = io.StringIO()
+        with (mock.patch.object(probe, 'collect',
+                                side_effect=RuntimeError('PRIVATE_SECRET')),
+              contextlib.redirect_stdout(out)):
+            self.assertEqual(probe.main(['--linger-inventory']), 0)
+        self.assertIn('"reason":"INVENTORY_UNVERIFIED"', out.getvalue())
+        self.assertIn('"phase":"INVENTORY_UNKNOWN"', out.getvalue())
+        self.assertNotIn('PRIVATE_SECRET', out.getvalue())
+
+    def test_inventory_hold_identifies_only_fixed_query_phase(self):
+        probe = module()
+        saved = self.paths['/run/user/1000/bus']
+        self.paths['/run/user/1000/bus'] = entry(stat.S_IFLNK, 0o777, 1000)
+        try:
+            with self.assertRaises(probe.InventoryHold) as caught:
+                self.inspect()
+            self.assertEqual(str(caught.exception), 'USER_BUS_UNVERIFIED')
+            self.assertEqual(caught.exception.phase, 'PREFLIGHT')
+        finally:
+            self.paths['/run/user/1000/bus'] = saved
+
+        for command, phase in (
+                ('show-user', 'LOGIND_QUERY'),
+                ('list-unit-files', 'UNIT_FILES_QUERY'),
+                ('list-units', 'ACTIVE_UNITS_QUERY'),
+                ('list-dependencies', 'TARGET_DEPS_QUERY')):
+            with self.subTest(command=command):
+                original = self.responses[command]
+                self.responses[command] = probe.InventoryHold('QUERY_FAILED')
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.responses[command] = original
+                self.assertEqual(str(caught.exception), 'QUERY_FAILED')
+                self.assertEqual(caught.exception.phase, phase)
 
     def test_output_limit_and_deadline_prevent_systemd_unbounded_read(self):
         probe = module()
@@ -199,6 +245,84 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
 
 
 class LingerInventoryWorkflowTests(unittest.TestCase):
+    def test_real_receiver_reports_allowlisted_stage_and_reason_only(self):
+        fields = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+                  'state': 'NO_VERIFICADO', 'read_only': True,
+                  'mutations': 0, 'docker_queries': 0,
+                  'docker_socket_connections': 0, 'sudo_executed': False,
+                  'rootless_certified': False,
+                  'reason': 'USER_BUS_UNVERIFIED', 'phase': 'PREFLIGHT'}
+        proc = run_receiver('Read bounded systemd user inventory',
+                            'linger.json', json.dumps(fields))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('HOST_PREREQUISITES_UNVERIFIED|PHASE=PREFLIGHT'
+                      '|REASON=USER_BUS_UNVERIFIED|CERT2=NO_VERIFICADO',
+                      proc.stdout + proc.stderr)
+
+        for field, bad in (('reason', 'UNREVIEWED_PRIVATE_CODE'),
+                           ('phase', 'untrusted; echo PRIVATE_SECRET')):
+            with self.subTest(field=field):
+                malicious = dict(fields, **{field: bad})
+                proc = run_receiver('Read bounded systemd user inventory',
+                                    'linger.json', json.dumps(malicious))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+                self.assertNotIn(bad, proc.stdout + proc.stderr)
+
+        # The receiver must reject valid-looking but impossible pairs, and
+        # never interpret duplicate keys or non-JSON numbers as trusted enums.
+        for malicious in (
+                dict(fields, reason='QUERY_FAILED', phase='PREFLIGHT'),
+                dict(fields, reason='USER_BUS_UNVERIFIED', phase='LOGIND_QUERY'),
+                dict(fields, reason='INVENTORY_UNVERIFIED', phase='LOGIND_PARSE'),
+                dict(fields, reason=['USER_BUS_UNVERIFIED']),
+                dict(fields, phase={'name': 'PREFLIGHT'}),
+                dict(fields, docker_queries=1),
+                dict(fields, rootless_certified=True),
+                dict(fields, private_name='DO_NOT_PRINT')):
+            with self.subTest(malicious=str(malicious)[:80]):
+                proc = run_receiver('Read bounded systemd user inventory',
+                                    'linger.json', json.dumps(malicious))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+
+        valid = json.dumps(fields)
+        for modified in (valid.replace('"phase": "PREFLIGHT"',
+                         '"phase": "LOGIND_QUERY", "phase": "PREFLIGHT"'),
+                         valid.replace('"mutations": 0', '"mutations": NaN')):
+            proc = run_receiver('Read bounded systemd user inventory',
+                                'linger.json', modified)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+            self.assertNotIn('Traceback', proc.stdout + proc.stderr)
+
+    def test_query_and_parse_error_enums_remain_fail_closed(self):
+        base = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+                'state': 'NO_VERIFICADO', 'read_only': True,
+                'mutations': 0, 'docker_queries': 0,
+                'docker_socket_connections': 0, 'sudo_executed': False,
+                'rootless_certified': False}
+        examples = (
+            ('PREFLIGHT', 'USER_BUS_UNVERIFIED'),
+            ('LOGIND_QUERY', 'QUERY_TIMEOUT'),
+            ('UNIT_FILES_QUERY', 'QUERY_FAILED'),
+            ('ACTIVE_UNITS_QUERY', 'QUERY_OUTPUT_BOUND'),
+            ('TARGET_DEPS_QUERY', 'QUERY_UNVERIFIED'),
+            ('LOGIND_PARSE', 'LOGIND_UNVERIFIED'),
+            ('UNIT_FILES_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
+            ('ACTIVE_UNITS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
+            ('TARGET_DEPS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
+            ('INVENTORY_UNKNOWN', 'INVENTORY_UNVERIFIED'))
+        for phase, reason in examples:
+            with self.subTest(phase=phase):
+                receipt = dict(base, phase=phase, reason=reason)
+                proc = run_receiver('Read bounded systemd user inventory',
+                                    'linger.json', json.dumps(receipt))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('PHASE=' + phase + '|REASON=' + reason,
+                              proc.stdout + proc.stderr)
+                self.assertNotIn('Traceback', proc.stdout + proc.stderr)
+
     def test_inventory_flag_is_exclusive_and_never_enters_rootful_job(self):
         source = WORKFLOW.read_text()
         self.assertIn('      linger_inventory_only:\n', source)
