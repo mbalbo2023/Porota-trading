@@ -26,12 +26,19 @@ on:
         required: false
         type: boolean
         default: false
+      linger_inventory_only:
+        description: UID1000 logind/user-systemd bounded inventory only (read-only user D-Bus; no Docker)
+        required: false
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/rc6-r1-docker-capacity-readonly.yml'
       - 'scripts/rc6_rootless_metadata_readonly.py'
       - 'tests/test_rc6_rootless_metadata_readonly.py'
+      - 'scripts/rc6_linger_runtime_inventory_readonly.py'
+      - 'tests/test_rc6_linger_runtime_inventory_readonly.py'
 
 permissions:
   contents: read
@@ -68,10 +75,11 @@ jobs:
           print('RC6_R1_DOCKER_RO_OFFHOST=GREEN')
           PY
           python3 -m unittest tests.test_rc6_rootless_metadata_readonly -q
+          python3 -m unittest tests.test_rc6_linger_runtime_inventory_readonly -q
 
   host_readonly:
     needs: contracts
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.current_login_capability_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && !inputs.current_login_capability_only && !inputs.linger_inventory_only
     concurrency:
       group: rc6-unified-paper-deploy
       cancel-in-progress: false
@@ -449,7 +457,7 @@ jobs:
 
   current_login_readonly:
     needs: contracts
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.current_login_capability_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.current_login_capability_only || inputs.linger_inventory_only)
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -459,6 +467,12 @@ jobs:
       # workflow identity is the exact protected-main source under review.
       - name: Validate current-login trusted context
         shell: bash
+        env:
+          RC6_LINGER_ONLY: ${{ inputs.linger_inventory_only }}
+          RC6_CURRENT_LOGIN_ONLY: ${{ inputs.current_login_capability_only }}
+          RC6_ROOTLESS_ONLY: ${{ inputs.rootless_metadata_only }}
+          RC6_TIMER_MODE: ${{ inputs.inspect_rc6_timers }}
+          RC6_DEPLOY_SHA: ${{ inputs.expected_deployed_sha }}
         run: |
           set -Eeuo pipefail
           if [[ "${GITHUB_REPOSITORY:-}" != "mbalbo2023/Porota-trading" ||
@@ -472,6 +486,16 @@ jobs:
             echo 'RC6_CURRENT_LOGIN_RO=UNTRUSTED_CONTEXT|CERT2=NO_VERIFICADO'
             exit 79
           fi
+          # The user-bus inventory is opt-in, exclusive and cannot fall into
+          # the legacy rootful host path or any other inspection mode.
+          if [[ "${RC6_LINGER_ONLY:-false}" == "true" &&
+                ( "${RC6_CURRENT_LOGIN_ONLY:-false}" != "false" ||
+                  "${RC6_ROOTLESS_ONLY:-false}" != "false" ||
+                  "${RC6_TIMER_MODE:-false}" != "false" ||
+                  -n "${RC6_DEPLOY_SHA:-}" ) ]]; then
+            echo 'RC6_LINGER_INVENTORY=INPUT_MODE_CONFLICT|CERT2=NO_VERIFICADO'
+            exit 79
+          fi
       - name: Checkout exact trusted workflow commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -483,7 +507,9 @@ jobs:
           set -Eeuo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_WORKFLOW_SHA" ]]
           python3 -m unittest tests.test_rc6_rootless_metadata_readonly -q
+          python3 -m unittest tests.test_rc6_linger_runtime_inventory_readonly -q
       - name: Read current login OS metadata without Docker or sudo
+        if: ${{ inputs.current_login_capability_only }}
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -516,7 +542,20 @@ jobs:
           raw = Path(os.environ['RUNNER_TEMP']) / 'rc6_current_login_ro/receipt.json'
           if raw.stat().st_size > 4096:
               raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_BOUND|CERT2=NO_VERIFICADO')
-          data = json.loads(raw.read_text())
+          def no_duplicate_keys(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError('DUPLICATE_KEY')
+                  result[key] = value
+              return result
+          def reject_non_json_constant(_):
+              raise ValueError('NON_JSON_NUMBER')
+          try:
+              data = json.loads(raw.read_text(), object_pairs_hook=no_duplicate_keys,
+                                parse_constant=reject_non_json_constant)
+          except (ValueError, UnicodeError):
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
           common = {'schema', 'state', 'read_only', 'mutations', 'provider_gets',
                     'docker_queries', 'socket_connections', 'sudo_executed',
                     'rootless_certified'}
@@ -591,8 +630,108 @@ jobs:
               out.write('Readiness metadata observed; no daemon queried, no socket connected, '
                         'no host changes. No runtime/deployment certification.\n')
           PY
+      - name: Read bounded systemd user inventory
+        if: ${{ inputs.linger_inventory_only }}
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          if ! [[ "$DO_HOST" =~ ^[a-zA-Z0-9.-]{1,253}$ &&
+                   "$DO_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ &&
+                   -n "$SSH_KEY" && -n "$KNOWN_HOSTS" ]]; then
+            echo 'RC6_LINGER_INVENTORY=CREDENTIAL_PREREQUISITES_UNVERIFIED|CERT2=NO_VERIFICADO'
+            exit 79
+          fi
+          install -m 700 -d "$RUNNER_TEMP/rc6_current_login_ro"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_current_login_ro/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_current_login_ro/known_hosts"
+          chmod 600 "$RUNNER_TEMP/rc6_current_login_ro/key" "$RUNNER_TEMP/rc6_current_login_ro/known_hosts"
+          # Fixed opt-in nonroot systemd user D-Bus reads only. The remote
+          # script emits aggregate enum categories, never unit names or paths.
+          if ! ssh -F /dev/null -i "$RUNNER_TEMP/rc6_current_login_ro/key" \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$RUNNER_TEMP/rc6_current_login_ro/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
+              "$DO_USER@$DO_HOST" \
+              '/usr/bin/timeout 25 /usr/bin/python3 -I -S -B - --linger-inventory' \
+              < scripts/rc6_linger_runtime_inventory_readonly.py \
+              > "$RUNNER_TEMP/rc6_current_login_ro/linger.json" 2>/dev/null; then
+            echo 'RC6_LINGER_INVENTORY=SSH_OR_REMOTE_UNVERIFIED|CERT2=NO_VERIFICADO'
+            exit 79
+          fi
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          path = Path(os.environ['RUNNER_TEMP']) / 'rc6_current_login_ro/linger.json'
+          try:
+              raw = path.read_bytes()
+          except OSError:
+              raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_UNAVAILABLE|CERT2=NO_VERIFICADO')
+          if len(raw) > 4096:
+              raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_BOUND|CERT2=NO_VERIFICADO')
+          def no_duplicate_keys(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      raise ValueError('DUPLICATE_KEY')
+                  result[key] = value
+              return result
+          def reject_non_json_constant(_):
+              raise ValueError('NON_JSON_NUMBER')
+          try:
+              data = json.loads(raw.decode('utf-8'), object_pairs_hook=no_duplicate_keys,
+                                parse_constant=reject_non_json_constant)
+          except (ValueError, UnicodeError):
+              raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          common = {'schema','state','read_only','mutations','docker_queries',
+                    'docker_socket_connections','sudo_executed','rootless_certified'}
+          fields = {'linger_effective','enabled_user_units','active_user_services',
+                    'user_timers','user_sockets','default_target_dependencies',
+                    'autostart_risk','systemd_dbus_state'}
+          expected = common | fields
+          if (not isinstance(data, dict) or
+                  data.get('schema') != 'rc6.r1.linger-runtime-inventory-readonly.v1' or
+                  data.get('state') != 'NO_VERIFICADO' or
+                  data.get('read_only') is not True or
+                  any(type(data.get(k)) is not int or data[k] != 0 for k in
+                      ('mutations','docker_queries','docker_socket_connections')) or
+                  data.get('sudo_executed') is not False or
+                  data.get('rootless_certified') is not False):
+              raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          if set(data) == common | {'reason'}:
+              if not isinstance(data['reason'], str) or not re.fullmatch(
+                      r'[A-Z_]{1,48}', data['reason']):
+                  raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+              raise SystemExit('RC6_LINGER_INVENTORY=HOST_PREREQUISITES_UNVERIFIED|CERT2=NO_VERIFICADO')
+          if (set(data) != expected or
+                  data.get('linger_effective') not in ('YES','NO') or
+                  any(data.get(k) not in ('PRESENT','NONE_OBSERVED') for k in (
+                      'enabled_user_units','active_user_services','user_timers',
+                      'user_sockets','default_target_dependencies')) or
+                  data.get('autostart_risk') not in ('PRESENT','UNVERIFIED') or
+                  data.get('systemd_dbus_state') != 'QUERIED_READONLY' or
+                  (data['autostart_risk'] == 'PRESENT') != any(
+                      data[k] == 'PRESENT' for k in (
+                          'enabled_user_units','active_user_services','user_timers',
+                          'user_sockets','default_target_dependencies'))):
+              raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          print('RC6_LINGER_INVENTORY=READ_ONLY_OBSERVED'
+                '|LINGER_EFFECTIVE=' + data['linger_effective'] +
+                '|AUTOSTART_RISK=' + data['autostart_risk'] +
+                '|CERT2=NO_VERIFICADO')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
+              out.write('### RC6 user-systemd inventory — READ_ONLY (not CERT2)\n\n')
+              out.write('Effective linger: '+data['linger_effective']+'; '
+                        'aggregate user-unit risk: '+data['autostart_risk']+'; '
+                        'no host writes, Docker queries or certification.\n')
+          PY
       - name: Runner-only current-login credential cleanup
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/rc6_current_login_ro/key" "$RUNNER_TEMP/rc6_current_login_ro/known_hosts" "$RUNNER_TEMP/rc6_current_login_ro/receipt.json"
+          rm -f "$RUNNER_TEMP/rc6_current_login_ro/key" "$RUNNER_TEMP/rc6_current_login_ro/known_hosts" "$RUNNER_TEMP/rc6_current_login_ro/receipt.json" "$RUNNER_TEMP/rc6_current_login_ro/linger.json"
