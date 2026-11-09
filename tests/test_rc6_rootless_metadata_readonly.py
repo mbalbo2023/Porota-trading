@@ -498,7 +498,7 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
                       '/var/lib': _entry(stat.S_IFDIR, 0o755, 0),
                       '/home': _entry(stat.S_IFDIR, 0o755, 0),
                       '/home/porotaadmin': _entry(stat.S_IFDIR, 0o750, 1000)}
-        self.port = 'NONE_OBSERVED'
+        self.port = ('NONE_OBSERVED', 'NONE')
         self.subids = True
         self.tools = True
         self.launcher = True
@@ -580,6 +580,7 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
         self.assertEqual(receipt['rootless_launcher'], 'AVAILABLE')
         self.assertEqual(receipt['user_namespace'], 'AVAILABLE')
         self.assertEqual(receipt['port_8000_listen'], 'NONE_OBSERVED')
+        self.assertEqual(receipt['port_8000_reason'], 'NONE')
         for key, value in (('mutations', 0), ('docker_queries', 0),
                            ('direct_socket_connections', 0),
                            ('nss_socket_activity', 'UNVERIFIED'),
@@ -746,7 +747,17 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
             return SimpleNamespace(st_dev=1, st_ino=2 if path == '/proc/1/ns/net' else 3)
         with (mock.patch.object(probe.os, 'stat', side_effect=different),
               mock.patch.object(probe, '_read_proc_net', return_value=row)):
-            self.assertEqual(probe._port_8000_listener(), 'UNVERIFIED')
+            self.assertEqual(probe._port_8000_listener(),
+                             ('UNVERIFIED', 'NETNS_MISMATCH'))
+        def second_stat_unreadable(path):
+            if path == '/proc/self/ns/net':
+                raise PermissionError('PRIVATE_HOST_DATA')
+            return SimpleNamespace(st_dev=1, st_ino=2)
+        with (mock.patch.object(probe.os, 'stat', side_effect=second_stat_unreadable),
+              mock.patch.object(probe, '_read_proc_net') as read_mock):
+            self.assertEqual(probe._port_8000_listener(),
+                             ('UNVERIFIED', 'NETNS_READ_UNVERIFIED'))
+            read_mock.assert_not_called()
 
     def test_proc_net_port_is_categorical_with_strict_bounds(self):
         ipv4 = ('  sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n'
@@ -766,19 +777,69 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
                                     side_effect=lambda path: raw4 if path.endswith('tcp') else raw6),
                   mock.patch.object(probe.os,'stat',side_effect=same_netns)):
                 return probe._port_8000_listener()
-        self.assertEqual(run(ipv4, ipv6), 'LISTEN_PRESENT')
-        self.assertEqual(run(ipv4.replace(b'0A', b'01'), ipv6), 'NONE_OBSERVED')
-        self.assertEqual(run(ipv4.replace(b'1F40', b'1F41'), ipv6), 'NONE_OBSERVED')
-        self.assertEqual(run(ipv4.replace(b' 0A ', b' FF '), ipv6), 'UNVERIFIED')
+        self.assertEqual(run(ipv4, ipv6), ('LISTEN_PRESENT', 'NONE'))
+        self.assertEqual(run(ipv4.replace(b'0A', b'01'), ipv6),
+                         ('NONE_OBSERVED', 'NONE'))
+        self.assertEqual(run(ipv4.replace(b'1F40', b'1F41'), ipv6),
+                         ('NONE_OBSERVED', 'NONE'))
+        self.assertEqual(run(ipv4.replace(b' 0A ', b' FF '), ipv6),
+                         ('UNVERIFIED', 'TCP4_PARSE_UNVERIFIED'))
         self.assertEqual(run(ipv4.split(b'\n')[0] + b'\n'
                              b'  0: 00000000:1F40 00000000:0000 01\n', ipv6),
-                         'UNVERIFIED')
+                         ('UNVERIFIED', 'TCP4_PARSE_UNVERIFIED'))
         self.assertEqual(run(ipv4.replace(b'1F40', b'1F41'),
                              ipv6.replace(b':01BB ', b':1F40 ', 1)
                                  .replace(b' 01 00000000', b' 0A 00000000')),
-                         'LISTEN_PRESENT')
-        self.assertEqual(run(b'PRIVATE_UNPARSEABLE', ipv6), 'UNVERIFIED')
-        self.assertEqual(run(ipv4 * 8000, ipv6), 'UNVERIFIED')
+                         ('LISTEN_PRESENT', 'NONE'))
+        self.assertEqual(run(b'PRIVATE_UNPARSEABLE', ipv6),
+                         ('UNVERIFIED', 'TCP4_PARSE_UNVERIFIED'))
+        self.assertEqual(run(ipv4 * 8000, ipv6),
+                         ('UNVERIFIED', 'TCP4_PARSE_UNVERIFIED'))
+        self.assertEqual(run(ipv4, b'PRIVATE_UNPARSEABLE'),
+                         ('UNVERIFIED', 'TCP6_PARSE_UNVERIFIED'))
+
+    def test_port_reason_fails_closed_at_exact_bounded_stage(self):
+        same = SimpleNamespace(st_dev=12, st_ino=34)
+        other = SimpleNamespace(st_dev=12, st_ino=35)
+        cases = (
+            ('NETNS_READ_UNVERIFIED', 1, 0, 0),
+            ('NETNS_MISMATCH', 2, 0, 0),
+            ('TCP4_READ_UNVERIFIED', 2, 1, 0),
+            ('TCP4_PARSE_UNVERIFIED', 2, 1, 1),
+            ('TCP6_READ_UNVERIFIED', 2, 2, 1),
+            ('TCP6_PARSE_UNVERIFIED', 2, 2, 2),
+        )
+        for reason, stat_calls, read_calls, parse_calls in cases:
+            with self.subTest(reason=reason):
+                def stat_func(path):
+                    if reason == 'NETNS_READ_UNVERIFIED':
+                        raise PermissionError('PRIVATE_HOST_DATA')
+                    return other if reason == 'NETNS_MISMATCH' and path.endswith(
+                        '/self/ns/net') else same
+
+                def read_func(path):
+                    if (reason == 'TCP4_READ_UNVERIFIED' and path.endswith('/tcp') or
+                            reason == 'TCP6_READ_UNVERIFIED' and path.endswith('/tcp6')):
+                        raise OSError('PRIVATE_HOST_DATA')
+                    return b'bounded kernel table'
+
+                def parse_func(_raw, length):
+                    if (reason == 'TCP4_PARSE_UNVERIFIED' and length == 8 or
+                            reason == 'TCP6_PARSE_UNVERIFIED' and length == 32):
+                        raise ValueError('PRIVATE_HOST_DATA')
+                    # Even when IPv4 has a listener, IPv6 must be inspected.
+                    return True
+
+                with (mock.patch.object(probe.os, 'stat', side_effect=stat_func) as stat_mock,
+                      mock.patch.object(probe, '_read_proc_net',
+                                        side_effect=read_func) as read_mock,
+                      mock.patch.object(probe, '_parse_proc_net_port',
+                                        side_effect=parse_func) as parse_mock):
+                    self.assertEqual(probe._port_8000_listener(),
+                                     ('UNVERIFIED', reason))
+                    self.assertEqual(stat_mock.call_count, stat_calls)
+                    self.assertEqual(read_mock.call_count, read_calls)
+                    self.assertEqual(parse_mock.call_count, parse_calls)
 
     def test_tcp_ssthresh_signed_minus_one_only_in_documented_slot(self):
         # docs.kernel.org/networking/proc_net_tcp.html: ssthresh is field 17;
@@ -911,6 +972,7 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
             'dedicated_socket':'NOT_ASSIGNED',
             'rootless_toolchain':'AVAILABLE','rootless_launcher':'AVAILABLE',
             'user_namespace':'AVAILABLE','port_8000_listen':'NONE_OBSERVED',
+            'port_8000_reason':'NONE',
         }
         with tempfile.TemporaryDirectory() as tmp:
             dest=Path(tmp)/'rc6_current_login_ro'
@@ -926,6 +988,7 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
             self.assertEqual(good.returncode, 0)
             self.assertIn('ACCOUNT=ABSENT',good.stdout+good.stderr)
             self.assertIn('PORT8000=NONE_OBSERVED',good.stdout+good.stderr)
+            self.assertIn('PORT8000_REASON=NONE',good.stdout+good.stderr)
             self.assertIn('BOOTSTRAP=HOLD',good.stdout+good.stderr)
             self.assertIn('CERT2=NO_VERIFICADO',good.stdout+good.stderr)
             occupied = dict(safe, port_8000_listen='LISTEN_PRESENT')
@@ -933,6 +996,18 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
             self.assertEqual(observed.returncode, 0)
             self.assertIn('PORT8000=LISTEN_PRESENT', observed.stdout)
             self.assertIn('BOOTSTRAP=HOLD', observed.stdout)
+            for reason in ('NETNS_READ_UNVERIFIED', 'NETNS_MISMATCH',
+                           'TCP4_READ_UNVERIFIED','TCP4_PARSE_UNVERIFIED',
+                           'TCP6_READ_UNVERIFIED','TCP6_PARSE_UNVERIFIED'):
+                with self.subTest(reason=reason):
+                    incomplete = dict(safe,port_8000_listen='UNVERIFIED',
+                                      port_8000_reason=reason)
+                    result = invoke(json.dumps(incomplete))
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    self.assertIn('PORT8000=UNVERIFIED|PORT8000_REASON='+reason,
+                                  result.stdout)
+                    self.assertIn('BOOTSTRAP=HOLD|CERT2=NO_VERIFICADO',
+                                  result.stdout)
             present = dict(occupied, dedicated_account='PRESENT',
                            dedicated_uid='DISTINCT', dedicated_home='PRIVATE',
                            dedicated_subids='AVAILABLE',
@@ -947,6 +1022,15 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
                     dict(safe,dedicated_subids='AVAILABLE'),
                     dict(safe,dedicated_subids='NOT_ASSIGNED'),
                     dict(safe,port_8000_listen='PRIVATE_PORT'),
+                    dict(safe,port_8000_reason='PRIVATE_PATH_OR_USERNAME'),
+                    dict(safe,port_8000_reason=['NONE']),
+                    dict(safe,port_8000_reason={'host':'PRIVATE'}),
+                    dict(safe,port_8000_reason=None),
+                    dict(safe,port_8000_listen='UNVERIFIED',port_8000_reason='NONE'),
+                    dict(safe,port_8000_listen='LISTEN_PRESENT',
+                         port_8000_reason='TCP6_PARSE_UNVERIFIED'),
+                    dict(safe,port_8000_listen='NONE_OBSERVED',
+                         port_8000_reason='NETNS_MISMATCH'),
                     dict(safe,mutations=True),
                     dict(safe,dedicated_account=['ABSENT']),
                     dict(safe,dedicated_account={'host':'private'}),
@@ -954,6 +1038,9 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
                     dict(safe,dedicated_home='PRIVATE'),
                     dict(safe,dedicated_home='CANDIDATE_EXISTS',dedicated_account='PRESENT'),
                     dict(safe,rootless_certified=True))
+            missing_reason=dict(safe)
+            del missing_reason['port_8000_reason']
+            forged += (missing_reason,)
             for data in forged:
                 with self.subTest(data=data):
                     result=invoke(json.dumps(data))
