@@ -270,9 +270,12 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
                 stat.S_IFREG, mode=0o644, uid=0),
         }
 
-    def inspect(self, *, uid=1000, subids=True, tooling=True, userns=True):
+    def inspect(self, *, uid=1000, subids=True, tooling=True, userns=True,
+                lstat_errors=None):
         def fake_lstat(path):
             path = str(path)
+            if lstat_errors and path in lstat_errors:
+                raise lstat_errors[path]
             if path in self.paths:
                 return self.paths[path]
             raise FileNotFoundError(path)
@@ -309,6 +312,7 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
             "rootless_tools_present": True,
             "rootless_launcher_present": True,
             "user_linger_record_present": True,
+            "user_linger_marker_status": "TRUSTED",
             "subuids_assigned": True,
             "userns_enabled": True,
             "default_socket_absent": True,
@@ -418,15 +422,19 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
         directory = "/var/lib/systemd/linger"
         marker = directory + "/private-operator-name"
         cases = (
-            (marker, None),
-            (marker, _entry(stat.S_IFLNK, mode=0o777, uid=0)),
-            (marker, _entry(stat.S_IFREG, mode=0o644, uid=1000)),
-            (marker, _entry(stat.S_IFREG, mode=0o666, uid=0)),
-            (directory, _entry(stat.S_IFLNK, mode=0o755, uid=0)),
-            (directory, _entry(stat.S_IFDIR, mode=0o777, uid=0)),
+            (marker, None, 'MARKER_MISSING'),
+            (marker, _entry(stat.S_IFLNK, mode=0o777, uid=0), 'MARKER_UNTRUSTED'),
+            (marker, _entry(stat.S_IFDIR, mode=0o755, uid=0), 'MARKER_UNTRUSTED'),
+            (marker, _entry(stat.S_IFREG, mode=0o644, uid=1000), 'MARKER_UNTRUSTED'),
+            (marker, _entry(stat.S_IFREG, mode=0o666, uid=0), 'MARKER_UNTRUSTED'),
+            (directory, None, 'PARENT_MISSING'),
+            (directory, _entry(stat.S_IFLNK, mode=0o755, uid=0), 'PARENT_UNTRUSTED'),
+            (directory, _entry(stat.S_IFREG, mode=0o644, uid=0), 'PARENT_UNTRUSTED'),
+            (directory, _entry(stat.S_IFDIR, mode=0o777, uid=0), 'PARENT_UNTRUSTED'),
+            (directory, _entry(stat.S_IFDIR, mode=0o755, uid=1000), 'PARENT_UNTRUSTED'),
         )
-        for path, entry in cases:
-            with self.subTest(path=path, entry=entry):
+        for path, entry, expected in cases:
+            with self.subTest(path=path, entry=entry, expected=expected):
                 original = self.paths[path]
                 if entry is None:
                     self.paths.pop(path)
@@ -435,10 +443,20 @@ class CurrentLoginReadOnlyTests(unittest.TestCase):
                 try:
                     observed = self.inspect()
                     self.assertFalse(observed["user_linger_record_present"])
+                    self.assertEqual(observed['user_linger_marker_status'], expected)
                     self.assertFalse(observed["ready_for_private_rootless_review"])
                     self.assertFalse(observed["rootless_certified"])
                 finally:
                     self.paths[path] = original
+
+        for path, expected in ((marker, 'MARKER_UNVERIFIED'),
+                               (directory, 'PARENT_UNVERIFIED')):
+            with self.subTest(path=path, expected=expected):
+                observed = self.inspect(lstat_errors={path: PermissionError('PRIVATE_PATH')})
+                self.assertEqual(observed['user_linger_marker_status'], expected)
+                self.assertFalse(observed['user_linger_record_present'])
+                self.assertFalse(observed['ready_for_private_rootless_review'])
+                self.assertNotIn('PRIVATE_PATH', json.dumps(observed))
 
     def test_current_login_subid_metadata_only_accepts_exclusive_65536_ranges(self):
         def check(uid_text, gid_text):
@@ -476,6 +494,7 @@ class CurrentLoginWorkflowTests(unittest.TestCase):
             'principal_nonroot_unique': True, 'runtime_directory_private': True,
             'user_manager_socket_present': True, 'rootless_tools_present': True,
             'rootless_launcher_present': True, 'user_linger_record_present': True,
+            'user_linger_marker_status': 'TRUSTED',
             'subuids_assigned': True, 'userns_enabled': True,
             'default_socket_absent': True,
             'project_socket_namespace_absent': True,
@@ -493,14 +512,21 @@ class CurrentLoginWorkflowTests(unittest.TestCase):
                 return subprocess.run([sys.executable, '-I', '-B', '-c', parser],
                                       text=True, capture_output=True, timeout=4, env=env)
 
+            def missing_variant(*fields):
+                variant = dict(positive, ready_for_private_rootless_review=False)
+                for field in fields:
+                    variant[field] = False
+                if 'user_linger_record_present' in fields:
+                    variant['user_linger_marker_status'] = 'MARKER_MISSING'
+                return variant
+
             success = run(positive)
             self.assertEqual(success.returncode, 0, success.stderr)
             self.assertIn('PREREQUISITES_READY_NOT_CERTIFIED|CERT2=NO_VERIFICADO',
                           success.stdout)
             for missing in ('rootless_launcher_present', 'user_linger_record_present'):
                 with self.subTest(missing=missing):
-                    incomplete = dict(positive, **{missing: False,
-                                                   'ready_for_private_rootless_review': False})
+                    incomplete = missing_variant(missing)
                     result = run(incomplete)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES=',
@@ -527,24 +553,56 @@ class CurrentLoginWorkflowTests(unittest.TestCase):
             )
             for missing, category in categories:
                 with self.subTest(category=category):
-                    incomplete = dict(positive, **{missing: False,
-                                                   'ready_for_private_rootless_review': False})
+                    incomplete = missing_variant(missing)
                     result = run(incomplete)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES=' + category
-                                  + '|CERT2=NO_VERIFICADO', result.stderr + result.stdout)
+                    self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES=' + category,
+                                  result.stderr + result.stdout)
+                    self.assertIn('|CERT2=NO_VERIFICADO', result.stderr + result.stdout)
                     self.assertNotIn('private-operator-name', result.stdout + result.stderr)
                     self.assertNotIn('/run/user/', result.stdout + result.stderr)
 
-            multiple = dict(positive, rootless_launcher_present=False,
-                            user_linger_record_present=False,
-                            ready_for_private_rootless_review=False)
+            multiple = missing_variant('rootless_launcher_present',
+                                       'user_linger_record_present')
             result = run(multiple)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES='
-                          'ROOTLESS_LAUNCHER,SYSTEMD_LINGER|CERT2=NO_VERIFICADO',
+                          'ROOTLESS_LAUNCHER,SYSTEMD_LINGER|LINGER_MARKER_STATUS=MARKER_MISSING'
+                          '|CERT2=NO_VERIFICADO',
                           result.stdout + result.stderr)
             self.assertLess(len(result.stdout + result.stderr), 300)
+
+            for status in ('MARKER_MISSING', 'MARKER_UNTRUSTED', 'MARKER_UNVERIFIED',
+                           'PARENT_MISSING', 'PARENT_UNTRUSTED', 'PARENT_UNVERIFIED'):
+                with self.subTest(marker_status=status):
+                    incomplete = missing_variant('user_linger_record_present')
+                    incomplete['user_linger_marker_status'] = status
+                    result = run(incomplete)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('|LINGER_MARKER_STATUS=' + status + '|CERT2=NO_VERIFICADO',
+                                  result.stdout + result.stderr)
+                    self.assertNotIn('/var/lib/systemd', result.stdout + result.stderr)
+                    self.assertNotIn('private-operator-name', result.stdout + result.stderr)
+
+            for malformed_status, present in (('TRUSTED', False),
+                                              ('MARKER_MISSING', True),
+                                              ('SECRET_PATH_OR_ACCOUNT', False)):
+                with self.subTest(malformed=malformed_status):
+                    inconsistent = dict(positive, user_linger_record_present=present,
+                                        user_linger_marker_status=malformed_status,
+                                        ready_for_private_rootless_review=False)
+                    result = run(inconsistent)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('RECEIPT_INVALID|CERT2=NO_VERIFICADO',
+                                  result.stdout + result.stderr)
+                    self.assertNotIn('SECRET_PATH_OR_ACCOUNT', result.stdout + result.stderr)
+
+            absent_marker_status = dict(positive)
+            del absent_marker_status['user_linger_marker_status']
+            result = run(absent_marker_status)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('RECEIPT_INVALID|CERT2=NO_VERIFICADO',
+                          result.stdout + result.stderr)
 
             malformed = dict(positive, rootless_launcher_present='SECRET_USER_OR_PATH',
                              ready_for_private_rootless_review=False)

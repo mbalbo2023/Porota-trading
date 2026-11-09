@@ -268,17 +268,22 @@ def _login_rootless_toolchain():
         return False
 
 
+def _root_metadata_trusted(info, kind, *, executable=False):
+    """Classify stat data without consulting a daemon or following symlinks."""
+    return (kind(info.st_mode) and info.st_uid == 0
+            and not stat.S_IMODE(info.st_mode) & 0o022
+            # Launcher is a shell script: UID1000 needs world read+execute,
+            # not merely owner-root execute bits.
+            and (not executable or (stat.S_IMODE(info.st_mode) & 0o005) == 0o005))
+
+
 def _trusted_root_metadata(path, kind, *, executable=False):
     """Do not follow untrusted leaf symlinks or accept writable OS metadata."""
     try:
         info = os.lstat(path)
     except OSError:
         return False
-    return (kind(info.st_mode) and info.st_uid == 0
-            and not stat.S_IMODE(info.st_mode) & 0o022
-            # Launcher is a shell script: UID1000 needs world read+execute,
-            # not merely owner-root execute bits.
-            and (not executable or (stat.S_IMODE(info.st_mode) & 0o005) == 0o005))
+    return _root_metadata_trusted(info, kind, executable=executable)
 
 
 def _login_rootless_launcher_present():
@@ -289,12 +294,25 @@ def _login_rootless_launcher_present():
                                        stat.S_ISREG, executable=True))
 
 
-def _login_linger_record_present(account):
-    """Trust only the root-owned systemd linger marker; run no commands."""
+def _login_linger_marker_status(account):
+    """Bounded, categorical lstat-only RCA: no loginctl, bus or mutations."""
     parents = ('/var', '/var/lib', '/var/lib/systemd', '/var/lib/systemd/linger')
-    return (all(_trusted_root_metadata(path, stat.S_ISDIR) for path in parents)
-            and _trusted_root_metadata(parents[-1] + '/' + account.pw_name,
-                                       stat.S_ISREG))
+
+    def status(path, kind):
+        try:
+            info = os.lstat(path)
+        except FileNotFoundError:
+            return 'MISSING'
+        except OSError:
+            return 'UNVERIFIED'
+        return 'TRUSTED' if _root_metadata_trusted(info, kind) else 'UNTRUSTED'
+
+    for parent in parents:
+        result = status(parent, stat.S_ISDIR)
+        if result != 'TRUSTED':
+            return 'PARENT_' + result
+    result = status(parents[-1] + '/' + account.pw_name, stat.S_ISREG)
+    return 'TRUSTED' if result == 'TRUSTED' else 'MARKER_' + result
 
 
 def _login_userns_ready():
@@ -344,7 +362,8 @@ def collect_current_login_readonly():
     bus, default_absent, project_absent = _login_runtime_inventory(account)
     rootless_tools = _login_rootless_toolchain()
     rootless_launcher = _login_rootless_launcher_present()
-    linger_record = _login_linger_record_present(account)
+    linger_status = _login_linger_marker_status(account)
+    linger_record = linger_status == 'TRUSTED'
     subids = _login_subids_ready(account)
     userns = _login_userns_ready()
     ready = all((bus, default_absent, project_absent, rootless_tools,
@@ -361,6 +380,7 @@ def collect_current_login_readonly():
         "rootless_tools_present": rootless_tools,
         "rootless_launcher_present": rootless_launcher,
         "user_linger_record_present": linger_record,
+        "user_linger_marker_status": linger_status,
         "subuids_assigned": subids, "userns_enabled": userns,
         "default_socket_absent": default_absent,
         "project_socket_namespace_absent": project_absent,
