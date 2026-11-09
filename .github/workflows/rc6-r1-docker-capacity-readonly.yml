@@ -987,7 +987,11 @@ jobs:
                   data['port_8000_listen'] not in (
                       'LISTEN_PRESENT','NONE_OBSERVED','UNVERIFIED') or
                   data['port_8000_reason'] not in (
-                      'NONE','NETNS_READ_UNVERIFIED','NETNS_MISMATCH',
+                      'NONE','NETNS_MISMATCH',
+                      'NETNS_PID1_ACCESS_DENIED','NETNS_PID1_NOT_FOUND',
+                      'NETNS_PID1_OTHER_OSERROR','NETNS_PID1_OTHER_EXCEPTION',
+                      'NETNS_SELF_ACCESS_DENIED','NETNS_SELF_NOT_FOUND',
+                      'NETNS_SELF_OTHER_OSERROR','NETNS_SELF_OTHER_EXCEPTION',
                       'TCP4_READ_UNVERIFIED','TCP4_PARSE_UNVERIFIED',
                       'TCP6_READ_UNVERIFIED','TCP6_PARSE_UNVERIFIED') or
                   # Uncertain port status requires exactly one fixed failure stage.

@@ -1,6 +1,7 @@
 """A998: opt-in Porota-only rootless metadata, without shared Docker access."""
 
 import contextlib
+import errno
 import grp
 import io
 import json
@@ -756,7 +757,7 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
         with (mock.patch.object(probe.os, 'stat', side_effect=second_stat_unreadable),
               mock.patch.object(probe, '_read_proc_net') as read_mock):
             self.assertEqual(probe._port_8000_listener(),
-                             ('UNVERIFIED', 'NETNS_READ_UNVERIFIED'))
+                             ('UNVERIFIED', 'NETNS_SELF_OTHER_OSERROR'))
             read_mock.assert_not_called()
 
     def test_proc_net_port_is_categorical_with_strict_bounds(self):
@@ -802,7 +803,6 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
         same = SimpleNamespace(st_dev=12, st_ino=34)
         other = SimpleNamespace(st_dev=12, st_ino=35)
         cases = (
-            ('NETNS_READ_UNVERIFIED', 1, 0, 0),
             ('NETNS_MISMATCH', 2, 0, 0),
             ('TCP4_READ_UNVERIFIED', 2, 1, 0),
             ('TCP4_PARSE_UNVERIFIED', 2, 1, 1),
@@ -812,8 +812,6 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
         for reason, stat_calls, read_calls, parse_calls in cases:
             with self.subTest(reason=reason):
                 def stat_func(path):
-                    if reason == 'NETNS_READ_UNVERIFIED':
-                        raise PermissionError('PRIVATE_HOST_DATA')
                     return other if reason == 'NETNS_MISMATCH' and path.endswith(
                         '/self/ns/net') else same
 
@@ -840,6 +838,47 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
                     self.assertEqual(stat_mock.call_count, stat_calls)
                     self.assertEqual(read_mock.call_count, read_calls)
                     self.assertEqual(parse_mock.call_count, parse_calls)
+
+    def test_netns_stat_stage_and_errno_classes_remain_private_and_bounded(self):
+        """A physical stat failure must identify its attempt, never a raw exception."""
+        cases = (
+            (errno.EACCES, 'ACCESS_DENIED'),
+            (errno.EPERM, 'ACCESS_DENIED'),
+            (errno.ENOENT, 'NOT_FOUND'),
+            (errno.ENOTDIR, 'NOT_FOUND'),
+            (errno.EIO, 'OTHER_OSERROR'),
+            (None, 'OTHER_OSERROR'),
+            ('unicode', 'OTHER_EXCEPTION'),
+            ('value', 'OTHER_EXCEPTION'),
+        )
+        for stage, attempted in (('PID1', 1), ('SELF', 2)):
+            for code, category in cases:
+                with self.subTest(stage=stage, code=code):
+                    if code == 'unicode':
+                        failure = UnicodeError('PRIVATE_HOST_SECRET')
+                    elif code == 'value':
+                        failure = ValueError('PRIVATE_HOST_SECRET')
+                    elif code is None:
+                        failure = OSError('PRIVATE_HOST_SECRET')
+                    else:
+                        failure = OSError(code, 'PRIVATE_HOST_SECRET')
+
+                    def fake_stat(path):
+                        if (stage == 'PID1' and path == '/proc/1/ns/net' or
+                                stage == 'SELF' and path == '/proc/self/ns/net'):
+                            raise failure
+                        return SimpleNamespace(st_dev=1, st_ino=2)
+
+                    with (mock.patch.object(probe.os, 'stat', side_effect=fake_stat) as stat_mock,
+                          mock.patch.object(probe, '_read_proc_net') as read_mock,
+                          mock.patch.object(probe, '_parse_proc_net_port') as parse_mock):
+                        observed = probe._port_8000_listener()
+                        self.assertEqual(observed,
+                                         ('UNVERIFIED', f'NETNS_{stage}_{category}'))
+                        self.assertNotIn('PRIVATE_HOST_SECRET', str(observed))
+                        self.assertEqual(stat_mock.call_count, attempted)
+                        read_mock.assert_not_called()
+                        parse_mock.assert_not_called()
 
     def test_tcp_ssthresh_signed_minus_one_only_in_documented_slot(self):
         # docs.kernel.org/networking/proc_net_tcp.html: ssthresh is field 17;
@@ -996,9 +1035,13 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
             self.assertEqual(observed.returncode, 0)
             self.assertIn('PORT8000=LISTEN_PRESENT', observed.stdout)
             self.assertIn('BOOTSTRAP=HOLD', observed.stdout)
-            for reason in ('NETNS_READ_UNVERIFIED', 'NETNS_MISMATCH',
-                           'TCP4_READ_UNVERIFIED','TCP4_PARSE_UNVERIFIED',
-                           'TCP6_READ_UNVERIFIED','TCP6_PARSE_UNVERIFIED'):
+            for reason in (
+                    *(f'NETNS_{stage}_{category}' for stage in ('PID1', 'SELF')
+                      for category in ('ACCESS_DENIED', 'NOT_FOUND',
+                                       'OTHER_OSERROR', 'OTHER_EXCEPTION')),
+                    'NETNS_MISMATCH', 'TCP4_READ_UNVERIFIED',
+                    'TCP4_PARSE_UNVERIFIED', 'TCP6_READ_UNVERIFIED',
+                    'TCP6_PARSE_UNVERIFIED'):
                 with self.subTest(reason=reason):
                     incomplete = dict(safe,port_8000_listen='UNVERIFIED',
                                       port_8000_reason=reason)
@@ -1023,6 +1066,8 @@ class DedicatedPreflightWorkflowTests(unittest.TestCase):
                     dict(safe,dedicated_subids='NOT_ASSIGNED'),
                     dict(safe,port_8000_listen='PRIVATE_PORT'),
                     dict(safe,port_8000_reason='PRIVATE_PATH_OR_USERNAME'),
+                    dict(safe,port_8000_listen='UNVERIFIED',
+                         port_8000_reason='NETNS_READ_UNVERIFIED'),
                     dict(safe,port_8000_reason=['NONE']),
                     dict(safe,port_8000_reason={'host':'PRIVATE'}),
                     dict(safe,port_8000_reason=None),

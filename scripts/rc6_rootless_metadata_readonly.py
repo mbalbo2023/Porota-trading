@@ -5,6 +5,7 @@ foreign objects, mutate a host resource or claim runtime certification.
 This file is streamed over the existing, host-pinned Actions SSH connection.
 """
 
+import errno
 import json
 import grp
 import os
@@ -614,11 +615,24 @@ def _parse_proc_net_port(raw, addr_length):
 
 def _port_8000_listener():
     """Bounded host-netns observation and fixed failure stage, never port ownership."""
-    try:
-        pid1 = os.stat('/proc/1/ns/net')
-        current = os.stat('/proc/self/ns/net')
-    except (OSError, UnicodeError, ValueError):
-        return 'UNVERIFIED', 'NETNS_READ_UNVERIFIED'
+    netns = []
+    # Fixed sequential attempts. On the first failure, the other marker
+    # remains unobserved; never imply both failed or disclose raw errno/path.
+    for path, stage in (('/proc/1/ns/net', 'PID1'),
+                        ('/proc/self/ns/net', 'SELF')):
+        try:
+            netns.append(os.stat(path))
+        except OSError as exc:
+            if exc.errno in (errno.EACCES, errno.EPERM):
+                category = 'ACCESS_DENIED'
+            elif exc.errno in (errno.ENOENT, errno.ENOTDIR):
+                category = 'NOT_FOUND'
+            else:
+                category = 'OTHER_OSERROR'
+            return 'UNVERIFIED', 'NETNS_' + stage + '_' + category
+        except (UnicodeError, ValueError):
+            return 'UNVERIFIED', 'NETNS_' + stage + '_OTHER_EXCEPTION'
+    pid1, current = netns
     if (pid1.st_dev, pid1.st_ino) != (current.st_dev, current.st_ino):
         return 'UNVERIFIED', 'NETNS_MISMATCH'
     listening = False
