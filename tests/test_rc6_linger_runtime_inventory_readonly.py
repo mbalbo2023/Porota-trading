@@ -165,6 +165,22 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
                        '/run/user/', '/home/', 'porotaadmin'):
             self.assertNotIn(secret, serialized)
 
+    def test_systemctl_plain_full_commands_are_bounded_and_exact(self):
+        """A1044: avoid upstream bullets and name ellipses without extra calls."""
+        self.assertEqual(self.inspect()['probe_extent'], 'FULL')
+        self.assertEqual(self.calls, [
+            ('/usr/bin/loginctl', '--no-pager', 'show-user',
+             '--property=Linger', 'porotaadmin'),
+            ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
+             'list-unit-files', '--all', '--type=service,socket,timer'),
+            ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
+             '--plain', '--full', 'list-units', '--all',
+             '--type=service,socket,timer'),
+            ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
+             '--plain', '--full', 'list-dependencies', '--all',
+             'default.target'),
+        ])
+
     def test_empty_unit_lists_are_unknown_not_a_false_absence_certification(self):
         self.responses.update({'list-unit-files': b'', 'list-units': b'',
                                'list-dependencies': b'default.target\n'})
@@ -697,6 +713,14 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
              'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_ENCODING'),
             ('list-units', b'private.service loaded active\n',
              'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_COLUMNS'),
+            # systemctl(1) can print a status bullet without --plain, and
+            # abbreviated names without --full. Those remain fail-closed.
+            ('list-units', '\u25cf private.service loaded failed failed PRIVATE\n'.encode(),
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
+            ('list-units', 'private\u2026service loaded active running PRIVATE\n'.encode(),
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
+            ('list-units', b'\x1b[31mprivate.service loaded failed failed PRIVATE\n',
+             'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
             ('list-units', b'private/name.service loaded active running PRIVATE\n',
              'ACTIVE_UNITS_PARSE', 'ACTIVE_UNITS_NAME'),
             ('list-units', b'private.service UNKNOWN_LOAD active running PRIVATE\n',
