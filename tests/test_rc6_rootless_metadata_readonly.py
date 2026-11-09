@@ -503,14 +503,56 @@ class CurrentLoginWorkflowTests(unittest.TestCase):
                                                    'ready_for_private_rootless_review': False})
                     result = run(incomplete)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn('PREREQUISITES_INCOMPLETE|CERT2=NO_VERIFICADO',
+                    self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES=',
                                   result.stderr + result.stdout)
+                    self.assertIn('|CERT2=NO_VERIFICADO', result.stderr + result.stdout)
                     absent = dict(positive)
                     del absent[missing]
                     result = run(absent)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn('RECEIPT_INVALID|CERT2=NO_VERIFICADO',
                                   result.stderr + result.stdout)
+
+            categories = (
+                ('principal_nonroot_unique', 'LOGIN_IDENTITY'),
+                ('runtime_directory_private', 'RUNTIME_DIRECTORY'),
+                ('user_manager_socket_present', 'USER_MANAGER_BUS'),
+                ('rootless_tools_present', 'ROOTLESS_TOOLCHAIN'),
+                ('rootless_launcher_present', 'ROOTLESS_LAUNCHER'),
+                ('user_linger_record_present', 'SYSTEMD_LINGER'),
+                ('subuids_assigned', 'SUBID_MAPPINGS'),
+                ('userns_enabled', 'USER_NAMESPACE'),
+                ('default_socket_absent', 'DEFAULT_SOCKET_CONFLICT'),
+                ('project_socket_namespace_absent', 'PROJECT_NAMESPACE_CONFLICT'),
+            )
+            for missing, category in categories:
+                with self.subTest(category=category):
+                    incomplete = dict(positive, **{missing: False,
+                                                   'ready_for_private_rootless_review': False})
+                    result = run(incomplete)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES=' + category
+                                  + '|CERT2=NO_VERIFICADO', result.stderr + result.stdout)
+                    self.assertNotIn('private-operator-name', result.stdout + result.stderr)
+                    self.assertNotIn('/run/user/', result.stdout + result.stderr)
+
+            multiple = dict(positive, rootless_launcher_present=False,
+                            user_linger_record_present=False,
+                            ready_for_private_rootless_review=False)
+            result = run(multiple)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('PREREQUISITES_INCOMPLETE|MISSING_CATEGORIES='
+                          'ROOTLESS_LAUNCHER,SYSTEMD_LINGER|CERT2=NO_VERIFICADO',
+                          result.stdout + result.stderr)
+            self.assertLess(len(result.stdout + result.stderr), 300)
+
+            malformed = dict(positive, rootless_launcher_present='SECRET_USER_OR_PATH',
+                             ready_for_private_rootless_review=False)
+            result = run(malformed)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('RECEIPT_INVALID|CERT2=NO_VERIFICADO',
+                          result.stdout + result.stderr)
+            self.assertNotIn('SECRET_USER_OR_PATH', result.stdout + result.stderr)
 
     def test_explicit_opt_in_skips_entire_legacy_rootful_and_dedicated_host_job(self):
         source = WORKFLOW.read_text()
