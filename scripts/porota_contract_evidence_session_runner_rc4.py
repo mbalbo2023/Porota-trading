@@ -160,171 +160,28 @@ def due_jobs(force):
     if force:return list(base.ROUTES.keys())
     p=subprocess.run(["docker","exec",OBSERVER,"python","/app/rc4_contract_due_job.py"],
                      capture_output=True,text=True,timeout=30)
-    if p.returncode!=0:return []
+    if p.returncode!=0:
+        # A603's fail-closed due-check must never become CACHED_NOT_DUE.
+        raise RuntimeError("CONTRACT_DUE_READ_FAILED")
     try:
-        d=json.loads(p.stdout); return [j for j in d.get("due_jobs",[]) if j in base.ROUTES]
-    except Exception:return []
+        receipt=json.loads(p.stdout)
+        if not isinstance(receipt,dict) or receipt.get("state")!="OK":
+            raise ValueError("due receipt not OK")
+        due=receipt.get("due_jobs")
+        if not isinstance(due,list) or any(
+                not isinstance(job,str) or job not in base.ROUTES for job in due):
+            raise ValueError("due receipt includes unknown jobs")
+        return list(dict.fromkeys(due))
+    except (ValueError,TypeError):
+        raise RuntimeError("CONTRACT_DUE_RECEIPT_INVALID") from None
 
 IMPORTER=r'''
-import json,sqlite3,sys,uuid
-from pathlib import Path
-import cp_contract_evidence_v2_hf6 as ce
-from rc6_ppi_contract_normalizer import separate_unbound_fee_estimate
-
-DB="/app/data/paper_v17/observer_v17.db"
-CAP=sys.argv[1]
-
-class Store:
-    def __init__(self,p): self.path=p
-    def connect(self):
-        c=sqlite3.connect(self.path,timeout=30); c.row_factory=sqlite3.Row; return c
-
-def nonempty(d):
-    return {k:v for k,v in d.items() if v not in (None,"",[],{})}
-
-def pick(obj,names):
-    want={x.lower().replace("-","_") for x in names}
-    if isinstance(obj,dict):
-        for k,v in obj.items():
-            kk=str(k).lower().replace("-","_")
-            if kk in want and v not in (None,"",[],{}): return v
-        for v in obj.values():
-            z=pick(v,names)
-            if z not in (None,"",[],{}): return z
-    elif isinstance(obj,list):
-        for v in obj:
-            z=pick(v,names)
-            if z not in (None,"",[],{}): return z
-    return None
-
-def candidate_map(store):
-    with store.connect() as c:
-        tabs={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if "candidate_identity_v2" in tabs:
-            query="""SELECT ticker,instrument_type,market,currency,settlement,status
-              FROM candidate_identity_v2 WHERE status='AVAILABLE'"""
-        elif {"candidate_universe","financial_instrument_catalog"} <= tabs:
-            query="""SELECT cu.ticker,cu.instrument_type,cu.market,f.currency,cu.settlement,cu.status
-              FROM candidate_universe cu JOIN financial_instrument_catalog f
-                ON f.ticker=cu.ticker AND f.instrument_type=cu.instrument_type
-               AND f.market=cu.market AND f.settlement=cu.settlement
-              WHERE cu.status='AVAILABLE'"""
-        else:return {}
-        out={}
-        for r in c.execute(query):
-            d=dict(r); out.setdefault(str(d.get("ticker") or "").upper(),[]).append(d)
-        return out
-
-raw=json.loads(Path(CAP).read_text(encoding="utf-8"))
-jobs=list(dict.fromkeys(raw.get("jobs") or []))
-store=Store(DB); cmap=candidate_map(store)
-runs={}
-for job in jobs:
-    rid="rc4-"+uuid.uuid4().hex; runs[job]=rid
-    ce.start_run(store,run_id=rid,job_key=job,detail="same-context authenticated XHR; partial evidence remains fail-closed")
-
-total=changed=conflicts=0; notes=[]
-for ek,item in (raw.get("endpoints") or {}).items():
-    kind=item.get("kind")
-    job=item.get("observed_job") or ""
-    route=item.get("observed_route") or ""
-    source=item.get("source_url") or str(ek).split("|",1)[0]
-
-    if kind=="CaucionesOperables":
-        rows=item.get("rows") or []
-        if not rows:
-            ev={"evidence_scope":"ENDPOINT_SCHEMA_ONLY","provider_schema":item.get("schema") or {},
-                "source_job":job,"source_route":route,
-                "readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"}
-            try:
-                r=ce.record_snapshot(store,family="CAUCIONES",ticker="*",market="UNKNOWN",
-                    settlement="UNKNOWN",source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
-                total+=1; changed+=int(bool(r.get("changed"))); notes.append("CAUCIONES_SCHEMA_ONLY_PARTIAL")
-            except Exception as exc: notes.append("CAUCIONES_SCHEMA_"+type(exc).__name__)
-        for row in rows:
-            ticker=str(pick(row,["ticker","simbolo","símbolo","especie"]) or "*").upper()
-            market=str(pick(row,["market","mercado"]) or "UNKNOWN")
-            currency=str(pick(row,["currency","moneda"]) or "UNKNOWN")
-            settlement=str(pick(row,["settlement","liquidacion","liquidación","plazo_liquidacion"]) or "UNKNOWN")
-            ev=nonempty({**row,"evidence_scope":"PARTIAL_AUTHENTICATED_XHR",
-                         "source_job":job,"source_route":route,
-                         "readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"})
-            if "currency" in ev:
-                ev["provider_currency"]=ev.pop("currency")
-            try:
-                r=ce.record_snapshot(store,family="CAUCIONES",ticker=ticker,market=market,
-                    currency=currency,settlement=settlement,source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
-                total+=1; changed+=int(bool(r.get("changed")))
-            except Exception as exc: notes.append("CAUCIONES_"+type(exc).__name__)
-
-    elif kind=="InstrumentosOperables":
-        for ev0 in item.get("rows") or []:
-            ticker=str(ev0.get("ticker") or "").upper()
-            if not ticker: continue
-            contract_fields, unbound_fees = separate_unbound_fee_estimate(ev0)
-            if unbound_fees:
-                # The sanitized capture retains these hints. No ticker-only
-                # fanout may attach them to ARS/USD or settlement variants.
-                notes.append("FEE_ESTIMATE_UNBOUND_IDENTITY_"+ticker)
-            ev=nonempty({k:v for k,v in contract_fields.items() if k not in {"ticker","currency"}})
-            if ev0.get("currency") not in (None,"",[],{}):
-                ev["provider_currency"]=ev0["currency"]
-            ev.update({"evidence_scope":"PARTIAL_AUTHENTICATED_XHR","source_job":job,
-                       "source_route":route,"readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"})
-            if job=="CONTRACT_EVIDENCE_AUCTIONS":
-                targets=[{"instrument_type":"LICITACIONES","market":"UNKNOWN","settlement":"UNKNOWN"}]
-            elif job=="CONTRACT_EVIDENCE_CAUCIONES":
-                targets=[{"instrument_type":"CAUCIONES","market":"UNKNOWN","settlement":"UNKNOWN"}]
-            else:
-                targets=cmap.get(ticker,[])
-            if not targets:
-                notes.append("UNMAPPED_INSTRUMENTOS_OPERABLES_"+ticker); continue
-            for ident in targets:
-                try:
-                    r=ce.record_snapshot(store,family=ident.get("instrument_type"),ticker=ticker,
-                        market=ident.get("market") or "UNKNOWN",settlement=ident.get("settlement") or "UNKNOWN",
-                        currency=ident.get("currency") or "UNKNOWN",
-                        source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
-                    total+=1; changed+=int(bool(r.get("changed")))
-                except Exception as exc: notes.append("INSTRUMENTOS_"+type(exc).__name__)
-
-    elif kind=="DatosTecnicos":
-        ev0=item.get("row") or {}; ticker=str(ev0.get("ticker") or "").upper()
-        for ident in cmap.get(ticker,[]):
-            if ce.normalize_family(ident.get("instrument_type")) not in {"BONOS","LETRAS","ON","LEBAC","NOBAC"}: continue
-            ev=nonempty({k:v for k,v in ev0.items() if k not in {"ticker","currency"}})
-            if ev0.get("currency") not in (None,"",[],{}):
-                ev["provider_currency"]=ev0["currency"]
-            ev.update({"source_job":job,"source_route":route})
-            try:
-                r=ce.record_snapshot(store,family=ident.get("instrument_type"),ticker=ticker,
-                    market=ident.get("market"),settlement=ident.get("settlement"),
-                    currency=ident.get("currency") or "UNKNOWN",
-                    source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=ev)
-                total+=1; changed+=int(bool(r.get("changed")))
-            except Exception as exc: notes.append("DATOSTECNICOS_"+type(exc).__name__)
-    elif kind=="SubyacenteOpciones":
-        notes.append("OPTION_UNDERLYING_CATALOG_OBSERVED_NOT_CONTRACT")
-    elif kind=="SCHEMA_ONLY":
-        fam={"CONTRACT_EVIDENCE_AUCTIONS":"LICITACIONES",
-             "CONTRACT_EVIDENCE_CAUCIONES":"CAUCIONES"}.get(job)
-        if fam:
-            ev={"evidence_scope":"ENDPOINT_SCHEMA_ONLY","provider_schema":item.get("schema") or {},
-                "source_job":job,"source_route":route,
-                "readiness_guard":"NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"}
-            try:
-                r=ce.record_snapshot(store,family=fam,ticker="*",market="UNKNOWN",settlement="UNKNOWN",
-                    source_class="PPI_AUTHENTICATED_XHR",source_ref=source,evidence=nonempty(ev))
-                total+=1; changed+=int(bool(r.get("changed"))); notes.append("SCHEMA_ONLY_PARTIAL")
-            except Exception as exc: notes.append("SCHEMA_"+type(exc).__name__)
-
-state="AMARILLO"
-detail=f"records={total}; changed={changed}; partial_fail_closed=YES; notes={','.join(sorted(set(notes)))[:1200]}"
-for job,rid in runs.items():
-    ce.finish_run(store,run_id=rid,state=state,records=total,changed=changed,conflicts=conflicts,detail=detail)
-print(json.dumps({"state":state,"auth_status":raw.get("auth_status"),"records":total,
-                  "changed":changed,"conflicts":conflicts,"notes":sorted(set(notes)),
-                  "real_orders_sent":0},ensure_ascii=False,sort_keys=True))
+# A615: one canonical implementation. Never fan out sanitized XHR by ticker.
+# rc4_contract_import_job resolves PPI-primary 5-key over ALL status rows.
+import json,sys
+from rc4_contract_import_job import DB, Store, import_capture
+result=import_capture(Store(DB),sys.argv[1])
+print(json.dumps(result,ensure_ascii=False,sort_keys=True))
 '''
 
 def import_capture(path):
@@ -333,6 +190,26 @@ def import_capture(path):
                      input=IMPORTER,text=True,capture_output=True,timeout=120)
     return p.returncode,(p.stdout or p.stderr).strip()[:1800]
 
+def capture_response(response,out,active):
+    """Observe passive FCI before the TARGETS filter in default RC5 runner.
+
+    Reuse the collector's one sanitizing implementation, with no extra
+    requests, importer or PPI-account binding inferred from the capture.
+    """
+    base.capture_passive_fci_response(response,out)
+    if response.request.method.upper()!="GET" or not any(
+            x in response.url for x in base.TARGETS):
+        return
+    if response.status>=400:
+        return
+    payload=response.json(); san=sanitize_endpoint(response.url,payload)
+    if san is None:
+        return
+    san={**san,"status":response.status,"source_url":clean(response.url),
+         "observed_job":active["job"],"observed_route":active["route"]}
+    k=clean(response.url)+"|"+active["job"]+"|"+active["route"]
+    out["endpoints"][k]=san
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--force",action="store_true"); args=ap.parse_args()
     OUTDIR.mkdir(parents=True,exist_ok=True)
@@ -340,13 +217,19 @@ def main():
     try: os.chown(OUTDIR,0,gid)
     except Exception: pass
     os.chmod(OUTDIR,0o750)
-    jobs=due_jobs(args.force)
+    try:
+        jobs=due_jobs(args.force)
+    except RuntimeError as exc:
+        print("STATUS=ERROR|"+str(exc))
+        return 3
     if not jobs:
         print("STATUS=CACHED_NOT_DUE"); return 0
 
     out={"schema":"POROTA_RC4_PPI_TRUSTED_CONTRACT_2",
          "generated_at":datetime.now(timezone.utc).isoformat(),
          "auth_status":"UNKNOWN","jobs":jobs,"routes":[],"endpoints":{},
+         "passive_fci_xhr":[],"passive_fci_observation_state":"SOURCE_UNBOUND",
+         "passive_fci_capture_truncated":False,
          "blocked_nonread":[],"continue_clicked":False,"amount_filled":False,
          "price_filled":False,"real_orders_sent":0}
     stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -386,14 +269,7 @@ def main():
 
                 def on_response(response):
                     try:
-                        if response.request.method.upper()!="GET" or not any(x in response.url for x in base.TARGETS): return
-                        if response.status>=400:return
-                        payload=response.json(); san=sanitize_endpoint(response.url,payload)
-                        if san is None:return
-                        san={**san,"status":response.status,"source_url":clean(response.url),
-                             "observed_job":active["job"],"observed_route":active["route"]}
-                        k=clean(response.url)+"|"+active["job"]+"|"+active["route"]
-                        out["endpoints"][k]=san
+                        capture_response(response,out,active)
                     except Exception: pass
                 page.on("response",on_response)
 
