@@ -82,18 +82,24 @@ def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
 
 
 def test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas():
-    # El runtime productivo vigente es el split de porota_mode_manager; no el
-    # servicio Chroma del compose legacy. El observer y los verificadores
-    # efimeros deben conservar rootfs read-only y escrituras acotadas a tmpfs.
-    manager = (RAIZ / "porota_mode_manager.py").read_text(encoding="utf-8")
+    # El manager nuevo NO construye Docker argv; los flags del observer se
+    # generan/atestan en el helper root-owned A1092. Este test valida que un
+    # caller viejo no pueda saltárselo y preserva los guards del Deploy V2.
+    from unittest.mock import patch
+    import porota_mode_manager as manager
+
+    with patch("subprocess.run") as subprocess_docker:
+        try:
+            manager.run("docker", "run", "-d", "--name", "porota_production_observer")
+        except SystemExit as exc:
+            assert exc.code == 79
+        else:
+            raise AssertionError("manager Docker direct debe HOLD79")
+        subprocess_docker.assert_not_called()
+
     deploy = (RAIZ / ".github/workflows/porota-deploy-v2-promote.yml").read_text(
         encoding="utf-8"
     )
-
-    observer = manager[manager.index('created = run("docker", "run"'):]
-    assert '"--user", "botuser", "--read-only", "--cap-drop", "ALL"' in observer
-    assert '"--security-opt", "no-new-privileges:true"' in observer
-    assert '"--tmpfs", "/tmp:rw,noexec,nosuid,size=32m"' in observer
     assert "docker compose" not in deploy
     assert "--user botuser --read-only --cap-drop ALL" in deploy
     assert "--security-opt no-new-privileges:true" in deploy
