@@ -9,15 +9,20 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import select
 import stat
 import subprocess
+import sys
 import time
 
 
 SCHEMA = "rc6.r1.rootless-private-readonly.v1"
 PRIVATE_ACCOUNT = "porota-rc6"
 MAX_ENGINE_INFO = 16384
+CURRENT_LOGIN_SCHEMA = "rc6.r1.current-login-capability-readonly.v1"
+CURRENT_LOGIN_EXPECTED_UID = 1000  # operator-observed A1013, not an OS policy
+MAX_SUBID_BYTES = 131072
 
 
 class ProbeError(Exception):
@@ -176,6 +181,183 @@ def collect():
     }
 
 
+def _current_login_account():
+    """Use the already-proven operator UID, never infer sudo/root authority."""
+    uid = os.geteuid()
+    if uid != CURRENT_LOGIN_EXPECTED_UID or uid < 1000:
+        raise ProbeError("CURRENT_LOGIN_IDENTITY_UNVERIFIED")
+    try:
+        account = pwd.getpwuid(uid)
+        matches = [entry for entry in pwd.getpwall() if entry.pw_uid == uid]
+    except (KeyError, OSError):
+        raise ProbeError("CURRENT_LOGIN_IDENTITY_UNVERIFIED") from None
+    home = Path(account.pw_dir)
+    if (account.pw_uid != uid or account.pw_gid < 1000 or len(matches) != 1
+            or not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", account.pw_name)
+            or not home.is_absolute() or ".." in home.parts):
+        raise ProbeError("CURRENT_LOGIN_IDENTITY_UNVERIFIED")
+    info = _lstat(home, "CURRENT_LOGIN_HOME_UNVERIFIED")
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != uid
+            or stat.S_IMODE(info.st_mode) & 0o022):
+        raise ProbeError("CURRENT_LOGIN_HOME_UNVERIFIED")
+    return account
+
+
+def _login_subid_text(path):
+    """Bounded root-owned metadata read; never print existing account ranges."""
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                or stat.S_IMODE(info.st_mode) & 0o022 or info.st_size > MAX_SUBID_BYTES):
+            raise ValueError("UNTRUSTED_SUBID_METADATA")
+        return os.read(fd, MAX_SUBID_BYTES + 1).decode("utf-8", "strict")
+    finally:
+        os.close(fd)
+
+
+def _login_subids_ready(account):
+    """Require a dedicated >=65536-ID block for this login in BOTH maps."""
+    try:
+        for path in ("/etc/subuid", "/etc/subgid"):
+            text = _login_subid_text(path)
+            if len(text.encode("utf-8")) > MAX_SUBID_BYTES:
+                return False
+            records = []
+            for line in text.splitlines():
+                if not line.strip():
+                    continue
+                parts = line.split(":")
+                if (len(records) >= 1024 or len(parts) != 3
+                        or not re.fullmatch(r"[a-zA-Z0-9_.-]{1,80}", parts[0])
+                        or not re.fullmatch(r"[0-9]{1,10}", parts[1])
+                        or not re.fullmatch(r"[0-9]{1,10}", parts[2])):
+                    return False
+                start, count = int(parts[1]), int(parts[2])
+                if count < 1 or start + count > 2147483648:
+                    return False
+                records.append((parts[0], start, start + count))
+            owner_keys = {account.pw_name, str(account.pw_uid)}
+            own = [(start, end) for name, start, end in records if name in owner_keys]
+            other = [(start, end) for name, start, end in records if name not in owner_keys]
+            if (not own or any(start < 65536 for start, _ in own)
+                    or any(not (end <= left or start >= right)
+                           for start, end in own for left, right in other)
+                    or not any(end - start >= 65536 for start, end in own)):
+                return False
+        return True
+    except (OSError, UnicodeError, ValueError):
+        return False
+
+
+def _login_rootless_toolchain():
+    """Read filesystem metadata only: no Docker daemon interaction."""
+    paths = ("/usr/bin/docker", "/usr/bin/rootlesskit",
+             "/usr/bin/dockerd-rootless-setuptool.sh", "/usr/bin/newuidmap",
+             "/usr/bin/newgidmap", "/usr/bin/loginctl", "/usr/bin/systemctl")
+    try:
+        for path in paths:
+            info = os.stat(path)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                    or not info.st_mode & 0o111 or info.st_mode & 0o022):
+                return False
+            if path.endswith(("newuidmap", "newgidmap")) and not info.st_mode & stat.S_ISUID:
+                return False
+        return True
+    except OSError:
+        return False
+
+
+def _login_userns_ready():
+    try:
+        def integer(path):
+            with open(path, "rb") as stream:
+                raw = stream.read(33)
+            return int(raw) if re.fullmatch(rb"[0-9]{1,20}\s*", raw) else 0
+        return (integer("/proc/sys/kernel/unprivileged_userns_clone") == 1
+                and integer("/proc/sys/user/max_user_namespaces") > 0
+                and Path("/sys/fs/cgroup/cgroup.controllers").is_file())
+    except (OSError, ValueError):
+        return False
+
+
+def _login_runtime_inventory(account):
+    """Never contact any socket: same-UID ownership is not Porota provenance."""
+    runtime = Path("/run/user") / str(account.pw_uid)
+    info = _lstat(runtime, "CURRENT_LOGIN_RUNTIME_UNVERIFIED")
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != account.pw_uid
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise ProbeError("CURRENT_LOGIN_RUNTIME_UNVERIFIED")
+    bus = runtime / "bus"
+    try:
+        info = os.lstat(str(bus))
+        if not stat.S_ISSOCK(info.st_mode) or info.st_uid != account.pw_uid:
+            raise ProbeError("CURRENT_LOGIN_BUS_UNVERIFIED")
+        bus_present = True
+    except FileNotFoundError:
+        bus_present = False
+
+    def absent(path):
+        try:
+            # DO NOT connect: a socket could belong to an unrelated project.
+            os.lstat(str(path))
+            return False
+        except FileNotFoundError:
+            return True
+        except OSError:
+            raise ProbeError("CURRENT_LOGIN_SOCKET_UNVERIFIED") from None
+
+    return bus_present, absent(runtime / "docker.sock"), absent(runtime / "porota-rc6")
+
+
+def collect_current_login_readonly():
+    account = _current_login_account()
+    bus, default_absent, project_absent = _login_runtime_inventory(account)
+    rootless_tools = _login_rootless_toolchain()
+    subids = _login_subids_ready(account)
+    userns = _login_userns_ready()
+    ready = all((bus, default_absent, project_absent, rootless_tools, subids, userns))
+    return {
+        "schema": CURRENT_LOGIN_SCHEMA,
+        "state": "NO_VERIFICADO",
+        "read_only": True, "mutations": 0, "provider_gets": 0,
+        "docker_queries": 0, "socket_connections": 0,
+        "sudo_executed": False, "foreign_docker_inspected": False,
+        "principal_nonroot_unique": True,
+        "runtime_directory_private": True,
+        "user_manager_socket_present": bus,
+        "rootless_tools_present": rootless_tools,
+        "subuids_assigned": subids, "userns_enabled": userns,
+        "default_socket_absent": default_absent,
+        "project_socket_namespace_absent": project_absent,
+        "ready_for_private_rootless_review": ready,
+        "rootless_certified": False,
+    }
+
+
+def main_current_login():
+    try:
+        receipt = collect_current_login_readonly()
+    except ProbeError as exc:
+        receipt = {
+            "schema": CURRENT_LOGIN_SCHEMA, "state": "NO_VERIFICADO",
+            "read_only": True, "mutations": 0, "provider_gets": 0,
+            "docker_queries": 0, "socket_connections": 0,
+            "sudo_executed": False, "rootless_certified": False,
+            "reason": exc.reason,
+        }
+    except Exception:
+        receipt = {
+            "schema": CURRENT_LOGIN_SCHEMA, "state": "NO_VERIFICADO",
+            "read_only": True, "mutations": 0, "provider_gets": 0,
+            "docker_queries": 0, "socket_connections": 0,
+            "sudo_executed": False, "rootless_certified": False,
+            "reason": "CURRENT_LOGIN_PROBE_UNVERIFIED",
+        }
+    print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
 def main():
     try:
         receipt = collect()
@@ -204,4 +386,8 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--current-login"]:
+        raise SystemExit(main_current_login())
+    if len(sys.argv) != 1:
+        raise SystemExit(79)
     raise SystemExit(main())
