@@ -100,11 +100,23 @@ def run_verifier(payload: str, ssh_status: int = 0) -> tuple[subprocess.Complete
         return result, summary.read_text(encoding="utf-8") if summary.exists() else ""
 
 
-def run_host_shell_with_fake_ssh(payload: str, return_code: int) -> tuple[subprocess.CompletedProcess, str]:
+def run_host_shell_with_fake_ssh(
+    payload: str, return_code: int, unsuppress_stderr: bool = False,
+) -> tuple[subprocess.CompletedProcess, str]:
     """Exercise the actual Bash + heredoc step, overriding SSH with a shell function."""
     host = host_workflow_section(WORKFLOW.read_text(encoding="utf-8"))
     shell = textwrap.dedent(host.split("        run: |\n", 1)[1])
-    fake_ssh = 'ssh() { printf "%s" "$FAKE_PAYLOAD"; return "$FAKE_RC"; };\n'
+    if unsuppress_stderr:
+        # OFFHOST mutation proving the tests would expose an accidental
+        # removal of SSH stderr redaction without changing production code.
+        marker = " 2>/dev/null <<'PY'"
+        if shell.count(marker) != 1:
+            raise AssertionError("expected one legacy-host SSH stderr suppression")
+        shell = shell.replace(marker, " <<'PY'", 1)
+    fake_ssh = (
+        'ssh() { printf "%s" "$FAKE_PAYLOAD"; '
+        'printf "PRIVATE_SENTINEL\\n" >&2; return "$FAKE_RC"; };\n'
+    )
     with tempfile.TemporaryDirectory(prefix="rc6_capacity_shell_offhost_") as tmp:
         root = Path(tmp)
         (root / "rc6_r1_capacity").mkdir()
@@ -251,12 +263,21 @@ class DockerCapacityReceiptSecurityContract(unittest.TestCase):
         result, summary = run_host_shell_with_fake_ssh(json.dumps(receipt), 2)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("RC6_R1_DOCKER_RO=RED|HOST_COMMAND_UNVERIFIED", result.stdout + result.stderr)
+        self.assertNotIn("PRIVATE_SENTINEL", result.stdout + result.stderr + summary)
         self.assertEqual(summary, "")
 
     def test_bash_hardening_handles_ssh_255_without_host_call(self) -> None:
         result, summary = run_host_shell_with_fake_ssh("", 255)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("RC6_R1_DOCKER_RO=RED|SSH_REMOTE_FAILED", result.stdout + result.stderr)
+        self.assertNotIn("PRIVATE_SENTINEL", result.stdout + result.stderr + summary)
+        self.assertEqual(summary, "")
+
+    def test_bash_hardening_handles_ssh_exit_one_without_leak(self) -> None:
+        result, summary = run_host_shell_with_fake_ssh("", 1)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("RC6_R1_DOCKER_RO=RED|SSH_REMOTE_FAILED", result.stdout + result.stderr)
+        self.assertNotIn("PRIVATE_SENTINEL", result.stdout + result.stderr + summary)
         self.assertEqual(summary, "")
 
     def test_bash_hardening_accepts_bounded_positive_fake_ssh_only(self) -> None:
@@ -264,6 +285,13 @@ class DockerCapacityReceiptSecurityContract(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RC6_R1_DOCKER_RO=GREEN", result.stdout)
         self.assertIn("READ_ONLY_OBSERVED", summary)
+        self.assertNotIn("PRIVATE_SENTINEL", result.stdout + result.stderr + summary)
+
+    def test_bash_mutant_without_ssh_stderr_redirect_would_leak(self) -> None:
+        result, summary = run_host_shell_with_fake_ssh(
+            json.dumps(valid_receipt()), 0, unsuppress_stderr=True,
+        )
+        self.assertIn("PRIVATE_SENTINEL", result.stdout + result.stderr + summary)
 
     def test_nonjson_or_private_failure_reason_never_leaks(self) -> None:
         self.assert_rejected('{"state":"NO_VERIFICADO","reason":"PRIVATE_SENTINEL"}')
