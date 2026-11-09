@@ -523,7 +523,8 @@ jobs:
           positive = common | {'foreign_docker_inspected', 'principal_nonroot_unique',
                     'runtime_directory_private', 'user_manager_socket_present',
                     'rootless_tools_present', 'rootless_launcher_present',
-                    'user_linger_record_present', 'subuids_assigned', 'userns_enabled',
+                    'user_linger_record_present', 'user_linger_marker_status',
+                    'subuids_assigned', 'userns_enabled',
                     'default_socket_absent', 'project_socket_namespace_absent',
                     'ready_for_private_rootless_review'}
           negative = common | {'reason'}
@@ -544,10 +545,20 @@ jobs:
           if (set(data) != positive or
                   data.get('foreign_docker_inspected') is not False or
                   any(type(data.get(k)) is not bool for k in positive - common -
-                      {'foreign_docker_inspected'})):
+                      {'foreign_docker_inspected', 'user_linger_marker_status'})):
+              raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+          # A loginctl Linger=yes claim is NOT made: this is only rooted
+          # on-disk marker metadata, classified by the nonroot OS probe.
+          marker_status = data['user_linger_marker_status']
+          marker_codes = {'TRUSTED', 'PARENT_MISSING', 'PARENT_UNTRUSTED',
+                          'PARENT_UNVERIFIED', 'MARKER_MISSING',
+                          'MARKER_UNTRUSTED', 'MARKER_UNVERIFIED'}
+          if (type(marker_status) is not str or marker_status not in marker_codes or
+                  data['user_linger_record_present'] is not (marker_status == 'TRUSTED')):
               raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
           required = tuple(positive - common - {'foreign_docker_inspected',
-                             'ready_for_private_rootless_review'})
+                             'ready_for_private_rootless_review',
+                             'user_linger_marker_status'})
           # The public failure output contains only bounded, allowlisted
           # categories. Never log the raw host receipt, login, paths or maps.
           reason_codes = (
@@ -569,8 +580,11 @@ jobs:
               raise SystemExit('RC6_CURRENT_LOGIN_RO=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
           if not ready:
               missing = ','.join(code for field, code in reason_codes if not data[field])
+              linger_code = ('|LINGER_MARKER_STATUS=' + marker_status
+                             if not data['user_linger_record_present'] else '')
               raise SystemExit('RC6_CURRENT_LOGIN_RO=PREREQUISITES_INCOMPLETE'
-                               '|MISSING_CATEGORIES=' + missing + '|CERT2=NO_VERIFICADO')
+                               '|MISSING_CATEGORIES=' + missing + linger_code +
+                               '|CERT2=NO_VERIFICADO')
           print('RC6_CURRENT_LOGIN_RO=PREREQUISITES_READY_NOT_CERTIFIED|CERT2=NO_VERIFICADO')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
               out.write('### RC6 current-login OS prerequisites (metadata READ_ONLY)\n\n')
