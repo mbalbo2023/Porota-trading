@@ -613,17 +613,27 @@ def _parse_proc_net_port(raw, addr_length):
 
 
 def _port_8000_listener():
-    """Network-namespace categorical snapshot, not owner or future-port proof."""
+    """Bounded host-netns observation and fixed failure stage, never port ownership."""
     try:
         pid1 = os.stat('/proc/1/ns/net')
         current = os.stat('/proc/self/ns/net')
-        if (pid1.st_dev, pid1.st_ino) != (current.st_dev, current.st_ino):
-            return 'UNVERIFIED'
-        ipv4 = _parse_proc_net_port(_read_proc_net('/proc/self/net/tcp'), 8)
-        ipv6 = _parse_proc_net_port(_read_proc_net('/proc/self/net/tcp6'), 32)
-        return 'LISTEN_PRESENT' if ipv4 or ipv6 else 'NONE_OBSERVED'
     except (OSError, UnicodeError, ValueError):
-        return 'UNVERIFIED'
+        return 'UNVERIFIED', 'NETNS_READ_UNVERIFIED'
+    if (pid1.st_dev, pid1.st_ino) != (current.st_dev, current.st_ino):
+        return 'UNVERIFIED', 'NETNS_MISMATCH'
+    listening = False
+    for path, length, reason_prefix in (
+            ('/proc/self/net/tcp', 8, 'TCP4'),
+            ('/proc/self/net/tcp6', 32, 'TCP6')):
+        try:
+            raw = _read_proc_net(path)
+        except (OSError, UnicodeError, ValueError):
+            return 'UNVERIFIED', reason_prefix + '_READ_UNVERIFIED'
+        try:
+            listening |= _parse_proc_net_port(raw, length)
+        except (OSError, UnicodeError, ValueError):
+            return 'UNVERIFIED', reason_prefix + '_PARSE_UNVERIFIED'
+    return ('LISTEN_PRESENT' if listening else 'NONE_OBSERVED'), 'NONE'
 
 
 def collect_dedicated_preflight():
@@ -667,6 +677,7 @@ def collect_dedicated_preflight():
         # UID1000 cannot inspect another account's 0700 /run/user path;
         # in particular, no attempted read/connect to foreign Docker socket.
         socket_state = 'NOT_INSPECTED'
+    port_status, port_reason = _port_8000_listener()
     return {
         'schema': DEDICATED_PREFLIGHT_SCHEMA, 'state': 'NO_VERIFICADO',
         'read_only': True, 'mutations': 0, 'docker_queries': 0,
@@ -683,7 +694,8 @@ def collect_dedicated_preflight():
         'rootless_launcher': ('AVAILABLE' if _login_rootless_launcher_present()
                               else 'UNVERIFIED'),
         'user_namespace': 'AVAILABLE' if _login_userns_ready() else 'UNVERIFIED',
-        'port_8000_listen': _port_8000_listener(),
+        'port_8000_listen': port_status,
+        'port_8000_reason': port_reason,
     }
 
 

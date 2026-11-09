@@ -951,7 +951,7 @@ jobs:
           fields = {'dedicated_account','dedicated_uid','dedicated_home',
                     'dedicated_subids','dedicated_socket',
                     'rootless_toolchain','rootless_launcher',
-                    'user_namespace','port_8000_listen'}
+                    'user_namespace','port_8000_listen','port_8000_reason'}
           if (not isinstance(data,dict) or
                   data.get('schema') != 'rc6.r1.dedicated-account-preflight-readonly.v1' or
                   data.get('state') != 'NO_VERIFICADO' or
@@ -985,7 +985,14 @@ jobs:
                   any(data[k] not in ('AVAILABLE','UNVERIFIED') for k in (
                       'rootless_toolchain','rootless_launcher','user_namespace')) or
                   data['port_8000_listen'] not in (
-                      'LISTEN_PRESENT','NONE_OBSERVED','UNVERIFIED')):
+                      'LISTEN_PRESENT','NONE_OBSERVED','UNVERIFIED') or
+                  data['port_8000_reason'] not in (
+                      'NONE','NETNS_READ_UNVERIFIED','NETNS_MISMATCH',
+                      'TCP4_READ_UNVERIFIED','TCP4_PARSE_UNVERIFIED',
+                      'TCP6_READ_UNVERIFIED','TCP6_PARSE_UNVERIFIED') or
+                  # Uncertain port status requires exactly one fixed failure stage.
+                  (data['port_8000_listen'] == 'UNVERIFIED') ==
+                      (data['port_8000_reason'] == 'NONE')):
               raise SystemExit(invalid)
           absent = data['dedicated_account'] == 'ABSENT'
           unresolved = data['dedicated_account'] == 'UNVERIFIED'
@@ -1014,6 +1021,7 @@ jobs:
                     '|LAUNCHER=' + data['rootless_launcher'] +
                     '|USERNS=' + data['user_namespace'] +
                     '|PORT8000=' + data['port_8000_listen'] +
+                    '|PORT8000_REASON=' + data['port_8000_reason'] +
                     '|BOOTSTRAP=HOLD' +
                     '|CERT2=NO_VERIFICADO')
           # A complete read-only observation is success even before bootstrap;
