@@ -494,6 +494,85 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.assertIn('"phase":"INVENTORY_UNKNOWN"', out.getvalue())
         self.assertNotIn('PRIVATE_SECRET', out.getvalue())
 
+    def test_unit_files_parse_failure_has_exact_stage_category_and_safe_receipt(self):
+        probe = module()
+        # Four mutually exclusive classes. The third (preset) column stays
+        # unvalidated by this change; no acceptance expansion is authorized.
+        invalid = (
+            ('ENCODING', b'private-name.service enabled\xff\n', 'UNIT_FILES_ENCODING'),
+            ('COLUMNS', b'private-name.service enabled extra extra\n', 'UNIT_FILES_COLUMNS'),
+            ('NAME', b'private/name.service enabled enabled\n', 'UNIT_FILES_NAME'),
+            ('STATE', b'private-name.service unexpected enabled\n', 'UNIT_FILES_STATE'),
+        )
+        for category, raw, reason in invalid:
+            with self.subTest(category=category):
+                self.calls.clear()
+                saved = self.responses['list-unit-files']
+                self.responses['list-unit-files'] = raw
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.responses['list-unit-files'] = saved
+                self.assertEqual(caught.exception.phase, 'UNIT_FILES_PARSE')
+                self.assertEqual(str(caught.exception), reason)
+                self.assertEqual(caught.exception.linger, 'NO')
+                self.assertEqual(caught.exception.systemd_dbus_state,
+                                 'INCOMPLETE_READONLY')
+                self.assertEqual(len(self.calls), 4)
+
+                # Serialized by the real remote main() then interpreted by
+                # the real inline Actions receiver, never raw host output.
+                output = io.StringIO()
+                with (mock.patch.object(probe, 'collect', side_effect=caught.exception),
+                      contextlib.redirect_stdout(output)):
+                    self.assertEqual(probe.main(['--linger-inventory']), 0)
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(receipt['reason'], reason)
+                self.assertEqual(receipt['linger_effective'], 'NO')
+                self.assertEqual(receipt['autostart_risk'], 'UNVERIFIED')
+                self.assertEqual(receipt['enabled_user_units'], 'UNVERIFIED')
+                self.assertEqual(receipt['systemd_dbus_state'], 'INCOMPLETE_READONLY')
+                self.assertNotIn('private-name', output.getvalue())
+                runner = run_receiver('Read bounded systemd user inventory',
+                                      'linger.json', output.getvalue())
+                self.assertNotEqual(runner.returncode, 0)
+                self.assertIn('PHASE=UNIT_FILES_PARSE|REASON=' + reason,
+                              runner.stdout + runner.stderr)
+                self.assertIn('LINGER_EFFECTIVE=NO', runner.stdout + runner.stderr)
+                self.assertIn('UNIT_INVENTORY=UNVERIFIED', runner.stdout + runner.stderr)
+                self.assertIn('CERT2=NO_VERIFICADO', runner.stdout + runner.stderr)
+                self.assertNotIn('private', runner.stdout + runner.stderr)
+                self.assertNotIn('Traceback', runner.stdout + runner.stderr)
+
+    def test_unit_files_valid_states_retained_without_preset_certification(self):
+        probe = module()
+        self.assertEqual(probe._unit_files(b'private.service enabled enabled\n'),
+                         'PRESENT')
+        self.assertEqual(probe._unit_files(b'private.service enabled-runtime -\n'),
+                         'PRESENT')
+        self.assertEqual(probe._unit_files(b'private.service disabled disabled\n'),
+                         'NONE_OBSERVED')
+        # State is interpreted; preset's meaning is explicitly NOT certified.
+        self.assertEqual(probe._unit_files(b'private.service enabled UNVALIDATED_PRESET\n'),
+                         'PRESENT')
+
+    def test_unit_files_rejects_malformed_late_rows_without_partial_success(self):
+        probe = module()
+        for invalid, reason in (
+                (b'private.service enabled enabled\nsecret/service enabled -\n',
+                 'UNIT_FILES_NAME'),
+                (b'private.service enabled enabled\nsecret.service UNKNOWN_STATE -\n',
+                 'UNIT_FILES_STATE'),
+                (b'private.service enabled enabled\nsecret.service enabled a b\n',
+                 'UNIT_FILES_COLUMNS'),
+                (b'private.service enabled enabled\nsecret.service enabled\xff\n',
+                 'UNIT_FILES_ENCODING')):
+            with self.subTest(reason=reason):
+                with self.assertRaises(probe.InventoryHold) as caught:
+                    probe._unit_files(invalid)
+                self.assertEqual(str(caught.exception), reason)
+
     def test_inventory_hold_identifies_only_fixed_query_phase(self):
         probe = module()
         saved = self.paths['/run/user/1000/bus']
@@ -534,6 +613,59 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
 
 
 class LingerInventoryWorkflowTests(unittest.TestCase):
+    def test_unit_files_parse_categories_are_strictly_phase_bound_and_sanitized(self):
+        probe = module()
+        baseline = probe._partial_receipt(probe.InventoryHold(
+            'UNIT_FILES_STATE', 'UNIT_FILES_PARSE', linger='NO',
+            user_runtime_status='METADATA_VALID', user_bus_status='METADATA_VALID',
+            bus_mode_other_bits='PRESENT', logind_status='PARSED_READONLY',
+            systemd_dbus_state='INCOMPLETE_READONLY'))
+        for reason in ('UNIT_FILES_ENCODING', 'UNIT_FILES_COLUMNS',
+                       'UNIT_FILES_NAME', 'UNIT_FILES_STATE'):
+            with self.subTest(valid=reason):
+                valid = dict(baseline, reason=reason)
+                proc = run_receiver('Read bounded systemd user inventory',
+                                    'linger.json', json.dumps(valid))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('PHASE=UNIT_FILES_PARSE|REASON=' + reason,
+                              proc.stdout + proc.stderr)
+                self.assertNotIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+
+        forged = (
+            dict(baseline, phase='ACTIVE_UNITS_PARSE'),
+            dict(baseline, phase='UNIT_FILES_QUERY'),
+            dict(baseline, reason='SYSTEMD_OUTPUT_UNVERIFIED'),
+            dict(baseline, reason='UNIT_FILES_PRIVATE_SECRET'),
+            dict(baseline, reason=['UNIT_FILES_STATE']),
+            dict(baseline, reason={'PRIVATE_KEY': 'UNIT_FILES_STATE'}),
+            dict(baseline, user_bus_status=['METADATA_VALID']),
+            dict(baseline, autostart_risk='PRESENT'),
+            dict(baseline, enabled_user_units='PRESENT'),
+            dict(baseline, rootless_certified=True),
+            dict(baseline, PRIVATE_FIELD='PRIVATE_VALUE'),
+            {k: v for k, v in baseline.items() if k != 'systemd_dbus_state'},
+        )
+        for bad in forged:
+            with self.subTest(bad=str(bad)[:72]):
+                proc = run_receiver('Read bounded systemd user inventory',
+                                    'linger.json', json.dumps(bad))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+                self.assertNotIn('PRIVATE_', proc.stdout + proc.stderr)
+                self.assertNotIn('Traceback', proc.stdout + proc.stderr)
+
+        valid = json.dumps(baseline)
+        for corrupt in (
+                valid.replace('"reason": "UNIT_FILES_STATE"',
+                              '"reason": "UNIT_FILES_NAME", "reason": "UNIT_FILES_STATE"'),
+                valid.replace('"mutations": 0', '"mutations": NaN'),
+                valid.replace('"mutations": 0', '"mutations": -Infinity')):
+            proc = run_receiver('Read bounded systemd user inventory',
+                                'linger.json', corrupt)
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn('RECEIPT_INVALID', proc.stdout + proc.stderr)
+            self.assertNotIn('Traceback', proc.stdout + proc.stderr)
+
     def test_partial_bus_receipt_is_strictly_validated_and_never_certified(self):
         probe = module()
         receipt = probe._partial_receipt(probe.InventoryHold(
@@ -699,7 +831,7 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
             ('ACTIVE_UNITS_QUERY', 'QUERY_OUTPUT_BOUND'),
             ('TARGET_DEPS_QUERY', 'QUERY_UNVERIFIED'),
             ('LOGIND_PARSE', 'LOGIND_UNVERIFIED'),
-            ('UNIT_FILES_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
+            ('UNIT_FILES_PARSE', 'UNIT_FILES_STATE'),
             ('ACTIVE_UNITS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
             ('TARGET_DEPS_PARSE', 'SYSTEMD_OUTPUT_UNVERIFIED'),
             ('INVENTORY_UNKNOWN', 'INVENTORY_UNVERIFIED'))
