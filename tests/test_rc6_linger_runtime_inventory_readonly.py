@@ -1,6 +1,7 @@
 """A1038: protected-main, operator-only logind inventory without mutation."""
 
 import contextlib
+import errno
 import importlib
 import importlib.util
 import io
@@ -52,8 +53,9 @@ def module():
     return importlib.import_module(name)
 
 
-def entry(kind, mode, uid):
-    return SimpleNamespace(st_mode=kind | mode, st_uid=uid)
+def entry(kind, mode, uid, *, inode=1, device=1):
+    return SimpleNamespace(st_mode=kind | mode, st_uid=uid,
+                           st_ino=inode, st_dev=device)
 
 
 class LingerInventoryReadOnlyTests(unittest.TestCase):
@@ -61,6 +63,8 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.account = SimpleNamespace(pw_name='porotaadmin', pw_uid=1000,
                                        pw_gid=1000, pw_dir='/home/porotaadmin')
         self.paths = {
+            '/run': entry(stat.S_IFDIR, 0o755, 0),
+            '/run/user': entry(stat.S_IFDIR, 0o755, 0),
             '/run/user/1000': entry(stat.S_IFDIR, 0o700, 1000),
             '/run/user/1000/bus': entry(stat.S_IFSOCK, 0o660, 1000),
             '/usr': entry(stat.S_IFDIR, 0o755, 0),
@@ -78,6 +82,7 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
             'list-dependencies': b'default.target\nboca-private.service\n',
         }
         self.calls = []
+        self.after_logind = None
 
     def inspect(self, *, uid=1000, name='porotaadmin'):
         probe = module()
@@ -85,16 +90,23 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
                                   pw_dir='/home/' + name)
 
         def fake_lstat(path):
-            return self.paths[str(path)]
+            item = self.paths[str(path)]
+            if isinstance(item, OSError):
+                raise item
+            return item
 
         def fake_run(argv, *, env, timeout, max_bytes):
             self.calls.append(tuple(argv))
             self.assertGreater(timeout, 0)
             self.assertLessEqual(timeout, 5)
             self.assertLessEqual(max_bytes, 16384)
-            self.assertEqual(env['XDG_RUNTIME_DIR'], '/run/user/1000')
-            self.assertEqual(env['DBUS_SESSION_BUS_ADDRESS'],
-                             'unix:path=/run/user/1000/bus')
+            if argv[0] == '/usr/bin/loginctl':
+                self.assertNotIn('XDG_RUNTIME_DIR', env)
+                self.assertNotIn('DBUS_SESSION_BUS_ADDRESS', env)
+            else:
+                self.assertEqual(env['XDG_RUNTIME_DIR'], '/run/user/1000')
+                self.assertEqual(env['DBUS_SESSION_BUS_ADDRESS'],
+                                 'unix:path=/run/user/1000/bus')
             self.assertNotIn('DOCKER_HOST', env)
             self.assertNotIn('DOCKER_CONTEXT', env)
             self.assertNotIn('SSH_KEY', env)
@@ -102,6 +114,11 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
                 if name in argv:
                     if isinstance(payload, Exception):
                         raise payload
+                    if callable(payload):
+                        return payload(argv, env=env, timeout=timeout,
+                                       max_bytes=max_bytes)
+                    if name == 'show-user' and self.after_logind is not None:
+                        self.after_logind(self.paths)
                     return payload
             raise AssertionError('unreviewed command')
 
@@ -114,7 +131,11 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
 
     def test_private_uid_and_bounded_queries_never_export_unit_names(self):
         result = self.inspect()
-        self.assertEqual(result['schema'], 'rc6.r1.linger-runtime-inventory-readonly.v1')
+        self.assertEqual(result['schema'], 'rc6.r1.linger-runtime-inventory-readonly.v2')
+        self.assertEqual(result['probe_extent'], 'FULL')
+        self.assertEqual(result['user_runtime_status'], 'METADATA_VALID')
+        self.assertEqual(result['user_bus_status'], 'METADATA_VALID')
+        self.assertEqual(result['bus_mode_other_bits'], 'ABSENT')
         self.assertEqual(result['state'], 'NO_VERIFICADO')
         self.assertEqual(result['linger_effective'], 'NO')
         self.assertEqual(result['enabled_user_units'], 'PRESENT')
@@ -149,7 +170,9 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
         self.assertEqual(result['user_sockets'], 'NONE_OBSERVED')
         self.assertEqual(result['default_target_dependencies'], 'NONE_OBSERVED')
         self.assertEqual(result['autostart_risk'], 'UNVERIFIED')
-        self.assertNotIn('ABSENT', json.dumps(result))
+        self.assertNotIn('ABSENT', [result[field] for field in (
+            'enabled_user_units', 'active_user_services', 'user_timers',
+            'user_sockets', 'default_target_dependencies', 'autostart_risk')])
 
     def test_identity_or_untrusted_bus_denies_before_external_commands(self):
         probe = module()
@@ -161,9 +184,275 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
                     self.inspect(uid=uid, name=name)
                 self.assertEqual(self.calls, [])
         self.paths['/run/user/1000/bus'] = entry(stat.S_IFLNK, 0o777, 1000)
-        with self.assertRaises(probe.InventoryHold):
+        with self.assertRaises(probe.InventoryHold) as caught:
             self.inspect()
+        self.assertEqual(caught.exception.user_bus_status, 'SYMLINK')
+        self.assertEqual(caught.exception.linger, 'NO')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0][0], '/usr/bin/loginctl')
+
+    def test_bus_mode_other_bits_allowed_only_under_private_verified_runtime(self):
+        # Root-owned parents and a true 0700 UID1000 runtime directory make
+        # 0666 AF_UNIX metadata acceptable for read-only systemd user reads.
+        # It does not authenticate the endpoint or certify rootless Docker.
+        self.paths['/run/user/1000/bus'] = entry(stat.S_IFSOCK, 0o666, 1000)
+        result = self.inspect()
+        self.assertEqual(result['user_bus_status'], 'METADATA_VALID')
+        self.assertEqual(result['bus_mode_other_bits'], 'PRESENT')
+        self.assertEqual(len(self.calls), 4)
+
+        self.calls.clear()
+        self.paths['/run/user/1000'] = entry(stat.S_IFDIR, 0o755, 1000)
+        with self.assertRaises(module().InventoryHold) as caught:
+            self.inspect()
+        self.assertEqual(caught.exception.user_runtime_status, 'UNSAFE_MODE')
+        self.assertEqual(caught.exception.user_bus_status, 'NOT_CHECKED')
+        self.assertEqual([call[0] for call in self.calls], ['/usr/bin/loginctl'])
+
+    def test_runtime_bus_independent_fixed_categories_and_linger_partial(self):
+        probe = module()
+        runtime = '/run/user/1000'
+        bus = '/run/user/1000/bus'
+        cases = (
+            (runtime, OSError(errno.ENOENT, 'secret'), 'MISSING', 'NOT_CHECKED'),
+            (runtime, OSError(errno.EACCES, 'secret'), 'ACCESS_DENIED', 'NOT_CHECKED'),
+            (runtime, OSError(errno.EIO, 'secret'), 'UNVERIFIED', 'NOT_CHECKED'),
+            (runtime, entry(stat.S_IFLNK, 0o777, 1000), 'SYMLINK', 'NOT_CHECKED'),
+            (runtime, entry(stat.S_IFREG, 0o700, 1000), 'WRONG_TYPE', 'NOT_CHECKED'),
+            (runtime, entry(stat.S_IFDIR, 0o700, 1001), 'WRONG_OWNER', 'NOT_CHECKED'),
+            (runtime, entry(stat.S_IFDIR, 0o755, 1000), 'UNSAFE_MODE', 'NOT_CHECKED'),
+            (bus, OSError(errno.ENOENT, 'secret'), 'METADATA_VALID', 'MISSING'),
+            (bus, OSError(errno.EACCES, 'secret'), 'METADATA_VALID', 'ACCESS_DENIED'),
+            (bus, OSError(errno.EIO, 'secret'), 'METADATA_VALID', 'UNVERIFIED'),
+            (bus, entry(stat.S_IFLNK, 0o777, 1000), 'METADATA_VALID', 'SYMLINK'),
+            (bus, entry(stat.S_IFREG, 0o600, 1000), 'METADATA_VALID', 'WRONG_TYPE'),
+            (bus, entry(stat.S_IFSOCK, 0o660, 1001), 'METADATA_VALID', 'WRONG_OWNER'),
+            (bus, entry(stat.S_IFSOCK, 0o000, 1000), 'METADATA_VALID', 'UNSAFE_MODE'),
+        )
+        for path, item, runtime_status, bus_status in cases:
+            with self.subTest(path='runtime' if path == runtime else 'bus',
+                              status=runtime_status + '/' + bus_status):
+                previous = self.paths[path]
+                self.paths[path] = item
+                self.calls.clear()
+                self.responses['show-user'] = b'Linger=yes\n'
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.paths[path] = previous
+                hold = caught.exception
+                self.assertEqual(hold.user_runtime_status, runtime_status)
+                self.assertEqual(hold.user_bus_status, bus_status)
+                self.assertEqual(hold.linger, 'YES')
+                self.assertEqual(hold.phase, 'PREFLIGHT')
+                self.assertEqual([call[0] for call in self.calls], ['/usr/bin/loginctl'])
+        self.responses['show-user'] = b'Linger=no\n'
+
+    def test_untrusted_ancestor_cannot_be_ambiguous_missing_receipt(self):
+        self.paths['/run/user'] = entry(stat.S_IFLNK, 0o777, 0)
+        with self.assertRaises(module().InventoryHold) as caught:
+            self.inspect()
+        self.assertNotEqual(caught.exception.user_runtime_status, 'MISSING')
+        self.assertEqual(caught.exception.linger, 'UNVERIFIED')
         self.assertEqual(self.calls, [])
+
+    def test_world_writable_ancestor_and_untrusted_loginctl_never_query(self):
+        probe = module()
+        for path, untrusted in (
+                ('/run/user', entry(stat.S_IFDIR, 0o777, 0)),
+                ('/usr/bin/loginctl', entry(stat.S_IFREG, 0o777, 0)),
+                ('/usr/bin/loginctl', entry(stat.S_IFLNK, 0o777, 0))):
+            with self.subTest(path=path, kind=untrusted.st_mode):
+                previous = self.paths[path]
+                self.paths[path] = untrusted
+                self.calls.clear()
+                try:
+                    with self.assertRaises(probe.InventoryHold):
+                        self.inspect()
+                finally:
+                    self.paths[path] = previous
+                self.assertEqual(self.calls, [])
+
+    def test_unit_query_failure_preserves_known_linger_in_partial_hold(self):
+        probe = module()
+        for cmd in ('list-unit-files', 'list-units', 'list-dependencies'):
+            with self.subTest(cmd=cmd):
+                previous = self.responses[cmd]
+                self.responses[cmd] = probe.InventoryHold('QUERY_FAILED')
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.responses[cmd] = previous
+                self.assertEqual(caught.exception.linger, 'NO')
+                self.assertEqual(caught.exception.user_bus_status, 'METADATA_VALID')
+
+    def test_invalid_user_bus_never_invokes_systemctl_even_if_logind_fails(self):
+        probe = module()
+        self.paths['/run/user/1000/bus'] = OSError(errno.ENOENT, 'PRIVATE_PATH')
+        self.responses['show-user'] = probe.InventoryHold('QUERY_TIMEOUT')
+        with self.assertRaises(probe.InventoryHold) as caught:
+            self.inspect()
+        self.assertEqual(caught.exception.user_bus_status, 'MISSING')
+        self.assertEqual(caught.exception.linger, 'UNVERIFIED')
+        self.assertEqual(caught.exception.logind_status, 'QUERY_UNVERIFIED')
+        self.assertEqual([call[0] for call in self.calls], ['/usr/bin/loginctl'])
+        receipt = probe._partial_receipt(caught.exception)
+        self.assertEqual(receipt['probe_extent'], 'PARTIAL')
+        self.assertEqual(receipt['enabled_user_units'], 'NOT_QUERIED')
+        self.assertEqual(receipt['systemd_dbus_state'], 'NOT_QUERIED')
+        self.assertEqual(receipt['autostart_risk'], 'UNVERIFIED')
+        self.assertEqual(receipt['rootless_certified'], False)
+        self.assertNotIn('PRIVATE_PATH', json.dumps(receipt))
+
+    def test_query_failure_partial_retains_logind_but_no_unit_certification(self):
+        probe = module()
+        self.responses['list-units'] = probe.InventoryHold('QUERY_FAILED')
+        with self.assertRaises(probe.InventoryHold) as caught:
+            self.inspect()
+        receipt = probe._partial_receipt(caught.exception)
+        self.assertEqual(receipt['linger_effective'], 'NO')
+        self.assertEqual(receipt['logind_status'], 'PARSED_READONLY')
+        self.assertEqual(receipt['user_bus_status'], 'METADATA_VALID')
+        self.assertEqual(receipt['systemd_dbus_state'], 'INCOMPLETE_READONLY')
+        self.assertEqual({receipt[key] for key in probe.UNIT_FIELDS}, {'UNVERIFIED'})
+        self.assertEqual(receipt['autostart_risk'], 'UNVERIFIED')
+
+    def test_malformed_logind_on_invalid_bus_preserves_independent_cause(self):
+        probe = module()
+        self.paths['/run/user/1000/bus'] = entry(stat.S_IFLNK, 0o777, 1000)
+        self.responses['show-user'] = b'Linger=NO PRIVATE_NAME\n'
+        with self.assertRaises(probe.InventoryHold) as caught:
+            self.inspect()
+        receipt = probe._partial_receipt(caught.exception)
+        self.assertEqual(receipt['reason'], 'USER_BUS_UNVERIFIED')
+        self.assertEqual(receipt['user_bus_status'], 'SYMLINK')
+        self.assertEqual(receipt['logind_status'], 'PARSE_UNVERIFIED')
+        self.assertEqual(receipt['linger_effective'], 'UNVERIFIED')
+        self.assertNotIn('PRIVATE_NAME', json.dumps(receipt))
+
+    def test_user_bus_is_rechecked_after_logind_and_before_each_user_query(self):
+        probe = module()
+        runtime = '/run/user/1000'
+        bus = runtime + '/bus'
+        cases = (
+            (bus, entry(stat.S_IFLNK, 0o777, 1000),
+             'METADATA_VALID', 'SYMLINK'),
+            (bus, entry(stat.S_IFSOCK, 0o660, 1000, inode=23),
+             'METADATA_VALID', 'UNVERIFIED'),
+            (runtime, entry(stat.S_IFDIR, 0o755, 1000),
+             'UNSAFE_MODE', 'NOT_CHECKED'),
+            ('/run/user', entry(stat.S_IFLNK, 0o777, 0),
+             'UNVERIFIED', 'NOT_CHECKED'),
+        )
+        for path, modified, runtime_status, bus_status in cases:
+            with self.subTest(path=path, status=runtime_status+'/'+bus_status):
+                old = self.paths[path]
+                self.calls.clear()
+                self.after_logind = lambda paths, path=path, modified=modified: paths.__setitem__(path, modified)
+                self.responses['show-user'] = b'Linger=yes\n'
+                try:
+                    with self.assertRaises(probe.InventoryHold) as caught:
+                        self.inspect()
+                finally:
+                    self.paths[path] = old
+                    self.after_logind = None
+                self.assertEqual(caught.exception.user_runtime_status, runtime_status)
+                self.assertEqual(caught.exception.user_bus_status, bus_status)
+                self.assertEqual(caught.exception.linger, 'YES')
+                self.assertEqual([call[0] for call in self.calls], ['/usr/bin/loginctl'])
+
+    def test_bus_changed_between_user_queries_blocks_remaining_calls(self):
+        probe = module()
+        original = self.paths['/run/user/1000/bus']
+        after_first = self.responses['list-unit-files']
+        # Simulate the endpoint being replaced just as the first bounded
+        # `systemctl --user` call finishes. No second user query is allowed.
+        def swap_after_first(*args, **kwargs):
+            self.paths['/run/user/1000/bus'] = entry(stat.S_IFLNK, 0o777, 1000)
+            return after_first
+        self.responses['list-unit-files'] = swap_after_first
+        try:
+            with self.assertRaises(probe.InventoryHold) as caught:
+                self.inspect()
+        finally:
+            self.responses['list-unit-files'] = after_first
+            self.paths['/run/user/1000/bus'] = original
+        self.assertEqual([call[0] for call in self.calls],
+                         ['/usr/bin/loginctl', '/usr/bin/systemctl'])
+        self.assertEqual(caught.exception.phase, 'ACTIVE_UNITS_QUERY')
+        self.assertEqual(str(caught.exception), 'USER_BUS_UNVERIFIED')
+        self.assertEqual(caught.exception.systemd_dbus_state, 'INCOMPLETE_READONLY')
+        self.assertEqual(caught.exception.linger, 'NO')
+
+        # Exercise the real remote serializer and the actual runner receiver,
+        # not just a constructed JSON fixture or a source-text assertion.
+        out = io.StringIO()
+        with (mock.patch.object(probe, 'collect', side_effect=caught.exception),
+              contextlib.redirect_stdout(out)):
+            self.assertEqual(probe.main(['--linger-inventory']), 0)
+        receipt = json.loads(out.getvalue())
+        self.assertEqual(receipt['probe_extent'], 'PARTIAL')
+        self.assertEqual(receipt['systemd_dbus_state'], 'INCOMPLETE_READONLY')
+        self.assertEqual({receipt[key] for key in probe.UNIT_FIELDS}, {'UNVERIFIED'})
+        self.assertEqual(receipt['linger_effective'], 'NO')
+        self.assertNotIn('/run/user/1000', out.getvalue())
+        result = run_receiver('Read bounded systemd user inventory',
+                              'linger.json', out.getvalue())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('PHASE=ACTIVE_UNITS_QUERY|REASON=USER_BUS_UNVERIFIED',
+                      result.stdout + result.stderr)
+        self.assertIn('UNIT_INVENTORY=UNVERIFIED', result.stdout + result.stderr)
+        self.assertIn('LINGER_EFFECTIVE=NO', result.stdout + result.stderr)
+        self.assertIn('CERT2=NO_VERIFICADO', result.stdout + result.stderr)
+        self.assertNotIn('Traceback', result.stdout + result.stderr)
+        for forged in (
+                dict(receipt, systemd_dbus_state='NOT_QUERIED',
+                     **{key: 'NOT_QUERIED' for key in probe.UNIT_FIELDS}),
+                dict(receipt, phase='PREFLIGHT'),
+                dict(receipt, phase='UNIT_FILES_QUERY'),
+                dict(receipt, user_bus_status='METADATA_VALID',
+                     bus_mode_other_bits='ABSENT')):
+            with self.subTest(forged=forged['phase']):
+                rejected = run_receiver('Read bounded systemd user inventory',
+                                        'linger.json', json.dumps(forged))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', rejected.stdout + rejected.stderr)
+                self.assertNotIn('Traceback', rejected.stdout + rejected.stderr)
+
+    def test_bus_drift_after_second_user_query_is_not_reported_as_not_queried(self):
+        probe = module()
+        old_bus = self.paths['/run/user/1000/bus']
+        second = self.responses['list-units']
+        def drift_after_second(*args, **kwargs):
+            self.paths['/run/user/1000/bus'] = entry(stat.S_IFSOCK, 0o660, 1000, inode=44)
+            return second
+        self.responses['list-units'] = drift_after_second
+        try:
+            with self.assertRaises(probe.InventoryHold) as caught:
+                self.inspect()
+        finally:
+            self.responses['list-units'] = second
+            self.paths['/run/user/1000/bus'] = old_bus
+        self.assertEqual(caught.exception.phase, 'TARGET_DEPS_QUERY')
+        self.assertEqual(caught.exception.user_bus_status, 'UNVERIFIED')
+        self.assertEqual(caught.exception.systemd_dbus_state, 'INCOMPLETE_READONLY')
+        self.assertEqual(len(self.calls), 3)  # loginctl + two systemctl reads
+        out = io.StringIO()
+        with (mock.patch.object(probe, 'collect', side_effect=caught.exception),
+              contextlib.redirect_stdout(out)):
+            self.assertEqual(probe.main(['--linger-inventory']), 0)
+        receipt = json.loads(out.getvalue())
+        self.assertEqual({receipt[key] for key in probe.UNIT_FIELDS}, {'UNVERIFIED'})
+        self.assertEqual(receipt['systemd_dbus_state'], 'INCOMPLETE_READONLY')
+        remote = run_receiver('Read bounded systemd user inventory',
+                              'linger.json', out.getvalue())
+        self.assertNotEqual(remote.returncode, 0)
+        self.assertIn('PHASE=TARGET_DEPS_QUERY|REASON=USER_BUS_UNVERIFIED',
+                      remote.stdout + remote.stderr)
+        self.assertIn('UNIT_INVENTORY=UNVERIFIED', remote.stdout + remote.stderr)
+        self.assertIn('CERT2=NO_VERIFICADO', remote.stdout + remote.stderr)
 
     def test_malformed_logind_or_units_fail_closed_without_raw_leak(self):
         probe = module()
@@ -245,19 +534,107 @@ class LingerInventoryReadOnlyTests(unittest.TestCase):
 
 
 class LingerInventoryWorkflowTests(unittest.TestCase):
+    def test_partial_bus_receipt_is_strictly_validated_and_never_certified(self):
+        probe = module()
+        receipt = probe._partial_receipt(probe.InventoryHold(
+            'USER_BUS_UNVERIFIED', 'PREFLIGHT', linger='YES',
+            user_runtime_status='METADATA_VALID', user_bus_status='MISSING',
+            bus_mode_other_bits='NOT_CHECKED', logind_status='PARSED_READONLY'))
+        good = run_receiver('Read bounded systemd user inventory', 'linger.json',
+                            json.dumps(receipt))
+        self.assertNotEqual(good.returncode, 0, good.stderr + good.stdout)
+        self.assertIn('REASON=USER_BUS_UNVERIFIED', good.stdout + good.stderr)
+        self.assertIn('RUNTIME_STATUS=METADATA_VALID', good.stdout + good.stderr)
+        self.assertIn('BUS_STATUS=MISSING', good.stdout + good.stderr)
+        self.assertIn('LINGER_EFFECTIVE=YES', good.stdout + good.stderr)
+        self.assertIn('BUS_MODE_OTHER_BITS=NOT_CHECKED', good.stdout + good.stderr)
+        self.assertIn('UNIT_INVENTORY=NOT_QUERIED', good.stdout + good.stderr)
+        self.assertIn('CERT2=NO_VERIFICADO', good.stdout + good.stderr)
+        self.assertNotIn('/run/user', good.stdout + good.stderr)
+
+        invalid = (
+            dict(receipt, user_runtime_status='MISSING', user_bus_status='METADATA_VALID'),
+            dict(receipt, user_bus_status='NOT_CHECKED'),
+            dict(receipt, bus_mode_other_bits='PRESENT'),
+            dict(receipt, systemd_dbus_state='QUERIED_READONLY'),
+            dict(receipt, user_timers='PRESENT'),
+            dict(receipt, logind_status='QUERY_UNVERIFIED'),
+            dict(receipt, linger_effective='UNVERIFIED'),
+            dict(receipt, logind_status='NOT_QUERIED', linger_effective='UNVERIFIED'),
+            dict(receipt, probe_extent='FULL'),
+            dict(receipt, read_only=1),
+            dict(receipt, rootless_certified=True),
+            dict(receipt, reason='PRIVATE_REASON'),
+            dict(receipt, phase='LOGIND_PARSE'),
+            dict(receipt, user_runtime_status=['METADATA_VALID']),
+            dict(receipt, user_runtime_status={'PRIVATE_PATH': 'METADATA_VALID'}),
+            dict(receipt, user_bus_status=['MISSING']),
+            dict(receipt, user_bus_status={'PRIVATE_PATH': 'MISSING'}),
+            dict(receipt, logind_status=['PARSED_READONLY']),
+            dict(receipt, bus_mode_other_bits=['PRESENT']),
+            dict(receipt, probe_extent=['PARTIAL']),
+            dict(receipt, extra='PRIVATE_FIELD'),
+            {key: value for key, value in receipt.items() if key != 'user_bus_status'},
+        )
+        for malicious in invalid:
+            with self.subTest(mutation=str(malicious)[:100]):
+                result = run_receiver('Read bounded systemd user inventory',
+                                      'linger.json', json.dumps(malicious))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('RECEIPT_INVALID', result.stdout + result.stderr)
+                self.assertNotIn('PRIVATE_', result.stdout + result.stderr)
+                self.assertNotIn('Traceback', result.stdout + result.stderr)
+        valid = json.dumps(receipt)
+        for raw in (
+                valid.replace('"phase": "PREFLIGHT"',
+                              '"phase": "LOGIND_QUERY", "phase": "PREFLIGHT"'),
+                valid.replace('"mutations": 0', '"mutations": NaN'),
+                valid.replace('"mutations": 0', '"mutations": Infinity')):
+            result = run_receiver('Read bounded systemd user inventory',
+                                  'linger.json', raw)
+            self.assertIn('RECEIPT_INVALID', result.stdout + result.stderr)
+
+    def test_late_systemctl_error_retains_linger_in_sanitized_receiver(self):
+        probe = module()
+        receipt = probe._partial_receipt(probe.InventoryHold(
+            'QUERY_FAILED', 'ACTIVE_UNITS_QUERY', linger='YES',
+            user_runtime_status='METADATA_VALID', user_bus_status='METADATA_VALID',
+            bus_mode_other_bits='PRESENT', logind_status='PARSED_READONLY',
+            systemd_dbus_state='INCOMPLETE_READONLY'))
+        good = run_receiver('Read bounded systemd user inventory', 'linger.json',
+                            json.dumps(receipt))
+        self.assertNotEqual(good.returncode, 0, good.stdout + good.stderr)
+        self.assertIn('LINGER_EFFECTIVE=YES', good.stdout + good.stderr)
+        self.assertIn('BUS_MODE_OTHER_BITS=PRESENT', good.stdout + good.stderr)
+        self.assertIn('UNIT_INVENTORY=UNVERIFIED', good.stdout + good.stderr)
+        self.assertIn('CERT2=NO_VERIFICADO', good.stdout + good.stderr)
+
     def test_real_receiver_reports_allowlisted_stage_and_reason_only(self):
-        fields = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+        fields = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v2',
                   'state': 'NO_VERIFICADO', 'read_only': True,
                   'mutations': 0, 'docker_queries': 0,
                   'docker_socket_connections': 0, 'sudo_executed': False,
                   'rootless_certified': False,
+                  'probe_extent': 'PARTIAL',
+                  'user_runtime_status': 'METADATA_VALID',
+                  'user_bus_status': 'SYMLINK',
+                  'bus_mode_other_bits': 'NOT_CHECKED',
+                  'logind_status': 'PARSED_READONLY',
+                  'linger_effective': 'NO',
+                  'enabled_user_units': 'NOT_QUERIED',
+                  'active_user_services': 'NOT_QUERIED',
+                  'user_timers': 'NOT_QUERIED',
+                  'user_sockets': 'NOT_QUERIED',
+                  'default_target_dependencies': 'NOT_QUERIED',
+                  'autostart_risk': 'UNVERIFIED',
+                  'systemd_dbus_state': 'NOT_QUERIED',
                   'reason': 'USER_BUS_UNVERIFIED', 'phase': 'PREFLIGHT'}
         proc = run_receiver('Read bounded systemd user inventory',
                             'linger.json', json.dumps(fields))
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn('HOST_PREREQUISITES_UNVERIFIED|PHASE=PREFLIGHT'
-                      '|REASON=USER_BUS_UNVERIFIED|CERT2=NO_VERIFICADO',
-                      proc.stdout + proc.stderr)
+                      '|REASON=USER_BUS_UNVERIFIED', proc.stdout + proc.stderr)
+        self.assertIn('|CERT2=NO_VERIFICADO', proc.stdout + proc.stderr)
 
         for field, bad in (('reason', 'UNREVIEWED_PRIVATE_CODE'),
                            ('phase', 'untrusted; echo PRIVATE_SECRET')):
@@ -297,11 +674,24 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
             self.assertNotIn('Traceback', proc.stdout + proc.stderr)
 
     def test_query_and_parse_error_enums_remain_fail_closed(self):
-        base = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+        base = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v2',
                 'state': 'NO_VERIFICADO', 'read_only': True,
                 'mutations': 0, 'docker_queries': 0,
                 'docker_socket_connections': 0, 'sudo_executed': False,
-                'rootless_certified': False}
+                'rootless_certified': False,
+                'probe_extent': 'PARTIAL',
+                'user_runtime_status': 'METADATA_VALID',
+                'user_bus_status': 'METADATA_VALID',
+                'bus_mode_other_bits': 'ABSENT',
+                'logind_status': 'PARSED_READONLY',
+                'linger_effective': 'NO',
+                'enabled_user_units': 'UNVERIFIED',
+                'active_user_services': 'UNVERIFIED',
+                'user_timers': 'UNVERIFIED',
+                'user_sockets': 'UNVERIFIED',
+                'default_target_dependencies': 'UNVERIFIED',
+                'autostart_risk': 'UNVERIFIED',
+                'systemd_dbus_state': 'INCOMPLETE_READONLY'}
         examples = (
             ('PREFLIGHT', 'USER_BUS_UNVERIFIED'),
             ('LOGIND_QUERY', 'QUERY_TIMEOUT'),
@@ -316,6 +706,29 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
         for phase, reason in examples:
             with self.subTest(phase=phase):
                 receipt = dict(base, phase=phase, reason=reason)
+                if phase == 'PREFLIGHT':
+                    receipt.update(user_bus_status='SYMLINK',
+                                   bus_mode_other_bits='NOT_CHECKED',
+                                   systemd_dbus_state='NOT_QUERIED',
+                                   **{key: 'NOT_QUERIED' for key in (
+                                       'enabled_user_units', 'active_user_services',
+                                       'user_timers', 'user_sockets',
+                                       'default_target_dependencies')})
+                if phase in ('LOGIND_QUERY', 'LOGIND_PARSE', 'INVENTORY_UNKNOWN'):
+                    receipt.update(logind_status=(
+                        'QUERY_UNVERIFIED' if phase == 'LOGIND_QUERY' else
+                        'PARSE_UNVERIFIED' if phase == 'LOGIND_PARSE' else
+                        'NOT_QUERIED'),
+                        linger_effective='UNVERIFIED',
+                        systemd_dbus_state='NOT_QUERIED',
+                        **{key: 'NOT_QUERIED' for key in (
+                            'enabled_user_units', 'active_user_services',
+                            'user_timers', 'user_sockets',
+                            'default_target_dependencies')})
+                if phase == 'INVENTORY_UNKNOWN':
+                    receipt.update(user_runtime_status='UNVERIFIED',
+                                   user_bus_status='NOT_CHECKED',
+                                   bus_mode_other_bits='NOT_CHECKED')
                 proc = run_receiver('Read bounded systemd user inventory',
                                     'linger.json', json.dumps(receipt))
                 self.assertNotEqual(proc.returncode, 0)
@@ -344,8 +757,13 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
             self.assertNotIn(forbidden, inventory)
 
     def test_actual_inventory_receiver_rejects_duplicate_json_and_preserves_safe_output(self):
-        fields = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+        fields = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v2',
                   'state': 'NO_VERIFICADO', 'read_only': True,
+                  'probe_extent': 'FULL',
+                  'user_runtime_status': 'METADATA_VALID',
+                  'user_bus_status': 'METADATA_VALID',
+                  'bus_mode_other_bits': 'ABSENT',
+                  'logind_status': 'PARSED_READONLY',
                   'linger_effective': 'NO', 'enabled_user_units': 'NONE_OBSERVED',
                   'active_user_services': 'NONE_OBSERVED',
                   'user_timers': 'NONE_OBSERVED', 'user_sockets': 'NONE_OBSERVED',
@@ -397,8 +815,13 @@ class LingerInventoryWorkflowTests(unittest.TestCase):
         # the receipt without exposing host-controlled text to public logs.
         for raw_constant in ('NaN', 'Infinity', '-Infinity'):
             self.assertIsInstance(json.loads(raw_constant), float)
-        inventory = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v1',
+        inventory = {'schema': 'rc6.r1.linger-runtime-inventory-readonly.v2',
                      'state': 'NO_VERIFICADO', 'read_only': True,
+                     'probe_extent': 'FULL',
+                     'user_runtime_status': 'METADATA_VALID',
+                     'user_bus_status': 'METADATA_VALID',
+                     'bus_mode_other_bits': 'ABSENT',
+                     'logind_status': 'PARSED_READONLY',
                      'linger_effective': 'NO', 'enabled_user_units': 'NONE_OBSERVED',
                      'active_user_services': 'NONE_OBSERVED',
                      'user_timers': 'NONE_OBSERVED', 'user_sockets': 'NONE_OBSERVED',

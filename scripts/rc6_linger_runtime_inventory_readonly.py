@@ -5,6 +5,7 @@ Only aggregate categories leave that login; unit names, paths and raw command
 errors are never printed. No privileged or Docker operations are performed.
 """
 
+import errno
 import json
 import os
 import pwd
@@ -16,7 +17,7 @@ import sys
 import time
 
 
-SCHEMA = 'rc6.r1.linger-runtime-inventory-readonly.v1'
+SCHEMA = 'rc6.r1.linger-runtime-inventory-readonly.v2'
 ACCOUNT = 'porotaadmin'
 UID = 1000
 RUNTIME = '/run/user/1000'
@@ -33,14 +34,30 @@ KNOWN_UNIT_STATES = frozenset(('enabled', 'enabled-runtime', 'disabled',
     'transient', 'linked', 'linked-runtime', 'bad'))
 KNOWN_ACTIVE_STATES = frozenset(('active', 'inactive', 'activating',
     'deactivating', 'reloading', 'failed'))
+METADATA_STATES = frozenset(('MISSING', 'ACCESS_DENIED', 'SYMLINK',
+    'WRONG_TYPE', 'WRONG_OWNER', 'UNSAFE_MODE', 'METADATA_VALID', 'UNVERIFIED'))
+BUS_OTHER_BITS = frozenset(('PRESENT', 'ABSENT', 'NOT_CHECKED'))
+LOGIND_STATES = frozenset(('NOT_QUERIED', 'PARSED_READONLY',
+    'QUERY_UNVERIFIED', 'PARSE_UNVERIFIED'))
+UNIT_FIELDS = ('enabled_user_units', 'active_user_services', 'user_timers',
+               'user_sockets', 'default_target_dependencies')
 
 
 class InventoryHold(Exception):
     """Fail-closed with only a fixed, public-safe error category."""
 
-    def __init__(self, reason, phase='PREFLIGHT'):
+    def __init__(self, reason, phase='PREFLIGHT', *, linger='UNVERIFIED',
+                 user_runtime_status='UNVERIFIED', user_bus_status='NOT_CHECKED',
+                 bus_mode_other_bits='NOT_CHECKED', logind_status='NOT_QUERIED',
+                 systemd_dbus_state='NOT_QUERIED'):
         super().__init__(reason)
         self.phase = phase
+        self.linger = linger
+        self.user_runtime_status = user_runtime_status
+        self.user_bus_status = user_bus_status
+        self.bus_mode_other_bits = bus_mode_other_bits
+        self.logind_status = logind_status
+        self.systemd_dbus_state = systemd_dbus_state
 
 
 def _trusted_directory(path, owner, private=False):
@@ -52,6 +69,7 @@ def _trusted_directory(path, owner, private=False):
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid != owner or
             mode & 0o022 or (private and mode != 0o700)):
         raise InventoryHold('OS_IDENTITY_UNVERIFIED')
+    return (info.st_dev, info.st_ino, mode)
 
 
 def _trusted_executable(path):
@@ -81,16 +99,81 @@ def _preflight():
         raise InventoryHold('LOGIN_IDENTITY_UNVERIFIED')
     _trusted_directory('/usr', 0)
     _trusted_directory('/usr/bin', 0)
-    _trusted_directory(RUNTIME, UID, private=True)
+    # The trusted parents make ENOENT at the UID runtime or bus meaningful.
+    # lstat also rejects a symlink before any of its children can be trusted.
+    run_identity = _trusted_directory('/run', 0)
+    user_parent_identity = _trusted_directory('/run/user', 0)
+    _trusted_executable('/usr/bin/loginctl')
+    return run_identity, user_parent_identity
+
+
+def _metadata(path, *, directory):
+    """Categorize one lstat safely; no raw host metadata exits the process."""
     try:
-        socket = os.lstat(BUS)
-    except OSError:
-        raise InventoryHold('USER_BUS_UNVERIFIED') from None
-    if (not stat.S_ISSOCK(socket.st_mode) or socket.st_uid != UID or
-            stat.S_IMODE(socket.st_mode) & 0o007):
-        raise InventoryHold('USER_BUS_UNVERIFIED')
-    for path in ('/usr/bin/loginctl', '/usr/bin/systemctl'):
-        _trusted_executable(path)
+        info = os.lstat(path)
+    except OSError as exc:
+        if exc.errno == errno.ENOENT:
+            return 'MISSING', 'NOT_CHECKED', None
+        if exc.errno in (errno.EACCES, errno.EPERM):
+            return 'ACCESS_DENIED', 'NOT_CHECKED', None
+        return 'UNVERIFIED', 'NOT_CHECKED', None
+    if stat.S_ISLNK(info.st_mode):
+        return 'SYMLINK', 'NOT_CHECKED', None
+    if not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISSOCK(info.st_mode)):
+        return 'WRONG_TYPE', 'NOT_CHECKED', None
+    if info.st_uid != UID:
+        return 'WRONG_OWNER', 'NOT_CHECKED', None
+    mode = stat.S_IMODE(info.st_mode)
+    identity = (info.st_dev, info.st_ino, mode)
+    if directory:
+        return ('METADATA_VALID' if mode == 0o700 else 'UNSAFE_MODE'), 'NOT_CHECKED', identity
+    # Security+SRE+Architecture: even 0666 is valid AF_UNIX metadata when
+    # protected by a real, UID-owned 0700 runtime parent. Other bits are
+    # reported, not treated as authentication or a Docker/host permission.
+    other = 'PRESENT' if mode & 0o007 else 'ABSENT'
+    if (mode & 0o7000 or not mode & 0o200):
+        return 'UNSAFE_MODE', other, identity
+    return 'METADATA_VALID', other, identity
+
+
+def _recheck_user_bus(parent_ids, runtime_id, bus_id, context, *, phase,
+                      prior_user_queries):
+    """Catch observable swaps; preserve whether user-systemd was queried."""
+    def deny(**statuses):
+        # A drift before the first systemctl is a preflight failure; a drift
+        # between calls is an incomplete inventory, NEVER 'NOT_QUERIED'.
+        raise InventoryHold('USER_BUS_UNVERIFIED',
+            phase if prior_user_queries else 'PREFLIGHT',
+            systemd_dbus_state=('INCOMPLETE_READONLY' if prior_user_queries
+                                else 'NOT_QUERIED'),
+            **{**context, **statuses})
+
+    try:
+        parent_now = (_trusted_directory('/run', 0),
+                      _trusted_directory('/run/user', 0))
+    except InventoryHold:
+        parent_now = None
+    if parent_now != parent_ids:
+        deny(user_runtime_status='UNVERIFIED', user_bus_status='NOT_CHECKED',
+             bus_mode_other_bits='NOT_CHECKED')
+    runtime_status, _, new_runtime_id = _metadata(RUNTIME, directory=True)
+    if runtime_status != 'METADATA_VALID' or new_runtime_id != runtime_id:
+        deny(user_runtime_status=(runtime_status if runtime_status != 'METADATA_VALID'
+                                  else 'UNVERIFIED'),
+             user_bus_status='NOT_CHECKED', bus_mode_other_bits='NOT_CHECKED')
+    bus_status, bits, new_bus_id = _metadata(BUS, directory=False)
+    if bus_status != 'METADATA_VALID' or new_bus_id != bus_id:
+        deny(user_bus_status=(bus_status if bus_status != 'METADATA_VALID'
+                              else 'UNVERIFIED'),
+             bus_mode_other_bits=(bits if bus_status == 'UNSAFE_MODE'
+                                  else 'NOT_CHECKED'))
+
+
+def _fixed_receipt():
+    return {'schema': SCHEMA, 'state': 'NO_VERIFICADO', 'read_only': True,
+            'mutations': 0, 'docker_queries': 0,
+            'docker_socket_connections': 0, 'sudo_executed': False,
+            'rootless_certified': False}
 
 
 def _run_bounded_command(argv, *, env, timeout, max_bytes):
@@ -193,14 +276,58 @@ def _dependencies(raw):
 
 
 def collect():
-    _preflight()
-    # Fixed argument vectors, restricted environment and explicit systemd
-    # user-bus reads. Does NOT touch a Docker or arbitrary AF_UNIX endpoint.
-    env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C',
-           'XDG_RUNTIME_DIR': RUNTIME,
-           'DBUS_SESSION_BUS_ADDRESS': 'unix:path=' + BUS}
+    parent_ids = _preflight()
+    runtime_status, _, runtime_id = _metadata(RUNTIME, directory=True)
+    if runtime_status == 'METADATA_VALID':
+        bus_status, bus_other_bits, bus_id = _metadata(BUS, directory=False)
+    else:
+        bus_status, bus_other_bits = 'NOT_CHECKED', 'NOT_CHECKED'
+        bus_id = None
+    metadata = {'user_runtime_status': runtime_status,
+                'user_bus_status': bus_status,
+                'bus_mode_other_bits': bus_other_bits}
+
+    # Independently read the system bus through a trusted root-owned loginctl
+    # BEFORE considering a user-bus connection. No DBUS_SESSION_BUS_ADDRESS
+    # or XDG_RUNTIME_DIR is injected for the system-bus-only query.
+    logind_env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}
+    linger = 'UNVERIFIED'
+    logind_status = 'NOT_QUERIED'
+    logind_hold = None
+    try:
+        raw_linger = _run_bounded_command(
+            ('/usr/bin/loginctl', '--no-pager', 'show-user', '--property=Linger', ACCOUNT),
+            env=logind_env, timeout=5, max_bytes=16384)
+    except InventoryHold as exc:
+        logind_status = 'QUERY_UNVERIFIED'
+        logind_hold = (str(exc), 'LOGIND_QUERY')
+    else:
+        try:
+            lines = _decoded(raw_linger)
+            if lines not in (['Linger=yes'], ['Linger=no']):
+                raise InventoryHold('LOGIND_UNVERIFIED')
+            linger = 'YES' if lines[0] == 'Linger=yes' else 'NO'
+            logind_status = 'PARSED_READONLY'
+        except InventoryHold as exc:
+            logind_status = 'PARSE_UNVERIFIED'
+            logind_hold = (str(exc), 'LOGIND_PARSE')
+    context = {**metadata, 'linger': linger, 'logind_status': logind_status}
+    if runtime_status != 'METADATA_VALID' or bus_status != 'METADATA_VALID':
+        # An invalid user bus does not erase independently observed linger.
+        # No systemctl --user may be invoked on this path.
+        raise InventoryHold('USER_BUS_UNVERIFIED', 'PREFLIGHT', **context)
+    if logind_hold is not None:
+        raise InventoryHold(*logind_hold, **context)
+    try:
+        _trusted_executable('/usr/bin/systemctl')
+    except InventoryHold as exc:
+        raise InventoryHold(str(exc), 'PREFLIGHT', **context) from None
+
+    # Fixed argument vectors, bounded systemd user-bus reads. The socket
+    # metadata is not a positive authentication or rootless certification.
+    user_env = {**logind_env, 'XDG_RUNTIME_DIR': RUNTIME,
+                'DBUS_SESSION_BUS_ADDRESS': 'unix:path=' + BUS}
     commands = (
-        ('/usr/bin/loginctl', '--no-pager', 'show-user', '--property=Linger', ACCOUNT),
         ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
          'list-unit-files', '--all', '--type=service,socket,timer'),
         ('/usr/bin/systemctl', '--user', '--no-pager', '--no-legend',
@@ -209,41 +336,73 @@ def collect():
          'list-dependencies', '--all', 'default.target'),
     )
     outputs = []
-    for phase, command in zip(('LOGIND_QUERY', 'UNIT_FILES_QUERY',
+    for phase, command in zip(('UNIT_FILES_QUERY',
                                'ACTIVE_UNITS_QUERY', 'TARGET_DEPS_QUERY'), commands):
+        _recheck_user_bus(parent_ids, runtime_id, bus_id, context,
+                          phase=phase, prior_user_queries=bool(outputs))
         try:
-            outputs.append(_run_bounded_command(command, env=env, timeout=5,
+            outputs.append(_run_bounded_command(command, env=user_env, timeout=5,
                                                 max_bytes=16384))
         except InventoryHold as exc:
-            raise InventoryHold(str(exc), phase) from None
+            raise InventoryHold(str(exc), phase,
+                                systemd_dbus_state='INCOMPLETE_READONLY',
+                                **context) from None
     try:
-        linger = _decoded(outputs[0])
-        if linger not in (['Linger=yes'], ['Linger=no']):
-            raise InventoryHold('LOGIND_UNVERIFIED')
+        enabled = _unit_files(outputs[0])
     except InventoryHold as exc:
-        raise InventoryHold(str(exc), 'LOGIND_PARSE') from None
+        raise InventoryHold(str(exc), 'UNIT_FILES_PARSE',
+                            systemd_dbus_state='INCOMPLETE_READONLY',
+                            **context) from None
     try:
-        enabled = _unit_files(outputs[1])
+        active, timers, sockets = _loaded_units(outputs[1])
     except InventoryHold as exc:
-        raise InventoryHold(str(exc), 'UNIT_FILES_PARSE') from None
+        raise InventoryHold(str(exc), 'ACTIVE_UNITS_PARSE',
+                            systemd_dbus_state='INCOMPLETE_READONLY',
+                            **context) from None
     try:
-        active, timers, sockets = _loaded_units(outputs[2])
+        deps = _dependencies(outputs[2])
     except InventoryHold as exc:
-        raise InventoryHold(str(exc), 'ACTIVE_UNITS_PARSE') from None
-    try:
-        deps = _dependencies(outputs[3])
-    except InventoryHold as exc:
-        raise InventoryHold(str(exc), 'TARGET_DEPS_PARSE') from None
+        raise InventoryHold(str(exc), 'TARGET_DEPS_PARSE',
+                            systemd_dbus_state='INCOMPLETE_READONLY',
+                            **context) from None
     risk = ('PRESENT' if 'PRESENT' in (enabled, active, timers, sockets, deps)
             else 'UNVERIFIED')
-    return {'schema': SCHEMA, 'state': 'NO_VERIFICADO', 'read_only': True,
-            'linger_effective': 'YES' if linger[0] == 'Linger=yes' else 'NO',
+    return {**_fixed_receipt(), **metadata, 'probe_extent': 'FULL',
+            'logind_status': logind_status, 'linger_effective': linger,
             'enabled_user_units': enabled, 'active_user_services': active,
             'user_timers': timers, 'user_sockets': sockets,
             'default_target_dependencies': deps, 'autostart_risk': risk,
-            'systemd_dbus_state': 'QUERIED_READONLY', 'mutations': 0,
-            'docker_queries': 0, 'docker_socket_connections': 0,
-            'sudo_executed': False, 'rootless_certified': False}
+            'systemd_dbus_state': 'QUERIED_READONLY'}
+
+
+def _partial_receipt(exc):
+    reason = str(exc)
+    phase = exc.phase
+    allowed_phases = ('PREFLIGHT', 'LOGIND_QUERY', 'UNIT_FILES_QUERY',
+                      'ACTIVE_UNITS_QUERY', 'TARGET_DEPS_QUERY', 'LOGIND_PARSE',
+                      'UNIT_FILES_PARSE', 'ACTIVE_UNITS_PARSE', 'TARGET_DEPS_PARSE')
+    if reason not in REASON_ALLOWLIST or phase not in allowed_phases:
+        reason, phase = 'INVENTORY_UNVERIFIED', 'INVENTORY_UNKNOWN'
+        exc = InventoryHold(reason, phase)
+    runtime_status = (exc.user_runtime_status if exc.user_runtime_status in METADATA_STATES
+                      else 'UNVERIFIED')
+    bus_status = (exc.user_bus_status if exc.user_bus_status in METADATA_STATES | {'NOT_CHECKED'}
+                  else 'NOT_CHECKED')
+    bits = (exc.bus_mode_other_bits if exc.bus_mode_other_bits in BUS_OTHER_BITS
+            else 'NOT_CHECKED')
+    linger = exc.linger if exc.linger in ('YES','NO','UNVERIFIED') else 'UNVERIFIED'
+    logind = (exc.logind_status if exc.logind_status in LOGIND_STATES
+              else 'NOT_QUERIED')
+    dbus = (exc.systemd_dbus_state if exc.systemd_dbus_state in (
+            'NOT_QUERIED', 'INCOMPLETE_READONLY') else 'NOT_QUERIED')
+    unit_state = 'UNVERIFIED' if dbus == 'INCOMPLETE_READONLY' else 'NOT_QUERIED'
+    return {**_fixed_receipt(), 'probe_extent': 'PARTIAL',
+            'reason': reason, 'phase': phase,
+            'user_runtime_status': runtime_status, 'user_bus_status': bus_status,
+            'bus_mode_other_bits': bits, 'logind_status': logind,
+            'linger_effective': linger,
+            **{key: unit_state for key in UNIT_FIELDS},
+            'autostart_risk': 'UNVERIFIED', 'systemd_dbus_state': dbus}
 
 
 def main(argv=None):
@@ -253,27 +412,11 @@ def main(argv=None):
     try:
         result = collect()
     except InventoryHold as exc:
-        # Safe enum only; host exceptions and raw systemd output are never sent.
-        reason = str(exc)
-        if reason not in REASON_ALLOWLIST:
-            reason = 'INVENTORY_UNVERIFIED'
-            phase = 'INVENTORY_UNKNOWN'
-        else:
-            phase = exc.phase if exc.phase in ('PREFLIGHT', 'LOGIND_QUERY',
-            'UNIT_FILES_QUERY', 'ACTIVE_UNITS_QUERY', 'TARGET_DEPS_QUERY',
-            'LOGIND_PARSE', 'UNIT_FILES_PARSE', 'ACTIVE_UNITS_PARSE',
-            'TARGET_DEPS_PARSE') else 'INVENTORY_UNKNOWN'
-        result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
-                  'reason': reason, 'phase': phase, 'read_only': True, 'mutations': 0,
-                  'docker_queries': 0, 'docker_socket_connections': 0,
-                  'sudo_executed': False, 'rootless_certified': False}
+        # Category-only partial receipt; never reflect raw host details.
+        result = _partial_receipt(exc)
     except Exception:
-        result = {'schema': SCHEMA, 'state': 'NO_VERIFICADO',
-                  'reason': 'INVENTORY_UNVERIFIED',
-                  'phase': 'INVENTORY_UNKNOWN', 'read_only': True,
-                  'mutations': 0, 'docker_queries': 0,
-                  'docker_socket_connections': 0, 'sudo_executed': False,
-                  'rootless_certified': False}
+        result = _partial_receipt(InventoryHold('INVENTORY_UNVERIFIED',
+                                               'INVENTORY_UNKNOWN'))
     print(json.dumps(result, sort_keys=True, separators=(',', ':')))
     return 0
 

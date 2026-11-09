@@ -693,9 +693,11 @@ jobs:
           fields = {'linger_effective','enabled_user_units','active_user_services',
                     'user_timers','user_sockets','default_target_dependencies',
                     'autostart_risk','systemd_dbus_state'}
-          expected = common | fields
+          metadata = {'probe_extent','user_runtime_status','user_bus_status',
+                      'bus_mode_other_bits','logind_status'}
+          expected = common | metadata | fields
           if (not isinstance(data, dict) or
-                  data.get('schema') != 'rc6.r1.linger-runtime-inventory-readonly.v1' or
+                  data.get('schema') != 'rc6.r1.linger-runtime-inventory-readonly.v2' or
                   data.get('state') != 'NO_VERIFICADO' or
                   data.get('read_only') is not True or
                   any(type(data.get(k)) is not int or data[k] != 0 for k in
@@ -703,10 +705,39 @@ jobs:
                   data.get('sudo_executed') is not False or
                   data.get('rootless_certified') is not False):
               raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
-          if set(data) == common | {'reason','phase'}:
-              # The remote already computes a safe enum. Do not discard its
-              # evidence or reflect any host-controlled code without an exact
-              # allowlist and a reason/phase consistency check.
+          invalid = 'RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO'
+          metadata_states = {'MISSING','ACCESS_DENIED','SYMLINK','WRONG_TYPE',
+                             'WRONG_OWNER','UNSAFE_MODE','METADATA_VALID','UNVERIFIED'}
+          unit_fields = ('enabled_user_units','active_user_services',
+                         'user_timers','user_sockets','default_target_dependencies')
+          if (set(data) not in (expected, expected | {'reason','phase'}) or
+                  any(type(data.get(k)) is not str for k in metadata | fields) or
+                  data.get('probe_extent') not in ('FULL','PARTIAL') or
+                  data.get('user_runtime_status') not in metadata_states or
+                  data.get('user_bus_status') not in metadata_states | {'NOT_CHECKED'} or
+                  data.get('bus_mode_other_bits') not in ('PRESENT','ABSENT','NOT_CHECKED') or
+                  data.get('logind_status') not in ('NOT_QUERIED','PARSED_READONLY',
+                      'QUERY_UNVERIFIED','PARSE_UNVERIFIED') or
+                  data.get('linger_effective') not in ('YES','NO','UNVERIFIED') or
+                  (data['logind_status'] == 'PARSED_READONLY') !=
+                      (data['linger_effective'] in ('YES','NO')) or
+                  (data['user_runtime_status'] != 'METADATA_VALID' and
+                      (data['user_bus_status'] != 'NOT_CHECKED' or
+                       data['bus_mode_other_bits'] != 'NOT_CHECKED')) or
+                  (data['user_runtime_status'] == 'METADATA_VALID' and
+                      (data['user_bus_status'] == 'NOT_CHECKED' or
+                       (data['user_bus_status'] in (
+                          'MISSING','ACCESS_DENIED','SYMLINK','WRONG_TYPE',
+                          'WRONG_OWNER','UNVERIFIED') and
+                       data['bus_mode_other_bits'] != 'NOT_CHECKED'))) or
+                  (data['user_bus_status'] in ('METADATA_VALID','UNSAFE_MODE') and
+                      data['bus_mode_other_bits'] not in ('PRESENT','ABSENT'))):
+              raise SystemExit(invalid)
+          if data['probe_extent'] == 'PARTIAL':
+              # A partial receipt is never sufficient for a positive result.
+              # Enums must agree with which system-bus/user-bus reads occurred.
+              if set(data) != expected | {'reason','phase'}:
+                  raise SystemExit(invalid)
               expected_pairs = {
                   'PREFLIGHT': {'OS_IDENTITY_UNVERIFIED',
                                 'OS_BINARY_UNVERIFIED',
@@ -720,10 +751,10 @@ jobs:
                                        'QUERY_UNVERIFIED'},
                   'ACTIVE_UNITS_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
                                         'QUERY_OUTPUT_BOUND','QUERY_FAILED',
-                                        'QUERY_UNVERIFIED'},
+                                        'QUERY_UNVERIFIED','USER_BUS_UNVERIFIED'},
                   'TARGET_DEPS_QUERY': {'QUERY_BOUND_INVALID','QUERY_TIMEOUT',
                                        'QUERY_OUTPUT_BOUND','QUERY_FAILED',
-                                       'QUERY_UNVERIFIED'},
+                                       'QUERY_UNVERIFIED','USER_BUS_UNVERIFIED'},
                   'LOGIND_PARSE': {'LOGIND_UNVERIFIED',
                                    'SYSTEMD_OUTPUT_UNVERIFIED'},
                   'UNIT_FILES_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
@@ -731,15 +762,79 @@ jobs:
                   'TARGET_DEPS_PARSE': {'SYSTEMD_OUTPUT_UNVERIFIED'},
                   'INVENTORY_UNKNOWN': {'INVENTORY_UNVERIFIED'},
               }
-              if (not isinstance(data['reason'], str) or
-                      not isinstance(data['phase'], str) or
-                      data['reason'] not in expected_pairs.get(data['phase'], set())):
-                  raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
+              phase = data['phase']
+              reason = data['reason']
+              if (type(phase) is not str or type(reason) is not str or
+                      reason not in expected_pairs.get(phase, set()) or
+                      data['autostart_risk'] != 'UNVERIFIED'):
+                  raise SystemExit(invalid)
+              before_bus = phase == 'PREFLIGHT'
+              logind_failure = phase in ('LOGIND_QUERY','LOGIND_PARSE')
+              late_failure = phase in ('UNIT_FILES_QUERY','ACTIVE_UNITS_QUERY',
+                  'TARGET_DEPS_QUERY','UNIT_FILES_PARSE','ACTIVE_UNITS_PARSE',
+                  'TARGET_DEPS_PARSE')
+              unknown_failure = phase == 'INVENTORY_UNKNOWN'
+              if (before_bus and reason == 'USER_BUS_UNVERIFIED' and
+                      (data['user_runtime_status'] != 'METADATA_VALID' or
+                       data['user_bus_status'] != 'METADATA_VALID') and
+                      data['logind_status'] != 'NOT_QUERIED'):
+                  pass
+              elif before_bus and reason in ('OS_IDENTITY_UNVERIFIED',
+                      'OS_BINARY_UNVERIFIED','LOGIN_IDENTITY_UNVERIFIED'):
+                  # A systemctl binary check can fail after known linger;
+                  # login/ancestor/loginctl failures occur before any query.
+                  if reason != 'OS_BINARY_UNVERIFIED' or data['logind_status'] == 'NOT_QUERIED':
+                      if (data['user_runtime_status'] != 'UNVERIFIED' or
+                              data['user_bus_status'] != 'NOT_CHECKED' or
+                              data['logind_status'] != 'NOT_QUERIED'):
+                          raise SystemExit(invalid)
+                  elif (data['user_runtime_status'] != 'METADATA_VALID' or
+                          data['user_bus_status'] != 'METADATA_VALID' or
+                          data['logind_status'] != 'PARSED_READONLY'):
+                      raise SystemExit(invalid)
+              elif logind_failure and data['user_runtime_status'] == 'METADATA_VALID' and (
+                      data['user_bus_status'] == 'METADATA_VALID') and (
+                      data['logind_status'] == ('QUERY_UNVERIFIED' if phase == 'LOGIND_QUERY'
+                                               else 'PARSE_UNVERIFIED')):
+                  pass
+              elif late_failure and data['logind_status'] == 'PARSED_READONLY' and (
+                      (reason == 'USER_BUS_UNVERIFIED' and
+                       phase in ('ACTIVE_UNITS_QUERY','TARGET_DEPS_QUERY') and
+                       (data['user_runtime_status'] != 'METADATA_VALID' or
+                        data['user_bus_status'] != 'METADATA_VALID')) or
+                      (reason != 'USER_BUS_UNVERIFIED' and
+                       data['user_runtime_status'] == 'METADATA_VALID' and
+                       data['user_bus_status'] == 'METADATA_VALID')):
+                  pass
+              elif (unknown_failure and data['user_runtime_status'] == 'UNVERIFIED' and
+                    data['user_bus_status'] == 'NOT_CHECKED' and
+                    data['logind_status'] == 'NOT_QUERIED'):
+                  pass
+              else:
+                  raise SystemExit(invalid)
+              if late_failure:
+                  if (data['systemd_dbus_state'] != 'INCOMPLETE_READONLY' or
+                          any(data.get(k) != 'UNVERIFIED' for k in unit_fields)):
+                      raise SystemExit(invalid)
+                  unit_inventory = 'UNVERIFIED'
+              else:
+                  if (data['systemd_dbus_state'] != 'NOT_QUERIED' or
+                          any(data.get(k) != 'NOT_QUERIED' for k in unit_fields)):
+                      raise SystemExit(invalid)
+                  unit_inventory = 'NOT_QUERIED'
               raise SystemExit('RC6_LINGER_INVENTORY=HOST_PREREQUISITES_UNVERIFIED'
-                               '|PHASE=' + data['phase'] + '|REASON=' + data['reason'] +
+                               '|PHASE=' + phase + '|REASON=' + reason +
+                               '|RUNTIME_STATUS=' + data['user_runtime_status'] +
+                               '|BUS_STATUS=' + data['user_bus_status'] +
+                               '|BUS_MODE_OTHER_BITS=' + data['bus_mode_other_bits'] +
+                               '|LOGIND_STATUS=' + data['logind_status'] +
+                               '|LINGER_EFFECTIVE=' + data['linger_effective'] +
+                               '|UNIT_INVENTORY=' + unit_inventory +
                                '|CERT2=NO_VERIFICADO')
-          if (set(data) != expected or
-                  data.get('linger_effective') not in ('YES','NO') or
+          if (data['probe_extent'] != 'FULL' or set(data) != expected or
+                  data['user_runtime_status'] != 'METADATA_VALID' or
+                  data['user_bus_status'] != 'METADATA_VALID' or
+                  data['logind_status'] != 'PARSED_READONLY' or
                   any(data.get(k) not in ('PRESENT','NONE_OBSERVED') for k in (
                       'enabled_user_units','active_user_services','user_timers',
                       'user_sockets','default_target_dependencies')) or
@@ -752,6 +847,7 @@ jobs:
               raise SystemExit('RC6_LINGER_INVENTORY=RECEIPT_INVALID|CERT2=NO_VERIFICADO')
           print('RC6_LINGER_INVENTORY=READ_ONLY_OBSERVED'
                 '|LINGER_EFFECTIVE=' + data['linger_effective'] +
+                '|BUS_MODE_OTHER_BITS=' + data['bus_mode_other_bits'] +
                 '|AUTOSTART_RISK=' + data['autostart_risk'] +
                 '|CERT2=NO_VERIFICADO')
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
