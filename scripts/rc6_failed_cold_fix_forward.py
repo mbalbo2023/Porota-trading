@@ -526,6 +526,75 @@ def original_location(source,archive):
     return archive
 
 
+def verify_prebirth_oci_quiescence(candidate, quiescence):
+    """Prove the *pre-birth* COLD write fence through a trusted host helper.
+
+    This bridge is deliberately not wired into the legacy V1 `run()` path:
+    Deploy V2 currently archives COLD before it creates/seals new OCI births.
+    A1031 must approve the producer/ordering and the independent root attestor
+    before the new version becomes an operational gate. No Docker name, CID,
+    mutable checkout marker or client-supplied helper argument grants custody.
+    """
+    if (type(candidate) is not str or
+            re.fullmatch('[0-9a-f]{40}', candidate) is None or
+            type(quiescence) is not dict or
+            quiescence.get('schema') != 'RC6_PREBIRTH_QUIESCENCE_V1' or
+            quiescence.get('status') not in ('DRAINED', 'HOST_INSTALLATION_STARTED') or
+            quiescence.get('candidate_sha') != candidate or
+            type(quiescence.get('real_orders_sent')) is not int or
+            quiescence['real_orders_sent'] != 0 or
+            quiescence.get('ppi_watch_accessed') is not False):
+        raise ValueError('COLD_PREBIRTH_RECEIPT_UNTRUSTED')
+
+    # The installed root-owned helper reads its own approved intent/attestor;
+    # no path, CID, Docker argv, candidate SHA or marker is passed as authority.
+    argv=['sudo','-n','/usr/local/sbin/porota-rc6-oci-custody',
+          'quiescence','verify-prebirth']
+    try:
+        result=subprocess.run(argv,check=True,capture_output=True,text=True,
+            timeout=20,env={'PATH':'/usr/bin:/bin','HOME':'/root',
+                            'LC_ALL':'C','PYTHONNOUSERSITE':'1'})
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_UNAVAILABLE') from None
+
+    raw=result.stdout
+    try:
+        encoded=raw.encode('utf-8') if type(raw) is str else b''
+    except UnicodeError:
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED') from None
+    if not 0 < len(encoded) <= 2048:
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED')
+
+    def unique_object(pairs):
+        value={}
+        for key,item in pairs:
+            if key in value:raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED')
+            value[key]=item
+        return value
+
+    def reject_constant(_):
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED')
+
+    try:
+        proof=json.loads(raw,object_pairs_hook=unique_object,
+                         parse_constant=reject_constant)
+    except (ValueError, UnicodeError, TypeError, RecursionError):
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED') from None
+    if (type(proof) is not dict or set(proof)!={
+            'schema','status','candidate_sha','runtime_writers','paper_mode',
+            'real_orders_sent','ppi_watch_accessed'} or
+            proof['schema']!='RC6_PREBIRTH_QUIESCENCE_V1' or
+            proof['status']!='OK' or proof['candidate_sha']!=candidate or
+            proof['runtime_writers']!='QUIESCENT' or
+            proof['paper_mode']!='PRODUCTION_PAPER' or
+            type(proof['real_orders_sent']) is not int or
+            proof['real_orders_sent']!=0 or
+            proof['ppi_watch_accessed'] is not False):
+        raise ValueError('COLD_PREBIRTH_ATTESTOR_REJECTED')
+    return {key:value for key,value in proof.items() if key!='ppi_watch_accessed'} | {
+        'status':'VERIFIED'}
+
+
 def run(candidate):
     if not re.fullmatch('[0-9a-f]{40}',candidate) or candidate==OLD_SHA:
         raise ValueError('COLD_NEW_CANDIDATE_REQUIRED')
