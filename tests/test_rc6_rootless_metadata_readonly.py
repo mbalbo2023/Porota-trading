@@ -757,8 +757,14 @@ class DedicatedAccountPreflightTests(unittest.TestCase):
                 '00000000000000000000000000000000:01BB 01 00000000:00000000 '
                 '00:00000000 00000000 1000 0 1234 1 0000000000000000 100 0 0 10 0\n').encode()
         def run(raw4, raw6):
-            with mock.patch.object(probe, '_read_proc_net',
-                                   side_effect=lambda path: raw4 if path.endswith('tcp') else raw6):
+            # Production must reject a foreign namespace, tested separately;
+            # these parser fixtures must not depend on the hosted runner's
+            # actual PID1/self namespace relationship.
+            def same_netns(_path):
+                return SimpleNamespace(st_dev=1, st_ino=2)
+            with (mock.patch.object(probe, '_read_proc_net',
+                                    side_effect=lambda path: raw4 if path.endswith('tcp') else raw6),
+                  mock.patch.object(probe.os,'stat',side_effect=same_netns)):
                 return probe._port_8000_listener()
         self.assertEqual(run(ipv4, ipv6), 'LISTEN_PRESENT')
         self.assertEqual(run(ipv4.replace(b'0A', b'01'), ipv6), 'NONE_OBSERVED')
