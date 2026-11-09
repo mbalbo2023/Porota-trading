@@ -522,7 +522,8 @@ jobs:
                     'rootless_certified'}
           positive = common | {'foreign_docker_inspected', 'principal_nonroot_unique',
                     'runtime_directory_private', 'user_manager_socket_present',
-                    'rootless_tools_present', 'subuids_assigned', 'userns_enabled',
+                    'rootless_tools_present', 'rootless_launcher_present',
+                    'user_linger_record_present', 'subuids_assigned', 'userns_enabled',
                     'default_socket_absent', 'project_socket_namespace_absent',
                     'ready_for_private_rootless_review'}
           negative = common | {'reason'}
