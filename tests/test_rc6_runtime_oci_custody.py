@@ -1042,7 +1042,7 @@ class CustodyOfflineTests(unittest.TestCase):
                 custody.begin_attempt().verify_pending_birth("observer")
             docker.assert_not_called()
 
-    def test_newborn_exec_only_allows_bound_observer_hash_command(self):
+    def test_newborn_exec_only_allows_absolute_bound_observer_hash_commands(self):
         pending = complete_pending()
         fresh = pending["roles"]["observer"]["cid"]
         with patch.object(custody, "_read_trusted_current", return_value=sample_current()), \
@@ -1061,10 +1061,26 @@ class CustodyOfflineTests(unittest.TestCase):
             with self.assertRaises(custody.CustodyHold):
                 session.authorize_newborn_operation("observer", "exec", "sh", "-c", "rm -rf /")
             docker.assert_not_called()
-            session.authorize_newborn_operation(
-                "observer", "exec", "sha256sum", "/app/cf_intraday_scalping.py", capture=True)
-            docker.assert_called_once_with(("docker", "exec", fresh, "sha256sum",
-                                           "/app/cf_intraday_scalping.py"), capture=True)
+            for path in ("/app/cf_intraday_scalping.py", "/app/co_market_sessions_hf6.py"):
+                session.authorize_newborn_operation(
+                    "observer", "exec", "/usr/bin/sha256sum", path, capture=True)
+                docker.assert_called_once_with(("docker", "exec", fresh,
+                                               "/usr/bin/sha256sum", path), capture=True)
+                docker.reset_mock()
+
+    def test_observer_exec_rejects_bare_path_control_and_unapproved_files(self):
+        cid = "4" * 64
+        unapproved = (
+            ("sha256sum", "/app/cf_intraday_scalping.py"),
+            ("/usr/bin/sha256sum", "/app/data/cf_intraday_scalping.py"),
+            ("/usr/bin/sha256sum", "/app/co_market_sessions_hf6.py", "--check"),
+            ("/usr/bin/env", "PATH=/app/data/bin", "/usr/bin/sha256sum",
+             "/app/co_market_sessions_hf6.py"),
+            ("/bin/sh", "-c", "sha256sum /app/cf_intraday_scalping.py"),
+        )
+        for argv in unapproved:
+            with self.subTest(argv=argv), self.assertRaises(custody.CustodyHold):
+                custody._operation_argv("exec", cid, argv, role="observer")
 
     def test_seal_refuses_unresolved_journal_even_when_three_births_running(self):
         pending = complete_pending()

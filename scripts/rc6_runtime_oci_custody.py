@@ -616,8 +616,8 @@ def _attest_critical_exclusivity(intent, observed):
 
 
 _OBSERVER_HASH_PROFILES = {
-    ("sha256sum", "/app/cf_intraday_scalping.py"),
-    ("sha256sum", "/app/co_market_sessions_hf6.py"),
+    ("/usr/bin/sha256sum", "/app/cf_intraday_scalping.py"),
+    ("/usr/bin/sha256sum", "/app/co_market_sessions_hf6.py"),
 }
 
 
