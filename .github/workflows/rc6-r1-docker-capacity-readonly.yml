@@ -67,7 +67,7 @@ jobs:
           for required in ('workflow_dispatch:', 'rc6-unified-paper-deploy',
                            'docker', 'statvfs', 'expected_deployed_sha'):
               assert required in source, required
-          host=source.rsplit('\n      - name: Read filesystem and Docker metadata only (max 35 seconds)\n',1)[1]
+          host=source.split('\n  host_readonly:',1)[1].split('\n  current_login_readonly:',1)[0]
           for forbidden in ('docker prune', 'docker image rm', 'docker system prune',
                             'docker rm ', 'docker rmi ', 'docker exec', 'PPI_GET'):
               assert forbidden not in host, forbidden
@@ -101,6 +101,33 @@ jobs:
       ROOTLESS_METADATA_ONLY: ${{ inputs.rootless_metadata_only }}
     steps:
       - uses: actions/checkout@v4
+      - name: Require independent physical owner binding before any host access
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$ROOTLESS_METADATA_ONLY" == "true" ]]; then
+            exit 0
+          fi
+          # No authoritative current container-ID custody receipt exists.
+          # Do not accept caller JSON, labels, names or a guessed host path.
+          # Future scoped observation requires separately reviewed custody proof.
+          python3 -I -B - <<'PY'
+          import json, os
+          receipt = {
+              'schema': 'rc6.r1.docker-capacity-readonly.v2',
+              'scope': 'POROTA_ONLY_PARTIAL',
+              'state': 'NO_VERIFICADO',
+              'reason': 'OWNER_BINDING_UNVERIFIED',
+              'mutations': 0, 'provider_gets': 0, 'docker_queries': 0,
+              'global_capacity': 'NO_VERIFICADO',
+              'cleanup_eligibility': 'NO_VERIFICADO',
+          }
+          encoded = json.dumps(receipt, sort_keys=True)
+          print(encoded)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('### RC6 R1 — HOLD before host access\n\n```json\n' + encoded + '\n```\n')
+          PY
+          exit 2
       - name: Bound SHA and runner-only SSH credentials
         shell: bash
         run: |
@@ -116,335 +143,6 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/rc6_r1_capacity/key"
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
           chmod 600 "$RUNNER_TEMP/rc6_r1_capacity/key" "$RUNNER_TEMP/rc6_r1_capacity/known_hosts"
-      - name: Read filesystem and Docker metadata only (max 35 seconds)
-        if: ${{ !inputs.rootless_metadata_only }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # Capture even an exit 2 from the remote receipt producer; never
-          # expose untrusted SSH/sudo stderr or skip the runner verifier.
-          ssh_status=0
-          ssh -i "$RUNNER_TEMP/rc6_r1_capacity/key" \
-            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$RUNNER_TEMP/rc6_r1_capacity/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=7 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 35 env RC6_EXPECTED_DEPLOY_SHA=$EXPECTED_DEPLOY_SHA python3 -I -B -" \
-            > "$RUNNER_TEMP/rc6_r1_capacity/raw.json" 2>/dev/null <<'PY' || ssh_status=$?
-          import datetime, json, os, re, shutil, subprocess, sys
-
-          def docker(*args):
-              command=subprocess.run(('docker',)+args, capture_output=True,
-                                     text=True, timeout=9, check=True)
-              if len(command.stdout)>131072:
-                  raise ValueError('DOCKER_RESPONSE_BOUND')
-              return command.stdout.strip()
-
-          try:
-              expected=os.environ['RC6_EXPECTED_DEPLOY_SHA']
-              if re.fullmatch(r'[a-f0-9]{40}',expected) is None:
-                  raise ValueError('EXPECTED_SHA_INVALID')
-              disk=shutil.disk_usage('/')
-              stat=os.statvfs('/')
-              inodes_free=(100*stat.f_favail/stat.f_files) if stat.f_files else 0
-              docker_root=docker('info','--format','{{.DockerRootDir}}')
-              if (not docker_root.startswith('/') or len(docker_root)>256
-                      or not os.path.isdir(docker_root)):
-                  raise ValueError('DOCKER_ROOT_UNSAFE')
-              docker_disk=shutil.disk_usage(docker_root)
-              docker_stat=os.statvfs(docker_root)
-              docker_inodes_free=(100*docker_stat.f_favail/docker_stat.f_files) if docker_stat.f_files else 0
-              all_containers=docker('ps','-aq','--no-trunc').splitlines()
-              all_images=sorted(set(docker('image','ls','-aq','--no-trunc').splitlines()))
-              if len(all_containers)>128 or len(all_images)>128:
-                  raise ValueError('DOCKER_INVENTORY_BOUND')
-              sha=re.compile(r'sha256:[a-f0-9]{64}')
-              container=re.compile(r'[a-f0-9]{12,64}')
-              if any(container.fullmatch(x) is None for x in all_containers):
-                  raise ValueError('CONTAINER_ID_UNSAFE')
-              if any(sha.fullmatch(x) is None for x in all_images):
-                  raise ValueError('IMAGE_ID_UNSAFE')
-              referenced=set()
-              for cid in all_containers:
-                  value=docker('inspect','--format','{{.Image}}',cid)
-                  if sha.fullmatch(value) is None:
-                      raise ValueError('REFERENCED_IMAGE_UNSAFE')
-                  referenced.add(value)
-              owned_names=('porota_production_observer',
-                           'porota_production_dashboard','porota_critical_approval_rc6')
-              owned=[]
-              for name in owned_names:
-                  try:
-                      value=docker('inspect','--format',
-                                   '{{json .State.Running}}|{{json .Image}}',name)
-                      running,image_raw=value.split('|',1)
-                      image=json.loads(image_raw)
-                      if running not in ('true','false') or sha.fullmatch(image) is None:
-                          raise ValueError('OWNED_CONTAINER_UNSAFE')
-                      owned.append({'name':name,'running':running=='true',
-                                    'image_referenced':image in referenced})
-                  except subprocess.CalledProcessError:
-                      owned.append({'name':name,'state':'ABSENT'})
-              candidate=re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[a-f0-9]{40}')
-              eligible=0
-              eligible_bytes_upper_bound=0
-              candidate_ref=0
-              protected=0
-              for iid in all_images:
-                  fields=docker('image','inspect','--format',
-                     '{{json .Id}}|{{json .RepoTags}}|{{json .RepoDigests}}|{{json .Size}}',iid).split('|')
-                  if len(fields)!=4:
-                      raise ValueError('IMAGE_FIELDS_UNSAFE')
-                  identity,tags,digests,size=map(json.loads,fields)
-                  if (identity!=iid or tags is not None and not isinstance(tags,list)
-                          or digests is not None and not isinstance(digests,list)
-                          or type(size) is not int or size<0):
-                      raise ValueError('IMAGE_DETAILS_UNSAFE')
-                  tags=tags or []
-                  digests=digests or []
-                  if (any(type(t) is not str for t in tags+digests)):
-                      raise ValueError('IMAGE_TAGS_UNSAFE')
-                  if iid in referenced:
-                      candidate_ref+=int(bool(tags) and all(candidate.fullmatch(t) for t in tags))
-                      continue
-                  repos={tag.split(':',1)[0] for tag in tags}
-                  matched=(bool(tags) and all(candidate.fullmatch(t) for t in tags) and
-                    all((m:=re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',d))
-                        is not None and m.group(1) in repos for d in digests))
-                  if matched:
-                      eligible+=1
-                      eligible_bytes_upper_bound+=size
-                  else:
-                      protected+=1
-              summary=[]
-              for line in docker('system','df','--format','{{json .}}').splitlines():
-                  entry=json.loads(line)
-                  if not isinstance(entry,dict) or entry.get('Type') not in (
-                         'Images','Containers','Local Volumes','Build Cache'):
-                      raise ValueError('SYSTEM_DF_UNSAFE')
-                  summary.append({k:entry.get(k) for k in
-                                 ('Type','TotalCount','Active','Size','Reclaimable')})
-              if {entry['Type'] for entry in summary} != {
-                    'Images','Containers','Local Volumes','Build Cache'}:
-                  raise ValueError('SYSTEM_DF_INCOMPLETE')
-              observed=subprocess.run(['git','-C','/opt/porota-trading','rev-parse','HEAD'],
-                                      capture_output=True,text=True,timeout=3,check=True).stdout.strip()
-              if re.fullmatch(r'[a-f0-9]{40}',observed) is None:
-                  raise ValueError('HOST_CODE_ID_INVALID')
-              at=datetime.datetime.now(datetime.timezone.utc)
-              payload={'schema':'rc6.r1.docker-capacity-readonly.v1',
-                  'state':'READ_ONLY_OBSERVED','mutations':0,'provider_gets':0,
-                  'generated_at_utc':at.isoformat(),
-                  'generated_at_art':at.astimezone(datetime.timezone(datetime.timedelta(hours=-3))).isoformat(),
-                  'expected_deployed_sha':expected,'observed_code_sha':observed,
-                  'code_identity_matches':observed==expected,
-                  'disk_total_bytes':disk.total,'disk_free_bytes':disk.free,
-                  'disk_used_bytes':disk.used,'inode_free_percent':round(inodes_free,3),
-                  'docker_root_same_filesystem':os.stat(docker_root).st_dev==os.stat('/').st_dev,
-                  'docker_root_disk_total_bytes':docker_disk.total,
-                  'docker_root_disk_free_bytes':docker_disk.free,
-                  'docker_root_inode_free_percent':round(docker_inodes_free,3),
-                  'containers_total':len(all_containers),'images_total':len(all_images),
-                  'referenced_images':len(referenced),'owned_containers':owned,
-                  'unreferenced_candidate_only_images':eligible,
-                  'unreferenced_candidate_estimated_upper_bytes':eligible_bytes_upper_bound,
-                  'referenced_candidate_only_images':candidate_ref,
-                  'other_or_ambiguous_unreferenced_images':protected,
-                  'docker_system_df':summary}
-              print(json.dumps(payload,sort_keys=True,separators=(',',':')))
-          except (Exception,) as exc:
-              print(json.dumps({'schema':'rc6.r1.docker-capacity-readonly.v1',
-                 'state':'NO_VERIFICADO','mutations':0,'provider_gets':0,
-                 'reason':type(exc).__name__},sort_keys=True))
-              sys.exit(2)
-          PY
-          export SSH_STATUS="$ssh_status"
-          python3 - <<'PY'
-          import datetime, json, math, os, re
-          from pathlib import Path
-
-          def red(code='RECEIPT_UNVERIFIED'):
-              # A fixed code only: never echo host-supplied bytes on failure.
-              raise SystemExit('RC6_R1_DOCKER_RO=RED|' + code)
-
-          def reject_duplicates(pairs):
-              obj={}
-              for key,value in pairs:
-                  if key in obj:
-                      raise ValueError('DUPLICATE_KEY')
-                  obj[key]=value
-              return obj
-
-          def reject_constant(_):
-              raise ValueError('NON_JSON_NUMBER')
-
-          try:
-              ssh_status=os.environ.get('SSH_STATUS','')
-              if re.fullmatch(r'[0-9]{1,3}',ssh_status) is None:
-                  red()
-              if ssh_status not in ('0','2'):
-                  red('SSH_REMOTE_FAILED')
-              raw=Path(os.environ['RUNNER_TEMP'])/'rc6_r1_capacity/raw.json'
-              if raw.stat().st_size>8192:
-                  red('RECEIPT_BOUND')
-              data=json.loads(raw.read_text(encoding='utf-8'),
-                              object_pairs_hook=reject_duplicates,
-                              parse_constant=reject_constant)
-              if not isinstance(data,dict):
-                  red()
-
-              common={'schema','state','mutations','provider_gets'}
-              negative=common|{'reason'}
-              if (ssh_status!='0' or data.get('state')=='NO_VERIFICADO'):
-                  if (ssh_status=='2' and set(data)==negative and
-                          data.get('schema')=='rc6.r1.docker-capacity-readonly.v1' and
-                          data.get('state')=='NO_VERIFICADO' and
-                          type(data.get('mutations')) is int and data['mutations']==0 and
-                          type(data.get('provider_gets')) is int and data['provider_gets']==0):
-                      # Only exact exception CLASS labels are recognized; never
-                      # print a host error string, path, identity, or inventory.
-                      reason=data.get('reason')
-                      if reason=='CalledProcessError':
-                          red('HOST_COMMAND_UNVERIFIED')
-                      if reason=='TimeoutExpired':
-                          red('HOST_COMMAND_TIMEOUT')
-                      if reason in ('PermissionError','FileNotFoundError'):
-                          red('HOST_ACCESS_UNVERIFIED')
-                      if reason=='ValueError':
-                          red('HOST_DATA_UNVERIFIED')
-                      red('HOST_EXECUTION_UNVERIFIED')
-                  red('SSH_REMOTE_FAILED' if ssh_status!='0' else 'RECEIPT_UNVERIFIED')
-
-              positive=common|{
-                  'generated_at_utc','generated_at_art','expected_deployed_sha',
-                  'observed_code_sha','code_identity_matches','disk_total_bytes',
-                  'disk_free_bytes','disk_used_bytes','inode_free_percent',
-                  'docker_root_same_filesystem','docker_root_disk_total_bytes',
-                  'docker_root_disk_free_bytes','docker_root_inode_free_percent',
-                  'containers_total','images_total','referenced_images',
-                  'owned_containers','unreferenced_candidate_only_images',
-                  'unreferenced_candidate_estimated_upper_bytes',
-                  'referenced_candidate_only_images',
-                  'other_or_ambiguous_unreferenced_images','docker_system_df'}
-              if (set(data)!=positive or
-                      data.get('schema')!='rc6.r1.docker-capacity-readonly.v1' or
-                      data.get('state')!='READ_ONLY_OBSERVED' or
-                      any(type(data.get(k)) is not int or data[k]!=0
-                          for k in ('mutations','provider_gets'))):
-                  red()
-              sha_pattern=r'[0-9a-f]{40}'
-              expected=os.environ['EXPECTED_DEPLOY_SHA']
-              if (re.fullmatch(sha_pattern,expected) is None or
-                      re.fullmatch(sha_pattern,data['expected_deployed_sha']) is None or
-                      re.fullmatch(sha_pattern,data['observed_code_sha']) is None or
-                      data['expected_deployed_sha']!=expected or
-                      type(data['code_identity_matches']) is not bool):
-                  red()
-              if (data['code_identity_matches'] is False and
-                      data['observed_code_sha']!=expected):
-                  red('CODE_IDENTITY_MISMATCH')
-              if (data['code_identity_matches'] is not True or
-                      data['observed_code_sha']!=expected):
-                  red()
-              utc_str=data['generated_at_utc']
-              art_str=data['generated_at_art']
-              time_pattern=r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?'
-              if (re.fullmatch(time_pattern+r'\+00:00',utc_str) is None or
-                      re.fullmatch(time_pattern+r'-03:00',art_str) is None or
-                      datetime.datetime.fromisoformat(utc_str)!=
-                      datetime.datetime.fromisoformat(art_str)):
-                  red()
-              quantities=('disk_total_bytes','disk_free_bytes','disk_used_bytes',
-                          'docker_root_disk_total_bytes','docker_root_disk_free_bytes',
-                          'containers_total','images_total','referenced_images',
-                          'unreferenced_candidate_only_images',
-                          'unreferenced_candidate_estimated_upper_bytes',
-                          'referenced_candidate_only_images',
-                          'other_or_ambiguous_unreferenced_images')
-              if any(type(data[k]) is not int or not 0<=data[k]<=2**63-1
-                     for k in quantities):
-                  red()
-              if (data['disk_total_bytes']==0 or
-                      data['disk_free_bytes']+data['disk_used_bytes']>data['disk_total_bytes'] or
-                      data['docker_root_disk_total_bytes']==0 or
-                      data['docker_root_disk_free_bytes']>data['docker_root_disk_total_bytes'] or
-                      any(data[k]>128 for k in ('containers_total','images_total',
-                          'referenced_images','unreferenced_candidate_only_images',
-                          'referenced_candidate_only_images',
-                          'other_or_ambiguous_unreferenced_images')) or
-                      data['referenced_images']>data['containers_total'] or
-                      data['referenced_candidate_only_images']>
-                      data['images_total'] or
-                      data['unreferenced_candidate_only_images']+
-                      data['referenced_candidate_only_images']+
-                      data['other_or_ambiguous_unreferenced_images']>data['images_total']):
-                  red()
-              for key in ('inode_free_percent','docker_root_inode_free_percent'):
-                  value=data[key]
-                  if (type(value) not in (int,float) or
-                          not math.isfinite(value) or not 0<=value<=100):
-                      red()
-              if type(data['docker_root_same_filesystem']) is not bool:
-                  red()
-
-              names=('porota_production_observer','porota_production_dashboard',
-                     'porota_critical_approval_rc6')
-              owned=data['owned_containers']
-              if type(owned) is not list or len(owned)!=len(names):
-                  red()
-              for name,entry in zip(names,owned):
-                  if (type(entry) is not dict or entry.get('name')!=name or
-                          not (set(entry)=={'name','state'} and
-                               entry['state']=='ABSENT' or
-                               set(entry)=={'name','running','image_referenced'} and
-                               type(entry['running']) is bool and
-                               type(entry['image_referenced']) is bool)):
-                      red()
-
-              system_df=data['docker_system_df']
-              types={'Images','Containers','Local Volumes','Build Cache'}
-              if type(system_df) is not list or len(system_df)!=4:
-                  red()
-              for entry in system_df:
-                  if (type(entry) is not dict or
-                          set(entry)!={'Type','TotalCount','Active','Size','Reclaimable'} or
-                          entry['Type'] not in types):
-                      red()
-                  counts={}
-                  for key in ('TotalCount','Active'):
-                      value=entry[key]
-                      if not (type(value) is int and 0<=value<=1000000 or
-                              type(value) is str and
-                              re.fullmatch(r'[0-9]{1,7}',value) is not None):
-                          red()
-                      counts[key]=int(value)
-                      if counts[key]>1000000:
-                          red()
-                  if counts['Active']>counts['TotalCount']:
-                      red()
-                  size_pattern=r'[0-9]{1,13}(?:\.[0-9]{1,4})? ?(?:B|kB|KB|MB|GB|TB|PB)'
-                  for key in ('Size','Reclaimable'):
-                      value=entry[key]
-                      pattern=(size_pattern if key=='Size' else
-                               size_pattern+r'(?: \((?:100|[0-9]{1,2})%\))?')
-                      if type(value) is not str or re.fullmatch(pattern,value) is None:
-                          red()
-              if {entry['Type'] for entry in system_df}!=types:
-                  red()
-
-              # Exact schema + validated primitive/nested fields, copied into
-              # an allowlist output; unrecognized host fields never propagate.
-              safe={key:data[key] for key in positive}
-              encoded=json.dumps(safe,sort_keys=True,allow_nan=False)
-          except (KeyError,TypeError,ValueError,OverflowError,UnicodeError,OSError):
-              red()
-          print(encoded)
-          print('RC6_R1_DOCKER_RO=GREEN|READ_ONLY_OBSERVED_NOT_DEPLOY_READY')
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out:
-              out.write('### RC6 R1 Docker capacity — READ_ONLY, not deploy certification\n\n')
-              out.write('```json\n'+json.dumps(safe,sort_keys=True,indent=2,
-                  allow_nan=False)+'\n```\n')
-          PY
       - name: Inspect RC6 timer contract READ_ONLY
         if: ${{ !inputs.rootless_metadata_only && inputs.inspect_rc6_timers }}
         shell: bash
