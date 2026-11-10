@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+from collections import deque
 import hashlib
 import json
 import re
+import shlex
+import stat
 from importlib.machinery import EXTENSION_SUFFIXES
 import subprocess
 import sys
@@ -44,13 +47,324 @@ def is_runtime_relevant(path: str) -> bool:
     return False
 
 
-def git_tracked_runtime_files(repo_root: Path) -> list[str]:
+def _git_tracked_files(repo_root: Path) -> list[str]:
     out = subprocess.check_output(
         ["git", "-C", str(repo_root), "ls-files", "-z"],
         text=False,
     )
     files = [x.decode("utf-8") for x in out.split(b"\0") if x]
-    return sorted(p for p in files if is_runtime_relevant(p))
+    return sorted(files)
+
+
+def git_tracked_runtime_files(repo_root: Path) -> list[str]:
+    return [p for p in _git_tracked_files(repo_root) if is_runtime_relevant(p)]
+
+
+def git_tracked_python_files(repo_root: Path) -> list[str]:
+    """Count all tracked Python, including tests and hidden CI helpers."""
+    return [p for p in _git_tracked_files(repo_root) if p.endswith(".py")]
+
+
+def _python_source_role(path: str) -> str:
+    parts = Path(path).parts
+    if parts[0] == "tests" or (len(parts) == 1 and parts[0].startswith("test_")):
+        return "TEST_ONLY"
+    if parts[0] == ".github":
+        return "CI_ONLY"
+    return "REVIEW_REQUIRED"
+
+
+def _module_names(rel: str) -> str:
+    parts = list(Path(rel).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _local_import_paths(tree: ast.AST, rel: str,
+                        modules: dict[str, str]) -> tuple[dict[str, set[str]], bool]:
+    """Resolve only literal local imports; unknown dependencies stay unproven."""
+    imports: dict[str, set[str]] = {}
+    unresolved_dynamic = False
+    package = _module_names(rel).split(".")
+    if Path(rel).name != "__init__.py":
+        package = package[:-1]
+    bare_import_aliases = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.level == 0
+        and node.module == "importlib"
+        for alias in node.names if alias.name == "import_module"
+    }
+    importlib_aliases = {
+        alias.asname or alias.name
+        for node in ast.walk(tree) if isinstance(node, ast.Import)
+        for alias in node.names if alias.name == "importlib"
+    }
+    for node in ast.walk(tree):
+        candidates: list[tuple[str, str]] = []
+        if isinstance(node, ast.Import):
+            candidates.extend((alias.name, "STATIC_IMPORT") for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module or ""
+            if node.level:
+                if node.level > len(package):
+                    continue
+                base = ".".join([*package[:len(package) - node.level + 1],
+                                  *([base] if base else [])])
+            if base:
+                candidates.append((base, "STATIC_IMPORT"))
+                candidates.extend((base + "." + alias.name, "STATIC_IMPORT")
+                                  for alias in node.names)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            literal_import = (
+                isinstance(fn, ast.Name) and fn.id == "__import__"
+            ) or (
+                isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                and fn.value.id in importlib_aliases and fn.attr == "import_module"
+            ) or (
+                isinstance(fn, ast.Name) and fn.id in bare_import_aliases
+            )
+            if literal_import:
+                if (node.args and isinstance(node.args[0], ast.Constant)
+                        and isinstance(node.args[0].value, str)
+                        and node.args[0].value and not node.args[0].value.startswith(".")):
+                    candidates.append((node.args[0].value, "LITERAL_DYNAMIC_IMPORT"))
+                else:
+                    unresolved_dynamic = True
+        for candidate, kind in candidates:
+            # Importing pkg.worker also executes pkg/__init__.py if present.
+            bits = candidate.split(".")
+            for index in range(1, len(bits) + 1):
+                target = modules.get(".".join(bits[:index]))
+                if target:
+                    imports.setdefault(target, set()).add(kind)
+    return imports, unresolved_dynamic
+
+
+def _source_cycle_stage_paths(tree: ast.AST) -> set[str]:
+    """Recognize literal STAGES passed as Python subprocess arguments."""
+    def python_runner_call(node: ast.AST) -> bool:
+        if (not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name)
+                or node.func.id != "runner" or not node.args):
+            return False
+        command = node.args[0]
+        if not isinstance(command, (ast.List, ast.Tuple)) or not command.elts:
+            return False
+        first = command.elts[0]
+        python_executable = (
+            isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name)
+            and first.value.id == "sys" and first.attr == "executable"
+        ) or (
+            isinstance(first, ast.Constant) and isinstance(first.value, str)
+            and Path(first.value).name in {"python", "python3"}
+        )
+        return python_executable and any(
+            isinstance(x, ast.Name) and x.id == "relative"
+            for x in ast.walk(command)
+        )
+
+    executes_relative = any(
+        python_runner_call(node)
+        for node in ast.walk(tree)
+    )
+    if not executes_relative:
+        return set()
+    paths = set()
+    for node in getattr(tree, "body", []):
+        if (not isinstance(node, ast.Assign)
+                or not any(isinstance(target, ast.Name) and target.id == "STAGES"
+                           for target in node.targets)):
+            continue
+        try:
+            rows = ast.literal_eval(node.value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            continue
+        if not isinstance(rows, (tuple, list)):
+            continue
+        for row in rows:
+            if (isinstance(row, (tuple, list)) and len(row) >= 2
+                    and isinstance(row[1], str) and row[1].endswith(".py")):
+                paths.add(row[1])
+    return paths
+
+
+def _repo_regular_file(repo_root: Path, rel: str) -> bool:
+    """Reject path escapes and symlink components before reading inventory files."""
+    path = Path(rel)
+    if not path.parts or path.is_absolute() or ".." in path.parts:
+        return False
+    try:
+        if repo_root.is_symlink():
+            return False
+        root = repo_root.resolve(strict=True)
+        target = root / path
+        if not root.is_dir() or not target.resolve(strict=True).is_relative_to(root):
+            return False
+        cursor = root
+        for index, part in enumerate(path.parts):
+            cursor = cursor / part
+            mode = cursor.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                return False
+            if index < len(path.parts) - 1 and not stat.S_ISDIR(mode):
+                return False
+        return stat.S_ISREG(cursor.lstat().st_mode)
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _direct_python_script(command: list[str]) -> str | None:
+    """Only a direct Python interpreter invocation can declare a host root."""
+    args = command
+    if args and Path(args[0]).name == "env":
+        args = args[1:]
+        while args and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", args[0]):
+            args = args[1:]
+    if not args or not re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(args[0]).name):
+        return None
+    args = args[1:]
+    # -m/-c and unknown options are not evidence of direct script execution.
+    while args and args[0] in {"-B", "-E", "-I", "-O", "-OO", "-q", "-s", "-S", "-u", "-v", "-x"}:
+        args = args[1:]
+    if not args or args[0].startswith("-"):
+        return None
+    for prefix in ("/opt/porota-trading/", "/app/"):
+        if args[0].startswith(prefix) and args[0].endswith(".py"):
+            return args[0][len(prefix):]
+    return None
+
+
+def _host_python_entrypoints(repo_root: Path, host_services: dict[str, str],
+                             paths: set[str]) -> tuple[dict[str, set[str]], list[str]]:
+    roots: dict[str, set[str]] = {}
+    unresolved = []
+    for unit, role in sorted(host_services.items()):
+        if (not unit.endswith(".service") or role != "ACTIVE_SERVICE"
+                or not _repo_regular_file(repo_root, unit)):
+            raise ValueError("PYTHON_HOST_SERVICE_INVALID:" + unit)
+        found = False
+        for line in (repo_root / unit).read_text(encoding="utf-8").splitlines():
+            if not line.startswith("ExecStart="):
+                continue
+            try:
+                command = shlex.split(line.partition("=")[2])
+            except ValueError:
+                continue
+            rel = _direct_python_script(command)
+            if rel in paths:
+                roots.setdefault(rel, set()).add("HOST_ENTRYPOINT_DECLARED:" + unit)
+                found = True
+        if not found:
+            unresolved.append(unit)
+    return roots, unresolved
+
+
+def python_source_provenance(
+    repo_root: Path,
+    tracked_python_paths: Iterable[str],
+    *,
+    entrypoints: Iterable[str] = (),
+    host_services: dict[str, str] | None = None,
+) -> dict:
+    """Classify declared Python wiring; never claim it was observed on a host.
+
+    An unreferenced file is *unreviewed*, not proven obsolete. This report is
+    diagnostic and cannot be used as authorization to remove deployment files.
+    """
+    paths = sorted(set(tracked_python_paths))
+    for rel in paths:
+        if not rel.endswith(".py") or not _repo_regular_file(repo_root, rel):
+            raise ValueError("PYTHON_SOURCE_INVENTORY_INVALID:" + rel)
+    roots = set(entrypoints)
+    if not roots <= set(paths):
+        raise ValueError("PYTHON_ENTRYPOINT_NOT_TRACKED:" + ",".join(sorted(roots - set(paths))))
+
+    reasons: dict[str, set[str]] = {path: set() for path in paths}
+    for rel in roots:
+        reasons[rel].add("ENTRYPOINT_DECLARED:" + rel)
+    host_roots, unresolved_host = _host_python_entrypoints(
+        repo_root, host_services or {}, set(paths)
+    )
+    for rel, origins in host_roots.items():
+        reasons[rel].update(origins)
+    modules = {_module_names(path): path for path in paths}
+    imports: dict[str, dict[str, set[str]]] = {}
+    stages: dict[str, set[str]] = {}
+    parse_errors = []
+    unresolved_dynamic_imports = []
+    for rel in paths:
+        try:
+            tree = ast.parse((repo_root / rel).read_text(encoding="utf-8"),
+                             filename=rel)
+        except (SyntaxError, UnicodeDecodeError) as error:
+            parse_errors.append({"path": rel, "reason": type(error).__name__})
+            continue
+        imports[rel], unresolved = _local_import_paths(tree, rel, modules)
+        if unresolved:
+            unresolved_dynamic_imports.append({
+                "source": rel, "reason": "DYNAMIC_IMPORT_ARGUMENT_NOT_LITERAL",
+            })
+        stages[rel] = _source_cycle_stage_paths(tree)
+    unknown_stages = set()
+    pending = deque(sorted(set(roots) | set(host_roots)))
+    seen = set()
+    while pending:
+        source = pending.popleft()
+        if source in seen:
+            continue
+        seen.add(source)
+        for target, kinds in sorted(imports.get(source, {}).items()):
+            reasons[target].update(kind + ":" + source for kind in kinds)
+            pending.append(target)
+        for target in sorted(stages.get(source, ())):
+            if target not in reasons:
+                unknown_stages.add((source, target))
+                continue
+            reasons[target].add("HOST_SOURCE_CYCLE_STAGE:" + source)
+            pending.append(target)
+
+    unresolved_files = {row["source"] for row in unresolved_dynamic_imports}
+    parse_error_files = {row["path"] for row in parse_errors}
+    missing_stage_sources = {source for source, _target in unknown_stages}
+    sources = []
+    for rel in paths:
+        provenance = sorted(reasons[rel])
+        source_role = _python_source_role(rel)
+        classification = source_role
+        if provenance:
+            if source_role != "REVIEW_REQUIRED":
+                classification = "REVIEW_REQUIRED"
+            elif any(p.startswith("HOST_ENTRYPOINT_DECLARED:") for p in provenance):
+                classification = "HOST_ENTRYPOINT_DECLARED"
+            elif any(p.startswith("ENTRYPOINT_DECLARED:") for p in provenance):
+                classification = "ENTRYPOINT_DECLARED"
+            else:
+                classification = "DEPENDENCY_DECLARED"
+        if (rel in parse_error_files or rel in unresolved_files
+                or rel in missing_stage_sources):
+            classification = "REVIEW_REQUIRED"
+        sources.append({
+            "path": rel,
+            "classification": classification,
+            "provenance": provenance,
+            "review_required": classification == "REVIEW_REQUIRED",
+            "runtime_proven": "NO_VERIFICADO",
+        })
+    return {
+        "schema_version": 1,
+        "status": "NO_VERIFICADO",
+        "source_count": len(sources),
+        "unresolved_host_services": unresolved_host,
+        "unresolved_source_cycle_stages": [
+            {"source": source, "target": target}
+            for source, target in sorted(unknown_stages)
+        ],
+        "unresolved_dynamic_imports": unresolved_dynamic_imports,
+        "parse_errors": parse_errors,
+        "sources": sources,
+    }
 
 
 def artifact_files(artifact_root: Path) -> set[str]:
