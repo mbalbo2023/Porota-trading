@@ -32,6 +32,14 @@ RUNTIME_EXACT = {
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
 }
+# These are declarations of the two container Python roots used by
+# porota_mode_manager.py, not a runtime-file allowlist or runtime proof.
+PAPER_IMAGE_ENTRYPOINTS = ("bv_paper_runtime.py", "o_dashboard.py")
+HOST_POLICY = "ops/policy/host-control-plane-reconciliation-v2.json"
+HOST_POLICY_ROLES = {
+    "ACTIVE_SERVICE", "ACTIVE_TIMER", "QUARANTINED_SERVICE",
+    "QUARANTINED_TIMER", "RETIRED_SERVICE", "RETIRED_TIMER",
+}
 
 
 def is_runtime_relevant(path: str) -> bool:
@@ -367,6 +375,24 @@ def python_source_provenance(
     }
 
 
+def active_host_python_services(repo_root: Path) -> dict[str, str]:
+    """Read only canonical ACTIVE_SERVICE unit declarations, never external units."""
+    if not _repo_regular_file(repo_root, HOST_POLICY):
+        raise ValueError("PYTHON_HOST_POLICY_INVALID:" + HOST_POLICY)
+    policy = json.loads((repo_root / HOST_POLICY).read_text(encoding="utf-8"))
+    if (not isinstance(policy, dict) or policy.get("schema_version") != 2
+            or not isinstance(policy.get("units"), dict)):
+        raise ValueError("PYTHON_HOST_POLICY_INVALID:" + HOST_POLICY)
+    active = {}
+    for unit, contract in policy["units"].items():
+        if (not isinstance(unit, str) or not isinstance(contract, dict)
+                or contract.get("role") not in HOST_POLICY_ROLES):
+            raise ValueError("PYTHON_HOST_POLICY_INVALID:" + HOST_POLICY)
+        if contract.get("role") == "ACTIVE_SERVICE":
+            active[unit] = "ACTIVE_SERVICE"
+    return active
+
+
 def artifact_files(artifact_root: Path) -> set[str]:
     return {
         p.relative_to(artifact_root).as_posix()
@@ -501,12 +527,63 @@ def main() -> int:
     ap.add_argument("--repo-root", default=".")
     ap.add_argument("--artifact-root", required=True)
     ap.add_argument("--manifest-out")
+    # R33 workflow owner passes the checkout's immutable PR SHA. Keep the
+    # existing invocation valid until that integration lands.
+    ap.add_argument("--candidate-sha")
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
     artifact_root = Path(args.artifact_root).resolve()
+    if args.candidate_sha is not None:
+        try:
+            checkout_sha = subprocess.check_output(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                text=True, stderr=subprocess.DEVNULL,
+            ).strip()
+            # Git index and worktree are checked separately: checking HEAD
+            # alone would incorrectly certify dirty tracked candidate files.
+            checkout_diffs = [
+                subprocess.run(
+                    ["git", "-C", str(repo_root), *command],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False,
+                ).returncode
+                for command in (
+                    ("diff-index", "--cached", "--quiet", "HEAD", "--"),
+                    ("diff-files", "--quiet", "--"),
+                )
+            ]
+        except (OSError, subprocess.CalledProcessError):
+            print("POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_GIT", file=sys.stderr)
+            return 1
+        if any(code not in (0, 1) for code in checkout_diffs):
+            print("POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_GIT", file=sys.stderr)
+            return 1
+        if (not re.fullmatch(r"[0-9a-f]{40}", args.candidate_sha)
+                or checkout_sha != args.candidate_sha):
+            print("POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_SHA", file=sys.stderr)
+            return 1
+        if any(checkout_diffs):
+            print("POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_CHECKOUT_DIRTY",
+                  file=sys.stderr)
+            return 1
+
     expected = git_tracked_runtime_files(repo_root)
     result = validate(repo_root, artifact_root, expected)
+    try:
+        result["python_source_provenance"] = python_source_provenance(
+            repo_root, git_tracked_python_files(repo_root),
+            entrypoints=PAPER_IMAGE_ENTRYPOINTS,
+            host_services=active_host_python_services(repo_root),
+        )
+    except ValueError as exc:
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_PYTHON_SOURCE_PROVENANCE:" + str(exc),
+              file=sys.stderr)
+        return 1
+    result["candidate_sha"] = args.candidate_sha
+    result["candidate_checkout_match"] = (
+        "MATCH" if args.candidate_sha is not None else "NO_VERIFICADO"
+    )
 
     payload = json.dumps(result, indent=2, sort_keys=True)
     if args.manifest_out:

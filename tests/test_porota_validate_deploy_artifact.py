@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -10,6 +13,219 @@ def write(root: Path, rel: str, content: str) -> None:
     p = root / rel
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
+
+
+def cli_fixture(tmp_path):
+    """An exact Git checkout with a complete tiny image and one opaque host unit."""
+    repo = tmp_path / "repo"
+    artifact = tmp_path / "artifact"
+    repo.mkdir()
+    artifact.mkdir()
+    files = {
+        "bv_paper_runtime.py": "import helper\n",
+        "o_dashboard.py": "pass\n",
+        "helper.py": "pass\n",
+        "tests/test_helper.py": "pass\n",
+        "systemd/porota-opaque-rc6.service": (
+            "[Service]\nExecStart=/usr/bin/docker exec paper python /app/helper.py\n"
+        ),
+    }
+    for rel, body in files.items():
+        write(repo, rel, body)
+        if not rel.startswith("tests/"):
+            write(artifact, rel, body)
+    policy = {
+        "schema_version": 2,
+        "units": {
+            "systemd/porota-opaque-rc6.service": {"role": "ACTIVE_SERVICE"},
+        },
+        "external_host_units": {
+            "systemd/ppi-watch.service": {"role": "ACTIVE_SERVICE"},
+        },
+    }
+    write(repo, "ops/policy/host-control-plane-reconciliation-v2.json",
+          json.dumps(policy))
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run([
+        "git", "-C", str(repo), "-c", "user.name=Porota QA",
+        "-c", "user.email=qa@example.invalid", "commit", "-qm", "fixture",
+    ], check=True)
+    candidate_sha = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    return repo, artifact, candidate_sha
+
+
+def test_main_embeds_git_python_provenance_without_claiming_runtime(tmp_path, monkeypatch, capsys):
+    """Removing the main() provenance call must make this fail."""
+    repo, artifact, candidate_sha = cli_fixture(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 0
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    audit = data["python_source_provenance"]
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert data["status"] == "GREEN"
+    assert data["candidate_sha"] == candidate_sha
+    assert data["candidate_checkout_match"] == "MATCH"
+    assert audit["source_count"] == 4
+    assert audit["status"] == "NO_VERIFICADO"
+    assert audit["unresolved_host_services"] == ["systemd/porota-opaque-rc6.service"]
+    assert rows["bv_paper_runtime.py"]["classification"] == "ENTRYPOINT_DECLARED"
+    assert rows["o_dashboard.py"]["classification"] == "ENTRYPOINT_DECLARED"
+    assert rows["helper.py"]["classification"] == "DEPENDENCY_DECLARED"
+    assert rows["tests/test_helper.py"]["classification"] == "TEST_ONLY"
+    assert all(row["runtime_proven"] == "NO_VERIFICADO" for row in rows.values())
+    assert "POROTA_ARTIFACT_INTEGRITY=GREEN" in capsys.readouterr().out
+
+
+def test_main_preserves_existing_cli_until_workflow_passes_candidate_sha(tmp_path, monkeypatch):
+    """An omitted new flag must not break the pre-existing Action invocation."""
+    repo, artifact, _candidate_sha = cli_fixture(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+    ])
+
+    assert artifact_guard.main() == 0
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["candidate_sha"] is None
+    assert data["candidate_checkout_match"] == "NO_VERIFICADO"
+    assert data["python_source_provenance"]["source_count"] == 4
+
+
+@pytest.mark.parametrize("dirty_kind", ["unstaged", "staged-index-only"])
+def test_main_rejects_dirty_tracked_checkout_even_when_head_matches(
+    tmp_path, monkeypatch, capsys, dirty_kind,
+):
+    """A clean HEAD value alone cannot authorize modified tracked source bytes."""
+    repo, artifact, candidate_sha = cli_fixture(tmp_path)
+    write(repo, "helper.py", "CHANGED = True\n")
+    if dirty_kind == "staged-index-only":
+        subprocess.run(["git", "-C", str(repo), "add", "helper.py"], check=True)
+        write(repo, "helper.py", "pass\n")  # Worktree clean against HEAD; index is not.
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 1
+    assert not manifest.exists()
+    output = capsys.readouterr()
+    assert "POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_CHECKOUT_DIRTY" in output.err
+    assert "POROTA_ARTIFACT_INTEGRITY=GREEN" not in output.out
+
+
+def test_main_allows_untracked_ci_outputs_with_exact_candidate(tmp_path, monkeypatch):
+    """Build-created untracked files must not veto a clean tracked checkout."""
+    repo, artifact, candidate_sha = cli_fixture(tmp_path)
+    write(repo, "build/untracked-generated.dat", "transient\n")
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 0
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["candidate_checkout_match"] == "MATCH"
+    assert data["status"] == "GREEN"
+
+
+def test_main_rejects_git_failure_without_claiming_candidate_match(
+    tmp_path, monkeypatch, capsys,
+):
+    """Missing Git metadata must fail with an auditable receipt, not a traceback."""
+    repo, artifact, candidate_sha = cli_fixture(tmp_path)
+    (repo / ".git").rename(tmp_path / "detached-git-metadata")
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 1
+    assert not manifest.exists()
+    output = capsys.readouterr()
+    assert "POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_GIT" in output.err
+    assert "POROTA_ARTIFACT_INTEGRITY=GREEN" not in output.out
+
+
+@pytest.mark.parametrize("candidate_sha", ["0" * 40, "HEAD", ""])
+def test_main_rejects_wrong_or_unpinned_candidate_sha(tmp_path, monkeypatch, capsys,
+                                                       candidate_sha):
+    """An invalid candidate must never receive a GREEN artifact receipt."""
+    repo, artifact, _real_sha = cli_fixture(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 1
+    assert not manifest.exists()
+    output = capsys.readouterr()
+    assert "POROTA_ARTIFACT_INTEGRITY=FAILED_CANDIDATE_SHA" in output.err
+    assert "POROTA_ARTIFACT_INTEGRITY=GREEN" not in output.out
+
+
+@pytest.mark.parametrize("policy_failure", [
+    "bad-schema", "missing-role", "unknown-role", "symlink",
+])
+def test_main_rejects_invalid_host_policy_before_writing_manifest(
+    tmp_path, monkeypatch, capsys, policy_failure,
+):
+    """An absent trustworthy policy must not silently erase host roots."""
+    repo, artifact, candidate_sha = cli_fixture(tmp_path)
+    policy = repo / "ops/policy/host-control-plane-reconciliation-v2.json"
+    if policy_failure == "bad-schema":
+        policy.write_text('{"schema_version": 999, "units": {}}', encoding="utf-8")
+    elif policy_failure == "missing-role":
+        policy.write_text(json.dumps({
+            "schema_version": 2,
+            "units": {"systemd/porota-opaque-rc6.service": {"reason": "lost role"}},
+        }), encoding="utf-8")
+    elif policy_failure == "unknown-role":
+        policy.write_text(json.dumps({
+            "schema_version": 2,
+            "units": {"systemd/porota-opaque-rc6.service": {"role": "ACTIVE"}},
+        }), encoding="utf-8")
+    else:
+        target = tmp_path / "host-policy.json"
+        target.write_text(policy.read_text(encoding="utf-8"), encoding="utf-8")
+        policy.unlink()
+        policy.symlink_to(target)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run([
+        "git", "-C", str(repo), "-c", "user.name=Porota QA",
+        "-c", "user.email=qa@example.invalid", "commit", "-qm", "malformed policy",
+    ], check=True)
+    candidate_sha = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--manifest-out", str(manifest),
+        "--candidate-sha", candidate_sha,
+    ])
+
+    assert artifact_guard.main() == 1
+    assert not manifest.exists()
+    output = capsys.readouterr()
+    assert "POROTA_ARTIFACT_INTEGRITY=FAILED_PYTHON_SOURCE_PROVENANCE" in output.err
 
 
 @pytest.mark.parametrize("symlink_component", ["file", "ancestor"])
