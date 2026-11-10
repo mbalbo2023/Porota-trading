@@ -152,15 +152,18 @@ def test_native_safety_read_only_rejects_real_and_stopped_runtime(tmp_path, monk
     with pytest.raises(clean.Rejected, match='PAPER_SAFETY_UNVERIFIED'): clean.safety()
 
 
-def test_exact_workflow_wires_checkout_helper_before_final_disk_gate():
+def test_exact_workflow_never_streams_candidate_image_cleanup_code_as_root():
     import subprocess
     import yaml
     workflow = Path(__file__).resolve().parents[1] / '.github/workflows/porota-deploy-v2-promote.yml'
     steps = yaml.safe_load(workflow.read_text())['jobs']['promote']['steps']
     block = next(step['run'] for step in steps if step.get('id') == 'diskguard')
-    assert 'base64 -w0 scripts/rc6_pretransfer_image_cleanup.py' in block
-    assert 'sudo -n timeout 120 python3 -c' in block
-    assert block.index('sudo -n timeout 120 python3 -c') < block.index('RC6_DISK_PRETRANSFER_GATE=GREEN')
+    assert 'IMAGE_CLEANUP_B64' not in block
+    assert 'base64 -w0 scripts/rc6_pretransfer_image_cleanup.py' not in block
+    assert 'sudo -n timeout 120 python3 -c' not in block
+    assert 'sudo -n /usr/local/sbin/porota-rc6-oci-custody image preflight-cleanup' in block
+    assert 'RC6_PRECLEAN_CRITICAL_IMAGE=HOLD79|legacy_unsealed|no_restart_or_image_delete' in block
+    assert block.index('image preflight-cleanup') < block.index('RC6_DISK_PRETRANSFER_GATE=GREEN')
     assert 'docker system prune' not in block and 'docker image prune -af' not in block
     assert subprocess.run(['bash','-n'], input=block, capture_output=True, text=True).returncode == 0
 
