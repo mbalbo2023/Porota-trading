@@ -686,8 +686,11 @@ class ReportArtifactIncomplete(RuntimeError):
 
 def _report_files_present(pdf_path, ai_path):
     """Check nonempty local files only; this is NOT a digest/content attestation."""
-    return all(path and Path(path).is_file() and Path(path).stat().st_size > 0
-               for path in (pdf_path, ai_path))
+    try:
+        return all(path and Path(path).is_file() and Path(path).stat().st_size > 0
+                   for path in (pdf_path, ai_path))
+    except OSError:
+        return False  # Missing or unreadable evidence must fail closed, without crashing POSTCLOSE.
 
 
 def ensure_reports(store, include_today=False):

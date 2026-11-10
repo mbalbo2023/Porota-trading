@@ -301,6 +301,39 @@ def test_missing_existing_daily_evidence_is_red_without_rewriting_history(tmp_pa
     assert old_pdf.read_bytes() == b"%PDF-historic"
 
 
+def test_report_file_stat_permission_error_marks_reports_red_without_crashing_observer(
+        tmp_path, monkeypatch):
+    """An unreadable report must be recorded as failed without tearing down the scheduler."""
+    store = PaperStore(str(tmp_path / "observer.db"))
+    services.init_schema(store)
+    pdf_path = tmp_path / "report.pdf"
+    ai_path = tmp_path / "report.json"
+    pdf_path.write_bytes(b"%PDF-1.4 mock")
+    ai_path.write_text('{"ordenes_reales":"NO_VERIFICADO"}', encoding="utf-8")
+    monkeypatch.setattr(services, "generate_report", lambda *_args: (
+        str(pdf_path), str(ai_path)))
+
+    original_stat = services.Path.stat
+    pdf_checks = 0
+
+    def permission_denied_after_is_file(path, *args, **kwargs):
+        nonlocal pdf_checks
+        if path == pdf_path:
+            pdf_checks += 1
+            if pdf_checks > 1:
+                raise PermissionError("EACCES on report artifact")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(services.Path, "stat", permission_denied_after_is_file)
+    services.ensure_reports(store)
+    with store.connect() as connection:
+        job = connection.execute("""SELECT state,detail,last_success_at
+          FROM operational_jobs WHERE job_key='REPORTS'""").fetchone()
+    assert job is not None and job["state"] == "ROJO"
+    assert "REPORT_ARTIFACT_INCOMPLETE" in job["detail"]
+    assert job["last_success_at"] is None
+
+
 def test_mensual_elimina_semanales_integrados(tmp_path, monkeypatch):
     store = PaperStore(str(tmp_path / "observer.db"))
     services.init_schema(store)
