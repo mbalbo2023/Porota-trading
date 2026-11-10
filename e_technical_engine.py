@@ -9,29 +9,19 @@ original pero nunca implementado.
 DECISIÓN DE DISEÑO — de dónde salen los datos de precio para el análisis:
 PPI expone "Intraday Market Data" pero solo para la sesión del día en
 curso (no hay minute-bars históricos de varios días), lo cual no alcanza
-para construir series 1H/15M/5M con suficiente profundidad. Como los
-tickers de este bot son CEDEARs cuyo activo subyacente cotiza en EE.UU.
-(AAPL, SPY, NVDA...), el análisis técnico por default se hace sobre el
-subyacente vía yfinance (que sí tiene historial intradiario de varias
-semanas/meses) — la forma de la tendencia y el momentum del subyacente y
-del CEDEAR son prácticamente la misma serie (co-integrados, salvo el
-drift del CCL).
+para construir series 1H/15M/5M con suficiente profundidad. Históricamente
+se exploró el subyacente estadounidense con Yahoo Finance para ese análisis;
+esa decisión ya NO representa el modo operativo predeterminado de RC6.
 
-CORRECCIÓN v10.4 — TECHNICAL_DATA_SOURCE_CEDEARS: se agregó la
-posibilidad de invertir esta prioridad. yfinance es un servicio externo,
-gratuito, sin garantía contractual, y no está pensado ni regulado para
-el mercado argentino — es una herramienta de datos, no una fuente
-"oficial". Si preferís que la fuente PRIMARIA sea siempre PPI (el propio
-bróker regulado en Argentina) y yfinance quede como respaldo —invirtiendo
-el orden que tenía por default— poné TECHNICAL_DATA_SOURCE_CEDEARS=ppi
-en el .env. La contrapartida honesta: PPI no tiene historial intradiario
-de varios días, así que en modo "ppi" el análisis de CEDEARs pasa a ser
-de un solo timeframe diario (igual que ya se hace para acciones/bonos
-locales), no de tres timeframes (1H/15M/5M) como con yfinance. Ninguna
-de las dos opciones es "la correcta" en abstracto — es una decisión
-entre más detalle (yfinance) o depender solo de la fuente regulada local
-(PPI). El default sigue siendo yfinance-primero, para no cambiar el
-comportamiento de quien no toque esta variable.
+POLÍTICA RC6: TECHNICAL_DATA_SOURCE_CEDEARS=ppi y
+YFINANCE_SHADOW_ONLY=true son los defaults de seguridad. PPI conserva la
+identidad y procedencia del instrumento; Yahoo es externo, sin contrato ni
+garantía de frescura, y queda solo para investigación/backtests autorizados,
+sin decidir, habilitar o dimensionar órdenes. La ruta PPI tiene menor
+profundidad intradiaria; se debe degradar explícitamente, nunca tomar datos
+Yahoo en silencio. El import de yfinance aún es obligatorio por compatibilidad
+histórica de arranque: NO quitar el paquete del lock sin desacoplar ese import
+y certificar la ausencia de invocaciones operativas y la imagen real.
 
 IMPORTANTE: esto es solo para decidir SI el patrón técnico es favorable.
 El precio real de entrada, el CCL y el costo de la operación siempre se
@@ -40,7 +30,8 @@ economics.py) — nunca se ejecuta ni se alerta con el precio del
 subyacente en dólares, sin importar qué fuente se haya usado para el
 análisis técnico.
 
-Requiere: pip install yfinance pandas numpy
+Dependencias actuales: ver requirements.lock.txt; no ejecutar instalaciones
+ad hoc ni restaurar la prioridad heredada de Yahoo.
 """
 
 import os

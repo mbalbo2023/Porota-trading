@@ -132,6 +132,7 @@ code{white-space:normal;overflow-wrap:anywhere}.legacy-shell{background:transpar
 
 MODE_INFO = {
     "PRODUCTION_PAPER": ("MODO SIMULACIÓN PRODUCTIVA", "PPI Producción solo lectura; compras y ventas simuladas; órdenes reales: estado actual NO_VERIFICADO sin recibo externo vinculado."),
+    "PENDING_CUSTODY_SEAL": ("BLOQUEADO — CUSTODIA PENDIENTE", "El sello físico del contenedor no está certificado; no interpretar el estado anterior como producción PAPER validada ni como autorización de órdenes."),
     "SANDBOX": ("MODO SANDBOX", "PPI Sandbox; únicamente operaciones del entorno de pruebas."),
     "PRODUCTION_REAL": ("ESTADO INVÁLIDO — PRODUCCIÓN REAL BLOQUEADA", "Por política permanente, Porota nunca puede enviar órdenes con dinero real."),
     "DETENIDO": ("PLATAFORMA DETENIDA", "Dashboard disponible; ningún motor de trading está activo."),
@@ -232,16 +233,22 @@ def _effective_mode():
     persistido del observador permite mostrar la situación sin inventarla. El
     valor del contenedor queda expuesto como diagnóstico, nunca como verdad.
     """
-    if MODE != CONFIGURED_MODE and MODE in MODE_INFO:
-        return MODE
     manifest = Path(DB_PATH).parents[1] / "operation_mode.json"
+    mode = ""
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
         mode = str(payload.get("mode") or "").upper()
-        if mode in MODE_INFO:
-            return mode
     except (OSError, ValueError, TypeError):
         pass
+    # The manager writes this restrictive transition before starting any
+    # replacement dashboard. It must outrank the deprecated MODE test alias
+    # and stale observer rows; otherwise a pending custody seal looks GREEN.
+    if mode == "PENDING_CUSTODY_SEAL":
+        return mode
+    if MODE != CONFIGURED_MODE and MODE in MODE_INFO:
+        return MODE
+    if mode in MODE_INFO:
+        return mode
     rows = _rows("SELECT mode FROM observer_state WHERE id=1") if _table("observer_state") else []
     observed = str((rows[0] if rows else {}).get("mode") or "").upper()
     return observed if observed in MODE_INFO else CONFIGURED_MODE
@@ -3416,8 +3423,8 @@ def config_page():
     rows=''.join(f"<tr><td><code>{_e(key)}</code></td><td>{_e(os.getenv(key,'NO_DEFINIDO'))}</td><td>{_e(_config_origin(key))}</td></tr>" for key in keys)
     mismatch,effective=_mode_mismatch()
     body=(f"<h1>Configuración efectiva</h1><div class='paper-grid'>"
-          f"{_card('Modo autoritativo',effective,'data/operation_mode.json','red' if mismatch else 'green')}"
-          f"{_card('Env del dashboard',CONFIGURED_MODE,'Debe coincidir con el manifiesto','red' if mismatch else 'green')}"
+          f"{_card('Modo autoritativo',effective,'data/operation_mode.json','red' if mismatch or effective=='PENDING_CUSTODY_SEAL' else 'green')}"
+          f"{_card('Env del dashboard',CONFIGURED_MODE,'Debe coincidir con el manifiesto','red' if mismatch or effective=='PENDING_CUSTODY_SEAL' else 'green')}"
           f"{_card('Órdenes PPI','BLOQUEADAS','No existe modo real habilitable','green')}</div>"
           "<div class='paper-card'><p>Esta tabla muestra valores efectivos no secretos. La procedencia se centraliza en el gestor de modo; las constantes financieras versionadas permanecen en código y se auditan por separado.</p>"
           f"<table class='paper-table'><tr><th>Variable</th><th>Valor efectivo</th><th>Procedencia</th></tr>{rows}</table></div>")
@@ -3510,6 +3517,10 @@ def install(app,check_auth):
     @app.post("/api/reports/action4")
     async def action4_publish(request:Request,token:str=Query(default=""),authorization:str|None=Header(default=None)):
         auth(request,token,authorization)
+        # A previously PAPER observer row cannot authorize filesystem writes
+        # while the manager's authoritative custody seal is still pending.
+        if _effective_mode() != "PRODUCTION_PAPER":
+            raise HTTPException(409,"Custodia del runtime pendiente o modo PAPER no verificado")
         raw=await request.body()
         if len(raw) > 5 * 1024 * 1024:
             raise HTTPException(413,"Auditoría demasiado grande")
