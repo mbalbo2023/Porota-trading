@@ -2062,16 +2062,27 @@ class PaperBroker:
         try:
             if reason in {"EOD_PAPER", "EXPIRY", "OVERNIGHT_CARRY_EXIT"}:
                 mark_id = f"{position['lifecycle_id']}:PAPER_CUT:{q.book_at}"
-                self.family_paper.mark_future(
-                    contract, lifecycle_id=position["lifecycle_id"],
+                settlement_mark_args = dict(
+                    lifecycle_id=position["lifecycle_id"],
                     event_id=mark_id,
-                    mark_price=q.bid, book_at=q.book_at, occurred_at=at,
+                    mark_price=q.bid, book_at=q.book_at,
                     settlement=True, max_mark_age_seconds=self.quote_max_age_seconds,
                     detail={"source": "PPI_BOOK_PAPER_EOD_VARIATION",
                             "broker_settlement": "NO_VERIFICADO", "reason": reason},
                     _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
                     commit_evidence=self._future_quote_callback(
                         q, position["lifecycle_id"], mark_id, "MARK", at))
+                try:
+                    self.family_paper.mark_future(contract, occurred_at=at,
+                                                  **settlement_mark_args)
+                except ValueError as mark_error:
+                    if str(mark_error) != "FUTURES_MARK_EVENT_COLLISION":
+                        raise
+                    # A previous variation may have committed before a CLOSE
+                    # failure. Reuse only the ledger's identical economic
+                    # request, after checking the Book is fresh *now* above.
+                    self.family_paper.mark_future(contract, occurred_at=None,
+                                                  **settlement_mark_args)
             result = self.family_paper.close_future(
                 contract, lifecycle_id=position["lifecycle_id"], event_id=event_id,
                 exit_price=exit_price, exit_cost=exit_cost,
@@ -2172,15 +2183,25 @@ class PaperBroker:
                 return
             mark_id = f"{position['lifecycle_id']}:MARK:{q.book_at or q.observed_at}"
             try:
-                self.family_paper.mark_future(
-                    q.contract, lifecycle_id=position["lifecycle_id"],
+                mark_args = dict(
+                    lifecycle_id=position["lifecycle_id"],
                     event_id=mark_id, mark_price=q.bid,
-                    book_at=q.book_at or q.observed_at, occurred_at=at,
+                    book_at=q.book_at or q.observed_at,
                     detail={"source": "PPI_BOOK"},
                     max_mark_age_seconds=self.quote_max_age_seconds,
                     _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
                     commit_evidence=self._future_quote_callback(
                         q, position["lifecycle_id"], mark_id, "MARK", at))
+                try:
+                    self.family_paper.mark_future(q.contract, occurred_at=at, **mark_args)
+                except ValueError as mark_error:
+                    if str(mark_error) != "FUTURES_MARK_EVENT_COLLISION":
+                        raise
+                    # An identical, already-recorded economic Book is not a new
+                    # mark.  The ledger compares the stored request and price;
+                    # only its idempotent replay may resume exit supervision.
+                    # Quote freshness at the *current* clock was checked above.
+                    self.family_paper.mark_future(q.contract, occurred_at=None, **mark_args)
                 position = self.family_paper.active_future(q.symbol) or position
             except ValueError:
                 self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
