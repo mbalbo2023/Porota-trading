@@ -19,7 +19,9 @@ identidad y procedencia del instrumento; Yahoo es externo, sin contrato ni
 garantía de frescura, y queda solo para investigación/backtests autorizados,
 sin decidir, habilitar o dimensionar órdenes. La ruta PPI tiene menor
 profundidad intradiaria; se debe degradar explícitamente, nunca tomar datos
-Yahoo en silencio. El import de yfinance aún es obligatorio por compatibilidad
+Yahoo en silencio. En la release canónica _version.MODE=PRODUCTION_PAPER,
+Yahoo queda bloqueado incluso si el entorno modifica esos defaults o MODE.
+El import de yfinance aún es obligatorio por compatibilidad
 histórica de arranque: NO quitar el paquete del lock sin desacoplar ese import
 y certificar la ausencia de invocaciones operativas y la imagen real.
 
@@ -45,6 +47,8 @@ from typing import Optional, Dict, Any
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+import _version
 
 logger = logging.getLogger("technical_engine")
 
@@ -169,6 +173,10 @@ def _fetch_bars(underlying: str, interval: str, period: str) -> Optional[pd.Data
     podían bajar las mismas velas dos veces seguidas para un mismo ticker.
     La caché es deliberadamente corta: pasado ese tiempo se vuelve a pedir,
     porque operar con velas viejas es peor que esperar."""
+    # En PAPER ni una caché Yahoo anterior puede convertirse en dato operativo.
+    # MODE ambiental no es autoridad para cambiar la identidad de la release.
+    if _version.MODE == "PRODUCTION_PAPER":
+        return None
     clave = (underlying, interval, period)
     ahora = time.time()
     with _bars_cache_lock:
@@ -204,7 +212,8 @@ def prefetch_bars(cedear_tickers: list, scalping: bool = False) -> int:
     individuales no se propagan: un ticker que falla se descarga después de
     la forma tradicional (la caché simplemente no lo va a tener).
     """
-    if YFINANCE_SHADOW_ONLY or TECHNICAL_DATA_SOURCE_CEDEARS == "ppi":
+    if (_version.MODE == "PRODUCTION_PAPER" or YFINANCE_SHADOW_ONLY
+            or TECHNICAL_DATA_SOURCE_CEDEARS == "ppi"):
         return 0
     combinaciones = []
     marcos = [("5m", "1d"), ("15m", "5d"), ("1h", "1mo")] if not scalping else [("1m", "1d"), ("5m", "1d")]
@@ -275,7 +284,8 @@ def evaluate_technical(cedear_ticker: str, ppi_client=None) -> TechnicalResult:
     # Si TECHNICAL_DATA_SOURCE_CEDEARS=ppi, PPI es la fuente PRIMARIA (no
     # el respaldo): ni siquiera se intenta yfinance. Ver docstring del
     # módulo para la explicación completa de esta decisión.
-    if TECHNICAL_DATA_SOURCE_CEDEARS == "ppi" or YFINANCE_SHADOW_ONLY:
+    if (_version.MODE == "PRODUCTION_PAPER"
+            or TECHNICAL_DATA_SOURCE_CEDEARS == "ppi" or YFINANCE_SHADOW_ONLY):
         if ppi_client is None:
             return TechnicalResult(
                 ticker=cedear_ticker, score_tech=0.0, atr_1h=None, data_ok=False,
@@ -361,7 +371,7 @@ def evaluate_technical_scalping(cedear_ticker: str) -> TechnicalResult:
     aproximar con otro timeframe — para scalping, usar el timeframe
     equivocado es peor que no operar.
     """
-    if YFINANCE_SHADOW_ONLY:
+    if _version.MODE == "PRODUCTION_PAPER" or YFINANCE_SHADOW_ONLY:
         return TechnicalResult(
             ticker=cedear_ticker, score_tech=0.0, atr_1h=None, data_ok=False,
             reason=("Scalping bloqueado: no hay velas intradiarias contractuales de PPI. "
