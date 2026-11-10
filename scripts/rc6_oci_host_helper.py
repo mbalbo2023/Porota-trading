@@ -219,6 +219,35 @@ class ApprovedLaunchProfiles:
     _ROLE_KEYS = frozenset({"env_file", "env_sha256", "environment", "mounts"})
     _PROGRAM = {"dashboard": "o_dashboard.py", "observer": "bv_paper_runtime.py",
                 "critical": "/code/fm_critical_approval_unix_runtime_rc6.py"}
+    _CRITICAL_REQUIRED_ENV = {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "POROTA_CRITICAL_APPROVAL_ENABLED": "true",
+        "POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED": "true",
+        "POROTA_CRITICAL_APPROVAL_POLL_SECONDS": "10",
+        "POROTA_CRITICAL_APPROVAL_DB": "/data/critical_approval_rc6.db",
+        "POROTA_CRITICAL_GITHUB_SOCKET": "/run/control/github.sock",
+        "POROTA_CRITICAL_BROKER_TOKEN_FILE": "/run/secrets/broker_capability.token",
+        "POROTA_CRITICAL_TELEGRAM_TOKEN_FILE": "/run/secrets/critical_telegram.token",
+        "POROTA_CRITICAL_TELEGRAM_CHAT_FILE": "/run/secrets/critical_telegram.chat",
+    }
+    _CRITICAL_REQUIRED_MOUNTS = frozenset({
+        ("/opt/porota-control-plane-rc6/current", "/code", True),
+        ("/opt/porota-control-plane-rc6/secrets/broker_capability.token",
+         "/run/secrets/broker_capability.token", True),
+        ("/opt/porota-control-plane-rc6/secrets/critical_telegram.token",
+         "/run/secrets/critical_telegram.token", True),
+        ("/opt/porota-control-plane-rc6/secrets/critical_telegram.chat",
+         "/run/secrets/critical_telegram.chat", True),
+        ("/opt/porota-control-plane-rc6/data", "/data", False),
+        ("/run/porota-critical-approval-rc6", "/run/control", False),
+    })
+    _CRITICAL_HEALTH_CMD = (
+        "python -I -c 'import sys; sys.path.insert(0, \"/code\"); "
+        "from fm_critical_approval_unix_runtime_rc6 import UnixGithubIssuesClient; "
+        "h=UnixGithubIssuesClient().health(); "
+        "assert h.get(\"status\")==\"ok\" and "
+        "h.get(\"capability\")==\"issues_only\"'"
+    )
 
     def __init__(self, doc, *, candidate_sha, artifact_digest, image_id, generation):
         _require(type(doc) is dict and set(doc) in ({
@@ -298,6 +327,14 @@ class ApprovedLaunchProfiles:
             _require(environment.get("MARKET_OPEN_HOUR") == "10" and
                      environment.get("MARKET_OPEN_MINUTE") == "30",
                      "PROFILE_BYMA_1030_REQUIRED")
+        if role == "critical":
+            _require(all(environment.get(key) == value
+                         for key, value in self._CRITICAL_REQUIRED_ENV.items()),
+                     "CRITICAL_RUNTIME_ENV_REQUIRED")
+            _require(set(environment) ==
+                     set(self._CRITICAL_REQUIRED_ENV) | {
+                         "POROTA_RUNTIME_MODE", "PPI_ORDERS", "REAL_ORDERS_ALLOWED"},
+                     "CRITICAL_ENV_SCOPE")
         for key, value in environment.items():
             _reject_executable_env_control(key, value)
             _require(type(key) is str and type(value) is str and
@@ -312,7 +349,8 @@ class ApprovedLaunchProfiles:
             _require(key in ("POROTA_RUNTIME_MODE", "SERVER_TIMEZONE", "DATA_DIR",
                              "REAL_ORDERS_ALLOWED",
                              "PPI_PRODUCTION_SECRET_FILE", "PYTHONDONTWRITEBYTECODE",
-                             ) or key.startswith(("PAPER_", "MARKET_", "PPI_")),
+                              ) or key.startswith(("PAPER_", "MARKET_", "PPI_")) or
+                     (role == "critical" and key in self._CRITICAL_REQUIRED_ENV),
                      "PROFILE_ENV_NOT_ALLOWLISTED")
             if key == "POROTA_RUNTIME_MODE":
                 _require(value == "PRODUCTION_PAPER", "PROFILE_NOT_PAPER")
@@ -327,17 +365,26 @@ class ApprovedLaunchProfiles:
             source, target = mount["source"], mount["target"]
             _require(self._clean_path(source) and self._clean_path(target) and
                      type(mount["readonly"]) is bool, "PROFILE_MOUNT_PATH")
-            _require((source == root or source.startswith(root + "/") or
-                      source == "/opt/porota-operator" or
-                      source.startswith("/opt/porota-control-plane-rc6/") or
-                      source.startswith("/run/porota-critical-approval-rc6/")) and
-                     (target == "/app/data" or target == "/app/operator" or
-                      target == "/code" or
-                      target.startswith("/run/secrets/") or
-                      target.startswith("/run/control/")), "PROFILE_MOUNT_SCOPE")
+            if role == "critical":
+                _require((source, target, mount["readonly"]) in
+                         self._CRITICAL_REQUIRED_MOUNTS, "CRITICAL_MOUNT_SCOPE")
+            else:
+                _require((source == root or source.startswith(root + "/") or
+                          source == "/opt/porota-operator" or
+                          source.startswith("/opt/porota-control-plane-rc6/") or
+                          source.startswith("/run/porota-critical-approval-rc6/")) and
+                         (target == "/app/data" or target == "/app/operator" or
+                          target == "/code" or
+                          target.startswith("/run/secrets/") or
+                          target.startswith("/run/control/")), "PROFILE_MOUNT_SCOPE")
             if target.startswith("/run/secrets/") or target == "/app/operator" or \
                     target == "/code":
                 _require(mount["readonly"], "PROFILE_SECRET_OR_CODE_WRITABLE")
+        if role == "critical":
+            _require(len(mounts) == len(self._CRITICAL_REQUIRED_MOUNTS) and
+                     {(mount["source"], mount["target"], mount["readonly"])
+                      for mount in mounts} == self._CRITICAL_REQUIRED_MOUNTS,
+                     "CRITICAL_MOUNT_REQUIRED")
 
     def preflight_launch_profiles(self):
         """Read-only closure check before retirement of any sealed predecessor."""
@@ -366,7 +413,10 @@ class ApprovedLaunchProfiles:
         if role == "observer":
             args.append("--no-healthcheck")
         if role == "critical":
-            args.extend(("--pids-limit", "64", "--memory", "192m"))
+            args.extend(("--init", "--pids-limit", "64", "--memory", "192m",
+                         "--health-cmd", self._CRITICAL_HEALTH_CMD,
+                         "--health-interval", "30s", "--health-timeout", "20s",
+                         "--health-retries", "3", "--health-start-period", "20s"))
         args.extend(labels)
         profile = self.roles[role]
         if profile["env_file"] is not None:
@@ -781,6 +831,13 @@ class HostHelperController:
 
     def dispatch(self, command):
         _require(isinstance(command, Command), "CLI_SHAPE")
+        if command.namespace == "global" and command.verb == "verify":
+            # A1079 begin_attempt().verify_role() attests the PREVIOUS sealed
+            # generation and fails GENERATION_REPLAY after seal. Until A1079
+            # provides an approved exact-CID CURRENT receipt verifier, never
+            # present an old container or a postseal error as a successful
+            # proof of the new approved generation.
+            raise CustodyHold("SEALED_CURRENT_CUSTODY_API_UNAVAILABLE")
         session = self._session()
         if command.namespace == "quiescence" and command.verb in (
                 "verify-prebirth", "verify-receipt"):

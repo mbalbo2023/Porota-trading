@@ -3,7 +3,10 @@
 import json
 import hashlib
 import os
+import shlex
+import sqlite3
 import stat
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
@@ -649,6 +652,36 @@ class HostHelperBirthContractTest(unittest.TestCase):
         self.assertEqual(self.session.events, [("seal",)])
         self.assertEqual(self.commands, [])
 
+    def test_verify_role_holds_before_prior_or_postseal_session_lookup(self):
+        # A1079 begin_attempt/verify_role checks the PREVIOUS sealed current.
+        # A post-seal call to begin_attempt fails GENERATION_REPLAY. Neither
+        # can prove the NEW generation in the approved root authority.
+        for phase in ("GENESIS", "CONTINUITY"):
+            self.authority.phase = phase
+            for role in ("dashboard", "observer", "critical"):
+                with self.subTest(phase=phase, role=role):
+                    with self.assertRaises(helper.CustodyHold) as caught:
+                        self.controller().dispatch(helper.parse_command(("verify", role)))
+                    self.assertEqual(caught.exception.reason,
+                                     "SEALED_CURRENT_CUSTODY_API_UNAVAILABLE")
+                    self.assertEqual(self.custody.calls, [])
+                    self.assertEqual(self.session.events, [])
+                    self.assertEqual(self.commands, [])
+
+    def test_verify_role_never_claims_old_cid_as_new_after_seal(self):
+        self.authority.phase = "CONTINUITY"
+        self.authority.generation = "e" * 32
+        self.session.verify_role = lambda _role: {
+            "Id": "b" * 64, "State": {"Status": "running"}}
+        with mock.patch.object(self.custody, "begin_attempt",
+                               side_effect=helper.CustodyHold("GENERATION_REPLAY")):
+            with self.assertRaises(helper.CustodyHold) as caught:
+                self.controller().dispatch(helper.parse_command(("verify", "critical")))
+        self.assertEqual(caught.exception.reason,
+                         "SEALED_CURRENT_CUSTODY_API_UNAVAILABLE")
+        self.assertEqual(self.custody.calls, [])
+        self.assertEqual(self.commands, [])
+
     def test_critical_start_checks_root_intent_before_fencer_delegation(self):
         args = ("critical", "start-newborn", "--paper-only", "--source-sha",
                 "a" * 40, "--generation", "e" * 32)
@@ -662,6 +695,20 @@ class HostHelperBirthContractTest(unittest.TestCase):
             with self.assertRaises(helper.CustodyHold):
                 self.controller().dispatch(helper.parse_command(bad_args))
             self.assertEqual(self.session.events, [])
+
+    def test_critical_external_fencer_hold_never_becomes_docker_start(self):
+        def no_independent_exclusivity(role):
+            self.session.events.append(("external-fencer", role))
+            raise helper.CustodyHold("CRITICAL_EXCLUSIVITY_UNPROVEN")
+
+        self.session.authorize_newborn_start = no_independent_exclusivity
+        args = ("critical", "start-newborn", "--paper-only", "--source-sha",
+                "a" * 40, "--generation", "e" * 32)
+        with self.assertRaises(helper.CustodyHold) as held:
+            self.controller().dispatch(helper.parse_command(args))
+        self.assertEqual(held.exception.reason, "CRITICAL_EXCLUSIVITY_UNPROVEN")
+        self.assertEqual(self.session.events, [("external-fencer", "critical")])
+        self.assertEqual(self.commands, [])
 
     def test_quiescence_never_touches_legacy_and_receipt_is_redacted(self):
         with self.assertRaises(helper.CustodyHold):
@@ -897,9 +944,33 @@ class HostHelperApprovedProfileTest(unittest.TestCase):
                     "env_file": None,
                     "env_sha256": None,
                     "environment": {"POROTA_RUNTIME_MODE": "PRODUCTION_PAPER",
-                                    "PPI_ORDERS": "BLOCKED", "REAL_ORDERS_ALLOWED": "false"},
-                    "mounts": [{"source": "/opt/porota-control-plane-rc6/current",
-                                "target": "/code", "readonly": True}],
+                                    "PPI_ORDERS": "BLOCKED", "REAL_ORDERS_ALLOWED": "false",
+                                    "PYTHONDONTWRITEBYTECODE": "1",
+                                    "POROTA_CRITICAL_APPROVAL_ENABLED": "true",
+                                    "POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED": "true",
+                                    "POROTA_CRITICAL_APPROVAL_POLL_SECONDS": "10",
+                                    "POROTA_CRITICAL_APPROVAL_DB": "/data/critical_approval_rc6.db",
+                                    "POROTA_CRITICAL_GITHUB_SOCKET": "/run/control/github.sock",
+                                    "POROTA_CRITICAL_BROKER_TOKEN_FILE":
+                                    "/run/secrets/broker_capability.token",
+                                    "POROTA_CRITICAL_TELEGRAM_TOKEN_FILE":
+                                    "/run/secrets/critical_telegram.token",
+                                    "POROTA_CRITICAL_TELEGRAM_CHAT_FILE":
+                                    "/run/secrets/critical_telegram.chat"},
+                    "mounts": [
+                        {"source": "/opt/porota-control-plane-rc6/current",
+                         "target": "/code", "readonly": True},
+                        {"source": "/opt/porota-control-plane-rc6/secrets/broker_capability.token",
+                         "target": "/run/secrets/broker_capability.token", "readonly": True},
+                        {"source": "/opt/porota-control-plane-rc6/secrets/critical_telegram.token",
+                         "target": "/run/secrets/critical_telegram.token", "readonly": True},
+                        {"source": "/opt/porota-control-plane-rc6/secrets/critical_telegram.chat",
+                         "target": "/run/secrets/critical_telegram.chat", "readonly": True},
+                        {"source": "/opt/porota-control-plane-rc6/data",
+                         "target": "/data", "readonly": False},
+                        {"source": "/run/porota-critical-approval-rc6",
+                         "target": "/run/control", "readonly": False},
+                    ],
                 },
             },
         }
@@ -911,6 +982,160 @@ class HostHelperApprovedProfileTest(unittest.TestCase):
             artifact_digest="sha256:" + "c" * 64,
             image_id=self.digest,
             generation="e" * 32)
+
+    def test_critical_required_environment_is_accepted_without_env_file(self):
+        bound = self.approved()
+        args = bound.launch_argv(
+            "critical", name="porota_rc6_critical_g_" + "e" * 32,
+            cidfile="/var/lib/porota-rc6-oci-custody/generations/e/critical.cid",
+            labels=("--label", "porota.rc6.role=critical"))
+        for value in (
+            "POROTA_CRITICAL_APPROVAL_ENABLED=true",
+            "POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED=true",
+            "POROTA_CRITICAL_APPROVAL_POLL_SECONDS=10",
+            "POROTA_CRITICAL_APPROVAL_DB=/data/critical_approval_rc6.db",
+            "POROTA_CRITICAL_GITHUB_SOCKET=/run/control/github.sock",
+            "POROTA_CRITICAL_BROKER_TOKEN_FILE=/run/secrets/broker_capability.token",
+            "POROTA_CRITICAL_TELEGRAM_TOKEN_FILE=/run/secrets/critical_telegram.token",
+            "POROTA_CRITICAL_TELEGRAM_CHAT_FILE=/run/secrets/critical_telegram.chat",
+        ):
+            self.assertIn(value, args)
+        self.assertNotIn("--env-file", args)
+
+    def test_critical_mounts_its_own_sqlite_and_broker_socket(self):
+        bound = self.approved()
+        args = bound.launch_argv(
+            "critical", name="porota_rc6_critical_g_" + "e" * 32,
+            cidfile="/var/lib/porota-rc6-oci-custody/generations/e/critical.cid",
+            labels=("--label", "porota.rc6.role=critical"))
+        mounts = [args[i + 1] for i, token in enumerate(args[:-1]) if token == "--mount"]
+        self.assertEqual(len(mounts), 6)
+        self.assertIn("type=bind,source=/opt/porota-control-plane-rc6/data,target=/data", mounts)
+        self.assertIn("type=bind,source=/run/porota-critical-approval-rc6,target=/run/control",
+                      mounts)
+        self.assertIn("type=bind,source=/opt/porota-control-plane-rc6/current,target=/code,readonly",
+                      mounts)
+        self.assertTrue(all("docker.sock" not in mount and "/opt/boca" not in mount
+                            for mount in mounts))
+
+    def test_critical_creation_reaps_children_and_checks_unix_issues_broker(self):
+        args = self.approved().launch_argv(
+            "critical", name="porota_rc6_critical_g_" + "e" * 32,
+            cidfile="/var/lib/porota-rc6-oci-custody/generations/e/critical.cid",
+            labels=("--label", "porota.rc6.role=critical"))
+        self.assertIn("--init", args)
+        self.assertIn("--pids-limit", args)
+        self.assertEqual(args[args.index("--pids-limit") + 1], "64")
+        self.assertNotIn("--no-healthcheck", args)
+        health = args[args.index("--health-cmd") + 1]
+        for required in ("python -I -c", "/code", "UnixGithubIssuesClient",
+                         '"status"', '"ok"', '"capability"', '"issues_only"'):
+            self.assertIn(required, health)
+        for forbidden in ("DASHBOARD_PORT", "urllib", "PYTHONPATH"):
+            self.assertNotIn(forbidden, health)
+        for option, expected in (("--health-interval", "30s"),
+                                 ("--health-timeout", "20s"),
+                                 ("--health-retries", "3"),
+                                 ("--health-start-period", "20s")):
+            self.assertEqual(args[args.index(option) + 1], expected)
+
+    def test_critical_rejects_extra_provider_secret_even_in_paper_mode(self):
+        hostile = json.loads(json.dumps(self.profile))
+        hostile["roles"]["critical"]["environment"]["PPI_API_KEY"] = "synthetic-not-a-secret"
+        with self.assertRaises(helper.CustodyHold):
+            self.approved(hostile)
+
+    def test_critical_required_flags_paths_and_unsafe_env_fail_closed(self):
+        required = (
+            "POROTA_CRITICAL_APPROVAL_ENABLED",
+            "POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED",
+            "POROTA_CRITICAL_APPROVAL_DB", "POROTA_CRITICAL_GITHUB_SOCKET",
+            "POROTA_CRITICAL_BROKER_TOKEN_FILE",
+            "POROTA_CRITICAL_TELEGRAM_TOKEN_FILE",
+            "POROTA_CRITICAL_TELEGRAM_CHAT_FILE",
+        )
+        for key in required:
+            absent = json.loads(json.dumps(self.profile))
+            absent["roles"]["critical"]["environment"].pop(key)
+            with self.subTest(missing=key), self.assertRaises(helper.CustodyHold):
+                self.approved(absent)
+        mutations = (
+            ("POROTA_CRITICAL_APPROVAL_ENABLED", "false"),
+            ("POROTA_TELEGRAM_SINGLE_CONSUMER_ENFORCED", "false"),
+            ("POROTA_CRITICAL_APPROVAL_DB", "/app/data/critical_approval_rc6.db"),
+            ("POROTA_CRITICAL_GITHUB_SOCKET", "/var/run/docker.sock"),
+            ("POROTA_CRITICAL_APPROVAL_POLL_SECONDS", "0"),
+            ("PYTHONDONTWRITEBYTECODE", "0"),
+            ("LD_PRELOAD", "/data/hostile.so"),
+            ("PYTHONPATH", "/data"),
+            ("GITHUB_TOKEN", "synthetic-not-a-token"),
+        )
+        for key, value in mutations:
+            hostile = json.loads(json.dumps(self.profile))
+            hostile["roles"]["critical"]["environment"][key] = value
+            with self.subTest(key=key), self.assertRaises(helper.CustodyHold):
+                self.approved(hostile)
+        wrong_role = json.loads(json.dumps(self.profile))
+        wrong_role["roles"]["observer"]["environment"][
+            "POROTA_CRITICAL_APPROVAL_ENABLED"] = "true"
+        with self.assertRaises(helper.CustodyHold):
+            self.approved(wrong_role)
+
+    def test_critical_mount_adversaries_and_partial_profile_are_rejected(self):
+        alterations = (
+            (4, "source", "/opt/boca/data"),
+            (4, "source", "/opt/porota-control-plane-rc6/data2"),
+            (4, "source", "/opt/porota-control-plane-rc6/data/../boca"),
+            (4, "target", "/app/data"),
+            (4, "readonly", True),
+            (5, "source", "/var/run/docker.sock"),
+            (5, "target", "/run/control/github.sock"),
+            (0, "readonly", False),
+        )
+        for index, field, value in alterations:
+            hostile = json.loads(json.dumps(self.profile))
+            hostile["roles"]["critical"]["mounts"][index][field] = value
+            with self.subTest(index=index, field=field, value=value):
+                with self.assertRaises(helper.CustodyHold):
+                    self.approved(hostile)
+        omitted = json.loads(json.dumps(self.profile))
+        omitted["roles"]["critical"]["mounts"].pop(4)
+        with self.assertRaises(helper.CustodyHold):
+            self.approved(omitted)
+        foreign_role = json.loads(json.dumps(self.profile))
+        foreign_role["roles"]["dashboard"]["mounts"].append({
+            "source": "/opt/porota-control-plane-rc6/data",
+            "target": "/data", "readonly": False})
+        with self.assertRaises(helper.CustodyHold):
+            self.approved(foreign_role)
+
+    def test_critical_health_is_syntactically_valid_isolated_python(self):
+        args = self.approved().launch_argv(
+            "critical", name="porota_rc6_critical_g_" + "e" * 32,
+            cidfile="/var/lib/porota-rc6-oci-custody/generations/e/critical.cid",
+            labels=("--label", "porota.rc6.role=critical"))
+        words = shlex.split(args[args.index("--health-cmd") + 1])
+        self.assertEqual(words[:3], ["python", "-I", "-c"])
+        compile(words[3], "<critical-broker-health>", "exec")
+
+    def test_critical_sqlite_state_and_telegram_offset_survive_reopen_offhost(self):
+        from fg_critical_approval_gateway_rc6 import ApprovalStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            db = os.path.join(directory, "critical_approval_rc6.db")
+            first = ApprovalStore(path=db)
+            first.ensure_issue(732)
+            self.assertTrue(first.decide(732, "APPROVED", "synthetic-actor", 12345))
+            first.set_offset(731)
+            second = ApprovalStore(path=db)
+            self.assertEqual(second.offset(), 731)
+            self.assertFalse(second.decide(732, "REJECTED", "other-actor", 12346))
+            with sqlite3.connect(db) as connection:
+                self.assertEqual(connection.execute("PRAGMA quick_check").fetchone()[0], "ok")
+                state = connection.execute(
+                    "SELECT decision,github_comment_id FROM critical_approval_state "
+                    "WHERE issue_number=732").fetchone()
+                self.assertEqual(state, ("APPROVED", 12345))
 
     def test_dashboard_launch_is_immutable_paper_profile_local_port_only(self):
         bound = self.approved()
