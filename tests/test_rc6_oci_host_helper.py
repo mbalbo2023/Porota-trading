@@ -60,6 +60,28 @@ class HostHelperCommandContractTest(unittest.TestCase):
                 with self.assertRaises(helper.CustodyHold):
                     helper.parse_command(candidate)
 
+    def test_postseal_verify_current_has_five_fixed_expectations_no_authority_flags(self):
+        values = ("a" * 40, "b" * 40, "e" * 32,
+                  "sha256:" + "d" * 64, "sha256:" + "8" * 64)
+        names = ("--candidate-sha", "--candidate-tree", "--generation",
+                 "--artifact-digest", "--image-id")
+        argv = ("verify-current",) + tuple(item for pair in zip(names, values)
+                                            for item in pair)
+        command = helper.parse_command(argv)
+        self.assertEqual((command.namespace, command.verb, command.expectations),
+                         ("global", "verify-current", values))
+        bad = [argv[:-2], argv + ("--daemon-id", "caller-daemon"),
+               argv + ("--expect-critical-state", "created"),
+               argv[:3] + ("--candidate-sha", values[0]) + argv[3:],
+               ("verify-current", "--daemon-id", "x") + argv[1:]]
+        for index, value in enumerate(values):
+            bad.append(argv[:2 + index * 2] + ("invalid",) +
+                       argv[3 + index * 2:])
+        for malformed in bad:
+            with self.subTest(argv=malformed):
+                with self.assertRaises(helper.CustodyHold):
+                    helper.parse_command(malformed)
+
     def test_manager_post_begin_commands_bind_exact_root_attempt(self):
         nonce = "f" * 32
         parsed = helper.parse_command(("manager", "birth", "dashboard",
@@ -236,6 +258,7 @@ class _Custody:
     def __init__(self, session):
         self.session = session
         self.calls = []
+        self.postseal_receipt = None
 
     def begin_genesis(self):
         self.calls.append("genesis")
@@ -249,12 +272,32 @@ class _Custody:
         self.calls.append("daemon-identity")
         return "daemon-rootful-rc6"
 
+    def verify_current_sealed(self, **expected):
+        self.calls.append(("postseal-current", expected))
+        if self.postseal_receipt is not None:
+            return self.postseal_receipt
+        return {
+            "schema": "RC6_POSTSEAL_CUSTODY_V1", "status": "OK",
+            "candidate_sha": expected["candidate_sha"],
+            "candidate_tree": expected["candidate_tree"],
+            "generation": expected["generation"],
+            "artifact_digest": expected["artifact_digest"],
+            "image_id": expected["image_id"],
+            "daemon_id": expected["daemon_id"],
+            "declared_paper_mode": "PRODUCTION_PAPER",
+            "roles": {role: {"cid": cid * 64, "state": "running"}
+                      for role, cid in (("dashboard", "a"),
+                                        ("observer", "b"),
+                                        ("critical", "c"))},
+        }
+
 
 class _ApprovedAuthority:
     def __init__(self, phase="GENESIS"):
         self.phase = phase
         self.calls = []
         self.candidate_sha = "a" * 40
+        self.candidate_tree = "b" * 40
         self.generation = "e" * 32
         self.attempt_token = "f" * 32
         self.unit_template_sha256 = "c" * 64
@@ -682,6 +725,125 @@ class HostHelperBirthContractTest(unittest.TestCase):
         self.assertEqual(self.custody.calls, [])
         self.assertEqual(self.commands, [])
 
+    def postseal_command(self):
+        values = (self.authority.candidate_sha, self.authority.candidate_tree,
+                  self.authority.generation, self.authority.artifact_digest,
+                  self.authority.image_id)
+        names = ("--candidate-sha", "--candidate-tree", "--generation",
+                 "--artifact-digest", "--image-id")
+        return helper.parse_command(("verify-current",) +
+                                    tuple(item for pair in zip(names, values)
+                                          for item in pair))
+
+    def test_postseal_verify_current_uses_root_daemon_and_exact_three_running_cids(self):
+        for phase in ("GENESIS", "CONTINUITY"):
+            with self.subTest(phase=phase):
+                self.authority.phase = phase
+                self.custody.calls.clear()
+                with mock.patch.object(self.custody, "begin_attempt",
+                                       side_effect=AssertionError("generation replay")), \
+                     mock.patch.object(self.custody, "begin_genesis",
+                                       side_effect=AssertionError("old genesis")):
+                    output = self.controller().dispatch(self.postseal_command())
+                self.assertLessEqual(len(output.encode("utf-8")), 4096)
+                receipt = json.loads(output)
+                self.assertEqual(receipt["schema"], "RC6_POSTSEAL_CUSTODY_V1")
+                self.assertEqual(receipt["status"], "OK")
+                self.assertEqual(receipt["declared_paper_mode"], "PRODUCTION_PAPER")
+                self.assertEqual({r: receipt["roles"][r]["cid"] for r in
+                                  ("dashboard", "observer", "critical")},
+                                 {"dashboard": "a" * 64, "observer": "b" * 64,
+                                  "critical": "c" * 64})
+                self.assertEqual(self.custody.calls, [("postseal-current", {
+                    "candidate_sha": self.authority.candidate_sha,
+                    "candidate_tree": self.authority.candidate_tree,
+                    "generation": self.authority.generation,
+                    "artifact_digest": self.authority.artifact_digest,
+                    "image_id": self.authority.image_id,
+                    "daemon_id": self.authority.daemon_id,
+                    "expected_role_states": {"dashboard": "running",
+                                             "observer": "running",
+                                             "critical": "running"}})])
+                self.assertEqual(self.session.events, [])
+                self.assertEqual(self.commands, [])
+
+    def test_postseal_verify_current_rejects_expected_identity_mismatch_before_custody(self):
+        good = self.postseal_command()
+        for index, bad_value in enumerate(("f" * 40, "f" * 40, "f" * 32,
+                                            "sha256:" + "f" * 64,
+                                            "sha256:" + "f" * 64)):
+            with self.subTest(index=index):
+                broken = list(good.expectations)
+                broken[index] = bad_value
+                command = helper.Command("global", "verify-current",
+                                         expectations=tuple(broken))
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(command)
+                self.assertEqual(caught.exception.reason,
+                                 "POSTSEAL_EXPECTATIONS_MISMATCH")
+                self.assertEqual(self.custody.calls, [])
+                self.assertEqual(self.commands, [])
+
+    def test_postseal_verify_current_requires_trusted_custody_api(self):
+        with mock.patch.object(self.custody, "verify_current_sealed", None):
+            with self.assertRaises(helper.CustodyHold) as caught:
+                self.controller().dispatch(self.postseal_command())
+        self.assertEqual(caught.exception.reason,
+                         "POSTSEAL_CUSTODY_API_UNAVAILABLE")
+        self.assertEqual(self.custody.calls, [])
+        self.assertEqual(self.commands, [])
+
+    def test_postseal_verify_current_rejects_forged_receipts(self):
+        command = self.postseal_command()
+        good = self.custody.verify_current_sealed(
+            candidate_sha=self.authority.candidate_sha,
+            candidate_tree=self.authority.candidate_tree,
+            generation=self.authority.generation,
+            artifact_digest=self.authority.artifact_digest,
+            image_id=self.authority.image_id,
+            daemon_id=self.authority.daemon_id,
+            expected_role_states={"dashboard": "running", "observer": "running",
+                                  "critical": "running"})
+        self.custody.calls.clear()
+        mutations = []
+        for key, value in (("schema", "UNTRUSTED"), ("status", "OKAY"),
+                           ("candidate_sha", "f" * 40),
+                           ("candidate_tree", "f" * 40),
+                           ("generation", "f" * 32),
+                           ("artifact_digest", "sha256:" + "f" * 64),
+                           ("image_id", "sha256:" + "f" * 64),
+                           ("daemon_id", "caller-daemon"),
+                           ("declared_paper_mode", "LIVE")):
+            mutant = json.loads(json.dumps(good))
+            mutant[key] = value
+            mutations.append(mutant)
+        extra = json.loads(json.dumps(good))
+        extra["real_orders_sent"] = 0  # Never attest live behavior from OCI identity.
+        mutations.append(extra)
+        for role in ("dashboard", "observer", "critical"):
+            for key, value in (("cid", "not-a-cid"), ("state", "exited")):
+                mutant = json.loads(json.dumps(good))
+                mutant["roles"][role][key] = value
+                mutations.append(mutant)
+        duplicate = json.loads(json.dumps(good))
+        duplicate["roles"]["critical"]["cid"] = duplicate["roles"]["observer"]["cid"]
+        mutations.append(duplicate)
+        missing = json.loads(json.dumps(good))
+        del missing["roles"]["critical"]
+        mutations.append(missing)
+        surplus = json.loads(json.dumps(good))
+        surplus["roles"]["boca"] = {"cid": "f" * 64, "state": "running"}
+        mutations.append(surplus)
+        for malformed in mutations:
+            with self.subTest(malformed=malformed):
+                self.custody.postseal_receipt = malformed
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(command)
+                self.assertEqual(caught.exception.reason,
+                                 "POSTSEAL_CUSTODY_RECEIPT_UNVERIFIED")
+                self.assertEqual(self.commands, [])
+        self.custody.postseal_receipt = None
+
     def test_critical_start_checks_root_intent_before_fencer_delegation(self):
         args = ("critical", "start-newborn", "--paper-only", "--source-sha",
                 "a" * 40, "--generation", "e" * 32)
@@ -982,6 +1144,21 @@ class HostHelperApprovedProfileTest(unittest.TestCase):
             artifact_digest="sha256:" + "c" * 64,
             image_id=self.digest,
             generation="e" * 32)
+
+    def test_installed_approval_binds_candidate_tree_for_postseal_proof(self):
+        approval = {
+            "phase": "GENESIS", "candidate_sha": self.sha,
+            "candidate_tree": "b" * 40, "generation": "e" * 32,
+            "artifact_digest": "sha256:" + "c" * 64,
+            "image_id": self.digest, "daemon_id": "daemon-rootful-rc6",
+            "run_id": "42644665843", "run_attempt": "1",
+            "unit_template_sha256": "f" * 64,
+        }
+        installed = helper.InstalledApprovedAuthority(approval, self.profile)
+        self.assertEqual(installed.candidate_tree, approval["candidate_tree"])
+        self.assertEqual(installed.daemon_id, approval["daemon_id"])
+        self.assertEqual(installed.attempt_token,
+                         helper.derive_attempt_token(approval))
 
     def test_critical_required_environment_is_accepted_without_env_file(self):
         bound = self.approved()

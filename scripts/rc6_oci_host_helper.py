@@ -444,6 +444,7 @@ class InstalledApprovedAuthority(ApprovedLaunchProfiles):
                          generation=approval["generation"])
         self.phase = approval["phase"]
         self.candidate_sha = approval["candidate_sha"]
+        self.candidate_tree = approval["candidate_tree"]
         self.generation = approval["generation"]
         self.run_id = approval["run_id"]
         self.run_attempt = approval["run_attempt"]
@@ -606,6 +607,17 @@ def parse_command(argv):
     if args[0] == "verify" and len(args) == 2 and args[1] in (
             "dashboard", "observer", "critical"):
         return Command("global", "verify", args[1])
+    if args[0] == "verify-current":
+        values = _expect_flags(args[1:], (
+            "--candidate-sha", "--candidate-tree", "--generation",
+            "--artifact-digest", "--image-id"))
+        _require(_HEX40.fullmatch(values[0]) and
+                 _HEX40.fullmatch(values[1]) and
+                 re.fullmatch(r"[0-9a-f]{32}", values[2]) and
+                 _IMMUTABLE_ID.fullmatch(values[3]) and
+                 _IMMUTABLE_ID.fullmatch(values[4]),
+                 "POSTSEAL_CLI_IDENTITY")
+        return Command("global", "verify-current", expectations=values)
     _require(len(args) >= 2)
     namespace, verb = args[:2]
     remaining = args[2:]
@@ -686,6 +698,56 @@ class HostHelperController:
         if self.authority.phase == "GENESIS":
             return self.custody.begin_genesis()
         return self.custody.begin_attempt()
+
+    def _verify_current_sealed(self, command):
+        # This command intentionally bypasses begin_attempt(): A1079's
+        # attempt session proves the PREVIOUS receipt and fails replay after
+        # seal. A1079's separately reviewed CURRENT API owns all root files,
+        # journals, CIDfile provenance and exact-CID Docker inspection.
+        _require(self.authority.phase in ("GENESIS", "CONTINUITY"),
+                 "APPROVED_PHASE")
+        fields = ("candidate_sha", "candidate_tree", "generation",
+                  "artifact_digest", "image_id")
+        expected = tuple(getattr(self.authority, key, None) for key in fields)
+        _require(command.expectations == expected,
+                 "POSTSEAL_EXPECTATIONS_MISMATCH")
+        _require(type(self.authority.daemon_id) is str and
+                 re.fullmatch(r"[A-Za-z0-9:_./-]{6,128}", self.authority.daemon_id),
+                 "POSTSEAL_DAEMON_UNVERIFIED")
+        verify = getattr(self.custody, "verify_current_sealed", None)
+        _require(callable(verify), "POSTSEAL_CUSTODY_API_UNAVAILABLE")
+        running = {role: "running" for role in ("dashboard", "observer", "critical")}
+        proof = verify(candidate_sha=expected[0], candidate_tree=expected[1],
+                       generation=expected[2], artifact_digest=expected[3],
+                       image_id=expected[4], daemon_id=self.authority.daemon_id,
+                       expected_role_states=running)
+        identifiers = {**dict(zip(fields, expected)),
+                       "daemon_id": self.authority.daemon_id,
+                       "schema": "RC6_POSTSEAL_CUSTODY_V1", "status": "OK",
+                       "declared_paper_mode": "PRODUCTION_PAPER"}
+        _require(type(proof) is dict and
+                 set(proof) == set(identifiers) | {"roles"} and
+                 all(type(proof.get(key)) is str and proof[key] == value
+                     for key, value in identifiers.items()) and
+                 type(proof.get("roles")) is dict and
+                 set(proof["roles"]) == set(running),
+                 "POSTSEAL_CUSTODY_RECEIPT_UNVERIFIED")
+        cids = []
+        for role in running:
+            record = proof["roles"][role]
+            _require(type(record) is dict and set(record) == {"cid", "state"} and
+                     type(record["cid"]) is str and
+                     _HEX64.fullmatch(record["cid"]) and
+                     type(record["state"]) is str and
+                     record["state"] == "running",
+                     "POSTSEAL_CUSTODY_RECEIPT_UNVERIFIED")
+            cids.append(record["cid"])
+        _require(len(set(cids)) == 3, "POSTSEAL_CUSTODY_RECEIPT_UNVERIFIED")
+        result = json.dumps(proof, sort_keys=True, separators=(",", ":"),
+                            ensure_ascii=True)
+        _require(len(result.encode("ascii")) <= 4096,
+                 "POSTSEAL_CUSTODY_RECEIPT_UNVERIFIED")
+        return result
 
     def _preflight_approved_profiles(self):
         # This is repeated for verify-image, retire and EACH birth, closing
@@ -831,6 +893,8 @@ class HostHelperController:
 
     def dispatch(self, command):
         _require(isinstance(command, Command), "CLI_SHAPE")
+        if command.namespace == "global" and command.verb == "verify-current":
+            return self._verify_current_sealed(command)
         if command.namespace == "global" and command.verb == "verify":
             # A1079 begin_attempt().verify_role() attests the PREVIOUS sealed
             # generation and fails GENERATION_REPLAY after seal. Until A1079
