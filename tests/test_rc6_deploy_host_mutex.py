@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -39,6 +40,9 @@ class HostMutexTests(unittest.TestCase):
         read_barrier = mutex._read_barrier
         open_lock = mutex.open_lock
         return (patch.object(mutex.os, 'geteuid', return_value=0),
+                # Dormant legacy lifecycle coverage only; the default veto is
+                # exercised without this bypass by A865ContainmentTests.
+                patch.object(mutex, 'require_migrated_consumer_protocol'),
                 patch.object(mutex.pwd, 'getpwnam', return_value=fake_user),
                 patch.object(mutex, '_enable_subreaper'),
                 patch.object(mutex, '_drain_children'),
@@ -50,6 +54,45 @@ class HostMutexTests(unittest.TestCase):
 
     def acquire(self):
         return mutex.open_lock(self.root, os.geteuid())
+
+    def test_real_child_cannot_unlock_private_owner_even_if_veto_later_migrates(self):
+        # A865 regression: removing FD privacy lets this real child unlock
+        # the parent's owner OFD and acquire a competing lock while it lives.
+        from contextlib import ExitStack
+        owner = self.acquire()
+        output = self.root / 'child-observation.json'
+        code = '''import fcntl,json,os,sys
+slot=int(os.environ['A865_TEST_OWNER_SLOT'])
+try:
+ fcntl.flock(slot,fcntl.LOCK_UN); usable=True
+except OSError:
+ usable=False
+probe=os.open(sys.argv[1],os.O_RDONLY)
+try:
+ try:
+  fcntl.flock(probe,fcntl.LOCK_EX|fcntl.LOCK_NB); acquired=True
+ except BlockingIOError:
+  acquired=False
+finally:
+ os.close(probe)
+with open(sys.argv[2],'w') as handle:
+ json.dump({'owner_usable':usable,'probe_acquired':acquired,
+            'legacy_fd':'RC6_DEPLOY_MUTEX_FD' in os.environ,
+            'legacy_proof':'RC6_DEPLOY_MUTEX_PROOF' in os.environ},handle)
+'''
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex, 'open_lock', return_value=owner))
+            stack.enter_context(patch.object(mutex, '_contract_writers', return_value=set()))
+            stack.enter_context(patch.dict(os.environ, {
+                'A865_TEST_OWNER_SLOT': str(owner),
+                'RC6_DEPLOY_MUTEX_FD': str(owner),
+                'RC6_DEPLOY_MUTEX_PROOF': 'untrusted ambient claim'}))
+            self.assertEqual(mutex.run(self.args('classify',
+                [sys.executable, '-B', '-c', code, str(self.lock), str(output)])), 0)
+        self.assertEqual(json.loads(output.read_text()), {
+            'owner_usable': False, 'probe_acquired': False,
+            'legacy_fd': False, 'legacy_proof': False})
 
     def test_orphan_holds_inode_after_parent_loses_fd_and_second_attempt_cannot_mutate(self):
         first = self.acquire()
@@ -597,6 +640,27 @@ class TransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'STAGING_PATH_UNSAFE'):
             stage.receive(target, self.archive())
         self.assertEqual(list(outside.iterdir()), [])
+
+
+class A865ContainmentTests(unittest.TestCase):
+    """Default executable boundary denies legacy consumers, without host I/O."""
+
+    def test_unmigrated_wrapper_never_opens_lock_or_launches_child(self):
+        fake_user = SimpleNamespace(pw_uid=1, pw_gid=1, pw_name='nobody', pw_dir='/tmp')
+        with patch.object(mutex.os, 'geteuid', return_value=0), \
+             patch.object(mutex.pwd, 'getpwnam', return_value=fake_user), \
+             patch.object(mutex, 'open_lock', side_effect=AssertionError(
+                 'UNMIGRATED_WRAPPER_OPENED_PHYSICAL_LOCK')) as acquire, \
+             patch.object(mutex.subprocess, 'run') as child:
+            for mode in ('root', 'user'):
+                for phase in sorted(mutex.PHASES):
+                    with self.subTest(mode=mode, phase=phase):
+                        with self.assertRaisesRegex(
+                                RuntimeError, 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'):
+                            mutex.run(['nobody', mode, '--attempt', SHA, RUN,
+                                       ATTEMPT, '--phase', phase, 'true'])
+            self.assertEqual(acquire.call_count, 0)
+            self.assertEqual(child.call_count, 0)
 
 
 class WorkflowIntegrationTests(unittest.TestCase):
