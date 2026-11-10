@@ -53,6 +53,7 @@ DATOS_AR_SERIES = {
 }
 BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
 REPORT_SQLITE_RETRY_SECONDS = 15 * 60
+REPORT_REAL_ORDERS_UNVERIFIED = "NO_VERIFICADO"  # Report DB alone is not host/runtime attestation.
 
 
 def now_iso():
@@ -527,7 +528,7 @@ def _report_story(title, period, data):
         })
     return {
         "titulo": title, "periodo": period, "generado_en": now_iso(),
-        "modo": "SIMULACIÓN PRODUCTIVA", "ordenes_reales": 0,
+        "modo": "SIMULACIÓN PRODUCTIVA", "ordenes_reales": REPORT_REAL_ORDERS_UNVERIFIED,
         "resumen": {"operaciones": len(data["positions"]), "cerradas": len(data["closed"]),
                     "ganadoras": data["wins"], "win_rate_pct": data["win_rate"],
                     "pnl_neto_ars": round(data["pnl"], 2), "decisiones": len(data["decisions"]),
@@ -573,7 +574,8 @@ def _pdf(story, path):
                             topMargin=14*mm, bottomMargin=14*mm,
                             title=story["titulo"], author="Porota Trading")
     blocks = [Paragraph(html.escape(story["titulo"]), styles["Title"]),
-              Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · órdenes reales: 0", styles["Normal"]),
+              Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · "
+                        f"órdenes reales: {html.escape(str(story['ordenes_reales']))}", styles["Normal"]),
               Spacer(1, 8)]
     summary = story["resumen"]
     table = Table([["Operaciones", "Cerradas", "Ganadoras", "Win rate", "PnL neto ARS"],
@@ -639,8 +641,9 @@ def generate_report(store, period_type, period_key, start, end):
             c.execute("""INSERT OR REPLACE INTO report_registry
               (period_type,period_key,created_at,pdf_path,ai_path,state,detail)
               VALUES(?,?,?,?,?,?,?)""",
-              (period_type, period_key, now_iso(), str(pdf_path), str(ai_path), "VERDE",
-               f"{len(data['positions'])} operaciones; {len(data['news'])} noticias"))
+              (period_type, period_key, now_iso(), str(pdf_path), str(ai_path), "AMARILLO",
+               f"{len(data['positions'])} operaciones; {len(data['news'])} noticias; "
+               "CONTENIDO_NO_VERIFICADO: ordenes_reales sin atestacion runtime"))
         return str(pdf_path), str(ai_path)
     except Exception as exc:
         with store.connect() as c:
@@ -677,48 +680,72 @@ def _observed_report_days(connection):
     return sorted(days)
 
 
+class ReportArtifactIncomplete(RuntimeError):
+    """A required EOD report has no verified local output artifact."""
+
+
+def _report_files_present(pdf_path, ai_path):
+    """Check nonempty local files only; this is NOT a digest/content attestation."""
+    return all(path and Path(path).is_file() and Path(path).stat().st_size > 0
+               for path in (pdf_path, ai_path))
+
+
 def ensure_reports(store, include_today=False):
-    """PDF diario y consolidaciones; un único paquete IA móvil de siete días."""
+    """Generate all EOD reports; never stamp success for missing artifacts.
+
+    Existing observed-day reports remain immutable: check file presence, never
+    rewrite, delete, or silently skip a missing historical artifact. A failure
+    leaves the prior successful run timestamp intact and records REPORTS=ROJO.
+    """
     init_schema(store)
-    today = datetime.now(TZ).date()
-    target = today if include_today else today - timedelta(days=1)
-    start = datetime.combine(target, datetime.min.time(), TZ).isoformat()
-    end = datetime.combine(target + timedelta(days=1), datetime.min.time(), TZ).isoformat()
-    generate_report(store, "DIARIO", target.isoformat(), start, end)
-    rolling_start = target - timedelta(days=6)
-    generate_report(store, "IA_SEMANAL", f"{rolling_start}_{target}",
-                    datetime.combine(rolling_start, datetime.min.time(), TZ).isoformat(), end)
-    # Backfill de fechas observadas: deja descarga día por día aun si el
-    # servicio fue instalado después de esas operaciones. El antiguo UNION
-    # DISTINCT construía un B-tree temporal para toda la historia y podía
-    # agotar el /tmp limitado del escáner (SQLITE_FULL).
-    with store.connect() as c:
-        c.execute("BEGIN")
-        observed = _observed_report_days(c)
-        existing = {r[0] for r in c.execute(
-            "SELECT period_key FROM report_registry WHERE period_type='DIARIO'").fetchall()}
-    for day_text in observed:
-        if day_text in existing:
-            continue
-        try:
-            day = date.fromisoformat(day_text)
-        except ValueError:
-            continue
-        day_start = datetime.combine(day, datetime.min.time(), TZ).isoformat()
-        day_end = datetime.combine(day + timedelta(days=1), datetime.min.time(), TZ).isoformat()
-        generate_report(store, "DIARIO", day_text, day_start, day_end)
-    if target.weekday() == 6:
-        week_start = target - timedelta(days=6)
-        generate_report(store, "SEMANAL", f"{week_start}_{target}",
-                        datetime.combine(week_start, datetime.min.time(), TZ).isoformat(), end)
-    if today.day <= 3:
-        last_day = today.replace(day=1) - timedelta(days=1)
-        first_day = last_day.replace(day=1)
-        month_key = first_day.strftime("%Y-%m")
-        month_start = datetime.combine(first_day, datetime.min.time(), TZ).isoformat()
-        month_end = datetime.combine(last_day + timedelta(days=1), datetime.min.time(), TZ).isoformat()
-        pdf_path, _ = generate_report(store, "MENSUAL", month_key, month_start, month_end)
-        if pdf_path:
+
+    def checked_report(period_type, period_key, start, end):
+        pdf, ai = generate_report(store, period_type, period_key, start, end)
+        if not _report_files_present(pdf, ai):
+            raise ReportArtifactIncomplete(f"{period_type}:{period_key}")
+        return pdf, ai
+
+    try:
+        today = datetime.now(TZ).date()
+        target = today if include_today else today - timedelta(days=1)
+        start = datetime.combine(target, datetime.min.time(), TZ).isoformat()
+        end = datetime.combine(target + timedelta(days=1), datetime.min.time(), TZ).isoformat()
+        checked_report("DIARIO", target.isoformat(), start, end)
+        rolling_start = target - timedelta(days=6)
+        checked_report("IA_SEMANAL", f"{rolling_start}_{target}",
+                       datetime.combine(rolling_start, datetime.min.time(), TZ).isoformat(), end)
+        # Backfill de fechas observadas sin UNION DISTINCT ni reescritura de
+        # evidencia histórica. Cada archivo previamente registrado debe existir.
+        with store.connect() as c:
+            c.execute("BEGIN")
+            observed = _observed_report_days(c)
+            existing = {r[0]: (r[1], r[2]) for r in c.execute(
+                "SELECT period_key,pdf_path,ai_path FROM report_registry WHERE period_type='DIARIO'")}
+        for day_text in observed:
+            if day_text in existing:
+                if not _report_files_present(*existing[day_text]):
+                    raise ReportArtifactIncomplete(f"DIARIO_HISTORICO:{day_text}")
+                continue
+            try:
+                day = date.fromisoformat(day_text)
+            except ValueError:
+                continue
+            day_start = datetime.combine(day, datetime.min.time(), TZ).isoformat()
+            day_end = datetime.combine(day + timedelta(days=1), datetime.min.time(), TZ).isoformat()
+            checked_report("DIARIO", day_text, day_start, day_end)
+        if target.weekday() == 6:
+            week_start = target - timedelta(days=6)
+            checked_report("SEMANAL", f"{week_start}_{target}",
+                           datetime.combine(week_start, datetime.min.time(), TZ).isoformat(), end)
+        if today.day <= 3:
+            last_day = today.replace(day=1) - timedelta(days=1)
+            first_day = last_day.replace(day=1)
+            month_key = first_day.strftime("%Y-%m")
+            month_start = datetime.combine(first_day, datetime.min.time(), TZ).isoformat()
+            month_end = datetime.combine(last_day + timedelta(days=1), datetime.min.time(), TZ).isoformat()
+            checked_report("MENSUAL", month_key, month_start, month_end)
+            # Existing monthly retention policy applies only after the monthly
+            # artifacts exist; no retention work occurs on a failed run.
             with store.connect() as c:
                 weekly = c.execute("""SELECT pdf_path,ai_path FROM report_registry
                   WHERE period_type='SEMANAL' AND period_key LIKE ?""", (month_key + "%",)).fetchall()
@@ -728,7 +755,16 @@ def ensure_reports(store, include_today=False):
                             Path(value).unlink(missing_ok=True)
                 c.execute("DELETE FROM report_registry WHERE period_type='SEMANAL' AND period_key LIKE ?",
                           (month_key + "%",))
-    _job(store, "REPORTS", "VERDE", "Informes actualizados", success=True)
+    except ReportArtifactIncomplete as exc:
+        _job(store, "REPORTS", "ROJO", f"REPORT_ARTIFACT_INCOMPLETE: {exc}", success=False)
+        return
+    except Exception as exc:
+        _job(store, "REPORTS", "ROJO", f"REPORT_GENERATION_ERROR: {type(exc).__name__}",
+             success=False)
+        raise  # Preserve fail-closed error propagation for invalid PAPER ledgers.
+    _job(store, "REPORTS", "AMARILLO",
+         "Informes generados; CONTENIDO_NO_VERIFICADO: ordenes_reales sin atestacion runtime",
+         success=True)
 
 
 def send_closing_summary(store):
@@ -753,7 +789,8 @@ def send_closing_summary(store):
             f"Win rate: {win}\nPnL paper neto ARS: $ {data['pnl']:,.2f}\n"
             f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
             f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
-            f"Decisiones evaluadas: {len(data['decisions'])}\nÓrdenes reales: 0\n"
+            f"Decisiones evaluadas: {len(data['decisions'])}\n"
+            f"Órdenes reales: {REPORT_REAL_ORDERS_UNVERIFIED}\n"
             "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
     at = now_iso()
     with store.connect() as c:
