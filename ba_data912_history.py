@@ -313,6 +313,8 @@ def refresh(days: int = hist.HIST_DEFAULT_DAYS) -> dict:
 def ensure_symbol(symbol: str, asset_class: str,
                   days: int = hist.HIST_DEFAULT_DAYS) -> int:
     """Completa un símbolo sin sobreescribir fuentes históricas superiores."""
+    if not DATA912_REFRESH_ENABLED:
+        return 0
     family = str(asset_class or "").upper()
     if family not in OPERATIONAL_FAMILIES:
         return 0
