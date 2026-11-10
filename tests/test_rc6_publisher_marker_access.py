@@ -54,11 +54,20 @@ def test_provisional_and_final_marker_are_atomic_and_readable_by_publisher(tmp_p
     monkeypatch.setattr(os, "replace", checked_replace)
     marker = tmp_path / "CURRENT_STATE_V2.json"
     namespace = {"__name__": "__main__", "__file__": str(marker)}
-    monkeypatch.setattr("sys.argv", ["-", str(marker), "a" * 40, "b" * 40, "sha256:" + "c" * 64, "PAPER_IDLE"])
+    monkeypatch.setattr("sys.argv", [
+        "-", str(marker), "a" * 40, "b" * 40, "c" * 40,
+        "sha256:" + "d" * 64, "STATE_FAST|PRODUCTION_PAPER|0",
+        "test-generation", "sha256:" + "e" * 64,
+        "1" * 64, "2" * 64, "3" * 64,
+    ])
     exec(compile(snippets[0], "provisional-marker-writer", "exec"), namespace)
     provisional = json.loads(marker.read_text())
     assert provisional["validation_status"] == "DEPLOYED_VALIDATION_PENDING"
     assert provisional["real_order_routes"] == "NOT_CALLED"
+    assert provisional["candidate_tree"] == "b" * 40
+    assert provisional["oci_cids"] == {
+        "dashboard": "1" * 64, "observer": "2" * 64, "critical": "3" * 64,
+    }
     assert stat.S_IMODE(marker.stat().st_mode) == 0o640
 
     # The final snippet's preceding checks touch Docker and native receipts.

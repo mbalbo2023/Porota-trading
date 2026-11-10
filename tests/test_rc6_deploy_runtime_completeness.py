@@ -94,7 +94,7 @@ def test_contract_reconciliation_reuses_the_immutable_candidate_image():
     source = _deploy()
     promote = source[source.index("- name: Promote exact frozen candidate and verify"):]
     assert 'gunzip -c "$REMOTE_DIR/porota-predeploy-image.tar.gz" | sudo -n docker load' in promote
-    assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in promote
+    assert '--entrypoint python "$RUNTIME_IMAGE_ID" ck_contract_evidence_runner_hf6.py' in promote
     assert not re.search(r"(?m)^\s*(?:sudo -n )?docker build(?:\s|$)", promote)
 
 
@@ -123,13 +123,15 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert '--name "$CONTRACT_NAME"' in source
     assert '-e POROTA_CONTRACT_REMOTE_V1_POLICY=REUSE_RECENT_COMPLETED' in source
     contract_block = source[source.index('CONTRACT_NAME="porota-deploy-contract-'):]
-    assert contract_block.index('CONTRACT_LIFECYCLE="$(sudo -n python3') < contract_block.index('sudo -n docker start porota_production_observer')
+    assert contract_block.index('CONTRACT_LIFECYCLE="$(sudo -n python3') < contract_block.index('quiescence start observer')
+    assert 'docker start porota_production_observer' not in contract_block
+    assert 'docker stop porota_production_observer' not in contract_block
     assert source.index('CONTRACT_ORPHAN_RC=$?') < source.index('RECOVERY_RC=$?')
     job = yaml.safe_load(source)['jobs']['promote']
     # The parent covers bounded local v2 and native acceptance.
     mandatory_seconds = 1200 + SOAK_TIMEOUT_SECONDS
     assert job['timeout-minutes'] * 60 > mandatory_seconds
-    assert '--entrypoint python "$STABLE_IMAGE" ck_contract_evidence_runner_hf6.py' in source
+    assert '--entrypoint python "$RUNTIME_IMAGE_ID" ck_contract_evidence_runner_hf6.py' in source
     assert '--entrypoint timeout' not in source
 
 
@@ -219,7 +221,7 @@ def test_live_safety_checks_do_not_use_heavy_quick_check():
 
 def test_sector_map_runtime_verifier_keeps_stdin_attached():
     source = _deploy()
-    assert '--entrypoint python -i "$STABLE_IMAGE" - <<\'PY\'' in source
+    assert '--entrypoint python -i "$RUNTIME_IMAGE_ID" - <<\'PY\'' in source
     assert "OPERATIONAL_SCOPE=ALL_CONTRACT_FAMILIES" in source
 
 
@@ -236,7 +238,7 @@ def test_history_cutoff_repair_is_decoupled_from_code_deploy():
 
 def test_runtime_audit_outer_budget_covers_measured_route_cycle():
     source = _deploy()
-    assert source.count("docker exec porota_production_dashboard timeout 300") == 2
+    assert source.count('docker exec "$DASHBOARD_CID" timeout 300') == 2
 
 
 def test_deploy_v2_fails_closed_without_two_parent_promotion_merge():
@@ -250,21 +252,21 @@ def test_deploy_v2_fails_closed_without_two_parent_promotion_merge():
 def test_zero_known_error_output_path_is_writable_by_dashboard_runtime_before_audit():
     source = _deploy()
     prepared = source.index('AUDIT_HOST_DIR="$REPO/data/deploy"')
-    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300')
+    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec "$DASHBOARD_CID" timeout 300')
     assert prepared < audited
-    assert 'AUDIT_UID="$(sudo -n docker exec porota_production_dashboard id -u)"' in source
-    assert 'AUDIT_GID="$(sudo -n docker exec porota_production_dashboard id -g)"' in source
+    assert 'AUDIT_UID="$(sudo -n docker exec "$DASHBOARD_CID" id -u)"' in source
+    assert 'AUDIT_GID="$(sudo -n docker exec "$DASHBOARD_CID" id -g)"' in source
     assert 'install -d -o "$AUDIT_UID" -g "$AUDIT_GID" -m 0750 "$AUDIT_HOST_DIR"' in source
     assert "-name 'zero-known-error-*.json'" in source
     assert 'test "$AUDIT_HOST_STAT" = "$AUDIT_UID:$AUDIT_GID|750"' in source
-    assert 'docker exec porota_production_dashboard test -w /app/data/deploy' in source
+    assert 'docker exec "$DASHBOARD_CID" test -w /app/data/deploy' in source
     assert "RC6_ZERO_KNOWN_ERROR_OUTPUT_PATH_WRITABLE=GREEN" in source
 
 def test_deploy_waits_boundedly_for_scalping_recovery_before_immediate_audit():
     source = _deploy()
     baseline = source.index("RC6_POST_RECONCILIATION_RESTART_BASELINE=")
     stabilized = source.index("RC6_SCALPING_STABILIZATION=GREEN")
-    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec porota_production_dashboard timeout 300')
+    audited = source.index('AUDIT_OUTPUT="$(sudo -n docker exec "$DASHBOARD_CID" timeout 300')
     assert baseline < stabilized < audited
     assert "SCALPING_STABILIZATION_SECONDS=420" in source
     assert "SCALPING_STABILIZATION_POLL_SECONDS=15" in source
@@ -307,8 +309,8 @@ def test_deploy_has_lightweight_exit139_soak_after_full_audits():
     assert soak < source.index("for soak in 1 2 3 4 5; do")
     final = source.index('RECENT_CRITICAL="$({', soak)
     assert source.index('echo "RC6_EXIT139_SOAK=GREEN"', soak) < final
-    assert 'docker logs --since "$SOAK_START_UTC" porota_production_observer' in source[final:]
-    assert 'docker logs --since "$SOAK_START_UTC" porota_production_dashboard' in source[final:]
+    assert 'docker logs --since "$SOAK_START_UTC" "$OBSERVER_CID"' in source[final:]
+    assert 'docker logs --since "$SOAK_START_UTC" "$DASHBOARD_CID"' in source[final:]
     assert 'test -z "$RECENT_CRITICAL"' in source[final:]
     assert 'test "$OBSERVER_RESTART_SOAK" = "$OBSERVER_RESTART_BASE"' in source
     assert 'test "$DASHBOARD_RESTART_SOAK" = "$DASHBOARD_RESTART_BASE"' in source

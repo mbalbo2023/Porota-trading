@@ -303,7 +303,40 @@ def cleanup(required_free_bytes=None):
                 'real_orders_sent':0,'ppi_watch_changed':False}
 
 
-if __name__=='__main__':
-    if len(sys.argv)!=2 or not re.fullmatch('[0-9]{10,11}',sys.argv[1]):
+class OCIImageCustodyHold(RuntimeError):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('OCI_IMAGE_REFERENCE_CUSTODY_HOLD79')
+
+
+def require_root_owned_image_reference_proof():
+    # One fixed independent helper invocation, no user-provided image/args.
+    # This file is piped via SSH stdin, so importing checkout modules as root
+    # would turn a missing-path error into generic exit1 and break isolation.
+    try:
+        subprocess.run(['sudo', '-n', '/usr/local/sbin/porota-rc6-oci-custody',
+                        'image', 'preflight-cleanup'], timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    raise OCIImageCustodyHold()
+
+
+def main(argv=None):
+    arguments = sys.argv[1:] if argv is None else argv
+    if len(arguments)!=1 or not re.fullmatch('[0-9]{10,11}',arguments[0]):
         raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_ARGUMENT')
-    print(json.dumps(cleanup(int(sys.argv[1])),sort_keys=True))
+    try:
+        require_root_owned_image_reference_proof()
+    except OCIImageCustodyHold as exc:
+        print(json.dumps({'schema': 'RC6_OFFLINE_CURRENT_IMAGE_CLEANUP_V1',
+                          'status': 'RED', 'reason': str(exc),
+                          'cleanup_deferred': True}, sort_keys=True))
+        return exc.exit_code
+    print(json.dumps(cleanup(int(arguments[0])),sort_keys=True))
+    return 0
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

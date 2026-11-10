@@ -64,7 +64,7 @@ def test_installed_image_readiness_precedes_unmodified_strict_soak_without_host_
     marker=text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")
     assert ready<strict<marker
     segment=text[ready:strict]
-    assert 'docker exec porota_production_dashboard timeout 195' in text[ready-100:ready]
+    assert 'docker exec "$DASHBOARD_CID" timeout 195' in text[ready-110:ready]
     assert '/app/scripts/rc6_deploy_generation_gate.py' in segment
     assert 'rc6_native_soak.py' not in segment
     assert 'Postdeploy full-session stress' not in text

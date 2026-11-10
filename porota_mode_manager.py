@@ -2,10 +2,14 @@
 """Selector exclusivo de modo operativo para Porota Trading v17 candidata.
 
 Uso:
-  sudo python porota_mode_manager.py status
-  sudo python porota_mode_manager.py simulation
-  sudo python porota_mode_manager.py sandbox
-  sudo python porota_mode_manager.py stop
+  python porota_mode_manager.py status
+  python porota_mode_manager.py simulation
+  python porota_mode_manager.py sandbox
+  python porota_mode_manager.py stop
+
+GitHub Actions invoca el manager como porotaadmin; sólo la API root-owned
+/usr/local/sbin/porota-rc6-oci-custody recibe sudo -n. Un checkout no se
+ejecuta como root para operar contenedores.
 
 Produccion real permanece deshabilitada permanentemente por politica del proyecto.
 """
@@ -35,8 +39,6 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 MODE_FILE = DATA / "operation_mode.json"
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
-KNOWN = ("porota_production_observer", "porota_production_dashboard",
-         "porota_dashboard_preview", "porota_sandbox_engine", "porota_production_engine")
 
 
 def operator_readonly_mount():
@@ -194,25 +196,115 @@ def paper_settings(env):
 
 
 def run(*args, check=True, capture=False):
-    return subprocess.run(args, cwd=ROOT, check=check, text=True,
-                          stdout=subprocess.PIPE if capture else None,
-                          stderr=subprocess.STDOUT if capture else None)
+    # Compatibility HOLD only: all Docker operations are delegated to the
+    # independently installed typed helper. No candidate-owned arbitrary
+    # subprocess runner remains as an alternate privilege path.
+    del args, check, capture
+    raise SystemExit(79)
 
 
-def simulation_image():
-    """Select the exact frozen Deploy image before touching the old runtime."""
+HOST_CUSTODY_HELPER = "/usr/local/sbin/porota-rc6-oci-custody"
+
+
+def _helper_call(*args, attempt=None):
+    """Call an installed, independently root-owned, typed host API only.
+
+    Untrusted checkout source never executes as root and never supplies Docker
+    arguments. Only a separately verified host installation may hold custody.
+    """
+    valid = (args in (("manager", "begin"),
+                      ("manager", "verify-observer-sources"),
+                      ("manager", "stop", "observer")) or
+             len(args) == 3 and args[:2] in (("manager", "retire"),
+                                               ("manager", "birth"),
+                                               ("manager", "verify-newborn")) and
+             args[2] in ("dashboard", "observer") or
+             len(args) == 4 and args[:2] == ("manager", "verify-image") and
+             re.fullmatch(r"porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}",
+                          args[2]) is not None and
+             re.fullmatch(r"sha256:[0-9a-f]{64}", args[3]) is not None)
+    is_begin = args == ("manager", "begin")
+    # A per-generation token is an expectation, never a permission. The
+    # root-owned helper verifies it against current intent under its lock on
+    # *every* call, rejecting a new attempt interleaved after this begin.
+    if (not valid or
+            (attempt is not None if is_begin else
+             not (type(attempt) is str and
+                  re.fullmatch(r"[0-9a-f]{32}", attempt) is not None))):
+        raise SystemExit(79)
+    command = ("/usr/bin/sudo", "-n", HOST_CUSTODY_HELPER, *args,
+               *(("--attempt", attempt) if not is_begin else ()))
+    try:
+        result = subprocess.run(command, cwd="/", check=False, text=True,
+                                timeout=120, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL,
+                                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SystemExit(79) from exc
+    answer = result.stdout.strip() if isinstance(result.stdout, str) else ""
+    valid_reply = (re.fullmatch(
+        r"RC6_CUSTODY=(GENESIS|CONTINUITY)\nRC6_CUSTODY_ATTEMPT=[0-9a-f]{32}", answer)
+        is not None if is_begin else answer == "RC6_CUSTODY=OK")
+    if result.returncode != 0 or not valid_reply:
+        raise SystemExit(79)
+    return answer
+
+
+class RootHelperSession:
+    """Unprivileged typed client; the root-owned installer is authority."""
+
+    def __init__(self):
+        answer = _helper_call("manager", "begin")
+        mode, attempt = answer.splitlines()
+        self._phase = mode.partition("=")[2]
+        self._attempt = attempt.partition("=")[2]
+
+    def verify_candidate(self, tag, digest):
+        _helper_call("manager", "verify-image", tag, digest,
+                     attempt=self._attempt)
+
+    def retire(self, role):
+        if self._phase == "GENESIS":
+            # No predecessor has authenticated birth custody. Names, labels,
+            # images and a healthy legacy unit cannot authorize its removal.
+            return
+        _helper_call("manager", "retire", role, attempt=self._attempt)
+
+    def birth(self, role):
+        # The helper must create + record the CIDFILE and journal as one typed
+        # attempt. No Docker argument, CID, mount or birth authority enters
+        # candidate-controlled code.
+        _helper_call("manager", "birth", role, attempt=self._attempt)
+        _helper_call("manager", "verify-newborn", role, attempt=self._attempt)
+
+    def verify_observer_sources(self):
+        _helper_call("manager", "verify-observer-sources", attempt=self._attempt)
+
+    def stop_observer(self):
+        _helper_call("manager", "stop", "observer", attempt=self._attempt)
+
+
+def _begin_custody():
+    return RootHelperSession()
+
+
+def _custody_session(session):
+    return _begin_custody() if session is None else session
+
+
+def simulation_image(*, _session=None):
+    """Verify the frozen Deploy identity with root-owned host authority."""
     candidate = os.getenv("POROTA_DEPLOY_CANDIDATE_IMAGE", "")
     expected = os.getenv("POROTA_DEPLOY_CANDIDATE_IMAGE_ID", "")
     if not candidate and not expected:
+        if _session is not None:
+            raise SystemExit(79)
         return IMAGE
     if (re.fullmatch(r"porota-trading-bot:17\.0\.0-rc6-candidate-[0-9a-f]{40}",
                      candidate) is None or
             re.fullmatch(r"sha256:[0-9a-f]{64}", expected) is None):
         raise RuntimeError("RC6_DEPLOY_CANDIDATE_IMAGE_INVALID")
-    observed = run("docker", "image", "inspect", "-f", "{{.Id}}", candidate,
-                   capture=True).stdout.strip()
-    if observed != expected:
-        raise RuntimeError("RC6_DEPLOY_CANDIDATE_IMAGE_ID_MISMATCH")
+    _custody_session(_session).verify_candidate(candidate, expected)
     return candidate
 
 
@@ -292,13 +384,13 @@ def notify(message):
         return "FALLO_" + type(exc).__name__
 
 
-def stop_engines(include_dashboard=True):
-    for name in KNOWN:
-        if not include_dashboard and name in {"porota_production_dashboard", "porota_dashboard_preview"}:
-            continue
-        run("docker", "rm", "-f", name, check=False, capture=True)
-    run("docker", "compose", "stop", "-t", "20", "bot",
-        check=False, capture=True)
+def stop_engines(include_dashboard=True, *, _session=None):
+    session = _custody_session(_session)
+    session.retire("observer")
+    if include_dashboard:
+        session.retire("dashboard")
+    # Legacy preview, sandbox and compose names have no birth-proof role;
+    # neither inspection nor a friendly-looking name permits stopping them.
 
 
 def dashboard_env(mode):
@@ -347,123 +439,50 @@ def observer_runtime_env():
     return target
 
 
-def start_dashboard(mode, image=IMAGE):
-    env_path = dashboard_env(mode)
-    run("docker", "rm", "-f", "porota_production_dashboard", check=False, capture=True)
-    # The dashboard image is immutable, but the deployment host is the canonical
-    # source staged by the transactional workflow. Mount only the RC6 dashboard
-    # modules read-only so a stale /app copy can never mask the exact candidate.
-    # The observer and PPI Watch remain separate owners and are not mounted here.
-    runtime_sources = (
-        "bg_paper_dashboard.py",
-        "zz_wave8_dashboard_live_rc6.py",
-        "da_dashboard_ux_hf6.py",
-        "rc6_annual_instrument_analysis.py",
-        "rc6_on_validation.py",
-        "bd_ppi_readonly_guard.py",
-        "c_ppi_client.py",
-        "cr_pending_settlement_diagnostics_hf6.py",
-        "eq_dashboard_table_layout_rc6.py",
-        "rc6_dashboard_responsive_ux.py",
-        "rc6_family_readiness.py",
-        "o_dashboard.py",
-        "rc6_ppi_iol_reconciliation_rc6.py",
-        "rc6_cauciones_shadow_evidence.py",
-        "er_dashboard_table_semantics_rc6.py",
-        "iol_shadow_observation_rc6.py",
-        "iol_shadow_collector_rc6.py",
-        "iol_mcp_readonly_adapter_rc6.py",
-    )
-    source_mounts = []
-    for filename in runtime_sources:
-        source = ROOT / filename
-        if not source.is_file():
-            raise RuntimeError("RC6_DASHBOARD_SOURCE_MISSING:" + filename)
-        source_mounts.extend((
-            "--mount",
-            f"type=bind,source={source},target=/app/{filename},readonly",
-        ))
-    run("docker", "run", "-d", "--name", "porota_production_dashboard",
-        "--pull", "never", "--restart", "unless-stopped", "--user", "botuser", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges:true", "-p", "127.0.0.1:8000:8000",
-        "--env-file", str(env_path), "-v", f"{DATA}:/app/data", *source_mounts,
-        "--entrypoint", "python", image, "o_dashboard.py")
-    # Todas las fuentes de dashboard se montan read-only desde el stage
-    # canónico. No se usa docker cp sobre un contenedor read-only: así no puede
-    # sobrevivir una copia interna antigua al recrear el servicio.
+def start_dashboard(mode, image=IMAGE, *, _session=None, _prior_retired=False):
+    # Exact image digest, mounts, environment and Docker CLI are rooted in the
+    # installed helper's immutable stage manifest. Caller-supplied `image` is
+    # retained for old API compatibility but is never a mutation authority.
+    del image
+    session = _custody_session(_session)
+    if mode != "PRODUCTION_PAPER":
+        raise SystemExit(79)
+    dashboard_env(mode)
+    if not _prior_retired:
+        session.retire("dashboard")
+    session.birth("dashboard")
+    # No Docker CLI, name, CIDFILE, mount list or runtime hash is assembled by
+    # this candidate code. Helper `birth` and `verify-newborn` do the checks.
 
 
-def simulation():
-    image = simulation_image()
-    # Reject malformed budget selectors before stopping any healthy runtime.
-    runtime_env = observer_runtime_env()
-    stop_engines()
-    write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
-               {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
-                "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, detail="Iniciando")
-    start_dashboard("PRODUCTION_PAPER", image=image)
+def simulation(*, _session=None):
+    # Pure configuration validation can reject an unsafe selector without
+    # touching Docker or writing runtime files, even while custody is absent.
+    ppi_budget_observer_selectors(env_file())
+    session = _custody_session(_session)
+    # A root-owned three-role attempt is required before even inspecting the
+    # image or writing a local env file. No env flag can bypass this gate.
+    image = simulation_image(_session=session)
     secret = ROOT / ".secrets" / "ppi_production.json"
     if not secret.exists():
         raise RuntimeError("Falta el secreto productivo de solo lectura.")
-    # RC6 worker provenance: the candidate image is verified by the deploy
-    # workflow before this manager is invoked. Remove any previous observer and
-    # run only that immutable image; then fail closed if PID 1 exits immediately.
-    removed = run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
-    print("RC6_OBSERVER_REMOVE=" + removed.stdout.strip())
-    created = run("docker", "run", "-d", "--name", "porota_production_observer",
-        "--pull", "never", "--restart", "unless-stopped", "--no-healthcheck",
-        "--user", "botuser", "--read-only", "--cap-drop", "ALL",
-        "--security-opt", "no-new-privileges:true", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
-        "-e", "PPI_PRODUCTION_SECRET_FILE=/run/secrets/ppi_production.json",
-        "-e", f"{DB_ENV}={CONTAINER_DB}",
-        "-e", "MARKET_OPEN_HOUR=10",
-        "-e", "MARKET_OPEN_MINUTE=30",
-        "-e", "MARKET_CLOSE_HOUR=17",
-        "-e", "MARKET_CLOSE_MINUTE=0",
-        "-e", "PAPER_PREOPEN_MINUTES=15",
-        "-e", "PPI_LOGIN_COOLDOWN_SECONDS=900",
-        "-e", "PPI_HISTORY_BATCH_LIMIT=40",
-        "-e", "DATA_DIR=/app/data",
-        "-e", "SERVER_TIMEZONE=America/Argentina/Buenos_Aires",
-        "--env-file", str(runtime_env),
-        "-e", "PAPER_SCALPING_MODE=ACTIVE_PAPER",
-        "-e", "PAPER_CAUCION_SWEEP_MODE=ACTIVE_PAPER",
-        "-v", f"{DATA}:/app/data", *operator_readonly_mount(),
-        "-v", f"{secret}:/run/secrets/ppi_production.json:ro",
-        "--entrypoint", "python", image, "bv_paper_runtime.py", capture=True)
-    print("RC6_OBSERVER_CREATED_ID=" + created.stdout.strip())
-    state = run("docker", "inspect", "-f", "{{.State.Status}}",
-                 "porota_production_observer", capture=True).stdout.strip()
-    if state != "running":
-        logs = run("docker", "logs", "--tail", "80", "porota_production_observer",
-                   check=False, capture=True).stdout.strip()
-        raise RuntimeError(f"RC6_OBSERVER_EXITED:{state}:{logs[-4000:]}")
-    for filename in ("cf_intraday_scalping.py", "co_market_sessions_hf6.py"):
-        expected = hashlib.sha256((ROOT / filename).read_bytes()).hexdigest()
-        actual = run("docker", "exec", "porota_production_observer",
-                     "sha256sum", f"/app/{filename}", capture=True).stdout.strip().split()[0]
-        if actual != expected:
-            run("docker", "rm", "-f", "porota_production_observer", check=False, capture=True)
-            raise RuntimeError(f"RC6_RUNTIME_SOURCE_MISMATCH:{filename}:expected={expected}:running={actual}")
-    status = notify("✅ POROTA TRADING — SISTEMA ACTIVO NUEVAMENTE\n🟣 Modo simulación productiva. Datos reales de PPI Producción; decisiones intradiarias determinísticas en Python; IA desactivada. Compras y ventas 100% simuladas. Órdenes reales: NINGUNA.\nHistorial PAPER v17 independiente; sin traslado de saldos, posiciones ni aprendizaje anteriores.")
-    write_mode("PRODUCTION_PAPER", "production_observer", "SIMULATED",
+    observer_runtime_env()
+    stop_engines(_session=session)
+    write_mode("PENDING_CUSTODY_SEAL", "NONE", "NONE",
                {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "TELEGRAM": "MODE_NOTIFICATIONS_ONLY",
-                "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, telegram=status,
-               detail="Fuera de rueda ingiere históricos por lotes; preapertura sincroniza; rueda abierta simula")
+                "PPI_ORDERS": "BLOCKED", "PYTHON_MATH_ENGINE": "ACTIVE"}, detail="Iniciando")
+    start_dashboard("PRODUCTION_PAPER", image=image, _session=session, _prior_retired=True)
+    session.birth("observer")
+    session.verify_observer_sources()
+    # A1031 DEPLOY_OWNER alone seals and validates all 3 birth roles through
+    # Deploy V2. This manager publishes only an explicit Iniciando/PENDING state;
+    # no activation notification or READY evidence comes from two births.
 
 
 def sandbox():
-    stop_engines()
-    write_mode("SANDBOX", "trading_bot", "SANDBOX_ORDERS",
-               {"PPI_SANDBOX": "MARKET_DATA_AND_SANDBOX_ORDERS", "TELEGRAM": "ACTIVE"},
-               detail="Iniciando Sandbox")
-    start_dashboard("SANDBOX")
-    run("docker", "compose", "run", "-d", "--name", "porota_sandbox_engine",
-        "--no-deps", "bot")
-    status = notify("🧪 POROTA — MODO SANDBOX\nLas órdenes se envían únicamente al entorno de pruebas de PPI. Dinero real: NINGUNO.")
-    write_mode("SANDBOX", "trading_bot", "SANDBOX_ORDERS",
-               {"PPI_SANDBOX": "MARKET_DATA_AND_SANDBOX_ORDERS", "TELEGRAM": "ACTIVE"},
-               telegram=status, detail="Sandbox iniciado; sujeto a disponibilidad de PPI Sandbox")
+    # PAPER/SHADOW only. The legacy compose sandbox has no authenticated
+    # birth role, so it must never be started or retired on a shared daemon.
+    raise SystemExit(79)
 
 
 def production(argv):
@@ -474,10 +493,11 @@ def production(argv):
     )
 
 
-def stop():
-    # DETENIDO se refiere a motores; el dashboard continúa 24x7.
-    stop_engines(include_dashboard=False)
-    start_dashboard("DETENIDO")
+def stop(*, _session=None):
+    session = _custody_session(_session)
+    # Helper requires a sealed exact-CID observer, never a name or a pending
+    # genesis role. Dashboard and the critical Telegram plane remain intact.
+    session.stop_observer()
     status = notify("⚪ POROTA — MOTORES DETENIDOS\nDashboard 24x7 activo; no se realizan llamadas PPI ni operaciones.")
     write_mode("DETENIDO", "NONE", "NONE", {}, telegram=status,
                detail="Todos los motores detenidos; dashboard 24x7 activo")
@@ -499,31 +519,37 @@ def status():
         print(MODE_FILE.read_text(encoding="utf-8"))
     else:
         print(json.dumps({"mode": "DESCONOCIDO", "detail": "Sin manifiesto"}))
-    run("docker", "ps", "-a", "--filter", "name=porota_", "--format",
-        "{{.Names}} | {{.Image}} | {{.Status}}", check=False)
+    # An unauthenticated global Docker inventory would expose unrelated
+    # applications and still could not establish a container's birth owner.
 
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     action = argv[0].lower() if argv else "status"
+    if action == "sandbox":
+        sandbox()  # PAPER-only HOLD before lock-file or Docker side effects.
+    if action in ("production", "produccion"):
+        production(argv[1:])
     lock_path = DATA / "diagnosticos" / "porota_mode.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with open(lock_path, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Local mode decisions are serialized *before* invoking the trusted
+        # helper. The host helper separately locks and binds its root intent.
+        session = (_begin_custody() if action in
+                   ("simulation", "simulacion", "stop", "detenido") else None)
         if action in ("simulation", "simulacion"):
-            simulation()
-        elif action == "sandbox":
-            sandbox()
-        elif action in ("production", "produccion"):
-            production(argv[1:])
+            simulation(_session=session)
         elif action in ("stop", "detenido"):
-            stop()
+            stop(_session=session)
         elif action == "status":
             status()
         else:
             raise SystemExit("Uso: porota-mode <status|simulation|sandbox|stop|production>")
-    summary = (f"POROTA_MODE=OK\nACCION={action.upper()}\n"
-               f"MANIFIESTO={MODE_FILE}\nDASHBOARD_24X7=SI")
+    result = ("PENDING_CUSTODY_SEAL" if action in ("simulation", "simulacion")
+              else "NO_VERIFICADO" if action == "status" else "OK")
+    summary = (f"POROTA_MODE={result}\nACCION={action.upper()}\n"
+               f"MANIFIESTO={MODE_FILE}\nDASHBOARD_24X7=NO_VERIFICADO")
     print(summary)
     copy_output(summary)
     return 0
@@ -535,5 +561,8 @@ if __name__ == "__main__":
     except BlockingIOError:
         raise SystemExit("Otro cambio de modo esta en curso.")
     except Exception as exc:
+        if getattr(exc, "exit_code", None) == 79:
+            print("CAMBIO_DE_MODO=HOLD\nERROR=RC6_OCI_CUSTODY_HOLD79", file=sys.stderr)
+            raise SystemExit(79)
         print(f"CAMBIO_DE_MODO=FALLO\nERROR={exc}", file=sys.stderr)
         raise SystemExit(1)

@@ -239,7 +239,8 @@ def test_parcial_informes_panel_y_caja_historica_concuerdan(partial_spot,monkeyp
 
 
 @pytest.mark.parametrize('family',['BONOS','LETRAS','ON'])
-def test_parcial_renta_fija_conserva_nominal_lote_y_ganancia(tmp_path,family):
+def test_renta_fija_sin_ledger_nativo_bloquea_venta_parcial_y_total(tmp_path,family):
+    # A generic spot SELL is not a certified FI-native sale executor.
     b=PaperBroker(PaperStore(str(tmp_path/'nominal.db')),initial_cash='10000',slippage_bps='0')
     cut = "2026-10-26T19:12:01Z" if family in {'LETRAS','ON'} else None
     q=replace(quote(ask_size='100',at=cut),asset_class=family,settlement='INMEDIATA',ask=D(100))
@@ -248,20 +249,29 @@ def test_parcial_renta_fija_conserva_nominal_lote_y_ganancia(tmp_path,family):
     assert b._open(q,D('.8'),{})[0]
     p=b.store.open_positions()[0]
     assert D(p['quantity'])==10
+    original_cash=b._cash(as_of=q.observed_at)
     first_at = "2026-10-26T19:13:01Z" if cut else quote(minute=1).observed_at
     first=replace(q,bid=D(110),ask=D(111),bid_size=D(30),
                   observed_at=first_at,book_at=first_at)
     assert not b._close(p,replace(first,contract=replace(spec,quantity_step=D(1))),'TEST')
-    assert b._close(p,first,'TEST')
+    assert not b._close(p,first,'TEST')
     remaining=b.store.open_positions()[0]
-    assert D(remaining['quantity'])==8
+    assert remaining==p
     final_at = "2026-10-26T19:14:01Z" if cut else quote(minute=2).observed_at
     final=replace(first,bid=D(120),ask=D(121),bid_size=D(100),
                   observed_at=final_at,book_at=final_at)
-    assert b._close(remaining,final,'TEST')
-    closed=b.store.recent_closed()[0]
-    assert D(closed['gross_pnl'])==D('1.80')
-    assert b._cash(as_of=final.observed_at)==10000+D(closed['net_pnl'])
+    assert not b._close(remaining,final,'TEST')
+    assert b.store.open_positions()==[p]
+    assert b.store.recent_closed()==[]
+    with b.store.connect() as c:
+        assert [r[0] for r in c.execute('SELECT side FROM paper_fills WHERE paper_id=?',
+                                      (p['paper_id'],))]==['BUY_SIMULATED']
+        assert c.execute('SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?',
+                         (p['paper_id'],)).fetchone()[0]==0
+        assert tuple(c.execute('SELECT status,quantity,entry_cost FROM paper_positions WHERE paper_id=?',
+                               (p['paper_id'],)).fetchone())==('OPEN',p['quantity'],p['entry_cost'])
+        assert c.execute('SELECT real_orders_sent FROM observer_state').fetchone()[0]==0
+    assert b._cash(as_of=final.observed_at)==original_cash
 
 
 def test_parcial_cada_venta_conserva_su_fecha_de_liquidacion(partial_spot):
@@ -480,7 +490,15 @@ def test_actualizacion_fallida_preserva_catalogo_fresco_y_no_inventa_disponibili
 def test_cotizacion_mep_del_catalogo_no_gasta_ars_ni_usd_generico(tmp_path, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     raw = next(r for r in real_catalog if r["ticker"] == "AAPLD")
-    metadata = catalog.normalize_record(raw, "INMEDIATA", datetime.now(timezone.utc).isoformat(), "fresh-synthetic-identity")
+    observed_at = datetime.now(timezone.utc).isoformat()
+    unbound = catalog.normalize_record(raw, "INMEDIATA", observed_at, "fixture-request-only")
+    assert unbound["settlement_source"] == "REQUEST_CANDIDATE"
+    assert catalog.quote_terms(unbound)["opening_block_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+    # This positive ledger/currency scenario supplies an explicitly synthetic
+    # provider literal; the historical search response itself did not attest it.
+    metadata = catalog.normalize_record({**raw, "settlement": "INMEDIATA"},
+                                        "INMEDIATA", observed_at, "fixture-raw-five-key")
+    assert metadata["settlement_source"] == "PPI_FIELD"
     source_at = observer.now_iso()
     q = observer.normalize_quote("AAPLD", "CEDEARS", "INMEDIATA", {"price": 100, "date": source_at},
                                  {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": source_at}, metadata=metadata)
@@ -1074,6 +1092,7 @@ def test_v17_no_ejecuta_familias_especiales_como_acciones(tmp_path, family):
 
 @pytest.mark.parametrize("family", ["BONOS", "LETRAS", "ON"])
 def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, family):
+    # Preserve native FI entry sizing, but never issue generic spot FI SELL.
     path = str(tmp_path / "paper.db")
     broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", daily_loss_pct="100",
                          max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0")
@@ -1087,6 +1106,7 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     assert broker._open(q, D("0.8"), {})[0]
     position = broker.store.open_positions()[0]
     assert D(position["quantity"]) == 9900
+    assert D(position["entry_cost"]) == broker._cost(D("1"), D("9900"), family, currency=q.currency)
     assert broker._cash() == 10000 - 9900 - D(position["entry_cost"])
     broker = PaperBroker(PaperStore(path), initial_cash="10000", risk_pct="1", slippage_bps="0")
     broker.mark_equity({q.symbol: q}, as_of=q.observed_at)
@@ -1095,12 +1115,17 @@ def test_v17_renta_fija_dimensiona_por_nominal_y_persiste_factor(tmp_path, famil
     closing_at = '2026-10-26T19:13:01Z' if cut else '2026-08-25T14:01:00+00:00'
     closing = replace(q, bid=D("110"), ask=D("111"), observed_at=closing_at, book_at=closing_at)
     assert broker._close(position, replace(closing, contract=replace(spec, cash_multiplier=D("1"))), "TEST") is False
-    assert broker._close(position, closing, "TEST")
-    closed = broker.store.recent_closed()[0]
-    assert D(closed["gross_pnl"]) == 990
-    assert D(closed["entry_cost"]) == broker._cost(D("1"), D("9900"), family, currency=q.currency)
-    assert D(closed["exit_cost"]) == broker._cost(D("1.1"), D("9900"), family, currency=q.currency)
-    assert broker._cash(as_of=closing.observed_at) == 10000 + D(closed["net_pnl"])
+    assert broker._close(position, replace(closing, bid_size=D("100")), "TEST") is False
+    assert broker._close(position, closing, "TEST") is False
+    assert broker.store.open_positions()==[position]
+    assert broker.store.recent_closed()==[]
+    with broker.store.connect() as c:
+        assert [r[0] for r in c.execute('SELECT side FROM paper_fills WHERE paper_id=?',
+                                      (position['paper_id'],))]==['BUY_SIMULATED']
+        assert c.execute('SELECT COUNT(*) FROM paper_spot_sales WHERE paper_id=?',
+                         (position['paper_id'],)).fetchone()[0]==0
+        assert c.execute('SELECT real_orders_sent FROM observer_state').fetchone()[0]==0
+    assert broker._cash(as_of=closing.observed_at) == 10000 - 9900 - D(position["entry_cost"])
 
 
 def test_v17_no_cauciona_el_producido_de_una_venta_t1(tmp_path):

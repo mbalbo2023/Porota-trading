@@ -217,6 +217,9 @@ def test_exceptional_admission_is_exact_and_normal_gate_remains_closed(partial_s
 @pytest.mark.parametrize('change', ['none', 'prior_position', 'prior_receipt', 'image', 'critical'])
 def test_failed_admin_continues_exact_stopped_paper_without_old_image_restart(
         partial_spot, tmp_path, monkeypatch, change):
+    # This pure stopped-host replay uses mocked inspect/exec; production
+    # legacy drain holds 79 before receipt creation.
+    monkeypatch.setattr(quiescence, 'require_legacy_drain_custody', lambda: None)
     broker, p, _, _ = partial_spot(settlement='A-24HS')
     _pending(broker, p)
     broker.store.state(process_state='WAITING_MARKET', session_state='MARKET_CLOSED')

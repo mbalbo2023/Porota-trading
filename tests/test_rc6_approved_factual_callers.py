@@ -35,7 +35,11 @@ def native_store(tmp_path, assets, at):
     with store.connect() as c:
         for a in assets:
             row = with_synthetic_volume_contract(dict(a, settlement_source="PPI_FIELD", description="isolated fixture",
-                last_seen_at=at.isoformat(), run_id="native-test", raw={"_discovery_source": "PPI_PRIMARY"})
+                last_seen_at=at.isoformat(), run_id="native-test", raw={
+                    "_discovery_source": "PPI_PRIMARY", "ticker": a["ticker"],
+                    "type": a["instrument_type"], "market": a["market"],
+                    "currency": a["currency"], "settlement": a["settlement"],
+                })
             )
             catalog_module.persist(c, row)
         catalog_module.sync_candidate_universe(c, at.isoformat())

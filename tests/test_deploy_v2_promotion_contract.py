@@ -64,12 +64,13 @@ def test_deploy_v2_retries_post_state_with_diagnostics():
     assert 'test "$POST_STATE_RC" -eq 0' in PROMOTE
 
 
-def test_deploy_v2_recovers_dashboard_after_contract_memory_peak():
+def test_deploy_v2_holds_instead_of_restarting_dashboard_by_name_after_memory_peak():
     assert "DASHBOARD_POST_RECONCILIATION_STATUS=" in PROMOTE
     assert "DASHBOARD_OOM_KILLED" in PROMOTE
-    assert "DASHBOARD_POST_RECONCILIATION_RESTART=PERFORMED" in PROMOTE
+    assert "DASHBOARD_POST_RECONCILIATION_RESTART=HOLD79|identity_or_memory_unverified" in PROMOTE
+    assert "docker start porota_production_dashboard" not in PROMOTE
     assert "for DASHBOARD_ATTEMPT in $(seq 1 18)" in PROMOTE
-    assert "docker logs --tail 200 porota_production_dashboard" in PROMOTE
+    assert 'docker logs --tail 200 "$DASHBOARD_CID"' in PROMOTE
     assert 'test "$DASHBOARD_IMAGE_ID" = "$RUNTIME_IMAGE_ID"' in PROMOTE
 
 
@@ -95,20 +96,16 @@ def test_deploy_v2_preflight_state_guard_is_bounded_and_never_scans_full_db():
     assert "docker exec -i porota_production_observer python" not in preflight
 
 
-def test_disk_preflight_recovers_only_verified_partial_critical_image():
+def test_disk_preflight_holds_legacy_critical_instead_of_restarting_or_pruning_shared_docker():
     preclean = PROMOTE.split('RC6_DISK_PRECLEAN=START', 1)[1].split(
         'PRECLEAN_REMOTE\n', 1)[0]
     assert 'test "$STATE" = "PRODUCTION_PAPER|0"' in preclean
     assert 'test "$(sudo -n docker inspect -f \'{{.Image}}\' porota_production_dashboard)" = "$CURRENT_IMAGE"' in preclean
-    assert 'test "$(sudo -n docker image inspect -f \'{{.Id}}\' "$STABLE_IMAGE")" = "$CURRENT_IMAGE"' in preclean
-    assert 'state.get("validation_status")=="DEPLOYED_VALIDATION_PENDING"' in preclean
-    assert 'state.get("real_order_routes")=="NOT_CALLED"' in preclean
-    assert 'CRITICAL_PRECLEAN_COMPATIBILITY=GREEN' in preclean
-    assert 'systemctl restart porota-critical-approval-rc6.service' in preclean
-    assert 'CRITICAL_PRECLEAN_CAPABILITY=GREEN' in preclean
-    assert 'if [ "$OLD_IMAGE_USERS" -eq 0 ]; then' in preclean
+    assert 'RC6_PRECLEAN_CRITICAL_IMAGE=HOLD79|legacy_unsealed|no_restart_or_image_delete' in preclean
+    assert 'sudo -n /usr/local/sbin/porota-rc6-oci-custody image preflight-cleanup' in preclean
+    assert 'systemctl restart porota-critical-approval-rc6.service' not in preclean
+    assert 'docker ps -aq' not in preclean
+    assert 'docker image rm "$CRIT_IMAGE"' not in preclean
     assert 'test "$PPI_AFTER" = "$PPI_BEFORE"' in preclean
-    assert preclean.index('CRITICAL_PRECLEAN_COMPATIBILITY=GREEN') < preclean.index(
-        'systemctl restart porota-critical-approval-rc6.service')
     assert preclean.index('test "$STATE" = "PRODUCTION_PAPER|0"') < preclean.index(
-        'systemctl restart porota-critical-approval-rc6.service')
+        'RC6_PRECLEAN_CRITICAL_IMAGE=HOLD79')

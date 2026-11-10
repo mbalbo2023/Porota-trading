@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from contextlib import closing, contextmanager, nullcontext
+from dataclasses import replace
 
 import faulthandler
 import fcntl
@@ -33,6 +34,7 @@ from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
+from rc6_ppi_global_budget import assert_native_ppi_response_identity
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -270,7 +272,14 @@ def _level(level):
     return price or Decimal(0), size or Decimal(0)
 
 
-def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None):
+def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None, identity=None):
+    terms = financial_catalog.quote_terms(metadata)
+    expected = (symbol, asset_class,
+                identity[2] if identity is not None else terms.get("market"),
+                identity[3] if identity is not None else terms.get("currency"),
+                settlement)
+    assert_native_ppi_response_identity(current, expected)
+    assert_native_ppi_response_identity(book, expected)
     # Current documenta price/date en la raíz. Un cierre diario o un precio
     # anidado arbitrario no constituye el último negocio de este instrumento.
     last = D(current.get("price")) if isinstance(current, dict) else Decimal(0)
@@ -286,18 +295,91 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  book_at=book.get("date") if isinstance(book, dict) else None,
                  trade_at=current.get("date") if isinstance(current, dict) else None,
                  last_kind="TRADE" if last > 0 else "UNAVAILABLE",
-                 **financial_catalog.quote_terms(metadata))
+                 **terms)
 
 
-def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
-    """Native scanner reads; exact opened identity enables bounded book reuse."""
+def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=None):
+    """Resolve a unique primary PPI five-key before binding diagnostic Book1.
+
+    This is a post-read witness only. Ambiguous identities never acquire
+    capacity or trading authority from the optional local journal.
+    """
+    try:
+        with store.connect() as connection:
+            rows = connection.execute("""SELECT market,currency
+              FROM financial_instrument_catalog
+              WHERE ticker=? AND instrument_type=? AND settlement=?
+                AND settlement_source='PPI_FIELD'
+              LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED") from None
+    if len(rows) != 1:
+        raise ValueError("PPI_BOOK_PRIMARY_IDENTITY_AMBIGUOUS")
+    market, currency = (str(value or "").strip().upper() for value in rows[0])
+    if (not market or market == "UNKNOWN"
+            or not currency or currency == "UNKNOWN"):
+        raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED")
+    exact = (symbol, asset_class, market, currency, settlement)
+    if identity is not None:
+        if not isinstance(identity, (tuple, list)) or len(identity) != 5:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_INVALID")
+        if tuple(identity) != exact:
+            raise ValueError("PPI_BOOK_REQUEST_SCOPE_IDENTITY_MISMATCH")
+    return exact
+
+
+def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
+                        priority="DISCOVERY", identity=None, scanner_primary=None):
+    """Reuse one Current+Book GET pair for an optional private native Book1.
+
+    A missing/ambiguous five-key cannot bind the diagnostic hash; it does not
+    authorize retry, new provider requests, BUY or bypass PAPER holds.
+    """
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    quote = normalize_quote(symbol, asset_class, settlement, current, book,
+        metadata=metadata, identity=identity)
+    if scanner_primary is None or (priority == "OPENED_CRITICAL" and identity is None):
+        return quote
+    try:
+        exact = _ppi_native_book_identity(
+            store, symbol, asset_class, settlement, identity)
+        currency, market = quote.monetary_identity()
+        if (quote.symbol, quote.asset_class, market, currency, quote.settlement) != exact:
+            return quote
+    except (TypeError, ValueError, AttributeError):
+        return quote
+    try:
+        capture = getattr(scanner_primary, "capture_raw_book", None)
+        result = (capture(quote, raw_book=book,
+                          request=(symbol, asset_class, settlement), identity=exact,
+                          observed_at=quote.observed_at)
+                  if callable(capture) else None)
+        if isinstance(result, dict) and result.get("status") == "CAPTURED":
+            native_sha = result.get("event_sha256")
+            if (isinstance(native_sha, str) and len(native_sha) == 64
+                    and all(char in "0123456789abcdef" for char in native_sha)
+                    and not quote.time_error(now_iso(), require_trade=False)):
+                return replace(quote, ppi_book1_event_sha256=native_sha)
+        if not isinstance(result, dict) or result.get("status") not in {"CAPTURED", "DEDUPLICATED"}:
+            status = result.get("status") if isinstance(result, dict) else None
+            reason = result.get("reason") if isinstance(result, dict) else None
+            if status not in {"CAPTURE_INVALID_HOLD", "CAPTURE_CAPACITY_HOLD", "CAPTURE_INTEGRITY_HOLD"}:
+                status = "CAPTURE_UNVERIFIED_HOLD"
+            if (not isinstance(reason, str) or not 1 <= len(reason) <= 96
+                    or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_" for char in reason)):
+                reason = "PPI_BOOK_CAPTURE_REASON_UNVERIFIED"
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_HOLD", status + ":" + reason)
+    except Exception as origin_error:
+        try:
+            store.event("PPI_SCANNER_NATIVE_BOOK_JOURNAL_ERROR", type(origin_error).__name__)
+        except Exception:
+            pass
+    return quote
 
 
 def _support_schema(store):
@@ -975,6 +1057,27 @@ def _periodic_complementary_reconcile(store, phase, last_completed):
         memory = _release_idle_catalog_heap()
         store.event("CLOSED_CATALOG_HEAP_RELEASE", json.dumps(memory, sort_keys=True))
     return time.time()
+
+
+def _caucion_blocked_closed_catalog_tick(store, phase, last_attempt):
+    """A blocked PAPER caucion fee ledger must not starve CLOSED catalog repair.
+
+    The local catalog/evidence publication does not grant PAPER admission,
+    reach a broker, or trigger any PPI network call. OPEN and T+1 never write.
+    """
+    if phase != "CLOSED":
+        return last_attempt
+    try:
+        return _periodic_complementary_reconcile(store, phase, last_attempt)
+    except Exception as exc:
+        reason = ("SQLITE_OPERATIONAL_ERROR" if isinstance(exc, sqlite3.OperationalError)
+                  else "CATALOG_RECONCILE_ERROR")
+        try:
+            store.event("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR", reason)
+        except Exception:
+            print("CAUCION_BLOCKED_CATALOG_RECONCILE_ERROR:" + reason,
+                  file=sys.stderr, flush=True)
+        return time.time()
 
 
 def _release_idle_catalog_heap():
@@ -2150,6 +2253,28 @@ def _write_scanner_metrics(store, stage, values):
 CAUCION_LEDGER_RECHECK_SECONDS = 3600
 
 
+def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
+    """Reject stale trade for entry while preserving independent fresh-Book EXIT.
+
+    A stale Book remains fully rejected. No entry path sees a rejected trade.
+    """
+    data_error = q.time_error(
+        checked_at, require_trade=True,
+        max_age_seconds=broker.quote_max_age_seconds,
+        max_trade_age_seconds=broker.trade_max_age_seconds)
+    if not data_error:
+        return ""
+    if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
+        broker.record_observation_rejection(q, data_error)
+    else:
+        broker.on_quote(
+            q, allow_new_openings=False,
+            opening_block_reason=data_error,
+            evaluate_when_blocked=False)
+    store.event("DATA_REJECTED", f"{q.symbol}: {data_error}")
+    return data_error
+
+
 def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
     """Keep an invalid PAPER caucion ledger out of the admission loop.
 
@@ -2255,6 +2380,8 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
                                    "cost evidence requires reconciliation.")
+                last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
+                    store, phase, last_complementary_reconcile)
                 time.sleep(max(30, COMMAND_POLL_SECONDS))
                 continue
             # Autenticación, catálogo e históricos son útiles también durante
@@ -2390,7 +2517,7 @@ def run():
                     exact_opened = opened_identities.get(request_key, set())
                     scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity)
+                        priority=priority, identity=scope_identity, scanner_primary=scanner_primary)
                     try:
                         scanner_primary.capture(q, request=request_key)
                     except Exception as origin_error:
@@ -2398,17 +2525,12 @@ def run():
                         # processing or create an additional provider request.
                         print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
                               file=sys.stderr, flush=True)
-                    # Persistir la observación sirve para trazabilidad, pero un
-                    # trade/libro stale nunca alcanza al motor ni a sus gates.
+                    # Stale Book never reaches the broker; stale trade with a
+                    # fresh Book can supervise exits only, never new entry.
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
-                    data_error = q.time_error(
-                        now_iso(), require_trade=True,
-                        max_age_seconds=broker.quote_max_age_seconds,
-                        max_trade_age_seconds=broker.trade_max_age_seconds)
-                    if data_error:
-                        store.event("DATA_REJECTED", f"{symbol}: {data_error}")
-                        broker.record_observation_rejection(q, data_error)
+                    if _scanner_trade_temporal_rejection(
+                            q, broker, store, checked_at=now_iso()):
                         continue
                     allow_openings, opening_reason = _scanner_opening_capacity(
                         request_key, focus=focus, feasibility=feasibility)

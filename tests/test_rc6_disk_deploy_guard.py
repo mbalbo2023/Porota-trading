@@ -104,22 +104,20 @@ def test_posttransfer_gate_uses_candidate_requirement_not_old_host_policy() -> N
     assert "REQUIRED_LOAD_FREE" in preinstall
 
 
-def test_final_cleanup_reconciles_critical_approval_and_prunes_only_unused_candidates() -> None:
+def test_final_cleanup_requires_earlier_three_cid_seal_and_root_owned_reference_proof() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
     native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
     tail = text[native:cleanup + 400]
 
-    assert "CRITICAL_IMAGE_COMPATIBILITY=GREEN" in tail
-    assert "systemctl restart porota-critical-approval-rc6.service" in tail
-    assert "CRITICAL_APPROVAL_IMAGE_RECONCILED=GREEN" in tail
-    assert "ISSUES_CAPABILITY_BROKER=GREEN" in tail
-
-    assert "RC6_OLD_CRITICAL_IMAGE_STILL_REFERENCED" in tail
-    assert "OLD_IMAGE_USERS" in tail
-    assert "IMAGE_IN_USE" in tail
-    assert "RC6_REMOVE_UNUSED_CANDIDATE_IMAGE" in tail
-    assert "porota-trading-bot:17.0.0-rc6-candidate-*" in tail
+    assert "RC6_CUSTODY_SEAL_ATTESTED" in tail
+    assert 'sudo -n "$CUSTODY_CLI" image preflight-cleanup' in tail
+    assert "RC6_IMAGE_CLEANUP=HOLD79|references_unverified" in tail
+    assert "RC6_IMAGE_CLEANUP=GREEN|root_attested|porota_only" in tail
+    assert "systemctl restart porota-critical-approval-rc6.service" not in tail
+    assert "docker ps -aq" not in tail
+    assert "docker image ls -q" not in tail
+    assert "sudo -n docker image rm" not in tail
 
     # Cleanup only proven-unreferenced RC6 candidates; no host-wide prune.
     assert "docker image prune -af" not in tail

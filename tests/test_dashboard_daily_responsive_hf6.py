@@ -44,12 +44,73 @@ def test_home_page_does_not_render_official_source_status_panel():
 def test_report_registry_is_cards_not_wide_table():
     html=report_cards_html([{
         "id":1,"period_type":"DIARIO","period_key":"2026-09-02",
-        "state":"VERDE","created_at":"2026-09-02T20:00:00-03:00",
-        "detail":"Cierre PAPER","pdf_path":"data/reports/day.pdf","ai_path":None,
+        "state":"AMARILLO","created_at":"2026-09-02T20:00:00-03:00",
+        "detail":"Cierre PAPER; CONTENIDO_NO_VERIFICADO: FX/ordenes",
+        "pdf_path":"data/reports/day.pdf","ai_path":None,
     }])
     assert "report-card" in html
     assert "<table" not in html
     assert "Descargar PDF" in html
+
+
+def test_legacy_report_without_a877_content_provenance_is_not_green_or_downloadable():
+    html = report_cards_html([{
+        "id": 210, "period_type": "DIARIO", "period_key": "2026-10-30",
+        "state": "VERDE", "created_at": "2026-10-30T19:00:00-03:00",
+        "detail": "3 operaciones; 0 noticias",
+        "pdf_path": "/evidence/reports/legacy.pdf",
+        "ai_path": "/evidence/reports/legacy.json",
+    }])
+    assert "Estado:</b> NO_VERIFICADO" in html
+    assert "LEGACY_CONTENIDO_SIN_PROVENIENCIA" in html
+    assert "Descargar PDF" not in html
+    assert "Descargar datos" not in html
+
+
+def test_a877_content_labeled_unknown_preserves_download_with_explicit_amber():
+    html = report_cards_html([{
+        "id": 211, "period_type": "DIARIO", "period_key": "2026-10-31",
+        "state": "AMARILLO", "created_at": "2026-10-31T19:00:00-03:00",
+        "detail": "2 operaciones; CONTENIDO_NO_VERIFICADO: ordenes_reales/FX",
+        "pdf_path": "/evidence/reports/reviewed.pdf", "ai_path": None,
+    }])
+    assert "Estado:</b> AMARILLO" in html
+    assert "CONTENIDO_NO_VERIFICADO" in html
+    assert "Descargar PDF" in html
+
+
+def test_unproven_legacy_generation_error_remains_red_without_download():
+    html = report_cards_html([{
+        "id": 212, "period_type": "DIARIO", "period_key": "2026-10-30",
+        "state": "ROJO", "created_at": "2026-10-30T19:00:00-03:00",
+        "detail": "ValueError: source unavailable",
+        "pdf_path": "/evidence/reports/legacy.pdf", "ai_path": None,
+    }])
+    assert "Estado:</b> ROJO" in html
+    assert "LEGACY_CONTENIDO_SIN_PROVENIENCIA" in html
+    assert "Descargar PDF" not in html
+
+
+def test_quality_marker_prefix_alone_cannot_unlock_legacy_download():
+    html = report_cards_html([{
+        "id": 213, "period_type": "DIARIO", "period_key": "2026-10-30",
+        "state": "AMARILLO", "created_at": "2026-10-30T19:00:00-03:00",
+        "detail": "3 operaciones; CONTENIDO_NO_VERIFICADO_FALSO",
+        "pdf_path": "/evidence/reports/unproven.pdf", "ai_path": None,
+    }])
+    assert "LEGACY_CONTENIDO_SIN_PROVENIENCIA" in html
+    assert "Descargar PDF" not in html
+
+
+def test_unattested_green_text_marker_alone_is_not_positive_runtime_proof():
+    html = report_cards_html([{
+        "id": 214, "period_type": "DIARIO", "period_key": "2026-10-30",
+        "state": "VERDE", "created_at": "2026-10-30T19:00:00-03:00",
+        "detail": "3 operaciones; CONTENIDO_ACREDITADO",
+        "pdf_path": "/evidence/reports/unsigned.pdf", "ai_path": None,
+    }])
+    assert "LEGACY_CONTENIDO_SIN_PROVENIENCIA" in html
+    assert "Descargar PDF" not in html
 
 
 def test_pagination_caps_large_lists():

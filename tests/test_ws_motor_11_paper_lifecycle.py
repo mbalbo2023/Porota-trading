@@ -150,7 +150,9 @@ def test_runtime_fci_subscription_requires_global_and_atomic_cash_gates(tmp_path
             "settlement_source": "PPI_FIELD", "description": "Fixture FCI",
             "last_seen_at": "2026-10-26T12:00:00+00:00", "run_id": "fixture",
             "status": "AVAILABLE", "capability": "READY_PAPER_FCI_SUBSCRIPTION",
-            "raw": {"_discovery_source": "PPI_PRIMARY",
+            "raw": {"_discovery_source": "PPI_PRIMARY", "ticker": "FUND1",
+                    "type": "FCI", "market": "FCI", "currency": "ARS",
+                    "settlement": "INMEDIATA",
                     "paper_family_contract_v1": json.loads(json.dumps(asdict(terms), default=str))}})
         db.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
             ticker TEXT,instrument_type TEXT,market TEXT,currency TEXT,settlement TEXT,
@@ -174,6 +176,26 @@ def test_runtime_fci_subscription_requires_global_and_atomic_cash_gates(tmp_path
     callbacks = dict(cash_guard=lambda c: broker._cash(at, "ARS", connection=c,
                                                        for_execution=True),
                      admission_guard=lambda _c: "")
+    # A READY label and candidate gate are not native provider attestation.
+    # Both missing literal settlement and request-sourced settlement must HOLD.
+    with store.connect() as db:
+        original_meta = db.execute(
+            "SELECT metadata_json FROM financial_instrument_catalog WHERE ticker='FUND1'"
+        ).fetchone()[0]
+        unbound_meta = json.loads(original_meta)
+        del unbound_meta["settlement"]
+        db.execute("UPDATE financial_instrument_catalog SET metadata_json=? WHERE ticker='FUND1'",
+                   (json.dumps(unbound_meta),))
+    with pytest.raises(ValueError, match="FCI_EXACT_CATALOG_NOT_READY"):
+        broker.family_paper.subscribe_fund(terms, **request, **callbacks)
+    with store.connect() as db:
+        db.execute("UPDATE financial_instrument_catalog SET metadata_json=?, settlement_source=? WHERE ticker='FUND1'",
+                   (original_meta, "REQUEST_CANDIDATE"))
+    with pytest.raises(ValueError, match="FCI_EXACT_CATALOG_NOT_READY"):
+        broker.family_paper.subscribe_fund(terms, **request, **callbacks)
+    with store.connect() as db:
+        db.execute("UPDATE financial_instrument_catalog SET settlement_source=? WHERE ticker='FUND1'",
+                   ("PPI_FIELD",))
     monkeypatch.setattr(gate, "admission_status", lambda: (False, "NO_GO_PAPER_SCALPING"))
     with pytest.raises(ValueError, match="NO_GO_PAPER_SCALPING"):
         broker.family_paper.subscribe_fund(terms, **request, **callbacks)

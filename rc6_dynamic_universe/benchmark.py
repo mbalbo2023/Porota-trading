@@ -169,7 +169,8 @@ def _observation(endpoint, payload, row, received, freshness_seconds, previous):
             raise BenchmarkReadError("PPI_INVALID_PAYLOAD")
         quote = normalize_quote(row["ticker"], row["instrument_type"], row["settlement"],
                                 payload if endpoint == "current" else {},
-                                payload if endpoint == "book" else {})
+                                payload if endpoint == "book" else {},
+                                identity=identity(row))
         source_at = stamp(quote.trade_at if endpoint == "current" else quote.book_at)
         if endpoint == "current":
             normalized = [source_at.isoformat(), str(quote.last)]

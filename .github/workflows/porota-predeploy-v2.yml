@@ -413,12 +413,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python scripts/porota_validate_deploy_artifact.py             --repo-root .             --artifact-root /tmp/porota-predeploy-app             --manifest-out /tmp/porota-artifact-manifest.json
+          python scripts/porota_validate_deploy_artifact.py \
+            --repo-root . \
+            --artifact-root /tmp/porota-predeploy-app \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --manifest-out /tmp/porota-artifact-manifest.json
           python - <<'PY'
           import json
           p='/tmp/porota-artifact-manifest.json'
           x=json.load(open(p,encoding='utf-8'))
           assert x['status']=='GREEN'
+          assert x['candidate_checkout_match']=='MATCH'
           print('POROTA_ARTIFACT_FILES=' + str(x['artifact_runtime_files']))
           print('POROTA_ARTIFACT_MISSING=' + str(len(x['missing_runtime_files'])))
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))

@@ -36,7 +36,7 @@ def _store(tmp_path):
 def _persist(store, *, ticker, family, nominal):
     record = catalog.normalize_record({
         "ticker": ticker, "type": family, "market": "BYMA",
-        "currency": "Pesos", "nominalInPrice": nominal,
+        "currency": "Pesos", "settlement": "A-24HS", "nominalInPrice": nominal,
     }, "A-24HS", NOW, "PPI-FULL-CATALOG")
     with store.connect() as connection:
         catalog.persist(connection, record)
@@ -121,7 +121,7 @@ def test_full_key_candidate_can_be_ready_while_legacy_selection_stays_closed(tmp
         for currency in ("ARS", "USD"):
             record = catalog.normalize_record({
                 "ticker": "TEST", "type": "ACCIONES", "market": "BYMA",
-                "currency": currency,
+                "currency": currency, "settlement": "A-24HS",
             }, "A-24HS", NOW, "PPI")
             catalog.persist(connection, record)
         catalog.sync_candidate_universe(connection, NOW)

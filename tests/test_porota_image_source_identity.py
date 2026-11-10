@@ -65,9 +65,11 @@ def test_build_and_promotion_verify_observed_identity_without_runtime_env_inject
     assert 'POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}' in predeploy
     assert 'verify_source_identity(sys.argv[1], sys.argv[2])' in predeploy
     deploy = (root / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    start = deploy.index('for IDENTITY_CONTAINER in porota_production_observer porota_production_dashboard;')
+    # Runtime identity must be checked against the exact attested CIDs, not
+    # mutable container names that can be replaced after source verification.
+    start = deploy.index('for IDENTITY_CONTAINER in "$OBSERVER_CID" "$DASHBOARD_CID";')
     end = deploy.index('POROTA_RUNNING_SOURCE_IDENTITY=GREEN', start)
     block = deploy[start:end]
-    assert 'docker exec "$IDENTITY_CONTAINER" python /app/scripts/porota_image_source_identity.py' in block
+    assert 'sudo -n docker exec "$IDENTITY_CONTAINER" python /app/scripts/porota_image_source_identity.py' in block
     assert '--expected-sha "$CANDIDATE_SHA" --expected-tree "$CANDIDATE_TREE"' in block
     assert '--env' not in block and ' -e ' not in block
