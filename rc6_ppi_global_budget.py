@@ -25,6 +25,8 @@ import time
 import uuid
 
 from rc6_dynamic_universe.common import digest, stamp
+from bs_instrument_contracts import cash_currency
+from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
 ENDPOINTS = ("current", "book", "intraday")
@@ -47,6 +49,55 @@ EXIT_ROUND_PRESSURE_KEY = digest({"critical_exit_scope": "ALL_ACTIVE_PAPER_POSIT
 # SQLite timeout bounded only lock waiting. Capture, SQL and cleanup share this
 # conservative total bound; an inherited earlier absolute deadline wins.
 LEDGER_SNAPSHOT_SECONDS = .15
+
+
+_PPI_RESPONSE_IDENTITY_FIELDS = {
+    "ticker": 0, "symbol": 0, "simbolo": 0,
+    "type": 1, "instrumenttype": 1, "assetclass": 1, "family": 1,
+    "market": 2, "marketcode": 2, "mercado": 2,
+    "currency": 3, "currencycode": 3, "moneda": 3,
+    "settlement": 4, "settlementtype": 4, "settlementused": 4, "term": 4,
+}
+
+
+def assert_native_ppi_response_identity(payload, expected):
+    """Reject explicit native Current/Book identity contradictions, not omissions.
+
+    The SDK request identifies ticker/type/settlement; the primary catalog
+    supplies market/currency. No payload identifier or secret is logged.
+    """
+    if not isinstance(expected, (tuple, list)) or len(expected) != 5:
+        raise ValueError("PPI_RESPONSE_IDENTITY_EXPECTATION_INVALID")
+    if not isinstance(payload, dict):
+        return
+    for container in (payload, payload.get("instrument"), payload.get("identity")):
+        if not isinstance(container, dict):
+            continue
+        for raw_field, value in container.items():
+            field = str(raw_field).strip().lower().replace("_", "")
+            index = _PPI_RESPONSE_IDENTITY_FIELDS.get(field)
+            if index is None or value in (None, "") or expected[index] is None:
+                continue
+            try:
+                if index == 1:
+                    actual = canonical_family(value)
+                    wanted = canonical_family(expected[index])
+                elif index == 2:
+                    actual = canonical_market(value)
+                    wanted = canonical_market(expected[index])
+                elif index == 3:
+                    actual = cash_currency(value)
+                    wanted = cash_currency(expected[index])
+                elif index == 4:
+                    actual = canonical_settlement(value, expected[1])
+                    wanted = canonical_settlement(expected[index], expected[1])
+                else:
+                    actual = str(value).strip().upper()
+                    wanted = str(expected[index]).strip().upper()
+                if not actual or actual != wanted:
+                    raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH")
+            except (TypeError, ValueError) as exc:
+                raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH") from exc
 
 # Review pin is deliberately unset until an independent Ed25519 *reviewer*
 # public key is approved. The signer key is not a runtime secret, never made
@@ -1362,6 +1413,7 @@ class GlobalPPIBudget:
                     raise BudgetBackpressure("PPI_GLOBAL_CIRCUIT_OPEN")
                 cached = self._get(c, "critical_books", {}).get(key)
                 if (cached and cached["authority"] == authority
+                        and cached.get("response_identity_checked_key") == key
                         and 0 <= now - cached["received_at"] <= age
                         and self._safe_book(cached["book"], now, age) is not None):
                     return False, now
@@ -1477,7 +1529,8 @@ class GlobalPPIBudget:
                             flights = self._get(c, "critical_book_flights", {})
                             cache = {k: v for k, v in cache.items() if 0 <= now - v["received_at"] <= age and v["authority"] == authority}
                             cached = cache.get(key)
-                            if cached and self._safe_book(cached["book"], now, age) is not None:
+                            if (cached and cached.get("response_identity_checked_key") == key
+                                    and self._safe_book(cached["book"], now, age) is not None):
                                 elapsed = time.monotonic() - started
                                 if critical and elapsed >= self.policy["critical_book_seconds"]:
                                     # Commit the observed authority before recording
@@ -1542,6 +1595,7 @@ class GlobalPPIBudget:
                 monitor.start()
             try:
                 result = fetch()
+                assert_native_ppi_response_identity(result, identity)
             except BaseException as error:
                 # A hard process kill leaves a bounded durable flight; restart
                 # cannot manufacture concurrency or silently use an old book.
@@ -1840,7 +1894,8 @@ class GlobalPPIBudget:
                     cache.pop(key, None)
                     safe = self._safe_book(payload, now, age)
                     if safe is not None:
-                        cache[key] = {"authority": authority, "received_at": now, "book": safe}
+                        cache[key] = {"authority": authority, "received_at": now, "book": safe,
+                            "response_identity_checked_key": key}
                         while len(cache) > BOOK_CACHE_LIMIT:
                             del cache[min(cache, key=lambda k: cache[k]["received_at"])]
                     self._put(c, "critical_books", cache)

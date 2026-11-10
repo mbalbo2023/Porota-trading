@@ -33,6 +33,7 @@ from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
+from rc6_ppi_global_budget import assert_native_ppi_response_identity
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -270,7 +271,14 @@ def _level(level):
     return price or Decimal(0), size or Decimal(0)
 
 
-def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None):
+def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=None, identity=None):
+    terms = financial_catalog.quote_terms(metadata)
+    expected = (symbol, asset_class,
+                identity[2] if identity is not None else terms.get("market"),
+                identity[3] if identity is not None else terms.get("currency"),
+                settlement)
+    assert_native_ppi_response_identity(current, expected)
+    assert_native_ppi_response_identity(book, expected)
     # Current documenta price/date en la raíz. Un cierre diario o un precio
     # anidado arbitrario no constituye el último negocio de este instrumento.
     last = D(current.get("price")) if isinstance(current, dict) else Decimal(0)
@@ -286,7 +294,7 @@ def normalize_quote(symbol, asset_class, settlement, current, book, *, metadata=
                  book_at=book.get("date") if isinstance(book, dict) else None,
                  trade_at=current.get("date") if isinstance(current, dict) else None,
                  last_kind="TRADE" if last > 0 else "UNAVAILABLE",
-                 **financial_catalog.quote_terms(metadata))
+                 **terms)
 
 
 def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, priority="DISCOVERY", identity=None):
@@ -297,7 +305,8 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *, prior
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
     metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
         market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
-    return normalize_quote(symbol, asset_class, settlement, current, book, metadata=metadata)
+    return normalize_quote(symbol, asset_class, settlement, current, book,
+        metadata=metadata, identity=identity)
 
 
 def _support_schema(store):
