@@ -31,7 +31,9 @@ logger = logging.getLogger("data912_history")
 DATA912_BASE = os.getenv("DATA912_BASE", "https://data912.com").rstrip("/")
 DATA912_TIMEOUT_SECONDS = float(os.getenv("DATA912_TIMEOUT_SECONDS", "30"))
 DATA912_RETRIES = int(os.getenv("DATA912_RETRIES", "5"))
-DATA912_REFRESH_ENABLED = os.getenv("DATA912_REFRESH_ENABLED", "true").lower() == "true"
+# Legacy provider is opt-in for research; no silent HTTP refreshes or DB writes
+# when this package is imported from an old monolithic entrypoint.
+DATA912_REFRESH_ENABLED = os.getenv("DATA912_REFRESH_ENABLED", "false").lower() == "true"
 DATA912_EXECUTION_ALLOWED = False
 DATA912_MIN_LIQUIDITY_ARS = float(
     os.getenv("DATA912_MIN_LIQUIDITY_ARS", os.getenv("MIN_LIQUIDITY_ARS", "5000000"))

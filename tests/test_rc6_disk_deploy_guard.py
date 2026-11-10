@@ -79,6 +79,9 @@ def test_dynamic_gate_uses_exact_unpacked_image_and_cleans_before_transfer_when_
 
 def test_final_cleanup_runs_after_runtime_validation_and_is_measured() -> None:
     text = CANONICAL.read_text(encoding="utf-8")
+    # The physical deploy contract must emit a single terminal success receipt;
+    # repeated markers can make an earlier log line look like the final verdict.
+    assert text.count('echo "RC6_FINAL_HOUSEKEEPING=GREEN|') == 1
     native = text.index("print('RC6_NATIVE_ACCEPTANCE_MODE=' + mode)")
     cleanup = text.index("RC6_FINAL_HOUSEKEEPING=GREEN")
     final = text.index("state['validation_status'] = 'VALIDATED_RUNTIME'")

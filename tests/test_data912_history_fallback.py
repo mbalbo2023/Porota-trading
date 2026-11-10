@@ -52,6 +52,8 @@ def test_liquidity_filter_prefers_ppi_when_available(tmp_path, monkeypatch):
 
 
 def test_empty_data912_history_is_not_counted_as_success(tmp_path, monkeypatch):
+    # Laboratorio legacy explícito: el refresh nunca se habilita por omisión.
+    monkeypatch.setattr(data912, "DATA912_REFRESH_ENABLED", True)
     database = tmp_path / "market_history.db"
     state = tmp_path / "state.json"
     monkeypatch.setattr(hist, "HIST_DB_PATH", str(database))
