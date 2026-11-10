@@ -9,6 +9,7 @@ No root receipt means HOLD79 *before* any Docker operation. In particular,
 the module does not silently bootstrap existing legacy containers.
 """
 
+import argparse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import fcntl
@@ -20,6 +21,7 @@ import re
 import secrets
 import stat
 import subprocess
+import sys
 
 
 TRUSTED_ROOT = Path("/var/lib/porota-rc6-oci-custody")
@@ -578,13 +580,24 @@ def _verify_inspect(role, record, expected, observed):
              "INSPECT_STATE")
 
 
-def _attest_critical_exclusivity(intent, observed):
-    """Require an external, fresh, exact-CID proof *before* critical start.
+def _aware_time(value, reason):
+    _require(type(value) is str and 12 <= len(value) <= 48, reason)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise CustodyHold(reason) from exc
+    _require(parsed.tzinfo is not None, reason)
+    return parsed
+
+
+def _attest_critical_exclusivity(intent, observed, *, allow_historical=False):
+    """Require an external exact-CID fence; fresh for a NEW critical start.
 
     No Docker, systemd or legacy mutation occurs here. A root-owned attestor
     outside candidate code must first establish stopped legacy ownership and
-    absence of concurrent Telegram consumers. An assertion without that
-    independent host authority is no authority and must not be provisioned.
+    absence of concurrent Telegram consumers. The postseal historical mode
+    only verifies the original birth and never reattests current exclusivity.
+    An assertion without independent host authority is no authority.
     """
     path = TRUSTED_ROOT / "generations" / intent["generation"] / "critical_exclusivity.json"
     _verify_root_directory()
@@ -609,10 +622,15 @@ def _attest_critical_exclusivity(intent, observed):
         now = datetime.now(timezone.utc)
     except (AttributeError, TypeError, ValueError) as exc:
         raise CustodyHold("CRITICAL_ATTESTATION_TIME_INVALID") from exc
-    _require(created.tzinfo is not None and attested.tzinfo is not None and
-             created <= attested <= now + timedelta(seconds=5) and
-             timedelta(0) <= now - attested <= timedelta(seconds=90),
+    _require(created.tzinfo is not None and attested.tzinfo is not None,
+             "CRITICAL_ATTESTATION_TIME_INVALID")
+    # Freshness is mandatory for a NEW start; a sealed historical birth may
+    # later be audited without claiming current exclusivity or readiness.
+    age = now - attested
+    _require(created <= attested <= now and timedelta(0) <= age and
+             (allow_historical or age <= timedelta(seconds=90)),
              "CRITICAL_ATTESTATION_STALE")
+    return attested
 
 
 _OBSERVER_HASH_PROFILES = {
@@ -969,3 +987,137 @@ def begin_genesis():
         genesis = _read_trusted_genesis()
         intent = _genesis_intent(genesis)
         return CustodySession(genesis, intent, genesis=True)
+
+
+def verify_current_sealed(*, candidate_sha: str, candidate_tree: str,
+                          generation: str, artifact_digest: str,
+                          image_id: str, daemon_id: str,
+                          expected_role_states: dict[str, str]) -> dict:
+    """READ_ONLY postseal proof of CURRENT; never begin the next attempt.
+
+    All expectations, including per-role states, must come from an independent
+    trusted deploy/host authority, not from current.json or Docker discovery.
+    OK proves identity and observed state, NOT critical health, exclusive
+    ownership today, PAPER fills or real_orders_sent in physical runtime.
+    """
+    expected = {
+        "candidate_sha": candidate_sha, "candidate_tree": candidate_tree,
+        "generation": generation, "artifact_digest": artifact_digest,
+        "image_id": image_id, "daemon_id": daemon_id,
+    }
+    _require(_is_token(candidate_sha, _HEX40) and
+             _is_token(candidate_tree, _HEX40) and
+             _is_token(generation, _HEX32) and
+             _is_token(artifact_digest, _DIGEST) and
+             _is_token(image_id, _DIGEST) and
+             type(daemon_id) is str and 6 <= len(daemon_id) <= 128 and
+             re.fullmatch(r"[A-Za-z0-9:_./-]+", daemon_id),
+             "POSTSEAL_EXPECTATION_FORMAT")
+    _require(type(expected_role_states) is dict and
+             set(expected_role_states) == set(ROLES) and
+             all(type(value) is str and value in ("running", "exited", "created")
+                 for value in expected_role_states.values()),
+             "POSTSEAL_EXPECTED_ROLE_STATES")
+    _require(all(value == "running" for value in expected_role_states.values()),
+             "POSTSEAL_EXPECTED_NOT_RUNNING")
+
+    with _root_lock():
+        current = _read_trusted_current()
+        _validate_current(current)
+        _require(all(current[key] == value for key, value in expected.items()),
+                 "POSTSEAL_CURRENT_NOT_EXPECTED")
+        original_digest = _canonical_digest(current)
+        _require(_daemon_identity() == daemon_id, "DAEMON_CHANGED")
+
+        # Validate ALL sealed birth receipts before querying any Docker CID.
+        for role in ROLES:
+            _verify_sealed_birth(current, role)
+
+        roles = {}
+        for role in ROLES:
+            record = current["roles"][role]
+            observed = _inspect_exact_cid(record["cid"])
+            _verify_inspect(role, record, current, observed)
+            labels = observed["Config"]["Labels"]
+            _require(labels.get("porota.rc6.run_id") == current["run_id"] and
+                     labels.get("porota.rc6.run_attempt") == current["run_attempt"] and
+                     labels.get("porota.rc6.artifact_digest") == artifact_digest,
+                     "POSTSEAL_BIRTH_LABELS")
+            # An unchanged CID/label is insufficient after a Docker restart.
+            _require(type(observed.get("RestartCount")) is int and
+                     observed["RestartCount"] == 0, "POSTSEAL_RESTART_UNVERIFIED")
+            started = _aware_time(observed["State"].get("StartedAt"),
+                                  "POSTSEAL_STARTED_AT_INVALID")
+            created = _aware_time(record["created"], "POSTSEAL_CREATED_INVALID")
+            _require(created <= started <= datetime.now(timezone.utc),
+                     "POSTSEAL_STARTED_AT_UNTRUSTED")
+            state = observed["State"]["Status"]
+            _require(state == "running" and state == expected_role_states[role],
+                     "POSTSEAL_ROLE_STATE_NOT_EXPECTED")
+            if role == "critical":
+                fenced_at = _attest_critical_exclusivity(
+                    current, observed, allow_historical=True)
+                journal = _load_journal(
+                    current, expected_intent_digest=current["birth_intent_sha256"])
+                confirmed = [event for event in journal["events"]
+                             if event["phase"] == "CONFIRMED" and
+                             event["role"] == "critical" and
+                             event["operation"] == "start"]
+                _require(len(confirmed) == 1 and
+                         confirmed[0]["cid"] == record["cid"],
+                         "POSTSEAL_CRITICAL_JOURNAL_AMBIGUOUS")
+                confirmed_at = _aware_time(confirmed[0]["timestamp"],
+                                           "POSTSEAL_CRITICAL_JOURNAL_TIME")
+                _require(fenced_at <= started <= confirmed_at,
+                         "POSTSEAL_CRITICAL_RESTART_UNTRUSTED")
+            roles[role] = {"cid": record["cid"], "state": state}
+
+        _require(_daemon_identity() == daemon_id, "DAEMON_CHANGED")
+        renewed = _read_trusted_current()
+        _validate_current(renewed)
+        _require(_canonical_digest(renewed) == original_digest,
+                 "POSTSEAL_CURRENT_CHANGED")
+        for role in ROLES:
+            _verify_sealed_birth(renewed, role)
+
+    return {
+        "schema": "RC6_POSTSEAL_CUSTODY_V1", "status": "OK",
+        "candidate_sha": candidate_sha, "candidate_tree": candidate_tree,
+        "generation": generation, "artifact_digest": artifact_digest,
+        "image_id": image_id, "daemon_id": daemon_id,
+        "declared_paper_mode": "PRODUCTION_PAPER", "roles": roles,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Bounded read-only adapter for trusted caller, with HOLD79 on mismatch."""
+    parser = argparse.ArgumentParser()
+    actions = parser.add_subparsers(dest="action", required=True)
+    verify = actions.add_parser("verify-current")
+    for option in ("candidate-sha", "candidate-tree", "generation",
+                   "artifact-digest", "image-id", "daemon-id"):
+        verify.add_argument("--" + option, required=True)
+    for role in ROLES:
+        verify.add_argument("--expect-" + role + "-state", required=True,
+                            choices=("running", "exited", "created"))
+    args = parser.parse_args(argv)
+    if args.action != "verify-current":
+        raise CustodyHold("OPERATION_UNSUPPORTED")
+    try:
+        result = verify_current_sealed(
+            candidate_sha=args.candidate_sha, candidate_tree=args.candidate_tree,
+            generation=args.generation, artifact_digest=args.artifact_digest,
+            image_id=args.image_id, daemon_id=args.daemon_id,
+            expected_role_states={
+                role: getattr(args, "expect_" + role + "_state") for role in ROLES
+            },
+        )
+    except CustodyHold as exc:
+        print(str(exc), file=sys.stderr)
+        return exc.exit_code
+    print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

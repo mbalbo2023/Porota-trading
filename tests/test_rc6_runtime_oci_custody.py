@@ -3,9 +3,11 @@
 No test in this module opens Docker, sudo, SSH, systemd, or a host socket.
 """
 
-from contextlib import contextmanager, nullcontext
-from datetime import datetime, timezone
+from contextlib import contextmanager, nullcontext, redirect_stderr, redirect_stdout
+import copy
+from datetime import datetime, timedelta, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -16,6 +18,9 @@ from unittest.mock import patch
 
 
 from scripts import rc6_runtime_oci_custody as custody
+
+REAL_DAEMON_IDENTITY = custody._daemon_identity
+REAL_INSPECT_EXACT_CID = custody._inspect_exact_cid
 
 
 SHA = "a" * 40
@@ -84,6 +89,7 @@ def newly_inspected(role, cid):
     intent = sample_intent()
     name = f"/porota_rc6_{role}_g_{intent['generation']}"
     return {"Id": cid, "Image": intent["image_id"], "Name": name,
+            "RestartCount": 0,
             "Created": "2026-11-09T12:15:00Z", "State": {"Status": "running"},
             "Config": {"Labels": {
                 "porota.rc6.role": role,
@@ -167,6 +173,9 @@ def record_genesis_birth(session, role, cid, *, state="created"):
     observed = newly_inspected(role, cid)
     observed["State"]["Status"] = state
     observed["Created"] = datetime.now(timezone.utc).isoformat()
+    observed["State"]["StartedAt"] = (
+        observed["Created"] if state == "running" else "0001-01-01T00:00:00Z"
+    )
     with patch.object(custody, "_inspect_exact_cid", return_value=observed):
         session.record_birth(role, cid)
     return observed
@@ -196,7 +205,9 @@ def complete_genesis_births(session, root):
     critical = births["critical"]
     host_receipt(root / "generations" / NEXT_GEN / "critical_exclusivity.json",
                  external_critical_attestation(sample_genesis(), critical))
-    running = {**critical, "State": {"Status": "running"}}
+    running = {**critical, "State": {
+        "Status": "running", "StartedAt": datetime.now(timezone.utc).isoformat(),
+    }}
     with patch.object(custody, "_inspect_exact_cid", side_effect=[critical, running]), \
          patch.object(custody, "_docker_run", return_value=SimpleNamespace(stdout="")):
         session.authorize_newborn_start("critical")
@@ -209,6 +220,30 @@ def confirmed_critical_start_journal():
              "cid": "6" * 64, "timestamp": "2026-11-09T12:15:01Z"}
     return {"events": [{**event, "phase": "REQUESTED"},
                        {**event, "phase": "CONFIRMED"}]}
+
+
+@contextmanager
+def sealed_postseal_root():
+    """Real offline genesis->birth->journal->seal; only Docker is faked."""
+    with external_genesis_root() as root:
+        host_receipt(root / "genesis.json", sample_genesis())
+        session = custody.begin_genesis()
+        births = complete_genesis_births(session, root)
+        by_cid = {row["Id"]: row for row in births.values()}
+        with patch.object(custody, "_inspect_exact_cid",
+                          side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+            session.seal_generation()
+        yield root, custody._read_trusted_current(), by_cid
+
+
+def postseal_expectations(**overrides):
+    return {
+        "candidate_sha": NEW_SHA, "candidate_tree": NEW_TREE,
+        "generation": NEXT_GEN, "artifact_digest": NEW_DIGEST,
+        "image_id": NEW_IMAGE, "daemon_id": DAEMON,
+        "expected_role_states": {role: "running" for role in ROLES},
+        **overrides,
+    }
 
 
 class CustodyOfflineTests(unittest.TestCase):
@@ -1161,6 +1196,260 @@ class CustodyOfflineTests(unittest.TestCase):
         foreign["generation"] = "1" * 32
         with self.assertRaises(custody.CustodyHold):
             custody._pending_for_intent(sample_intent(), foreign)
+
+
+class PostsealCurrentReadOnlyTests(unittest.TestCase):
+    def test_postseal_verifies_sealed_current_not_predecessor_and_returns_exact_states(self):
+        """Removing the new public current-only API must fail this test."""
+        with sealed_postseal_root() as (_root, current, by_cid), \
+             patch.object(custody, "begin_attempt", side_effect=AssertionError(
+                 "POSTSEAL_MUST_NOT_BEGIN_ATTEMPT")), \
+             patch.object(custody, "_read_trusted_intent", side_effect=AssertionError(
+                 "POSTSEAL_MUST_NOT_READ_NEXT_INTENT")), \
+             patch.object(custody, "_inspect_exact_cid",
+                          side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+            result = custody.verify_current_sealed(**postseal_expectations())
+
+        self.assertEqual(result["schema"], "RC6_POSTSEAL_CUSTODY_V1")
+        self.assertEqual(result["status"], "OK")
+        self.assertEqual(result["candidate_sha"], NEW_SHA)
+        self.assertEqual(result["candidate_tree"], NEW_TREE)
+        self.assertEqual(result["generation"], NEXT_GEN)
+        self.assertEqual(result["artifact_digest"], NEW_DIGEST)
+        self.assertEqual(result["image_id"], NEW_IMAGE)
+        self.assertEqual(result["daemon_id"], DAEMON)
+        self.assertEqual(result["declared_paper_mode"], "PRODUCTION_PAPER")
+        self.assertNotIn("paper_mode", result)  # Receipt is not runtime PAPER proof.
+        self.assertNotIn("real_orders_sent", result)
+        self.assertEqual(result["roles"], {
+            role: {"cid": current["roles"][role]["cid"], "state": "running"}
+            for role in ROLES
+        })
+
+    def test_postseal_rejects_previous_or_mismatched_external_identity_pre_docker(self):
+        for key, value in (
+            ("candidate_sha", SHA), ("candidate_tree", TREE),
+            ("generation", GEN), ("artifact_digest", DIGEST),
+            ("image_id", IMAGE), ("daemon_id", "other-daemon-pin"),
+        ):
+            with self.subTest(key=key), sealed_postseal_root(), \
+                 patch.object(custody, "_inspect_exact_cid") as inspect, \
+                 patch.object(custody, "_docker_run") as docker:
+                with self.assertRaises(custody.CustodyHold) as raised:
+                    custody.verify_current_sealed(**postseal_expectations(**{key: value}))
+                self.assertEqual(raised.exception.exit_code, 79)
+                inspect.assert_not_called()
+                docker.assert_not_called()
+
+    def test_postseal_rejects_missing_external_states_or_false_created_claim(self):
+        for expected in (None, {"observer": "running"},
+                         {"dashboard": "running", "observer": "running",
+                          "critical": "created"}):
+            with self.subTest(expected=expected), sealed_postseal_root() as (
+                    _root, _current, by_cid), \
+                 patch.object(custody, "_inspect_exact_cid",
+                              side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+                with self.assertRaises(custody.CustodyHold):
+                    custody.verify_current_sealed(**postseal_expectations(
+                        expected_role_states=expected))
+
+    def test_postseal_never_reports_ok_for_down_or_unstarted_roles(self):
+        """Even agreeing caller data cannot turn EXITED/CREATED into postseal OK."""
+        for role, state in (("observer", "exited"), ("critical", "created")):
+            with self.subTest(role=role, state=state), sealed_postseal_root() as (
+                    _root, current, by_cid):
+                cid = current["roles"][role]["cid"]
+                by_cid[cid]["State"]["Status"] = state
+                expectations = postseal_expectations(expected_role_states={
+                    **{name: "running" for name in ROLES}, role: state,
+                })
+                with patch.object(custody, "_inspect_exact_cid",
+                                  side_effect=lambda value: copy.deepcopy(by_cid[value])):
+                    with self.assertRaises(custody.CustodyHold):
+                        custody.verify_current_sealed(**expectations)
+
+    def test_postseal_rejects_duplicate_foreign_and_truncated_cids(self):
+        for bad in ("4" * 64, "f" * 64, "4" * 63):
+            with self.subTest(bad=bad), sealed_postseal_root() as (
+                    root, current, _by_cid), \
+                 patch.object(custody, "_inspect_exact_cid") as inspect:
+                current["roles"]["observer"]["cid"] = bad
+                host_receipt(root / "current.json", current)
+                with self.assertRaises(custody.CustodyHold):
+                    custody.verify_current_sealed(**postseal_expectations())
+                inspect.assert_not_called()
+
+    def test_postseal_rejects_foreign_docker_cid_and_missing_birth_labels(self):
+        for tamper in ("foreign-cid", "run-id", "run-attempt", "artifact-digest"):
+            with self.subTest(tamper=tamper), sealed_postseal_root() as (
+                    _root, current, by_cid):
+                observer = by_cid[current["roles"]["observer"]["cid"]]
+                if tamper == "foreign-cid":
+                    observer["Id"] = "a" * 64
+                else:
+                    label = {
+                        "run-id": "porota.rc6.run_id",
+                        "run-attempt": "porota.rc6.run_attempt",
+                        "artifact-digest": "porota.rc6.artifact_digest",
+                    }[tamper]
+                    observer["Config"]["Labels"][label] = "WRONG"
+                with patch.object(custody, "_inspect_exact_cid",
+                                  side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+                    with self.assertRaises(custody.CustodyHold):
+                        custody.verify_current_sealed(**postseal_expectations())
+
+    def test_postseal_rejects_current_cidfile_pending_journal_and_fence_tamper(self):
+        for tamper in ("current-symlink", "cidfile-symlink", "pending-digest",
+                       "journal-unconfirmed", "critical-fencer-missing"):
+            with self.subTest(tamper=tamper), sealed_postseal_root() as (
+                    root, current, by_cid):
+                generation_dir = root / "generations" / NEXT_GEN
+                if tamper == "current-symlink":
+                    current_path = root / "current.json"
+                    alias = root / "foreign-current.json"
+                    host_receipt(alias, current)
+                    current_path.unlink()
+                    current_path.symlink_to(alias)
+                elif tamper == "cidfile-symlink":
+                    cid_path = generation_dir / "observer.cid"
+                    alias = root / "foreign-cid"
+                    alias.write_text(current["roles"]["observer"]["cid"])
+                    cid_path.unlink()
+                    cid_path.symlink_to(alias)
+                elif tamper == "pending-digest":
+                    pending_path = generation_dir / "pending.json"
+                    pending = custody._read_pending(current)
+                    pending["intent_digest"] = "0" * 64
+                    host_receipt(pending_path, pending)
+                elif tamper == "journal-unconfirmed":
+                    journal_path = generation_dir / "operations.json"
+                    journal = custody._load_journal(current,
+                        expected_intent_digest=current["birth_intent_sha256"])
+                    journal["events"] = journal["events"][:-1]
+                    host_receipt(journal_path, journal)
+                else:
+                    (generation_dir / "critical_exclusivity.json").unlink()
+                with patch.object(custody, "_inspect_exact_cid",
+                                  side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+                    with self.assertRaises(custody.CustodyHold):
+                        custody.verify_current_sealed(**postseal_expectations())
+
+    def test_postseal_detects_current_rotation_during_docker_read(self):
+        with sealed_postseal_root() as (root, current, by_cid):
+            triggered = []
+
+            def rotate(cid):
+                if not triggered:
+                    triggered.append(True)
+                    newer = copy.deepcopy(current)
+                    newer["run_attempt"] = "2"
+                    host_receipt(root / "current.json", newer)
+                return copy.deepcopy(by_cid[cid])
+
+            with patch.object(custody, "_inspect_exact_cid", side_effect=rotate):
+                with self.assertRaises(custody.CustodyHold):
+                    custody.verify_current_sealed(**postseal_expectations())
+            self.assertTrue(triggered)
+
+    def test_postseal_detects_daemon_rotation_after_exact_cid_reads(self):
+        with sealed_postseal_root() as (_root, _current, by_cid), \
+             patch.object(custody, "_daemon_identity", side_effect=[
+                 DAEMON, "other-daemon-pin"]), \
+             patch.object(custody, "_inspect_exact_cid",
+                          side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+            with self.assertRaises(custody.CustodyHold):
+                custody.verify_current_sealed(**postseal_expectations())
+
+    def test_postseal_naive_critical_attestation_time_holds79(self):
+        """Malformed historical fencer time must HOLD, never throw TypeError."""
+        with sealed_postseal_root() as (root, current, by_cid):
+            path = root / "generations" / NEXT_GEN / "critical_exclusivity.json"
+            proof = custody._strict_json(custody._read_regular_file(path))
+            proof["attested_at"] = "2026-11-10T12:00:00"  # No timezone.
+            host_receipt(path, proof)
+            with patch.object(custody, "_inspect_exact_cid",
+                              side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+                with self.assertRaises(custody.CustodyHold) as raised:
+                    custody.verify_current_sealed(**postseal_expectations())
+                self.assertEqual(raised.exception.exit_code, 79)
+
+    def test_postseal_rejects_critical_restart_even_with_same_cid_and_labels(self):
+        """RestartCount and journal-bounded StartedAt prevent stale-birth OK."""
+        for tamper in ("restart-count", "later-start", "missing-start"):
+            with self.subTest(tamper=tamper), sealed_postseal_root() as (
+                    root, current, by_cid):
+                critical = by_cid[current["roles"]["critical"]["cid"]]
+                if tamper == "restart-count":
+                    critical["RestartCount"] = 7
+                elif tamper == "later-start":
+                    journal = custody._load_journal(
+                        current, expected_intent_digest=current["birth_intent_sha256"])
+                    confirmed = [e for e in journal["events"]
+                                 if e["role"] == "critical" and
+                                 e["operation"] == "start" and
+                                 e["phase"] == "CONFIRMED"][-1]
+                    latest = datetime.fromisoformat(
+                        confirmed["timestamp"].replace("Z", "+00:00"))
+                    critical["State"]["StartedAt"] = (
+                        latest + timedelta(milliseconds=10)).isoformat()
+                else:
+                    critical["State"].pop("StartedAt")
+                with patch.object(custody, "_inspect_exact_cid",
+                                  side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+                    with self.assertRaises(custody.CustodyHold) as raised:
+                        custody.verify_current_sealed(**postseal_expectations())
+                    self.assertEqual(raised.exception.exit_code, 79)
+
+    def test_postseal_only_reads_pinned_daemon_and_three_exact_cids(self):
+        with sealed_postseal_root() as (_root, current, by_cid):
+            invocations = []
+
+            def docker_boundary(argv, *, capture=False):
+                invocations.append(argv)
+                self.assertTrue(capture)
+                if argv == ("docker", "info", "--format", "{{.ID}}"):
+                    return SimpleNamespace(stdout=DAEMON)
+                self.assertEqual(tuple(argv[:4]),
+                                 ("docker", "inspect", "--type", "container"))
+                self.assertIn(argv[4], by_cid)
+                return SimpleNamespace(stdout=json.dumps([by_cid[argv[4]]]))
+
+            with patch.object(custody, "_daemon_identity",
+                              side_effect=REAL_DAEMON_IDENTITY), \
+                 patch.object(custody, "_inspect_exact_cid",
+                              side_effect=REAL_INSPECT_EXACT_CID), \
+                 patch.object(custody, "_docker_run", side_effect=docker_boundary):
+                result = custody.verify_current_sealed(**postseal_expectations())
+            self.assertEqual(result["status"], "OK")
+            self.assertEqual(invocations[0], ("docker", "info", "--format", "{{.ID}}"))
+            self.assertEqual(invocations[-1], ("docker", "info", "--format", "{{.ID}}"))
+            self.assertEqual(set(argv[-1] for argv in invocations[1:-1]),
+                             {row["cid"] for row in current["roles"].values()})
+            self.assertEqual(len(invocations), 5)
+
+    def test_postseal_cli_returns_bounded_json_and_hold79(self):
+        flags = [
+            "verify-current", "--candidate-sha", NEW_SHA,
+            "--candidate-tree", NEW_TREE, "--generation", NEXT_GEN,
+            "--artifact-digest", NEW_DIGEST, "--image-id", NEW_IMAGE,
+            "--daemon-id", DAEMON,
+            "--expect-dashboard-state", "running",
+            "--expect-observer-state", "running",
+            "--expect-critical-state", "running",
+        ]
+        with sealed_postseal_root() as (_root, _current, by_cid), \
+             patch.object(custody, "_inspect_exact_cid",
+                          side_effect=lambda cid: copy.deepcopy(by_cid[cid])):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(custody.main(flags), 0)
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "OK")
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                self.assertEqual(custody.main([
+                    *flags[:flags.index("--generation") + 1], GEN,
+                    *flags[flags.index("--generation") + 2:]]), 79)
+            self.assertIn("RC6_OCI_CUSTODY_HOLD79:", stderr.getvalue())
 
 
 if __name__ == "__main__":
