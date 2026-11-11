@@ -43,8 +43,12 @@ def cli_fixture(tmp_path):
             "systemd/ppi-watch.service": {"role": "ACTIVE_SERVICE"},
         },
     }
-    write(repo, "ops/policy/host-control-plane-reconciliation-v2.json",
-          json.dumps(policy))
+    policy_path = "ops/policy/host-control-plane-reconciliation-v2.json"
+    policy_bytes = json.dumps(policy)
+    write(repo, policy_path, policy_bytes)
+    # The host-control policy is a runtime input, not an off-image fixture.
+    # Keep the synthetic image complete so only deliberate omissions fail.
+    write(artifact, policy_path, policy_bytes)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     subprocess.run([
@@ -586,8 +590,10 @@ def test_aliased_native_binary_is_rejected(tmp_path):
     repo,artifact=native_fixture(tmp_path)
     target=tmp_path/"outside.so";target.write_bytes(b"synthetic outside")
     (artifact/"pkg/_bounded.so").symlink_to(target)
-    result=validate(repo,artifact,["pkg/_bounded.c"])
-    assert result["status"]=="FAILED" and result["missing_native_extensions"]
+    # A symlink is rejected at the artifact-tree boundary before any
+    # extension-resolution logic can accept or hash its target.
+    with pytest.raises(ValueError, match="^ARTIFACT_MEMBER_UNSAFE$"):
+        validate(repo,artifact,["pkg/_bounded.c"])
 
 
 def test_predeploy_wires_exact_pr_head_sha_to_artifact_checkout_gate():
