@@ -148,7 +148,25 @@ def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
     steps = artifact["steps"]
     native = next(s for s in steps if s["name"] == "Exact image native sizing and generated catalog proof")
     cleanup = next(s for s in steps if s["name"] == "Local cleanup")
-    assert "exit 79" in native["run"] and cleanup["run"].rstrip().endswith("exit 79")
+    # This is a semantic gate: no unconditional trailing exit is needed as
+    # long as a created image or stage remains HOLD79 and the release guard
+    # rejects skipped/failed artifact evidence. Never mistake the genuine
+    # both-skipped NO_RESOURCE branch for an artifact certificate.
+    native_run = native["run"]
+    assert native_run.index("exit 79") < native_run.index("# RC6_A980_NATIVE_OWNER_BEGIN")
+    assert "root_same_uid_path_swap_unresolved" in native_run
+    cleanup_run = cleanup["run"]
+    assert cleanup["if"] == "always()"
+    assert cleanup["env"]["RC6_BUILD_OUTCOME"] == "${{ steps.rc6_build_once.outcome }}"
+    assert cleanup["env"]["RC6_EXTRACT_OUTCOME"] == "${{ steps.rc6_extract_application.outcome }}"
+    assert "NO_RESOURCE|build_not_started" in cleanup_run
+    assert "NO_RESOURCE|extract_not_started" in cleanup_run
+    assert "RETAINED|HOLD79|tag_namespace_mutable_no_delete" in cleanup_run
+    assert "RETAINED|HOLD79|pathname_swap_unresolved_no_delete" in cleanup_run
+    assert 'if [[ "$rc6_image_state" != GREEN || "$rc6_stage_state" != GREEN ]]; then' in cleanup_run
+    assert "POROTA_PREDEPLOY_LOCAL_CLEANUP=HOLD79|ownership_not_proven" in cleanup_run
+    assert "exit 79" in cleanup_run
+    assert 'docker image rm' not in cleanup_run and 'rm -rf -- "$RC6_EXTRACT_STAGE"' not in cleanup_run
     required_evidence = next(i for i, step in enumerate(steps)
                              if step["name"] == "Verify required published native evidence")
     identity = next(i for i, step in enumerate(steps)
@@ -158,7 +176,7 @@ def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
     assert required_evidence < identity < upload
     assert "git rev-parse HEAD" in steps[identity]["run"]
     assert "GITHUB_OUTPUT" in steps[identity]["run"]
-    assert steps[upload]["if"] == "always()"
+    assert steps[upload]["if"] == "${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}"
     assert steps[upload]["uses"] == "actions/upload-artifact@v4"
 
     required = workflow["jobs"]["release-evidence-required"]

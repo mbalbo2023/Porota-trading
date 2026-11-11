@@ -289,7 +289,9 @@ def test_unproven_cleanup_preserves_foreign_resources_and_fails_closed(tmp_path,
     assert not trace.exists()
 
 
-def test_predeploy_green_certificate_disabled_during_cleanup_hold():
+def test_predeploy_green_certificate_requires_owned_cleanup_success():
     steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["artifact-gate"]["steps"]
     summary = next(step for step in steps if step.get("name") == "Predeploy summary")
-    assert summary["if"] == "${{ false }}"
+    assert summary["if"] == "${{ success() && steps.rc6_local_cleanup.outcome == 'success' }}"
+    assert [step.get("name") for step in steps].index("Local cleanup") < (
+        [step.get("name") for step in steps].index("Predeploy summary"))

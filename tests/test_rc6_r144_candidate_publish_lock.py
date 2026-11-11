@@ -142,7 +142,7 @@ def test_canonical_pr_number_remains_held_after_branch_rename():
                         number=1087) is False
 
 
-def test_publish_lock_preserves_only_pull_request_trigger_and_native_hold():
+def test_publish_lock_preserves_only_pull_request_trigger_and_fail_closed_native_owner():
     workflow = _source()
     assert list(workflow["on"]) == ["pull_request"]
     # Required offhost release evidence must be non-skippable when R144
@@ -153,9 +153,16 @@ def test_publish_lock_preserves_only_pull_request_trigger_and_native_hold():
                   "Exact image native sizing and generated catalog proof")
     cleanup = next(s for s in steps if s.get("name") == "Local cleanup")
     summary = next(s for s in steps if s.get("name") == "Predeploy summary")
-    assert native["run"].splitlines()[1:3] == [
-        "echo 'POROTA_NATIVE_PROOF=HOLD|unverified_container_ownership'", "exit 79"]
-    assert cleanup["run"].splitlines()[-2:] == [
-        "echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=HOLD|resources_retained_ownership_unverified'",
-        "exit 79"]
-    assert summary["if"] == "${{ false }}"
+    # R162 resolves two unconditional HOLDs only with exact-CID/label and
+    # job-created-stage evidence; unverified resources still exit 79.
+    assert "# RC6_A980_NATIVE_OWNER_BEGIN" in native["run"]
+    assert 'docker rm "$rc6_container_id"' in native["run"]
+    assert 'docker rm "$rc6_name"' not in native["run"]
+    assert 'unknown_cid_or_foreign_labels_no_delete' in native["run"]
+    assert "exit 79" in native["run"]
+    assert "NO_RESOURCE|build_not_started" in cleanup["run"]
+    assert "NO_RESOURCE|extract_not_started" in cleanup["run"]
+    assert "unknown_or_foreign_image_no_delete" in cleanup["run"]
+    assert "unknown_or_foreign_stage_no_delete" in cleanup["run"]
+    assert "exit 79" in cleanup["run"]
+    assert summary["if"] == "${{ success() && steps.rc6_local_cleanup.outcome == 'success' }}"

@@ -135,17 +135,21 @@ def test_contract_runner_uses_host_timeout_and_python_entrypoint():
     assert '--entrypoint timeout' not in source
 
 
-def test_predeploy_preserves_the_entire_native_proof_directory():
+def test_predeploy_publishes_only_declared_verified_native_receipts():
     import yaml
     workflow=yaml.safe_load(_predeploy())
     steps=workflow['jobs']['artifact-gate']['steps']
     upload=next(step for step in steps if step.get('name')=='Upload predeploy evidence')
-    # Keep every current/future JUnit and session receipt, includingRED output,
-    # instead of a partial file list that silently drops the added405min run.
-    paths={line.strip().rstrip('/') for line in upload['with']['path'].splitlines()}
-    assert '${{ runner.temp }}/porota-native-sizing-evidence' in paths
-    assert '!${{ runner.temp }}/porota-native-sizing-evidence/tmp/**' in paths
-    assert upload['if']=='always()'
+    # Native evidence is untrusted container output until the exact receipt
+    # gate accepts it. Whole-directory upload can include injected files.
+    paths={line.strip() for line in upload['with']['path'].splitlines()}
+    native={p for p in paths if 'porota-native-sizing-evidence/' in p}
+    assert len(native)==13
+    assert all('/payload/' in p and '*' not in p and not p.endswith('/') for p in native)
+    assert '${{ runner.temp }}/porota-native-sizing-evidence/payload/native-bound.xml' in native
+    assert '${{ runner.temp }}/porota-native-sizing-evidence/payload/session/stress.json' in native
+    assert '${{ runner.temp }}/porota-native-sizing-evidence/payload/cadence/cadence-legacy.json' in native
+    assert upload['if']=="${{ always() && steps.rc6_artifact_gate.outcome == 'success' }}"
 
 
 def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
@@ -162,23 +166,25 @@ def test_host_stress_and_its_second_owner_go_are_absent_from_promotion():
     assert 'native-ten-generation-soak.json' in source
 
 
-def test_native_proof_ownership_is_reclaimed_after_sandbox_before_upload():
+def test_native_proof_fails_closed_on_unreadable_evidence_without_elevation():
     import yaml
     steps=yaml.safe_load(_predeploy())['jobs']['artifact-gate']['steps']
     names=[step.get('name') for step in steps]
     name='Reclaim native proof evidence for artifact publication'
-    assert name in names, 'NATIVE_PROOF_ARTIFACT_EACCES_UNGUARDED'
+    assert name not in names, 'PRIVILEGED_NATIVE_RECLAIM_UNAUTHORIZED'
     proof=names.index('Exact image native sizing and generated catalog proof')
-    reclaim=names.index(name)
+    verify=names.index('Verify required published native evidence')
     upload=names.index('Upload predeploy evidence')
-    assert proof < reclaim < upload
-    step=steps[reclaim]
-    assert step['if']=='always()'  # Preserve the forensic evidence onRED too.
-    assert 'rc6_proof_root="$RUNNER_TEMP/porota-native-sizing-evidence"' in step['run']
-    assert 'sudo chown -R -- "$(id -u):$(id -g)" "$rc6_proof_root"' in step['run']
+    assert proof < verify < upload
+    assert 'REQUIRED_PREDEPLOY_EVIDENCE_UNREADABLE' in steps[verify]['run']
+    assert 'REQUIRED_PREDEPLOY_EVIDENCE_ALIASED' in steps[verify]['run']
     sandbox=steps[proof]['run']
     assert '--user 1000:1000' in sandbox and '--read-only' in sandbox
     assert '--cap-drop ALL' in sandbox and '--security-opt no-new-privileges' in sandbox
+    assert 'mkdir -m 700 -- "$rc6_native_root"' in sandbox
+    assert '-v "$RUNNER_TEMP/porota-native-sizing-evidence/payload:/proof"' in sandbox
+    assert 'chmod 777 -- "$rc6_native_root"' not in sandbox
+    assert 'sudo ' not in _predeploy()
 
 
 def test_sector_map_and_multisource_helpers_are_immutable_deploy_inputs():
