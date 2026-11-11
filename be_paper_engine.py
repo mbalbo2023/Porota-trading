@@ -473,6 +473,10 @@ class PaperStore:
         # economic ledger; no hot-path DDL or issuer-data ingestion is allowed.
         from rc6_fixed_income_event_ledger import init_schema as init_fi_event_schema
         init_fi_event_schema(self)
+        from rc6_fixed_income_native_redemption import init_schema as init_fi_review_schema
+        from rc6_fixed_income_native_exit import init_schema as init_fi_terminal_schema
+        init_fi_review_schema(self)
+        init_fi_terminal_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -1036,11 +1040,15 @@ class PaperBroker:
                 LIMIT 1""", (currency, at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
-        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
+        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed
+                        if p['currency']==currency and
+                        p.get('close_reason') != 'FI_NATIVE_MATURITY_REVIEWED'), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
-                         for p in opened if p['currency']==currency), ZERO)
+                         for p in opened + [p for p in closed if
+                             p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED']
+                         if p['currency']==currency), ZERO)
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
@@ -3004,8 +3012,12 @@ class PaperBroker:
                     qty = D(p["quantity"]) * self._position_multiplier(p)
                     exposure += mark * qty
                     unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
+            terminal_fx_unknown = [p for p in closed if p["currency"] == currency
+                and p.get("close_reason") == "FI_NATIVE_MATURITY_REVIEWED"
+                and p.get("net_pnl") is None]
+            stale += len(terminal_fx_unknown)
             realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
-                                          if p["currency"] == currency), ZERO))
+                if p["currency"] == currency and p not in terminal_fx_unknown), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]

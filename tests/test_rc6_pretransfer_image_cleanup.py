@@ -51,6 +51,9 @@ class Docker:
 @pytest.fixture
 def host(monkeypatch):
     backend = Docker()
+    # Opt in only for the simulated historical algorithm. All executable
+    # entrypoints default-deny without a candidate-exclusive namespace.
+    monkeypatch.setattr(clean, 'require_exclusive_docker_namespace', lambda: None)
     monkeypatch.setattr(clean, 'docker', backend)
     monkeypatch.setattr(clean, 'safety', lambda: ['unchanged'])
     monkeypatch.setattr(clean.shutil, 'disk_usage', lambda _: SimpleNamespace(free=1234))
@@ -196,10 +199,12 @@ def test_new_external_alias_between_inspections_blocks(host, monkeypatch):
     assert TAG in host.images[IMG][0]
 
 
-def test_same_repository_digest_does_not_make_unused_candidate_immortal(host):
+def test_same_repository_digest_does_not_prove_candidate_custody(host):
     host.images[IMG] = ([TAG], ['porota-predeploy-v2@sha256:'+'f'*64])
     result = clean.cleanup()
-    assert result['removed_tags'] == [TAG] and IMG not in host.images
+    assert result['removed_tags'] == [] and IMG in host.images
+    assert next(item for item in result['inventory'] if item['image_id'] == IMG)[
+        'reason'] == 'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED'
 
 
 def test_unpaired_canonical_repository_digest_still_protects_image(host):

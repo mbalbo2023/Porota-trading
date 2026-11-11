@@ -85,8 +85,18 @@ def _seed(db, paper_id):
             or not paper_id.startswith("PAPER-")):
         raise ValueError("FI_LEDGER_PAPER_FIXED_INCOME_REQUIRED")
     fills = db.execute("SELECT * FROM paper_fills WHERE paper_id=? ORDER BY id", (paper_id,)).fetchall()
+    terminal = False
+    if (family == "LETRAS" and root["status"] == "CLOSED"
+            and root["close_reason"] == "FI_NATIVE_MATURITY_REVIEWED"):
+        present = db.execute("""SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='paper_fi_native_maturities'""").fetchone()
+        receipt = (db.execute("SELECT closed_at FROM paper_fi_native_maturities WHERE paper_id=?",
+                              (paper_id,)).fetchone() if present else None)
+        terminal = (receipt is not None and root["closed_at"] is not None
+                    and aware_datetime(receipt[0]) == aware_datetime(root["closed_at"]))
     if (len(fills) != 1 or fills[0]["side"] != "BUY_SIMULATED"
-            or fills[0]["source"] != "PRODUCTION_PAPER" or root["status"] != "OPEN"):
+            or fills[0]["source"] != "PRODUCTION_PAPER"
+            or (root["status"] != "OPEN" and not terminal)):
         raise ValueError("FI_LEDGER_INTACT_BUY_LOT_REQUIRED")
     buy = dict(fills[0])
     quantity = decimal_value(root["quantity"], "nominal", positive=True)
@@ -137,7 +147,9 @@ def _entitlement(seed, event, receipt, at, prior_events):
     if term in {"INMEDIATA", "CI", "T+0"}:
         expected, basis = opened, "PAPER_CI_AT_TRADE"
     elif term in {"A-24HS", "24HS", "T+1"}:
-        expected = conservative_unconfirmed_availability(term, seed.opened_at)
+        expected = conservative_unconfirmed_availability(
+            term, seed.opened_at, family=seed.family, market=seed.market,
+            currency=seed.trading_currency)
         basis = "PAPER_CONSERVATIVE_FULL_SETTLEMENT_DATE"
     else:
         expected, basis = None, ""
@@ -208,6 +220,11 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
                 raise ValueError("FI_LEDGER_BOOKING_CLOCK_ROLLBACK")
             return reduce_events(seed, tuple(EconomicEvent(**json.loads(row["event_json"]))
                                              for row in rows), as_of=applied_at)
+        # Closed terminal seeds remain readable for PIT/replay, not writable.
+        # Even a cash-free fixing would invalidate the approved terminal DAG.
+        if db.execute("SELECT status FROM paper_positions WHERE paper_id=?",
+                      (seed.paper_id,)).fetchone()[0] != "OPEN":
+            raise ValueError("FI_LEDGER_TERMINAL_CLOSED")
         # Capacity limits new events, never an exact replay already committed.
         if len(rows) >= MAX_LOT_EVENTS:
             raise ValueError("FI_LEDGER_EVENT_BOUND_EXCEEDED")

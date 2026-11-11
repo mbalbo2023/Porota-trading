@@ -645,6 +645,40 @@ class TransferTests(unittest.TestCase):
 class A865ContainmentTests(unittest.TestCase):
     """Default executable boundary denies legacy consumers, without host I/O."""
 
+    def test_streamed_cleanup_source_loads_without_shared_checkout_on_target(self):
+        # Deploy V2 pipes each module through Python stdin. A root checkout on
+        # that host cannot be relied on at module-import time, or A979's
+        # existing HOLD79 would turn into an unstructured ImportError.
+        import builtins
+        import runpy
+        real_import = builtins.__import__
+
+        def block_checkout(name, *args, **kwargs):
+            if name in {'scripts.rc6_deploy_host_mutex', 'rc6_deploy_host_mutex'}:
+                raise ModuleNotFoundError('host checkout unavailable', name=name)
+            return real_import(name, *args, **kwargs)
+
+        for script in ('rc6_pretransfer_image_cleanup.py',
+                       'rc6_offline_current_image_cleanup.py',
+                       'rc6_offline_failed_image_cleanup.py'):
+            with self.subTest(script=script), \
+                 patch.object(builtins, '__import__', side_effect=block_checkout), \
+                 patch.object(subprocess, 'run', side_effect=AssertionError(
+                     'STREAMED_CLEANUP_LAUNCHED_HOST_COMMAND')) as process:
+                isolated = runpy.run_path(str(Path(__file__).resolve().parents[1] /
+                                              'scripts' / script), run_name='test_stream')
+                self.assertTrue(callable(isolated['cleanup']))
+                if script == 'rc6_pretransfer_image_cleanup.py':
+                    report = isolated['cleanup']()
+                    self.assertEqual(report['reason'],
+                                     'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+                    self.assertEqual(report['removed_tags'], [])
+                else:
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'):
+                        isolated['cleanup']()
+                self.assertEqual(process.call_count, 0)
+
     def test_unmigrated_wrapper_never_opens_lock_or_launches_child(self):
         fake_user = SimpleNamespace(pw_uid=1, pw_gid=1, pw_name='nobody', pw_dir='/tmp')
         with patch.object(mutex.os, 'geteuid', return_value=0), \
@@ -661,6 +695,120 @@ class A865ContainmentTests(unittest.TestCase):
                                        ATTEMPT, '--phase', phase, 'true'])
             self.assertEqual(acquire.call_count, 0)
             self.assertEqual(child.call_count, 0)
+
+    def test_pretransfer_default_denies_before_inventory_or_docker(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        with patch.object(pretransfer, 'safety', side_effect=AssertionError(
+                'PRETRANSFER_UNAUTHORIZED_HOST_INSPECTION')) as inspect, \
+             patch.object(pretransfer, 'docker', side_effect=AssertionError(
+                 'PRETRANSFER_UNAUTHORIZED_DOCKER')) as docker:
+            report = pretransfer.cleanup()
+        self.assertEqual(report['status'], 'RED')
+        self.assertEqual(report['reason'], 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+        self.assertEqual(report['removed_tags'], [])
+        self.assertEqual(report['space_recovered'], 0)
+        self.assertEqual(inspect.call_count, 0)
+        self.assertEqual(docker.call_count, 0)
+
+    def test_offline_entrypoints_default_deny_before_filesystem_and_docker(self):
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        for consumer in (current, failed):
+            with self.subTest(consumer=consumer.__name__), \
+                 patch.object(consumer, 'ROOT', Path('/nonexistent-r139-a865')), \
+                 patch.object(consumer, 'docker', side_effect=AssertionError(
+                     'OFFLINE_UNAUTHORIZED_DOCKER')) as docker:
+                with self.assertRaisesRegex(
+                        RuntimeError, 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'):
+                    consumer.cleanup()
+                self.assertEqual(docker.call_count, 0)
+
+    def test_docker_wrappers_reject_mutation_before_subprocess(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        commands = [('image', 'rm', 'porota-predeploy-v2:' + SHA),
+                    ('tag', 'original', 'renamed'), ('system', 'prune'),
+                    ('rm', 'foreign-container'), ('volume', 'rm', 'foreign'),
+                    ('network', 'rm', 'foreign'), ('exec', 'foreign', 'true')]
+        for consumer in (pretransfer, current, failed):
+            for args in commands:
+                with self.subTest(consumer=consumer.__name__, args=args), \
+                     patch.object(consumer.subprocess, 'run', side_effect=AssertionError(
+                         'UNAUTHORIZED_DOCKER_SUBPROCESS')) as process:
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'DOCKER_MUTATION_UNAUTHORIZED'):
+                        consumer.docker(*args)
+                    self.assertEqual(process.call_count, 0)
+
+    def test_same_repository_digest_is_not_independent_attempt_provenance(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        image = 'sha256:' + '1' * 64
+        with patch.object(pretransfer, 'references', return_value=set()), \
+             patch.object(pretransfer, 'inspect_image', return_value=(
+                 ['porota-predeploy-v2:' + SHA],
+                 ['porota-predeploy-v2@sha256:' + 'f' * 64])):
+            self.assertEqual(pretransfer.eligibility(image)[1],
+                             'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED')
+
+    def test_offline_cleanup_rejects_unbound_repository_digests(self):
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        record = {'Id': failed.IMAGE, 'RepoTags': list(failed.TAGS),
+                  'RepoDigests': ['porota-predeploy-v2@sha256:' + 'f' * 64],
+                  'Config': {'Labels': {'porota.predeploy': 'v2',
+                                        'porota.commit': failed.FAILED}}}
+        with patch.object(failed, 'docker', return_value=json.dumps([record])), \
+             patch.object(failed, 'references', return_value=set()):
+            with self.assertRaisesRegex(ValueError, 'ALIASED'):
+                failed.eligible_tags()
+
+    def test_finalizer_legacy_fd_rejected_before_inspection(self):
+        from scripts import porota_apply_host_control_plane_v2 as finalizer
+        with patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': '9'}), \
+             patch.object(finalizer.os, 'fstat', side_effect=AssertionError(
+                 'UNAUTHORIZED_FINALIZER_FD_INSPECTION')) as inspect:
+            with self.assertRaisesRegex(
+                    RuntimeError, 'MUTEX_CONSUMER_PROTOCOL_UNMIGRATED'):
+                finalizer._require_inherited_finalizer_mutex()
+            self.assertEqual(inspect.call_count, 0)
+
+    def test_cleanup_main_reports_red_without_sudo_or_docker(self):
+        # In-process only: neither a real subprocess nor a host credential is
+        # allowed even during this OFFHOST test. A979's HOLD79 stays intact.
+        from contextlib import ExitStack, nullcontext
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        cases = ((pretransfer, None, 79), (current, ['2147483648'], 79),
+                 (failed, None, 2))
+        for consumer, args, expected_rc in cases:
+            with self.subTest(consumer=consumer.__name__), ExitStack() as stack:
+                stack.enter_context(patch.object(consumer, 'docker',
+                    side_effect=AssertionError('UNAUTHORIZED_TEST_DOCKER')))
+                process = stack.enter_context(patch.object(consumer.subprocess, 'run',
+                    side_effect=AssertionError('UNAUTHORIZED_TEST_SUBPROCESS')))
+                if consumer is pretransfer:
+                    stack.enter_context(patch.object(consumer, 'promotion_lock',
+                        return_value=nullcontext()))
+                    stack.enter_context(patch.object(consumer,
+                        'require_root_owned_image_reference_proof',
+                        side_effect=consumer.OCIImageCustodyHold()))
+                if consumer is current:
+                    stack.enter_context(patch.object(consumer,
+                        'require_root_owned_image_reference_proof',
+                        side_effect=consumer.OCIImageCustodyHold()))
+                if consumer is failed:
+                    stack.enter_context(patch.object(consumer, 'ROOT',
+                        Path('/nonexistent-r139-a865')))
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    rc = consumer.main(args) if args is not None else consumer.main()
+                self.assertEqual(rc, expected_rc)
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(receipt['status'], 'RED')
+                self.assertEqual(receipt['removed_tags'], [])
+                self.assertEqual(receipt['space_recovered'], 0)
+                self.assertEqual(process.call_count, 0)
 
 
 class WorkflowIntegrationTests(unittest.TestCase):

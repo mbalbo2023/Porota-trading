@@ -131,6 +131,10 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         (cash_currency(currency),)).fetchall()
     pending = spot_ledger.pending(connection,at,currency)
     for row in rows:
+        if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+            # Durable terminal validation is mandatory even for old cutoffs.
+            spot_ledger.partition(connection, row, at)
+            continue
         if spot_ledger.sales(connection,row['paper_id']):
             continue
         if aware_datetime(row['closed_at']) > at:
@@ -142,8 +146,12 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
             "SELECT * FROM paper_fills WHERE paper_id=? AND side='SELL_SIMULATED'",(row['paper_id'],)).fetchall())
         if amount != expected:
             raise ValueError('Producido del recibo no concilia con el fill')
-        available = validated_sale_settlement(row['settlement'],row['closed_at'],
-                                             row['available_at'],row['basis'])
+        fields = set(row.keys())
+        available = validated_sale_settlement(
+            row['settlement'], row['closed_at'], row['available_at'], row['basis'],
+            family=row['asset_class'] if 'asset_class' in fields else None,
+            market=row['market'] if 'market' in fields else None,
+            currency=row['currency'] if 'currency' in fields else None)
         if amount > 0 and (available is None or available > at):
             pending += amount
     return pending

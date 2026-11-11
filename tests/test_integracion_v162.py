@@ -89,6 +89,50 @@ def _arbol(nombre):
     return ast.parse((RAIZ / nombre).read_text(encoding="utf-8"), filename=nombre)
 
 
+def _assert_candidate_only_image_tags(source):
+    """Inspect executable image-tag commands, not diagnostic wording.
+
+    This bounded shell grammar is deliberately not a universal shell parser.
+    """
+    # A shell backslash-newline joins one logical command; splitting first
+    # would miss a retag whose executable and verb occupy different lines.
+    logical_source = source.replace("\\\r\n", " ").replace("\\\n", " ")
+    tags = []
+    for line in logical_source.splitlines():
+        if "docker" not in line:
+            continue
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        commands, current = [], []
+        for word in lexer:
+            if word in {";", "&&", "||", "|", "&", "(", ")"}:
+                commands.append(current)
+                current = []
+            else:
+                current.append(word)
+        commands.append(current)
+        for words in commands:
+            if not words:
+                continue
+            # Do not discard echo/printf/eval/bash: shell substitutions and
+            # dynamically evaluated strings can execute a nested docker tag.
+            if not (any("docker" in word for word in words)
+                    and any("tag" in word for word in words)):
+                continue
+            positions = [i for i, word in enumerate(words) if Path(word).name == "docker"]
+            assert len(positions) == 1, "RETAG_COMMAND_NOT_LITERAL"
+            at = positions[0]
+            assert words[at:at + 2] == ["docker", "tag"]
+            assert words[:at] in ([], ["sudo", "-n"])
+            assert len(words[at:]) == 4
+            tags.append(tuple(words[at + 2:]))
+    expected = {
+        ("$FROZEN_IMAGE", "$CANDIDATE_IMAGE"),
+        ("$FROZEN_IMAGE", "$STABLE_IMAGE"),
+    }
+    assert len(tags) == len(expected) and set(tags) == expected
+
+
 def _llamadas_en(nombre):
     """Nombres de todas las funciones y métodos invocados en un archivo."""
     nombres = set()
@@ -601,7 +645,36 @@ class TestPipeline:
         assert "strategy: FIX_FORWARD_ONLY" in policy
         assert "rollback_allowed: false" in policy
         assert "FIX-FORWARD ONLY" in deploy
-        assert "rollback" not in deploy.lower()
+        _assert_candidate_only_image_tags(deploy)
+
+    def test_el_guard_de_promocion_no_confunde_mensajes_con_retag_anterior(self):
+        valid = ('sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"\n'
+                 'sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"\n'
+                 "echo 'NO_ROLLBACK; no scheduler recovery or rollback'\n")
+        _assert_candidate_only_image_tags(valid)
+        with pytest.raises(AssertionError):
+            _assert_candidate_only_image_tags(valid +
+                'sudo -n docker tag "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
+        with pytest.raises(AssertionError):
+            _assert_candidate_only_image_tags(valid +
+                'echo safe; docker tag "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
+        for invocation in ('sudo -n /usr/bin/docker tag',
+                           'docker --host unix:///var/run/docker.sock tag'):
+            with pytest.raises(AssertionError):
+                _assert_candidate_only_image_tags(valid + invocation +
+                    ' "$PREVIOUS_IMAGE" "$STABLE_IMAGE"\n')
+
+    @pytest.mark.parametrize("injected", [
+        'sudo -n docker \\' + '\n' + 'tag "$PREVIOUS_IMAGE" "$STABLE_IMAGE"',
+        'echo "$(docker tag $PREVIOUS_IMAGE $STABLE_IMAGE)"',
+        'eval "docker tag $PREVIOUS_IMAGE $STABLE_IMAGE"',
+        "bash -c 'docker tag $PREVIOUS_IMAGE $STABLE_IMAGE'",
+    ])
+    def test_no_retag_encubierto_en_lineas_o_evaluadores(self, injected):
+        baseline = ('sudo -n docker tag "$FROZEN_IMAGE" "$CANDIDATE_IMAGE"\n'
+                    'sudo -n docker tag "$FROZEN_IMAGE" "$STABLE_IMAGE"\n')
+        with pytest.raises(AssertionError):
+            _assert_candidate_only_image_tags(baseline + injected + '\n')
 
     def test_el_barrido_de_secretos_cubre_todo_el_arbol(self):
         ci = self._wf("ci.yml")

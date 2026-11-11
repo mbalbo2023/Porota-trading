@@ -4,7 +4,7 @@ All PPI traffic uses the actual SDK over the existing fake HTTP adapter. Native
 signals, quotes, snapshots and positions live only in isolated fixture SQLite.
 """
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -44,6 +44,28 @@ def native_store(tmp_path, assets, at):
             catalog_module.persist(c, row)
         catalog_module.sync_candidate_universe(c, at.isoformat())
     return store
+
+
+@pytest.mark.parametrize("missing", ["ticker", "type", "market", "currency", "settlement"])
+def test_request_identity_cannot_fill_missing_literal_ppi_key_in_native_batch(tmp_path, missing):
+    """A request-side full key cannot make incomplete provider evidence tradeable."""
+    at = datetime.fromisoformat("2026-10-05T14:00:00+00:00")
+    assets = [dict(ticker="TEST0", instrument_type="ACCIONES", market="BYMA",
+                   currency="ARS", settlement="A-24HS", status="AVAILABLE",
+                   capability="READY_PAPER_SPOT")]
+    store = native_store(tmp_path, assets, at)
+    with store.connect() as connection:
+        assert connection.execute("SELECT can_simulate FROM candidate_identity_v2").fetchone()[0] == 1
+        raw = json.loads(connection.execute(
+            "SELECT metadata_json FROM financial_instrument_catalog").fetchone()[0])
+        del raw[missing]
+        connection.execute("UPDATE financial_instrument_catalog SET metadata_json=?",
+                           (json.dumps(raw),))
+        catalog_module.sync_candidate_universe(connection, at.isoformat())
+        can_simulate, detail = connection.execute(
+            "SELECT can_simulate,detail FROM candidate_identity_v2").fetchone()
+    assert can_simulate == 0 and "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED" in detail
+    assert scalping.select_batch(store, limit=8)[0] == []
 
 
 def cold_shadow(values, warm_shadow, assets, at):

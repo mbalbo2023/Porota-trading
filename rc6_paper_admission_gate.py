@@ -233,6 +233,66 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
         return False, "PAPER_PREOPEN_RECEIPT_INVALID"
 
 
+def _pending_identity_material_change(connection, identity):
+    """Read only this identity's unresolved transitions; never waive/delete one.
+
+    Use the existing material projection, so a provenance-only historical
+    change is not promoted into a new trading veto. Missing/corrupt payloads
+    remain unverified. Fee-authority waivers are not option/underlying waivers.
+    """
+    from cp_contract_evidence_v2_hf6 import material_evidence_hash
+    rows = connection.execute("""
+        SELECT prev.evidence_json,curr.evidence_json
+        FROM contract_evidence_v2_changes ch
+        LEFT JOIN contract_evidence_v2_snapshots prev
+          ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
+         AND prev.currency=ch.currency AND prev.settlement=ch.settlement
+         AND prev.source_class=ch.source_class AND prev.evidence_hash=ch.previous_hash
+        LEFT JOIN contract_evidence_v2_snapshots curr
+          ON curr.family=ch.family AND curr.ticker=ch.ticker AND curr.market=ch.market
+         AND curr.currency=ch.currency AND curr.settlement=ch.settlement
+         AND curr.source_class=ch.source_class AND curr.evidence_hash=ch.current_hash
+        WHERE ch.family=? AND ch.ticker=? AND ch.market=? AND ch.currency=?
+          AND ch.settlement=? AND ch.status='CHANGED_REVIEW_REQUIRED'
+    """, identity).fetchall()
+    for previous, current in rows:
+        if previous is None or current is None:
+            return True
+        previous, current = json.loads(previous), json.loads(current)
+        if (not isinstance(previous, dict) or not isinstance(current, dict)
+                or material_evidence_hash(previous) != material_evidence_hash(current)):
+            return True
+    return False
+
+
+def _current_option_dependency_contract(connection, record, now):
+    """Normalize only an OPTION/dependency's current snapshots, without init/write."""
+    from bs_instrument_contracts import contract_from_metadata
+    from rc6_contract_bridge import normalize_group
+    identity = tuple(record[key] for key in ("instrument_type", "ticker", "market", "currency", "settlement"))
+    pending = _pending_identity_material_change(connection, identity)
+    rows = connection.execute("""
+        SELECT c.*,s.source_ref,s.effective_at,s.evidence_json,s.snapshot_id AS verified_snapshot_id
+        FROM contract_evidence_v2_current c LEFT JOIN contract_evidence_v2_snapshots s
+          ON s.snapshot_id=c.snapshot_id AND s.family=c.family AND s.ticker=c.ticker
+         AND s.market=c.market AND s.currency=c.currency AND s.settlement=c.settlement
+         AND s.source_class=c.source_class AND s.evidence_hash=c.evidence_hash
+        WHERE c.family=? AND c.ticker=? AND c.market=? AND c.currency=? AND c.settlement=?
+    """, identity).fetchall()
+    records = []
+    for row in rows:
+        item = dict(row)
+        if item.pop("verified_snapshot_id") is None:
+            raise ValueError("OPTION_CURRENT_SNAPSHOT_LINK_UNVERIFIED")
+        item["evidence"] = json.loads(item.pop("evidence_json"))
+        item["change_pending"] = pending
+        records.append(item)
+    normalized = normalize_group(records, now=now)
+    if normalized["contract_bridge"]["status"] != "NORMALIZED" or not normalized["financial_contract_v17"]:
+        raise ValueError("OPTION_CURRENT_SNAPSHOT_UNVERIFIED")
+    return contract_from_metadata(record["ticker"], record["instrument_type"], normalized["financial_contract_v17"])
+
+
 def paper_admission_guard(quote, store):
     """Recheck global GO and exact candidate terms at the final PAPER admission."""
     allowed, reason = admission_status()
@@ -253,6 +313,31 @@ def paper_admission_guard(quote, store):
                 or spec.market != market or (quote.asset_class in {"OPCIONES", "FUTUROS"}
                                       and quote.contract is None)):
             return False, "PAPER_EXACT_CONTRACT_MISMATCH"
+        if quote.asset_class == "OPCIONES":
+            from rc6_ppi_option_contract_policy import current_option_contract_reason
+            now = datetime.now(TZ)
+            with store.connect() as connection:
+                underlying_rows = [dict(row) for row in connection.execute("""
+                    SELECT * FROM financial_instrument_catalog
+                    WHERE ticker=? AND instrument_type IN ('ACCIONES','CEDEARS')
+                """, (spec.underlying,)).fetchall()]
+                reason = current_option_contract_reason(
+                    record, underlying_rows, quote.contract, checked_at=now.isoformat())
+                if reason:
+                    return False, reason
+                current_spec = _current_option_dependency_contract(connection, record, now)
+                for underlying in underlying_rows:
+                    if (underlying.get("status") == "AVAILABLE"
+                            and underlying.get("market") == "BYMA"
+                            and underlying.get("currency") == "ARS"
+                            and underlying.get("settlement") == "INMEDIATA"
+                            and str(json.loads(underlying.get("metadata_json") or "{}").get(
+                                "_discovery_source") or "").upper() == "PPI_PRIMARY"):
+                        _current_option_dependency_contract(connection, underlying, now)
+                reason = current_option_contract_reason(
+                    record, underlying_rows, current_spec, checked_at=now.isoformat())
+                if reason:
+                    return False, reason
     except (OSError, ValueError, TypeError, AttributeError, sqlite3.Error):
         return False, "PAPER_EXACT_CONTRACT_UNAVAILABLE"
     return True, ""

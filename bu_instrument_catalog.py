@@ -519,6 +519,36 @@ def ppi_full_key_evidence_reason(record):
     return "" if observed == expected else "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
 
 
+def ppi_option_full_key_evidence_reason(record):
+    """OPTION-only alias consistency, including its underlying's identity.
+
+    Keep the shared guard unchanged: external Watch/services may import it and
+    are separately owned. Only option-policy callers opt into this pure wrapper.
+    """
+    reason = ppi_full_key_evidence_reason(record)
+    if reason:
+        return reason
+    raw = record.get("raw")
+    if not isinstance(raw, dict):
+        raw = json.loads(record.get("metadata_json") or "{}")
+    try:
+        for names, normalize, wanted in (
+            (("ticker", "symbol"), lambda value: value.strip().upper(),
+             str(record.get("ticker") or "").strip().upper()),
+            (("type", "instrumentType", "_provider_instrument_type"), canonical_family,
+             canonical_family(record.get("instrument_type"))),
+        ):
+            for name in names:
+                value = raw.get(name)
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    continue
+                if not isinstance(value, str) or normalize(value) != wanted:
+                    return "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
+    except (ValueError, TypeError):
+        return "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
+    return ""
+
+
 def _candidate_retry_ambiguities(connection):
     table = connection.execute("""SELECT 1 FROM sqlite_master
       WHERE type='table' AND name='complementary_contract_retry'""").fetchone()

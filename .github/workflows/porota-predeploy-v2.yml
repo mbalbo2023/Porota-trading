@@ -16,9 +16,21 @@ concurrency:
 jobs:
   artifact-gate:
     name: Exact artifact predeploy gate
-    # Draft PRs cannot be promoted. Certify their final SHA once they become
-    # ready_for_review instead of spending a full native cycle while drafting.
-    if: ${{ !github.event.pull_request.draft }}
+    # R144 temporary publish lock: never start #1087 from its candidate branch,
+    # including a concurrent READY transition. Future unlock requires owner GO.
+    # Other PRs retain their existing draft/ready eligibility.
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+      toJSON(github.event.pull_request.draft) == 'false' &&
+      startsWith(toJSON(github.event.pull_request.head.ref), '"') &&
+      github.event.pull_request.head.ref != '' &&
+      startsWith(toJSON(github.event.pull_request.head.sha), '"') &&
+      github.event.pull_request.head.sha != '' &&
+      toJSON(github.event.pull_request.number) > 0 &&
+      !contains(toJSON(github.event.pull_request.number), '.') &&
+      !contains(toJSON(github.event.pull_request.number), 'e') &&
+      github.event.pull_request.number != 1087 &&
+      github.event.pull_request.head.ref != 'integration/rc6-a1115-r87-unified-paper-candidate-20261110' }}
     runs-on: ubuntu-24.04
     # Existing35min gates + two12*120+60s physical stages + cleanup5min.
     timeout-minutes: 90
@@ -401,13 +413,46 @@ jobs:
           set -Eeuo pipefail
           rm -rf /tmp/porota-predeploy-app
           mkdir -p /tmp/porota-predeploy-app
-          cid="$(docker create "$IMAGE")"
-          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
-          docker cp "$cid:/app/." /tmp/porota-predeploy-app/
-          docker rm "$cid" >/dev/null
-          trap - EXIT
+          rc6_extract_container_id=
+          rc6_extract_owner="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
+          rc6_extract_owned() {
+            [[ "$rc6_extract_container_id" =~ ^[0-9a-f]{64}$ ]] || return 1
+            rc6_extract_actual="$(docker inspect -f '{{.Id}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.run_id"}}' "$rc6_extract_container_id" 2>/dev/null)" || return 1
+            [[ "$rc6_extract_actual" == "$rc6_extract_container_id$rc6_extract_owner" ]]
+          }
+          rc6_extract_cleanup() {
+            rc6_extract_rc=$?
+            trap - EXIT
+            if [[ -n "$rc6_extract_container_id" ]]; then
+              if ! rc6_extract_owned; then
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|created_container_identity_unverified_no_delete'
+                rc6_extract_rc=79
+              elif docker rm "$rc6_extract_container_id" >/dev/null 2>&1; then
+                echo 'POROTA_EXTRACT_CLEANUP=GREEN|verified_stopped_cid_removed'
+              else
+                echo 'POROTA_EXTRACT_CLEANUP=WARN|verified_cid_delete_failed'
+                rc6_extract_rc=79
+              fi
+            fi
+            if [[ "$rc6_extract_rc" -eq 0 ]]; then
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
+            else
+              echo 'POROTA_EXACT_ARTIFACT_EXTRACT=RED|no_unverified_cleanup'
+            fi
+            exit "$rc6_extract_rc"
+          }
+          trap rc6_extract_cleanup EXIT
+          trap 'exit 143' INT TERM HUP
+          if rc6_new_id="$(docker create --pull never \
+            --label "porota.commit=$CANDIDATE_SHA" --label porota.predeploy=v2 \
+            --label "porota.run_id=$GITHUB_RUN_ID" "$IMAGE")"; then
+            rc6_extract_container_id="$rc6_new_id"
+          else
+            exit 79
+          fi
+          rc6_extract_owned || exit 79
+          docker cp "$rc6_extract_container_id:/app/." /tmp/porota-predeploy-app/
           test -f /tmp/porota-predeploy-app/Dockerfile
-          echo 'POROTA_EXACT_ARTIFACT_EXTRACT=GREEN'
 
       - name: Artifact completeness and import closure
         shell: bash
@@ -424,6 +469,8 @@ jobs:
           x=json.load(open(p,encoding='utf-8'))
           assert x['status']=='GREEN'
           assert x['candidate_checkout_match']=='MATCH'
+          assert x['source_image_provenance']['status']=='GREEN'
+          print('POROTA_IMAGE_GIT_BLOB_PROVENANCE=GREEN')
           print('POROTA_ARTIFACT_FILES=' + str(x['artifact_runtime_files']))
           print('POROTA_ARTIFACT_MISSING=' + str(len(x['missing_runtime_files'])))
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
@@ -465,6 +512,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          echo 'POROTA_NATIVE_PROOF=HOLD|unverified_container_ownership'
+          exit 79
+          # The retained native source below is unreachable pending an
+          # independently reviewed exact-CID lifecycle and ownership protocol.
           install -d -m 777 "$RUNNER_TEMP/porota-native-sizing-evidence" "$RUNNER_TEMP/porota-native-sizing-evidence/tmp"
           cleanup_native_proof() {
             rc6_cleanup_rc=$?
@@ -516,22 +567,10 @@ jobs:
           # independent of cadence, but cadence legacy consumes fresh's exact
           # receipt and fixture. Keep fresh -> legacy ordered. Docker caps and
           # proof paths are separate; both branches must finish cleanly.
-          run_native_proof session python scripts/rc6_postdeploy_stress.py \
-            --output /proof/session > "$RUNNER_TEMP/porota-native-session.log" 2>&1 &
-          rc6_session_pid=$!
-          # Independent processes preserve each existing additive nice10 call.
-          # Every stage physically waits30s and verifies12full original audits.
-          run_native_proof cadence-fresh python scripts/rc6_postdeploy_stress.py \
-            --cadence-stage fresh --output /proof/cadence
-          run_native_proof cadence-legacy python scripts/rc6_postdeploy_stress.py \
-            --cadence-stage legacy --output /proof/cadence
-          set +e
-          wait "$rc6_session_pid"
-          rc6_session_rc=$?
-          set -e
-          cat "$RUNNER_TEMP/porota-native-session.log"
-          rc6_session_pid=
-          test "$rc6_session_rc" -eq 0
+          # Pure ordering is tested OFFHOST independently of the blocked
+          # physical Docker lifecycle. Only full native proof can print GREEN.
+          source ./scripts/rc6_predeploy_native_orchestration.sh
+          rc6_native_session_cadence
           echo 'POROTA_EXACT_IMAGE_NATIVE_SIZING=GREEN'
       - name: Exact image runtime smoke contract
         shell: bash
@@ -721,7 +760,8 @@ jobs:
           path: /tmp/porota-rca-learning.json
 
       - name: Predeploy summary
-        if: success()
+        # No GO certificate while cleanup/native ownership is unresolved.
+        if: ${{ false }}
         shell: bash
         run: |
           {
@@ -751,8 +791,5 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set +e
-          docker ps -aq --filter "ancestor=$IMAGE" | xargs -r docker rm -f
-          docker image rm "$IMAGE" >/dev/null 2>&1 || true
-          rm -rf /tmp/porota-predeploy-app /tmp/porota-artifact-manifest.json /tmp/porota-host-control-plane.json /tmp/porota-dependency-repro.json /tmp/porota-host-manifest-v2.json /tmp/porota-host-policy-v2.json /tmp/porota-deploy-bundle-v2.tgz /tmp/porota-deploy-bundle-v2-manifest.json /tmp/porota-predeploy-image.tar.gz /tmp/porota-frozen-candidate.json /tmp/porota-governed-tests.xml /tmp/porota-governed-tests.json /tmp/porota-rca-learning.json /tmp/porota-parallel-pilot.xml /tmp/porota-test-collection.txt /tmp/porota-test-exclusions.txt /tmp/porota-test-args.txt /tmp/porota-negative-fixtures.json "${RUNNER_TEMP}/porota-predeploy-evidence" "${RUNNER_TEMP}/porota-native-sizing-evidence"
-          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=GREEN'
+          echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=HOLD|resources_retained_ownership_unverified'
+          exit 79

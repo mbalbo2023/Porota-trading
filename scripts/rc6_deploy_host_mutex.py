@@ -57,6 +57,20 @@ def require_migrated_consumer_protocol() -> None:
     raise RuntimeError('MUTEX_CONSUMER_PROTOCOL_UNMIGRATED')
 
 
+def require_exclusive_docker_namespace() -> None:
+    """No physically enforced, candidate-exclusive Docker namespace is proven."""
+    raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+
+
+def require_readonly_docker_command(args: tuple) -> None:
+    """Disallow Docker mutators independently of a caller's cleanup policy."""
+    if args and (args[0] in {'ps', 'inspect'} or
+                 args[:2] in {('image', 'inspect'), ('image', 'ls'),
+                              ('system', 'df')}):
+        return
+    raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED')
+
+
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
     lock_path = directory_path / LOCK_PATH.name
     directory = os.lstat(directory_path)

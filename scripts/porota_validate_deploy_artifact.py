@@ -13,6 +13,7 @@ import ast
 from collections import deque
 import hashlib
 import json
+import os
 import re
 import shlex
 import stat
@@ -23,6 +24,21 @@ from pathlib import Path
 from typing import Iterable
 
 RUNTIME_SUFFIXES = {".py", ".c", ".h", ".so", ".sh", ".service", ".timer"}
+RUNTIME_METADATA_PREFIXES = ("ops/policy/", "ops/state/")
+SENSITIVE_EXTRA_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".p8", ".jks", ".kdbx"}
+SENSITIVE_EXTRA_NAMES = {
+    ".netrc", ".npmrc", ".pypirc", ".git-credentials",
+    "credentials", "credentials.json", "client_secret.json",
+    "secret.txt", "acceso_dashboard_droplet.txt",
+    "id_rsa", "id_ed25519", "id_ecdsa", "id_dsa",
+}
+SENSITIVE_EXTRA_DIRS = {".aws", ".ssh", ".gnupg", ".secrets", "secrets"}
+# Local virtualenvs and generated caches can legitimately contain publicly
+# distributed CA .pem certificates; none of these directories belongs to the
+# frozen Docker build context. They are not credential leakage evidence.
+IGNORED_LOCAL_CACHE_DIRS = {
+    "venv", ".venv", "__pycache__", ".pytest_cache", ".hypothesis", "htmlcov",
+}
 RUNTIME_EXACT = {
     ".dockerignore",
     "Dockerfile",
@@ -47,6 +63,8 @@ def is_runtime_relevant(path: str) -> bool:
     if p.parts and p.parts[0] in {"tests", "docs", ".github", ".agents"}:
         return False
     if path in RUNTIME_EXACT:
+        return True
+    if path.startswith(RUNTIME_METADATA_PREFIXES):
         return True
     if p.suffix in RUNTIME_SUFFIXES:
         return True
@@ -401,6 +419,37 @@ def artifact_files(artifact_root: Path) -> set[str]:
     }
 
 
+def _preflight_artifact_tree(artifact_root: Path) -> None:
+    """Reject aliases and special files before parsing or hashing image data.
+
+    The tree must remain stable for the subsequent validation; this scan is
+    not an atomic snapshot or a defense against concurrent replacement.
+    """
+    root = Path(os.path.abspath(artifact_root))
+    for path in reversed((root, *root.parents)):
+        mode = path.lstat().st_mode
+        if not stat.S_ISDIR(mode):
+            raise ValueError("ARTIFACT_ANCESTOR_NOT_DIRECTORY")
+    pending = [root]
+    count = total_bytes = 0
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                count += 1
+                if count > 1_000_000:
+                    raise ValueError("ARTIFACT_MEMBER_LIMIT")
+                if stat.S_ISDIR(info.st_mode):
+                    pending.append(Path(entry.path))
+                elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
+                    total_bytes += info.st_size
+                    if info.st_size > 16 * 1024**3 or total_bytes > 64 * 1024**3:
+                        raise ValueError("ARTIFACT_BYTE_LIMIT")
+                else:
+                    raise ValueError("ARTIFACT_MEMBER_UNSAFE")
+
+
 def root_local_modules(repo_root: Path, expected: Iterable[str]) -> dict[str, str]:
     modules: dict[str, str] = {}
     for rel in expected:
@@ -449,6 +498,171 @@ def sha256(path: Path) -> str:
 
 
 
+def is_sensitive_untracked_extra(path: str) -> bool:
+    """Fail closed if an untracked image addition looks like credential material.
+
+    This does not inspect or print file contents, and deliberately keeps the
+    existing runtime relevance / generated native extension rules separate.
+    """
+    parts = tuple(part.lower() for part in Path(path).parts)
+    name = parts[-1] if parts else ""
+    return bool(
+        name in SENSITIVE_EXTRA_NAMES
+        or (name.startswith(".env") and name != ".env.example")
+        or Path(name).suffix in SENSITIVE_EXTRA_SUFFIXES
+        or any(part in SENSITIVE_EXTRA_DIRS for part in parts[:-1])
+    )
+
+
+class SourceImageProvenanceError(ValueError):
+    """Exact Git source / frozen image identity could not be established."""
+
+
+def _git_bytes(repo_root: Path, *args: str) -> bytes:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(repo_root), *args], stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SourceImageProvenanceError("GIT_BLOB_EVIDENCE_UNAVAILABLE") from exc
+
+
+def _git_blob_sha256(repo_root: Path, blob_oid: str) -> str:
+    """Read the exact committed Git blob, not potentially changed worktree."""
+    if re.fullmatch(r"[0-9a-f]{40,64}", blob_oid) is None:
+        raise SourceImageProvenanceError("GIT_BLOB_OBJECT_INVALID")
+    digest = hashlib.sha256()
+    try:
+        with subprocess.Popen(
+            ["git", "-C", str(repo_root), "cat-file", "blob", blob_oid],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        ) as proc:
+            assert proc.stdout is not None
+            for chunk in iter(lambda: proc.stdout.read(1024 * 1024), b""):
+                digest.update(chunk)
+            if proc.wait() != 0:
+                raise SourceImageProvenanceError("GIT_BLOB_CONTENT_UNAVAILABLE")
+    except OSError as exc:
+        raise SourceImageProvenanceError("GIT_BLOB_CONTENT_UNAVAILABLE") from exc
+    return digest.hexdigest()
+
+
+def exact_git_image_bytes(repo_root: Path, artifact_root: Path,
+                          candidate_sha: str) -> dict:
+    """Attest *each* Git-tracked file present in the extracted image.
+
+    Required runtime files (including ops/policy) remain a separate strict
+    completeness check. Intentional .dockerignore omissions such as docs/data
+    are not treated as runtime inputs. Untracked runtime inputs and dirty Git
+    worktrees fail closed. Additional untracked credential-like files also
+    fail closed, even if they are not Python or other runtime source. Generated
+    native .so files have no tracked blob and retain their independent
+    native_extension_closure / ABI verification.
+    """
+    if re.fullmatch(r"[0-9a-f]{40}", candidate_sha) is None:
+        raise SourceImageProvenanceError("CANDIDATE_SHA_INVALID")
+    head = _git_bytes(repo_root, "rev-parse", "HEAD").decode("ascii").strip()
+    if head != candidate_sha:
+        raise SourceImageProvenanceError("GIT_HEAD_CANDIDATE_SHA_MISMATCH")
+    # Git's tree SHA alone is not a proof that tests did not mutate checkout.
+    tracked_dirty = _git_bytes(repo_root, "diff", "--name-only", "HEAD", "--").decode("utf-8").splitlines()
+    staged_dirty = _git_bytes(repo_root, "diff", "--cached", "--name-only", "--").decode("utf-8").splitlines()
+    untracked = [p.decode("utf-8") for p in _git_bytes(
+        repo_root, "ls-files", "--others", "--exclude-standard", "-z",
+    ).split(b"\0") if p]
+    untracked_runtime = sorted(p for p in untracked if is_runtime_relevant(p))
+    untracked_sensitive = sorted(p for p in untracked if is_sensitive_untracked_extra(p))
+    # `--exclude-standard` intentionally hides .env/.secrets via .gitignore.
+    # Query ignored files by name as a separate fail-closed checkout proof,
+    # without opening sensitive bytes or falsely blocking virtualenv CA roots.
+    ignored = [p.decode("utf-8") for p in _git_bytes(
+        repo_root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+    ).split(b"\0") if p]
+    ignored_sensitive = sorted(
+        p for p in ignored
+        if (Path(p).parts and Path(p).parts[0].lower() not in IGNORED_LOCAL_CACHE_DIRS
+            and is_sensitive_untracked_extra(p))
+    )
+
+    rows = _git_bytes(repo_root, "ls-tree", "-rz", "--full-tree", candidate_sha)
+    tracked: dict[str, str] = {}
+    tracked_aliases: list[str] = []
+    for item in rows.split(b"\0"):
+        if not item:
+            continue
+        record, rel_raw = item.split(b"\t", 1)
+        mode, obj_type, oid = record.decode("ascii").split()
+        rel = rel_raw.decode("utf-8")
+        if obj_type != "blob":
+            if is_runtime_relevant(rel):
+                tracked_aliases.append(rel)
+            continue
+        tracked[rel] = oid
+        if mode == "120000" and is_runtime_relevant(rel):
+            tracked_aliases.append(rel)
+
+    image = artifact_files(artifact_root)
+    # `rglob` does not traverse a symlinked directory: inspect the directory
+    # entries themselves so a policy path redirected outside /app fails rather
+    # than silently appearing missing (or being skipped by the blob checker).
+    image_aliases = sorted(
+        p.relative_to(artifact_root).as_posix()
+        for p in artifact_root.rglob("*") if p.is_symlink()
+    )
+    # The image may legitimately contain the compiled native extension built
+    # from its tracked C input; its ABI/module proof is independent of Git.
+    native_extensions, _ = native_extension_closure(
+        artifact_root, image, git_tracked_runtime_files(repo_root),
+    )
+    generated_native = {item["path"] for item in native_extensions}
+    untracked_image_runtime = sorted(
+        rel for rel in image
+        if is_runtime_relevant(rel) and rel not in tracked
+        and rel not in generated_native
+    )
+    untracked_image_sensitive = sorted(
+        rel for rel in image
+        if rel not in tracked and is_sensitive_untracked_extra(rel)
+    )
+    mismatches: list[dict[str, str]] = []
+    verified = 0
+    for rel, oid in sorted(tracked.items()):
+        if rel not in image:
+            continue  # Required absences are rejected by validate(...expected).
+        path = artifact_root / rel
+        if (path.is_symlink() or path.stat().st_nlink != 1 or
+                any(parent.is_symlink() for parent in path.parents if parent != artifact_root
+                    and artifact_root in parent.parents)):
+            mismatches.append({"path": rel, "reason": "SOURCE_IMAGE_ALIAS_UNSAFE"})
+            continue
+        expected_sha256 = _git_blob_sha256(repo_root, oid)
+        actual_sha256 = sha256(path)
+        if expected_sha256 != actual_sha256:
+            mismatches.append({"path": rel, "reason": "SOURCE_IMAGE_BYTES_DRIFT"})
+        else:
+            verified += 1
+
+    return {
+        "status": "GREEN" if not (mismatches or tracked_dirty or staged_dirty or
+                                      untracked_runtime or untracked_image_runtime or
+                                      untracked_sensitive or ignored_sensitive or
+                                      untracked_image_sensitive or
+                                      tracked_aliases or image_aliases or not verified) else "FAILED",
+        "candidate_sha": candidate_sha,
+        "source": "COMMITTED_GIT_BLOB_NOT_WORKTREE",
+        "verified_tracked_image_files": verified,
+        "image_tracked_source_mismatches": mismatches,
+        "dirty_tracked_files": sorted(set(tracked_dirty + staged_dirty)),
+        "untracked_runtime_files": untracked_runtime,
+        "untracked_image_runtime_files": untracked_image_runtime,
+        "untracked_sensitive_files": untracked_sensitive,
+        "ignored_sensitive_files": ignored_sensitive,
+        "untracked_image_sensitive_files": untracked_image_sensitive,
+        "runtime_gitlinks_or_symlinks": sorted(set(tracked_aliases)),
+        "image_symlink_paths": image_aliases,
+    }
+
+
+
 def native_extension_closure(artifact_root: Path, present: set[str], expected: list[str]) -> tuple[list, list]:
     """Derive binary requirements from tracked CPython module definitions."""
     modules, missing = [], []
@@ -472,6 +686,7 @@ def native_extension_closure(artifact_root: Path, present: set[str], expected: l
 
 
 def validate(repo_root: Path, artifact_root: Path, expected: list[str]) -> dict:
+    _preflight_artifact_tree(artifact_root)
     present = artifact_files(artifact_root)
     missing_runtime = sorted(p for p in expected if p not in present)
 
@@ -533,7 +748,7 @@ def main() -> int:
     args = ap.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    artifact_root = Path(args.artifact_root).resolve()
+    artifact_root = Path(os.path.abspath(args.artifact_root))
     if args.candidate_sha is not None:
         try:
             checkout_sha = subprocess.check_output(
@@ -569,7 +784,12 @@ def main() -> int:
             return 1
 
     expected = git_tracked_runtime_files(repo_root)
-    result = validate(repo_root, artifact_root, expected)
+    try:
+        result = validate(repo_root, artifact_root, expected)
+    except (ValueError, OSError) as exc:
+        print("POROTA_ARTIFACT_INTEGRITY=FAILED_ARTIFACT_PREFLIGHT:" + str(exc),
+              file=sys.stderr)
+        return 1
     try:
         result["python_source_provenance"] = python_source_provenance(
             repo_root, git_tracked_python_files(repo_root),
@@ -584,6 +804,17 @@ def main() -> int:
     result["candidate_checkout_match"] = (
         "MATCH" if args.candidate_sha is not None else "NO_VERIFICADO"
     )
+    if args.candidate_sha is not None:
+        try:
+            result["source_image_provenance"] = exact_git_image_bytes(
+                repo_root, artifact_root, args.candidate_sha,
+            )
+        except (SourceImageProvenanceError, OSError, UnicodeError, ValueError) as exc:
+            print("POROTA_ARTIFACT_INTEGRITY=FAILED_SOURCE_IMAGE_PROVENANCE:" + str(exc),
+                  file=sys.stderr)
+            return 1
+        if result["source_image_provenance"]["status"] != "GREEN":
+            result["status"] = "FAILED"
 
     payload = json.dumps(result, indent=2, sort_keys=True)
     if args.manifest_out:
