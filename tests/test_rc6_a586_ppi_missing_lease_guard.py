@@ -205,38 +205,32 @@ def test_off_shadow_with_absent_shared_budget_never_sends_market_get(
         direct_guard.restore()
 
 
-def test_genuine_approved_global_budget_keeps_durable_book_lease(wire, tmp_path, monkeypatch):
+def test_self_hashed_dynamic_approval_never_grants_book_lease(wire, tmp_path):
     from be_paper_engine import PaperStore
 
     clock, provider_calls, _ = wire
-    validated = approved(wire)  # capacity evidence from in-memory fake SDK
+    validated = approved(wire)  # self-consistent in-memory benchmark, not external PPI/Watch authority
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    runtime = RuntimePPIBudget(store.path, controller(validated), clock=clock.now)
+    authority = controller(validated)
+    state = authority.state(clock.now())
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert not state["production_limits_modified"] and "global_budget" not in state
+    assert state["real_orders_sent"] == 0
+    runtime = RuntimePPIBudget(store.path, authority, clock=clock.now)
     assert not runtime.path.exists()
 
-    admitted = []
-    original_acquire = runtime.acquire
-
-    def capture_admission(*args, **kwargs):
-        result = original_acquire(*args, **kwargs)
-        admitted.append(result)
-        return result
-
-    monkeypatch.setattr(runtime, "acquire", capture_admission)
     provider_calls.clear()  # excludes capacity fixture's fake SDK measurements
     guard = ReadOnlyTransportGuard(budget=runtime, consumer="EXIT_READER").install()
     try:
         with guard.read_scope(priority="EXIT_CRITICAL"):
-            result = requests.get(BOOK_URL)
-        assert result.status_code == 200
-        assert len(provider_calls) == 1
-        assert len(admitted) == 1
-        assert admitted[0]["allowed"] is True
-        assert isinstance(admitted[0]["lease"], str) and admitted[0]["lease"]
-        assert runtime.path.is_file()
-        assert runtime.path.stat().st_mode & 0o777 == 0o600
-        assert runtime.budget.metrics()["by_endpoint"]["book"]["used"] == 1
+            with pytest.raises(BudgetBackpressure, match="PPI_BUDGET_LEASE_UNVERIFIED"):
+                requests.get(BOOK_URL)
+        assert guard.calls_allowed == 0
+        assert not provider_calls
+        assert runtime.budget is None
+        assert not runtime.path.exists()
     finally:
         guard.restore()
 

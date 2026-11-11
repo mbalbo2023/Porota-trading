@@ -1,6 +1,10 @@
-from packaging.markers import default_environment
 import sys
+from pathlib import Path
+
 import pytest
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from scripts.porota_dependency_repro_audit import (
     audit,
@@ -163,6 +167,58 @@ def test_installed_closure_detects_setuptools_dependency_from_ppi_client():
     )
     assert result["status"] == "REPRODUCIBILITY_GAP"
     assert result["missing_transitive_pins"] == ["setuptools"]
+
+
+def test_rc6_python311_lock_pins_ppi_and_pytest_transitives_without_ambient_tooling():
+    """Guard two Python 3.11 resolver additions, not a synthetic image receipt."""
+    lock_text = (Path(__file__).resolve().parents[1] / "requirements.lock.txt").read_text(
+        encoding="utf-8"
+    )
+    rows = requirement_rows(lock_text)
+    assert len(rows) == 155
+    assert all(row["exact_pin"] for row in rows)
+    requirements = [Requirement(str(row["requirement"])) for row in rows]
+    pins = {
+        canonicalize_name(req.name): next(iter(req.specifier)).version
+        for req in requirements
+    }
+    assert len(pins) == len(rows)  # No duplicate distribution under an alias.
+    assert {name: pins[name] for name in ("pytest", "ppi-client", "packaging", "setuptools")} == {
+        "pytest": "9.1.1",
+        "ppi-client": "1.3.0",
+        "packaging": "26.3",
+        "setuptools": "84.2.1",
+    }
+
+    # A synthetic projection of the two observed Python 3.11 metadata edges.
+    # No pip/wheel is inserted: those need independent, image-bound base evidence.
+    report = _inspect_report([
+        ("pytest", "9.1.1", ["packaging>=22"]),
+        ("packaging", "26.3", []),
+        ("ppi_client", "1.3.0", ["setuptools>=52.0.0"]),
+        ("setuptools", "84.2.1", []),
+    ])
+    projection = "".join(f"{name}=={pins[name]}\n" for name in (
+        "pytest", "packaging", "ppi-client", "setuptools"
+    ))
+    result = audit_installed_closure(
+        projection, report, image_id=_IMAGE_ID, pip_check_ok=True,
+    )
+    assert result["graph_status"] == "CONSISTENT"
+    assert result["status"] == "NO_VERIFICADO"
+    assert result["locked_packages_verified"] == 4
+    assert result["missing_transitive_pins"] == []
+    assert result["unexpected_installed"] == []
+
+    # A system-provided installer may not be silently exempted from exact closure.
+    report["installed"].append({
+        "metadata": {"name": "pip", "version": "26.2.2", "requires_dist": []}
+    })
+    with_unpinned_installer = audit_installed_closure(
+        projection, report, image_id=_IMAGE_ID, pip_check_ok=True,
+    )
+    assert with_unpinned_installer["status"] == "REPRODUCIBILITY_GAP"
+    assert with_unpinned_installer["unexpected_installed"] == ["pip"]
 
 
 def test_installed_closure_detects_incompatible_pin_and_unlocked_extra():

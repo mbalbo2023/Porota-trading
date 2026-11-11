@@ -113,6 +113,13 @@ def test_ingesta_background_se_limita_a_una_vez_por_rueda_postcierre(tmp_path):
     ) is False
     assert observer._background_ingest_due(
         store, now=datetime(2026, 9, 29, 17, 1, tzinfo=observer.TZ)
+    ) is False
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 17, 14, tzinfo=observer.TZ)
+    ) is False
+    # En septiembre, el piso EOD es 17:15 ART; cierre spot 17:00 no basta.
+    assert observer._background_ingest_due(
+        store, now=datetime(2026, 9, 29, 17, 15, tzinfo=observer.TZ)
     ) is True
 
 
@@ -146,7 +153,9 @@ def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
         assert source == "2026-09-25T20:00:00+00:00"
         assert due(store, now=datetime(2026, 9, 29, 23, 30, tzinfo=observer.TZ)) is False
         assert due(store, now=datetime(2026, 9, 30, 16, 59, tzinfo=observer.TZ)) is False
-        assert due(store, now=datetime(2026, 9, 30, 17, 1, tzinfo=observer.TZ)) is True
+        assert due(store, now=datetime(2026, 9, 30, 17, 1, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 17, 14, tzinfo=observer.TZ)) is False
+        assert due(store, now=datetime(2026, 9, 30, 17, 15, tzinfo=observer.TZ)) is True
 
 
 def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypatch):

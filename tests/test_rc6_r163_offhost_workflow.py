@@ -4,10 +4,12 @@ These tests analyze workflow declarations; they are not Docker/Actions proof.
 """
 
 import ast
+import hashlib
 from pathlib import Path
 import re
 import subprocess
 import sys
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -56,6 +58,55 @@ def _junit_guard_source():
     ast.parse(match.group(1))
     assert body.index(match.group(0)) < body.index('docker stop --time 10 "$source_cid"')
     return match.group(1)
+
+
+def _raw_rest_digest_contract_source():
+    job = _workflow()["jobs"]["offhost-independent-bytes"]
+    body = _runs(job)
+    match = re.search(r"(?ms)^# RC6_R163_DIGEST_CONTRACT_BEGIN\n(.*?)^# RC6_R163_DIGEST_CONTRACT_END$", body)
+    assert match is not None, "Missing executable raw REST vs Action upload digest contract"
+    ast.parse(match.group(1))
+    return match.group(1)
+
+
+def _run_raw_rest_digest_contract(archive: bytes, action_output: str, rest_digest: str):
+    script = _raw_rest_digest_contract_source()
+    scope = {"hashlib": hashlib, "re": re, "archive": archive,
+             "artifact": {"digest": rest_digest},
+             "os": SimpleNamespace(environ={"RC6_ARTIFACT_DIGEST": action_output})}
+    exec(compile(script, "R163_REST_DIGEST_CONTRACT", "exec"), scope)
+
+
+def test_action_upload_v4_bare_hex_and_rest_prefixed_digest_bind_same_raw_zip():
+    archive = b"exact raw REST ZIP bytes (synthetic test fixture)"
+    sha = hashlib.sha256(archive).hexdigest()
+    _run_raw_rest_digest_contract(archive, sha, "sha256:" + sha)
+
+
+@pytest.mark.parametrize("case", (
+    "action_prefixed", "action_wrong_hash", "action_uppercase", "action_blank",
+    "rest_bare", "rest_wrong_hash", "rest_double_prefix",
+))
+def test_raw_zip_digest_contract_rejects_wrong_prefix_or_bytes(case):
+    archive = b"exact raw REST ZIP bytes (synthetic test fixture)"
+    sha = hashlib.sha256(archive).hexdigest()
+    action, rest = sha, "sha256:" + sha
+    if case == "action_prefixed":
+        action = "sha256:" + sha
+    elif case == "action_wrong_hash":
+        action = "0" * 64
+    elif case == "action_uppercase":
+        action = sha.upper()
+    elif case == "action_blank":
+        action = ""
+    elif case == "rest_bare":
+        rest = sha
+    elif case == "rest_wrong_hash":
+        rest = "sha256:" + "0" * 64
+    elif case == "rest_double_prefix":
+        rest = "sha256:sha256:" + sha
+    with pytest.raises(AssertionError):
+        _run_raw_rest_digest_contract(archive, action, rest)
 
 
 def _make_junit_proofs(root: Path):

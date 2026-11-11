@@ -1,5 +1,8 @@
+import json
 import sqlite3
 from datetime import datetime, timezone
+
+import pytest
 
 import cp_contract_evidence_v2_hf6 as evidence
 import cq_family_contract_rules_hf6 as rules
@@ -86,14 +89,30 @@ def test_legacy_iol_option_lot_and_contract_never_gain_series_authority():
     assert payload["records"][0]["financial_contract_v17"]["cash_multiplier"] == "100"
 
 
+def _synthetic_ppi_option_with_full_key():
+    """Historical fake PPI evidence, not a live receipt or READY authorization."""
+    description = "Opción compra GGAL AR$ 6000 Vto. 16/10/2026"
+    return {
+        "ticker": "GFGC6000OC", "instrument_type": "OPCIONES", "market": "BYMA",
+        "currency": "ARS", "settlement": "INMEDIATA",
+        "settlement_source": "PPI_FIELD", "status": "AVAILABLE",
+        "capability": "NEEDS_OPTION_CONTRACT", "last_seen_at": NOW.isoformat(),
+        "description": description,
+        "metadata_json": json.dumps({
+            "_discovery_source": "PPI_PRIMARY",
+            "ticker": "GFGC6000OC", "type": "OPCIONES", "market": "BYMA",
+            "currency": "ARS", "settlement": "INMEDIATA",
+            "description": description,
+        }),
+    }
+
+
 def test_iol_option_quarantine_does_not_block_independent_ppi_byma_policy(tmp_path):
-    ppi = {"ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BYMA",
-           "currency":"ARS","settlement":"INMEDIATA","status":"AVAILABLE",
-           "capability":"NEEDS_OPTION_CONTRACT",
-           "description":"Opción compra GGAL AR$ 6000 Vto. 16/10/2026",
-           "metadata_json":'{"_discovery_source":"PPI_PRIMARY"}'}
-    assert ppi_option.standard_long_option_evidence(
-        ppi,{"GGAL":"ACCIONES"})["cash_multiplier"] == "100"
+    ppi = _synthetic_ppi_option_with_full_key()
+    static_terms = ppi_option.standard_long_option_evidence(
+        ppi, {"GGAL": "ACCIONES"})
+    assert static_terms["cash_multiplier"] == "100"
+    assert static_terms["policy_scope"] == "PRODUCTION_PAPER_SIMULATION_ONLY"
     store=Store(tmp_path / "option-quarantine.db")
     iol={"schema":"rc6-iol-family-reference-v1","records":[{
         "ticker":"GFGC6000OC","instrument_type":"OPCIONES","market":"BCBA",
@@ -105,6 +124,21 @@ def test_iol_option_quarantine_does_not_block_independent_ppi_byma_policy(tmp_pa
     assert ingested["written"] == []
     assert ingested["blocked"][0]["blocker"] == "OPTION_SERIES_CONTRACT_UNVERIFIED"
     assert iol["records"][0]["option_chain_evidence"]["contract_lot"] == 100
+
+
+@pytest.mark.parametrize("missing_dimension", [
+    "settlement_source", "last_seen_at", "provider_settlement",
+])
+def test_static_ppi_option_evidence_requires_each_provider_attestation(missing_dimension):
+    ppi = _synthetic_ppi_option_with_full_key()
+    if missing_dimension == "provider_settlement":
+        raw = json.loads(ppi["metadata_json"])
+        del raw["settlement"]
+        ppi["metadata_json"] = json.dumps(raw)
+    else:
+        del ppi[missing_dimension]
+    assert ppi_option.standard_long_option_evidence(
+        ppi, {"GGAL": "ACCIONES"}) is None
 
 
 def test_scraping_is_only_last_resort_for_required_unresolved_field():

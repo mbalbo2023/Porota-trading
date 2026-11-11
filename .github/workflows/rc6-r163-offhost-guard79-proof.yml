@@ -460,7 +460,7 @@ jobs:
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$RC6_EXPECTED_SHA"
           python - <<'PY'
-          import hashlib, io, json, os, zipfile
+          import hashlib, io, json, os, re, zipfile
           from pathlib import Path
 
           def unique_pairs(pairs):
@@ -480,8 +480,12 @@ jobs:
           assert 0 < len(archive) <= 64 * 1024 * 1024, "ZIP_SIZE_INVALID"
           artifact = json_bytes((base / "rc6-r163-artifact-receipt.json").read_bytes())
           run = json_bytes((base / "rc6-r163-run-receipt.json").read_bytes())
-          digest = "sha256:" + hashlib.sha256(archive).hexdigest()
-          assert digest == os.environ["RC6_ARTIFACT_DIGEST"] == artifact["digest"], "ZIP_DIGEST_MISMATCH"
+          # RC6_R163_DIGEST_CONTRACT_BEGIN
+          raw_digest = hashlib.sha256(archive).hexdigest()
+          assert re.fullmatch(r"[0-9a-f]{64}", os.environ["RC6_ARTIFACT_DIGEST"]), "ACTION_DIGEST_FORMAT"
+          assert raw_digest == os.environ["RC6_ARTIFACT_DIGEST"], "ACTION_DIGEST_MISMATCH"
+          assert artifact.get("digest") == "sha256:" + raw_digest, "REST_DIGEST_MISMATCH"
+          # RC6_R163_DIGEST_CONTRACT_END
           assert artifact["id"] == int(os.environ["RC6_ARTIFACT_ID"])
           assert artifact["name"] == os.environ["RC6_ARTIFACT_NAME"]
           assert artifact["size_in_bytes"] == len(archive) and artifact["expired"] is False

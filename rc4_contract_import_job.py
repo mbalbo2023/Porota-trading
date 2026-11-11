@@ -190,7 +190,17 @@ def import_capture(store,path):
         return {'state':'BLOCKED_CAPTURE_INVALID','records':0,'changed':0,'conflicts':0}
     jobs=list(dict.fromkeys(raw.get('jobs') or [])); auth=str(raw.get('auth_status') or 'UNKNOWN')
     if auth!='AUTHENTICATED_TRUSTED_DEVICE':
-        return {'state':'BLOCKED_AUTH','auth_status':auth,'records':0,'changed':0,'conflicts':0}
+        # Only a schema-valid receipt claiming session expiry becomes an audit
+        # run, never authenticated contract evidence. Missing profile/runtime
+        # prerequisites cannot initialize a DB by presenting a blocked label.
+        if auth=='BLOCKED_AUTH_SESSION_EXPIRED':
+            for job in jobs:
+                rid='rc4-'+uuid.uuid4().hex
+                start_run(store,run_id=rid,job_key=job,detail='unverified browser auth blocked')
+                finish_run(store,run_id=rid,state='BLOCKED_AUTH',records=0,
+                           changed=0,conflicts=0,detail='auth blocked; no contract evidence')
+        return {'state':'BLOCKED_AUTH','auth_status':auth,'records':0,'changed':0,
+                'conflicts':0,'real_orders_sent':0}
     cmap=candidates(store); total=changed=conflicts=0; notes=[]
     run_ids={}
     for job in jobs:
