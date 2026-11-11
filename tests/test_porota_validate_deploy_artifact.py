@@ -89,6 +89,304 @@ def test_main_embeds_git_python_provenance_without_claiming_runtime(tmp_path, mo
     assert "POROTA_ARTIFACT_INTEGRITY=GREEN" in capsys.readouterr().out
 
 
+def test_main_provenance_follows_container_cmd_and_python_subprocess(tmp_path, monkeypatch):
+    """Docker CMD -> child Python -> local import must not disappear from provenance."""
+    repo, artifact, _ = cli_fixture(tmp_path)
+    files = {
+        "Dockerfile": 'FROM python:3.11-slim\nCMD ["python", "entrypoint.py"]\n',
+        "entrypoint.py": (
+            "import subprocess\nimport sys\n"
+            "def start_bot():\n"
+            "    return subprocess.Popen([sys.executable, 'j_main.py'])\n"
+        ),
+        "j_main.py": "import e_technical_engine\n",
+        "e_technical_engine.py": "import yfinance\n",
+    }
+    for path, body in files.items():
+        write(repo, path, body)
+        write(artifact, path, body)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run([
+        "git", "-C", str(repo), "-c", "user.name=Porota QA",
+        "-c", "user.email=qa@example.invalid", "commit", "-qm", "cmd-chain",
+    ], check=True)
+    candidate_sha = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True,
+    ).strip()
+    manifest = tmp_path / "manifest.json"
+    monkeypatch.setattr(sys, "argv", [
+        "porota_validate_deploy_artifact.py", "--repo-root", str(repo),
+        "--artifact-root", str(artifact), "--candidate-sha", candidate_sha,
+        "--manifest-out", str(manifest),
+    ])
+
+    assert artifact_guard.main() == 0
+    audit = json.loads(manifest.read_text(encoding="utf-8"))["python_source_provenance"]
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["entrypoint.py"]["classification"] == "ENTRYPOINT_DECLARED"
+    assert "CONTAINER_CMD_DECLARED:Dockerfile" in rows["entrypoint.py"]["provenance"]
+    assert rows["j_main.py"]["classification"] == "DEPENDENCY_DECLARED"
+    assert "LITERAL_PYTHON_SUBPROCESS:entrypoint.py" in rows["j_main.py"]["provenance"]
+    assert rows["e_technical_engine.py"]["classification"] == "DEPENDENCY_DECLARED"
+    assert "STATIC_IMPORT:j_main.py" in rows["e_technical_engine.py"]["provenance"]
+    assert all(row["runtime_proven"] == "NO_VERIFICADO" for row in rows.values())
+
+
+@pytest.mark.parametrize("command", [
+    'CMD ["sh", "-c", "python entrypoint.py"]\n',
+    'CMD ["python", "../foreign.py"]\n',
+    'CMD ["python", "-m", "entrypoint"]\n',
+])
+def test_provenance_does_not_infer_unsafe_or_shell_container_cmd(tmp_path, command):
+    """An opaque container command cannot certify a made-up Python root."""
+    write(tmp_path, "Dockerfile", "FROM python:3.11-slim\n" + command)
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    row = audit["sources"][0]
+    assert row["classification"] == "REVIEW_REQUIRED"
+    assert row["runtime_proven"] == "NO_VERIFICADO"
+    assert audit["unresolved_container_entrypoints"]
+
+
+def test_provenance_never_assumes_dynamic_python_subprocess(tmp_path):
+    """A computed child script stays unverified instead of inventing an edge."""
+    write(tmp_path, "entrypoint.py", (
+        "import subprocess\nimport sys\n"
+        "def start():\n"
+        "    subprocess.Popen([sys.executable, choose_script()])\n"
+    ))
+    write(tmp_path, "j_main.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "j_main.py"], entrypoints=["entrypoint.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["entrypoint.py"]["classification"] == "REVIEW_REQUIRED"
+    assert rows["j_main.py"]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_python_subprocesses"] == [
+        {"source": "entrypoint.py", "reason": "PYTHON_SUBPROCESS_TARGET_NOT_LITERAL"}
+    ]
+
+
+def test_provenance_non_python_subprocess_is_not_python_edge(tmp_path):
+    """A command mentioning a .py filename is not necessarily Python execution."""
+    write(tmp_path, "entrypoint.py", (
+        "import subprocess\n"
+        "def start():\n"
+        "    subprocess.Popen(['echo', 'j_main.py'])\n"
+    ))
+    write(tmp_path, "j_main.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "j_main.py"], entrypoints=["entrypoint.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["j_main.py"]["classification"] == "REVIEW_REQUIRED"
+    assert rows["j_main.py"]["provenance"] == []
+
+
+@pytest.mark.parametrize("override", ["cwd='/tmp'", "executable='/bin/sh'", "shell=True"])
+def test_provenance_subprocess_execution_override_never_certifies_local_child(tmp_path, override):
+    """A different working directory or executable invalidates the local edge."""
+    write(tmp_path, "entrypoint.py", (
+        "import subprocess\nimport sys\n"
+        "def start():\n"
+        f"    subprocess.Popen([sys.executable, 'j_main.py'], {override})\n"
+    ))
+    write(tmp_path, "j_main.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "j_main.py"], entrypoints=["entrypoint.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["j_main.py"]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_python_subprocesses"]
+
+
+def test_provenance_ignores_builder_stage_cmd_not_active_final_image(tmp_path):
+    """A builder-only CMD cannot stand in for the image's runtime command."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim AS builder\n"
+        'CMD ["python", "entrypoint.py"]\n'
+        "FROM python:3.11-slim\n"
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_container_entrypoints"]
+
+
+def test_provenance_docker_heredoc_and_healthcheck_are_not_top_level_cmd(tmp_path):
+    """Nested Python `from` and HEALTHCHECK CMD must not mask the real CMD."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim AS build\n"
+        "RUN python - <<'PY'\n"
+        "from pathlib import Path\n"
+        "PY\n"
+        "FROM python:3.11-slim\n"
+        "RUN python - <<'PY'\n"
+        "from pathlib import Path\n"
+        "PY\n"
+        "HEALTHCHECK --interval=30s \\\n"
+        "    CMD python -c 'pass'\n"
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "ENTRYPOINT_DECLARED"
+    assert audit["unresolved_container_entrypoints"] == []
+
+
+def test_provenance_ignores_from_and_cmd_inside_final_stage_run_heredoc(tmp_path):
+    """Literal Docker instructions inside RUN heredocs are not layer directives."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim AS builder\n"
+        "RUN python - <<'PY'\n"
+        "print('builder')\n"
+        "PY\n"
+        "FROM python:3.11-slim\n"
+        "RUN python - <<'PY'\n"
+        "FROM python:unexpected\n"
+        'CMD ["python", "foreign.py"]\n'
+        "PY\n"
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+    write(tmp_path, "foreign.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "foreign.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["entrypoint.py"]["classification"] == "ENTRYPOINT_DECLARED"
+    assert rows["foreign.py"]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_container_entrypoints"] == []
+
+
+def test_provenance_heredoc_cmd_alone_never_invents_runtime_root(tmp_path):
+    """A final image without CMD remains unknown even if RUN text contains CMD."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim\n"
+        "RUN <<EOF\n"
+        'CMD ["python", "foreign.py"]\n'
+        "EOF\n"
+    ))
+    write(tmp_path, "foreign.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["foreign.py"])
+    assert audit["sources"][0]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_container_entrypoints"]
+
+
+@pytest.mark.parametrize("ignored_lines", [
+    "# ignored comment\n",
+    "\n",
+    "# first comment\n\n# second comment\n",
+])
+def test_provenance_docker_run_continuation_skips_blank_and_comment_lines(
+    tmp_path, ignored_lines,
+):
+    """A CMD token after a continued RUN is not a runtime Docker directive."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim\n"
+        "RUN echo marker \\\n"
+        + ignored_lines +
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_container_entrypoints"]
+
+
+def test_provenance_docker_comment_in_run_does_not_hide_subsequent_real_cmd(tmp_path):
+    """Once a continued RUN ends, a later top-level CMD remains declarative."""
+    write(tmp_path, "Dockerfile", (
+        "FROM python:3.11-slim\n"
+        "RUN echo marker \\\n"
+        "# ignored comment\n"
+        "  && echo done\n"
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "ENTRYPOINT_DECLARED"
+    assert audit["unresolved_container_entrypoints"] == []
+
+
+@pytest.mark.parametrize("directive", [
+    "# escape=`", "# ESCAPE=`", "#escape=`",
+])
+def test_provenance_docker_alternate_escape_never_invents_cmd(tmp_path, directive):
+    """A CMD is part of continued RUN under Docker's backtick escape syntax."""
+    write(tmp_path, "Dockerfile", (
+        f"{directive}\n"
+        "FROM python:3.11-slim\n"
+        "RUN echo marker `\n"
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_container_entrypoints"] == [
+        "CONTAINER_DOCKER_ESCAPE_UNSUPPORTED"]
+
+
+def test_provenance_docker_explicit_default_escape_keeps_literal_cmd(tmp_path):
+    """An explicit default backslash escape does not invalidate genuine CMD."""
+    write(tmp_path, "Dockerfile", (
+        "# escape=\\\n"
+        "FROM python:3.11-slim\n"
+        'CMD ["python", "entrypoint.py"]\n'
+    ))
+    write(tmp_path, "entrypoint.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(tmp_path, ["entrypoint.py"])
+    assert audit["sources"][0]["classification"] == "ENTRYPOINT_DECLARED"
+    assert audit["unresolved_container_entrypoints"] == []
+
+
+@pytest.mark.parametrize("suffix", [
+    ", -1, '/bin/sh'",
+    ", **{'cwd': '/tmp'}",
+    ", **opaque_kwargs",
+])
+def test_provenance_popen_positional_or_expanded_override_denies_child(tmp_path, suffix):
+    """Popen arguments after argv can replace the claimed local execution."""
+    write(tmp_path, "entrypoint.py", (
+        "import subprocess\nimport sys\n"
+        "def start():\n"
+        f"    subprocess.Popen([sys.executable, 'child.py']{suffix})\n"
+    ))
+    write(tmp_path, "child.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "child.py"], entrypoints=["entrypoint.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["entrypoint.py"]["classification"] == "REVIEW_REQUIRED"
+    assert rows["child.py"]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_python_subprocesses"]
+
+
+def test_provenance_aliased_subprocess_import_remains_unverified(tmp_path):
+    """An aliased invocation must not silently disappear from review."""
+    write(tmp_path, "entrypoint.py", (
+        "import subprocess as proc\nimport sys as runtime\n"
+        "def start():\n"
+        "    proc.Popen([runtime.executable, 'child.py'])\n"
+    ))
+    write(tmp_path, "child.py", "pass\n")
+
+    audit = artifact_guard.python_source_provenance(
+        tmp_path, ["entrypoint.py", "child.py"], entrypoints=["entrypoint.py"])
+    rows = {row["path"]: row for row in audit["sources"]}
+    assert rows["entrypoint.py"]["classification"] == "REVIEW_REQUIRED"
+    assert rows["child.py"]["classification"] == "REVIEW_REQUIRED"
+    assert audit["unresolved_python_subprocesses"]
+
+
 def test_main_preserves_existing_cli_until_workflow_passes_candidate_sha(tmp_path, monkeypatch):
     """An omitted new flag must not break the pre-existing Action invocation."""
     repo, artifact, _candidate_sha = cli_fixture(tmp_path)

@@ -48,8 +48,9 @@ RUNTIME_EXACT = {
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
 }
-# These are declarations of the two container Python roots used by
-# porota_mode_manager.py, not a runtime-file allowlist or runtime proof.
+# These are two declared PAPER roots used by porota_mode_manager.py. The
+# Dockerfile CMD and literal Python subprocess children are discovered below;
+# none of these roots is a runtime-file allowlist or runtime proof.
 PAPER_IMAGE_ENTRYPOINTS = ("bv_paper_runtime.py", "o_dashboard.py")
 HOST_POLICY = "ops/policy/host-control-plane-reconciliation-v2.json"
 HOST_POLICY_ROLES = {
@@ -241,6 +242,155 @@ def _repo_regular_file(repo_root: Path, rel: str) -> bool:
         return False
 
 
+def _dockerfile_top_level_instructions(text: str) -> list[tuple[str, str]]:
+    """Read directives outside Docker heredocs and continuations only."""
+    instructions: list[tuple[str, str]] = []
+    heredocs: deque[tuple[str, bool]] = deque()
+    pending: tuple[str, str] | None = None
+    marker_re = re.compile(
+        r"<<(-?)(?:'([A-Za-z_][A-Za-z0-9_]*)'|"
+        r'"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))'
+    )
+    for line in text.splitlines():
+        if heredocs:
+            marker, strip_tabs = heredocs[0]
+            candidate = line.lstrip("\t") if strip_tabs else line
+            if candidate == marker:
+                heredocs.popleft()
+            continue
+        # Alternate Docker parser escapes change instruction boundaries. Until
+        # explicitly parsed, they cannot authorize an apparent runtime CMD.
+        if re.match(r"^\s*#\s*escape\s*=", line, re.IGNORECASE):
+            if line.partition("=")[2].strip() != "\\":
+                raise ValueError("CONTAINER_DOCKER_ESCAPE_UNSUPPORTED")
+        # Docker discards full-line comments and blank lines even while an
+        # instruction is continued. Neither terminates its escape sequence.
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if pending is not None:
+            kind, previous = pending
+            body = previous + " " + line.strip()
+        else:
+            match = re.match(r"^([A-Z]+)\s+(.+)$", line)
+            if match is None:
+                continue
+            kind, body = match.groups()
+        if line.rstrip().endswith("\\"):
+            pending = (kind, body[:-1].rstrip())
+            continue
+        pending = None
+        instructions.append((kind, body))
+        if "<<" in body:
+            markers = list(marker_re.finditer(body))
+            if not markers:
+                raise ValueError("CONTAINER_DOCKER_HEREDOC_UNRECOGNIZED")
+            for match in markers:
+                name = next(value for value in match.groups()[1:] if value)
+                heredocs.append((name, match.group(1) == "-"))
+    if pending is not None or heredocs:
+        raise ValueError("CONTAINER_DOCKER_MULTILINE_UNTERMINATED")
+    return instructions
+
+
+def _container_cmd_python_roots(repo_root: Path, paths: set[str]) -> tuple[set[str], list[str]]:
+    """Discover a literal Python Docker CMD; opaque forms stay unverified."""
+    dockerfile = repo_root / "Dockerfile"
+    if not dockerfile.exists():
+        return set(), []  # Older isolated provenance fixtures have no Dockerfile.
+    if not _repo_regular_file(repo_root, "Dockerfile"):
+        return set(), ["DOCKERFILE_NOT_REGULAR"]
+    try:
+        instructions = _dockerfile_top_level_instructions(
+            dockerfile.read_text(encoding="utf-8")
+        )
+    except ValueError as exc:
+        return set(), [str(exc)]
+    from_indices = [i for i, (kind, _) in enumerate(instructions)
+                    if kind == "FROM"]
+    if not from_indices:
+        return set(), ["CONTAINER_FINAL_STAGE_UNVERIFIED"]
+    commands = [(kind, value) for kind, value in instructions[from_indices[-1] + 1:]
+                if kind in {"CMD", "ENTRYPOINT"}]
+    if any(kind == "ENTRYPOINT" for kind, _ in commands):
+        return set(), ["CONTAINER_ENTRYPOINT_REQUIRES_REVIEW"]
+    cmd = [value for kind, value in commands if kind == "CMD"]
+    if len(cmd) != 1:
+        return set(), ["CONTAINER_CMD_NOT_UNIQUE"]
+    try:
+        argv = json.loads(cmd[0])
+    except (ValueError, TypeError):
+        return set(), ["CONTAINER_CMD_NOT_LITERAL_JSON"]
+    if (not isinstance(argv, list) or len(argv) < 2
+            or not all(isinstance(arg, str) for arg in argv)
+            or not re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(argv[0]).name)):
+        return set(), ["CONTAINER_CMD_NOT_LITERAL_PYTHON"]
+    script = argv[1]
+    if (script not in paths or not script.endswith(".py")
+            or not _repo_regular_file(repo_root, script)):
+        return set(), ["CONTAINER_CMD_PYTHON_SCRIPT_UNVERIFIED"]
+    return {script}, []
+
+
+def _literal_python_subprocess_paths(tree: ast.AST, paths: set[str]) -> tuple[set[str], bool]:
+    """Trace literal Python Popen children without executing their commands."""
+    imports = [alias for node in ast.walk(tree) if isinstance(node, ast.Import)
+               for alias in node.names]
+    subprocess_names = {alias.asname or alias.name for alias in imports
+                        if alias.name == "subprocess"}
+    sys_names = {alias.asname or alias.name for alias in imports
+                 if alias.name == "sys"}
+    direct_popen_names = {
+        alias.asname or alias.name for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "subprocess"
+        for alias in node.names if alias.name == "Popen"
+    }
+    if not subprocess_names and not direct_popen_names:
+        return set(), False
+    children = set()
+    unresolved = False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        call_alias = (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in subprocess_names and node.func.attr == "Popen"
+        )
+        direct_alias = isinstance(node.func, ast.Name) and node.func.id in direct_popen_names
+        if not call_alias and not direct_alias:
+            continue
+        if not node.args or not isinstance(node.args[0], (ast.List, ast.Tuple)):
+            unresolved = True
+            continue
+        argv = node.args[0].elts
+        if not argv:
+            unresolved = True
+            continue
+        first = argv[0]
+        executable_from_sys = (
+            isinstance(first, ast.Attribute) and isinstance(first.value, ast.Name)
+            and first.value.id in sys_names and first.attr == "executable"
+        )
+        executable_is_python = executable_from_sys or (
+            isinstance(first, ast.Constant) and isinstance(first.value, str)
+            and re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(first.value).name) is not None
+        )
+        if not executable_is_python:
+            continue
+        if (direct_alias or (call_alias and node.func.value.id != "subprocess")
+                or (executable_from_sys and first.value.id != "sys")
+                or len(node.args) != 1
+                or len(argv) < 2 or not isinstance(argv[1], ast.Constant)
+                or not isinstance(argv[1].value, str)
+                or argv[1].value not in paths or not argv[1].value.endswith(".py")
+                or any(kw.arg is None or kw.arg in {"cwd", "executable", "shell"}
+                       for kw in node.keywords)):
+            unresolved = True
+            continue
+        children.add(argv[1].value)
+    return children, unresolved
+
+
 def _direct_python_script(command: list[str]) -> str | None:
     """Only a direct Python interpreter invocation can declare a host root."""
     args = command
@@ -303,13 +453,17 @@ def python_source_provenance(
     for rel in paths:
         if not rel.endswith(".py") or not _repo_regular_file(repo_root, rel):
             raise ValueError("PYTHON_SOURCE_INVENTORY_INVALID:" + rel)
-    roots = set(entrypoints)
+    docker_roots, unresolved_container = _container_cmd_python_roots(repo_root, set(paths))
+    roots = set(entrypoints) | docker_roots
     if not roots <= set(paths):
         raise ValueError("PYTHON_ENTRYPOINT_NOT_TRACKED:" + ",".join(sorted(roots - set(paths))))
 
     reasons: dict[str, set[str]] = {path: set() for path in paths}
     for rel in roots:
-        reasons[rel].add("ENTRYPOINT_DECLARED:" + rel)
+        if rel in docker_roots:
+            reasons[rel].add("CONTAINER_CMD_DECLARED:Dockerfile")
+        else:
+            reasons[rel].add("ENTRYPOINT_DECLARED:" + rel)
     host_roots, unresolved_host = _host_python_entrypoints(
         repo_root, host_services or {}, set(paths)
     )
@@ -318,6 +472,8 @@ def python_source_provenance(
     modules = {_module_names(path): path for path in paths}
     imports: dict[str, dict[str, set[str]]] = {}
     stages: dict[str, set[str]] = {}
+    subprocesses: dict[str, set[str]] = {}
+    unresolved_subprocess_sources: set[str] = set()
     parse_errors = []
     unresolved_dynamic_imports = []
     for rel in paths:
@@ -333,7 +489,12 @@ def python_source_provenance(
                 "source": rel, "reason": "DYNAMIC_IMPORT_ARGUMENT_NOT_LITERAL",
             })
         stages[rel] = _source_cycle_stage_paths(tree)
+        subprocesses[rel], subprocess_unresolved = _literal_python_subprocess_paths(
+            tree, set(paths))
+        if subprocess_unresolved:
+            unresolved_subprocess_sources.add(rel)
     unknown_stages = set()
+    reached_unresolved_subprocesses = set()
     pending = deque(sorted(set(roots) | set(host_roots)))
     seen = set()
     while pending:
@@ -341,6 +502,8 @@ def python_source_provenance(
         if source in seen:
             continue
         seen.add(source)
+        if source in unresolved_subprocess_sources:
+            reached_unresolved_subprocesses.add(source)
         for target, kinds in sorted(imports.get(source, {}).items()):
             reasons[target].update(kind + ":" + source for kind in kinds)
             pending.append(target)
@@ -349,6 +512,9 @@ def python_source_provenance(
                 unknown_stages.add((source, target))
                 continue
             reasons[target].add("HOST_SOURCE_CYCLE_STAGE:" + source)
+            pending.append(target)
+        for target in sorted(subprocesses.get(source, ())):
+            reasons[target].add("LITERAL_PYTHON_SUBPROCESS:" + source)
             pending.append(target)
 
     unresolved_files = {row["source"] for row in unresolved_dynamic_imports}
@@ -364,12 +530,14 @@ def python_source_provenance(
                 classification = "REVIEW_REQUIRED"
             elif any(p.startswith("HOST_ENTRYPOINT_DECLARED:") for p in provenance):
                 classification = "HOST_ENTRYPOINT_DECLARED"
-            elif any(p.startswith("ENTRYPOINT_DECLARED:") for p in provenance):
+            elif any(p.startswith(("ENTRYPOINT_DECLARED:", "CONTAINER_CMD_DECLARED:"))
+                     for p in provenance):
                 classification = "ENTRYPOINT_DECLARED"
             else:
                 classification = "DEPENDENCY_DECLARED"
         if (rel in parse_error_files or rel in unresolved_files
-                or rel in missing_stage_sources):
+                or rel in missing_stage_sources
+                or rel in reached_unresolved_subprocesses):
             classification = "REVIEW_REQUIRED"
         sources.append({
             "path": rel,
@@ -383,6 +551,11 @@ def python_source_provenance(
         "status": "NO_VERIFICADO",
         "source_count": len(sources),
         "unresolved_host_services": unresolved_host,
+        "unresolved_container_entrypoints": unresolved_container,
+        "unresolved_python_subprocesses": [
+            {"source": source, "reason": "PYTHON_SUBPROCESS_TARGET_NOT_LITERAL"}
+            for source in sorted(reached_unresolved_subprocesses)
+        ],
         "unresolved_source_cycle_stages": [
             {"source": source, "target": target}
             for source, target in sorted(unknown_stages)

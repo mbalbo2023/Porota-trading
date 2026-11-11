@@ -114,13 +114,41 @@ def test_disabled_factual_scalping_batch_is_byte_equivalent(wire, tmp_path, mode
         scalping.select_batch(store, limit=41)
 
 
-def test_approved_full_key_policy_reaches_native_scanner_and_scalping(wire, tmp_path, monkeypatch):
+def test_self_hash_approval_cannot_promote_native_scanner_or_scalping(wire, tmp_path, monkeypatch):
     values = approved(wire)
     shadow, assets, at = shadow_selection(values)
     store = native_store(tmp_path, assets, at)
     ctl = controller(values, shadow=shadow)
     monkeypatch.setattr(promotion, "capacity_controller_from_environment", lambda database=None: ctl)
     monkeypatch.setattr(observer, "now_iso", lambda: at.isoformat())
+    baseline = scalping.select_batch(store, limit=40, cursor=7)
+    selected, cursor, universe, selection = scalping.select_runtime_batch(store, limit=40, cursor=7, at=at)
+    assert (selected, cursor, universe) == baseline
+    assert selection == {"dynamic": False}
+    assert ctl.state(at)["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    symbols, total, _, _, plan = observer._cycle_plan(store)
+    assert total == len(assets)
+    assert len(symbols) <= observer.ACTIVE_SYMBOL_LIMIT
+    assert not plan.get("dynamic_selection")
+    assert not ctl.selection("EQUITY_SPOT", [], as_of=at)["dynamic"]
+    focus, _, _, _, _, _ = observer._runtime_readiness(store)
+    assert focus["source"] == "POINT_IN_TIME_EXACT_SPOT_FALLBACK"
+
+    # Component-only coverage of the native exact-key/cadence consumer branch:
+    # this injected state is deliberately NOT produced by the security resolver,
+    # is never passed to RuntimePPIBudget, and makes zero provider GETs. The
+    # genuine controller above/below always denies the same fake approval.
+    real_state = ctl.state
+    recommendation = values[1]
+    injected_test_only_non_authorizing_state = {
+        "status": "APPROVED_DYNAMIC", "mode": "APPROVED",
+        "baseline_limits": promotion.DEFAULT_POLICY["baseline_limits"],
+        "configuration_fingerprint": recommendation["runtime_policy_fingerprint"],
+        "fingerprint": "INJECTED_TEST_ONLY_NON_AUTHORIZING_STATE",
+        "engine_profiles": recommendation["engines"],
+        "global_budget": recommendation["global_budget"], "reason_codes": [],
+    }
+    monkeypatch.setattr(ctl, "state", lambda _as_of: injected_test_only_non_authorizing_state)
     selected, cursor, universe, selection = scalping.select_runtime_batch(store, limit=40, cursor=7, at=at)
     assert selection["dynamic"] and selection["limit"] == 15 and selection["cadence_seconds"] == 30
     assert 0 < len(selected) <= 15 and len(selected) == len(selection["selected"])
@@ -130,7 +158,7 @@ def test_approved_full_key_policy_reaches_native_scanner_and_scalping(wire, tmp_
     assert 0 < len(symbols) <= 15 and total == len(assets)
     assert len(symbols) == len(ctl.selection("EQUITY_SPOT", [], as_of=at)["selected"])
     assert plan["dynamic_selection"] and plan["cadence_seconds"] == 120 and plan["approved_limit"] == 15
-    assert plan["configuration_fingerprint"] == ctl.state(at)["fingerprint"]
+    assert plan["configuration_fingerprint"] == injected_test_only_non_authorizing_state["fingerprint"]
     focus, _, _, _, _, _ = observer._runtime_readiness(store)
     assert focus["allow_new_openings"] and focus["matched"] == list(plan["opening_identities"])
     assert focus["source"] == "POINT_IN_TIME_TRADEABILITY_APPROVED_CAPACITY" and not plan["family_quota"]
@@ -138,13 +166,13 @@ def test_approved_full_key_policy_reaches_native_scanner_and_scalping(wire, tmp_
     focus, _, _, _, _, _ = observer._runtime_readiness(store)
     assert not focus["allow_new_openings"] and focus["state"] == "AMARILLO"
     assert focus["matched"] == [] and all(r["reason"] == "NATIVE_SIGNAL_WINDOW_NOT_READY" for r in focus["missing"])
+    monkeypatch.setattr(ctl, "state", real_state)
     values[3]["approved"] = False
-    baseline = scalping.select_batch(store, limit=40, cursor=7)
     assert scalping.select_runtime_batch(store, limit=40, cursor=7, at=at)[:3] == baseline
     assert not observer._cycle_plan(store)[-1].get("dynamic_selection")
 
 
-def test_actual_scalping_worker_uses_shared_wire_budget_and_cold_hypothesis_cannot_open(wire, tmp_path, monkeypatch):
+def test_actual_scalping_worker_denies_fake_budget_and_cold_hypothesis_cannot_open(wire, tmp_path, monkeypatch):
     values = approved(wire)
     warm, assets, at = shadow_selection(values)
     store = native_store(tmp_path, assets, at)
@@ -153,8 +181,10 @@ def test_actual_scalping_worker_uses_shared_wire_budget_and_cold_hypothesis_cann
     # strategic warmup. This must not bypass the actual native admission path.
     assert scalping.evaluate_candidate(store, native_record, at=at) == "BUY_CANDIDATE"
     ctl = controller(values, shadow=cold_shadow(values, warm, assets, at))
-    scheduled = ctl.selection("SCALPING", [], as_of=at)["selected"]
-    assert 0 < len(scheduled) <= values[1]["engines"]["SCALPING"]["capacity"]["safe_limit"]
+    scheduled = ctl.selection("SCALPING", [], as_of=at)
+    assert not scheduled["dynamic"] and scheduled["selected"] == []
+    assert scheduled["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert values[1]["engines"]["SCALPING"]["capacity"]["safe_limit"] == 15
     clock, calls, _ = wire
     clock.advance((at - clock.now()).total_seconds())
     arbiter = RuntimePPIBudget(store.path, ctl, clock=clock.now)
@@ -184,19 +214,44 @@ def test_actual_scalping_worker_uses_shared_wire_budget_and_cold_hypothesis_cann
     monkeypatch.setattr(bv_paper_runtime, "broker_from_environment", forbidden_broker)
     before = len(calls)
     scalping.run_worker(store, stop, clock_fn=clock.now)
-    assert len(readers) == 1 and stop.waits[-1] == 30
+    assert len(readers) == 1 and stop.waits[-1] >= 30
     native_wire = calls[before:]
-    assert len(native_wire) == len(scheduled) + 1  # original login and only native due tasks
-    assert sum("/Intraday?" in url for _, url in native_wire) == len(scheduled)
-    metrics = arbiter.budget.metrics()
-    assert metrics["global"] == {"requested": len(scheduled), "allowed": len(scheduled), "used": len(scheduled), "dropped": 0}
-    assert {r["consumer"] for r in metrics["by_scope"]} == {"SCALPING"}
-    assert {r["priority"] for r in metrics["by_scope"]} == {"WARM", "DISCOVERY"}
-    assert all(r["used"] == sum(ctl.shadow["engines"]["SCALPING"]["telemetry"][assets.index(a)]["state"] == r["priority"]
-        for a in assets if identity(a) in scheduled) for r in metrics["by_scope"])
+    # Authentication is not a GET lease; no synthetic proof may trigger a
+    # provider market-data read or create a dynamic-budget sidecar.
+    assert len(native_wire) == 1 and native_wire[0][0] == "POST"
+    assert not any("/Intraday?" in url for _, url in native_wire)
+    assert arbiter.budget is None and not arbiter.path.exists()
+
+    # Preserve multi-scope arbiter coverage as a PURE component test: the
+    # synthetic SHADOW scheduler supplies full-key tasks, and a fresh local
+    # GlobalPPIBudget counts them without a RuntimePPIBudget, HTTP or any
+    # claim of verified PPI/Watch ownership.
+    from rc6_ppi_global_budget import GlobalPPIBudget
+    from tests.test_rc6_ppi_global_budget import policy as component_budget_policy
+    shadow_plan = ctl.shadow["engines"]["SCALPING"]
+    keys = {tuple(key) for key in shadow_plan["selected"]}
+    selected_rows = [row for row in shadow_plan["telemetry"] if tuple(row["identity"]) in keys]
+    assert 0 < len(selected_rows) <= values[1]["engines"]["SCALPING"]["capacity"]["safe_limit"]
+    pure_budget = GlobalPPIBudget(tmp_path / "component-only-global-budget.sqlite",
+        component_budget_policy(clock, limits={"current": 15, "book": 15, "intraday": 15}),
+        clock=clock.now)
+    for row in selected_rows:
+        priority = {"HOT": "SCALPING_HOT", "WARM": "WARM"}.get(row["state"], "DISCOVERY")
+        token = pure_budget.acquire("intraday", consumer="SCALPING", priority=priority)
+        assert token["allowed"]
+        pure_budget.start(token["lease"])
+        pure_budget.finish(token["lease"])
+    metrics = pure_budget.metrics()
+    assert metrics["global"] == {"requested": len(selected_rows), "allowed": len(selected_rows),
+                                 "used": len(selected_rows), "dropped": 0}
+    assert {item["consumer"] for item in metrics["by_scope"]} == {"SCALPING"}
+    assert {item["priority"] for item in metrics["by_scope"]} == {"WARM", "DISCOVERY"}
+    assert all(item["used"] == sum(
+        ({"HOT": "SCALPING_HOT", "WARM": "WARM"}.get(row["state"], "DISCOVERY")) == item["priority"]
+        for row in selected_rows) for item in metrics["by_scope"])
     with store.connect() as c:
         events = list(c.execute("SELECT detail FROM paper_events WHERE event_type='SCALPING_PAPER_PROMOTION'"))
-        assert any("DISCOVERY_OR_WARMUP_NO_ENTRY_AUTHORITY" in r[0] for r in events)
+        assert events == []  # a forged approval cannot even enter this path
         assert c.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
         assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0

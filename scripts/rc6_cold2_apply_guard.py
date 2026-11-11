@@ -8,6 +8,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -32,7 +33,26 @@ def bounded_json(path, limit=65536):
         raw = stream.read(limit + 1)
     if len(raw) > limit:
         raise ValueError('COLD2_RECEIPT_BOUND')
-    value = json.loads(raw)
+
+    def unique_object(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError('COLD2_RECEIPT_DUPLICATE_KEY')
+            result[key] = item
+        return result
+
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('COLD2_RECEIPT_NONFINITE')
+        return number
+
+    def reject_nonfinite(_value):
+        raise ValueError('COLD2_RECEIPT_NONFINITE')
+
+    value = json.loads(raw, object_pairs_hook=unique_object,
+                       parse_float=finite_float, parse_constant=reject_nonfinite)
     if type(value) is not dict:
         raise ValueError('COLD2_RECEIPT_SHAPE')
     return value
