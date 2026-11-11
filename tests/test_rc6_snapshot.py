@@ -1,6 +1,8 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from rc6_snapshot import build_snapshot, write_snapshot
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -27,6 +29,15 @@ def test_verified_snapshot_is_paper_only_and_keeps_operation_trace():
 def test_nonzero_real_orders_is_fail_closed():
     snap = build_snapshot("preopen", datetime(2026, 9, 18, 10, 10, tzinfo=TZ), payload(real_orders_sent=1))
     assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert "REAL_ORDERS_NOT_ZERO_OR_UNVERIFIED" in snap["urgent_alerts"]
+
+
+@pytest.mark.parametrize("ambiguous", (False, "0", 0.0, None))
+def test_snapshot_fails_closed_for_noninteger_zero_real_orders(ambiguous):
+    snap = build_snapshot("postclose", datetime(2026, 11, 11, 18, 30, tzinfo=TZ),
+                          payload(real_orders_sent=ambiguous))
+    assert snap["status"] == "INSUFFICIENT_EVIDENCE"
+    assert snap["paper_safety_status"] == "INSUFFICIENT_EVIDENCE"
     assert "REAL_ORDERS_NOT_ZERO_OR_UNVERIFIED" in snap["urgent_alerts"]
 
 def test_write_is_valid_json(tmp_path):
@@ -70,3 +81,11 @@ def test_snapshot_fails_closed_when_closed_pnl_currency_is_missing():
     assert snap["status"] == "INSUFFICIENT_EVIDENCE"
     assert "CLOSED_OPERATION_CURRENCY_MISSING" in snap["urgent_alerts"]
     assert snap["metrics"]["net_pnl_ars"] == 0.0
+
+
+def test_postclose_after_com19031_without_verified_ppi_session_is_provisional():
+    now = datetime(2026, 11, 11, 18, 30, tzinfo=TZ)
+    snap = build_snapshot("postclose", now, payload())
+    assert snap["status"] == "PROVISIONAL_POSTCLOSE_SOURCE_PENDING"
+    assert snap["paper_safety_status"] == "VERIFIED"
+    assert snap["postclose_eod_source"]["state"] == "PROVISIONAL_POSTCLOSE_SOURCE_PENDING"

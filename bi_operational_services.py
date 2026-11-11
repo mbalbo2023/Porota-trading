@@ -54,6 +54,8 @@ DATOS_AR_SERIES = {
 BCRA_VARIABLES = {}  # BCRA active ingestion retired by operator
 REPORT_SQLITE_RETRY_SECONDS = 15 * 60
 REPORT_REAL_ORDERS_UNVERIFIED = "NO_VERIFICADO"  # Report DB alone is not host/runtime attestation.
+PPI_EOD_SOURCE_VERIFIED = "PPI_HISTORY_EXACT_SESSION_VERIFIED"  # Batch only, never entire report.
+PPI_EOD_SOURCE_PROVISIONAL = "PPI_HISTORY_PROVISIONAL"
 
 
 def now_iso():
@@ -180,6 +182,65 @@ def _postclose_daily_due(store, key):
 
 def _reports_due(store):
     return _postclose_daily_due(store, "REPORTS")
+
+
+def _postclose_history_source_ready(store, at):
+    """Read existing exact-session PPI history receipt; never request provider data.
+
+    `session=DATE` alone is a requested range, not source certification.
+    Only a positive verified/required RAW batch acknowledged after the BYMA
+    source-publication floor can attest this *one* history source; it does not
+    certify PnL, FCI NAV, the full instrument universe, or real-order safety.
+    """
+    from co_market_sessions_hf6 import byma_eod_publication_floor
+
+    try:
+        if at.tzinfo is None or at.utcoffset() is None:
+            return False
+        with store.connect() as conn:
+            row = conn.execute("""SELECT status,last_attempt_at,last_success_at,detail
+              FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        if not row or row[0] != "VERDE" or not row[1] or not row[2] or not row[3]:
+            return False
+        attempted = datetime.fromisoformat(str(row[1]).replace("Z", "+00:00"))
+        seen = datetime.fromisoformat(str(row[2]).replace("Z", "+00:00"))
+        if (seen.tzinfo is None or seen.utcoffset() is None
+                or attempted.tzinfo is None or attempted.utcoffset() is None):
+            return False
+        local = at.astimezone(TZ)
+        if (seen.astimezone(TZ).date() != local.date()
+                or seen < byma_eod_publication_floor(local)
+                or seen > at or attempted < seen or attempted > at):
+            return False
+        from ak_byma_calendar import es_dia_habil_operativo
+        if not es_dia_habil_operativo(local.date()):
+            return False
+        # One pure OFFHOST parser owns the exact-session RAW provenance,
+        # cohort and consumer contract for BOTH BI and postclose snapshot.
+        # Import only after cheap DB/clock checks; no second SQLite reader.
+        from rc6_postclose_source_contract import verified_ppi_eod_detail
+        proof = verified_ppi_eod_detail(row[3], local.date().isoformat())
+        return proof is not None
+    except (ImportError, KeyError, OSError, ValueError, TypeError, sqlite3.Error):
+        return False
+
+
+def _report_eod_source_status(store, period_type, period_key, start, end, at):
+    """Only the exact current single-day report may cite the current EOD batch."""
+    try:
+        today = at.astimezone(TZ).date()
+        first = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        last = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        if (period_type != "DIARIO" or period_key != today.isoformat()
+                or first.tzinfo is None or last.tzinfo is None
+                or first.astimezone(TZ) != datetime.combine(today, datetime.min.time(), TZ)
+                or last.astimezone(TZ) != datetime.combine(
+                    today + timedelta(days=1), datetime.min.time(), TZ)):
+            return PPI_EOD_SOURCE_PROVISIONAL
+        return (PPI_EOD_SOURCE_VERIFIED if _postclose_history_source_ready(store, at)
+                else PPI_EOD_SOURCE_PROVISIONAL)
+    except (AttributeError, TypeError, ValueError):
+        return PPI_EOD_SOURCE_PROVISIONAL
 
 
 def collect_sre(store):
@@ -527,7 +588,7 @@ def _lesson(position):
     return "Sin resultado neto concluyente; no usar esta muestra para relajar umbrales."
 
 
-def _report_story(title, period, data):
+def _report_story(title, period, data, *, eod_source_status=PPI_EOD_SOURCE_PROVISIONAL):
     operations = []
     for p in data["positions"]:
         operations.append({
@@ -543,6 +604,7 @@ def _report_story(title, period, data):
     return {
         "titulo": title, "periodo": period, "generado_en": now_iso(),
         "modo": "SIMULACIÓN PRODUCTIVA", "ordenes_reales": REPORT_REAL_ORDERS_UNVERIFIED,
+        "fuente_historial_eod": eod_source_status,
         "resumen": {"operaciones": len(data["positions"]), "cerradas": len(data["closed"]),
                     "ganadoras": data["wins"], "win_rate_pct": data["win_rate"],
                     "pnl_neto_ars": (round(data["pnl"], 2) if data["pnl"] is not None else None),
@@ -604,6 +666,9 @@ def _pdf(story, path):
     blocks = [Paragraph(html.escape(story["titulo"]), styles["Title"]),
               Paragraph(f"{html.escape(story['periodo'])} · Modo SIMULACIÓN PRODUCTIVA · "
                         f"órdenes reales: {html.escape(str(story['ordenes_reales']))}", styles["Normal"]),
+              Paragraph("Fuente histórica EOD PPI: " + html.escape(
+                  story.get("fuente_historial_eod", PPI_EOD_SOURCE_PROVISIONAL)) +
+                  " (sólo lote histórico; no certifica PnL ni órdenes reales)", styles["Normal"]),
               Spacer(1, 8)]
     summary = story["resumen"]
     table = Table([["Operaciones", "Cerradas", "Ganadoras", "Win rate", "PnL neto ARS"],
@@ -662,7 +727,10 @@ def generate_report(store, period_type, period_key, start, end):
         # Conservar evidencia ya persistida, pero no mezclarla con nuevas
         # muestras de trading ni con el paquete de aprendizaje.
         data["news"] = []
-    story = _report_story(f"Informe {period_type.lower()} — Porota Trading", f"{start} a {end}", data)
+    eod_source = _report_eod_source_status(store, period_type, period_key, start, end,
+                                            datetime.now(TZ))
+    story = _report_story(f"Informe {period_type.lower()} — Porota Trading", f"{start} a {end}",
+                          data, eod_source_status=eod_source)
     try:
         _pdf(story, pdf_path)
         ai_path.write_text(json.dumps(story, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -673,6 +741,7 @@ def generate_report(store, period_type, period_key, start, end):
               VALUES(?,?,?,?,?,?,?)""",
               (period_type, period_key, now_iso(), str(pdf_path), str(ai_path), "AMARILLO",
                f"{len(data['positions'])} operaciones; {len(data['news'])} noticias; "
+               f"EOD_HISTORY_SOURCE={eod_source}; "
                "CONTENIDO_NO_VERIFICADO: ordenes_reales sin atestacion runtime"))
         return str(pdf_path), str(ai_path)
     except Exception as exc:
@@ -819,12 +888,15 @@ def send_closing_summary(store):
     win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
     pnl_text = ("NO_VERIFICADO" if data["pnl"] is None
                 else f"$ {data['pnl']:,.2f}")
+    eod_source = (PPI_EOD_SOURCE_VERIFIED if _postclose_history_source_ready(
+        store, datetime.now(TZ)) else PPI_EOD_SOURCE_PROVISIONAL)
     text = ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
             f"Fecha: {today.isoformat()}\nOperaciones cerradas: {len(data['closed'])}\n"
             f"Win rate: {win}\nPnL paper neto ARS: {pnl_text}\n"
             f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
             f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
             f"Decisiones evaluadas: {len(data['decisions'])}\n"
+            f"Fuente histórica EOD PPI: {eod_source}\n"
             f"Órdenes reales: {REPORT_REAL_ORDERS_UNVERIFIED}\n"
             "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
     at = now_iso()

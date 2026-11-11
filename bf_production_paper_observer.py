@@ -35,6 +35,7 @@ from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
 from rc6_ppi_global_budget import assert_native_ppi_response_identity
+from co_market_sessions_hf6 import byma_eod_publication_floor
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -1724,8 +1725,11 @@ def _history_cutoff_repair_complete() -> bool:
 
 def _history_end_date(now=None):
     now = now or datetime.now(TZ)
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if now.hour * 60 + now.minute < close_minute:
+    if now.tzinfo is None or now.utcoffset() is None:
+        return None
+    now = now.astimezone(TZ)
+    # Spot close at 17:00 does not imply published PPI EOD RAW evidence.
+    if now < byma_eod_publication_floor(now):
         return None
     day = now.date()
     while day.year == BYMA_CALENDAR_AUDITED_YEAR and not _business_day(day):
@@ -1828,6 +1832,43 @@ def _history_covered_target_count(connection, targets):
         )
     }
     return len(target_keys & covered_keys)
+
+
+def _verified_ppi_eod_keys(history_store, exact_keys, session, at):
+    """Count only genuine same-session, five-key PPI RAW EOD publications.
+
+    Request dates and historical coverage cannot substitute for the actual
+    stored source, RAW basis and postclose version-known timestamp.
+    """
+    if at.tzinfo is None or at.utcoffset() is None:
+        return 0
+    now = at.astimezone(TZ)
+    if now.date() != session:
+        return 0
+    floor = byma_eod_publication_floor(now)
+    if now < floor:
+        return 0
+    verified = 0
+    with history_store.connect() as conn:
+        for identity in dict.fromkeys(exact_keys):
+            if len(identity) != 5:
+                continue
+            rows = conn.execute("""SELECT source,version_known_at
+              FROM history_canonical_v2 WHERE symbol=? AND instrument_type=?
+                AND market=? AND currency=? AND settlement=? AND date=?
+                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+                (*identity, session.isoformat())).fetchall()
+            # Canonical full-key+date RAW identity is unique in the actual
+            # schema. Any duplicate or missing record means no source proof.
+            if len(rows) != 1 or rows[0][0] != "PPI_PRODUCTION_HISTORY":
+                continue
+            try:
+                known = datetime.fromisoformat(str(rows[0][1]).replace("Z", "+00:00"))
+                if known.tzinfo and known.utcoffset() is not None and floor <= known <= now:
+                    verified += 1
+            except (TypeError, ValueError):
+                continue
+    return verified
 
 
 def _download_histories_locked(reader, store, history_store, *, incremental_only=False):
@@ -1936,19 +1977,30 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
     with history_store.connect() as c:
         coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    # Certify only the bounded exact-key batch requested in this cycle.
+    # Neither a requested end date nor global historical coverage proves EOD.
+    batch_keys=[identity for identity,_,_,_ in requests[:HISTORY_BATCH_LIMIT]]
+    exact_eod=_verified_ppi_eod_keys(history_store,batch_keys,end,datetime.now(TZ))
+    exact_required=len(batch_keys)
+    current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
     state=semantics['state']
     if not batch_statuses:
-        state='VERDE' if coverage['denominator'] and coverage['covered']==coverage['denominator'] else 'AMARILLO'
-    detail=(f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
+        state='AMARILLO'
+    if state=='VERDE' and not current_session_verified:
+        state='AMARILLO'
+    detail=(f"session={end.isoformat()}; "
+        f"source_session_verified={end.isoformat()}:{exact_eod}/{exact_required}; "
+        "source_raw_provenance=OBSERVER_PPI_HISTORY_CANONICAL_V2_RAW_FULL_KEY; "
+        f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
         f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
         f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
         f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
         f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
-        f"cut={coverage['as_of']}; session={coverage['session']}; "
-        f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; readiness=NONE; "
+        f"cut={coverage['as_of']}; session_requested={coverage['session']}; readiness=NONE; "
+        f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; "
         f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
-    usable=bool(semantics['usable'])
+    usable=bool(semantics['usable'] and current_session_verified and state=='VERDE')
     _sync_state(store,'PPI_PRODUCTION_HISTORY',state,total,detail,success=usable)
     _health(store,'PPI_PRODUCTION_HISTORY',state,detail,'PPI Producción',success=usable)
     return total
@@ -2047,15 +2099,14 @@ def _daily_sync(reader, store, now=None):
 
 
 def _background_ingest_due(store, now=None):
-    """Como máximo un intento histórico por rueda, después del cierre."""
+    """At most one historical attempt after the BYMA EOD publication floor."""
     now = now or datetime.now(TZ)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=TZ)
+    if now.tzinfo is None or now.utcoffset() is None:
+        return False
     local_now = now.astimezone(TZ)
     if not _business_day(local_now.date()):
         return False
-    close_minute = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE
-    if local_now.hour * 60 + local_now.minute < close_minute:
+    if local_now < byma_eod_publication_floor(local_now):
         return False
     with store.connect() as connection:
         source = connection.execute("""SELECT last_attempt_at FROM source_sync
