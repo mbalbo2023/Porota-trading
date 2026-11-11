@@ -5,6 +5,7 @@ These tests analyze workflow declarations; they are not Docker/Actions proof.
 
 import ast
 import hashlib
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -35,6 +36,73 @@ def _assert_no_foreign_or_global_commands(shell: str) -> None:
         assert re.search(command, shell, flags=re.I) is None, command
     for match in re.finditer(r"\bdocker\s+rm\b[^\n]*", shell):
         assert match.group() == 'docker rm -v "$cid" >/dev/null; then'
+
+
+_RUNNER_JOBS = (
+    "python311-lock-closure",
+    "offhost-native-proof",
+    "offhost-independent-bytes",
+)
+
+
+def _runner_guard(job_name: str) -> dict:
+    steps = _workflow()["jobs"][job_name]["steps"]
+    guard = steps[0]  # First, before checkout, image build, container or ZIP.
+    assert guard["name"] == "Reject non-GitHub-hosted runner (HOLD79)"
+    assert guard["shell"] == "bash"
+    assert guard.get("env") == {"RC6_RUNNER_ENVIRONMENT": "${{ runner.environment }}"}
+    assert "continue-on-error" not in guard and "if" not in guard
+    assert "uses" not in guard
+    assert "exit 79" in guard["run"]
+    return guard
+
+
+@pytest.mark.parametrize("job_name", _RUNNER_JOBS)
+def test_every_runner_job_fails_closed_before_any_work_if_not_github_hosted(job_name):
+    job = _workflow()["jobs"][job_name]
+    assert job["runs-on"] == "ubuntu-24.04"
+    script = _runner_guard(job_name)["run"]
+    assert "RC6_R163_RUNNER=GITHUB_HOSTED" in script
+    assert "docker " not in script and "curl " not in script
+    # After the guard, actions may build/inspect Docker or download the ZIP;
+    # an `if:`-skipped check would not be an enforcement step.
+    assert len(job["steps"]) > 1
+    assert "checkout" in str(job["steps"][1]).lower()
+
+
+@pytest.mark.parametrize("environment,expected", (
+    ("github-hosted", 0),
+    ("self-hosted", 79),
+    ("", 79),
+    ("github-hosted ", 79),
+    ("GITHUB-HOSTED", 79),
+    ("github-hosted\nself-hosted", 79),
+))
+def test_executable_runner_identity_guard_rejects_untrusted_context(environment, expected):
+    script = _runner_guard("offhost-native-proof")["run"]
+    env = os.environ.copy()
+    env["RC6_RUNNER_ENVIRONMENT"] = environment
+    result = subprocess.run(["bash", "-c", script], env=env,
+                            text=True, capture_output=True, check=False)
+    assert result.returncode == expected
+    if expected:
+        assert result.stdout == ""
+        assert result.stderr.strip() == "RC6_R163_RUNNER=HOLD79|untrusted_runner_environment"
+    else:
+        assert result.stdout.strip() == "RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only"
+
+
+def test_runner_guard_retains_read_only_permissions_and_no_host_write_exceptions():
+    wf = _workflow()
+    assert wf["permissions"] == {"contents": "read"}
+    for job_name in _RUNNER_JOBS:
+        step = _runner_guard(job_name)
+        assert step["env"] == {"RC6_RUNNER_ENVIRONMENT": "${{ runner.environment }}"}
+        expected = ({"actions": "read", "contents": "read"}
+                    if job_name == "offhost-independent-bytes"
+                    else {"contents": "read"})
+        assert wf["jobs"][job_name]["permissions"] == expected
+        assert "sudo" not in step["run"] and "docker" not in step["run"]
 
 
 _NATIVE_XMLS = (

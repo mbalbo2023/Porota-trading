@@ -26,6 +26,17 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
       - name: Exact SHA checkout without persisted credentials
         uses: actions/checkout@v4
         with:
@@ -114,6 +125,17 @@ jobs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
       - name: Checkout exact candidate without persisted credentials
         uses: actions/checkout@v4
         with:
@@ -426,6 +448,17 @@ jobs:
       RC6_IMAGE_ID: ${{ needs.offhost-native-proof.outputs.image_id }}
       RC6_VOLUME_NAME: ${{ needs.offhost-native-proof.outputs.volume_name }}
     steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
       - name: Checkout same exact untrusted PR source without credentials
         uses: actions/checkout@v4
         with:
