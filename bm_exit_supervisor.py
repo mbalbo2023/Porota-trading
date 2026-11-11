@@ -276,6 +276,10 @@ class PositionExitSupervisor:
             return verdict("OPEN", "Dentro de parámetros")
         if size * self.broker.participation <= 0:
             return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
+        # BONOS/ON must not fall into the generic spot close callback. The
+        # engine deliberately has no authorized native FI sale ledger here.
+        if family in {"BONOS", "OBLIGACIONES"}:
+            return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_EVIDENCE_REQUIRED")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
         reason = "El ejecutor no confirmó un cierre"
         try:
