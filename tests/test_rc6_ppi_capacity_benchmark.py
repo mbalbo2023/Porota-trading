@@ -163,6 +163,41 @@ def test_credentials_absent_has_no_network(wire):
     assert capacity(report, clock)["safe_limit"] == 0
 
 
+def test_missing_shared_budget_stops_before_reader_login_or_get(wire, monkeypatch):
+    clock, calls, _ = wire
+    events = []
+    monkeypatch.setattr("rc6_ppi_global_budget.budget_from_environment",
+                        lambda *args, **kwargs: None)
+
+    class FakeReader:
+        metrics = {}
+
+        def login_once(self):
+            events.append("login")
+            requests.post("https://synthetic.invalid/loginapi")
+
+        def current(self, *_args):
+            events.append("get")
+            requests.get("https://synthetic.invalid/current")
+            return {"date": clock.now().isoformat(), "price": 100}
+
+        def close(self):
+            events.append("close")
+
+    def factory(*_args, **_kwargs):
+        events.append("construct")
+        return FakeReader()
+
+    report = measure(wire, reader_factory=factory, endpoints=("current",), max_requests=2)
+    assert report["stop_reason"] == "PPI_SHARED_BUDGET_UNAVAILABLE"
+    assert report["status"] == "NO_VERIFICADO"
+    assert report["observations"] == []
+    assert report["real_orders_sent"] == 0 and report["real_routes"] == "NOT_CALLED"
+    assert report["runtime_modified"] is False
+    assert capacity(report, clock)["safe_limit"] == 0
+    assert events == [] and calls == []
+
+
 def test_three_endpoints_real_sdk_normalization_global_and_identity_counters(wire):
     clock, calls, _ = wire
     before_request = requests.sessions.Session.request

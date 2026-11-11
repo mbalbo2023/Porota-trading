@@ -411,8 +411,33 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf /tmp/porota-predeploy-app
-          mkdir -p /tmp/porota-predeploy-app
+          # A fixed /tmp path may contain another run's or another app's data.
+          # Exclusive create is intentional: never clear a preexisting stage.
+          if [[ -z "${RUNNER_TEMP:-}" || ! -d "$RUNNER_TEMP" || -L "$RUNNER_TEMP" ||
+                ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]*$ ||
+                ! "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|runner_identity_invalid'
+            exit 79
+          fi
+          rc6_extract_stage="$RUNNER_TEMP/porota-predeploy-app-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          umask 077
+          if ! mkdir -m 700 -- "$rc6_extract_stage"; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|exclusive_create_failed_no_foreign_cleanup'
+            exit 79
+          fi
+          rc6_extract_stage_identity="$(stat -c '%d:%i:%u:%a' -- "$rc6_extract_stage")" || exit 79
+          if [[ ! -d "$rc6_extract_stage" || -L "$rc6_extract_stage" ||
+                "$rc6_extract_stage_identity" != *:$(id -u):700 ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|identity_unverified_no_cleanup'
+            exit 79
+          fi
+          if ! mkdir -m 700 -- "$rc6_extract_stage/app"; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|private_app_create_failed_no_cleanup'
+            exit 79
+          fi
+          printf 'RC6_EXTRACT_STAGE=%s\nRC6_EXTRACT_STAGE_ID=%s\n' \
+            "$rc6_extract_stage" "$rc6_extract_stage_identity" >> "$GITHUB_ENV"
+          echo 'POROTA_PRIVATE_EXTRACT_STAGE=GREEN|mode700_run_attempt'
           rc6_extract_container_id=
           rc6_extract_owner="|$CANDIDATE_SHA|v2|$GITHUB_RUN_ID"
           rc6_extract_owned() {
@@ -451,16 +476,37 @@ jobs:
             exit 79
           fi
           rc6_extract_owned || exit 79
-          docker cp "$rc6_extract_container_id:/app/." /tmp/porota-predeploy-app/
-          test -f /tmp/porota-predeploy-app/Dockerfile
+          docker cp "$rc6_extract_container_id:/app/." "$rc6_extract_stage/app/"
+          test -f "$rc6_extract_stage/app/Dockerfile"
 
       - name: Artifact completeness and import closure
         shell: bash
         run: |
           set -Eeuo pipefail
+          if [[ -z "${RUNNER_TEMP:-}" || ! -d "$RUNNER_TEMP" || -L "$RUNNER_TEMP" ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|consumer_path_unverified'
+            exit 79
+          fi
+          rc6_expected_stage="$RUNNER_TEMP/porota-predeploy-app-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          if [[ -z "${RC6_EXTRACT_STAGE:-}" || -z "${RC6_EXTRACT_STAGE_ID:-}" ||
+                "$RC6_EXTRACT_STAGE" != "$rc6_expected_stage" ||
+                ! -d "$RC6_EXTRACT_STAGE" || -L "$RC6_EXTRACT_STAGE" ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|consumer_path_unverified'
+            exit 79
+          fi
+          rc6_extract_stage_identity="$(stat -c '%d:%i:%u:%a' -- "$RC6_EXTRACT_STAGE")" || exit 79
+          if [[ "$rc6_extract_stage_identity" != "$RC6_EXTRACT_STAGE_ID" ||
+                "$rc6_extract_stage_identity" != *:$(id -u):700 ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|consumer_identity_changed'
+            exit 79
+          fi
+          if [[ ! -d "$RC6_EXTRACT_STAGE/app" || -L "$RC6_EXTRACT_STAGE/app" ]]; then
+            echo 'POROTA_PRIVATE_EXTRACT_STAGE=RED|consumer_app_invalid'
+            exit 79
+          fi
           python scripts/porota_validate_deploy_artifact.py \
             --repo-root . \
-            --artifact-root /tmp/porota-predeploy-app \
+            --artifact-root "$RC6_EXTRACT_STAGE/app" \
             --candidate-sha "$CANDIDATE_SHA" \
             --manifest-out /tmp/porota-artifact-manifest.json
           python - <<'PY'
@@ -476,9 +522,9 @@ jobs:
           print('POROTA_IMPORT_CLOSURE_MISSING=' + str(len(x['missing_local_imports'])))
           PY
           for asset in n_instrument_watchlist.json POROTA_SECTOR_MAP_V1.csv; do
-            test -f "/tmp/porota-predeploy-app/$asset"
+            test -f "$RC6_EXTRACT_STAGE/app/$asset"
             EXPECTED="$(sha256sum "$asset" | awk '{print $1}')"
-            ACTUAL="$(sha256sum "/tmp/porota-predeploy-app/$asset" | awk '{print $1}')"
+            ACTUAL="$(sha256sum "$RC6_EXTRACT_STAGE/app/$asset" | awk '{print $1}')"
             test "$EXPECTED" = "$ACTUAL"
             echo "POROTA_STATIC_RUNTIME_ASSET=GREEN|$asset|$ACTUAL"
           done
