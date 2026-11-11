@@ -37,6 +37,13 @@ jobs:
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
       IMAGE: porota-predeploy-v2:${{ github.event.pull_request.head.sha }}
+    # Both the successful gate result and these exact same-run upload outputs
+    # are required by the independent offhost release check below.
+    outputs:
+      candidate_sha: ${{ steps.rc6_artifact_identity.outputs.candidate_sha }}
+      artifact_name: ${{ steps.rc6_artifact_identity.outputs.artifact_name }}
+      artifact_id: ${{ steps.rc6_predeploy_upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.rc6_predeploy_upload.outputs.artifact-digest }}
 
     steps:
       - name: Checkout exact candidate
@@ -751,7 +758,17 @@ jobs:
           print('POROTA_REQUIRED_EVIDENCE=GREEN')
           PY
 
+      - name: Bind frozen artifact to exact candidate SHA
+        id: rc6_artifact_identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          printf 'candidate_sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=porota-predeploy-v2-%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Upload predeploy evidence
+        id: rc6_predeploy_upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -839,3 +856,50 @@ jobs:
         run: |
           echo 'POROTA_PREDEPLOY_LOCAL_CLEANUP=HOLD|resources_retained_ownership_unverified'
           exit 79
+
+  release-evidence-required:
+    name: RC6 required release evidence (offhost)
+    # GitHub treats SKIPPED jobs as successful required checks. Unlike the
+    # candidate gate, this product-targeted job must run on skipped/failure.
+    # The R144 publish lock and both existing exit79 holds remain untouched.
+    needs: artifact-gate
+    if: ${{ always() && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout untrusted PR head for exact SHA inspection only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .rc6-release-head-inspect
+          persist-credentials: false
+
+      - name: Checkout immutable reviewed release evidence guard
+        # Reviewed bootstrap pin: do not execute PR HEAD's version of guard.
+        uses: actions/checkout@v4
+        with:
+          ref: 7c1c60a7e050f2dc0bfa215f38e6e98dafac556e
+          path: .rc6-release-guard-trusted
+          persist-credentials: false
+
+      - name: Reject skipped or unbound frozen artifact evidence
+        shell: bash
+        env:
+          RC6_RELEASE_REPO: ${{ github.repository }}
+          RC6_RELEASE_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          RC6_RELEASE_PR_DRAFT: ${{ github.event.pull_request.draft }}
+          RC6_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RC6_RELEASE_GATE_RESULT: ${{ needs.artifact-gate.result }}
+          RC6_RELEASE_ARTIFACT_SHA: ${{ needs.artifact-gate.outputs.candidate_sha }}
+          RC6_RELEASE_ARTIFACT_NAME: ${{ needs.artifact-gate.outputs.artifact_name }}
+          RC6_RELEASE_ARTIFACT_ID: ${{ needs.artifact-gate.outputs.artifact_id }}
+          RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.artifact-gate.outputs.artifact_digest }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
+            "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
+          export RC6_RELEASE_CHECKOUT_SHA
+          RC6_RELEASE_CHECKOUT_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD)"
+          python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py

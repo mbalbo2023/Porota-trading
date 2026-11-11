@@ -145,7 +145,9 @@ def test_canonical_pr_number_remains_held_after_branch_rename():
 def test_publish_lock_preserves_only_pull_request_trigger_and_native_hold():
     workflow = _source()
     assert list(workflow["on"]) == ["pull_request"]
-    assert list(workflow["jobs"]) == ["artifact-gate"]
+    # Required offhost release evidence must be non-skippable when R144
+    # intentionally skips the original candidate job.
+    assert list(workflow["jobs"]) == ["artifact-gate", "release-evidence-required"]
     steps = workflow["jobs"]["artifact-gate"]["steps"]
     native = next(s for s in steps if s.get("name") ==
                   "Exact image native sizing and generated catalog proof")
