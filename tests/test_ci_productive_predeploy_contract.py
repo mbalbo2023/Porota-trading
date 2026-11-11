@@ -1,4 +1,5 @@
 from pathlib import Path
+import unittest
 
 import yaml
 
@@ -191,3 +192,59 @@ def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
     assert result.returncode != 0, result.stdout + result.stderr
     assert len(list(root.iter('testcase'))) == 1
     assert len(list(root.iter('failure'))) == 1
+
+
+class TestFrozenArtifactTypedReceipt(unittest.TestCase):
+    """Reject JSON scalar types that merely compare equal to contract integers."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        from hashlib import sha256
+
+        self._json = json
+        self._temporary = tempfile.TemporaryDirectory(prefix='rc6-frozen-type-')
+        self.addCleanup(self._temporary.cleanup)
+        root = Path(self._temporary.name)
+        self.image = root / 'image.tar.gz'
+        self.manifest = root / 'manifest.json'
+        self.frozen = root / 'frozen.json'
+        self.image.write_bytes(b'isolated immutable image fixture')
+        self.manifest.write_text('{"schema_version":1}', encoding='utf-8')
+        self.payload = {
+            'candidate_sha': 'a' * 40,
+            'candidate_tree_sha': 'b' * 40,
+            'image_tar_sha256': sha256(self.image.read_bytes()).hexdigest(),
+            'image_size_bytes': 31,
+            'paper_mode_required': 'PRODUCTION_PAPER',
+            'real_orders_sent_required': 0,
+            'real_order_capability_required': 'BLOCKED',
+            'build_once': True,
+        }
+
+    def _validate(self):
+        self.frozen.write_text(self._json.dumps(self.payload), encoding='utf-8')
+        return validate_frozen_candidate(
+            frozen_path=self.frozen,
+            image_path=self.image,
+            manifest_path=self.manifest,
+            candidate_sha='a' * 40,
+            tree_sha='b' * 40,
+        )
+
+    def test_integer_baseline_remains_valid(self):
+        self.assertEqual(self._validate()['image_size_bytes'], 31)
+
+    def test_noninteger_image_sizes_are_rejected(self):
+        for invalid in (True, False, 0.0, 1.5, '3', None):
+            with self.subTest(value=repr(invalid)):
+                self.payload['image_size_bytes'] = invalid
+                with self.assertRaisesRegex(FrozenContractError, 'IMAGE_SIZE_INVALID'):
+                    self._validate()
+
+    def test_noninteger_real_orders_receipts_are_rejected(self):
+        for invalid in (False, 0.0, '0', True, 1, None):
+            with self.subTest(value=repr(invalid)):
+                self.payload['real_orders_sent_required'] = invalid
+                with self.assertRaisesRegex(FrozenContractError, 'REAL_ORDERS_NONZERO'):
+                    self._validate()

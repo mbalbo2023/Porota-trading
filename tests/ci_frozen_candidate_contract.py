@@ -40,15 +40,13 @@ def validate_frozen_candidate(
         raise FrozenContractError("IMAGE_TAR_MISSING")
     if payload.get("image_tar_sha256") != sha256(image_path.read_bytes()).hexdigest():
         raise FrozenContractError("IMAGE_DIGEST_MISMATCH")
-    try:
-        image_size_bytes = int(payload.get("image_size_bytes", 0))
-    except (TypeError, ValueError) as exc:
-        raise FrozenContractError("IMAGE_SIZE_INVALID") from exc
-    if image_size_bytes <= 0:
+    image_size_bytes = payload.get("image_size_bytes")
+    if type(image_size_bytes) is not int or image_size_bytes <= 0:
         raise FrozenContractError("IMAGE_SIZE_INVALID")
     if payload.get("paper_mode_required") != "PRODUCTION_PAPER":
         raise FrozenContractError("NON_PAPER_MODE")
-    if payload.get("real_orders_sent_required") != 0:
+    real_orders_sent_required = payload.get("real_orders_sent_required")
+    if type(real_orders_sent_required) is not int or real_orders_sent_required != 0:
         raise FrozenContractError("REAL_ORDERS_NONZERO")
     if payload.get("real_order_capability_required") != "BLOCKED":
         raise FrozenContractError("REAL_ROUTE_ENABLED")
