@@ -1,0 +1,63 @@
+name: RC6 R281 Existing Immutable D-E Evidence (OFFHOST; HOST HOLD79)
+
+# This trusted-main controller inspects an already built R251 D/E release.
+# The reviewed R252 bridge selects PR_CANDIDATE or PRODUCT_POSTMERGE from
+# current GitHub PR/ref evidence; manual inputs cannot select another image.
+# It cannot build an image, grant owner GO, or promote the host. The canonical
+# Deploy V2 still owns the eventual single physical deployment.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  offhost_release_evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      offhost_release_verified: ${{ steps.reopen.outputs.offhost_release_verified }}
+    steps:
+      - name: Checkout exact trusted main event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Reopen fixed D and E immutable receipts and audited bytes (R252)
+        id: reopen
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I scripts/rc6_r281_trusted_deploy_controller.py --verify-fixed-d-e
+
+  # This job is intentionally non-skippable: missing independent root-owned
+  # authority, source guard, and physical proof must stay HOLD79, regardless of
+  # the OFFHOST receipt. HOST R280/R277 is owned by a separate scope. Do not
+  # replace the physical witness with a fake local receipt or a static boolean.
+  host_physical_preflight:
+    if: ${{ always() }}
+    needs: offhost_release_evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      RC6_OFFHOST_RESULT: ${{ needs.offhost_release_evidence.result }}
+      RC6_OFFHOST_VERIFIED: ${{ needs.offhost_release_evidence.outputs.offhost_release_verified }}
+    steps:
+      - name: Preserve physical HOST HOLD79 until independent root authority exists
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_R281_HOST=HOLD79|host_control_verified=NO_VERIFICADO|deploy_authorized=NO'
+          echo 'R281 is an OFFHOST proof only. Root-owned authority, physical preflight and runtime validation are not verified.' >> "$GITHUB_STEP_SUMMARY"
+          exit 79
