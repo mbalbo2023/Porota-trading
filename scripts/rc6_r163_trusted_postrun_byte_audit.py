@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""R163 proposal: read-only, default-main POSTRUN artifact byte authenticator.
+"""R163 read-only, default-main POSTRUN public artifact byte authenticator.
 
-This source is NOT a trusted bootstrap until independently reviewed, merged via
-an authorized main-targeted PR, and pinned by the corresponding workflow. It
-never executes PR code, extracts archives, builds images, sends orders or
-changes any GitHub/host state. Bytes and metadata come from authenticated
-GitHub REST; actual host/runtime custody remains NO_VERIFICADO.
+It never executes PR code, extracts archives, builds images, sends orders or
+changes GitHub/host state. Artifact and REST bytes authenticate a *public V2
+projection*, NOT the private original Docker inspect. The producer-supplied
+SHA256 of withheld raw inspect is a commitment and is NOT independently replayed
+here. Native host/runtime custody remains NO_VERIFICADO.
 
-The same-run R163 proof is untrusted REVIEW_ONLY. This verifier requires the
-entire upstream run to have completed successfully, the source PR #1087 to
-remain at that exact SHA, and the original artifact ZIP byte digest to match
-GitHub's REST artifact digest. No R144/HOLD79/release gate is lifted.
+The same-run R163 proof remains untrusted REVIEW_ONLY. The upstream run must be
+completed successfully, source PR #1087 remain at its exact SHA, and the raw
+artifact ZIP digest must match GitHub REST. No R144/HOLD79/release gate is lifted.
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import struct
 import sys
 import tarfile
 from typing import Any, Mapping
@@ -75,6 +75,27 @@ CUSTODY_KEYS = frozenset({
     "collector_cid", "volume_name", "mount_target", "uid", "gid",
     "host_or_runtime_verified",
 })
+# Public artifact contract. Private Docker inspect bytes are never available here.
+# SHA256 of the private raw bytes is a commitment, not replayable evidence.
+PUBLIC_INSPECT_SCHEMA = "RC6_R163_PUBLIC_INSPECT_V2"
+PUBLIC_INSPECT_KEYS = frozenset({
+    "schema", "schema_version", "role", "status", "raw_inspect",
+    "source_redaction", "record", "host_or_runtime_verified",
+})
+PUBLIC_RECORD_KEYS = frozenset({"Id", "Image", "Config", "HostConfig", "Mounts"})
+PUBLIC_MOUNT_KEYS = frozenset({
+    "Type", "Name", "Driver", "Destination", "Mode", "RW",
+})
+PUBLIC_HOST_KEYS = frozenset({
+    "Privileged", "ReadonlyRootfs", "NetworkMode", "CapDrop", "CapAdd",
+    "Devices", "Tmpfs", "PublishAllPorts", "PortBindings", "Links",
+    "ExtraHosts", "SecurityOpt", "Binds", "IpcMode", "UTSMode",
+    "PidMode", "UsernsMode", "CgroupnsMode", "GroupAdd", "DeviceRequests",
+    "DeviceCgroupRules", "Runtime", "Sysctls", "CgroupParent",
+    "VolumesFrom", "Mounts",
+})
+MAX_PUBLIC_INSPECT_BYTES = 262144
+
 MAX_JSON_BYTES = 4 * 1024 * 1024
 MAX_MANIFEST_BYTES = 512 * 1024
 MAX_ZIP_BYTES = 64 * 1024 * 1024
@@ -268,6 +289,131 @@ def _artifact_identity(artifact_list: Mapping[str, Any], artifact: Mapping[str, 
     return artifact["id"], digest[7:], artifact["size_in_bytes"]
 
 
+
+def _strict_zip32_envelope(
+    raw: bytes, archive: zipfile.ZipFile, members: list[zipfile.ZipInfo],
+) -> dict[str, tuple[int, int]]:
+    """Own every ZIP byte: contiguous local records, CD records and EOCD only.
+
+    GitHub actions/upload-artifact@v4 uses streaming ZIP32 entries with a signed
+    16-byte data descriptor (GPBF bit 3). CPython's seekable writer instead
+    backpatches local headers. Both are supported; ZIP64, opaque framing,
+    comments, extra fields, prefixes, data gaps and trailers are rejected.
+    This establishes ZIP framing custody, NOT secrecy of semantic payloads or
+    independent authenticity of private Docker inspect bytes.
+    """
+    reason = "ZIP_ENVELOPE_UNSAFE"
+    if len(raw) < 22:
+        _red(reason)
+    eocd_at = len(raw) - 22
+    if raw[eocd_at:eocd_at + 4] != b"PK\x05\x06":
+        _red(reason)
+    (_, disk, cd_disk, disk_count, total_count, cd_size,
+     cd_at, eocd_comment_length) = struct.unpack_from("<IHHHHIIH", raw, eocd_at)
+    if (disk != 0 or cd_disk != 0 or
+            disk_count != len(members) or total_count != len(members) or
+            disk_count == 0xffff or total_count == 0xffff or
+            cd_size == 0xffffffff or cd_at == 0xffffffff or
+            eocd_comment_length != 0 or archive.comment != b"" or
+            cd_at < 0 or cd_size < 0 or
+            cd_at + cd_size != eocd_at or archive.start_dir != cd_at):
+        _red(reason)
+
+    # The central directory must contain exactly the same six records that
+    # zipfile enumerated, with no unclaimed metadata or padding.
+    cursor = cd_at
+    central_timestamps: dict[str, tuple[int, int, int]] = {}
+    for info in members:
+        if (cursor + 46 > eocd_at or
+                raw[cursor:cursor + 4] != b"PK\x01\x02"):
+            _red(reason)
+        (_, _made, version, flags, method, mtime, mdate, crc, csize, usize,
+         name_len, extra_len, comment_len, disk_start, _internal, _external,
+         local_at) = struct.unpack_from("<IHHHHHHIIIHHHHHII", raw, cursor)
+        try:
+            expected_name = info.filename.encode("ascii")
+        except UnicodeEncodeError:
+            _red(reason)
+        if (not expected_name or len(expected_name) != name_len or
+                cursor + 46 + name_len > eocd_at or
+                raw[cursor + 46:cursor + 46 + name_len] != expected_name or
+                extra_len != 0 or comment_len != 0 or disk_start != 0 or
+                info.extra != b"" or info.comment != b"" or
+                flags & ~0x0808 or version > 20 or
+                flags != info.flag_bits or method != info.compress_type or
+                crc != info.CRC or csize != info.compress_size or
+                usize != info.file_size or local_at != info.header_offset or
+                csize == 0xffffffff or usize == 0xffffffff):
+            _red(reason)
+        central_timestamps[info.filename] = (version, mtime, mdate)
+        cursor += 46 + name_len
+    if cursor != eocd_at:
+        _red(reason)
+
+    # Sort physical offsets independently of central enumeration; there must
+    # be no prefixes, inter-local gaps, descriptor gaps or pre-CD padding.
+    cursor = 0
+    segments: dict[str, tuple[int, int]] = {}
+    for info in sorted(members, key=lambda item: item.header_offset):
+        if (info.header_offset != cursor or cursor + 30 > cd_at or
+                raw[cursor:cursor + 4] != b"PK\x03\x04"):
+            _red(reason)
+        (_, needed, flags, method, mtime, mdate, local_crc,
+         local_csize, local_usize, name_len, extra_len) = struct.unpack_from(
+            "<IHHHHHIIIHH", raw, cursor
+        )
+        name = info.filename.encode("ascii")
+        if ((needed, mtime, mdate) != central_timestamps[info.filename] or
+                flags != info.flag_bits or method != info.compress_type or
+                flags & ~0x0808 or extra_len != 0 or
+                name_len != len(name) or
+                cursor + 30 + name_len > cd_at or
+                raw[cursor + 30:cursor + 30 + name_len] != name):
+            _red(reason)
+        data_at = cursor + 30 + name_len
+        data_end = data_at + info.compress_size
+        if data_end > cd_at:
+            _red(reason)
+        segments[info.filename] = (data_at, data_end)
+        if flags & 0x0008:
+            # archiver/zip-stream's streaming ZIP32 signed descriptor.
+            if (local_crc != 0 or local_csize != 0 or local_usize != 0 or
+                    data_end + 16 > cd_at or
+                    raw[data_end:data_end + 4] != b"PK\x07\x08"):
+                _red(reason)
+            (crc, csize, usize) = struct.unpack_from("<III", raw, data_end + 4)
+            if (crc, csize, usize) != (info.CRC, info.compress_size, info.file_size):
+                _red(reason)
+            cursor = data_end + 16
+        else:
+            if ((local_crc, local_csize, local_usize) !=
+                    (info.CRC, info.compress_size, info.file_size)):
+                _red(reason)
+            cursor = data_end
+    if cursor != cd_at or len(segments) != len(members):
+        _red(reason)
+    return segments
+
+
+def _deflate_consumes_exact_zip_bytes(
+    raw: bytes, data_at: int, data_end: int, expected_size: int,
+) -> None:
+    """Reject secret-bearing trailing bytes ignored by ordinary zipfile read."""
+    stream = zlib.decompressobj(-zlib.MAX_WBITS)
+    total = 0
+    cursor = data_at
+    while cursor < data_end:
+        chunk = raw[cursor:min(data_end, cursor + 65536)]
+        cursor += len(chunk)
+        part = stream.decompress(chunk, expected_size - total + 1)
+        total += len(part)
+        if (total > expected_size or stream.unconsumed_tail or
+                stream.unused_data or (stream.eof and cursor != data_end)):
+            _red("ZIP_DEFLATE_STREAM_UNSAFE")
+    if not stream.eof or total != expected_size:
+        _red("ZIP_DEFLATE_STREAM_UNSAFE")
+
+
 def _zip_evidence(raw: bytes, *, sha: str, tree: str, name: str,
                   run_id: int, attempt: int, digest: str,
                   expected_size: int) -> dict[str, bytes]:
@@ -308,6 +454,15 @@ def _zip_evidence(raw: bytes, *, sha: str, tree: str, name: str,
                 _red("ZIP_EXPANSION_LIMIT")
             if set(index) != ZIP_PAYLOAD | {ZIP_MANIFEST}:
                 _red("ZIP_MEMBER_SET_INVALID")
+            segments = _strict_zip32_envelope(raw, archive, members)
+            for item in members:
+                if item.compress_type == zipfile.ZIP_DEFLATED:
+                    start, end = segments[item.filename]
+                    _deflate_consumes_exact_zip_bytes(raw, start, end, item.file_size)
+                elif item.compress_size != item.file_size:
+                    # CPython ZipExtFile truncates STORED reads at file_size,
+                    # silently ignoring the rest of the declared ZIP segment.
+                    _red("ZIP_STORED_STREAM_UNSAFE")
             manifest_info = index[ZIP_MANIFEST]
             if not 0 < manifest_info.file_size <= MAX_MANIFEST_BYTES:
                 _red("ZIP_MANIFEST_SIZE_INVALID")
@@ -358,7 +513,7 @@ def _zip_evidence(raw: bytes, *, sha: str, tree: str, name: str,
                 _red("MANIFEST_TOTAL_SIZE_INVALID")
             return payload
     except (zipfile.BadZipFile, EOFError, RuntimeError, OSError,
-            ValueError, zlib.error) as exc:
+            ValueError, zlib.error, struct.error) as exc:
         if isinstance(exc, PostrunEvidenceRed):
             raise
         _red("ZIP_INVALID")
@@ -369,6 +524,7 @@ def _native_tar_files(raw: bytes) -> list[dict[str, Any]]:
             len(raw) % 512 or raw[-1024:] != bytes(1024)):
         _red("TAR_FORMAT_INVALID")
     found: dict[str, dict[str, Any]] = {}
+    contents: dict[str, bytes] = {}
     cursor = total = 0
     try:
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
@@ -398,6 +554,7 @@ def _native_tar_files(raw: bytes) -> list[dict[str, Any]]:
                     _red("TAR_CONTENT_INVALID")
                 found[name] = {"path": name, "size_bytes": len(data),
                                "sha256": hashlib.sha256(data).hexdigest()}
+                contents[name] = data
     except (tarfile.TarError, EOFError, OSError, OverflowError, ValueError) as exc:
         if isinstance(exc, PostrunEvidenceRed):
             raise
@@ -406,16 +563,35 @@ def _native_tar_files(raw: bytes) -> list[dict[str, Any]]:
         _red("TAR_TRAILING_DATA")
     if set(found) != TAR_FILES:
         _red("TAR_SET_INVALID")
+    # The unprivileged collector's pack_collector_tar emits deterministic USTAR,
+    # sorted exact paths, uid/gid 1000, mode 0600, mtime zero. Recreate from
+    # newly initialized headers: never copy untrusted TAR metadata. Exact bytes
+    # prohibit covert Env/Source in per-file padding, uname/gname, prefixes,
+    # optional records or unclaimed trailing blocks.
+    canonical = io.BytesIO()
+    with tarfile.open(fileobj=canonical, mode="w",
+                      format=tarfile.USTAR_FORMAT) as writer:
+        for name in sorted(TAR_FILES):
+            data = contents[name]
+            info = tarfile.TarInfo("./" + name)
+            info.uid = info.gid = 1000
+            info.mode = 0o600
+            info.mtime = 0
+            info.size = len(data)
+            writer.addfile(info, io.BytesIO(data))
+    if canonical.getvalue() != raw:
+        _red("TAR_CANONICAL_BYTES_MISMATCH")
     return [found[name] for name in sorted(found)]
 
 
 def _anonymous_volume_declaration(declared: Any) -> bool:
+    """Public V2 declaration: never serialize the private Docker Source key."""
     if type(declared) is not list or len(declared) != 1 or type(declared[0]) is not dict:
         return False
     item = declared[0]
-    if (not set(item).issubset({"Type", "Source", "Target", "ReadOnly", "Consistency",
+    if (not set(item).issubset({"Type", "Target", "ReadOnly", "Consistency",
                                 "BindOptions", "VolumeOptions", "TmpfsOptions"}) or
-            item.get("Type") != "volume" or item.get("Source", "") != "" or
+            item.get("Type") != "volume" or
             item.get("Target") != "/app/data" or
             ("ReadOnly" in item and item["ReadOnly"] is not False) or
             item.get("Consistency") not in (None, "", "default", "consistent") or
@@ -433,25 +609,52 @@ def _anonymous_volume_declaration(declared: Any) -> bool:
             options.get("Subpath") in (None, ""))
 
 
-def _validate_docker_inspect(records: Any, *, cid: str, source_cid: str,
+def _validate_public_inspect(document: Any, *, cid: str, source_cid: str,
                              image_id: str, volume: str, sha: str, tree: str,
                              run_id: int, attempt: int, collector: bool) -> None:
-    if (type(records) is not list or len(records) != 1 or
-            type(records[0]) is not dict):
-        _red("INSPECT_IDENTITY_MISMATCH")
-    entry = records[0]
+    """Check only allowlisted public fields; NEVER assert private raw replay.
+
+    A producer-controlled digest is a commitment to unavailable raw bytes.
+    It does not prove that a private Docker daemon emitted those bytes.
+    """
+    if (type(document) is not dict or set(document) != PUBLIC_INSPECT_KEYS or
+            document.get("schema") != PUBLIC_INSPECT_SCHEMA or
+            type(document.get("schema_version")) is not int or
+            document["schema_version"] != 2 or
+            document.get("role") != ("bundle-collector" if collector else "bundle") or
+            document.get("status") != "OFFHOST_PROJECTED_EVIDENCE_ONLY" or
+            document.get("host_or_runtime_verified") is not False):
+        _red("INSPECT_PROJECTION_SCHEMA_INVALID")
+    raw = document["raw_inspect"]
+    if (type(raw) is not dict or set(raw) != {"sha256", "size_bytes", "published"} or
+            not _hex64(raw.get("sha256")) or
+            type(raw.get("size_bytes")) is not int or
+            not 0 < raw["size_bytes"] <= MAX_PUBLIC_INSPECT_BYTES or
+            raw.get("published") is not False):
+        _red("INSPECT_PRIVATE_DIGEST_UNVERIFIABLE")
+    redaction = document["source_redaction"]
+    if (type(redaction) is not dict or
+            set(redaction) != {"hostconfig_declaration", "runtime_source_nonempty_observed"} or
+            redaction.get("runtime_source_nonempty_observed") is not True or
+            (redaction.get("hostconfig_declaration") != "NOT_APPLICABLE" if collector
+             else redaction.get("hostconfig_declaration") not in ("ABSENT", "EMPTY"))):
+        _red("INSPECT_SOURCE_REDACTION_INVALID")
+    entry = document["record"]
+    if type(entry) is not dict or set(entry) != PUBLIC_RECORD_KEYS:
+        _red("INSPECT_PROJECTION_SCHEMA_INVALID")
     if entry.get("Id") != cid or entry.get("Image") != image_id:
         _red("INSPECT_IDENTITY_MISMATCH")
-    config, host = entry.get("Config"), entry.get("HostConfig")
-    if type(config) is not dict or type(host) is not dict:
-        _red("INSPECT_CONFIG_UNSAFE")
+    config, host = entry["Config"], entry["HostConfig"]
+    if (type(config) is not dict or set(config) != {"User", "Labels"} or
+            type(host) is not dict or not set(host).issubset(PUBLIC_HOST_KEYS)):
+        _red("INSPECT_PROJECTION_SCHEMA_INVALID")
     labels = {
         "porota.commit": sha, "porota.candidate_tree": tree,
         "porota.predeploy": "v2", "porota.native-proof": "v3",
         "porota.native-role": "bundle-collector" if collector else "bundle",
         "porota.run_id": str(run_id), "porota.run_attempt": str(attempt),
     }
-    if config.get("User") != "1000:1000" or config.get("Labels") != labels:
+    if config["User"] != "1000:1000" or config["Labels"] != labels:
         _red("INSPECT_CONFIG_UNSAFE")
     if (host.get("Privileged") is not False or
             host.get("ReadonlyRootfs") is not True or
@@ -485,15 +688,16 @@ def _validate_docker_inspect(records: Any, *, cid: str, source_cid: str,
     elif (host.get("VolumesFrom") not in (None, []) or
           not _anonymous_volume_declaration(host.get("Mounts"))):
         _red("INSPECT_CONFIG_UNSAFE")
-    mounts = entry.get("Mounts")
+    mounts = entry["Mounts"]
     if type(mounts) is not list or len(mounts) != 1 or type(mounts[0]) is not dict:
         _red("INSPECT_VOLUME_MISMATCH")
     mount = mounts[0]
+    if set(mount) != PUBLIC_MOUNT_KEYS:
+        _red("INSPECT_PROJECTION_SCHEMA_INVALID")
     if (mount.get("Type") != "volume" or mount.get("Name") != volume or
-            type(mount.get("Source")) is not str or not mount["Source"] or
             mount.get("Driver") != "local" or
             mount.get("Destination") != "/app/data" or
-            mount.get("Mode") != ("ro" if collector else "") or
+            mount.get("Mode") != ("" if collector else "z") or
             mount.get("RW") is not (not collector)):
         _red("INSPECT_VOLUME_MISMATCH")
 
@@ -534,8 +738,10 @@ def _native_evidence(payload: Mapping[str, bytes], *, sha: str,
         _red("NATIVE_IDENTITY_MISMATCH")
     for filename, cid, writable in (("source-inspect.json", native["source_cid"], True),
                                      ("collector-inspect.json", native["collector_cid"], False)):
+        if len(payload[filename]) > MAX_PUBLIC_INSPECT_BYTES:
+            _red("INSPECT_PROJECTION_SIZE_INVALID")
         records = load_unique_json(payload[filename])
-        _validate_docker_inspect(
+        _validate_public_inspect(
             records, cid=cid, source_cid=native["source_cid"],
             image_id=native["image_id"], volume=native["volume_name"],
             sha=sha, tree=tree, run_id=run_id, attempt=attempt,
@@ -588,7 +794,9 @@ def verify_postrun_bytes(*, event: Mapping[str, Any], run: Mapping[str, Any],
         "artifact_digest": "sha256:" + digest, "native_file_count": count,
         "artifact_contents_verified_by_this_guard": True,
         "trusted_main_review_and_merge_verified_by_script": False,
-        "native_host_custody_verified": False, "automatic_go": False,
+        "native_host_custody_verified": False,
+        "raw_inspect_contents_verified_by_this_guard": False,
+        "automatic_go": False,
         "release_go": False, "runtime_verified": False,
     }
 
