@@ -4,6 +4,7 @@ These tests analyze workflow declarations; they are not Docker/Actions proof.
 """
 
 import ast
+import copy
 import hashlib
 import os
 from pathlib import Path
@@ -23,6 +24,72 @@ WORKFLOW = ROOT / ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
 
 def _workflow():
     return yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+
+
+_PROBE_CACHE_SCOPE = (
+    "type=gha,scope=rc6-r163-probe-${{ github.event.pull_request.number }}"
+)
+
+
+def _assert_probe_cache_contract(workflow):
+    """Only the PR-scoped PROBE may export cache; never the trusted release."""
+    python_steps = workflow["jobs"]["python311-lock-closure"]["steps"]
+    setup = [step for step in python_steps if
+             str(step.get("uses", "")).startswith("actions/setup-python@")]
+    assert len(setup) == 1
+    assert setup[0].get("with") == {
+        "python-version": "3.11",
+        "cache": "pip",
+        "cache-dependency-path": "requirements.lock.txt",
+    }
+
+    native_steps = workflow["jobs"]["offhost-native-proof"]["steps"]
+    builders = [step for step in native_steps if
+                str(step.get("uses", "")).startswith("docker/build-push-action@")]
+    assert len(builders) == 1
+    options = builders[0]["with"]
+    assert options["cache-from"] == _PROBE_CACHE_SCOPE
+    assert options["cache-to"] == (
+        _PROBE_CACHE_SCOPE + ",mode=max,timeout=2m,ignore-error=true"
+    )
+    assert options["context"] == "." and options["file"] == "./Dockerfile"
+    assert options["load"] == "true" and options["push"] == "false"
+    assert "POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}" in options["build-args"]
+    assert "POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}" in options["build-args"]
+    assert workflow["permissions"] == {"contents": "read"}
+    assert "ready_for_review" not in workflow["on"]["pull_request"]["types"]
+
+
+def test_probe_cache_is_pip_lock_scoped_and_docker_pr_isolated():
+    _assert_probe_cache_contract(_workflow())
+
+
+@pytest.mark.parametrize("mutant", (
+    "unlocked_pip_cache", "disabled_pip_cache", "foreign_pr_restore",
+    "global_cache_export", "push_probe", "missing_tree_identity",
+))
+def test_probe_cache_contract_rejects_poisonable_or_non_frozen_variants(mutant):
+    workflow = copy.deepcopy(_workflow())
+    python_steps = workflow["jobs"]["python311-lock-closure"]["steps"]
+    setup = next(s for s in python_steps if
+                 str(s.get("uses", "")).startswith("actions/setup-python@"))
+    native_steps = workflow["jobs"]["offhost-native-proof"]["steps"]
+    build = next(s for s in native_steps if
+                 str(s.get("uses", "")).startswith("docker/build-push-action@"))
+    if mutant == "unlocked_pip_cache":
+        setup["with"]["cache-dependency-path"] = "requirements.txt"
+    elif mutant == "disabled_pip_cache":
+        setup["with"]["cache"] = ""
+    elif mutant == "foreign_pr_restore":
+        build["with"]["cache-from"] = "type=gha,scope=porota-rc6-global"
+    elif mutant == "global_cache_export":
+        build["with"]["cache-to"] = "type=gha,scope=porota-rc6-global,mode=max"
+    elif mutant == "push_probe":
+        build["with"]["push"] = "true"
+    elif mutant == "missing_tree_identity":
+        build["with"]["build-args"] = "POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}"
+    with pytest.raises(AssertionError):
+        _assert_probe_cache_contract(workflow)
 
 
 def _runs(job):
