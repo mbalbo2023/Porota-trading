@@ -129,3 +129,51 @@ def test_ready_child_connect_cannot_recreate_main_removed_after_validation(tmp_p
     with pytest.raises(sqlite3.OperationalError, match='unable to open database file'):
         child.connect()
     assert not path.exists()
+
+
+def test_ready_child_rejects_symlink_retarget_after_validation(tmp_path, monkeypatch):
+    """Opening another PAPER v17 DB after constructor validation is forbidden."""
+    own = tmp_path / 'own.db'
+    foreign = tmp_path / 'foreign.db'
+    workspace.runtime_store(own)
+    workspace.runtime_store(foreign)
+    gc.collect()
+    monkeypatch.setenv('POROTA_RUNTIME_SCHEMA_READY', '1')
+    child = PaperStore(str(own))
+    foreign_before = workspace.read_identity(foreign)
+
+    own.unlink()
+    own.symlink_to(foreign)
+    with pytest.raises(ValueError, match='PAPER_V17_DATABASE_ALIAS_FORBIDDEN'):
+        connection = child.connect()
+        connection.close()
+    assert workspace.read_identity(foreign) == foreign_before
+
+
+def test_ready_child_rejects_inode_replacement_after_validation(tmp_path, monkeypatch):
+    """An ordinary regular file replacement may change the dataset under one name."""
+    own = tmp_path / 'own.db'
+    foreign = tmp_path / 'foreign.db'
+    workspace.runtime_store(own)
+    workspace.runtime_store(foreign)
+    gc.collect()
+    monkeypatch.setenv('POROTA_RUNTIME_SCHEMA_READY', '1')
+    child = PaperStore(str(own))
+    foreign_before = workspace.read_identity(foreign)
+
+    os.replace(foreign, own)
+    with pytest.raises(ValueError, match='PAPER_V17_CHILD_DATABASE_REPLACED'):
+        connection = child.connect()
+        connection.close()
+    assert workspace.read_identity(own) == foreign_before
+
+
+def test_ready_child_connect_stable_main_inode_remains_available(tmp_path, monkeypatch):
+    path = tmp_path / 'own.db'
+    workspace.runtime_store(path)
+    expected = workspace.read_identity(path)
+    monkeypatch.setenv('POROTA_RUNTIME_SCHEMA_READY', '1')
+    child = PaperStore(str(path))
+    with closing(child.connect()) as connection:
+        assert workspace.identity_from_connection(connection) == expected
+        assert connection.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'

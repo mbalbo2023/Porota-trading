@@ -14,6 +14,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tarfile
+import zipfile
 
 import pytest
 
@@ -706,3 +707,328 @@ def test_cli_forged_inspect_cid_returns_bounded_hold79_not_payload(tmp_path: Pat
     assert result.returncode == 79
     assert result.stdout == b""
     assert result.stderr == b"RC6_R163_HOLD79:CID_IMAGE_IDENTITY\n"
+
+
+# R203: all assertions here are offline; no Docker, host, network or secrets.
+def _public_identity_args() -> dict:
+    return {
+        "source_cid": SOURCE_CID, "collector_cid": COLLECTOR_CID,
+        "candidate_sha": SHA, "candidate_tree_sha": TREE,
+        "image_id": IMAGE, "run_id": RUN_ID,
+        "run_attempt": RUN_ATTEMPT, "role": ROLE,
+    }
+
+
+def _public_pair(producer: dict | None = None,
+                 collector: dict | None = None) -> tuple[bytes, bytes]:
+    source = _inspect() if producer is None else producer
+    reader = _inspect(collector=True) if collector is None else collector
+    return _sut().project_public_inspects_v2(
+        producer_inspect_json=json.dumps([source]).encode(),
+        collector_inspect_json=json.dumps([reader]).encode(),
+        **_public_identity_args(),
+    )
+
+
+def test_r203_public_inspect_v2_exact_allowlist_and_raw_commitments() -> None:
+    producer, collector = _inspect(), _inspect(collector=True)
+    # Deliberately include realistic private-only fields that must never
+    # appear in the public JSON or in the fixed stdout/stderr diagnostics.
+    private = "PRIVATE_PROOF_CANARY_DO_NOT_PUBLISH"
+    for entry in (producer, collector):
+        entry["Config"]["Env"] = ["EXAMPLE=" + private]
+        entry["GraphDriver"] = {"Data": {"MergedDir": "/private/" + private}}
+        entry["LogPath"] = "/private/" + private + ".log"
+        entry["NetworkSettings"] = {"IPAddress": private}
+        entry["HostConfig"]["UnknownPrivateField"] = private
+        entry["Mounts"][0]["Source"] += "/" + private
+    raw_source = json.dumps([producer]).encode()
+    raw_collector = json.dumps([collector]).encode()
+    source, reader = _sut().project_public_inspects_v2(
+        producer_inspect_json=raw_source, collector_inspect_json=raw_collector,
+        **_public_identity_args(),
+    )
+    assert b"PRIVATE_PROOF_CANARY_DO_NOT_PUBLISH" not in source + reader
+    assert b"GraphDriver" not in source + reader
+    assert b"LogPath" not in source + reader
+    assert b"NetworkSettings" not in source + reader
+    assert b'"Source"' not in source + reader
+    assert b'"Env"' not in source + reader
+    assert source.endswith(b"\n") and reader.endswith(b"\n")
+    assert source == (json.dumps(json.loads(source), sort_keys=True,
+                                 separators=(",", ":"), ensure_ascii=True) + "\n").encode()
+    for payload, raw, expected_role in (
+        (source, raw_source, "bundle"), (reader, raw_collector, "bundle-collector"),
+    ):
+        doc = json.loads(payload)
+        assert set(doc) == {
+            "schema", "schema_version", "role", "status", "raw_inspect",
+            "source_redaction", "record", "host_or_runtime_verified",
+        }
+        assert doc["schema"] == "RC6_R163_PUBLIC_INSPECT_V2"
+        assert doc["schema_version"] == 2
+        assert doc["role"] == expected_role
+        assert doc["status"] == "OFFHOST_PROJECTED_EVIDENCE_ONLY"
+        assert doc["host_or_runtime_verified"] is False
+        assert doc["raw_inspect"] == {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw), "published": False,
+        }
+        assert set(doc["record"]) == {"Id", "Image", "Config", "HostConfig", "Mounts"}
+        assert set(doc["record"]["Config"]) == {"User", "Labels"}
+        assert set(doc["record"]["Mounts"][0]) == {
+            "Type", "Name", "Driver", "Destination", "Mode", "RW",
+        }
+    assert _sut().verify_public_inspects_v2(
+        producer_public_json=source, collector_public_json=reader,
+        **_public_identity_args(),
+    ) == _verify()
+
+
+@pytest.mark.parametrize("declaration", ("ABSENT", "EMPTY"))
+def test_r203_source_declaration_redaction_is_explicit(declaration: str) -> None:
+    producer = _inspect()
+    if declaration == "ABSENT":
+        del producer["HostConfig"]["Mounts"][0]["Source"]
+    source, reader = _public_pair(producer)
+    assert json.loads(source)["source_redaction"] == {
+        "hostconfig_declaration": declaration,
+        "runtime_source_nonempty_observed": True,
+    }
+    assert json.loads(reader)["source_redaction"] == {
+        "hostconfig_declaration": "NOT_APPLICABLE",
+        "runtime_source_nonempty_observed": True,
+    }
+    assert _sut().verify_public_inspects_v2(
+        producer_public_json=source, collector_public_json=reader,
+        **_public_identity_args(),
+    )["volume_name"] == VOLUME
+
+
+@pytest.mark.parametrize("case", (
+    "outer_env", "outer_private_path", "wrong_version", "faked_role",
+    "fake_raw_digest", "raw_published", "raw_zero_size", "redaction_hidden",
+    "unobserved_source", "record_private_env", "hostconfig_unknown",
+    "hostconfig_declared_source", "runtime_mount_source",
+    "runtime_mode", "runtime_rw", "forged_cid", "foreign_label",
+    "host_namespace", "collector_wrong_source",
+))
+def test_r203_public_inspect_v2_forgery_is_hold79_not_host_proof(
+    case: str, capsys: pytest.CaptureFixture[str],
+) -> None:
+    source, reader = _public_pair()
+    docs = [json.loads(source), json.loads(reader)]
+    selected = docs[0] if case not in ("collector_wrong_source",) else docs[1]
+    record = selected["record"]
+    if case == "outer_env":
+        selected["Env"] = ["CANARY_SECRET"]
+    elif case == "outer_private_path":
+        selected["GraphDriver"] = {"Data": "CANARY_SECRET"}
+    elif case == "wrong_version":
+        selected["schema_version"] = 1
+    elif case == "faked_role":
+        selected["role"] = "bundle"
+        selected = docs[1]
+        selected["role"] = "bundle"
+    elif case == "fake_raw_digest":
+        selected["raw_inspect"]["sha256"] = "not-a-digest"
+    elif case == "raw_published":
+        selected["raw_inspect"]["published"] = True
+    elif case == "raw_zero_size":
+        selected["raw_inspect"]["size_bytes"] = 0
+    elif case == "redaction_hidden":
+        selected["source_redaction"]["hostconfig_declaration"] = "NAMED"
+    elif case == "unobserved_source":
+        selected["source_redaction"]["runtime_source_nonempty_observed"] = False
+    elif case == "record_private_env":
+        record["Config"]["Env"] = ["CANARY_SECRET"]
+    elif case == "hostconfig_unknown":
+        record["HostConfig"]["RuntimeSecret"] = "CANARY_SECRET"
+    elif case == "hostconfig_declared_source":
+        record["HostConfig"]["Mounts"][0]["Source"] = "CANARY_SECRET"
+    elif case == "runtime_mount_source":
+        record["Mounts"][0]["Source"] = "/private/CANARY_SECRET"
+    elif case == "runtime_mode":
+        record["Mounts"][0]["Mode"] = "rw"
+    elif case == "runtime_rw":
+        record["Mounts"][0]["RW"] = False
+    elif case == "forged_cid":
+        record["Id"] = "9" * 64
+    elif case == "foreign_label":
+        record["Config"]["Labels"]["porota.foreign"] = "CANARY_SECRET"
+    elif case == "host_namespace":
+        record["HostConfig"]["IpcMode"] = "host"
+    elif case == "collector_wrong_source":
+        record["HostConfig"]["VolumesFrom"] = ["9" * 64 + ":ro"]
+    else:
+        raise AssertionError(case)
+    with pytest.raises(_sut().VolumeProofHold, match="RC6_R163_HOLD79"):
+        _sut().verify_public_inspects_v2(
+            producer_public_json=json.dumps(docs[0]).encode(),
+            collector_public_json=json.dumps(docs[1]).encode(),
+            **_public_identity_args(),
+        )
+    output = capsys.readouterr()
+    assert "CANARY_SECRET" not in output.err + output.out
+
+
+def _privacy_tar(*, replacement: dict[str, bytes] | None = None) -> bytes:
+    xml = b'<testsuite name="offline" tests="1" failures="0" errors="0" skipped="0"><testcase name="safe"/></testsuite>'
+    payloads = {relative: (xml if relative.endswith(".xml") else
+                           b'{"status":"SYNTHETIC_OFFHOST_ONLY","real_orders_sent":0}')
+                for relative in FILES}
+    payloads.update(replacement or {})
+    return _tar_bytes(replacement=payloads)
+
+
+def test_r203_synthetic_native_privacy_all_thirteen_paths_are_checked() -> None:
+    assert _sut().verify_native_tar_privacy(_privacy_tar()) == sorted(FILES)
+
+
+@pytest.mark.parametrize("relative", FILES)
+def test_r203_canary_secret_in_each_native_member_is_hold79(relative: str) -> None:
+    # No real credentials, paths, tokens or user data are used as fixtures.
+    secret = "CANARY_SECRET_A7F3A2D927F6"
+    poisoned = (f'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+                f'<testcase name="{secret}"/></testsuite>'.encode()
+                if relative.endswith(".xml")
+                else json.dumps({"evidence": secret}).encode())
+    tar = _privacy_tar(replacement={relative: poisoned})
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY"):
+        _sut().verify_native_tar_privacy(tar)
+
+
+@pytest.mark.parametrize("payload", (
+    b'{"Authorization":"Bearer ghp_fake_fixture_token_1234567890123456"}',
+    b'{"api_key":"fake-example-value"}',
+    b'{"path":"/var/lib/docker/volumes/private"}',
+    b'{"payload":"-----BEGIN PRIVATE KEY-----"}',
+))
+def test_r203_privacy_rejects_high_signal_synthetic_credentials(payload: bytes) -> None:
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY"):
+        _sut().verify_native_tar_privacy(
+            _privacy_tar(replacement={"session/stress.json": payload}))
+
+
+def test_r203_public_v2_cli_writes_two_new_files_no_raw_stdout(
+    tmp_path: Path,
+) -> None:
+    raw_producer = tmp_path / "producer-raw.json"
+    raw_reader = tmp_path / "collector-raw.json"
+    raw_producer.write_bytes(json.dumps([_inspect()]).encode())
+    raw_reader.write_bytes(json.dumps([_inspect(collector=True)]).encode())
+    source_output = tmp_path / "source-public.json"
+    reader_output = tmp_path / "collector-public.json"
+    argv = (
+        "--producer-inspect", str(raw_producer),
+        "--collector-inspect", str(raw_reader),
+        "--source-cid", SOURCE_CID, "--collector-cid", COLLECTOR_CID,
+        "--candidate-sha", SHA, "--candidate-tree-sha", TREE,
+        "--image-id", IMAGE, "--run-id", RUN_ID,
+        "--run-attempt", RUN_ATTEMPT, "--role", ROLE,
+    )
+    result = _cli("project", *argv, "--producer-public", str(source_output),
+                  "--collector-public", str(reader_output))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == b""
+    assert source_output.stat().st_mode & 0o077 == 0
+    assert reader_output.stat().st_mode & 0o077 == 0
+    assert _sut().verify_public_inspects_v2(
+        producer_public_json=source_output.read_bytes(),
+        collector_public_json=reader_output.read_bytes(),
+        **_public_identity_args(),
+    ) == _verify()
+    repeated = _cli("project", *argv, "--producer-public", str(source_output),
+                    "--collector-public", str(reader_output))
+    assert repeated.returncode == 79  # O_EXCL; cannot silently overwrite.
+
+
+def _preview_zip(*, poison: dict[str, bytes] | None = None) -> bytes:
+    source, reader = _public_pair()
+    tar = _privacy_tar()
+    custody = _verify()
+    native = _sut().attest_collector_tar(tar, custody_receipt=custody)
+    members = {
+        "source-inspect.json": source,
+        "collector-inspect.json": reader,
+        "custody.json": (json.dumps(custody) + "\n").encode(),
+        "native.tar": tar,
+        "native-manifest.json": _sut().canonical_manifest_bytes(native),
+    }
+    members.update(poison or {})
+    files = [{
+        "path": name, "type": "file", "size_bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    } for name, data in sorted(members.items())]
+    members["porota-artifact-byte-manifest-v1.json"] = (
+        json.dumps({
+            "schema_version": 1, "candidate_sha": SHA,
+            "candidate_tree_sha": TREE, "run_id": int(RUN_ID),
+            "run_attempt": int(RUN_ATTEMPT), "artifact_name": "synthetic-offhost",
+            "file_count": len(files),
+            "total_size_bytes": sum(row["size_bytes"] for row in files),
+            "files": files,
+        }, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in sorted(members.items()):
+            archive.writestr(name, data)
+    return output.getvalue()
+
+
+def test_r203_public_zip_preview_protects_six_members_without_host_trust() -> None:
+    assert _sut().verify_probe_zip_privacy(
+        _preview_zip(), **_public_identity_args()) == 13
+
+
+@pytest.mark.parametrize("member", (
+    "source-inspect.json", "collector-inspect.json", "custody.json",
+    "native.tar", "native-manifest.json",
+))
+def test_r203_zip_preview_rejects_canary_in_any_evidence_member(member: str) -> None:
+    poisoned = {member: b"CANARY_SECRET_RANDOM_FIXTURE_ONLY"}
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY"):
+        _sut().verify_probe_zip_privacy(
+            _preview_zip(poison=poisoned), **_public_identity_args())
+
+
+def test_r203_zip_preview_rejects_raw_private_docker_inspect() -> None:
+    raw = json.dumps([_inspect()]).encode()
+    with pytest.raises(_sut().VolumeProofHold, match="HOLD79"):
+        _sut().verify_probe_zip_privacy(
+            _preview_zip(poison={"source-inspect.json": raw}),
+            **_public_identity_args())
+
+
+def test_r203_live_synthetic_canary_detector_exercises_all_paths() -> None:
+    source, reader = _public_pair()
+    assert _sut().challenge_privacy_patterns(_privacy_tar(), source, reader) is None
+
+
+
+
+def test_r203_offhost_workflow_never_uploads_private_inspect_or_skips_privacy() -> None:
+    workflow = (Path(__file__).parents[1] /
+                ".github/workflows/rc6-r163-offhost-guard79-proof.yml").read_text()
+    assert 'docker inspect "$source_cid" > "$proof_root/private/source-inspect.json"' in workflow
+    assert 'docker inspect "$collector_cid" > "$proof_root/private/collector-inspect.json"' in workflow
+    assert 'docker inspect "$source_cid" > "$proof_root/evidence/source-inspect.json"' not in workflow
+    assert 'docker inspect "$collector_cid" > "$proof_root/evidence/collector-inspect.json"' not in workflow
+    assert "--producer-public" in workflow and "--collector-public" in workflow
+    assert "proof.verify_public_inspects_v2(" in workflow
+    assert "proof.verify_probe_zip_privacy(" in workflow
+    assert "proof.challenge_privacy_patterns(" in workflow
+    assert "RC6_R191_PUBLIC_INSPECT=HOLD79" not in workflow
+    assert "release_go=NO|runtime_verified=NO" in workflow
+
+
+@pytest.mark.parametrize("path,payload", (
+    ("session/stress.json", b'{"value":"CANARY_\\u0053ECRET_ENCODED"}'),
+    ("session/dashboard_auth_52.xml",
+     b'<testsuite tests="1"><testcase name="CANARY&#95;SECRET_ENCODED"/></testsuite>'),
+))
+def test_r203_privacy_rejects_decoded_escape_canary(path: str, payload: bytes) -> None:
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY"):
+        _sut().verify_native_tar_privacy(
+            _privacy_tar(replacement={path: payload}))
+

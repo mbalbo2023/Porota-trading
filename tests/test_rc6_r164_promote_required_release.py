@@ -1,0 +1,274 @@
+"""R164 permanent fail-closed regression for Deploy V2 product promotion.
+
+Run with Python 3.11 stdlib:
+    python3 -I -m unittest discover -s tests -p test_rc6_r164_promote_required_release.py -v
+
+Targeted YAML-shape/semantic static guard, not a substitute for GitHub Actions
+parsing, trusted RELEASE byte verification, or host preflight.
+"""
+
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+
+WORKFLOW_PATH = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "porota-deploy-v2-promote.yml"
+)
+PRODUCT_BRANCH = "deploy/rc6-pr69-isolated-20260915"
+EXPECTED_HOLD79_RUN = """          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != push || "$GITHUB_REF" != "$RC6_EXPECTED_PRODUCT_REF" ]]; then
+            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=SOURCE_EVENT_OR_REF_MISMATCH|automatic_go=NO"
+            exit 79
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=PRODUCT_SHA_INVALID|automatic_go=NO"
+            exit 79
+          fi
+          echo "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE|product_sha=${GITHUB_SHA}|trusted_main_release_audit=NO_VERIFICADO|artifact_id=NO_VERIFICADO|digest=NO_VERIFICADO|automatic_go=NO"
+          echo "::error::R164 postmerge product RELEASE byte verification, attempt-freshness and trusted-main receipt are not implemented; host promotion forbidden."
+          exit 79
+"""
+EXPECTED_IF = (
+    "$" + "{{ needs.release-evidence-required.result == 'success' && "
+    "needs.release-evidence-required.outputs.release_bytes_verified == 'true' && "
+    "needs.release-evidence-required.outputs.release_product_sha == github.sha && "
+    "needs.release-evidence-required.outputs.release_artifact_id != '' && "
+    "needs.release-evidence-required.outputs.release_artifact_digest != '' && "
+    "needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' }}"
+)
+
+
+def _require(ok: bool, reason: str) -> None:
+    if not ok:
+        raise AssertionError("RC6_R164_PROMOTE_GUARD_RED:" + reason)
+
+
+def _job_blocks(source: str) -> tuple[str, dict[str, str]]:
+    """Separate top-level jobs by exact indentation; fail on ambiguous YAML."""
+    _require(source.endswith("\n"), "WORKFLOW_NO_FINAL_NEWLINE")
+    split = re.split(r"(?m)^jobs:[ \t]*\n", source)
+    _require(len(split) == 2, "JOBS_KEY_AMBIGUOUS")
+    header, body = split
+    _require(
+        re.search(
+            r"(?m)^on:\n  push:\n    branches:\n"
+            rf"      - {re.escape(PRODUCT_BRANCH)}\n",
+            header,
+        )
+        is not None,
+        "PRODUCT_PUSH_TRIGGER_CHANGED",
+    )
+    _require(
+        re.search(
+            r"(?m)^concurrency:\n"
+            r"  group: rc6-unified-paper-deploy\n"
+            r"  cancel-in-progress: false\n",
+            header,
+        )
+        is not None,
+        "GLOBAL_MUTEX_CHANGED",
+    )
+    _require(
+        re.search(r"(?m)^  workflow_dispatch:|^  workflow_run:|^  repository_dispatch:", header)
+        is None,
+        "UNREVIEWED_ALTERNATE_EVENT",
+    )
+    _require(
+        all(not line or line.startswith((" ", "#")) for line in body.splitlines()),
+        "TOP_LEVEL_KEY_AFTER_JOBS",
+    )
+    markers = list(re.finditer(r"(?m)^  ([a-z][a-z0-9-]*):[ \t]*$", body))
+    _require(bool(markers), "NO_JOB_BLOCKS")
+    _require(
+        all(not line.strip() or line.lstrip().startswith("#")
+            for line in body[: markers[0].start()].splitlines()),
+        "UNRECOGNIZED_JOB_PREAMBLE",
+    )
+    jobs: dict[str, str] = {}
+    for index, marker in enumerate(markers):
+        name = marker.group(1)
+        end = markers[index + 1].start() if index + 1 < len(markers) else len(body)
+        _require(name not in jobs, "DUPLICATE_JOB_" + name)
+        jobs[name] = body[marker.end() : end]
+    _require(
+        set(jobs) == {"release-evidence-required", "promote"},
+        "UNREVIEWED_JOB_OR_MISSING_REQUIRED_JOB",
+    )
+    return header, jobs
+
+
+def assert_product_promotion_fail_closed(source: str) -> None:
+    """Reject any missing, bypassable, or weak pre-host RELEASE trust gate."""
+    _header, jobs = _job_blocks(source)
+    gate = jobs["release-evidence-required"]
+    promote = jobs["promote"]
+
+    _require(
+        re.search(r"(?m)^    runs-on: ubuntu-24\.04$", gate) is not None,
+        "GATE_RUNNER_CHANGED",
+    )
+    _require(
+        re.search(
+            r"(?m)^    permissions:\n      contents: read\n    steps:",
+            gate,
+        )
+        is not None,
+        "GATE_PERMISSIONS_NOT_READONLY",
+    )
+    _require(
+        re.search(
+            rf"(?m)^          RC6_EXPECTED_PRODUCT_REF: refs/heads/{re.escape(PRODUCT_BRANCH)}$",
+            gate,
+        )
+        is not None,
+        "PRODUCT_REF_NOT_PINNED",
+    )
+    _require(
+        len(re.findall(r"(?m)^      - name: ", gate)) == 1,
+        "MULTIPLE_PREHOST_STEPS",
+    )
+    _require(
+        re.search(r"(?m)^        shell: bash$", gate) is not None,
+        "GATE_SHELL_CHANGED",
+    )
+    _require(
+        re.search(
+            r"(?m)^          if \[\[ "
+            r'"\$GITHUB_EVENT_NAME" != push \|\| '
+            r'"\$GITHUB_REF" != "\$RC6_EXPECTED_PRODUCT_REF" \]\]; then$',
+            gate,
+        )
+        is not None,
+        "SOURCE_EVENT_OR_REF_GUARD_REMOVED",
+    )
+    _require(
+        re.search(r'(?m)^          if \[\[ ! "\$GITHUB_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]; then$', gate)
+        is not None,
+        "PRODUCT_SHA_FORMAT_GUARD_REMOVED",
+    )
+    _require(
+        "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE"
+        in gate,
+        "TRUSTED_AUDIT_HOLD_MISSING",
+    )
+    _require(
+        len(re.findall(r"(?m)^ {10,}exit 79[ \t]*$", gate)) == 3,
+        "MUST_EXIT79_ON_EACH_GUARD_BRANCH",
+    )
+    _require(
+        gate.rstrip().endswith("          exit 79"),
+        "LAST_GATE_OPERATION_NOT_EXIT79",
+    )
+    script_parts = gate.split("        run: |\n")
+    _require(len(script_parts) == 2, "GATE_SCRIPT_AMBIGUOUS")
+    _require(
+        script_parts[1].rstrip() + "\n" == EXPECTED_HOLD79_RUN,
+        "GATE_SCRIPT_EARLY_SUCCESS_OR_UNREVIEWED_CHANGE",
+    )
+    _require(
+        re.search(r"(?m)^    outputs:", gate) is None,
+        "UNREVIEWED_TRUST_RECEIPT_OUTPUTS",
+    )
+    _require(
+        re.search(r"(?m)^\s+continue-on-error:", gate) is None,
+        "GATE_CONTINUE_ON_ERROR",
+    )
+    _require(
+        re.search(r"(?m)^\s+if:", gate) is None,
+        "CONDITIONAL_GATE_BYPASS",
+    )
+    _require(
+        re.search(r"(?m)^\s+uses:", gate) is None,
+        "PREHOST_UNREVIEWED_ACTION",
+    )
+    _require(
+        re.search(r"\b(?:sudo|ssh|docker)\b|secrets\.|GITHUB_TOKEN|GH_TOKEN", gate)
+        is None,
+        "PREHOST_HOST_OR_TOKEN_ACCESS",
+    )
+    _require(
+        len(re.findall(r"(?m)^    needs: release-evidence-required[ \t]*$", promote))
+        == 1,
+        "PROMOTE_NOT_DEPENDENT_ON_REQUIRED_GATE",
+    )
+    _require(
+        len(re.findall(r"(?m)^    needs:", promote)) == 1,
+        "PROMOTE_JOB_HAS_ALTERNATE_NEEDS",
+    )
+    statements = list(re.finditer(r"(?m)^    if: >-\n((?:^ {6}.*\n)+)", promote))
+    _require(len(statements) == 1, "PROMOTE_REQUIRED_IF_MISSING")
+    actual_if = re.sub(r"\s+", "", statements[0].group(1))
+    expected_if = re.sub(r"\s+", "", EXPECTED_IF)
+    _require(actual_if == expected_if, "PROMOTE_RELEASE_IDENTITY_OR_AUDIT_BYPASS")
+    _require(
+        len(re.findall(r"(?m)^    if:", promote)) == 1,
+        "PROMOTE_ALTERNATE_JOB_IF",
+    )
+    _require(
+        "    if: ${{ always()" not in promote
+        and "    if: ${{ failure()" not in promote,
+        "PROMOTE_ALWAYS_OR_FAILURE_BYPASS",
+    )
+    _require(
+        re.search(r"(?m)^    continue-on-error:", promote) is None,
+        "PROMOTE_JOB_CAN_IGNORE_GUARD",
+    )
+    _require(
+        re.search(r"(?m)^    steps:", promote) is not None
+        and "      - name: Prepare strict SSH\n" in promote,
+        "PROMOTE_HOST_STEPS_REMOVED_OR_MOVED",
+    )
+
+
+class R164PromoteRequiredReleaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    def test_current_workflow_must_require_trusted_release_before_host(self) -> None:
+        assert_product_promotion_fail_closed(self.source)
+
+    def test_security_mutants_are_rejected(self) -> None:
+        cases = [
+            ("no_prerequisite", "    needs: release-evidence-required\n", ""),
+            ("wrong_dependency", "    needs: release-evidence-required\n", "    needs: artifact-gate\n"),
+            ("conditional_bypass", "    if: >-\n      ${{ needs.release-evidence-required.result", "    if: ${{ always() }}\n      ${{ needs.release-evidence-required.result"),
+            ("drop_SHA_binding", "needs.release-evidence-required.outputs.release_product_sha == github.sha", "true"),
+            ("drop_byte_proof", "needs.release-evidence-required.outputs.release_bytes_verified == 'true'", "true"),
+            ("drop_artifact_id", "needs.release-evidence-required.outputs.release_artifact_id != ''", "true"),
+            ("drop_artifact_digest", "needs.release-evidence-required.outputs.release_artifact_digest != ''", "true"),
+            ("drop_trusted_audit_run", "needs.release-evidence-required.outputs.trusted_main_audit_run_id != ''", "true"),
+            ("forget_final_hard_stop", "          exit 79\n\n  promote:", "          exit 0\n\n  promote:"),
+            ("early_exit_success", "          echo \"RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE", "          exit 0\n          echo \"RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE"),
+            ("early_return_success", "          exit 79\n\n  promote:", "          return 0\n          exit 79\n\n  promote:"),
+            ("early_exit_before_source_checks", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          exit 0\n          if [[ \"$GITHUB_EVENT_NAME\""),
+            ("disable_strict_bash", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          set +e\n          if [[ \"$GITHUB_EVENT_NAME\""),
+            ("success_if_true", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          if true; then exit 0; fi\n          if [[ \"$GITHUB_EVENT_NAME\""),
+            ("fake_github_event", 'if [[ "$GITHUB_EVENT_NAME" != push', 'if [[ "$GITHUB_EVENT_NAME" == push'),
+            ("allow_secrets", "    permissions:\n      contents: read\n", "    permissions:\n      contents: write\n"),
+            ("grant_token", "    timeout-minutes: 5\n    permissions:\n      contents: read\n", "    timeout-minutes: 5\n    env:\n      GITHUB_TOKEN: ${{ github.token }}\n    permissions:\n      contents: read\n"),
+            ("ignore_failures", "    timeout-minutes: 5\n    permissions:\n      contents: read\n", "    continue-on-error: true\n    timeout-minutes: 5\n    permissions:\n      contents: read\n"),
+            ("unreviewed_host_step", "    steps:\n      - name: Refuse host promotion", "    steps:\n      - name: Unexpected host action\n        run: sudo -n true\n      - name: Refuse host promotion"),
+            ("change_mutex", "  group: rc6-unified-paper-deploy", "  group: rc6-split-promote-mutex"),
+            ("new_host_job", "jobs:\n  # R164 fail-closed", "jobs:\n  bypass-host:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh invalid-host\n  # R164 fail-closed"),
+        ]
+        for name, old, new in cases:
+            with self.subTest(mutant=name):
+                self.assertEqual(
+                    self.source.count(old),
+                    1,
+                    "Mutation anchor drifted; security test must not silently skip",
+                )
+                mutated = self.source.replace(old, new, 1)
+                with self.assertRaises(AssertionError):
+                    assert_product_promotion_fail_closed(mutated)
+
+
+if __name__ == "__main__":
+    unittest.main()

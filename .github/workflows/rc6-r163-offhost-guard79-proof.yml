@@ -73,15 +73,34 @@ jobs:
             python -m pytest -q -p no:cacheprovider \
               tests/test_rc6_sre_health_paper_zero.py
           echo 'RC6_SRE_HEALTH_PAPER_ZERO=PY311_OFFHOST_FIXTURES_ONLY'
-      - name: A976 SQLite readiness regression (ephemeral fixture only)
+      - name: A976 A785 R164 R203 offline regression matrix (no host)
         shell: bash
         run: |
           set -Eeuo pipefail
-          # SQLite tmp_path fixtures, no real DB, host, broker, or provider.
+          # Four complete offline files plus all 13 exact R203 nodes.
+          # No -k/deselection. Missing node causes a blocking pytest error.
+          # UID1000 collector-pack cases cannot run under Python runner UID1001.
+          # No continue-on-error: RED fails job after executing all collected cases.
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
             python -m pytest -q -p no:cacheprovider \
-              tests/test_rc6_a976_sqlite_readiness.py
-          echo 'RC6_A976_SQLITE_READINESS=PY311_OFFHOST_FIXTURES_ONLY'
+              tests/test_rc6_a976_sqlite_readiness.py \
+              tests/test_rc6_a785_caucion_settle_wal.py \
+              tests/test_rc6_r164_promote_required_release.py \
+              tests/test_rc6_r163_offhost_workflow.py \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_inspect_v2_exact_allowlist_and_raw_commitments \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_source_declaration_redaction_is_explicit \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_inspect_v2_forgery_is_hold79_not_host_proof \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_synthetic_native_privacy_all_thirteen_paths_are_checked \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_canary_secret_in_each_native_member_is_hold79 \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_high_signal_synthetic_credentials \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_v2_cli_writes_two_new_files_no_raw_stdout \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_zip_preview_protects_six_members_without_host_trust \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_zip_preview_rejects_canary_in_any_evidence_member \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_zip_preview_rejects_raw_private_docker_inspect \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_live_synthetic_canary_detector_exercises_all_paths \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_offhost_workflow_never_uploads_private_inspect_or_skips_privacy \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_decoded_escape_canary
+          echo 'RC6_R203_REGRESSION_MATRIX=A976_A785_R164_R203_PY311_OFFHOST_ONLY'
       - name: PPI quota and capability fake-wire regressions on Python 3.11
         shell: bash
         run: |

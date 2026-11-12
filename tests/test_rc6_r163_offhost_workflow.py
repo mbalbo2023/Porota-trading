@@ -460,7 +460,8 @@ def test_independent_runner_downloads_raw_rest_bytes_with_receipts_and_never_go(
     assert "run[\"status\"] != \"completed\"" in runs
     assert "RC6_R163_POSTRUN=NO_VERIFICADO" in runs
     assert 'run["path"] == workflow_path or run["path"].startswith(workflow_path + "@")' in runs
-    assert "proof.verify_volume_chain(" in runs
+    assert "proof.verify_public_inspects_v2(" in runs
+    assert "proof.verify_volume_chain(" not in runs  # private raw never leaves producer
     assert "proof.verify_collector_manifest(" in runs
     assert "POSTRUN_TRUSTED_DEFAULT_WORKFLOW" in WORKFLOW.read_text()
     assert "RC6_ARTIFACT_ID" in runs and "GITHUB_RUN_ID" in runs
@@ -469,3 +470,29 @@ def test_independent_runner_downloads_raw_rest_bytes_with_receipts_and_never_go(
     assert "PROBE_ONLY" in runs
     assert "R144" in WORKFLOW.read_text()
     assert "RC6_UNIFIED_PAPER_DEPLOY=GREEN" not in WORKFLOW.read_text()
+
+
+def test_r203_private_inspect_is_not_uploaded_and_public_v2_is_failclosed():
+    wf = _workflow()
+    native = _runs(wf["jobs"]["offhost-native-proof"])
+    independently_downloaded = _runs(wf["jobs"]["offhost-independent-bytes"])
+    assert 'mkdir -m 700 "$proof_root/private"' in native
+    for role in ("source", "collector"):
+        assert (f'docker inspect "$' +
+                ("source_cid" if role == "source" else "collector_cid") +
+                f'" > "$proof_root/private/{role}-inspect.json"') in native
+        assert (f'docker inspect "$' +
+                ("source_cid" if role == "source" else "collector_cid") +
+                f'" > "$proof_root/evidence/{role}-inspect.json"') not in native
+    assert 'rc6_r163_native_volume_proof.py project' in native
+    assert '--producer-public "$proof_root/evidence/source-inspect.json"' in native
+    assert '--collector-public "$proof_root/evidence/collector-inspect.json"' in native
+    assert 'rc6_r163_native_volume_proof.py privacy' in native
+    assert 'proof.challenge_privacy_patterns(' in native
+    assert 'proof.verify_probe_zip_privacy(' in native
+    assert "RC6_R191_PUBLIC_INSPECT=HOLD79" not in native
+    assert "RC6_R203_NATIVE=OFFHOST_PROBE_ONLY|release_go=NO" in native
+    assert "proof.verify_public_inspects_v2(" in independently_downloaded
+    assert "proof.verify_probe_zip_privacy(" in independently_downloaded
+    assert "private Docker inspect SHA256 preimages" in independently_downloaded
+    assert "POSTRUN_TRUSTED_DEFAULT_WORKFLOW" in WORKFLOW.read_text()
