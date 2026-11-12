@@ -966,3 +966,68 @@ def test_r205b_collector_uses_pytest_session_items_and_enforces_ten_file_order()
     assert "item.nodeid" not in collector
     assert "case.get(" not in collector
     assert "write_text" in collector
+
+
+def test_r206_offhost_exact_nine_projection_nodes_and_71_cases_failclosed() -> None:
+    """All synthetic R206 privacy regressions execute, no silent deselection."""
+    steps = _workflow()["jobs"]["python311-lock-closure"]["steps"]
+    matches = [
+        (index, step) for index, step in enumerate(steps)
+        if step.get("name") == (
+            "R206 XML and JSON opaque native projection regression (offhost TDD)"
+        )
+    ]
+    assert len(matches) == 1
+    index, step = matches[0]
+    assert step["shell"] == "bash"
+    assert "if" not in step and "continue-on-error" not in step
+    assert "R203" in steps[index - 1]["name"]
+    assert "R205" in steps[index + 1]["name"]
+
+    run = step["run"]
+    marker = "python - <<'PY'\n"
+    assert run.count(marker) == 1
+    assert run.strip().endswith("PY")
+    script = run.split(marker, 1)[1].rsplit("\nPY", 1)[0]
+    syntax = ast.parse(script)
+    assignments = [
+        node.value for node in syntax.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "NODES"
+                for target in node.targets)
+    ]
+    assert len(assignments) == 1
+    expected = tuple(
+        "tests/test_rc6_r163_native_volume_proof.py::" + name
+        for name in (
+            "test_r206_raw_junit_opaque_attribute_is_not_public_evidence",
+            "test_r206_raw_json_opaque_field_is_not_public_evidence",
+            "test_r206_collector_projects_private_fixture_to_exact_public_schema",
+            "test_r206_public_schema_rejects_tampered_synthetic_bytes",
+            "test_r206_private_junit_invalid_counts_or_negative_nodes_hold",
+            "test_r206_private_json_red_or_bool_in_place_of_zero_holds",
+            "test_r206_private_junit_rejects_unaccounted_or_nested_testcase",
+            "test_r206_private_json_rejects_nonfinite_exponent_in_discarded_field",
+            "test_r206_stress_requires_complete_ordered_positive_junit_scenarios",
+        )
+    )
+    assert ast.literal_eval(assignments[0]) == expected
+    assert sum(
+        isinstance(node, ast.Constant) and type(node.value) is int
+        and node.value == 71
+        for node in ast.walk(syntax)
+    ) >= 3
+    assert 'len(cases) != 71' in script
+    assert 'sum(len(suite.findall("testcase")) for suite in suites) != 71' in script
+    assert 'totals["tests"] != 71' in script
+    assert 'totals["skipped"] != 0' in script
+    assert 'proc.returncode != 0' in script
+    assert 'next(root.iter(tag), None) is not None' in script
+    assert "TemporaryFile() as private_log" in script
+    assert "stdout=private_log" in script and "stderr=private_log" in script
+    assert "R206_PRIVACY=HOLD79|tests=71" in script
+    assert "R206_PRIVACY=PY311_71_GREEN|release_go=NO" in script
+    assert "raise SystemExit(79)" in script
+    assert "RC6_R205_JUNIT_PRIVACY=HOLD79" in _runs(
+        _workflow()["jobs"]["offhost-native-proof"]
+    )
