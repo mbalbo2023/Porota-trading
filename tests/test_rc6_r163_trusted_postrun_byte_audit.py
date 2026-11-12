@@ -10,6 +10,7 @@ import io
 import json
 from pathlib import Path
 import stat
+import struct
 import tarfile
 import unittest
 from unittest import mock
@@ -66,7 +67,7 @@ def _json(data: object) -> bytes:
 def _tar(paths=NATIVE_PATHS) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as tf:
-        for path in paths:
+        for path in sorted(paths):
             data = ("R163 synthetic evidence for " + path).encode()
             info = tarfile.TarInfo("./" + path)
             info.uid = info.gid = 1000
@@ -120,7 +121,39 @@ def _inspect(cid, *, collector):
             "Mounts": [{"Type": "volume", "Name": VOLUME,
                         "Source": "/var/lib/docker/volumes/anonymous/_data",
                         "Driver": "local", "Destination": "/app/data",
-                        "Mode": "ro" if collector else "", "RW": not collector}]}
+                        "Mode": "" if collector else "z", "RW": not collector}]}
+
+
+def _public_inspect(cid, *, collector):
+    """Synthetic V2 projection, never a replay of private Docker inspection."""
+    raw = _inspect(cid, collector=collector)
+    raw_bytes = _json([raw])
+    host = dict(raw["HostConfig"])
+    if not collector:
+        host["Mounts"] = [{key: value for key, value in host["Mounts"][0].items()
+                           if key != "Source"}]
+    mount = {key: value for key, value in raw["Mounts"][0].items()
+             if key != "Source"}
+    return {
+        "schema": "RC6_R163_PUBLIC_INSPECT_V2",
+        "schema_version": 2,
+        "role": "bundle-collector" if collector else "bundle",
+        "status": "OFFHOST_PROJECTED_EVIDENCE_ONLY",
+        "raw_inspect": {
+            "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+            "size_bytes": len(raw_bytes),
+            "published": False,
+        },
+        "source_redaction": {
+            "hostconfig_declaration": "NOT_APPLICABLE" if collector else "EMPTY",
+            "runtime_source_nonempty_observed": True,
+        },
+        "record": {
+            "Id": raw["Id"], "Image": raw["Image"],
+            "Config": raw["Config"], "HostConfig": host, "Mounts": [mount],
+        },
+        "host_or_runtime_verified": False,
+    }
 
 
 def _evidence():
@@ -137,8 +170,8 @@ def _evidence():
     entries = {
         "native.tar": tar_bytes, "native-manifest.json": _json(native),
         "custody.json": _json(custody),
-        "source-inspect.json": _json([_inspect(SOURCE_CID, collector=False)]),
-        "collector-inspect.json": _json([_inspect(COLLECTOR_CID, collector=True)]),
+        "source-inspect.json": _json(_public_inspect(SOURCE_CID, collector=False)),
+        "collector-inspect.json": _json(_public_inspect(COLLECTOR_CID, collector=True)),
     }
     rows = [{"path": name, "type": "file", "size_bytes": len(data),
              "sha256": hashlib.sha256(data).hexdigest()}
@@ -215,6 +248,138 @@ def _repack(evidence, *, rename=None, mutate=None, symlink=None):
         receipt["size_in_bytes"] = len(evidence["zip_bytes"])
 
 
+
+def _reseal_zip_only(evidence, zip_bytes):
+    """Attacker reseals both REST receipts, with inner file manifest unchanged."""
+    evidence["zip_bytes"] = bytes(zip_bytes)
+    digest = "sha256:" + hashlib.sha256(evidence["zip_bytes"]).hexdigest()
+    for receipt in (evidence["artifact"], evidence["artifact_list"]["artifacts"][0]):
+        receipt["digest"] = digest
+        receipt["size_in_bytes"] = len(evidence["zip_bytes"])
+
+
+def _assert_readable_zip(zip_bytes):
+    """Canaries should pass the standard Python parser before the strict guard."""
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+        assert len(archive.infolist()) == 6
+        for info in archive.infolist():
+            assert archive.read(info)
+
+
+def _zip_with_metadata(evidence, *, archive_comment=b"", member_comment=b"",
+                       member_extra=b""):
+    original = io.BytesIO(evidence["zip_bytes"])
+    rewritten = io.BytesIO()
+    with zipfile.ZipFile(original, "r") as source:
+        with zipfile.ZipFile(rewritten, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for info in source.infolist():
+                entry = zipfile.ZipInfo(info.filename)
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                if info.filename == "custody.json":
+                    entry.comment = member_comment
+                    entry.extra = member_extra
+                target.writestr(entry, source.read(info))
+            target.comment = archive_comment
+    _reseal_zip_only(evidence, rewritten.getvalue())
+    _assert_readable_zip(evidence["zip_bytes"])
+
+
+def _inject_zip32_bytes(raw, at, hidden, *, local_extra=False,
+                        stream_trailing=False):
+    """Byte-mutate ZIP32, adjusting central offsets so stock zipfile still reads it."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        infos = archive.infolist()
+    eocd = len(raw) - 22
+    assert raw[eocd:eocd + 4] == b"PK\x05\x06"
+    cd_offset = struct.unpack_from("<I", raw, eocd + 16)[0]
+    cd_size = struct.unpack_from("<I", raw, eocd + 12)[0]
+    assert at <= cd_offset and not (local_extra and stream_trailing)
+    rewritten = bytearray(raw)
+    rewritten[at:at] = hidden
+    shift = len(hidden)
+    cursor = cd_offset + shift
+    for info in infos:
+        assert rewritten[cursor:cursor + 4] == b"PK\x01\x02"
+        name_len, extra_len, comment_len = struct.unpack_from("<HHH", rewritten, cursor + 28)
+        old_local = info.header_offset
+        if old_local >= at:
+            struct.pack_into("<I", rewritten, cursor + 42, old_local + shift)
+        if stream_trailing and info.filename == infos[0].filename:
+            struct.pack_into("<I", rewritten, cursor + 20, info.compress_size + shift)
+        cursor += 46 + name_len + extra_len + comment_len
+    assert cursor == cd_offset + shift + cd_size
+    struct.pack_into("<I", rewritten, eocd + shift + 16, cd_offset + shift)
+    if local_extra:
+        struct.pack_into("<H", rewritten, infos[0].header_offset + 28, shift)
+    if stream_trailing:
+        struct.pack_into("<I", rewritten, infos[0].header_offset + 18,
+                         infos[0].compress_size + shift)
+    return bytes(rewritten)
+
+
+
+def _central_only_zip32_extra(raw, extra):
+    """Valid ZIP32 central-only extra; payload and local headers unchanged."""
+    eocd = len(raw) - 22
+    cd_at = struct.unpack_from("<I", raw, eocd + 16)[0]
+    cd_size = struct.unpack_from("<I", raw, eocd + 12)[0]
+    assert raw[cd_at:cd_at + 4] == b"PK\x01\x02"
+    name_length, extra_length = struct.unpack_from("<HH", raw, cd_at + 28)
+    assert extra_length == 0
+    at = cd_at + 46 + name_length
+    out = bytearray(raw)
+    out[at:at] = extra
+    struct.pack_into("<H", out, cd_at + 30, len(extra))
+    struct.pack_into("<I", out, eocd + len(extra) + 12, cd_size + len(extra))
+    return bytes(out)
+
+
+class _NonSeekableZipSink(io.BytesIO):
+    def seekable(self):
+        return False
+
+    def seek(self, *_args):
+        raise io.UnsupportedOperation("force signed streaming data descriptors")
+
+
+
+def _stored_zip(evidence):
+    target = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as source:
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_STORED) as output:
+            for info in source.infolist():
+                output.writestr(info.filename, source.read(info))
+    _reseal_zip_only(evidence, target.getvalue())
+    _assert_readable_zip(evidence["zip_bytes"])
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as archive:
+        assert all(item.compress_type == zipfile.ZIP_STORED and
+                   item.compress_size == item.file_size
+                   for item in archive.infolist())
+
+
+def _streaming_descriptor_zip(evidence):
+    target = _NonSeekableZipSink()
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as source:
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as output:
+            for info in source.infolist():
+                output.writestr(info.filename, source.read(info))
+    _reseal_zip_only(evidence, target.getvalue())
+    _assert_readable_zip(evidence["zip_bytes"])
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as archive:
+        assert all((item.flag_bits & 8) == 8 for item in archive.infolist())
+
+
+def _first_zip32_file_parts(raw):
+    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        first = sorted(archive.infolist(), key=lambda item: item.header_offset)[0]
+        second = sorted(archive.infolist(), key=lambda item: item.header_offset)[1]
+    local = first.header_offset
+    assert raw[local:local + 4] == b"PK\x03\x04"
+    name_len, extra_len = struct.unpack_from("<HH", raw, local + 26)
+    compressed_begin = local + 30 + name_len + extra_len
+    return first, compressed_begin, compressed_begin + first.compress_size, second.header_offset
+
+
 def _reseal_native_tar(evidence, raw_tar):
     with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as original:
         payload = {name: original.read(name) for name in original.namelist()}
@@ -233,11 +398,16 @@ def _reseal_native_tar(evidence, raw_tar):
     _repack(evidence, mutate=payload)
 
 
-def _reseal_inspect(evidence, file_name, mutator):
+def _reseal_inspect(evidence, file_name, mutator=None, *, envelope=False,
+                    replacement=None):
     with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as original:
         payload = {name: original.read(name) for name in original.namelist()}
     inspect = json.loads(payload[file_name])
-    mutator(inspect[0])
+    if replacement is not None:
+        inspect = replacement
+    else:
+        assert mutator is not None
+        mutator(inspect if envelope else inspect["record"])
     payload[file_name] = _json(inspect)
     outer = json.loads(payload[MANIFEST])
     for row in outer["files"]:
@@ -259,6 +429,7 @@ def test_trusted_bytes_attest_exact_run_artifact_tree_and_tar_without_release_go
     assert result["automatic_go"] is False
     assert result["release_go"] is False
     assert result["runtime_verified"] is False
+    assert result["raw_inspect_contents_verified_by_this_guard"] is False
 
 
 MUTATIONS = [
@@ -297,6 +468,122 @@ def test_mutated_raw_zip_bytes_fail_even_when_zip_parser_would_accept_them():
     _red(evidence, "ZIP_DIGEST_MISMATCH")
 
 
+
+def test_zip32_seekable_and_signed_streaming_descriptors_both_accepted():
+    seekable = _evidence()
+    with zipfile.ZipFile(io.BytesIO(seekable["zip_bytes"])) as archive:
+        assert all(not (item.flag_bits & 8) for item in archive.infolist())
+    assert verify_postrun_bytes(**seekable)["release_go"] is False
+    streaming = _evidence()
+    _streaming_descriptor_zip(streaming)
+    assert verify_postrun_bytes(**streaming)["status"] == "POSTRUN_ARTIFACT_BYTES_MATCH"
+    assert verify_postrun_bytes(**streaming)["release_go"] is False
+
+
+def test_zip32_public_artifact_cannot_carry_resealed_global_or_member_comments():
+    hidden = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    for kwargs in (
+        {"archive_comment": hidden},
+        {"member_comment": hidden},
+        {"member_extra": struct.pack("<HH", 0xCAFE, len(hidden)) + hidden},
+    ):
+        evidence = _evidence()
+        _zip_with_metadata(evidence, **kwargs)
+        _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+def test_zip32_public_artifact_rejects_resealed_prefix_and_eocd_trailer():
+    hidden = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    for adapter in (
+        lambda raw: hidden + raw,
+        lambda raw: raw + hidden,
+    ):
+        evidence = _evidence()
+        raw = adapter(evidence["zip_bytes"])
+        _assert_readable_zip(raw)
+        _reseal_zip_only(evidence, raw)
+        _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+def test_zip32_public_artifact_rejects_resealed_precentral_and_interlocal_gaps():
+    hidden = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    for interlocal in (False, True):
+        evidence = _evidence()
+        raw = evidence["zip_bytes"]
+        if interlocal:
+            _, _, _, at = _first_zip32_file_parts(raw)
+        else:
+            at = struct.unpack_from("<I", raw, len(raw) - 22 + 16)[0]
+        modified = _inject_zip32_bytes(raw, at, hidden)
+        _assert_readable_zip(modified)
+        _reseal_zip_only(evidence, modified)
+        _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+def test_zip32_public_artifact_rejects_resealed_local_extra_only():
+    evidence = _evidence()
+    raw = evidence["zip_bytes"]
+    first, compressed_begin, _, _ = _first_zip32_file_parts(raw)
+    payload = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    extra = struct.pack("<HH", 0xCAFE, len(payload)) + payload
+    first_name_length = struct.unpack_from("<H", raw, first.header_offset + 26)[0]
+    at = first.header_offset + 30 + first_name_length
+    assert at == compressed_begin
+    modified = _inject_zip32_bytes(raw, at, extra, local_extra=True)
+    _assert_readable_zip(modified)
+    _reseal_zip_only(evidence, modified)
+    _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+
+def test_zip32_public_artifact_rejects_resealed_central_only_extra():
+    evidence = _evidence()
+    hidden = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    extra = struct.pack("<HH", 0xCAFE, len(hidden)) + hidden
+    modified = _central_only_zip32_extra(evidence["zip_bytes"], extra)
+    _assert_readable_zip(modified)
+    _reseal_zip_only(evidence, modified)
+    _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+def test_zip32_streaming_descriptor_gap_cannot_hide_private_inspect():
+    evidence = _evidence()
+    _streaming_descriptor_zip(evidence)
+    _, _, _, next_local = _first_zip32_file_parts(evidence["zip_bytes"])
+    modified = _inject_zip32_bytes(evidence["zip_bytes"], next_local,
+                                   b"PRIVATE_DOCKER_CONFIG_ENV_CANARY")
+    _assert_readable_zip(modified)
+    _reseal_zip_only(evidence, modified)
+    _red(evidence, "ZIP_ENVELOPE_UNSAFE")
+
+
+
+def test_zip32_stored_members_require_exact_compressed_uncompressed_lengths():
+    evidence = _evidence()
+    _stored_zip(evidence)
+    assert verify_postrun_bytes(**evidence)["status"] == "POSTRUN_ARTIFACT_BYTES_MATCH"
+    first, _, at, _ = _first_zip32_file_parts(evidence["zip_bytes"])
+    assert first.compress_type == zipfile.ZIP_STORED
+    altered = _inject_zip32_bytes(evidence["zip_bytes"], at,
+                                  b"PRIVATE_DOCKER_CONFIG_ENV_CANARY",
+                                  stream_trailing=True)
+    _assert_readable_zip(altered)
+    _reseal_zip_only(evidence, altered)
+    _red(evidence, "ZIP_STORED_STREAM_UNSAFE")
+
+
+def test_zip32_public_artifact_rejects_resealed_unused_deflate_bytes():
+    evidence = _evidence()
+    raw = evidence["zip_bytes"]
+    first, _, at, _ = _first_zip32_file_parts(raw)
+    assert first.compress_type == zipfile.ZIP_DEFLATED and not first.flag_bits & 8
+    modified = _inject_zip32_bytes(raw, at, b"PRIVATE_DOCKER_CONFIG_ENV_CANARY",
+                                   stream_trailing=True)
+    _assert_readable_zip(modified)
+    _reseal_zip_only(evidence, modified)
+    _red(evidence, "ZIP_DEFLATE_STREAM_UNSAFE")
+
+
 def test_resealed_zip_member_corruption_and_ambiguous_members_are_rejected():
     for rename, mutate, symlink, reason in (
         ({"native.tar": "../native.tar"}, None, None, "ZIP_PATH_UNSAFE"),
@@ -316,6 +603,55 @@ def test_resealed_native_tar_with_missing_required_file_fails_closed():
     _red(evidence, "TAR_SET_INVALID")
 
 
+
+def test_native_tar_resealed_member_padding_cannot_carry_private_docker_env():
+    evidence = _evidence()
+    raw = bytearray(_tar())
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        first = next(iter(archive))
+        visible = archive.extractfile(first).read()
+    data_end = first.offset_data + first.size
+    padding_end = first.offset_data + ((first.size + 511) // 512) * 512
+    canary = b"PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    assert len(visible) == first.size and data_end + len(canary) <= padding_end
+    raw[data_end:data_end + len(canary)] = canary
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        item = next(iter(archive))
+        assert archive.extractfile(item).read() == visible
+    _reseal_native_tar(evidence, bytes(raw))
+    _red(evidence, "TAR_CANONICAL_BYTES_MISMATCH")
+
+
+def test_native_tar_resealed_ustar_uname_header_cannot_carry_private_env():
+    evidence = _evidence()
+    raw = bytearray(_tar())
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        first = next(iter(archive))
+        contents = archive.extractfile(first).read()
+    injected = tarfile.TarInfo(first.name)
+    injected.uid = injected.gid = 1000
+    injected.mode = 0o600
+    injected.mtime = 0
+    injected.size = len(contents)
+    injected.uname = "PRIVATE_DOCKER_CONFIG_ENV_CANARY"
+    raw[first.offset:first.offset + 512] = injected.tobuf(format=tarfile.USTAR_FORMAT)
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        item = next(iter(archive))
+        assert item.uname == injected.uname
+        assert archive.extractfile(item).read() == contents
+    _reseal_native_tar(evidence, bytes(raw))
+    _red(evidence, "TAR_CANONICAL_BYTES_MISMATCH")
+
+
+def test_native_tar_resealed_zero_extension_must_match_exact_ustar_writer():
+    evidence = _evidence()
+    raw = _tar() + bytes(10240)
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        assert len(archive.getmembers()) == 13
+    _reseal_native_tar(evidence, raw)
+    _red(evidence, "TAR_CANONICAL_BYTES_MISMATCH")
+
+
 def test_resealed_docker_inspect_cannot_escalate_host_or_collector_isolation():
     for file_name, mutator in (
         ("source-inspect.json", lambda i: i["HostConfig"].__setitem__("Privileged", True)),
@@ -328,27 +664,152 @@ def test_resealed_docker_inspect_cannot_escalate_host_or_collector_isolation():
         _red(evidence, "INSPECT_CONFIG_UNSAFE")
 
 
-def test_docker_anonymous_volume_accepts_omitted_hostconfig_source_from_moby():
+def test_public_v2_omits_all_docker_source_paths_and_never_claims_raw_replay():
     evidence = _evidence()
-    _reseal_inspect(
-        evidence, "source-inspect.json",
-        lambda item: item["HostConfig"]["Mounts"][0].pop("Source"),
-    )
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as archive:
+        producer = json.loads(archive.read("source-inspect.json"))
+        collector = json.loads(archive.read("collector-inspect.json"))
+    for doc in (producer, collector):
+        assert doc["schema"] == "RC6_R163_PUBLIC_INSPECT_V2"
+        assert doc["raw_inspect"]["published"] is False
+        assert doc["source_redaction"]["runtime_source_nonempty_observed"] is True
+        assert "Source" not in doc["record"]["Mounts"][0]
+        assert set(doc["record"]) == {"Id", "Image", "Config", "HostConfig", "Mounts"}
+        assert set(doc["record"]["Config"]) == {"User", "Labels"}
+        assert "Env" not in doc["record"]["Config"]
+        assert "GraphDriver" not in doc["record"]
+        assert "LogPath" not in doc["record"]
+    assert producer["source_redaction"]["hostconfig_declaration"] == "EMPTY"
+    assert "Source" not in producer["record"]["HostConfig"]["Mounts"][0]
+    assert collector["source_redaction"]["hostconfig_declaration"] == "NOT_APPLICABLE"
     result = verify_postrun_bytes(**evidence)
     assert result["status"] == "POSTRUN_ARTIFACT_BYTES_MATCH"
-    assert result["automatic_go"] is False
-    assert result["release_go"] is False
+    assert result["raw_inspect_contents_verified_by_this_guard"] is False
+    assert result["automatic_go"] is False and result["release_go"] is False
     assert result["runtime_verified"] is False
 
 
-def test_docker_anonymous_volume_rejects_null_named_and_hex_source():
-    for source in (None, "named-volume", VOLUME):
+def test_public_v2_moby_omitted_hostconfig_declaration_contract_is_explicit():
+    evidence = _evidence()
+    _reseal_inspect(
+        evidence, "source-inspect.json",
+        lambda doc: doc["source_redaction"].__setitem__("hostconfig_declaration", "ABSENT"),
+        envelope=True,
+    )
+    result = verify_postrun_bytes(**evidence)
+    assert result["raw_inspect_contents_verified_by_this_guard"] is False
+    assert result["release_go"] is False
+
+
+
+def test_public_v2_mount_mode_uses_observed_engine_28_0_4_physical_semantics():
+    evidence = _evidence()
+    with zipfile.ZipFile(io.BytesIO(evidence["zip_bytes"])) as archive:
+        source = json.loads(archive.read("source-inspect.json"))
+        collector = json.loads(archive.read("collector-inspect.json"))
+    assert source["record"]["Mounts"][0]["Mode"] == "z"
+    assert source["record"]["Mounts"][0]["RW"] is True
+    assert collector["record"]["Mounts"][0]["Mode"] == ""
+    assert collector["record"]["Mounts"][0]["RW"] is False
+    assert verify_postrun_bytes(**evidence)["release_go"] is False
+    for role, bad_mode in (
+        ("source-inspect.json", ""), ("source-inspect.json", "ro"),
+        ("source-inspect.json", "Z"), ("collector-inspect.json", "ro"),
+        ("collector-inspect.json", "z"), ("collector-inspect.json", None),
+    ):
+        evidence = _evidence()
+        _reseal_inspect(
+            evidence, role,
+            lambda record, value=bad_mode: record["Mounts"][0].__setitem__(
+                "Mode", value
+            ),
+        )
+        _red(evidence, "INSPECT_VOLUME_MISMATCH")
+
+
+def test_public_v2_rejects_any_reintroduced_hostconfig_source_key():
+    for source in ("", None, "named-volume", VOLUME):
         evidence = _evidence()
         _reseal_inspect(
             evidence, "source-inspect.json",
             lambda item, value=source: item["HostConfig"]["Mounts"][0].__setitem__("Source", value),
         )
         _red(evidence, "INSPECT_CONFIG_UNSAFE")
+
+
+def test_public_v2_rejects_legacy_full_docker_inspect():
+    evidence = _evidence()
+    _reseal_inspect(
+        evidence, "source-inspect.json",
+        replacement=[_inspect(SOURCE_CID, collector=False)],
+    )
+    _red(evidence, "INSPECT_PROJECTION_SCHEMA_INVALID")
+
+
+def test_public_v2_resealed_raw_fields_and_host_paths_fail_schema():
+    for mutator in (
+        lambda record: record["Config"].__setitem__("Env", ["PPI_TOKEN=CANARY_SECRET"]),
+        lambda record: record.__setitem__("GraphDriver", {"Data": {"UpperDir": "/private/root"}}),
+        lambda record: record.__setitem__("LogPath", "/private/secret.log"),
+        lambda record: record.__setitem__("HostnamePath", "/private/hostname"),
+        lambda record: record["HostConfig"].__setitem__("LogConfig", {"Config": {"token": "CANARY"}}),
+        lambda record: record["Mounts"][0].__setitem__("Source", "/var/lib/docker/secret"),
+        lambda record: record["Mounts"][0].__setitem__("Source", None),
+    ):
+        evidence = _evidence()
+        _reseal_inspect(evidence, "source-inspect.json", mutator)
+        _red(evidence, "INSPECT_PROJECTION_SCHEMA_INVALID")
+
+
+def test_public_v2_fails_closed_on_schema_version_role_and_runtime_claims():
+    for key, value in (
+        ("schema", "RC6_R163_DOCKER_INSPECT_V1"),
+        ("schema_version", True),
+        ("schema_version", 1),
+        ("role", "bundle-collector"),
+        ("status", "RUNTIME_VERIFIED"),
+        ("host_or_runtime_verified", True),
+    ):
+        evidence = _evidence()
+        _reseal_inspect(
+            evidence, "source-inspect.json",
+            lambda doc, name=key, bad=value: doc.__setitem__(name, bad),
+            envelope=True,
+        )
+        _red(evidence, "INSPECT_PROJECTION_SCHEMA_INVALID")
+
+
+def test_public_v2_rejects_private_digest_or_source_attestation_abuse():
+    for section, key, value, reason in (
+        ("raw_inspect", "sha256", "g" * 64, "INSPECT_PRIVATE_DIGEST_UNVERIFIABLE"),
+        ("raw_inspect", "size_bytes", 0, "INSPECT_PRIVATE_DIGEST_UNVERIFIABLE"),
+        ("raw_inspect", "size_bytes", True, "INSPECT_PRIVATE_DIGEST_UNVERIFIABLE"),
+        ("raw_inspect", "published", True, "INSPECT_PRIVATE_DIGEST_UNVERIFIABLE"),
+        ("raw_inspect", "raw_path", "/private/secret", "INSPECT_PRIVATE_DIGEST_UNVERIFIABLE"),
+        ("source_redaction", "hostconfig_declaration", "NAMED", "INSPECT_SOURCE_REDACTION_INVALID"),
+        ("source_redaction", "runtime_source_nonempty_observed", False, "INSPECT_SOURCE_REDACTION_INVALID"),
+        ("source_redaction", "private_source", "/private/secret", "INSPECT_SOURCE_REDACTION_INVALID"),
+    ):
+        evidence = _evidence()
+        _reseal_inspect(
+            evidence, "source-inspect.json",
+            lambda doc, part=section, name=key, bad=value: doc[part].__setitem__(name, bad),
+            envelope=True,
+        )
+        _red(evidence, reason)
+
+
+def test_public_v2_private_raw_digest_is_not_independently_replayable():
+    evidence = _evidence()
+    _reseal_inspect(
+        evidence, "source-inspect.json",
+        lambda doc: doc["raw_inspect"].__setitem__("sha256", "f" * 64),
+        envelope=True,
+    )
+    result = verify_postrun_bytes(**evidence)
+    assert result["raw_inspect_contents_verified_by_this_guard"] is False
+    assert result["native_host_custody_verified"] is False
+    assert result["automatic_go"] is False and result["release_go"] is False
 
 
 def test_same_run_wrong_artifact_attempt_name_and_size_fail_closed():
