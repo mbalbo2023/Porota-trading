@@ -52,7 +52,7 @@ jobs:
           [[ "$RC6_TRUSTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
           [[ "$RC6_PUBLISHER_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
           [[ "$RC6_PUBLISHER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
-          RC6_TRUSTED_SOURCE_SHA256=c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f
+          RC6_TRUSTED_SOURCE_SHA256=9ba6422916d8008776f0884bf881d5856c0172010ca044c371aafa08b305066c
           printf '%s  %s\n' "$RC6_TRUSTED_SOURCE_SHA256" \
             scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
           python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py r206-postcompletion \

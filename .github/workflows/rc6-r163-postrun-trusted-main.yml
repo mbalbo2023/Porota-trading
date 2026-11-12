@@ -1,5 +1,6 @@
 # R206 B trusted-main PREUPLOAD publisher. Upstream HOLD79 does not upload.
-# This workflow must reproduce a fresh OFFHOST probe before trusted publish.
+# This workflow first authenticates A's Python/native/R205 steps via GitHub REST,
+# then reproduces a fresh OFFHOST probe before trusted publish.
 # R144, PAPER safety, host control and release GO remain held.
 name: RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)
 
@@ -56,13 +57,13 @@ jobs:
           [[ "$RC6_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
           [[ "$RC6_UPSTREAM_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
           [[ "$RC6_UPSTREAM_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
-          RC6_TRUSTED_SOURCE_SHA256=c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f
+          RC6_TRUSTED_SOURCE_SHA256=9ba6422916d8008776f0884bf881d5856c0172010ca044c371aafa08b305066c
           printf '%s  %s\n' "$RC6_TRUSTED_SOURCE_SHA256" \
             scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
           python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py r206-upstream \
             --event "$GITHUB_EVENT_PATH" --run-id "$RC6_UPSTREAM_ID" \
             --run-attempt "$RC6_UPSTREAM_ATTEMPT"
-          echo 'RC6_R206_UPSTREAM=IDENTITY_ONLY|fresh_reproduction_required|release_go=NO'
+          echo 'RC6_R206_UPSTREAM=PREUPLOAD_R205_STEPS=AUTHENTICATED|r205_exit_code_verified=NO|fresh_reproduction_required|release_go=NO'
       - name: Checkout candidate as Docker-only build context
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

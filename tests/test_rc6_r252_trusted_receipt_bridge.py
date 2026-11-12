@@ -421,6 +421,78 @@ def test_trusted_bridge_consumes_actual_r251_e_receipt_zip(tmp_path):
     assert result["owner_go_verified"] is False
 
 
+def test_r252_real_d_and_e_zip_gate_rejects_resealed_missing_same_image_native(tmp_path):
+    """R252 must invoke the actual D/E byte verifier, including native_proof."""
+    from test_rc6_r163_artifact_byte_verifier import RELEASE_FILES
+
+    stage = tmp_path / "seven-member-d"
+    stage.mkdir(mode=0o700)
+    for name, raw in RELEASE_FILES.items():
+        if name == "porota-image-build-receipt.json":
+            build_receipt = json.loads(raw)
+            build_receipt["native_proof"].update(run_id=D_ID, run_attempt=D_ATTEMPT)
+            raw = json.dumps(build_receipt, sort_keys=True).encode()
+        (stage / name).write_bytes(raw)
+    real_r251_bytes.seal_release_directory(
+        stage, candidate_sha=S, candidate_tree_sha=T,
+        publisher_main_sha=M, run_id=D_ID, run_attempt=D_ATTEMPT)
+
+    d_zip, e_zip = tmp_path / "real-d.zip", tmp_path / "real-e.zip"
+    e_receipt = receipt()
+    records = github_records()
+
+    def publish_fixture():
+        with zipfile.ZipFile(d_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for path in sorted(stage.iterdir()):
+                zf.write(path, arcname=path.name)
+        d_digest = "sha256:" + hashlib.sha256(d_zip.read_bytes()).hexdigest()
+        e_receipt["release_artifact_digest"] = d_digest
+        e_receipt["release_artifact_size_bytes"] = d_zip.stat().st_size
+        e_receipt["total_size_bytes"] = sum(
+            path.stat().st_size for path in stage.iterdir()
+            if path.name != real_r251_bytes.MANIFEST_NAME)
+        with zipfile.ZipFile(e_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("rc6-r251-release-postcompletion-v1.json",
+                        json.dumps(e_receipt, sort_keys=True))
+        e_digest = "sha256:" + hashlib.sha256(e_zip.read_bytes()).hexdigest()
+        for artifact_id, digest, size, run_id in (
+            (D_ART, d_digest, d_zip.stat().st_size, D_ID),
+            (E_ART, e_digest, e_zip.stat().st_size, E_ID),
+        ):
+            records[f"{API}/actions/artifacts/{artifact_id}"].update(
+                digest=digest, size_in_bytes=size)
+            records[f"{API}/actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0].update(
+                digest=digest, size_in_bytes=size)
+
+    def bridge_with_real_bytes():
+        github = FakeGitHub(records)
+        github.download_artifact = lambda artifact_id: d_zip if artifact_id == D_ART else e_zip
+        return guard.verify_trusted_release(
+            inputs(), github=github, byte_verifier=real_r251_bytes)
+
+    publish_fixture()
+    assert bridge_with_real_bytes()["status"] == "TRUSTED_RELEASE_BYTES_BOUND"
+
+    # Re-seal the manifest and both GitHub artifact digests as an attacker
+    # would. The inner receipt is still missing its mandatory native proof.
+    receipt_file = stage / "porota-image-build-receipt.json"
+    build_receipt = json.loads(receipt_file.read_text())
+    build_receipt.pop("native_proof")
+    replacement = json.dumps(build_receipt, sort_keys=True).encode()
+    receipt_file.write_bytes(replacement)
+    manifest_file = stage / real_r251_bytes.MANIFEST_NAME
+    manifest = json.loads(manifest_file.read_text())
+    for row in manifest["files"]:
+        if row["path"] == receipt_file.name:
+            manifest["total_size_bytes"] += len(replacement) - row["size_bytes"]
+            row.update(size_bytes=len(replacement),
+                       sha256=hashlib.sha256(replacement).hexdigest())
+    manifest_file.write_text(json.dumps(manifest, sort_keys=True))
+    publish_fixture()
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge_with_real_bytes()
+
+
 @pytest.mark.parametrize("bad", [
     {"RC6_BRIDGE_REPOSITORY": "someone/else"},
     {"RC6_BRIDGE_CANDIDATE_SHA": "z" * 40},

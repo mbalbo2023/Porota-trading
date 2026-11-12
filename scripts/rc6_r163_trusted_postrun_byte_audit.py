@@ -15,6 +15,8 @@ artifact ZIP digest must match GitHub REST. No R144/HOLD79/release gate is lifte
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from datetime import datetime
 import hashlib
 import io
@@ -42,6 +44,47 @@ CANDIDATE_REF = "integration/rc6-a1115-r87-unified-paper-candidate-20261110"
 PR_NUMBER = 1087
 UPSTREAM_NAME = "RC6 R163 Offhost Guard79 Proof (PROBE ONLY)"
 UPSTREAM_PATH = ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
+# R265: allow ONLY these exact fully reviewed A workflow *file bytes*.
+# SHA 8c1084a6 is #1087's original source; the second is final integrated
+# R265 SPEED's conditional-concurrency, no-ready-trigger variant at 8b1b51b.
+# Both intermediate variants (f266317, bed8082) are deliberately excluded.
+# Top-level env/defaults (e.g. BASH_ENV) can change
+# execution without altering a job block, so the full-source pin is mandatory.
+# No other PR-owned YAML variant may trigger B without trusted-main review.
+UPSTREAM_REVIEWED_SOURCE_SHA256 = frozenset({
+    "209e108702fe690289d5ea8c0abffec4eef9b8cb29b27ec55b5767116657043b",
+    "5c068762f68d019851792ba61e3b5e6be387441f67607ba11228efba87361afa",
+})
+# Retain independent exact Python/native job hashes as defense in depth.
+UPSTREAM_PYTHON_JOB_SHA256 = "8e0a4bc917d543c7a05df4088ef80080a9899cb49dc7874163e7797ae20a8504"
+UPSTREAM_NATIVE_JOB_SHA256 = "ce3a3b6d68a8185c22adf7feca472b5efbecc0944911ac5c1636e2cab8e7a364"
+UPSTREAM_PYTHON_JOB = "Python 3.11 lock and incident fixtures (offhost)"
+UPSTREAM_NATIVE_JOB = "Native CID and anonymous volume producer (offhost)"
+UPSTREAM_INDEPENDENT_JOB = "Separate-runner preliminary raw REST bytes (NO RELEASE)"
+UPSTREAM_PYTHON_STEPS = (
+    "Reject non-GitHub-hosted runner (HOLD79)",
+    "Exact SHA checkout without persisted credentials",
+    "Python 3.11",
+    "Locked dependency closure and import smoke",
+    "SRE health PAPER-zero regression (in-memory SQLite only)",
+    "A976 A785 R164 R203 offline regression matrix (no host)",
+    "R206 XML and JSON opaque native projection regression (offhost TDD)",
+    "R205 signals risk exit ledger exact 191 fixture diagnostic (offline)",
+    "PPI quota and capability fake-wire regressions on Python 3.11",
+    "Replay failed host transition regression fixtures",
+    "Verify mount identity and redacted HOLD79 diagnostics on Python 3.11",
+)
+UPSTREAM_NATIVE_STEPS = (
+    "Reject non-GitHub-hosted runner (HOLD79)",
+    "Checkout exact candidate without persisted credentials",
+    "Strict candidate identity",
+    "Setup isolated image builder",
+    "Build one ephemeral PROBE image, never push",
+    "Run native stages in one UID1000 anonymous volume",
+    "R205 raw JUnit privacy hold before any upload (R206 required)",
+    "Seal all evidence before upload (artifact ID assigned later)",
+    "Upload sealed offhost probe evidence (never release artifact)",
+)
 TRUSTED_PUBLISHER_NAME = "RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)"
 TRUSTED_PUBLISHER_PATH = ".github/workflows/rc6-r163-postrun-trusted-main.yml"
 ZIP_MANIFEST = "porota-artifact-byte-manifest-v1.json"
@@ -1547,22 +1590,152 @@ def audit_from_github(client: Any, *, event: Mapping[str, Any],
     return verified
 
 
+def _verify_upstream_source_contract(receipt: Mapping[str, Any]) -> None:
+    """Bind job/step labels to reviewed executable A source at the same SHA.
+
+    GitHub's jobs REST proves actual step results, but PR-owned step *names*
+    alone cannot prove that the R205 step still executes intentional exit79.
+    A's complete YAML source and exact Python/native blocks are independently
+    pinned here. Never read run logs, raw JUnit, artifacts, or execute
+    candidate source in this check.
+    """
+    if (type(receipt) is not dict or
+            receipt.get("path") != UPSTREAM_PATH or
+            receipt.get("name") != UPSTREAM_PATH.rsplit("/", 1)[-1] or
+            receipt.get("encoding") != "base64" or
+            not _sha(receipt.get("sha")) or
+            type(receipt.get("size")) is not int or
+            not 0 < receipt["size"] <= 256 * 1024 or
+            type(receipt.get("content")) is not str or
+            not 0 < len(receipt["content"]) <= 360 * 1024 or
+            "\r" in receipt["content"]):
+        _red("PREUPLOAD_WORKFLOW_SOURCE_INVALID")
+    try:
+        raw = base64.b64decode(receipt["content"].replace("\n", ""),
+                               validate=True)
+        source = raw.decode("utf-8")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        _red("PREUPLOAD_WORKFLOW_SOURCE_INVALID")
+    git_blob = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+    if len(raw) != receipt["size"] or git_blob != receipt["sha"]:
+        _red("PREUPLOAD_WORKFLOW_SOURCE_INVALID")
+    if hashlib.sha256(raw).hexdigest() not in UPSTREAM_REVIEWED_SOURCE_SHA256:
+        _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
+
+    # Exact top-level job boundaries; reject duplicate markers, omitted jobs,
+    # reordered blocks, or altered bytes within the two reviewed blocks.
+    lines = source.splitlines(keepends=True)
+    roots = [i for i, line in enumerate(lines) if line == "jobs:\n"]
+    if len(roots) != 1:
+        _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
+    job_keys = [line for line in lines[roots[0] + 1:]
+                if re.fullmatch(r"  [a-zA-Z0-9_-]+:\n", line)]
+    boundaries = (
+        "  python311-lock-closure:\n",
+        "  offhost-native-proof:\n",
+        "  offhost-independent-bytes:\n",
+    )
+    if tuple(job_keys) != boundaries:
+        _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
+    positions = [tuple(i for i, line in enumerate(lines) if line == marker)
+                 for marker in boundaries]
+    if (any(len(indices) != 1 for indices in positions) or
+            not positions[0][0] < positions[1][0] < positions[2][0]):
+        _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
+    python_job = "".join(lines[positions[0][0]:positions[1][0]]).encode()
+    native_job = "".join(lines[positions[1][0]:positions[2][0]]).encode()
+    if (hashlib.sha256(python_job).hexdigest() != UPSTREAM_PYTHON_JOB_SHA256 or
+            hashlib.sha256(native_job).hexdigest() != UPSTREAM_NATIVE_JOB_SHA256):
+        _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
+
+
+def _verify_upstream_job_steps(job: Mapping[str, Any], *,
+                               expected: Mapping[int, tuple[str, str]],
+                               reason: str) -> None:
+    """Exact authenticated GitHub step numbers/conclusions, no log parsing."""
+    steps = job.get("steps")
+    if type(steps) is not list or len(steps) != len(expected):
+        _red(reason)
+    seen: dict[int, tuple[str, str]] = {}
+    for row in steps:
+        if (type(row) is not dict or type(row.get("number")) is not int or
+                row["number"] <= 0 or row.get("status") != "completed" or
+                type(row.get("name")) is not str or
+                type(row.get("conclusion")) is not str or
+                row["number"] in seen):
+            _red(reason)
+        seen[row["number"]] = row["name"], row["conclusion"]
+    if seen != expected:
+        _red(reason)
+
+
+def _verify_upstream_jobs(receipt: Mapping[str, Any], *,
+                          run_id: int, sha: str) -> None:
+    """Only A Python SUCCESS -> native SUCCESS -> R205 failure may trigger B."""
+    if (type(receipt) is not dict or type(receipt.get("total_count")) is not int or
+            receipt["total_count"] != 3 or type(receipt.get("jobs")) is not list or
+            len(receipt["jobs"]) != 3):
+        _red("PREUPLOAD_JOB_IDENTITY_MISMATCH")
+    expected_names = {UPSTREAM_PYTHON_JOB, UPSTREAM_NATIVE_JOB,
+                      UPSTREAM_INDEPENDENT_JOB}
+    jobs = receipt["jobs"]
+    if (any(type(row) is not dict or not _positive(row.get("id")) or
+            row.get("run_id") != run_id or row.get("head_sha") != sha or
+            row.get("status") != "completed" or type(row.get("name")) is not str or
+            row["name"] not in expected_names or
+            ("workflow_name" in row and row["workflow_name"] != UPSTREAM_NAME)
+            for row in jobs) or
+            len({row["id"] for row in jobs}) != 3 or
+            {row["name"] for row in jobs} != expected_names):
+        _red("PREUPLOAD_JOB_IDENTITY_MISMATCH")
+    by_name = {row["name"]: row for row in jobs}
+    python_job = by_name[UPSTREAM_PYTHON_JOB]
+    if python_job.get("conclusion") != "success":
+        _red("PREUPLOAD_PYTHON_JOB_NOT_SUCCESS")
+
+    python_expected = {
+        1: ("Set up job", "success"),
+        **{i: (name, "success") for i, name in enumerate(UPSTREAM_PYTHON_STEPS, 2)},
+        23: ("Post Python 3.11", "success"),
+        24: ("Post Exact SHA checkout without persisted credentials", "success"),
+        25: ("Complete job", "success"),
+    }
+    _verify_upstream_job_steps(python_job, expected=python_expected,
+                               reason="PREUPLOAD_PYTHON_STAGE_MISMATCH")
+    native_job = by_name[UPSTREAM_NATIVE_JOB]
+    if native_job.get("conclusion") != "failure":
+        _red("PREUPLOAD_NATIVE_STAGE_MISMATCH")
+    native_expected = {
+        1: ("Set up job", "success"),
+        **{i: (name, "failure" if i == 8 else "skipped" if i in (9, 10)
+               else "success") for i, name in enumerate(UPSTREAM_NATIVE_STEPS, 2)},
+        18: ("Post Build one ephemeral PROBE image, never push", "success"),
+        19: ("Post Setup isolated image builder", "success"),
+        20: ("Post Checkout exact candidate without persisted credentials", "success"),
+        21: ("Complete job", "success"),
+    }
+    _verify_upstream_job_steps(native_job, expected=native_expected,
+                               reason="PREUPLOAD_NATIVE_STAGE_MISMATCH")
+    independent = by_name[UPSTREAM_INDEPENDENT_JOB]
+    if independent.get("conclusion") != "skipped" or independent.get("steps") not in (None, []):
+        _red("PREUPLOAD_INDEPENDENT_STAGE_MISMATCH")
+
+
 def verify_upstream_preupload_from_github(client: Any, *,
                                           event: Mapping[str, Any],
                                           expected_run_id: int,
                                           expected_run_attempt: int) -> dict[str, Any]:
-    """Authenticate a currently failed-by-HOLD upstream before fresh B probe.
+    """Before Docker, authenticate A's exact Python/native/R205 job results.
 
-    This source receipt is not native proof: R205 deliberately caused exit79,
-    and GitHub REST cannot attest why a run failed from run metadata alone.
-    Trusted B must independently reproduce/validate all native tests before
-    any public projection is sealed and uploaded. No U/M artifact is allowed.
+    GitHub REST proves stage conclusions, not raw R205 process exit status.
+    Trusted B independently reproduces native tests before public upload.
     """
     prefix = f"/repos/{REPOSITORY}"
     run_path = f"{prefix}/actions/runs/{expected_run_id}"
     attempt_path = f"{run_path}/attempts/{expected_run_attempt}"
     pr_path = f"{prefix}/pulls/{PR_NUMBER}"
     list_path = f"{run_path}/artifacts?per_page=100"
+    jobs_path = f"{attempt_path}/jobs?per_page=100"
     run = client.get_json(run_path)
     attempt = client.get_json(attempt_path)
     pr = client.get_json(pr_path)
@@ -1581,20 +1754,26 @@ def verify_upstream_preupload_from_github(client: Any, *,
             artifacts.get("total_count") != 0 or
             artifacts.get("artifacts") != []):
         _red("PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT")
+    jobs = client.get_json(jobs_path)
+    _verify_upstream_jobs(jobs, run_id=expected_run_id, sha=candidate_sha)
+    source_path = f"{prefix}/contents/{UPSTREAM_PATH}?ref={candidate_sha}"
+    _verify_upstream_source_contract(client.get_json(source_path))
     run_after = client.get_json(run_path)
     attempt_after = client.get_json(attempt_path)
     pr_after = client.get_json(pr_path)
     art_after = client.get_json(list_path)
+    jobs_after = client.get_json(jobs_path)
     if (run_after != run or attempt_after != attempt or
-            pr_after != pr or art_after != artifacts):
+            pr_after != pr or art_after != artifacts or jobs_after != jobs):
         _red("PREUPLOAD_UPSTREAM_REST_RACE")
     return {
-        "status": "UPSTREAM_IDENTITY_ONLY_REPRODUCE_REQUIRED",
+        "status": "UPSTREAM_R205_STAGE_MATCH_REPRODUCE_REQUIRED",
         "candidate_sha": candidate_sha,
         "candidate_tree_sha": candidate_tree,
         "upstream_run_id": expected_run_id,
         "upstream_attempt": expected_run_attempt,
         "upstream_ci_green_verified": False,
+        "r205_exit_code_verified": False,
         "upstream_artifact_count": 0,
         "release_go": False,
         "runtime_verified": False,

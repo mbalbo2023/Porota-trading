@@ -103,6 +103,18 @@ class TrustedMainWorkflowTest(unittest.TestCase):
                 self.assertEqual(match.group(1), expected)
                 self.assertIn("sha256sum --check --status", source)
 
+    def test_r265_b_authenticates_actual_upstream_jobs_before_candidate_checkout_or_build(self):
+        source = PUBLISHER.read_text(encoding="utf-8")
+        first = source.index("r206-upstream")
+        jobs = source.index("PREUPLOAD_R205_STEPS=AUTHENTICATED")
+        candidate = source.index("Checkout candidate as Docker-only build context")
+        build = source.index("docker build --no-cache")
+        self.assertLess(first, jobs)
+        self.assertLess(jobs, candidate)
+        self.assertLess(candidate, build)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", source[:candidate])
+        self.assertNotIn("GITHUB_TOKEN:", source[candidate:build])
+
     def test_every_b_and_c_inline_bash_is_syntax_valid(self):
         for path in (PUBLISHER, POSTCOMPLETION):
             source = path.read_text(encoding="utf-8")

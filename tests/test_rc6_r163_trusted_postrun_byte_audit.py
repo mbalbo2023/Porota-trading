@@ -6,6 +6,7 @@ These are synthetic REST replies and TAR/ZIP bytes; never a GitHub/runtime GO.
 from __future__ import annotations
 
 import hashlib
+import base64
 import copy
 import io
 import json
@@ -652,36 +653,321 @@ def test_r206_trusted_preupload_writes_six_privacy_verified_files_in_private_sta
 
 
 def test_r206_trusted_publisher_rechecks_upstream_failure_and_zero_artifacts():
-    upstream, _, _ = _r206_publisher_receipts()
-    prefix = f"/repos/{REPO}"
-    route = f"{prefix}/actions/runs/{RUN}"
-    rows = {
-        route: upstream["run"],
-        route + f"/attempts/{ATTEMPT}": upstream["attempt"],
-        f"{prefix}/pulls/1087": upstream["pr"],
-        f"{prefix}/git/commits/{SHA}": upstream["commit"],
-        route + "/artifacts?per_page=100": {"total_count": 0, "artifacts": []},
-    }
-
-    class Client:
-        def get_json(self, path):
-            return rows[path]
-
-    result = trusted.verify_upstream_preupload_from_github(
-        Client(), event=upstream["event"],
-        expected_run_id=RUN, expected_run_attempt=ATTEMPT)
+    client = _R265FakeGitHub()
+    result = client.check()
     assert result["candidate_sha"] == SHA
     assert result["candidate_tree_sha"] == TREE
     assert result["upstream_ci_green_verified"] is False
-    rows[route + "/artifacts?per_page=100"] = {
+    client.rows[client.run_path + "/artifacts?per_page=100"] = {
         "total_count": 1, "artifacts": [{"id": 88}],
     }
     with __import__("pytest").raises(
         PostrunEvidenceRed, match="^PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT$"
     ):
-        trusted.verify_upstream_preupload_from_github(
-            Client(), event=upstream["event"],
-            expected_run_id=RUN, expected_run_attempt=ATTEMPT)
+        client.check()
+
+
+def _r265_upstream_step_receipts():
+    """Synthetic GitHub *attempt-specific* job metadata; no raw JUnit/logs."""
+    py_names = (
+        "Reject non-GitHub-hosted runner (HOLD79)",
+        "Exact SHA checkout without persisted credentials",
+        "Python 3.11",
+        "Locked dependency closure and import smoke",
+        "SRE health PAPER-zero regression (in-memory SQLite only)",
+        "A976 A785 R164 R203 offline regression matrix (no host)",
+        "R206 XML and JSON opaque native projection regression (offhost TDD)",
+        "R205 signals risk exit ledger exact 191 fixture diagnostic (offline)",
+        "PPI quota and capability fake-wire regressions on Python 3.11",
+        "Replay failed host transition regression fixtures",
+        "Verify mount identity and redacted HOLD79 diagnostics on Python 3.11",
+    )
+    native_names = (
+        "Reject non-GitHub-hosted runner (HOLD79)",
+        "Checkout exact candidate without persisted credentials",
+        "Strict candidate identity",
+        "Setup isolated image builder",
+        "Build one ephemeral PROBE image, never push",
+        "Run native stages in one UID1000 anonymous volume",
+        "R205 raw JUnit privacy hold before any upload (R206 required)",
+        "Seal all evidence before upload (artifact ID assigned later)",
+        "Upload sealed offhost probe evidence (never release artifact)",
+    )
+
+    def step(name, number, conclusion="success"):
+        return {"name": name, "number": number, "status": "completed",
+                "conclusion": conclusion}
+
+    common = {"run_id": RUN, "head_sha": SHA, "status": "completed"}
+    return {"total_count": 3, "jobs": [
+        dict(common, id=4101, name="Python 3.11 lock and incident fixtures (offhost)",
+             conclusion="success", steps=(
+                 [step("Set up job", 1)] +
+                 [step(name, n) for n, name in enumerate(py_names, 2)] +
+                 [step("Post Python 3.11", 23),
+                  step("Post Exact SHA checkout without persisted credentials", 24),
+                  step("Complete job", 25)])),
+        dict(common, id=4102, name="Native CID and anonymous volume producer (offhost)",
+             conclusion="failure", steps=(
+                 [step("Set up job", 1)] +
+                 [step(name, n, "failure" if n == 8 else
+                       "skipped" if n in (9, 10) else "success")
+                  for n, name in enumerate(native_names, 2)] +
+                 [step("Post Build one ephemeral PROBE image, never push", 18),
+                  step("Post Setup isolated image builder", 19),
+                  step("Post Checkout exact candidate without persisted credentials", 20),
+                  step("Complete job", 21)])),
+        dict(common, id=4103, name="Separate-runner preliminary raw REST bytes (NO RELEASE)",
+             conclusion="skipped", steps=None),
+    ]}
+
+
+def _r265_source_receipt():
+    """A small synthetic fixture with hashes injected only into offline tests."""
+    python = (
+        "  python311-lock-closure:\n"
+        "    name: Python 3.11 lock and incident fixtures (offhost)\n"
+        "    steps:\n"
+        "      - name: Locked dependency closure and import smoke\n"
+        "        run: python -m pip check\n"
+    )
+    native = (
+        "  offhost-native-proof:\n"
+        "    name: Native CID and anonymous volume producer (offhost)\n"
+        "    needs: [python311-lock-closure]\n"
+        "    steps:\n"
+        "      - name: Run native stages in one UID1000 anonymous volume\n"
+        "        run: true\n"
+        "      - name: R205 raw JUnit privacy hold before any upload (R206 required)\n"
+        "        run: |\n"
+        "          echo RC6_R205_JUNIT_PRIVACY=HOLD79\n"
+        "          exit 79\n"
+    )
+    source = ("name: RC6 R163 Offhost Guard79 Proof (PROBE ONLY)\n"
+              "jobs:\n" + python + native +
+              "  offhost-independent-bytes:\n    needs: [offhost-native-proof]\n")
+    raw = source.encode()
+    receipt = {
+        "path": WORKFLOW, "name": WORKFLOW.rsplit("/", 1)[-1],
+        "encoding": "base64", "content": base64.encodebytes(raw).decode(),
+        "size": len(raw),
+        "sha": hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest(),
+    }
+    return receipt, (hashlib.sha256(python.encode()).hexdigest(),
+                     hashlib.sha256(native.encode()).hexdigest())
+
+
+class _R265FakeGitHub:
+    def __init__(self):
+        upstream, _, _ = _r206_publisher_receipts()
+        prefix = f"/repos/{REPO}"
+        self.run_path = f"{prefix}/actions/runs/{RUN}"
+        self.jobs_path = self.run_path + f"/attempts/{ATTEMPT}/jobs?per_page=100"
+        self.source_path = f"{prefix}/contents/{WORKFLOW}?ref={SHA}"
+        self.source, self.source_hashes = _r265_source_receipt()
+        self.reviewed_source_hash = hashlib.sha256(
+            base64.b64decode(self.source["content"])).hexdigest()
+        self.rows = {
+            self.run_path: upstream["run"],
+            self.run_path + f"/attempts/{ATTEMPT}": upstream["attempt"],
+            f"{prefix}/pulls/1087": upstream["pr"],
+            f"{prefix}/git/commits/{SHA}": upstream["commit"],
+            self.run_path + "/artifacts?per_page=100":
+                {"total_count": 0, "artifacts": []},
+            self.jobs_path: _r265_upstream_step_receipts(),
+            self.source_path: self.source,
+        }
+        self.event = upstream["event"]
+        self.calls = []
+
+    def get_json(self, path):
+        self.calls.append(path)
+        return copy.deepcopy(self.rows[path])
+
+    def check(self):
+        with (mock.patch.object(trusted, "UPSTREAM_PYTHON_JOB_SHA256",
+                                self.source_hashes[0], create=True),
+              mock.patch.object(trusted, "UPSTREAM_NATIVE_JOB_SHA256",
+                                self.source_hashes[1], create=True),
+              mock.patch.object(trusted, "UPSTREAM_REVIEWED_SOURCE_SHA256",
+                                frozenset({self.reviewed_source_hash}), create=True)):
+            return trusted.verify_upstream_preupload_from_github(
+                self, event=self.event, expected_run_id=RUN,
+                expected_run_attempt=ATTEMPT)
+
+
+def test_r265_genuine_r205_failure_requires_trusted_attempt_jobs_before_b_build():
+    client = _R265FakeGitHub()
+    result = client.check()
+    assert result["status"] == "UPSTREAM_R205_STAGE_MATCH_REPRODUCE_REQUIRED"
+    assert result["upstream_ci_green_verified"] is False
+    assert result["r205_exit_code_verified"] is False
+    assert result["release_go"] is False
+    assert client.jobs_path in client.calls
+    assert client.source_path in client.calls
+    assert "/jobs?per_page=100" not in client.calls
+
+
+def test_r265_early_python_failure_holds_without_redundant_b_build():
+    client = _R265FakeGitHub()
+    jobs = client.rows[client.jobs_path]["jobs"]
+    jobs[0]["conclusion"] = "failure"
+    jobs[0]["steps"][5]["conclusion"] = "failure"
+    jobs[1]["conclusion"] = "skipped"
+    jobs[1]["steps"] = None
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PREUPLOAD_PYTHON_JOB_NOT_SUCCESS$"
+    ):
+        client.check()
+
+
+def test_r265_cancelled_a_is_not_intentional_r205_hold():
+    client = _R265FakeGitHub()
+    for receipt in (client.event["workflow_run"], client.rows[client.run_path],
+                    client.rows[client.run_path + f"/attempts/{ATTEMPT}"]):
+        receipt["conclusion"] = "cancelled"
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^EVENT_UPSTREAM_NOT_SUCCESS$"
+    ):
+        client.check()
+
+
+def test_r265_missing_ambiguous_or_foreign_native_job_is_hold():
+    for mutation in ("missing", "duplicate", "different_sha", "unknown_job"):
+        client = _R265FakeGitHub()
+        jobs = client.rows[client.jobs_path]
+        if mutation == "missing":
+            jobs["jobs"].pop(1)
+        elif mutation == "duplicate":
+            jobs["jobs"].append(copy.deepcopy(jobs["jobs"][1]))
+            jobs["jobs"][-1]["id"] = 4114
+        elif mutation == "different_sha":
+            jobs["jobs"][1]["head_sha"] = "d" * 40
+        else:
+            jobs["jobs"][1]["name"] = "Different native job"
+        jobs["total_count"] = len(jobs["jobs"])
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_JOB_IDENTITY_MISMATCH$"
+        ):
+            client.check()
+
+
+def test_r265_missing_skipped_or_wrong_r205_stage_is_hold():
+    for mutation in ("missing_native", "skipped_native", "wrong_stage", "hold_success"):
+        client = _R265FakeGitHub()
+        steps = client.rows[client.jobs_path]["jobs"][1]["steps"]
+        if mutation == "missing_native":
+            steps.pop(6)
+        elif mutation == "skipped_native":
+            steps[6]["conclusion"] = "skipped"
+        elif mutation == "wrong_stage":
+            steps[7]["name"] = "Renamed R205 step"
+        else:
+            steps[7]["conclusion"] = "success"
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_NATIVE_STAGE_MISMATCH$"
+        ):
+            client.check()
+
+
+def test_r265_upstream_source_forged_hold_script_rejected_even_if_steps_match():
+    client = _R265FakeGitHub()
+    raw = base64.b64decode(client.source["content"])
+    forged = raw.replace(b"exit 79", b"exit 13")
+    client.source["content"] = base64.encodebytes(forged).decode()
+    client.source["sha"] = hashlib.sha1(
+        f"blob {len(forged)}\0".encode() + forged).hexdigest()
+    client.rows[client.source_path] = client.source
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PREUPLOAD_WORKFLOW_SOURCE_MISMATCH$"
+    ):
+        client.check()
+
+
+def test_r265_source_rejects_duplicate_jobs_root_or_extra_unreviewed_job():
+    for added in (
+        b"\njobs:\n  forged-jobs:\n    name: unexpected\n",
+        b"\n  forged-jobs:\n    name: unexpected\n",
+    ):
+        client = _R265FakeGitHub()
+        raw = base64.b64decode(client.source["content"]) + added
+        client.source["content"] = base64.encodebytes(raw).decode()
+        client.source["size"] = len(raw)
+        client.source["sha"] = hashlib.sha1(
+            f"blob {len(raw)}\0".encode() + raw).hexdigest()
+        client.rows[client.source_path] = client.source
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_WORKFLOW_SOURCE_MISMATCH$"
+        ):
+            client.check()
+
+
+def test_r265_pr_top_level_shell_env_injection_rejected_despite_same_job_hashes():
+    """SEC: BASH_ENV can change every bash step without editing reviewed jobs."""
+    for injection in (
+        b"env:\n  BASH_ENV: .github/ci-workflow-shell-startup.sh\n",
+        b"defaults:\n  run:\n    shell: bash -e {0}\n",
+    ):
+        client = _R265FakeGitHub()
+        original = base64.b64decode(client.source["content"])
+        forged = original.replace(b"jobs:\n", injection + b"jobs:\n", 1)
+        assert forged != original
+        client.source["content"] = base64.encodebytes(forged).decode()
+        client.source["size"] = len(forged)
+        client.source["sha"] = hashlib.sha1(
+            f"blob {len(forged)}\0".encode() + forged).hexdigest()
+        client.rows[client.source_path] = client.source
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_WORKFLOW_SOURCE_MISMATCH$"
+        ):
+            client.check()
+
+
+def test_r265_final_a_without_ready_trigger_is_reviewed_source():
+    # Verified Git SHA 8b1b51b; no ready_for_review redundant A build.
+    assert "5c068762f68d019851792ba61e3b5e6be387441f67607ba11228efba87361afa" in (
+        trusted.UPSTREAM_REVIEWED_SOURCE_SHA256)
+
+
+def test_r265_intermediate_speed_variant_is_not_reviewed_source():
+    # Neither f266317 nor bed8082 is the final (8b1b51b) A source.
+    for superseded in (
+        "14bb5cf5367ff1b33fd4f96d8603efa8cd511dbab98a898a8b2266c67c8fb1c2",
+        "6a29148fff4714c4fb0115f2a3d32d2104559ab4a4eb323525b7ac6e23825f23",
+    ):
+        assert superseded not in trusted.UPSTREAM_REVIEWED_SOURCE_SHA256
+    assert len(trusted.UPSTREAM_REVIEWED_SOURCE_SHA256) == 2
+
+
+def test_r265_malformed_unhashable_jobs_name_holds_as_bounded_reason():
+    client = _R265FakeGitHub()
+    client.rows[client.jobs_path]["jobs"][0]["name"] = ["forged"]
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PREUPLOAD_JOB_IDENTITY_MISMATCH$"
+    ):
+        client.check()
+
+
+def test_r265_upstream_jobs_race_and_pr_head_staleness_fail_closed():
+    client = _R265FakeGitHub()
+    client.rows[f"/repos/{REPO}/pulls/1087"]["head"]["sha"] = "c" * 40
+    with __import__("pytest").raises(PostrunEvidenceRed, match="^PR_HEAD_STALE$"):
+        client.check()
+
+    client = _R265FakeGitHub()
+    original_get = client.get_json
+
+    def changed_after_validation(path):
+        row = original_get(path)
+        if path == client.jobs_path and client.calls.count(path) == 2:
+            row["jobs"][1]["conclusion"] = "cancelled"
+        return row
+
+    client.get_json = changed_after_validation
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PREUPLOAD_UPSTREAM_REST_RACE$"
+    ):
+        client.check()
 
 
 def test_r206_workflow_path_accepts_only_exact_github_at_ref_forms():
