@@ -47,7 +47,7 @@ jobs:
           set -Eeuo pipefail
           test "$GITHUB_REF" = refs/heads/main || exit 79
           test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
-          RC6_TRUSTED_SOURCE_SHA256=85a5f4709d92188958d5c8c58e89670f8ea894d0a82d04fa5897142894dd2674
+          RC6_TRUSTED_SOURCE_SHA256=489de91f76be8c7d5ab6c9fa391d8bbd4e2650e2e2f0ae73e48c0891967fcb67
           printf '%s  %s\n' "$RC6_TRUSTED_SOURCE_SHA256" \
             scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
           [[ "$RC6_EXPECTED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79

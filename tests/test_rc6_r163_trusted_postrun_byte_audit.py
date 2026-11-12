@@ -205,18 +205,13 @@ def _evidence():
                               "conclusion": "success", "status": "completed",
                               "head_sha": SHA, "event": "pull_request",
                               "name": run["name"], "path": WORKFLOW}}
-    return {"event": event, "run": run, "pr": pr,
-            "commit": {"sha": SHA, "tree": {"sha": TREE}},
-            "artifact_list": {"total_count": 1, "artifacts": [dict(artifact)]},
-            "artifact": artifact, "zip_bytes": zip_bytes,
-            "expected_run_id": RUN, "expected_run_attempt": ATTEMPT}
-
-
-
-def _evidence_with_attempt():
-    evidence = _evidence()
+    evidence = {"event": event, "run": run, "pr": pr,
+                "commit": {"sha": SHA, "tree": {"sha": TREE}},
+                "artifact_list": {"total_count": 1, "artifacts": [dict(artifact)]},
+                "artifact": artifact, "zip_bytes": zip_bytes,
+                "expected_run_id": RUN, "expected_run_attempt": ATTEMPT}
     evidence["attempt"] = dict(
-        evidence["run"], run_started_at="2026-11-12T03:04:13Z",
+        run, run_started_at="2026-11-12T03:04:13Z",
         created_at="2026-11-12T03:04:14Z",
         updated_at="2026-11-12T03:35:00Z",
     )
@@ -224,6 +219,11 @@ def _evidence_with_attempt():
         receipt["created_at"] = "2026-11-12T03:30:00Z"
         receipt["updated_at"] = "2026-11-12T03:30:02Z"
     return evidence
+
+
+
+def _evidence_with_attempt():
+    return _evidence()
 
 
 def _red(evidence, reason):
@@ -927,6 +927,8 @@ def test_trusted_client_uses_rest_directly_and_rechecks_fresh_pr_after_zip():
                                expected_run_attempt=ATTEMPT)
     assert result["status"] == "POSTRUN_ARTIFACT_BYTES_MATCH"
     assert client.pr_call_count == 2
+    assert client.attempt_call_count == 2
+    assert client.calls.count(("json", f"/repos/{REPO}/actions/runs/{RUN}/attempts/{ATTEMPT}")) == 2
     assert client.calls.count(("zip", ARTIFACT_ID)) == 1
 
 
@@ -969,6 +971,9 @@ def test_attempt_receipt_identity_and_success_are_mandatory():
         ("path", ".github/workflows/evil.yml", "ATTEMPT_IDENTITY_MISMATCH"),
         ("name", "different workflow", "ATTEMPT_IDENTITY_MISMATCH"),
         ("event", "workflow_dispatch", "ATTEMPT_IDENTITY_MISMATCH"),
+        ("head_branch", "different-branch", "ATTEMPT_IDENTITY_MISMATCH"),
+        ("repository", {"full_name": "other/repo"}, "ATTEMPT_IDENTITY_MISMATCH"),
+        ("head_repository", {"full_name": "other/repo"}, "ATTEMPT_IDENTITY_MISMATCH"),
         ("status", "in_progress", "ATTEMPT_NOT_SUCCESS"),
         ("conclusion", "failure", "ATTEMPT_NOT_SUCCESS"),
     ):
@@ -995,6 +1000,19 @@ def test_attempt_and_artifact_timestamp_malformed_missing_and_out_of_window_red(
         if location == "artifact":
             evidence["artifact_list"]["artifacts"][0][key] = value
         _red(evidence, reason)
+
+
+
+def test_artifact_inconsistent_or_future_creation_and_update_windows_red():
+    for created, updated in (
+        ("2026-11-12T03:36:00Z", "2026-11-12T03:34:00Z"),
+        ("2026-11-12T03:30:03Z", "2026-11-12T03:30:02Z"),
+    ):
+        evidence = _evidence_with_attempt()
+        for receipt in (evidence["artifact"], evidence["artifact_list"]["artifacts"][0]):
+            receipt["created_at"] = created
+            receipt["updated_at"] = updated
+        _red(evidence, "ARTIFACT_ATTEMPT_WINDOW_INVALID")
 
 
 def test_artifact_list_and_detail_timestamps_cannot_disagree():
