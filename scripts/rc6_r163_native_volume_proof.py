@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import hashlib
 import io
 import os
@@ -484,11 +485,303 @@ def _privacy_json_tree(value: Any, *, depth: int, budget: list[int]) -> None:
                  "PRIVACY_JSON_TYPE")
 
 
+_R206_PUBLIC_XML_SCHEMA = "RC6_R206_PUBLIC_JUNIT_V1"
+_R206_PUBLIC_JSON_SCHEMA = "RC6_R206_PUBLIC_JSON_V1"
+_R206_PRIVATE_STATUS = "PRIVATE_SOURCE_UNATTESTED"
+_R206_XML_MEMBERS = frozenset(
+    relative for relative in NATIVE_EVIDENCE_PATHS if relative.endswith(".xml")
+)
+_R206_JSON_GENERATIONS = {
+    "session/stress.json": 2,
+    "catalog/full-catalog.json": 2,
+    "cadence/cadence-fresh.json": 12,
+    "cadence/cadence-legacy.json": 12,
+}
+_R206_MAX_CASES = 100000
+_R206_STRESS_SCENARIOS = (
+    "sql_shadow_wal",
+    "publication_io_identity",
+    "signals_risk_exit_ledger",
+    "sources_readiness_network",
+    "scalping_capacity",
+    "treasury_caucion",
+    "dashboard_auth_52",
+    "scheduler_monitor_backup",
+)
+
+
+
+def _r206_public_junit_bytes(name: str, tests: int, private_size: int,
+                            raw_sha256: str) -> bytes:
+    """Literal ASCII projection; never serialize source attributes or text."""
+    _require(name in _R206_XML_MEMBERS and type(tests) is int and
+             0 < tests <= _R206_MAX_CASES and
+             type(private_size) is int and 0 < private_size <= MAX_FILE_BYTES and
+             type(raw_sha256) is str and _DIGEST.fullmatch(raw_sha256) is not None,
+             "PRIVACY_PUBLIC_XML_SCHEMA")
+    header = (
+        '<testsuite schema="RC6_R206_PUBLIC_JUNIT_V1" '
+        'status="PRIVATE_SOURCE_UNATTESTED" path="' + name +
+        '" name="R206_PUBLIC_SYNTHETIC_ONLY" tests="' + str(tests) +
+        '" failures="0" errors="0" skipped="0" private_raw_size_bytes="' +
+        str(private_size) + '" private_raw_sha256_unattested="' +
+        raw_sha256 + '" release_go="false">'
+    )
+    cases = "".join(
+        '<testcase name="case-%06d"/>' % index
+        for index in range(1, tests + 1)
+    )
+    projected = (header + cases + '</testsuite>\n').encode("ascii")
+    _require(len(projected) <= MAX_FILE_BYTES, "PRIVACY_PUBLIC_XML_SCHEMA")
+    return projected
+
+
+def _r206_public_json_bytes(name: str, private_size: int,
+                           raw_sha256: str) -> bytes:
+    """All source fields are discarded; only fixed synthetic metadata survives."""
+    _require(name in _R206_JSON_GENERATIONS and
+             type(private_size) is int and 0 < private_size <= MAX_FILE_BYTES and
+             type(raw_sha256) is str and _DIGEST.fullmatch(raw_sha256) is not None,
+             "PRIVACY_PUBLIC_JSON_SCHEMA")
+    record = {
+        "schema": _R206_PUBLIC_JSON_SCHEMA,
+        "status": _R206_PRIVATE_STATUS,
+        "source_path": name,
+        "private_raw_size_bytes": private_size,
+        "private_raw_sha256_unattested": raw_sha256,
+        "synthetic_fixture_only": True,
+        "release_go": False,
+        "real_orders_sent": 0,
+        "catalog_count": 14611,
+        "ready_fixture_count": 9902,
+        "required_generations": _R206_JSON_GENERATIONS[name],
+    }
+    return (json.dumps(record, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+
+
+def _r206_source_junit_count(raw: bytes) -> int:
+    """Independently recount private testcases before revealing only ordinals."""
+    _require(type(raw) is bytes and 0 < len(raw) <= MAX_FILE_BYTES and
+             raw.count(b"<") <= _R206_MAX_CASES * 4 and
+             b"\x00" not in raw, "PRIVACY_PRIVATE_JUNIT")
+    upper = raw.upper()
+    _require(all(marker not in upper for marker in
+                 (b"<!DOCTYPE", b"<!ENTITY", b"<![CDATA")),
+             "PRIVACY_PRIVATE_JUNIT")
+    try:
+        root = _etree.fromstring(raw)
+    except (_etree.ParseError, ValueError, UnicodeError, TypeError,
+            RecursionError) as exc:
+        raise VolumeProofHold("PRIVACY_PRIVATE_JUNIT") from exc
+    _require(root.tag in ("testsuite", "testsuites"), "PRIVACY_PRIVATE_JUNIT")
+    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+    _require(0 < len(suites) <= _R206_MAX_CASES and
+             len(suites) == len(list(root.iter("testsuite"))),
+             "PRIVACY_PRIVATE_JUNIT")
+    total = 0
+    for suite in suites:
+        values = {}
+        for key in ("tests", "failures", "errors", "skipped"):
+            literal = suite.get(key)
+            _require(type(literal) is str and
+                     re.fullmatch(r"[0-9]+", literal) is not None and
+                     len(literal) <= 9, "PRIVACY_PRIVATE_JUNIT")
+            values[key] = int(literal)
+        direct = len(suite.findall("testcase"))
+        _require(0 < values["tests"] <= _R206_MAX_CASES and
+                 values["tests"] == direct and
+                 not any(values[key] for key in ("failures", "errors", "skipped")),
+                 "PRIVACY_PRIVATE_JUNIT")
+        total += direct
+        _require(total <= _R206_MAX_CASES, "PRIVACY_PRIVATE_JUNIT")
+    _require(not any(next(root.iter(tag), None) is not None
+                     for tag in ("failure", "error", "skipped")) and
+             len(list(root.iter("testcase"))) == total,
+             "PRIVACY_PRIVATE_JUNIT")
+    return total
+
+
+def _r206_assert_paper_zero(payload: dict, reason: str) -> None:
+    _require(type(payload) is dict and
+             type(payload.get("real_orders_sent")) is int and
+             payload["real_orders_sent"] == 0 and
+             type(payload.get("provider_requests")) is int and
+             payload["provider_requests"] == 0 and
+             payload.get("real_routes") == "NOT_CALLED",
+             reason)
+
+
+def _r206_assert_catalog_source(payload: dict, generations: int) -> None:
+    reason = "PRIVACY_PRIVATE_JSON"
+    _r206_assert_paper_zero(payload, reason)
+    _require(payload.get("schema") == "rc6.synthetic-full-catalog.v1" and
+             type(payload.get("catalog_count")) is int and
+             payload["catalog_count"] == 14611 and
+             type(payload.get("ready_fixture_count")) is int and
+             payload["ready_fixture_count"] == 9902 and
+             type(payload.get("required_generations")) is int and
+             payload["required_generations"] == generations and
+             payload.get("database_unchanged") is True and
+             payload.get("production_data_mounted") is False and
+             payload.get("actual_market_acceptance") is False and
+             type(payload.get("cuts")) is list and
+             len(payload["cuts"]) == generations,
+             reason)
+
+
+def _r206_parse_finite_float(literal: str) -> float:
+    try:
+        value = float(literal)
+    except (ValueError, OverflowError) as exc:
+        raise VolumeProofHold("PRIVACY_PRIVATE_JSON") from exc
+    _require(math.isfinite(value), "PRIVACY_PRIVATE_JSON")
+    return value
+
+
+def _r206_assert_private_json(name: str, raw: bytes) -> None:
+    reason = "PRIVACY_PRIVATE_JSON"
+    _require(type(raw) is bytes and 0 < len(raw) <= MAX_FILE_BYTES and
+             b"\x00" not in raw and name in _R206_JSON_GENERATIONS, reason)
+    try:
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs_unique,
+                             parse_constant=lambda _: _require(False, reason),
+                             parse_float=_r206_parse_finite_float)
+    except VolumeProofHold:
+        raise
+    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+        raise VolumeProofHold(reason) from exc
+    _require(type(payload) is dict, reason)
+    if name == "session/stress.json":
+        _require(payload.get("schema") == "rc6.postdeploy-stress.v1" and
+                 payload.get("status") == "GREEN" and
+                 payload.get("production_data_mounted") is False and
+                 payload.get("ppi_watch_accessed") is False and
+                 type(payload.get("scenarios")) is list and
+                 len(payload["scenarios"]) == len(_R206_STRESS_SCENARIOS), reason)
+        _r206_assert_paper_zero(payload.get("session"), reason)
+        _r206_assert_catalog_source(payload.get("full_catalog"), 2)
+        for index, scenario in enumerate(payload["scenarios"]):
+            _require(type(scenario) is dict and
+                     scenario.get("name") == _R206_STRESS_SCENARIOS[index] and
+                     type(scenario.get("cases")) is int and
+                     0 < scenario["cases"] <= _R206_MAX_CASES and
+                     type(scenario.get("junit_sha256")) is str and
+                     _DIGEST.fullmatch(scenario["junit_sha256"]) is not None and
+                     all(type(scenario.get(key)) is int and scenario[key] == 0
+                         for key in ("exit_code", "failure", "error", "skipped")),
+                     reason)
+    elif name == "catalog/full-catalog.json":
+        _r206_assert_catalog_source(payload, 2)
+        _require("status" not in payload, reason)
+    else:
+        _r206_assert_catalog_source(payload, 12)
+        expected_mode = "fresh" if name.endswith("fresh.json") else "legacy"
+        _require(payload.get("status") == "GREEN" and
+                 payload.get("cadence_mode") == expected_mode and
+                 type(payload.get("observed_publications")) is int and
+                 payload["observed_publications"] == 12, reason)
+
+
+def _project_private_native_member(name: str, raw: bytes) -> bytes:
+    """One-way collector projection; SHA is unilateral, never raw attestation."""
+    _require(name in NATIVE_EVIDENCE_PATHS and
+             type(raw) is bytes and 0 < len(raw) <= MAX_FILE_BYTES,
+             "PRIVACY_PRIVATE_MEMBER_INVALID")
+    digest = hashlib.sha256(raw).hexdigest()
+    if name in _R206_XML_MEMBERS:
+        count = _r206_source_junit_count(raw)
+        return _r206_public_junit_bytes(name, count, len(raw), digest)
+    _r206_assert_private_json(name, raw)
+    return _r206_public_json_bytes(name, len(raw), digest)
+
+
+def _r206_verify_public_xml(name: str, content: bytes) -> None:
+    reason = "PRIVACY_PUBLIC_XML_SCHEMA"
+    _require(type(content) is bytes and 0 < len(content) <= MAX_FILE_BYTES and
+             content.count(b"<") <= _R206_MAX_CASES + 3 and
+             not any(marker in content.upper() for marker in
+                     (b"<!DOCTYPE", b"<!ENTITY", b"<![CDATA")),
+             reason)
+    try:
+        root = _etree.fromstring(content)
+        _require(root.tag == "testsuite" and
+                 set(root.attrib) == {
+                     "schema", "status", "path", "name", "tests", "failures",
+                     "errors", "skipped", "private_raw_size_bytes",
+                     "private_raw_sha256_unattested", "release_go",
+                 } and root.get("schema") == _R206_PUBLIC_XML_SCHEMA and
+                 root.get("status") == _R206_PRIVATE_STATUS and
+                 root.get("path") == name and
+                 root.get("name") == "R206_PUBLIC_SYNTHETIC_ONLY" and
+                 all(root.get(key) == "0" for key in
+                     ("failures", "errors", "skipped")) and
+                 root.get("release_go") == "false", reason)
+        tests = root.get("tests")
+        size = root.get("private_raw_size_bytes")
+        _require(type(tests) is str and
+                 re.fullmatch(r"[1-9][0-9]*", tests) is not None and
+                 type(size) is str and
+                 re.fullmatch(r"[1-9][0-9]*", size) is not None, reason)
+        expected = _r206_public_junit_bytes(
+            name, int(tests), int(size),
+            root.get("private_raw_sha256_unattested"))
+        _require(content == expected, reason)
+    except VolumeProofHold as exc:
+        raise VolumeProofHold(reason) from exc
+    except (_etree.ParseError, ValueError, TypeError, UnicodeError,
+            RecursionError) as exc:
+        raise VolumeProofHold(reason) from exc
+
+
+def _r206_verify_public_json(name: str, content: bytes) -> None:
+    reason = "PRIVACY_PUBLIC_JSON_SCHEMA"
+    _require(type(content) is bytes and 0 < len(content) <= 2048, reason)
+    try:
+        parsed = json.loads(content.decode("ascii"), object_pairs_hook=_pairs_unique)
+        _require(type(parsed) is dict and
+                 set(parsed) == {
+                     "schema", "status", "source_path", "private_raw_size_bytes",
+                     "private_raw_sha256_unattested", "synthetic_fixture_only",
+                     "release_go", "real_orders_sent", "catalog_count",
+                     "ready_fixture_count", "required_generations",
+                 } and parsed.get("schema") == _R206_PUBLIC_JSON_SCHEMA and
+                 parsed.get("status") == _R206_PRIVATE_STATUS and
+                 parsed.get("source_path") == name and
+                 parsed.get("synthetic_fixture_only") is True and
+                 parsed.get("release_go") is False and
+                 type(parsed.get("real_orders_sent")) is int and
+                 parsed["real_orders_sent"] == 0 and
+                 type(parsed.get("catalog_count")) is int and
+                 parsed["catalog_count"] == 14611 and
+                 type(parsed.get("ready_fixture_count")) is int and
+                 parsed["ready_fixture_count"] == 9902 and
+                 type(parsed.get("required_generations")) is int and
+                 parsed["required_generations"] == _R206_JSON_GENERATIONS[name],
+                 reason)
+        expected = _r206_public_json_bytes(
+            name, parsed.get("private_raw_size_bytes"),
+            parsed.get("private_raw_sha256_unattested"))
+        _require(content == expected, reason)
+    except VolumeProofHold as exc:
+        raise VolumeProofHold(reason) from exc
+    except (ValueError, TypeError, UnicodeError, RecursionError) as exc:
+        raise VolumeProofHold(reason) from exc
+
+
 def _privacy_check_member(name: str, content: bytes) -> None:
     """Best-effort high-signal privacy policy, not an absence-of-secrets proof."""
     _require(b"\x00" not in content, "PRIVACY_PAYLOAD_BINARY")
     _require(_PRIVACY_SECRET_RE.search(content) is None,
              "PRIVACY_SECRET_SIGNATURE")
+    if name in NATIVE_EVIDENCE_PATHS:
+        # Public TAR admits ONLY the exact synthetic projection. The raw
+        # collector source is held privately, regardless of known signatures.
+        if name in _R206_XML_MEMBERS:
+            _r206_verify_public_xml(name, content)
+        else:
+            _r206_verify_public_json(name, content)
+        return
     try:
         content.decode("utf-8")  # one canonical text encoding only
         if name.endswith(".xml"):
@@ -928,7 +1221,8 @@ def pack_collector_tar(proof_root: str) -> bytes:
         with tarfile.open(fileobj=payload, mode="w",
                           format=tarfile.USTAR_FORMAT) as archive:
             for relative in sorted(NATIVE_EVIDENCE_PATHS):
-                contents = _safe_read_proof(root_fd, relative)
+                private = _safe_read_proof(root_fd, relative)
+                contents = _project_private_native_member(relative, private)
                 total += len(contents)
                 _require(total <= MAX_PAYLOAD_BYTES, "PACK_PAYLOAD_LIMIT")
                 info = tarfile.TarInfo("./" + relative)

@@ -585,9 +585,8 @@ def _proof_directory(root: Path) -> Path:
     for relative in FILES:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(f"receipt:{relative}".encode())
+        path.write_bytes(_r206_private_fixture(relative))
         path.chmod(0o600)
-    (root / "native-bound.xml").write_bytes(b"hello")
     return root
 
 
@@ -595,8 +594,12 @@ def test_collector_pack_uses_only_fixed_regular_uid1000_files(tmp_path: Path) ->
     root = _proof_directory(tmp_path / "volume")
     (root / "logs").mkdir()
     (root / "logs" / "host-private.log").write_bytes(b"NOT_EVIDENCE")
+    private_before = {rel: (root / rel).read_bytes() for rel in FILES}
     packed = _sut().pack_collector_tar(str(root))
     assert packed == _sut().pack_collector_tar(str(root))
+    assert {rel: (root / rel).read_bytes() for rel in FILES} == private_before
+    assert _sut().verify_native_tar_privacy(packed) == sorted(FILES)
+    assert b"original-not-public" not in packed
     manifest = _sut().attest_collector_tar(packed, custody_receipt=_verify())
     assert manifest["file_count"] == 13
     assert [row["path"] for row in manifest["files"]] == sorted(FILES)
@@ -872,11 +875,77 @@ def test_r203_public_inspect_v2_forgery_is_hold79_not_host_proof(
     assert "CANARY_SECRET" not in output.err + output.out
 
 
+def _r206_private_fixture(relative: str) -> bytes:
+    """Private synthetic source with required PAPER-only shape (never uploaded)."""
+    if relative.endswith(".xml"):
+        return (b'<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+                b'<testcase name="original-not-public" classname="private.fixture"/>'
+                b'</testsuite></testsuites>')
+    catalog = {
+        "schema": "rc6.synthetic-full-catalog.v1",
+        "catalog_count": 14611, "ready_fixture_count": 9902,
+        "required_generations": 2, "real_orders_sent": 0,
+        "provider_requests": 0, "real_routes": "NOT_CALLED",
+        "production_data_mounted": False, "actual_market_acceptance": False,
+        "database_unchanged": True, "cuts": [{}, {}],
+    }
+    if relative == "session/stress.json":
+        source = {
+            "schema": "rc6.postdeploy-stress.v1", "status": "GREEN",
+            "production_data_mounted": False, "ppi_watch_accessed": False,
+            "session": {"real_orders_sent": 0, "provider_requests": 0,
+                        "real_routes": "NOT_CALLED"},
+            "full_catalog": catalog,
+            "scenarios": [
+                {"name": group, "cases": 1, "junit_sha256": "d" * 64,
+                 "exit_code": 0, "failure": 0, "error": 0, "skipped": 0}
+                for group in (
+                    "sql_shadow_wal", "publication_io_identity",
+                    "signals_risk_exit_ledger", "sources_readiness_network",
+                    "scalping_capacity", "treasury_caucion", "dashboard_auth_52",
+                    "scheduler_monitor_backup",
+                )
+            ],
+        }
+    elif relative == "catalog/full-catalog.json":
+        source = catalog
+    else:
+        mode = "fresh" if relative.endswith("fresh.json") else "legacy"
+        source = {**catalog, "required_generations": 12,
+                  "status": "GREEN", "cadence_mode": mode,
+                  "cuts": [{} for _ in range(12)], "observed_publications": 12}
+    return (json.dumps(source, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _r206_public_fixture(
+        relative: str, *, digest: str = "0" * 64,
+        private_bytes: int = 123) -> bytes:
+    """Hand-specified PUBLIC contract: no private contents or testcase names."""
+    if relative.endswith(".xml"):
+        return (
+            '<testsuite schema="RC6_R206_PUBLIC_JUNIT_V1" '
+            'status="PRIVATE_SOURCE_UNATTESTED" path="' + relative +
+            '" name="R206_PUBLIC_SYNTHETIC_ONLY" tests="1" failures="0" '
+            'errors="0" skipped="0" private_raw_size_bytes="' + str(private_bytes) + '" '
+            'private_raw_sha256_unattested="' + digest +
+            '" release_go="false"><testcase name="case-000001"/></testsuite>\n'
+        ).encode("ascii")
+    record = {
+        "schema": "RC6_R206_PUBLIC_JSON_V1",
+        "status": "PRIVATE_SOURCE_UNATTESTED",
+        "source_path": relative,
+        "private_raw_size_bytes": private_bytes,
+        "private_raw_sha256_unattested": digest,
+        "synthetic_fixture_only": True, "release_go": False,
+        "real_orders_sent": 0, "catalog_count": 14611,
+        "ready_fixture_count": 9902,
+        "required_generations": 12 if relative.startswith("cadence/") else 2,
+    }
+    return (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
 def _privacy_tar(*, replacement: dict[str, bytes] | None = None) -> bytes:
-    xml = b'<testsuite name="offline" tests="1" failures="0" errors="0" skipped="0"><testcase name="safe"/></testsuite>'
-    payloads = {relative: (xml if relative.endswith(".xml") else
-                           b'{"status":"SYNTHETIC_OFFHOST_ONLY","real_orders_sent":0}')
-                for relative in FILES}
+    payloads = {relative: _r206_public_fixture(relative) for relative in FILES}
     payloads.update(replacement or {})
     return _tar_bytes(replacement=payloads)
 
@@ -919,6 +988,113 @@ def test_r206_raw_json_opaque_field_is_not_public_evidence(
     with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PUBLIC_JSON_SCHEMA"):
         _sut().verify_native_tar_privacy(
             _privacy_tar(replacement={relative: source}))
+
+
+@pytest.mark.parametrize("relative", FILES)
+def test_r206_collector_projects_private_fixture_to_exact_public_schema(
+        relative: str) -> None:
+    raw = _r206_private_fixture(relative)
+    public = _sut()._project_private_native_member(relative, raw)
+    assert public == _r206_public_fixture(
+        relative, digest=hashlib.sha256(raw).hexdigest(),
+        private_bytes=len(raw))
+    assert b"original-not-public" not in public
+    assert b"private.fixture" not in public
+    _sut()._privacy_check_member(relative, public)
+
+
+@pytest.mark.parametrize("relative", FILES)
+def test_r206_public_schema_rejects_tampered_synthetic_bytes(relative: str) -> None:
+    canonical = _r206_public_fixture(relative)
+    if relative.endswith(".xml"):
+        changed = canonical.replace(
+            b'name="case-000001"', b'name="private_opaque"')
+        reason = "PRIVACY_PUBLIC_XML_SCHEMA"
+    else:
+        changed = canonical.replace(
+            b'"release_go":false', b'"release_go":true')
+        reason = "PRIVACY_PUBLIC_JSON_SCHEMA"
+    assert changed != canonical
+    with pytest.raises(_sut().VolumeProofHold, match=reason):
+        _sut().verify_native_tar_privacy(
+            _privacy_tar(replacement={relative: changed}))
+
+
+@pytest.mark.parametrize("raw", (
+    b'<testsuite tests="2" failures="0" errors="0" skipped="0">'
+    b'<testcase name="one"/></testsuite>',
+    b'<testsuite tests="1" failures="1" errors="0" skipped="0">'
+    b'<testcase name="one"><failure>opaque</failure></testcase></testsuite>',
+    b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+    b'<testcase name="one"><skipped/></testcase></testsuite>',
+))
+def test_r206_private_junit_invalid_counts_or_negative_nodes_hold(raw: bytes) -> None:
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PRIVATE_JUNIT"):
+        _sut()._project_private_native_member("native-bound.xml", raw)
+
+
+@pytest.mark.parametrize(
+    "relative", tuple(path for path in FILES if path.endswith(".json"))
+)
+def test_r206_private_json_red_or_bool_in_place_of_zero_holds(relative: str) -> None:
+    raw = json.loads(_r206_private_fixture(relative))
+    if relative == "catalog/full-catalog.json":
+        raw["real_orders_sent"] = False  # bool is not an integer zero
+    else:
+        raw["status"] = "RED"
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PRIVATE_JSON"):
+        _sut()._project_private_native_member(
+            relative, json.dumps(raw).encode("utf-8"))
+
+
+@pytest.mark.parametrize("source", (
+    b'<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+    b'<testcase name="counted"/></testsuite><testcase name="rogue"/></testsuites>',
+    b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+    b'<testcase name="counted"/><testsuite tests="1" failures="0" '
+    b'errors="0" skipped="0"><testcase name="nested"/></testsuite></testsuite>',
+    b'<testsuite tests="1" failures="0" errors="0" skipped="0">'
+    b'<testcase name="counted"/><testsuite tests="0" failures="0" '
+    b'errors="0" skipped="0"></testsuite></testsuite>',
+))
+def test_r206_private_junit_rejects_unaccounted_or_nested_testcase(
+        source: bytes) -> None:
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PRIVATE_JUNIT"):
+        _sut()._project_private_native_member("native-bound.xml", source)
+
+
+@pytest.mark.parametrize(
+    "relative", tuple(path for path in FILES if path.endswith(".json"))
+)
+def test_r206_private_json_rejects_nonfinite_exponent_in_discarded_field(
+        relative: str) -> None:
+    valid = _r206_private_fixture(relative).decode("utf-8").strip()
+    assert valid.endswith("}")
+    poisoned = (valid[:-1] + ',"ignored_numeric":1e999}').encode("utf-8")
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PRIVATE_JSON"):
+        _sut()._project_private_native_member(relative, poisoned)
+
+
+@pytest.mark.parametrize("mutation", (
+    "missing", "duplicate", "reordered", "zero_cases", "bad_digest",
+))
+def test_r206_stress_requires_complete_ordered_positive_junit_scenarios(
+        mutation: str) -> None:
+    source = json.loads(_r206_private_fixture("session/stress.json"))
+    scenarios = source["scenarios"]
+    if mutation == "missing":
+        scenarios.pop()
+    elif mutation == "duplicate":
+        scenarios[1]["name"] = scenarios[0]["name"]
+    elif mutation == "reordered":
+        scenarios[0], scenarios[1] = scenarios[1], scenarios[0]
+    elif mutation == "zero_cases":
+        scenarios[2]["cases"] = 0
+    else:
+        scenarios[3]["junit_sha256"] = "invalid"
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PRIVATE_JSON"):
+        _sut()._project_private_native_member(
+            "session/stress.json", json.dumps(source).encode("utf-8"))
 
 
 def test_r203_synthetic_native_privacy_all_thirteen_paths_are_checked() -> None:
