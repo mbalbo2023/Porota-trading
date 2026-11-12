@@ -51,7 +51,7 @@ jobs:
       github.ref == 'refs/heads/main' &&
       github.repository == 'mbalbo2023/Porota-trading' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: read
       actions: read
@@ -85,7 +85,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
           [[ "$RC6_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
           [[ "$RC6_SOURCE_TREE" =~ ^[0-9a-f]{40}$ ]] || exit 79
-          printf '%s  %s\n' c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f \
+          printf '%s  %s\n' 9ba6422916d8008776f0884bf881d5856c0172010ca044c371aafa08b305066c \
             scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
           python3 -I scripts/rc6_r163_artifact_byte_verifier.py release-preflight \
             --candidate-sha "$RC6_SOURCE_SHA" --candidate-tree-sha "$RC6_SOURCE_TREE" \
@@ -165,7 +165,7 @@ jobs:
             --output "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2.tgz" \
             --manifest-out "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2-manifest.json"
           echo 'RC6_R251_BUNDLE=BUILT_ONCE|host_policy=CHECKED|release_go=NO'
-      - name: Build one ephemeral offhost image and save exact bytes
+      - name: Build one ephemeral offhost RELEASE image
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -174,12 +174,14 @@ jobs:
             --build-arg "POROTA_CANDIDATE_TREE_SHA=$RC6_SOURCE_TREE" \
             --label "porota.commit=$RC6_SOURCE_SHA" \
             --label porota.predeploy=v2 -t "$RC6_IMAGE" .rc6-untrusted-source
-          # Execute the *one* image's trusted source-identity and import smoke
-          # in an offline, read-only, capless ephemeral container.
+          RC6_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")"
+          [[ "$RC6_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 79
+          printf 'RC6_IMAGE_ID=%s\n' "$RC6_IMAGE_ID" >> "$GITHUB_ENV"
+          # Identity/import smoke executes on the immutable image ID, not tag.
           smoke="$(docker run --rm --pull never --network none \
             --cap-drop ALL --read-only --pids-limit 128 --memory 2g \
             --tmpfs /tmp:rw,noexec,nosuid,size=32m \
-            -i --entrypoint python "$RC6_IMAGE" \
+            -i --entrypoint python "$RC6_IMAGE_ID" \
             - "$RC6_SOURCE_SHA" "$RC6_SOURCE_TREE" <<'PY'
           import sys
           from scripts.porota_image_source_identity import verify_source_identity
@@ -197,8 +199,153 @@ jobs:
           )"
           [[ "$smoke" == *"POROTA_IMAGE_SOURCE_IDENTITY=GREEN"* ]] || exit 79
           [[ "$smoke" == *"POROTA_RUNTIME_IMPORT_SMOKE=GREEN"* ]] || exit 79
+          echo 'RC6_R251_IMAGE=BUILD_ONCE|same_image_native=PENDING|release_go=NO'
+      - name: Execute native PAPER suite on exact RELEASE image ID
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")" = "$RC6_IMAGE_ID" || exit 79
+          source_cid=
+          collector_cid=
+          private_stage="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r251-native-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-XXXXXXXX")"
+          test -d "$private_stage" && test ! -L "$private_stage" || exit 79
+          chmod 700 "$private_stage"
+          native_tar="$private_stage/native.tar"
+          native_proof="$private_stage/native-proof.json"
+          owned_cid() {
+            local cid="$1" role="$2" actual expected
+            [[ "$cid" =~ ^[0-9a-f]{64}$ ]] || return 1
+            actual="$(docker inspect -f '{{.Id}}|{{.Image}}|{{.Config.User}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.candidate_tree"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.native-proof"}}|{{index .Config.Labels "porota.native-role"}}|{{index .Config.Labels "porota.run_id"}}|{{index .Config.Labels "porota.run_attempt"}}' "$cid")" || return 1
+            expected="$cid|$RC6_IMAGE_ID|1000:1000|$RC6_SOURCE_SHA|$RC6_SOURCE_TREE|v2|v3|$role|$GITHUB_RUN_ID|$GITHUB_RUN_ATTEMPT"
+            test "$actual" = "$expected"
+          }
+          cleanup_owned() {
+            local previous=$? cleanup=0 cid role running
+            trap - EXIT
+            for role in bundle-collector bundle; do
+              if [[ "$role" == bundle ]]; then cid="$source_cid"; else cid="$collector_cid"; fi
+              test -n "$cid" || continue
+              if ! owned_cid "$cid" "$role"; then cleanup=79; continue; fi
+              running="$(docker inspect -f '{{.State.Running}}' "$cid")" || { cleanup=79; continue; }
+              if [[ "$running" == true ]]; then
+                docker stop --time 10 "$cid" >/dev/null || { cleanup=79; continue; }
+              elif [[ "$running" != false ]]; then cleanup=79; continue; fi
+              owned_cid "$cid" "$role" || { cleanup=79; continue; }
+              docker rm -v "$cid" >/dev/null || cleanup=79
+            done
+            if (( previous != 0 || cleanup != 0 )); then
+              echo 'RC6_R251_NATIVE=HOLD79|exact_image_stage_or_owned_cleanup_red' >&2
+              exit 79
+            fi
+          }
+          trap cleanup_owned EXIT
+          trap 'exit 143' INT TERM HUP
+          labels=(
+            --label "porota.commit=$RC6_SOURCE_SHA"
+            --label "porota.candidate_tree=$RC6_SOURCE_TREE"
+            --label "porota.run_id=$GITHUB_RUN_ID"
+            --label "porota.run_attempt=$GITHUB_RUN_ATTEMPT"
+            --label porota.predeploy=v2 --label porota.native-proof=v3
+          )
+          isolated=(
+            --pull never --read-only --network none --no-healthcheck
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges
+            --pids-limit 128 --memory 256m --memory-swap 256m --cpus .75 --workdir /app
+          )
+          source_cid="$(docker create "${labels[@]}" --label porota.native-role=bundle \
+            "${isolated[@]}" --mount type=volume,target=/app/data \
+            -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/app/data/tmp \
+            -e MPLCONFIGDIR=/app/data/tmp/matplotlib \
+            -e XDG_CACHE_HOME=/app/data/tmp/cache \
+            "$RC6_IMAGE_ID" sleep 7200)" || exit 79
+          owned_cid "$source_cid" bundle || exit 79
+          docker start "$source_cid" >/dev/null || exit 79
+          docker exec --user 1000:1000 "$source_cid" sh -ceu '
+            umask 077
+            mkdir -p /app/data/tmp /app/data/catalog /app/data/session /app/data/cadence
+            test -w /app/data/tmp
+          ' >/dev/null 2>&1 || exit 79
+          timeout 900 docker exec --user 1000:1000 "$source_cid" \
+            python -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
+            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py \
+            tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py \
+            --junitxml=/app/data/native-bound.xml >/dev/null 2>&1 || exit 79
+          timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --full-catalog-check \
+            --output /app/data/catalog >/dev/null 2>&1 || exit 79
+          timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --output /app/data/session \
+            >/dev/null 2>&1 || exit 79
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --cadence-stage fresh \
+            --output /app/data/cadence >/dev/null 2>&1 || exit 79
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --cadence-stage legacy \
+            --output /app/data/cadence >/dev/null 2>&1 || exit 79
+          owned_cid "$source_cid" bundle || exit 79
+          # Independently re-hash and parse all nine PRIVATE JUnits copied
+          # from this exact owned CID. Never expose their contents in logs.
+          private_junit_root="$private_stage/private-junit"
+          mkdir -m 700 "$private_junit_root" "$private_junit_root/session"
+          junit_paths=(
+            native-bound.xml session/dashboard_auth_52.xml
+            session/publication_io_identity.xml session/scalping_capacity.xml
+            session/scheduler_monitor_backup.xml session/signals_risk_exit_ledger.xml
+            session/sources_readiness_network.xml session/sql_shadow_wal.xml
+            session/treasury_caucion.xml
+          )
+          for relative in "${junit_paths[@]}"; do
+            docker cp "$source_cid:/app/data/$relative" "$private_junit_root/$relative" \
+              >/dev/null 2>&1 || exit 79
+          done
+          docker stop --time 10 "$source_cid" >/dev/null || exit 79
+          collector_cid="$(docker create "${labels[@]}" --label porota.native-role=bundle-collector \
+            "${isolated[@]}" --volumes-from "$source_cid:ro" \
+            "$RC6_IMAGE_ID" sleep 7200)" || exit 79
+          owned_cid "$collector_cid" bundle-collector || exit 79
+          test "$(docker inspect -f '{{(index .Mounts 0).RW}}' "$collector_cid")" = false || exit 79
+          docker start "$collector_cid" >/dev/null || exit 79
+          docker exec -i --user 1000:1000 "$collector_cid" python - <<'PY' >/dev/null 2>&1 || exit 79
+          import errno, os, sys
+          try:
+              fd = os.open('/app/data/.r251_ro_probe',
+                           os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          except OSError as exc:
+              if exc.errno != errno.EROFS:
+                  sys.exit(79)
+          else:
+              os.close(fd)
+              sys.exit(79)
+          PY
+          # The PR owns source stdout: cap before trusted parsing and never
+          # upload raw JUnit/private Docker inspect, native.tar or logs.
+          timeout 90 docker exec --user 1000:1000 "$collector_cid" \
+            python scripts/rc6_r163_native_volume_proof.py pack --proof-root /app/data \
+            2>/dev/null | head -c 33554433 > "$native_tar" || exit 79
+          test "$(wc -c < "$native_tar")" -le 33554432 || exit 79
+          owned_cid "$source_cid" bundle || exit 79
+          owned_cid "$collector_cid" bundle-collector || exit 79
+          python3 -I scripts/rc6_r163_artifact_byte_verifier.py native-proof \
+            --native-tar "$native_tar" --private-junit-root "$private_junit_root" \
+            --candidate-sha "$RC6_SOURCE_SHA" --candidate-tree-sha "$RC6_SOURCE_TREE" \
+            --trusted-main-sha "$RC6_TRUSTED_MAIN_SHA" --image-id "$RC6_IMAGE_ID" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --source-cid "$source_cid" --collector-cid "$collector_cid" \
+            --receipt-out "$native_proof"
+          test "$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")" = "$RC6_IMAGE_ID" || exit 79
+          printf 'RC6_NATIVE_PROOF_FILE=%s\n' "$native_proof" >> "$GITHUB_ENV"
+          echo 'RC6_R251_NATIVE=SAME_IMAGE_ID|UID1000|PAPER|PRIVATE_RAW_NOT_UPLOADED|release_go=NO'
+      - name: Save verified RELEASE image ID and bind native receipt
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")" = "$RC6_IMAGE_ID" || exit 79
           docker save "$RC6_IMAGE" | gzip -1 > "$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz"
-          RC6_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")"
+          test "$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")" = "$RC6_IMAGE_ID" || exit 79
           RC6_IMAGE_SIZE_BYTES="$(docker image inspect -f '{{.Size}}' "$RC6_IMAGE")"
           RC6_IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$RC6_IMAGE" | sha256sum | awk '{print $1}')"
           RC6_IMAGE_TAR_SHA="$(sha256sum "$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz" | awk '{print $1}')"
@@ -211,6 +358,8 @@ jobs:
           source, tree = os.environ["RC6_SOURCE_SHA"], os.environ["RC6_SOURCE_TREE"]
           image_id = os.environ["RC6_IMAGE_ID"]
           assert image_id.startswith("sha256:") and len(image_id) == 71
+          native_proof = json.loads(Path(os.environ["RC6_NATIVE_PROOF_FILE"]).read_text(
+              encoding="utf-8"))
           frozen = {
               "schema_version": 1, "candidate_sha": source,
               "candidate_tree_sha": tree, "image_id": image_id,
@@ -230,6 +379,7 @@ jobs:
               "image_id": image_id, "image_size_bytes": frozen["image_size_bytes"],
               "image_tar_sha256": frozen["image_tar_sha256"],
               "bundle_sha256": os.environ["RC6_BUNDLE_SHA"],
+              "native_proof": native_proof,
               "paper_only": True, "release_go": False, "host_runtime_verified": False,
           }
           for name, data in (("porota-frozen-candidate.json", frozen),

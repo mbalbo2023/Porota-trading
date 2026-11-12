@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import importlib.util
 import json
 import math
@@ -44,10 +45,12 @@ from pathlib import Path
 import re
 import stat
 import sys
+import tarfile
 import tempfile
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -79,6 +82,29 @@ RELEASE_SMALL_JSON_FILES = frozenset({
     "porota-frozen-candidate.json", "porota-image-build-receipt.json",
     "porota-deploy-bundle-v2-manifest.json", "porota-host-manifest-v2.json",
     "porota-host-policy-v2.json",
+})
+RELEASE_NATIVE_XML_PATHS = frozenset({
+    "native-bound.xml", "session/dashboard_auth_52.xml",
+    "session/publication_io_identity.xml", "session/scalping_capacity.xml",
+    "session/scheduler_monitor_backup.xml", "session/signals_risk_exit_ledger.xml",
+    "session/sources_readiness_network.xml", "session/sql_shadow_wal.xml",
+    "session/treasury_caucion.xml",
+})
+RELEASE_NATIVE_GENERATIONS = {
+    "catalog/full-catalog.json": 2, "session/stress.json": 2,
+    "cadence/cadence-fresh.json": 12, "cadence/cadence-legacy.json": 12,
+}
+RELEASE_NATIVE_STAGES = frozenset({
+    "cases", "catalog", "session", "cadence-fresh", "cadence-legacy",
+})
+RELEASE_NATIVE_PROOF_KEYS = frozenset({
+    "schema", "schema_version", "status", "candidate_sha",
+    "candidate_tree_sha", "trusted_main_sha", "image_id", "run_id",
+    "run_attempt", "source_cid", "collector_cid", "native_tar_sha256",
+    "native_tar_size_bytes", "native_file_count", "native_case_counts",
+    "native_generations", "stage_exit_codes", "private_raw_uploaded",
+    "paper_only", "release_go", "host_runtime_verified",
+    "real_orders_physical_verified",
 })
 POSTCOMPLETION_RECEIPT_NAME = "rc6-r251-release-postcompletion-v1.json"
 POSTCOMPLETION_RECEIPT_KEYS = frozenset({
@@ -156,9 +182,266 @@ def _parse_json(data: bytes) -> Any:
         _red("JSON_INVALID")
 
 
+def _require_release_native_proof(
+    proof: Any, *, image_id: str, candidate_sha: str,
+    candidate_tree_sha: str, trusted_main_sha: str,
+    run_id: int, run_attempt: int,
+) -> None:
+    """E and R252 validate D's trusted native attestation, not a B PROBE.
+
+    Private raw reports remain on D's ephemeral runner; the seven-member ZIP
+    contains a bounded native summary sealed inside its image-build receipt.
+    An authenticated D workflow run is required for the execution claim.
+    """
+    if type(proof) is not dict or set(proof) != RELEASE_NATIVE_PROOF_KEYS:
+        _red("RELEASE_INNER_CLAIM_RED")
+    expected = {
+        "schema": "RC6_R251_RELEASE_NATIVE_V1", "schema_version": 1,
+        "status": "SAME_IMAGE_TESTS_PASS", "image_id": image_id,
+        "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha,
+        "trusted_main_sha": trusted_main_sha,
+        "run_id": run_id, "run_attempt": run_attempt,
+        "native_file_count": 13, "private_raw_uploaded": False,
+        "paper_only": True, "release_go": False,
+        "host_runtime_verified": False, "real_orders_physical_verified": False,
+    }
+    if any(type(proof.get(key)) is not type(value) or proof[key] != value
+           for key, value in expected.items()):
+        _red("RELEASE_INNER_CLAIM_RED")
+    source_cid, collector_cid = proof["source_cid"], proof["collector_cid"]
+    if (not all(type(cid) is str and HEX64.fullmatch(cid)
+                for cid in (source_cid, collector_cid)) or
+            source_cid == collector_cid or
+            type(proof["native_tar_sha256"]) is not str or
+            HEX64.fullmatch(proof["native_tar_sha256"]) is None or
+            not _integer(proof["native_tar_size_bytes"], minimum=1024) or
+            proof["native_tar_size_bytes"] > 32 * 1024 * 1024):
+        _red("RELEASE_INNER_CLAIM_RED")
+    cases = proof["native_case_counts"]
+    if (type(cases) is not dict or set(cases) != RELEASE_NATIVE_XML_PATHS or
+            any(not _integer(value, minimum=1) or value > 100000
+                for value in cases.values()) or cases["native-bound.xml"] < 8):
+        _red("RELEASE_INNER_CLAIM_RED")
+    generations = proof["native_generations"]
+    if (type(generations) is not dict or
+            any(type(generations.get(key)) is not int or
+                generations[key] != expected
+                for key, expected in RELEASE_NATIVE_GENERATIONS.items()) or
+            set(generations) != set(RELEASE_NATIVE_GENERATIONS)):
+        _red("RELEASE_INNER_CLAIM_RED")
+    stages = proof["stage_exit_codes"]
+    if (type(stages) is not dict or set(stages) != RELEASE_NATIVE_STAGES or
+            any(type(code) is not int or code != 0 for code in stages.values())):
+        _red("RELEASE_INNER_CLAIM_RED")
+
+
+def _read_private_release_junit(root: Path, relative: str) -> bytes:
+    """Read only a fixed private JUnit from D's Docker-copied CID, no symlinks."""
+    if relative not in RELEASE_NATIVE_XML_PATHS:
+        _red("RELEASE_NATIVE_TAR_RED")
+    try:
+        parts = relative.split("/")
+        for directory in (root, root / parts[0]) if len(parts) > 1 else (root,):
+            meta = directory.lstat()
+            if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.getuid() or
+                    meta.st_mode & 0o077):
+                _red("RELEASE_NATIVE_TAR_RED")
+        target = root.joinpath(*parts)
+        named = target.lstat()
+        if (not stat.S_ISREG(named.st_mode) or named.st_uid != os.getuid() or
+                named.st_nlink != 1 or
+                not 0 < named.st_size <= 8 * 1024 * 1024):
+            _red("RELEASE_NATIVE_TAR_RED")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        with os.fdopen(os.open(target, flags), "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or
+                    before.st_nlink != 1 or
+                    (before.st_dev, before.st_ino, before.st_size) !=
+                    (named.st_dev, named.st_ino, named.st_size)):
+                _red("RELEASE_NATIVE_TAR_RED")
+            # docker cp can preserve the source's 0644 umask, even though the
+            # destination is inside an owned 0700 runner-only directory.
+            # Normalize ONLY the verified local regular inode via descriptor;
+            # never chmod a path that might have changed into a symlink.
+            if stat.S_IMODE(before.st_mode) != 0o600:
+                os.fchmod(stream.fileno(), 0o600)
+            secured = os.fstat(stream.fileno())
+            if (stat.S_IMODE(secured.st_mode) != 0o600 or
+                    (secured.st_dev, secured.st_ino, secured.st_size) !=
+                    (before.st_dev, before.st_ino, before.st_size)):
+                _red("RELEASE_NATIVE_TAR_RED")
+            raw = stream.read(8 * 1024 * 1024 + 1)
+            after = os.fstat(stream.fileno())
+            if (len(raw) != secured.st_size or
+                    (secured.st_mtime_ns, secured.st_ctime_ns) !=
+                    (after.st_mtime_ns, after.st_ctime_ns)):
+                _red("RELEASE_NATIVE_TAR_RED")
+        return raw
+    except OSError:
+        _red("RELEASE_NATIVE_TAR_RED")
+
+
+def _count_private_release_junit(raw: bytes, *, require_eight_modules: bool) -> int:
+    """Independently recount real private testcases; reject false zero skips."""
+    if (not 0 < len(raw) <= 8 * 1024 * 1024 or b"\x00" in raw or
+            raw.count(b"<") > 400000 or
+            any(marker in raw.upper() for marker in
+                (b"<!DOCTYPE", b"<!ENTITY", b"<![CDATA"))):
+        _red("RELEASE_NATIVE_TAR_RED")
+    try:
+        root = ET.fromstring(raw)
+        if root.tag not in {"testsuites", "testsuite"}:
+            _red("RELEASE_NATIVE_TAR_RED")
+        suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+        if not suites or len(suites) != len(list(root.iter("testsuite"))):
+            _red("RELEASE_NATIVE_TAR_RED")
+        cases_total = 0
+        modules: set[str] = set()
+        for suite in suites:
+            attrs = {}
+            for key in ("tests", "failures", "errors", "skipped"):
+                literal = suite.get(key)
+                if (type(literal) is not str or
+                        re.fullmatch(r"[0-9]{1,9}", literal) is None):
+                    _red("RELEASE_NATIVE_TAR_RED")
+                attrs[key] = int(literal)
+            cases = suite.findall("testcase")
+            if (not 0 < attrs["tests"] <= 100000 or
+                    attrs["tests"] != len(cases) or
+                    any(attrs[key] != 0 for key in ("failures", "errors", "skipped"))):
+                _red("RELEASE_NATIVE_TAR_RED")
+            cases_total += len(cases)
+            if cases_total > 100000:
+                _red("RELEASE_NATIVE_TAR_RED")
+            for case in cases:
+                classname = case.get("classname")
+                if type(classname) is str:
+                    modules.add(classname)
+        if (len(list(root.iter("testcase"))) != cases_total or
+                any(next(root.iter(tag), None) is not None
+                    for tag in ("failure", "error", "skipped"))):
+            _red("RELEASE_NATIVE_TAR_RED")
+        if require_eight_modules:
+            required = (
+                "test_rc6_shadow_native_bound", "test_rc6_shadow_streaming_cost",
+                "test_rc6_shadow_shared_audit", "test_rc6_shadow_owned_state",
+                "test_rc6_shadow_report_lifetime", "test_rc6_shadow_cold_audit",
+                "test_rc6_owned_funnel_details", "test_rc6_physical_cadence",
+            )
+            if not all(any(name in classname.split(".") for classname in modules)
+                       for name in required):
+                _red("RELEASE_NATIVE_TAR_RED")
+        return cases_total
+    except (ET.ParseError, ValueError, TypeError, RecursionError):
+        _red("RELEASE_NATIVE_TAR_RED")
+
+
+def build_release_native_proof(
+    native_tar: Path, *, private_junit_root: Path,
+    candidate_sha: str, candidate_tree_sha: str,
+    trusted_main_sha: str, image_id: str, run_id: int, run_attempt: int,
+    source_cid: str, collector_cid: str,
+) -> dict[str, Any]:
+    """Project R206's already-vetted public 13-member collector TAR, not raw XML.
+
+    D calls this only after every same-image docker exec returns zero and the
+    container/collector CIDs were authenticated by its trusted shell. Neither
+    a second Docker image nor an extra release member is created.
+    """
+    if (not all(type(value) is str and HEX40.fullmatch(value)
+                for value in (candidate_sha, candidate_tree_sha, trusted_main_sha)) or
+            type(image_id) is not str or
+            re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None or
+            not _integer(run_id, minimum=1) or not _integer(run_attempt, minimum=1)):
+        _red("RELEASE_NATIVE_INPUT_RED")
+    try:
+        named = native_tar.lstat()
+        if (not stat.S_ISREG(named.st_mode) or named.st_nlink != 1 or
+                named.st_uid != os.getuid() or
+                not 1024 <= named.st_size <= 32 * 1024 * 1024):
+            _red("RELEASE_NATIVE_TAR_RED")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        with os.fdopen(os.open(native_tar, flags), "rb") as stream:
+            opened = os.fstat(stream.fileno())
+            if (opened.st_dev, opened.st_ino, opened.st_size) != (
+                    named.st_dev, named.st_ino, named.st_size):
+                _red("RELEASE_NATIVE_TAR_RED")
+            raw = stream.read(32 * 1024 * 1024 + 1)
+            after = os.fstat(stream.fileno())
+            if (len(raw) != opened.st_size or
+                    (opened.st_mtime_ns, opened.st_ctime_ns) !=
+                    (after.st_mtime_ns, after.st_ctime_ns)):
+                _red("RELEASE_NATIVE_TAR_RED")
+        r206 = _load_trusted_r206_module()
+        files = r206._native_tar_files(raw)
+        if len(files) != 13:
+            _red("RELEASE_NATIVE_TAR_RED")
+        case_counts: dict[str, int] = {}
+        generations: dict[str, int] = {}
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+            for item in archive:
+                name = item.name.removeprefix("./")
+                stream = archive.extractfile(item)
+                if stream is None:
+                    _red("RELEASE_NATIVE_TAR_RED")
+                content = stream.read(item.size + 1)
+                if name in RELEASE_NATIVE_XML_PATHS:
+                    match = re.search(rb' tests="([1-9][0-9]{0,5})" ', content)
+                    if match is None:
+                        _red("RELEASE_NATIVE_TAR_RED")
+                    raw_junit = _read_private_release_junit(private_junit_root, name)
+                    # Public projection has fixed schema after R206 parser.
+                    # Unlike R206's source-side hash claim, D independently
+                    # re-hashes private bytes copied from its owned source CID.
+                    public = ET.fromstring(content)
+                    raw_hash = hashlib.sha256(raw_junit).hexdigest()
+                    if (public.get("private_raw_sha256_unattested") != raw_hash or
+                            public.get("private_raw_size_bytes") != str(len(raw_junit))):
+                        _red("RELEASE_NATIVE_TAR_RED")
+                    verified_cases = _count_private_release_junit(
+                        raw_junit, require_eight_modules=name == "native-bound.xml")
+                    if verified_cases != int(match[1]):
+                        _red("RELEASE_NATIVE_TAR_RED")
+                    case_counts[name] = verified_cases
+                elif name in RELEASE_NATIVE_GENERATIONS:
+                    generations[name] = _parse_json(content)["required_generations"]
+                else:
+                    _red("RELEASE_NATIVE_TAR_RED")
+        proof = {
+            "schema": "RC6_R251_RELEASE_NATIVE_V1", "schema_version": 1,
+            "status": "SAME_IMAGE_TESTS_PASS", "candidate_sha": candidate_sha,
+            "candidate_tree_sha": candidate_tree_sha,
+            "trusted_main_sha": trusted_main_sha, "image_id": image_id,
+            "run_id": run_id, "run_attempt": run_attempt,
+            "source_cid": source_cid, "collector_cid": collector_cid,
+            "native_tar_sha256": hashlib.sha256(raw).hexdigest(),
+            "native_tar_size_bytes": len(raw), "native_file_count": len(files),
+            "native_case_counts": case_counts,
+            "native_generations": generations,
+            "stage_exit_codes": {name: 0 for name in RELEASE_NATIVE_STAGES},
+            "private_raw_uploaded": False, "paper_only": True,
+            "release_go": False, "host_runtime_verified": False,
+            "real_orders_physical_verified": False,
+        }
+        _require_release_native_proof(
+            proof, image_id=image_id, candidate_sha=candidate_sha,
+            candidate_tree_sha=candidate_tree_sha,
+            trusted_main_sha=trusted_main_sha,
+            run_id=run_id, run_attempt=run_attempt,
+        )
+        return proof
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError) as exc:
+        if isinstance(exc, ArtifactByteEvidenceRed) and str(exc) == "RELEASE_NATIVE_INPUT_RED":
+            raise
+        _red("RELEASE_NATIVE_TAR_RED")
+
+
 def _cross_bind_release_inner_claims(
     documents: Mapping[str, bytes], hashes: Mapping[str, str], *,
     candidate_sha: str, candidate_tree_sha: str, trusted_main_sha: str,
+    run_id: int, run_attempt: int,
 ) -> None:
     """Independent, bounded PAPER/frozen-hash cross-bind of already hashed ZIP.
 
@@ -212,6 +495,7 @@ def _cross_bind_release_inner_claims(
                 image.get("image_size_bytes") != frozen["image_size_bytes"] or
                 image.get("image_tar_sha256") != image_hash or
                 image.get("bundle_sha256") != bundle_hash or
+                type(image.get("native_proof")) is not dict or
                 image.get("paper_only") is not True or
                 image.get("release_go") is not False or
                 image.get("host_runtime_verified") is not False or
@@ -220,6 +504,12 @@ def _cross_bind_release_inner_claims(
                 host.get("source_git_sha") != candidate_sha or
                 policy.get("status") != "GREEN"):
             _red("RELEASE_INNER_CLAIM_RED")
+        _require_release_native_proof(
+            image["native_proof"], image_id=frozen["image_id"],
+            candidate_sha=candidate_sha, candidate_tree_sha=candidate_tree_sha,
+            trusted_main_sha=trusted_main_sha,
+            run_id=run_id, run_attempt=run_attempt,
+        )
     except (ArtifactByteEvidenceRed, KeyError, TypeError, ValueError):
         _red("RELEASE_INNER_CLAIM_RED")
 
@@ -294,6 +584,7 @@ def seal_release_directory(
         documents, {row["path"]: row["sha256"] for row in rows},
         candidate_sha=candidate_sha, candidate_tree_sha=candidate_tree_sha,
         trusted_main_sha=publisher_main_sha,
+        run_id=run_id, run_attempt=run_attempt,
     )
     result = {
         "schema_version": 1, "candidate_sha": candidate_sha,
@@ -716,6 +1007,7 @@ def _verify_zip(snapshot: Any, *, sha: str, tree: str, run_id: int,
                     documents, {row["path"]: row["sha256"] for row in rows},
                     candidate_sha=sha, candidate_tree_sha=tree,
                     trusted_main_sha=publisher_main_sha,
+                    run_id=run_id, run_attempt=attempt,
                 )
             return len(rows), expected_total
     except (zipfile.BadZipFile, EOFError, RuntimeError, OSError, ValueError) as exc:
@@ -1118,6 +1410,18 @@ def _release_command(argv: list[str]) -> int:
         parser.add_argument("--trusted-main-sha", required=True)
         parser.add_argument("--run-id", type=int, required=True)
         parser.add_argument("--run-attempt", type=int, required=True)
+    elif command == "native-proof":
+        parser.add_argument("--native-tar", type=Path, required=True)
+        parser.add_argument("--private-junit-root", type=Path, required=True)
+        parser.add_argument("--candidate-sha", required=True)
+        parser.add_argument("--candidate-tree-sha", required=True)
+        parser.add_argument("--trusted-main-sha", required=True)
+        parser.add_argument("--image-id", required=True)
+        parser.add_argument("--run-id", type=int, required=True)
+        parser.add_argument("--run-attempt", type=int, required=True)
+        parser.add_argument("--source-cid", required=True)
+        parser.add_argument("--collector-cid", required=True)
+        parser.add_argument("--receipt-out", type=Path, required=True)
     elif command == "release-postcompletion":
         parser.add_argument("--event", type=Path, required=True)
         parser.add_argument("--publisher-run-id", type=int, required=True)
@@ -1148,6 +1452,22 @@ def _release_command(argv: list[str]) -> int:
                 publisher_main_sha=args.trusted_main_sha,
                 run_id=args.run_id, run_attempt=args.run_attempt,
             )
+        elif command == "native-proof":
+            result = build_release_native_proof(
+                args.native_tar, private_junit_root=args.private_junit_root,
+                candidate_sha=args.candidate_sha,
+                candidate_tree_sha=args.candidate_tree_sha,
+                trusted_main_sha=args.trusted_main_sha,
+                image_id=args.image_id, run_id=args.run_id,
+                run_attempt=args.run_attempt,
+                source_cid=args.source_cid, collector_cid=args.collector_cid,
+            )
+            raw = (json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n").encode()
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+            with os.fdopen(os.open(args.receipt_out, flags, 0o600), "wb") as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
         else:
             r206 = _load_trusted_r206_module()
             client = r206.GitHubReadOnlyREST(os.environ.get("GITHUB_TOKEN", ""))
@@ -1163,7 +1483,10 @@ def _release_command(argv: list[str]) -> int:
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
-        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+        if command == "native-proof":
+            print("RC6_R251_SAME_IMAGE_NATIVE=VALIDATED|private_raw_uploaded=NO")
+        else:
+            print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         print("RC6_R251_RELEASE=OFFHOST_EVIDENCE_ONLY|R144=HOLD|release_go=NO")
         return 0
     except ArtifactByteEvidenceRed as exc:
@@ -1178,7 +1501,7 @@ def _release_command(argv: list[str]) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if argv and argv[0] in {"release-preflight", "seal-release", "release-postcompletion"}:
+    if argv and argv[0] in {"release-preflight", "seal-release", "release-postcompletion", "native-proof"}:
         return _release_command(argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)

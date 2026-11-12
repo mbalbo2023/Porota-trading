@@ -117,3 +117,52 @@ def test_one_docker_build_pins_embedded_identity_and_validates_saved_frozen_tar(
     assert "--frozen \"$RC6_RELEASE_STAGE/porota-frozen-candidate.json\"" in full
     assert "--image \"$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz\"" in full
     assert "--manifest \"$RC6_RELEASE_STAGE/porota-deploy-bundle-v2-manifest.json\"" in full
+
+
+def test_same_release_image_runs_required_native_and_paper_stages_before_save_and_seal():
+    """B's separate PROBE suites cannot stand in for D's exact RELEASE image."""
+    workflow = _workflow(BUILD)
+    steps = workflow["jobs"]["trusted-release"]["steps"]
+    names = [step["name"] for step in steps]
+    build_idx = names.index("Build one ephemeral offhost RELEASE image")
+    native_idx = names.index("Execute native PAPER suite on exact RELEASE image ID")
+    export_idx = names.index("Save verified RELEASE image ID and bind native receipt")
+    seal_idx = names.index("Seal seven-member owned artifact manifest")
+    assert build_idx < native_idx < export_idx < seal_idx
+    build, native, export = (steps[index]["run"]
+                             for index in (build_idx, native_idx, export_idx))
+    assert "docker build " in build
+    assert "RC6_IMAGE_ID=" in build
+    assert 'docker create ' in native
+    assert '"$RC6_IMAGE_ID" sleep ' in native
+    assert '"$RC6_IMAGE_ID"' in build
+    assert 'docker build ' not in native + export
+    for required in (
+        "--network none", "--read-only", "--cap-drop ALL",
+        "--security-opt no-new-privileges", "--user 1000:1000",
+        "--mount type=volume,target=/app/data", '--volumes-from "$source_cid:ro"',
+        "tests/test_rc6_shadow_native_bound.py", "tests/test_rc6_shadow_streaming_cost.py",
+        "tests/test_rc6_shadow_shared_audit.py", "tests/test_rc6_shadow_owned_state.py",
+        "tests/test_rc6_shadow_report_lifetime.py", "tests/test_rc6_shadow_cold_audit.py",
+        "tests/test_rc6_owned_funnel_details.py", "tests/test_rc6_physical_cadence.py",
+        "rc6_postdeploy_stress.py --full-catalog-check",
+        "rc6_postdeploy_stress.py --output /app/data/session",
+        "rc6_postdeploy_stress.py --cadence-stage fresh",
+        "rc6_postdeploy_stress.py --cadence-stage legacy",
+        "rc6_r163_native_volume_proof.py pack", "--native-tar",
+        '--private-junit-root "$private_junit_root"',
+        'docker cp "$source_cid:/app/data/$relative"',
+        "--source-cid", "--collector-cid", "--image-id",
+        "native-proof", "docker rm -v", "owned_cid",
+    ):
+        assert required in native
+    assert 'docker save "$RC6_IMAGE"' in export
+    assert 'test "$(docker image inspect -f' in export
+    assert '"native_proof":' in export
+    assert 'RC6_NATIVE_PROOF_FILE' in export
+    assert '"porota-image-build-receipt.json"' in export
+    assert '"$RC6_RELEASE_STAGE"' not in native  # no private report in upload folder
+    assert native.index('docker cp "$source_cid:/app/data/$relative"') < native.index(
+        'docker stop --time 10 "$source_cid"')  # mounted volume still live
+    upload = next(step for step in steps if step["name"] == "Upload one trusted RELEASE artifact")
+    assert upload["with"]["path"] == "${{ env.RC6_RELEASE_STAGE }}"

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 from types import SimpleNamespace
 import warnings
@@ -267,6 +269,34 @@ RELEASE_FILES = {
 _IMAGE_SHA = hashlib.sha256(RELEASE_FILES["porota-predeploy-image.tar.gz"]).hexdigest()
 _BUNDLE_SHA = hashlib.sha256(RELEASE_FILES["porota-deploy-bundle-v2.tgz"]).hexdigest()
 _IMAGE_ID = "sha256:" + "e" * 64
+_NATIVE_XML_PATHS = (
+    "native-bound.xml", "session/dashboard_auth_52.xml",
+    "session/publication_io_identity.xml", "session/scalping_capacity.xml",
+    "session/scheduler_monitor_backup.xml", "session/signals_risk_exit_ledger.xml",
+    "session/sources_readiness_network.xml", "session/sql_shadow_wal.xml",
+    "session/treasury_caucion.xml",
+)
+_NATIVE_GENERATIONS = {
+    "catalog/full-catalog.json": 2, "session/stress.json": 2,
+    "cadence/cadence-fresh.json": 12, "cadence/cadence-legacy.json": 12,
+}
+_NATIVE_PROOF = {
+    "schema": "RC6_R251_RELEASE_NATIVE_V1", "schema_version": 1,
+    "status": "SAME_IMAGE_TESTS_PASS", "candidate_sha": SHA,
+    "candidate_tree_sha": TREE, "trusted_main_sha": PUBLISHER_MAIN_SHA,
+    "image_id": _IMAGE_ID, "run_id": RUN_ID, "run_attempt": RUN_ATTEMPT,
+    "source_cid": "1" * 64, "collector_cid": "2" * 64,
+    "native_tar_sha256": "3" * 64, "native_tar_size_bytes": 20480,
+    "native_file_count": 13,
+    "native_case_counts": {name: 1520 if name == "native-bound.xml" else 1
+                           for name in _NATIVE_XML_PATHS},
+    "native_generations": _NATIVE_GENERATIONS,
+    "stage_exit_codes": {name: 0 for name in (
+        "cases", "catalog", "session", "cadence-fresh", "cadence-legacy")},
+    "private_raw_uploaded": False, "paper_only": True,
+    "release_go": False, "host_runtime_verified": False,
+    "real_orders_physical_verified": False,
+}
 RELEASE_FILES["porota-deploy-bundle-v2-manifest.json"] = json.dumps({
     "schema_version": 1, "status": "GREEN", "file_count": 1,
     "files": [{"path": "sample.py", "sha256": "f" * 64, "bytes": 10}],
@@ -287,8 +317,210 @@ RELEASE_FILES["porota-image-build-receipt.json"] = json.dumps({
     "builder_blob_sha": "0fe454dcdddc445d719288ed0673f3bfa279526f",
     "image_id": _IMAGE_ID, "image_size_bytes": 123456,
     "image_tar_sha256": _IMAGE_SHA, "bundle_sha256": _BUNDLE_SHA,
+    "native_proof": _NATIVE_PROOF,
     "paper_only": True, "release_go": False, "host_runtime_verified": False,
 }).encode()
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda receipt: receipt.pop("native_proof"),
+    lambda receipt: receipt["native_proof"].update(image_id="sha256:" + "4" * 64),
+    lambda receipt: receipt["native_proof"].update(candidate_sha=TREE),
+    lambda receipt: receipt["native_proof"].update(candidate_tree_sha=SHA),
+    lambda receipt: receipt["native_proof"].update(trusted_main_sha=SHA),
+    lambda receipt: receipt["native_proof"].update(run_id=RUN_ID + 1),
+    lambda receipt: receipt["native_proof"].update(run_attempt=RUN_ATTEMPT + 1),
+    lambda receipt: receipt["native_proof"].update(status="PROBE_ONLY"),
+    lambda receipt: receipt["native_proof"]["stage_exit_codes"].update(cases=5),
+    lambda receipt: receipt["native_proof"]["native_case_counts"].update(
+        {"native-bound.xml": 0}),
+    lambda receipt: receipt["native_proof"]["native_generations"].update(
+        {"cadence/cadence-legacy.json": 0}),
+    lambda receipt: receipt["native_proof"].update(private_raw_uploaded=True),
+    lambda receipt: receipt["native_proof"].update(release_go=True),
+    lambda receipt: receipt["native_proof"].update(source_cid="2" * 64),
+    lambda receipt: receipt["native_proof"].update(native_tar_sha256="bad"),
+    lambda receipt: receipt["native_proof"].update(native_file_count=12),
+    lambda receipt: receipt["native_proof"].update(extra="FORGED"),
+])
+def test_e_real_zip_verifier_rejects_resealed_missing_mismatch_or_skipped_native(
+    tmp_path, mutation,
+):
+    evidence = _release_evidence(tmp_path)
+    receipt = json.loads(RELEASE_FILES["porota-image-build-receipt.json"])
+    mutation(receipt)
+    _reseal_release_member(evidence, "porota-image-build-receipt.json",
+                           json.dumps(receipt).encode())
+    _reject(evidence, "RELEASE_INNER_CLAIM_RED")
+
+
+def _synthetic_r206_public_tar(tmp_path):
+    from scripts import rc6_r163_trusted_postrun_byte_audit as r206
+
+    raw_root = tmp_path / "private-raw-junit"
+    raw_root.mkdir(mode=0o700)
+    (raw_root / "session").mkdir(mode=0o700)
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as tf:
+        for name in sorted(r206.TAR_FILES):
+            if name.endswith(".xml"):
+                count = 9 if name == "native-bound.xml" else 1
+                required_modules = (
+                    "test_rc6_shadow_native_bound", "test_rc6_shadow_streaming_cost",
+                    "test_rc6_shadow_shared_audit", "test_rc6_shadow_owned_state",
+                    "test_rc6_shadow_report_lifetime", "test_rc6_shadow_cold_audit",
+                    "test_rc6_owned_funnel_details", "test_rc6_physical_cadence",
+                )
+                raw_xml = (
+                    '<testsuites><testsuite tests="' + str(count) +
+                    '" failures="0" errors="0" skipped="0">' +
+                    ''.join(f'<testcase classname="tests.{required_modules[index % 8]}" '
+                            f'name="case-{index}"/>' for index in range(count)) +
+                    '</testsuite></testsuites>\n').encode()
+                (raw_root / name).write_bytes(raw_xml)
+                (raw_root / name).chmod(0o600)
+                content = (
+                    '<testsuite schema="RC6_R206_PUBLIC_JUNIT_V1" '
+                    'status="PRIVATE_SOURCE_UNATTESTED" path="' + name +
+                    '" name="R206_PUBLIC_SYNTHETIC_ONLY" tests="' + str(count) +
+                    '" failures="0" errors="0" skipped="0" '
+                    'private_raw_size_bytes="' + str(len(raw_xml)) +
+                    '" private_raw_sha256_unattested="' +
+                    hashlib.sha256(raw_xml).hexdigest() + '" release_go="false">' +
+                    ''.join(f'<testcase name="case-{index:06d}"/>'
+                            for index in range(1, count + 1)) +
+                    '</testsuite>\n').encode()
+            else:
+                content = (json.dumps({
+                    "schema": "RC6_R206_PUBLIC_JSON_V1",
+                    "status": "PRIVATE_SOURCE_UNATTESTED", "source_path": name,
+                    "private_raw_size_bytes": 67,
+                    "private_raw_sha256_unattested": "0" * 64,
+                    "synthetic_fixture_only": True, "release_go": False,
+                    "real_orders_sent": 0, "catalog_count": 14611,
+                    "ready_fixture_count": 9902,
+                    "required_generations": _NATIVE_GENERATIONS[name],
+                }, sort_keys=True, separators=(",", ":")) + "\n").encode()
+            header = tarfile.TarInfo("./" + name)
+            header.uid = header.gid = 1000
+            header.mode = 0o600
+            header.size = len(content)
+            tf.addfile(header, io.BytesIO(content))
+    archive = tmp_path / "native-private-preview.tar"
+    archive.write_bytes(stream.getvalue())
+    return archive, raw_root
+
+
+def test_release_native_proof_builder_parses_existing_trusted_public_tar(tmp_path):
+    """A real R206 public TAR is parsed; no raw private JUnit is uploaded."""
+    archive, raw_root = _synthetic_r206_public_tar(tmp_path)
+    result = byte_gate.build_release_native_proof(
+        archive, private_junit_root=raw_root,
+        candidate_sha=SHA, candidate_tree_sha=TREE,
+        trusted_main_sha=PUBLISHER_MAIN_SHA, image_id=_IMAGE_ID,
+        run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+        source_cid="1" * 64, collector_cid="2" * 64,
+    )
+    assert result["native_case_counts"]["native-bound.xml"] == 9
+    assert result["native_generations"] == _NATIVE_GENERATIONS
+    assert result["native_tar_sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert result["stage_exit_codes"] == {name: 0 for name in (
+        "cases", "catalog", "session", "cadence-fresh", "cadence-legacy")}
+    assert result["image_id"] == _IMAGE_ID
+    assert result["private_raw_uploaded"] is False
+
+
+def test_native_proof_cli_seals_only_bounded_private_receipt(tmp_path):
+    archive, raw_root = _synthetic_r206_public_tar(tmp_path)
+    proof = tmp_path / "native-proof.json"
+    result = subprocess.run([
+        sys.executable, "-I", str(byte_gate.__file__), "native-proof",
+        "--native-tar", str(archive), "--private-junit-root", str(raw_root),
+        "--candidate-sha", SHA,
+        "--candidate-tree-sha", TREE, "--trusted-main-sha", PUBLISHER_MAIN_SHA,
+        "--image-id", _IMAGE_ID, "--run-id", str(RUN_ID),
+        "--run-attempt", str(RUN_ATTEMPT),
+        "--source-cid", "1" * 64, "--collector-cid", "2" * 64,
+        "--receipt-out", str(proof),
+    ], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "SAME_IMAGE_NATIVE=VALIDATED" in result.stdout
+    assert "case-000001" not in result.stdout
+    assert json.loads(proof.read_text())["image_id"] == _IMAGE_ID
+    assert proof.stat().st_mode & 0o777 == 0o600
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "native-private-preview.tar", "native-proof.json", "private-raw-junit"]
+
+
+def test_native_proof_cli_rejects_invalid_recycled_cid_without_receipt(tmp_path):
+    archive, raw_root = _synthetic_r206_public_tar(tmp_path)
+    proof = tmp_path / "native-proof.json"
+    result = subprocess.run([
+        sys.executable, "-I", str(byte_gate.__file__), "native-proof",
+        "--native-tar", str(archive), "--private-junit-root", str(raw_root),
+        "--candidate-sha", SHA,
+        "--candidate-tree-sha", TREE, "--trusted-main-sha", PUBLISHER_MAIN_SHA,
+        "--image-id", _IMAGE_ID, "--run-id", str(RUN_ID),
+        "--run-attempt", str(RUN_ATTEMPT),
+        "--source-cid", "1" * 64, "--collector-cid", "1" * 64,
+        "--receipt-out", str(proof),
+    ], capture_output=True, text=True, check=False)
+    assert result.returncode == 79
+    assert not proof.exists()
+    assert "HOLD79" in result.stderr
+    assert "native-private-preview.tar" not in result.stderr
+
+
+def test_trusted_native_normalizes_copied_0644_to_private_0600_after_fd_validation(tmp_path):
+    """Docker cp may retain a source file's 0644 mode despite a private parent."""
+    archive, raw_root = _synthetic_r206_public_tar(tmp_path)
+    for name in _NATIVE_XML_PATHS:
+        (raw_root / name).chmod(0o644)
+    result = byte_gate.build_release_native_proof(
+        archive, private_junit_root=raw_root,
+        candidate_sha=SHA, candidate_tree_sha=TREE,
+        trusted_main_sha=PUBLISHER_MAIN_SHA, image_id=_IMAGE_ID,
+        run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+        source_cid="1" * 64, collector_cid="2" * 64,
+    )
+    assert result["status"] == "SAME_IMAGE_TESTS_PASS"
+    assert all((raw_root / name).stat().st_mode & 0o777 == 0o600
+               for name in _NATIVE_XML_PATHS)
+
+
+@pytest.mark.parametrize("attack", [
+    "skipped", "failure", "digest_mismatch", "entity", "missing", "symlink",
+    "oversize",
+])
+def test_trusted_native_builder_rejects_private_junit_not_matching_public_projection(
+    tmp_path, attack,
+):
+    archive, raw_root = _synthetic_r206_public_tar(tmp_path)
+    target = raw_root / "native-bound.xml"
+    raw = target.read_bytes()
+    if attack == "skipped":
+        target.write_bytes(raw.replace(b'skipped="0"', b'skipped="1"'))
+    elif attack == "failure":
+        target.write_bytes(raw.replace(b'failures="0"', b'failures="1"'))
+    elif attack == "digest_mismatch":
+        target.write_bytes(raw.replace(b'name="case-0"', b'name="case-X"'))
+    elif attack == "entity":
+        target.write_bytes(b'<!DOCTYPE testsuites [<!ENTITY leak SYSTEM "file:///etc/passwd">]>' + raw)
+    elif attack == "missing":
+        target.unlink()
+    elif attack == "symlink":
+        target.unlink()
+        target.symlink_to(raw_root / "session/dashboard_auth_52.xml")
+    elif attack == "oversize":
+        target.write_bytes(b"X" * (8 * 1024 * 1024 + 1))
+    with pytest.raises(ArtifactByteEvidenceRed, match="^RELEASE_NATIVE_TAR_RED$"):
+        byte_gate.build_release_native_proof(
+            archive, private_junit_root=raw_root,
+            candidate_sha=SHA, candidate_tree_sha=TREE,
+            trusted_main_sha=PUBLISHER_MAIN_SHA, image_id=_IMAGE_ID,
+            run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+            source_cid="1" * 64, collector_cid="2" * 64,
+        )
 
 
 def test_trusted_seal_generates_complete_sorted_release_manifest_in_private_stage(tmp_path):
