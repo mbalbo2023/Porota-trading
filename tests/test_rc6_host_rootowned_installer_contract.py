@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import stat
 import tempfile
+from types import MappingProxyType
 import unittest
 from unittest.mock import patch
 
@@ -134,6 +135,35 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
                 finally:
                     os.close(fd)
                 self.assertEqual(list(root.iterdir()), [])
+
+    def test_publisher_uses_immutable_rechecked_snapshot_during_atomic_writes(self):
+        manifest, sources, _, _ = bundle()
+        backing = dict(sources)
+        forged = installer.VerifiedBundle(
+            candidate_sha=SHA, manifest_sha256=digest(manifest),
+            manifest_raw=manifest,
+            files=MappingProxyType(backing), host_control_verified=False)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            opened = []
+
+            def open_target(_):
+                opened.append(1)
+                # Precisely after publisher's pre-write revalidation, before
+                # its first atomic writer: untrusted wrapper backing mutates.
+                backing["helper"] = b"UNAPPROVED-AFTER-RECHECK"
+                return os.dup(fd)
+
+            try:
+                with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)), \
+                        patch.object(installer, "_open_root_directory", side_effect=open_target):
+                    installer.publish_verified_bundle(forged)
+            finally:
+                os.close(fd)
+            self.assertEqual(len(opened), 4)
+            self.assertEqual((root / "porota-rc6-oci-custody").read_bytes(),
+                             sources["helper"])
 
     def test_template_bytes_required_as_readonly_pinned_evidence_not_unit_install(self):
         manifest, sources, document, approval = bundle()

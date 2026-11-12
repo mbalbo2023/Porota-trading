@@ -344,7 +344,7 @@ def publish_verified_bundle(verified):
         target_dir_fd = _open_root_directory(str(Path(target).parent))
         try:
             atomic_publish(target_dir_fd, Path(target).name,
-                           verified.files[role], mode)
+                           rechecked.files[role], mode)
         finally:
             os.close(target_dir_fd)
 
