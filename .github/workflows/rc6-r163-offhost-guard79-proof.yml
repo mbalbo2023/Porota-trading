@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc6-r163-offhost-${{ github.event.pull_request.number || github.ref }}
+  group: rc6-r163-offhost-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: false
 
 jobs:
