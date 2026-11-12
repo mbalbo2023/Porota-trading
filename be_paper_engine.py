@@ -14,6 +14,7 @@ import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
+from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -327,27 +328,35 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            # Child validation is read-only and must precede any mkdir/DDL.
+            from cg_paper_workspace import validate_child_ready
+            validate_child_ready(path)
+            return
         new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        # El runtime padre migra una única vez antes de crear hijos. Repetir
-        # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
+        # Only the parent initializes or migrates schema before spawning workers.
+        self.init_db()
         if new_file:
             from cg_paper_workspace import mark_new_database
             with self.connect() as c:
                 mark_new_database(c)
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=20)
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            # READY children cannot recreate the DB if the pathname disappeared.
+            uri = Path(self.path).absolute().as_uri() + "?mode=rw"
+            conn = sqlite3.connect(uri, timeout=20, uri=True)
+        else:
+            conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row
         from rc6_signal_contracts import register_exact_time
         register_exact_time(conn)
         # Runtime RC6 has several PAPER child processes sharing this DB. Keep
         # lock waiting bounded and explicit at SQLite level.
         conn.execute("PRAGMA busy_timeout=20000")
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
         if str(mode).lower() != "wal":
             if runtime_schema_ready:
