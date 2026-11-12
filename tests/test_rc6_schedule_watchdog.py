@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import rc6_schedule_watchdog as a358
@@ -81,6 +82,29 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual(1, result["after_last_declared_slot_count"])
         self.assertEqual(7506, result["latest_creation_after_last_slot_lower_bound_seconds"])
         self.assertTrue(result["multi_hour_delayed_creation_proven"])
+        self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
+
+    def test_nov11_sanitized_p1_46_slots_two_runs_44_missing(self):
+        """A358 receipt counts; first in-session timestamp is a synthetic stand-in."""
+        created = [
+            dict(id=43100000001, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-11T13:37:03Z"),
+            dict(id=43100000002, event="schedule", run_attempt=1,
+                 head_branch="main", created_at="2026-11-12T01:55:04Z"),
+        ]
+        observed = datetime(2026, 11, 12, 1, 58, 59, tzinfo=timezone.utc)
+        result = a358.classify(created, observed, workflow_state="active",
+                               api_day_covered=True)
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("MATURE_RUN_COUNT_LOWER_BOUND", result["detection_basis"])
+        self.assertEqual(46, result["mature_expected_slots"])
+        self.assertEqual(2, result["genuine_runs_today"])
+        self.assertEqual(1, result["genuine_in_session"])
+        self.assertEqual(1, result["off_session_runs"])
+        self.assertEqual(44, result["missing_mature_run_lower_bound"])
+        self.assertFalse(result["latest_two_mature_slots_compatible"])
+        self.assertEqual(17284, result["latest_creation_after_last_slot_lower_bound_seconds"])
         self.assertEqual("NO_VERIFICADO", result["market_watch_runtime_recovered"])
 
     def test_both_actual_nov02_delayed_schedule_events_remain_p1(self):
@@ -275,7 +299,7 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual([], sent)
 
     def test_dedupe_many_small_pages_recognizes_existing_marker(self):
-        """The current #732 volume overflows one 100-comment response."""
+        """The legacy #732 volume overflows one 100-comment response."""
         receipt = {"date_art": "2026-11-02", "status": "P1_SCHEDULE_SILENT"}
         marker = "<!--RC6-A358:2026-11-02:P1_SCHEDULE_SILENT-->"
         pages = []
@@ -315,6 +339,33 @@ class ScheduleWatchdogTest(unittest.TestCase):
         self.assertEqual([1, 2, 3], pages)
         self.assertEqual(1, len(posted))
         self.assertIn("<!--RC6-A358:2026-11-02:P1_SCHEDULE_SILENT-->",
+                      posted[0][1]["body"])
+
+    def test_dedupe_uses_issue1093_for_both_read_and_one_post(self):
+        """A closed legacy comment destination must not swallow the P1 alert."""
+        receipt = {"date_art": "2026-11-11", "status": "P1_SCHEDULE_SILENT",
+                   "observed_at_utc": "2026-11-12T01:58:59Z",
+                   "workflow_state": "active", "genuine_runs_today": 2,
+                   "overdue_slots_after_last_run": 0}
+        fetched, posted = [], []
+
+        def get(url, _token):
+            fetched.append(url)
+            return []
+
+        def post(url, data, _token):
+            posted.append((url, data))
+            return 201
+
+        self.assertEqual("ISSUE_COMMENT_CREATED",
+                         a358.dedupe_issue("P1_SCHEDULE_SILENT", receipt, "mock",
+                                           get=get, post=post))
+        self.assertEqual(1, len(fetched))
+        self.assertEqual(1, len(posted))
+        expected = "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/1093/comments"
+        self.assertTrue(fetched[0].startswith(expected + "?since=2026-11-11T03:00:00Z"))
+        self.assertEqual(expected, posted[0][0])
+        self.assertIn("<!--RC6-A358:2026-11-11:P1_SCHEDULE_SILENT-->",
                       posted[0][1]["body"])
 
     def test_no_notification_for_non_p1(self):
@@ -369,6 +420,60 @@ class ScheduleWatchdogTest(unittest.TestCase):
             self.assertEqual("A358_API_RESPONSE_TOO_LARGE",
                              result["notification_error_class"])
             self.assertNotIn("mock_token_123456", json.dumps(result))
+
+    def test_issue1093_post_http403_preserves_p1_and_sanitizes_error(self):
+        """The notification's HTTP failure must not erase scheduler evidence."""
+        p1 = {"schema": "rc6.a358.schedule-watch.v1", "status": "P1_SCHEDULE_SILENT",
+              "reason": "TWO_MATURE_SLOTS_WITHOUT_RUN", "date_art": "2026-11-11",
+              "observed_at_utc": "2026-11-12T01:58:59Z", "workflow_state": "active",
+              "genuine_runs_today": 2, "overdue_slots_after_last_run": 0}
+        requests, scanned = [], []
+
+        def forbidden(url, _data, _token):
+            requests.append(url)
+            raise HTTPError(url, 403, "private status/body", None, None)
+
+        def empty_comments(url, _token):
+            scanned.append(url)
+            return []
+
+        # The helper binds its HTTP defaults at definition time. Inject both
+        # functions explicitly so the complete dedupe+notification path is
+        # exercised without ever reaching GitHub.
+        original_dedupe = a358.dedupe_issue
+
+        def mocked_transport(status, receipt, token):
+            return original_dedupe(status, receipt, token,
+                                   get=empty_comments, post=forbidden)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = str(Path(tmp) / "receipt.json")
+            with patch.dict(os.environ, {"GH_TOKEN": "private_mock_token_123"}):
+                with patch.object(a358, "_get", side_effect=[
+                    {"state": "active"}, {"total_count": 0, "workflow_runs": []}]):
+                    with patch.object(a358, "classify", return_value=p1):
+                        with patch.object(a358, "dedupe_issue", side_effect=mocked_transport):
+                            code = a358.main(["--output", target, "--notify"])
+            result = json.loads(Path(target).read_text(encoding="utf-8"))
+        self.assertEqual(3, code)
+        self.assertEqual("P1_SCHEDULE_SILENT", result["status"])
+        self.assertEqual("TWO_MATURE_SLOTS_WITHOUT_RUN", result["reason"])
+        self.assertEqual("A358_HTTP_ERROR", result["notification_error_class"])
+        self.assertEqual("NO_VERIFICADO", result["notification"])
+        expected = "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/1093/comments"
+        self.assertEqual([expected], requests)
+        self.assertEqual(1, len(scanned))
+        self.assertTrue(scanned[0].startswith(expected + "?"))
+        self.assertNotIn("private_mock_token_123", json.dumps(result))
+        self.assertNotIn("private status/body", json.dumps(result))
+
+    def test_issue_comment_get_http403_never_attempts_post(self):
+        """Incomplete deduplication must not post into an unknown state."""
+        failed_get = HTTPError("https://api.github.com", 403, "private", None, None)
+        with self.assertRaises(HTTPError):
+            a358.dedupe_issue("P1_SCHEDULE_SILENT", {"date_art": "2026-11-11"},
+                              "mock", get=lambda *_: (_ for _ in ()).throw(failed_get),
+                              post=lambda *_: self.fail("must not post"))
 
     def test_unknown_exception_text_is_never_emitted(self):
         self.assertEqual("A358_VALUE_ERROR",

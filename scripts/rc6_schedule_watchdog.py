@@ -20,7 +20,8 @@ from zoneinfo import ZoneInfo
 
 REPO = "mbalbo2023/Porota-trading"
 WORKFLOW_ID = 384354765
-ISSUE = 732
+# A358 notifications route to the active successor; legacy #732 is closed to comments.
+ISSUE = 1093
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 MAX_REPLY = 512 * 1024
 GRACE_MINUTES = 12

@@ -19,7 +19,7 @@
 - El control considera slots después de 10:30 ART y hasta 18:07, con 12 minutos de gracia; dos slots maduros sin run nuevo producen P1_SCHEDULE_SILENT.
 - Workflow state disabled_manually / disabled_inactivity / disabled_fork / deleted produce P1_WORKFLOW_DISABLED. Estado/API desconocidos no se presentan como ACTIVE.
 - Estados NO_VERIFICADO, NOT_APPLICABLE_PR y NOT_APPLICABLE_CLOSED no son GREEN de runtime.
-- La notificación P1 se añade a issue #732 solo tras comprobar ausencia de marcador idéntico para fecha y causa (máximo cinco páginas de comentarios). Ante dudas de deduplicación no se publican repetidos.
+- La notificación P1 se dirige al issue sucesor #1093 (el destino histórico #732 tiene comentarios deshabilitados). Antes de publicar, inspecciona páginas de cinco comentarios hasta un límite de 500 para descartar el mismo marcador por fecha y causa; si no puede completar la comprobación, falla cerrado y no publica. El A358_HTTP_ERROR de un run histórico no permite distinguir por sí solo si falló GET o POST: la ruta a #732 es una hipótesis causal probable, no RCA confirmado del evento.
 - El recibo JSON es siempre sanitizado, ligado a run_id mediante nombre del artefacto. Un workflow FAIL representa P1 o API/alerta no verificable, no fallo de trading.
 
 ## Aceptación y acciones
