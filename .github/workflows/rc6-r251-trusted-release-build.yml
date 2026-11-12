@@ -1,0 +1,289 @@
+# R251 D: explicit OWNER-frozen offhost build; NEVER a fourth workflow_run.
+# R144, R164, host/runtime, real_orders_sent physical remain HOLD.
+name: RC6 R251 Trusted Release Build (OFFHOST ONLY)
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact reviewed PR 1087 SHA
+        type: string
+        required: true
+      candidate_tree_sha:
+        description: Exact reviewed PR 1087 tree
+        type: string
+        required: true
+      owner_comment_id:
+        description: Unedited owner GO comment ID on issue 1093
+        type: string
+        required: true
+      r206_publisher_run_id:
+        description: R206 B completed run ID
+        type: string
+        required: true
+      r206_publisher_attempt:
+        description: R206 B exact attempt
+        type: string
+        required: true
+      r206_audit_run_id:
+        description: R206 C completed run ID
+        type: string
+        required: true
+      r206_audit_attempt:
+        description: R206 C exact attempt
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: rc6-r251-trusted-offhost-release-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  trusted-release:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'mbalbo2023/Porota-trading' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+    env:
+      RC6_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      RC6_SOURCE_TREE: ${{ inputs.candidate_tree_sha }}
+      RC6_TRUSTED_MAIN_SHA: ${{ github.sha }}
+      RC6_IMAGE: rc6-r251-offhost:${{ inputs.candidate_sha }}
+    steps:
+      - name: Checkout protected main trust anchor
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify unedited owner freeze, PR HEAD/tree and fresh R206 B/C
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RC6_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
+          RC6_R206_PUBLISHER_RUN_ID: ${{ inputs.r206_publisher_run_id }}
+          RC6_R206_PUBLISHER_ATTEMPT: ${{ inputs.r206_publisher_attempt }}
+          RC6_R206_AUDIT_RUN_ID: ${{ inputs.r206_audit_run_id }}
+          RC6_R206_AUDIT_ATTEMPT: ${{ inputs.r206_audit_attempt }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$GITHUB_REF" = refs/heads/main || exit 79
+          test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
+          [[ "$RC6_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$RC6_SOURCE_TREE" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          printf '%s  %s\n' c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f \
+            scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
+          python3 -I scripts/rc6_r163_artifact_byte_verifier.py release-preflight \
+            --candidate-sha "$RC6_SOURCE_SHA" --candidate-tree-sha "$RC6_SOURCE_TREE" \
+            --trusted-main-sha "$RC6_TRUSTED_MAIN_SHA" \
+            --owner-comment-id "$RC6_OWNER_COMMENT_ID" \
+            --r206-publisher-run-id "$RC6_R206_PUBLISHER_RUN_ID" \
+            --r206-publisher-attempt "$RC6_R206_PUBLISHER_ATTEMPT" \
+            --r206-audit-run-id "$RC6_R206_AUDIT_RUN_ID" \
+            --r206-audit-attempt "$RC6_R206_AUDIT_ATTEMPT"
+          echo 'RC6_R251_OWNER=OFFHOST_BUILD_ONLY|R144=HOLD|release_go=NO'
+      - name: Checkout pinned trusted product builder
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 7ac6e368bd42137817e3271839c35f579bdbbbbe
+          path: .rc6-pinned-product
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Checkout reviewed candidate as Docker-only context
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: .rc6-untrusted-source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify immutable product scripts and candidate classifier
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
+          test "$(git -C .rc6-pinned-product rev-parse HEAD)" = 7ac6e368bd42137817e3271839c35f579bdbbbbe || exit 79
+          test "$(git -C .rc6-untrusted-source rev-parse HEAD)" = "$RC6_SOURCE_SHA" || exit 79
+          test "$(git -C .rc6-untrusted-source rev-parse HEAD^{tree})" = "$RC6_SOURCE_TREE" || exit 79
+          test "$(git hash-object .rc6-pinned-product/scripts/porota_build_deploy_bundle_v2.py)" = 0fe454dcdddc445d719288ed0673f3bfa279526f || exit 79
+          test "$(git hash-object .rc6-pinned-product/scripts/porota_validate_deploy_artifact.py)" = 56d669cb176511d874bbbd12689d2980317440f8 || exit 79
+          test "$(git hash-object .rc6-untrusted-source/scripts/porota_validate_deploy_artifact.py)" = 0478a93c1af9771ba9c59b9a6372024a194859e0 || exit 79
+          test "$(git hash-object .rc6-pinned-product/scripts/porota_host_manifest_v2.py)" = 0b622b71e7e1864de51cfdf1fc8ca5ce1dee6508 || exit 79
+          test "$(git hash-object .rc6-pinned-product/scripts/porota_host_policy_v2.py)" = f29c0fe4f7c8a474fbf496a14f5146bdbb72045b || exit 79
+          test "$(git hash-object .rc6-pinned-product/tests/ci_frozen_candidate_contract.py)" = 3a745c5746083b1d0fab8cabe4c4d772e09682ea || exit 79
+          # For reviewed candidate@43c4b432 the pinned PRODUCT builder and
+          # reviewed candidate classifier selected the SAME 604 of 1,539
+          # tracked paths, including ops/policy and ops/state metadata.
+          # These hash pins preserve those classifier contracts; they are NOT
+          # proof of candidate validator's broader wiring/closure semantics.
+          # Reject unsafe Git file modes (no symlink/submodule checkout).
+          python3 -I - <<'PY'
+          import subprocess
+          modes = {row.split(b" ", 1)[0] for row in subprocess.check_output(
+              ["git", "-C", ".rc6-untrusted-source", "ls-files", "-s", "-z"]
+          ).split(b"\0") if row}
+          assert modes <= {b"100644", b"100755"}
+          PY
+      - name: Stage private owned RELEASE output
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r251-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-XXXXXXXX")"
+          test -d "$stage" && test ! -L "$stage" || exit 79
+          chmod 700 "$stage"
+          printf 'RC6_RELEASE_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+      - name: Trusted product scripts generate host receipts and one source bundle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          python3 .rc6-pinned-product/scripts/porota_host_manifest_v2.py \
+            --repo-root .rc6-untrusted-source \
+            --policy ops/policy/host-control-plane-reconciliation-v2.json \
+            --source-sha "$RC6_SOURCE_SHA" \
+            --json-out "$RC6_RELEASE_STAGE/porota-host-manifest-v2.json"
+          python3 .rc6-pinned-product/scripts/porota_host_policy_v2.py \
+            --manifest "$RC6_RELEASE_STAGE/porota-host-manifest-v2.json" \
+            --policy .rc6-untrusted-source/ops/policy/host-control-plane-reconciliation-v2.json \
+            --json-out "$RC6_RELEASE_STAGE/porota-host-policy-v2.json"
+          python3 .rc6-pinned-product/scripts/porota_build_deploy_bundle_v2.py \
+            --repo-root .rc6-untrusted-source \
+            --output "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2.tgz" \
+            --manifest-out "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2-manifest.json"
+          echo 'RC6_R251_BUNDLE=BUILT_ONCE|host_policy=CHECKED|release_go=NO'
+      - name: Build one ephemeral offhost image and save exact bytes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          docker build --build-arg "POROTA_BUILD_SHA=$RC6_SOURCE_SHA" \
+            --build-arg "POROTA_CANDIDATE_TREE_SHA=$RC6_SOURCE_TREE" \
+            --label "porota.commit=$RC6_SOURCE_SHA" \
+            --label porota.predeploy=v2 -t "$RC6_IMAGE" .rc6-untrusted-source
+          # Execute the *one* image's trusted source-identity and import smoke
+          # in an offline, read-only, capless ephemeral container.
+          smoke="$(docker run --rm --pull never --network none \
+            --cap-drop ALL --read-only --pids-limit 128 --memory 2g \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            -i --entrypoint python "$RC6_IMAGE" \
+            - "$RC6_SOURCE_SHA" "$RC6_SOURCE_TREE" <<'PY'
+          import sys
+          from scripts.porota_image_source_identity import verify_source_identity
+          identity = verify_source_identity(sys.argv[1], sys.argv[2])
+          assert identity['candidate_sha'] == sys.argv[1]
+          assert identity['candidate_tree_sha'] == sys.argv[2]
+          print('POROTA_IMAGE_SOURCE_IDENTITY=GREEN')
+          from rc6_shadow_runtime import persistence
+          assert persistence._native_json_bound is not None
+          import bg_paper_dashboard, bf_production_paper_observer, bv_paper_runtime
+          import bl_candle_engine, be_paper_engine, bw_daily_risk
+          import dh_paper_dynamic_risk_gate_hf6, o_dashboard
+          print('POROTA_RUNTIME_IMPORT_SMOKE=GREEN')
+          PY
+          )"
+          [[ "$smoke" == *"POROTA_IMAGE_SOURCE_IDENTITY=GREEN"* ]] || exit 79
+          [[ "$smoke" == *"POROTA_RUNTIME_IMPORT_SMOKE=GREEN"* ]] || exit 79
+          docker save "$RC6_IMAGE" | gzip -1 > "$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz"
+          RC6_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$RC6_IMAGE")"
+          RC6_IMAGE_SIZE_BYTES="$(docker image inspect -f '{{.Size}}' "$RC6_IMAGE")"
+          RC6_IMAGE_CONFIG_SHA="$(docker image inspect -f '{{json .Config}}' "$RC6_IMAGE" | sha256sum | awk '{print $1}')"
+          RC6_IMAGE_TAR_SHA="$(sha256sum "$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz" | awk '{print $1}')"
+          RC6_BUNDLE_SHA="$(sha256sum "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2.tgz" | awk '{print $1}')"
+          export RC6_IMAGE_ID RC6_IMAGE_SIZE_BYTES RC6_IMAGE_CONFIG_SHA RC6_IMAGE_TAR_SHA RC6_BUNDLE_SHA
+          python3 -I - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RC6_RELEASE_STAGE"])
+          source, tree = os.environ["RC6_SOURCE_SHA"], os.environ["RC6_SOURCE_TREE"]
+          image_id = os.environ["RC6_IMAGE_ID"]
+          assert image_id.startswith("sha256:") and len(image_id) == 71
+          frozen = {
+              "schema_version": 1, "candidate_sha": source,
+              "candidate_tree_sha": tree, "image_id": image_id,
+              "image_tar_sha256": os.environ["RC6_IMAGE_TAR_SHA"],
+              "image_config_sha256": os.environ["RC6_IMAGE_CONFIG_SHA"],
+              "image_size_bytes": int(os.environ["RC6_IMAGE_SIZE_BYTES"]),
+              "paper_mode_required": "PRODUCTION_PAPER",
+              "real_orders_sent_required": 0,
+              "real_order_capability_required": "BLOCKED", "build_once": True,
+          }
+          receipt = {
+              "schema_version": 1, "candidate_sha": source,
+              "candidate_tree_sha": tree,
+              "trusted_main_sha": os.environ["RC6_TRUSTED_MAIN_SHA"],
+              "builder_product_sha": "7ac6e368bd42137817e3271839c35f579bdbbbbe",
+              "builder_blob_sha": "0fe454dcdddc445d719288ed0673f3bfa279526f",
+              "image_id": image_id, "image_size_bytes": frozen["image_size_bytes"],
+              "image_tar_sha256": frozen["image_tar_sha256"],
+              "bundle_sha256": os.environ["RC6_BUNDLE_SHA"],
+              "paper_only": True, "release_go": False, "host_runtime_verified": False,
+          }
+          for name, data in (("porota-frozen-candidate.json", frozen),
+                             ("porota-image-build-receipt.json", receipt)):
+              (root / name).write_text(
+                  json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          echo 'RC6_R251_IMAGE=EXPORTED_ONCE|R144=HOLD|release_go=NO'
+      - name: Validate exact frozen image against saved tar with pinned product test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -I .rc6-pinned-product/tests/ci_frozen_candidate_contract.py validate \
+            --frozen "$RC6_RELEASE_STAGE/porota-frozen-candidate.json" \
+            --image "$RC6_RELEASE_STAGE/porota-predeploy-image.tar.gz" \
+            --manifest "$RC6_RELEASE_STAGE/porota-deploy-bundle-v2-manifest.json" \
+            --candidate-sha "$RC6_SOURCE_SHA" \
+            --tree-sha "$RC6_SOURCE_TREE"
+          echo 'RC6_R251_FROZEN=PINNED_PRODUCT_CONTRACT_PASS|R144=HOLD|release_go=NO'
+      - name: Seal seven-member owned artifact manifest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -I scripts/rc6_r163_artifact_byte_verifier.py seal-release \
+            --staging-root "$RC6_RELEASE_STAGE" \
+            --candidate-sha "$RC6_SOURCE_SHA" --candidate-tree-sha "$RC6_SOURCE_TREE" \
+            --trusted-main-sha "$RC6_TRUSTED_MAIN_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          printf 'RC6_RELEASE_ARTIFACT_NAME=rc6-r251-release-%s-%s-%s\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RC6_SOURCE_SHA" >> "$GITHUB_ENV"
+          echo 'RC6_R251_PREUPLOAD=MANIFEST_SEALED|postcompletion_required=YES|release_go=NO'
+      - name: Upload one trusted RELEASE artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.RC6_RELEASE_ARTIFACT_NAME }}
+          path: ${{ env.RC6_RELEASE_STAGE }}
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+          compression-level: 0
+      - name: Report pending E (D cannot self-attest completion)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n '${{ steps.upload.outputs.artifact-id }}' || exit 79
+          echo 'RC6_R251_D=UPLOAD_PENDING_E_INDEPENDENT_BYTES|R144=HOLD|release_go=NO'
+      - name: Cleanup only job-owned offhost image
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$RC6_IMAGE" =~ ^rc6-r251-offhost:[0-9a-f]{40}$ ]]; then
+            docker image inspect "$RC6_IMAGE" >/dev/null 2>&1 && \
+              docker image rm "$RC6_IMAGE" >/dev/null || true
+          fi
+          echo 'RC6_R251_OFFHOST_CLEANUP=BEST_EFFORT|host=UNTOUCHED|release_go=NO'

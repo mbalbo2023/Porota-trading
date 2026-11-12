@@ -1,0 +1,102 @@
+# R251 E: only after the trusted D run has COMPLETED SUCCESS.
+# Re-hash GitHub REST raw ZIP bytes and publish one review-only E receipt.
+# R252/R253 must authenticate E's own later completed run independently.
+name: RC6 R251 Trusted Release Postcompletion Byte Audit (READ ONLY)
+
+on:
+  workflow_run:
+    workflows: [RC6 R251 Trusted Release Build (OFFHOST ONLY)]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-r251-release-postcompletion-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release-bytes:
+    if: >-
+      ${{ github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.status == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.name == 'RC6 R251 Trusted Release Build (OFFHOST ONLY)' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RC6_PUBLISHER_MAIN_SHA: ${{ github.event.workflow_run.head_sha }}
+      RC6_PUBLISHER_RUN_ID: ${{ github.event.workflow_run.id }}
+      RC6_PUBLISHER_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+    steps:
+      - name: Checkout reviewed default main only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Prepare owned receipt output
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$GITHUB_REF" = refs/heads/main || exit 79
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || exit 79
+          test "$(git rev-parse HEAD)" = "$RC6_PUBLISHER_MAIN_SHA" || exit 79
+          [[ "$RC6_PUBLISHER_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$RC6_PUBLISHER_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
+          [[ "$RC6_PUBLISHER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
+          printf '%s  %s\n' c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f \
+            scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
+          stage="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r251-e-$RC6_PUBLISHER_RUN_ID-$RC6_PUBLISHER_ATTEMPT-XXXXXXXX")"
+          test -d "$stage" && test ! -L "$stage" || exit 79
+          chmod 700 "$stage"
+          printf 'RC6_E_RECEIPT_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+      - name: Authenticate D P/N success, candidate tree and actual full ZIP bytes
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -I scripts/rc6_r163_artifact_byte_verifier.py release-postcompletion \
+            --event "$GITHUB_EVENT_PATH" \
+            --publisher-run-id "$RC6_PUBLISHER_RUN_ID" \
+            --publisher-run-attempt "$RC6_PUBLISHER_ATTEMPT" \
+            --expected-publisher-sha "$RC6_PUBLISHER_MAIN_SHA" \
+            --receipt-out "$RC6_E_RECEIPT_STAGE/rc6-r251-release-postcompletion-v1.json"
+          RC6_CANDIDATE_SHA="$(python3 -I - "$RC6_E_RECEIPT_STAGE/rc6-r251-release-postcompletion-v1.json" <<'PY'
+          import json, re, sys
+          document = json.load(open(sys.argv[1], encoding="utf-8"))
+          sha = document.get("candidate_sha")
+          if type(sha) is not str or re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+              raise SystemExit(79)
+          print(sha)
+          PY
+          )"
+          printf 'RC6_E_ARTIFACT_NAME=rc6-r251-postcompletion-%s-%s-%s\n' \
+            "$RC6_PUBLISHER_RUN_ID" "$RC6_PUBLISHER_ATTEMPT" \
+            "$RC6_CANDIDATE_SHA" >> "$GITHUB_ENV"
+          echo 'RC6_R251_E=RELEASE_BYTES_MATCH|E_OWN_COMPLETION=PENDING|R144=HOLD|release_go=NO'
+      - name: Upload single review-only postcompletion receipt
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.RC6_E_ARTIFACT_NAME }}
+          path: ${{ env.RC6_E_RECEIPT_STAGE }}
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+          compression-level: 0
+      - name: Never self-attest E completion or release GO
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n '${{ steps.upload.outputs.artifact-id }}' || exit 79
+          echo 'RC6_R251_E=RECEIPT_PUBLISHED_PENDING_INDEPENDENT_R252|R144=HOLD|release_go=NO|runtime=NO_VERIFICADO'
