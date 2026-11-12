@@ -415,7 +415,7 @@ def _anonymous_volume_declaration(declared: Any) -> bool:
     item = declared[0]
     if (not set(item).issubset({"Type", "Source", "Target", "ReadOnly", "Consistency",
                                 "BindOptions", "VolumeOptions", "TmpfsOptions"}) or
-            item.get("Type") != "volume" or item.get("Source") != "" or
+            item.get("Type") != "volume" or item.get("Source", "") != "" or
             item.get("Target") != "/app/data" or
             ("ReadOnly" in item and item["ReadOnly"] is not False) or
             item.get("Consistency") not in (None, "", "default", "consistent") or

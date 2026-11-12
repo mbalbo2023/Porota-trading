@@ -328,6 +328,29 @@ def test_resealed_docker_inspect_cannot_escalate_host_or_collector_isolation():
         _red(evidence, "INSPECT_CONFIG_UNSAFE")
 
 
+def test_docker_anonymous_volume_accepts_omitted_hostconfig_source_from_moby():
+    evidence = _evidence()
+    _reseal_inspect(
+        evidence, "source-inspect.json",
+        lambda item: item["HostConfig"]["Mounts"][0].pop("Source"),
+    )
+    result = verify_postrun_bytes(**evidence)
+    assert result["status"] == "POSTRUN_ARTIFACT_BYTES_MATCH"
+    assert result["automatic_go"] is False
+    assert result["release_go"] is False
+    assert result["runtime_verified"] is False
+
+
+def test_docker_anonymous_volume_rejects_null_named_and_hex_source():
+    for source in (None, "named-volume", VOLUME):
+        evidence = _evidence()
+        _reseal_inspect(
+            evidence, "source-inspect.json",
+            lambda item, value=source: item["HostConfig"]["Mounts"][0].__setitem__("Source", value),
+        )
+        _red(evidence, "INSPECT_CONFIG_UNSAFE")
+
+
 def test_same_run_wrong_artifact_attempt_name_and_size_fail_closed():
     for change, reason in (
         (lambda d: d["artifact"].__setitem__("name", f"rc6-r163-offhost-{RUN}-1-{SHA}"),
