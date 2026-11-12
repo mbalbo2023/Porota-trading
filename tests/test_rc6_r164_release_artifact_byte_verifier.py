@@ -262,6 +262,24 @@ class ReleaseBytes(unittest.TestCase):
         self.assertFalse(evidence["docker_image_load_verified"])
         self.assertFalse(evidence["fresh_rest_race_check_verified"])
 
+    def test_standard_streamed_zip_data_descriptors_are_counted_not_hidden(self) -> None:
+        class NonSeekableBuffer(io.BytesIO):
+            def seek(self, *args):
+                raise OSError("streamed output does not seek")
+
+        with zipfile.ZipFile(self.payload["archive"], "r") as original:
+            entries = [(item.filename, original.read(item.filename))
+                       for item in original.infolist()]
+        stream = NonSeekableBuffer()
+        with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as writer:
+            for path, value in entries:
+                writer.writestr(path, value)
+        self.payload["archive"].write_bytes(stream.getvalue())
+        self._resign_zip_only()
+        evidence = self._verify()
+        self.assertEqual(evidence["status"], "RELEASE_BYTES_MATCH_OFFLINE_ONLY")
+        self.assertFalse(evidence["release_go"])
+
     def test_another_run_artifact_id_is_rejected(self) -> None:
         self.payload["artifact_receipt"]["id"] += 1
         self._reject("ARTIFACT_ID_MISMATCH")
@@ -430,6 +448,64 @@ class ReleaseBytes(unittest.TestCase):
         self.payload["archive"].write_bytes(
             self.payload["archive"].read_bytes() + b"tampered outside zip")
         self._reject("ZIP_DIGEST_MISMATCH")
+
+    def test_resigned_zip_with_extra_trailing_bytes_is_not_a_canonical_zip(self) -> None:
+        self.payload["archive"].write_bytes(
+            self.payload["archive"].read_bytes() + b"unlisted trailing payload")
+        self._resign_zip_only()
+        self._reject("ZIP_TRAILING_BYTES")
+
+    def test_resigned_zip_with_self_extracting_prefix_is_not_canonical(self) -> None:
+        self.payload["archive"].write_bytes(
+            b"unlisted self-extracting prefix" + self.payload["archive"].read_bytes())
+        self._resign_zip_only()
+        self._reject("ZIP_PREFIX_BYTES")
+
+    def test_resigned_zip_comment_is_not_a_release_payload_member(self) -> None:
+        with zipfile.ZipFile(self.payload["archive"], "a") as zf:
+            zf.comment = b"untracked appended comment"
+        self._resign_zip_only()
+        self._reject("ZIP_COMMENT_UNEXPECTED")
+
+    def test_resigned_zip_with_unlisted_bytes_before_directory_is_rejected(self) -> None:
+        raw = self.payload["archive"].read_bytes()
+        eocd = raw.rfind(b"PK\x05\x06")
+        self.assertGreater(eocd, 0)
+        directory = int.from_bytes(raw[eocd + 16:eocd + 20], "little")
+        junk = b"unlisted arbitrary bytes in the local-entry region"
+        forged = bytearray(raw[:directory] + junk + raw[directory:])
+        new_eocd = eocd + len(junk)
+        forged[new_eocd + 16:new_eocd + 20] = (
+            directory + len(junk)).to_bytes(4, "little")
+        self.payload["archive"].write_bytes(forged)
+        self._resign_zip_only()
+        with zipfile.ZipFile(self.payload["archive"]) as zf:
+            self.assertIn("native.tar", zf.namelist())
+        self._reject("ZIP_LOCAL_LAYOUT_INVALID")
+
+    def test_resigned_zip_with_undeclared_member_comment_is_rejected(self) -> None:
+        with zipfile.ZipFile(self.payload["archive"], "r") as original:
+            entries = [(item, original.read(item.filename))
+                       for item in original.infolist()]
+        with zipfile.ZipFile(self.payload["archive"], "w", zipfile.ZIP_DEFLATED) as writer:
+            for item, payload in entries:
+                if item.filename == "native.tar":
+                    item.comment = b"unlisted file-level comment bytes"
+                writer.writestr(item, payload)
+        self._resign_zip_only()
+        self._reject("ZIP_LOCAL_LAYOUT_INVALID")
+
+    def test_resigned_zip_with_undeclared_member_extra_is_rejected(self) -> None:
+        with zipfile.ZipFile(self.payload["archive"], "r") as original:
+            entries = [(item, original.read(item.filename))
+                       for item in original.infolist()]
+        with zipfile.ZipFile(self.payload["archive"], "w", zipfile.ZIP_DEFLATED) as writer:
+            for item, payload in entries:
+                if item.filename == "native.tar":
+                    item.extra = b"\xfa\xce\x04\x00junk"
+                writer.writestr(item, payload)
+        self._resign_zip_only()
+        self._reject("ZIP_LOCAL_LAYOUT_INVALID")
 
     def test_foreign_pull_request_head_and_branch_are_rejected(self) -> None:
         self.payload["pr_receipt"]["head"]["sha"] = "1" * 40

@@ -34,6 +34,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import struct
 import sys
 import tarfile
 import tempfile
@@ -265,6 +266,105 @@ def _member_sha(zf: zipfile.ZipFile, path: str) -> str:
         while block := stream.read(CHUNK_BYTES):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _check_canonical_zip_envelope(snapshot: Any, size: int) -> None:
+    """Reject self-extracting prefixes, comments and unlisted ZIP bytes.
+
+    ``zipfile.ZipFile`` deliberately accepts self-extracting stubs and bytes
+    after the EOCD. A release archive cannot silently include either, even if
+    someone re-signed its digest. R163 remains the sole member/manifest parser.
+    """
+    if size < 22:
+        _red("ZIP_TRAILING_BYTES")
+    snapshot.seek(0)
+    if snapshot.read(4) != b"PK\x03\x04":
+        _red("ZIP_PREFIX_BYTES")
+    tail_size = min(size, 22 + 65535)
+    snapshot.seek(size - tail_size)
+    tail = snapshot.read(tail_size)
+    start = tail.rfind(b"PK\x05\x06")
+    if start < 0 or start + 22 > len(tail):
+        _red("ZIP_TRAILING_BYTES")
+    comment_size = int.from_bytes(tail[start + 20:start + 22], "little")
+    if comment_size:
+        _red("ZIP_COMMENT_UNEXPECTED")
+    if start + 22 != len(tail):
+        _red("ZIP_TRAILING_BYTES")
+    directory_size = int.from_bytes(tail[start + 12:start + 16], "little")
+    directory_offset = int.from_bytes(tail[start + 16:start + 20], "little")
+    if (directory_size in (0, 0xffffffff) or
+            directory_offset == 0xffffffff or
+            directory_offset + directory_size != size - 22):
+        _red("ZIP_CENTRAL_DIRECTORY_LAYOUT")
+    snapshot.seek(directory_offset)
+    if snapshot.read(4) != b"PK\x01\x02":
+        _red("ZIP_CENTRAL_DIRECTORY_LAYOUT")
+    _check_local_zip_layout(snapshot, directory_offset)
+    snapshot.seek(0)
+
+
+def _check_local_zip_layout(snapshot: Any, directory_offset: int) -> None:
+    """Require contiguous, correctly framed local entries up to the directory.
+
+    ``zipfile`` can successfully read archives with unreferenced arbitrary
+    bytes between local entries and their central directory. Match every
+    central member to an exact local record, compressed payload and optional
+    standard data descriptor. No local-gap bytes remain unaccounted for.
+    """
+    try:
+        with zipfile.ZipFile(snapshot, "r") as archive:
+            cursor = 0
+            for info in sorted(archive.infolist(), key=lambda item: item.header_offset):
+                if info.header_offset != cursor or cursor + 30 > directory_offset:
+                    _red("ZIP_LOCAL_LAYOUT_INVALID")
+                snapshot.seek(cursor)
+                header = snapshot.read(30)
+                if len(header) != 30:
+                    _red("ZIP_LOCAL_LAYOUT_INVALID")
+                (signature, _version, flags, method, _mtime, _mdate, crc,
+                 compressed, uncompressed, name_size, extra_size) = struct.unpack(
+                    "<4s5H3I2H", header)
+                if (signature != b"PK\x03\x04" or flags != info.flag_bits or
+                        method != info.compress_type or
+                        # File comments/extra fields are unmanifested bytes;
+                        # the release ZIP contract does not authorize them.
+                        info.comment or info.extra or extra_size != 0 or
+                        name_size != len(info.filename.encode("ascii")) or
+                        cursor + 30 + name_size + extra_size > directory_offset):
+                    _red("ZIP_LOCAL_LAYOUT_INVALID")
+                if snapshot.read(name_size) != info.filename.encode("ascii"):
+                    _red("ZIP_LOCAL_LAYOUT_INVALID")
+                data_end = cursor + 30 + name_size + extra_size + info.compress_size
+                if data_end > directory_offset:
+                    _red("ZIP_LOCAL_LAYOUT_INVALID")
+                if flags & 0x08:
+                    # Streamed ZIPs may carry a signed or unsigned data
+                    # descriptor after the compressed member. Both forms
+                    # contain central-directory CRC/sizes, never junk bytes.
+                    if (crc not in (0, info.CRC) or
+                            compressed not in (0, info.compress_size) or
+                            uncompressed not in (0, info.file_size)):
+                        _red("ZIP_LOCAL_LAYOUT_INVALID")
+                    descriptor = struct.pack(
+                        "<III", info.CRC, info.compress_size, info.file_size)
+                    snapshot.seek(data_end)
+                    observed = snapshot.read(16)
+                    if observed.startswith(b"PK\x07\x08" + descriptor):
+                        cursor = data_end + 16
+                    elif observed.startswith(descriptor):
+                        cursor = data_end + 12
+                    else:
+                        _red("ZIP_LOCAL_LAYOUT_INVALID")
+                else:
+                    if (crc != info.CRC or compressed != info.compress_size or
+                            uncompressed != info.file_size):
+                        _red("ZIP_LOCAL_LAYOUT_INVALID")
+                    cursor = data_end
+            if cursor != directory_offset:
+                _red("ZIP_LOCAL_LAYOUT_INVALID")
+    except (zipfile.BadZipFile, UnicodeError, OSError, OverflowError, struct.error):
+        _red("ZIP_LOCAL_LAYOUT_INVALID")
 
 
 def _check_bundle(zf: zipfile.ZipFile) -> None:
@@ -505,6 +605,7 @@ def verify_release_artifact_bytes(
             if (not _int(artifact_receipt.get("size_in_bytes"), 1) or
                     artifact_receipt["size_in_bytes"] != size):
                 _red("ARTIFACT_SIZE_MISMATCH")
+            _check_canonical_zip_envelope(snapshot, size)
             try:
                 files, _ = byte_gate._verify_zip(
                     snapshot, sha=expected["candidate_sha"],
