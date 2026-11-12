@@ -308,6 +308,52 @@ def test_foreign_or_privileged_docker_identity_is_hold79(case: str) -> None:
         _verify(producer, collector)
 
 
+
+@pytest.mark.parametrize("collector,field,value,bad_check", (
+    (False, "Type", "bind", "type"),
+    (False, "Destination", "/private/do-not-print", "target"),
+    (False, "Name", "secret-volume-do-not-print", "name"),
+    (False, "Source", "", "source"),
+    (False, "Driver", "private-driver-do-not-print", "driver"),
+    (False, "RW", False, "rw"),
+    (False, "Mode", "rw", "mode"),
+    (True, "Type", "bind", "type"),
+    (True, "Destination", "/private/do-not-print", "target"),
+    (True, "Name", "secret-volume-do-not-print", "name"),
+    (True, "Source", "", "source"),
+    (True, "Driver", "private-driver-do-not-print", "driver"),
+    (True, "RW", True, "rw"),
+    (True, "Mode", "rw", "mode"),
+))
+def test_mount_hold79_reports_only_boolean_subchecks(
+    collector: bool, field: str, value: object, bad_check: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    producer = _inspect()
+    reader = _inspect(collector=True)
+    target = reader if collector else producer
+    target["Mounts"][0][field] = value
+    with pytest.raises(_sut().VolumeProofHold, match="HOLD79:MOUNT_VOLUME_IDENTITY"):
+        _verify(producer, reader)
+    reported = capsys.readouterr()
+    assert reported.out == ""
+    role = "collector" if collector else "producer"
+    prefix = "RC6_R163_MOUNT_SUBCHECKS=role=" + role + "|"
+    assert reported.err.startswith(prefix)
+    assert reported.err.count("\n") == 1
+    details = reported.err[len(prefix):].strip().split("|")
+    assert details == [
+        name + "=" + str(int(name != bad_check))
+        for name in ("type", "target", "name", "source", "driver", "rw", "mode")
+    ]
+    for sensitive in (
+        SOURCE_CID, COLLECTOR_CID, VOLUME, SHA, TREE,
+        "/var/lib/docker/", "secret-volume-do-not-print",
+        "/private/do-not-print", "private-driver-do-not-print",
+    ):
+        assert sensitive not in reported.err
+
+
 def test_duplicate_docker_inspect_keys_are_rejected_not_last_wins() -> None:
     payload = json.dumps([_inspect()]).encode()
     payload = payload.replace(b'"Id": ', b'"Id": "' + b"f" * 64 + b'", "Id": ', 1)
