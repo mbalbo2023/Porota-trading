@@ -101,6 +101,88 @@ jobs:
               tests/test_rc6_r163_native_volume_proof.py::test_r203_offhost_workflow_never_uploads_private_inspect_or_skips_privacy \
               tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_decoded_escape_canary
           echo 'RC6_R203_REGRESSION_MATRIX=A976_A785_R164_R203_PY311_OFFHOST_ONLY'
+      - name: R206 XML and JSON opaque native projection regression (offhost TDD)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Exact R206 nodes only; 26 parametrized synthetic privacy cases.
+          # Failures and opaque fixture values remain in private runner temp.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import xml.etree.ElementTree as ET
+
+          NODES = (
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_junit_opaque_attribute_is_not_public_evidence",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_json_opaque_field_is_not_public_evidence",
+          )
+          try:
+              with tempfile.TemporaryDirectory(prefix="rc6-r206-", dir=os.environ["RUNNER_TEMP"]) as scratch:
+                  report = Path(scratch) / "private-junit.xml"
+                  env = {
+                      "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                      "HOME": scratch, "TMPDIR": scratch,
+                      "PYTHONDONTWRITEBYTECODE": "1",
+                      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                  }
+                  args = [sys.executable, "-m", "pytest", "-q",
+                          "-p", "no:cacheprovider", *NODES,
+                          "--junitxml=" + str(report)]
+                  with tempfile.TemporaryFile() as private_log:
+                      proc = subprocess.run(
+                          args, cwd=Path.cwd(), env=env, stdout=private_log,
+                          stderr=private_log, timeout=180, check=False)
+                  with os.fdopen(os.open(report, os.O_RDONLY | os.O_NOFOLLOW), "rb") as stream:
+                      meta = os.fstat(stream.fileno())
+                      if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                              meta.st_uid != os.getuid() or
+                              not 0 < meta.st_size <= 8 * 1024 * 1024):
+                          raise ValueError("R206_XML_UNOWNED")
+                      raw = stream.read(8 * 1024 * 1024 + 1)
+                      if len(raw) != meta.st_size:
+                          raise ValueError("R206_XML_CHANGED")
+                  if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                      raise ValueError("R206_XML_METADATA")
+                  root = ET.fromstring(raw)
+                  if root.tag not in ("testsuite", "testsuites"):
+                      raise ValueError("R206_XML_ROOT")
+                  suites = ([root] if root.tag == "testsuite" else
+                            list(root.findall("testsuite")))
+                  cases = list(root.iter("testcase"))
+                  if (not suites or len(cases) != 26 or
+                          sum(len(suite.findall("testcase")) for suite in suites) != 26 or
+                          len(list(root.iter("testsuite"))) != len(suites)):
+                      raise ValueError("R206_XML_CARDINALITY")
+                  totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+                  for suite in suites:
+                      for key in totals:
+                          value = suite.get(key)
+                          if value is None or re.fullmatch(r"[0-9]+", value) is None:
+                              raise ValueError("R206_XML_COUNTER")
+                          totals[key] += int(value)
+                      if int(suite.get("tests")) != len(suite.findall("testcase")):
+                          raise ValueError("R206_XML_SUITE_COVERAGE")
+                  if totals["tests"] != 26 or totals["skipped"] != 0:
+                      raise ValueError("R206_XML_TESTS_OR_SKIPS")
+                  has_bad = any(next(root.iter(tag), None) is not None
+                                for tag in ("failure", "error", "skipped"))
+                  if proc.returncode != 0 or has_bad or totals["failures"] or totals["errors"]:
+                      print("RC6_R206_PRIVACY=HOLD79|tests=26|failures=" +
+                            str(min(totals["failures"], 9999)) + "|errors=" +
+                            str(min(totals["errors"], 9999)) + "|skipped=0|release_go=NO")
+                      raise SystemExit(79)
+                  print("RC6_R206_PRIVACY=PY311_26_GREEN|release_go=NO")
+          except SystemExit:
+              raise
+          except Exception:
+              print("RC6_R206_PRIVACY=HOLD79|diagnostic_unavailable|release_go=NO")
+              raise SystemExit(79)
+          PY
       - name: R205 signals risk exit ledger exact 191 fixture diagnostic (offline)
         shell: bash
         run: |

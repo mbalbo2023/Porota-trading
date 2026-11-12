@@ -881,6 +881,46 @@ def _privacy_tar(*, replacement: dict[str, bytes] | None = None) -> bytes:
     return _tar_bytes(replacement=payloads)
 
 
+@pytest.mark.parametrize(
+    "relative", tuple(path for path in FILES if path.endswith(".xml"))
+)
+@pytest.mark.parametrize(
+    "opaque", (
+        "AKIAABCDEFGHIJKLMNOP",
+        "https://private.example.invalid/opaque/person-reference",
+    ),
+)
+def test_r206_raw_junit_opaque_attribute_is_not_public_evidence(
+        relative: str, opaque: str) -> None:
+    """No public native TAR may contain raw JUnit testcase attributes."""
+    source = (
+        '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+        f'<testcase name="{opaque}" classname="private.fixture"/>'
+        '</testsuite>'
+    ).encode("utf-8")
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PUBLIC_XML_SCHEMA"):
+        _sut().verify_native_tar_privacy(
+            _privacy_tar(replacement={relative: source}))
+
+
+@pytest.mark.parametrize(
+    "relative", tuple(path for path in FILES if path.endswith(".json"))
+)
+@pytest.mark.parametrize(
+    "opaque", (
+        "AKIAABCDEFGHIJKLMNOP",
+        "https://private.example.invalid/opaque/person-reference",
+    ),
+)
+def test_r206_raw_json_opaque_field_is_not_public_evidence(
+        relative: str, opaque: str) -> None:
+    """Public JSON is a fixed synthetic projection, never a raw dict."""
+    source = json.dumps({"status": "GREEN", "opaque_value": opaque}).encode("utf-8")
+    with pytest.raises(_sut().VolumeProofHold, match="PRIVACY_PUBLIC_JSON_SCHEMA"):
+        _sut().verify_native_tar_privacy(
+            _privacy_tar(replacement={relative: source}))
+
+
 def test_r203_synthetic_native_privacy_all_thirteen_paths_are_checked() -> None:
     assert _sut().verify_native_tar_privacy(_privacy_tar()) == sorted(FILES)
 
