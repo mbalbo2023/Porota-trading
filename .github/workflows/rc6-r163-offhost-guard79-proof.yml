@@ -265,55 +265,9 @@ jobs:
           [[ "$new_source" =~ ^[0-9a-f]{64}$ ]] || exit 79
           source_cid="$new_source"
           owned_cid "$source_cid" bundle || exit 79
-          # R186 one-shot OFFHOST physical classifier. Never publishes inspect bytes.
-          # Both CIDs are generated under this run; the existing EXIT trap
-          # verifies exact ownership before removing only these two containers.
-          diag_collector="$(docker create "${labels[@]}" --label porota.native-role=bundle-collector \
-            "${isolation[@]}" --volumes-from "$source_cid:ro" \
-            "$IMAGE" sleep 7200)" || exit 79
-          [[ "$diag_collector" =~ ^[0-9a-f]{64}$ ]] || exit 79
-          collector_cid="$diag_collector"
-          owned_cid "$collector_cid" bundle-collector || exit 79
-          python - "$source_cid" "$collector_cid" <<'PY'
-          import json, subprocess, sys
-          for role, cid, expected_rw in (
-              ("producer", sys.argv[1], True),
-              ("collector", sys.argv[2], False),
-          ):
-              # Keep raw inspect entirely within this ephemeral runner's process.
-              try:
-                  result = subprocess.run(
-                      ["docker", "inspect", "--format", "{{json .Mounts}}", cid],
-                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                      text=True, timeout=20, check=False)
-                  if result.returncode != 0 or len(result.stdout) > 16384:
-                      raise ValueError("bounded_inspect_failed")
-                  mounts = json.loads(result.stdout)
-              except (OSError, ValueError, subprocess.TimeoutExpired):
-                  # Do not log an exception containing an ephemeral CID.
-                  print(f"RC6_R186_MOUNT_MODE=role={role}|inspect=HOLD79", file=sys.stderr)
-                  raise SystemExit(79)
-              if not isinstance(mounts, list) or len(mounts) != 1 or not isinstance(mounts[0], dict):
-                  print(f"RC6_R186_MOUNT_MODE=role={role}|shape=HOLD79", file=sys.stderr)
-                  raise SystemExit(79)
-              mount = mounts[0]
-              mode = mount.get("Mode")
-              categories = {"": "empty", "z": "selinux_shared",
-                            "ro": "read_only_option", "rw": "read_write_option"}
-              mode_class = categories.get(mode, "other") if type(mode) is str else "invalid_type"
-              rw_ok = mount.get("RW") is expected_rw
-              type_ok = mount.get("Type") == "volume"
-              print(
-                  f"RC6_R186_MOUNT_MODE=role={role}|mode_class={mode_class}"
-                  f"|rw_contract={int(rw_ok)}|type_volume={int(type_ok)}"
-              )
-              if not rw_ok or not type_ok:
-                  raise SystemExit(79)
-          PY
-          # Diagnostic only: never reach nine suites, ZIP seal, artifact upload,
-          # trusted postrun, host Promote, or any deployment transition.
-          echo 'RC6_R186_DIAGNOSTIC=HOLD79|no_artifact|no_release' >&2
-          exit 79
+          # R191 full native proof under a no-public-raw-artifact HOLD.
+          # The producer runs nine suites first; the collector is created RO
+          # only after producer exit, preserving one frozen anonymous volume.
           docker start "$source_cid" >/dev/null
           [[ "$(docker inspect -f '{{.State.Running}}' "$source_cid")" == true ]] || exit 79
           docker exec --user 1000:1000 "$source_cid" sh -ceu '
@@ -426,6 +380,28 @@ jobs:
           owned_cid "$collector_cid" bundle-collector || exit 79
           docker start "$collector_cid" >/dev/null
           [[ "$(docker inspect -f '{{.State.Running}}' "$collector_cid")" == true ]] || exit 79
+          # Physically challenge RO on this single owned anonymous volume.
+          # Never print the private path, CID or raw exception. An unexpected
+          # writable collector fails and the existing owned-CID trap cleans up.
+          if ! docker exec -i --user 1000:1000 "$collector_cid" python - 2>/dev/null <<'PY'; then
+          import errno, os, sys
+          try:
+              fd = os.open("/app/data/.rc6_r191_readonly_canary",
+                           os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          except OSError as exc:
+              if exc.errno == errno.EROFS:
+                  print("RC6_R191_COLLECTOR_RO=PHYSICAL_EROFS")
+              else:
+                  print("RC6_R191_COLLECTOR_RO=HOLD79|unexpected_oserror", file=sys.stderr)
+                  sys.exit(79)
+          else:
+              os.close(fd)
+              print("RC6_R191_COLLECTOR_RO=HOLD79|unexpected_write", file=sys.stderr)
+              sys.exit(79)
+          PY
+            echo 'RC6_R191_COLLECTOR_RO=HOLD79|exec_unverified' >&2
+            exit 79
+          fi
           docker inspect "$source_cid" > "$proof_root/evidence/source-inspect.json"
           docker inspect "$collector_cid" > "$proof_root/evidence/collector-inspect.json"
           python scripts/rc6_r163_native_volume_proof.py inspect \
@@ -462,6 +438,12 @@ jobs:
           printf 'collector_cid=%s\n' "$collector_cid" >> "$GITHUB_OUTPUT"
           printf 'volume_name=%s\n' "$volume_name" >> "$GITHUB_OUTPUT"
           echo 'RC6_NATIVE_EVIDENCE_PATHS=13_SEALED_OFFHOST'
+          # Security R181/R190: source/collector Docker inspect contains
+          # private Env, GraphDriver, LogPath and Source. Keep all raw files
+          # within the ephemeral runner and fail BEFORE zip/artifact upload
+          # until PUBLIC_INSPECT_V2 is independently proved trusted-main.
+          echo 'RC6_R191_PUBLIC_INSPECT=HOLD79|no_raw_artifact|no_release' >&2
+          exit 79
       - name: Seal all evidence before upload (artifact ID assigned later)
         shell: bash
         run: |
