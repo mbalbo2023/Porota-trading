@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Exact R206 nodes only; 26 parametrized synthetic privacy cases.
+          # Exact R206 nodes only; 71 parametrized synthetic privacy cases.
           # Failures and opaque fixture values remain in private runner temp.
           python - <<'PY'
           import os
@@ -120,6 +120,13 @@ jobs:
           NODES = (
               "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_junit_opaque_attribute_is_not_public_evidence",
               "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_json_opaque_field_is_not_public_evidence",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_collector_projects_private_fixture_to_exact_public_schema",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_public_schema_rejects_tampered_synthetic_bytes",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_junit_invalid_counts_or_negative_nodes_hold",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_json_red_or_bool_in_place_of_zero_holds",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_junit_rejects_unaccounted_or_nested_testcase",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_json_rejects_nonfinite_exponent_in_discarded_field",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_stress_requires_complete_ordered_positive_junit_scenarios",
           )
           try:
               with tempfile.TemporaryDirectory(prefix="rc6-r206-", dir=os.environ["RUNNER_TEMP"]) as scratch:
@@ -154,8 +161,8 @@ jobs:
                   suites = ([root] if root.tag == "testsuite" else
                             list(root.findall("testsuite")))
                   cases = list(root.iter("testcase"))
-                  if (not suites or len(cases) != 26 or
-                          sum(len(suite.findall("testcase")) for suite in suites) != 26 or
+                  if (not suites or len(cases) != 71 or
+                          sum(len(suite.findall("testcase")) for suite in suites) != 71 or
                           len(list(root.iter("testsuite"))) != len(suites)):
                       raise ValueError("R206_XML_CARDINALITY")
                   totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
@@ -167,16 +174,16 @@ jobs:
                           totals[key] += int(value)
                       if int(suite.get("tests")) != len(suite.findall("testcase")):
                           raise ValueError("R206_XML_SUITE_COVERAGE")
-                  if totals["tests"] != 26 or totals["skipped"] != 0:
+                  if totals["tests"] != 71 or totals["skipped"] != 0:
                       raise ValueError("R206_XML_TESTS_OR_SKIPS")
                   has_bad = any(next(root.iter(tag), None) is not None
                                 for tag in ("failure", "error", "skipped"))
                   if proc.returncode != 0 or has_bad or totals["failures"] or totals["errors"]:
-                      print("RC6_R206_PRIVACY=HOLD79|tests=26|failures=" +
+                      print("RC6_R206_PRIVACY=HOLD79|tests=71|failures=" +
                             str(min(totals["failures"], 9999)) + "|errors=" +
                             str(min(totals["errors"], 9999)) + "|skipped=0|release_go=NO")
                       raise SystemExit(79)
-                  print("RC6_R206_PRIVACY=PY311_26_GREEN|release_go=NO")
+                  print("RC6_R206_PRIVACY=PY311_71_GREEN|release_go=NO")
           except SystemExit:
               raise
           except Exception:
