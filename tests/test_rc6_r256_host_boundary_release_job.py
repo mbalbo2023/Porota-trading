@@ -64,6 +64,83 @@ class R256TrustedReleaseJobBoundary(unittest.TestCase):
                 ):
                     reject_untrusted_checkout_privilege(command)
 
+    def test_root_checkout_interpreter_multiplexers_cannot_escape_boundary(self):
+        # A rooted env/busybox/interpreter wrapper still runs checkout-supplied
+        # instructions, even though the direct sudo target is not python/bash.
+        for command in (
+            'sudo -n /usr/bin/env python3 -c "print(1)"',
+            'sudo -n /usr/bin/env PYTHONDONTWRITEBYTECODE=1 python3 -c "print(1)"',
+            'sudo -n /bin/busybox sh -c "printf unsafe"',
+            'sudo -n perl -e "print 1"',
+            'sudo -n /usr/bin/node -e "process.exit(0)"',
+        ):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(
+                    HostBoundaryViolation, "ROOT_CHECKOUT_INTERPRETER_UNTRUSTED"
+                ):
+                    reject_untrusted_checkout_privilege(command)
+        # The independently installed fixed-verb executable remains the only
+        # acceptable privileged entrypoint in this source-boundary check.
+        reject_untrusted_checkout_privilege(
+            'sudo -n /usr/local/sbin/porota-rc6-oci-custody quiescence verify-prebirth'
+        )
+
+    def test_unreviewed_sudo_option_forms_do_not_become_root_shells(self):
+        for command in (
+            'sudo -n -- /usr/bin/python3 -c "print(1)"',
+            'sudo -n -u root /bin/bash -c "true"',
+            'sudo -n -H python3 -c "print(1)"',
+            'sudo -n -E /usr/bin/python3 -c "print(1)"',
+            'sudo -n --preserve-env=PYTHONPATH /usr/bin/python3 -c "print(1)"',
+            'sudo -n -s',
+            'sudo -n -i',
+        ):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(
+                    HostBoundaryViolation, "ROOT_CHECKOUT_INTERPRETER_UNTRUSTED"
+                ):
+                    reject_untrusted_checkout_privilege(command)
+
+    def test_unreviewed_root_commands_are_rejected_without_open_ended_denylist(self):
+        # Source inspection cannot prove that every future executable is
+        # harmless. Only the immutable installed custody entrypoint is allowed.
+        for command in (
+            'sudo -n /usr/bin/timeout 5 python3 -c "print(1)"',
+            'sudo -n /usr/bin/nice -n 5 python3 -c "print(1)"',
+            'sudo -n awk "BEGIN{system(\"id\")}"',
+            'sudo -n find /tmp -exec /bin/sh -c "true" \\;',
+            'sudo -n xargs -I{} /bin/sh -c "true"',
+            'sudo -n tee /etc/systemd/system/porota-critical-approval-rc6.service',
+            'sudo -n install /tmp/candidate /usr/local/sbin/porota-rc6-oci-custody',
+            'sudo -n cp /tmp/candidate /usr/local/sbin/porota-rc6-oci-custody',
+            'sudo -n "$CUSTODY_CLI" critical birth',
+            'CUSTODY_CLI=/usr/local/sbin/porota-rc6-oci-custody\n'
+            'sudo -n "$CUSTODY_CLI" critical birth',
+            'sudo -n /usr/local/sbin/porota-rc6-oci-custody$(echo /../../bin/bash)',
+        ):
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(
+                    HostBoundaryViolation, "ROOT_CHECKOUT_PRIVILEGE_UNTRUSTED"
+                ):
+                    reject_untrusted_checkout_privilege(command)
+
+    def test_only_literal_installed_custody_call_passes_source_sudo_filter(self):
+        # This is a negative source-boundary allowance, not a claim that the
+        # helper is installed or that the host is authorized to mutate.
+        reject_untrusted_checkout_privilege(
+            '# sudo -n awk "BEGIN{system(\"id\")}" is a forbidden example\n'
+            'sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+            'quiescence verify-prebirth\n'
+        )
+        with self.assertRaisesRegex(
+            HostBoundaryViolation, "ROOT_CHECKOUT_PRIVILEGE_UNTRUSTED"
+        ):
+            reject_untrusted_checkout_privilege(
+                'sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+                'quiescence verify-prebirth\n'
+                'sudo -n find /tmp -exec /bin/sh -c "true" \\;'
+            )
+
     def test_altered_mutex_decoder_and_unbounded_subprocess_stay_denied(self):
         unsafe = (
             "sudo -n python3 -c 'import base64 ; exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' --phase reconcile",

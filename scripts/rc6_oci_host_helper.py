@@ -910,16 +910,18 @@ class HostHelperController:
             # root installer or unchanged critical process. HOLD before
             # beginning an OCI custody session or touching host state.
             raise CustodyHold("SYSTEMD_STAGE_INSTALLER_UNVERIFIED")
-        session = self._session()
         if command.namespace == "quiescence" and command.verb in (
                 "verify-prebirth", "verify-receipt"):
             # PRE-BIRTH must come from a separate, independent host writer
             # attestor; POST-SEAL must correlate 3 new CIDs/journal. Neither
-            # exists in the installed contract yet, so never manufacture OK.
+            # exists in the installed contract yet. Deny before opening an
+            # A1079 session, which may journal an attempt or acquire a lock.
             raise CustodyHold("EXTERNAL_QUIESCENCE_ATTESTOR_UNVERIFIED")
         if command.namespace == "image":
             # No global prune or image removal by name/tag; shared refs unknown.
+            # A rejected cleanup must not even begin a root custody session.
             raise CustodyHold("OWNED_IMAGE_REFERENCE_PROOF_UNVERIFIED")
+        session = self._session()
         if command.namespace == "manager" and command.verb != "begin":
             _require(type(self.authority.attempt_token) is str and
                      re.fullmatch(r"[0-9a-f]{32}", self.authority.attempt_token) and

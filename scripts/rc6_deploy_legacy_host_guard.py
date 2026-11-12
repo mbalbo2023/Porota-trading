@@ -42,8 +42,17 @@ _CHECKOUT_ROOT_INTERPRETER = re.compile(
     r"\bsudo\s+-n\s+"
     r"(?:(?:env|timeout)\s+|[A-Za-z_][A-Za-z_0-9]*=\S+\s+|"
     r"--\S+\s+|[0-9]+s?\s+)*"
-    r"(?:/(?:[A-Za-z0-9_.-]+/)+)?(?:python(?:3(?:\.[0-9]+)?)?|bash|sh|dash)\b"
+    r"(?:/(?:[A-Za-z0-9_.-]+/)+)?"
+    r"(?:python(?:3(?:\.[0-9]+)?)?|bash|sh|dash|env|busybox|"
+    r"perl|ruby|node|php|lua)\b"
 )
+# Deliberately narrow source-level allowance, not proof of host authority.
+# Mutable shell variables such as "$CUSTODY_CLI" cannot be source-attested
+# without a separate exact binding/no-reassignment contract.
+_REVIEWED_SUDO_FIXED_EXEC = re.compile(
+    r"\bsudo[ \t]+-n[ \t]+/usr/local/sbin/porota-rc6-oci-custody(?=\s|$)"
+)
+_SUDO_WORD = re.compile(r"\bsudo\b")
 _MUTATION_BY_NAME = re.compile(
     # The candidate cannot supply any container-mutation argv directly:
     # even a harmless-looking variable may hide an unowned name or CID. The
@@ -239,8 +248,24 @@ def reject_untrusted_checkout_privilege(source: str) -> None:
     # turn legacy checkout-root execution into an accepted host operation.
     # This is a DENY, not an alternative installer or physical authority.
     active = re.sub(r"[ \t]*\\\n[ \t]*", " ", source)
+    # The reviewed root helper is invoked as one fixed executable directly.
+    # Allowing caller-selected sudo switches (--, -u, -s, -i, -E, etc.)
+    # would also allow a shell or an unreviewed interpreter entrypoint.
+    if re.search(r"\bsudo\s+-n\s+-", active):
+        raise HostBoundaryViolation("ROOT_CHECKOUT_INTERPRETER_UNTRUSTED")
     if _CHECKOUT_ROOT_INTERPRETER.search(active):
         raise HostBoundaryViolation("ROOT_CHECKOUT_INTERPRETER_UNTRUSTED")
+    # Enumerating known interpreters is incomplete: timeout, nice, awk,
+    # find/xargs, tee/install and future binaries can all execute or replace
+    # root-owned code. Deny every literal sudo command except the direct,
+    # absolute installed fixed-verb entrypoint. This remains a NEGATIVE
+    # source filter; it does not validate its physical installation or grant
+    # host_control_verified.
+    uncommented = "\n".join(line for line in active.splitlines()
+                            if not line.lstrip().startswith("#"))
+    for match in _SUDO_WORD.finditer(uncommented):
+        if _REVIEWED_SUDO_FIXED_EXEC.match(uncommented, match.start()) is None:
+            raise HostBoundaryViolation("ROOT_CHECKOUT_PRIVILEGE_UNTRUSTED")
 
 
 def require_approved_critical_stage_cli(promotion_text: str) -> None:

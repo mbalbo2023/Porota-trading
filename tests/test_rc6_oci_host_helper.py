@@ -984,6 +984,31 @@ class HostHelperBirthContractTest(unittest.TestCase):
                 self.assertEqual(caught.exception.reason, reason)
                 self.assertEqual(self.commands, [])
 
+    def test_unavailable_external_authority_holds_before_opening_root_custody_session(self):
+        # A root custody begin may write attempt journals or acquire a mutable
+        # lock. A missing external attestor must be denied before that point.
+        for phase in ("GENESIS", "CONTINUITY"):
+            for argv, reason in (
+                (("quiescence", "verify-prebirth"),
+                 "EXTERNAL_QUIESCENCE_ATTESTOR_UNVERIFIED"),
+                (("quiescence", "verify-receipt"),
+                 "EXTERNAL_QUIESCENCE_ATTESTOR_UNVERIFIED"),
+                (("image", "preflight-cleanup"),
+                 "OWNED_IMAGE_REFERENCE_PROOF_UNVERIFIED"),
+            ):
+                with self.subTest(phase=phase, command=argv):
+                    self.custody.calls.clear()
+                    self.session.events.clear()
+                    self.commands.clear()
+                    authority = _ApprovedAuthority(phase=phase)
+                    with self.assertRaises(helper.CustodyHold) as caught:
+                        self.controller(authority).dispatch(
+                            helper.parse_command(argv))
+                    self.assertEqual(caught.exception.reason, reason)
+                    self.assertEqual(self.custody.calls, [])
+                    self.assertEqual(self.session.events, [])
+                    self.assertEqual(self.commands, [])
+
 
 class HostHelperIndependentApprovalTest(unittest.TestCase):
     def setUp(self):
