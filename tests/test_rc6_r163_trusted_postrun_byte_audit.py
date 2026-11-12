@@ -929,6 +929,31 @@ def test_r265_final_a_without_ready_trigger_is_reviewed_source():
         trusted.UPSTREAM_REVIEWED_SOURCE_SHA256)
 
 
+def test_r268_cache_probe_source_requires_exact_reviewed_job_pair():
+    # The approved cache-only variant has a different full YAML and different
+    # Python/native job bytes.  A full-source pin alone must not admit a job
+    # from a different variant, even when the old R265 pair remains trusted.
+    cache_source = "22cf40da38929a0f5976b153935ef52b55a99164c568cf9ecf36c0af254e4135"
+    cache_jobs = (
+        "d5f2dab236acc5047b5aee676209a884a8265a55450c00621ae68ef5bf4944d6",
+        "9c4bf8596ce57837cc075b89dc06ad759b1cabd219fdf00eb2672d334f3e2e18",
+    )
+    assert cache_source in trusted.UPSTREAM_REVIEWED_SOURCE_SHA256
+    assert trusted.UPSTREAM_REVIEWED_CACHE_JOB_SHA256 == {cache_source: cache_jobs}
+
+    client = _R265FakeGitHub()
+    # The synthetic byte fixture acts as another reviewed variant only inside
+    # this mock: a wrong per-variant Python hash must still HOLD79.
+    with mock.patch.object(
+        trusted, "UPSTREAM_REVIEWED_CACHE_JOB_SHA256",
+        {client.reviewed_source_hash: ("0" * 64, client.source_hashes[1])},
+    ):
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_WORKFLOW_SOURCE_MISMATCH$"
+        ):
+            client.check()
+
+
 def test_r265_intermediate_speed_variant_is_not_reviewed_source():
     # Neither f266317 nor bed8082 is the final (8b1b51b) A source.
     for superseded in (
@@ -936,7 +961,7 @@ def test_r265_intermediate_speed_variant_is_not_reviewed_source():
         "6a29148fff4714c4fb0115f2a3d32d2104559ab4a4eb323525b7ac6e23825f23",
     ):
         assert superseded not in trusted.UPSTREAM_REVIEWED_SOURCE_SHA256
-    assert len(trusted.UPSTREAM_REVIEWED_SOURCE_SHA256) == 2
+    assert len(trusted.UPSTREAM_REVIEWED_SOURCE_SHA256) == 3
 
 
 def test_r265_malformed_unhashable_jobs_name_holds_as_bounded_reason():

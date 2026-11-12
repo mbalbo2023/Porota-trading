@@ -44,20 +44,30 @@ CANDIDATE_REF = "integration/rc6-a1115-r87-unified-paper-candidate-20261110"
 PR_NUMBER = 1087
 UPSTREAM_NAME = "RC6 R163 Offhost Guard79 Proof (PROBE ONLY)"
 UPSTREAM_PATH = ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
-# R265: allow ONLY these exact fully reviewed A workflow *file bytes*.
-# SHA 8c1084a6 is #1087's original source; the second is final integrated
-# R265 SPEED's conditional-concurrency, no-ready-trigger variant at 8b1b51b.
-# Both intermediate variants (f266317, bed8082) are deliberately excluded.
+# R268: allow ONLY these exact fully reviewed A workflow *file bytes*.
+# SHA 8c1084a6 is #1087's original source, the second is R265 SPEED's
+# conditional-concurrency variant, and the third is R266's cache-only A PROBE.
+# Both superseded intermediate R265 variants remain excluded.
 # Top-level env/defaults (e.g. BASH_ENV) can change
 # execution without altering a job block, so the full-source pin is mandatory.
 # No other PR-owned YAML variant may trigger B without trusted-main review.
 UPSTREAM_REVIEWED_SOURCE_SHA256 = frozenset({
     "209e108702fe690289d5ea8c0abffec4eef9b8cb29b27ec55b5767116657043b",
     "5c068762f68d019851792ba61e3b5e6be387441f67607ba11228efba87361afa",
+    "22cf40da38929a0f5976b153935ef52b55a99164c568cf9ecf36c0af254e4135",
 })
 # Retain independent exact Python/native job hashes as defense in depth.
+# The old two reviewed full-source variants share the original job hashes.
 UPSTREAM_PYTHON_JOB_SHA256 = "8e0a4bc917d543c7a05df4088ef80080a9899cb49dc7874163e7797ae20a8504"
 UPSTREAM_NATIVE_JOB_SHA256 = "ce3a3b6d68a8185c22adf7feca472b5efbecc0944911ac5c1636e2cab8e7a364"
+# The new full-source digest MUST select its own exact job pair. Do not
+# flatten these into independent allowlists: that would accept a mixed YAML.
+UPSTREAM_REVIEWED_CACHE_JOB_SHA256 = {
+    "22cf40da38929a0f5976b153935ef52b55a99164c568cf9ecf36c0af254e4135": (
+        "d5f2dab236acc5047b5aee676209a884a8265a55450c00621ae68ef5bf4944d6",
+        "9c4bf8596ce57837cc075b89dc06ad759b1cabd219fdf00eb2672d334f3e2e18",
+    ),
+}
 UPSTREAM_PYTHON_JOB = "Python 3.11 lock and incident fixtures (offhost)"
 UPSTREAM_NATIVE_JOB = "Native CID and anonymous volume producer (offhost)"
 UPSTREAM_INDEPENDENT_JOB = "Separate-runner preliminary raw REST bytes (NO RELEASE)"
@@ -1619,7 +1629,8 @@ def _verify_upstream_source_contract(receipt: Mapping[str, Any]) -> None:
     git_blob = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
     if len(raw) != receipt["size"] or git_blob != receipt["sha"]:
         _red("PREUPLOAD_WORKFLOW_SOURCE_INVALID")
-    if hashlib.sha256(raw).hexdigest() not in UPSTREAM_REVIEWED_SOURCE_SHA256:
+    source_hash = hashlib.sha256(raw).hexdigest()
+    if source_hash not in UPSTREAM_REVIEWED_SOURCE_SHA256:
         _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
 
     # Exact top-level job boundaries; reject duplicate markers, omitted jobs,
@@ -1644,8 +1655,10 @@ def _verify_upstream_source_contract(receipt: Mapping[str, Any]) -> None:
         _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
     python_job = "".join(lines[positions[0][0]:positions[1][0]]).encode()
     native_job = "".join(lines[positions[1][0]:positions[2][0]]).encode()
-    if (hashlib.sha256(python_job).hexdigest() != UPSTREAM_PYTHON_JOB_SHA256 or
-            hashlib.sha256(native_job).hexdigest() != UPSTREAM_NATIVE_JOB_SHA256):
+    expected_python, expected_native = UPSTREAM_REVIEWED_CACHE_JOB_SHA256.get(
+        source_hash, (UPSTREAM_PYTHON_JOB_SHA256, UPSTREAM_NATIVE_JOB_SHA256))
+    if (hashlib.sha256(python_job).hexdigest() != expected_python or
+            hashlib.sha256(native_job).hexdigest() != expected_native):
         _red("PREUPLOAD_WORKFLOW_SOURCE_MISMATCH")
 
 
