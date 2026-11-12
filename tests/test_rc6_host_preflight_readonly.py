@@ -20,11 +20,15 @@ ARTIFACT = "sha256:" + "d" * 64
 IMAGE = "sha256:" + "e" * 64
 HELPER = "f" * 64
 DAEMON = "daemon-rootful-rc6"
+SYNTHETIC_DO_ID = "987654321"
+SYNTHETIC_DO_REGION = "lab9"
 
 
 def expected_env(phase="POSTSEAL"):
     values = {
         "RC6_PREFLIGHT_PHASE": phase,
+        "RC6_EXPECTED_DO_ID": SYNTHETIC_DO_ID,
+        "RC6_EXPECTED_DO_REGION": SYNTHETIC_DO_REGION,
         "RC6_EXPECTED_CANDIDATE_SHA": SHA,
         "RC6_EXPECTED_CANDIDATE_TREE": TREE,
         "RC6_EXPECTED_GENERATION": GENERATION,
@@ -33,7 +37,9 @@ def expected_env(phase="POSTSEAL"):
         "RC6_EXPECTED_DAEMON_ID": DAEMON,
     }
     if phase == "BOOTSTRAP":
-        return {"RC6_PREFLIGHT_PHASE": phase}
+        return {"RC6_PREFLIGHT_PHASE": phase,
+                "RC6_EXPECTED_DO_ID": SYNTHETIC_DO_ID,
+                "RC6_EXPECTED_DO_REGION": SYNTHETIC_DO_REGION}
     if phase == "PREBIRTH":
         for key in ("RC6_EXPECTED_GENERATION", "RC6_EXPECTED_ARTIFACT_DIGEST",
                     "RC6_EXPECTED_IMAGE_ID", "RC6_EXPECTED_DAEMON_ID"):
@@ -63,8 +69,8 @@ def receipts():
 def write_receipts(folder, prebirth=None, current=None, phase="POSTSEAL"):
     normal_prebirth, normal_current = receipts()
     evidence = {
-        "droplet_id.txt": "594077619\n",
-        "region.txt": "nyc1\n",
+        "droplet_id.txt": SYNTHETIC_DO_ID + "\n",
+        "region.txt": SYNTHETIC_DO_REGION + "\n",
         "helper.stat": "0|755|1|regular file\n",
         "helper.sha": HELPER + "  /usr/local/sbin/porota-rc6-oci-custody\n",
     }
@@ -91,7 +97,7 @@ class HostPreflightReadonlyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
             write_receipts(folder, phase="BOOTSTRAP")
-            bootstrap = {"RC6_PREFLIGHT_PHASE": "BOOTSTRAP"}
+            bootstrap = expected_env("BOOTSTRAP")
             result = preflight.validate_evidence(folder, preflight.validate_expected(bootstrap))
             self.assertEqual(result["phase"], "BOOTSTRAP")
             self.assertEqual(result["status"], "BOOTSTRAP_OBSERVATION_ONLY")
@@ -105,6 +111,8 @@ class HostPreflightReadonlyTest(unittest.TestCase):
             folder = Path(temp)
             write_receipts(folder, phase="PREBIRTH")
             selectors = {"RC6_PREFLIGHT_PHASE": "PREBIRTH",
+                         "RC6_EXPECTED_DO_ID": SYNTHETIC_DO_ID,
+                         "RC6_EXPECTED_DO_REGION": SYNTHETIC_DO_REGION,
                          "RC6_EXPECTED_CANDIDATE_SHA": SHA,
                          "RC6_EXPECTED_CANDIDATE_TREE": TREE}
             with patch.object(preflight, "TRUSTED_HELPER_SHA256", HELPER):
@@ -133,6 +141,8 @@ class HostPreflightReadonlyTest(unittest.TestCase):
 
     def test_unpinned_helper_cannot_be_self_authorized_by_dispatch_input(self):
         selectors = {"RC6_PREFLIGHT_PHASE": "PREBIRTH",
+                     "RC6_EXPECTED_DO_ID": SYNTHETIC_DO_ID,
+                     "RC6_EXPECTED_DO_REGION": SYNTHETIC_DO_REGION,
                      "RC6_EXPECTED_CANDIDATE_SHA": SHA,
                      "RC6_EXPECTED_CANDIDATE_TREE": TREE,
                      "RC6_EXPECTED_HELPER_SHA256": HELPER}
@@ -148,11 +158,10 @@ class HostPreflightReadonlyTest(unittest.TestCase):
 
     def test_optional_phase_selectors_cannot_skip_or_cross_phase(self):
         rejected = (
-            {"RC6_PREFLIGHT_PHASE": "BOOTSTRAP", "RC6_EXPECTED_GENERATION": GENERATION},
-            {"RC6_PREFLIGHT_PHASE": "PREBIRTH", "RC6_EXPECTED_CANDIDATE_SHA": SHA},
-            {"RC6_PREFLIGHT_PHASE": "PREBIRTH", "RC6_EXPECTED_CANDIDATE_SHA": SHA,
-             "RC6_EXPECTED_CANDIDATE_TREE": TREE,
-             "RC6_EXPECTED_IMAGE_ID": IMAGE},
+            dict(expected_env("BOOTSTRAP"), RC6_EXPECTED_GENERATION=GENERATION),
+            {key: value for key, value in expected_env("PREBIRTH").items()
+             if key != "RC6_EXPECTED_CANDIDATE_TREE"},
+            dict(expected_env("PREBIRTH"), RC6_EXPECTED_IMAGE_ID=IMAGE),
             {key: value for key, value in expected_env().items()
              if key != "RC6_EXPECTED_GENERATION"},
         )
@@ -215,7 +224,7 @@ class HostPreflightReadonlyTest(unittest.TestCase):
             folder = Path(temp)
             write_receipts(folder)
             for name, spoofed in (
-                ("droplet_id.txt", "594077620"),
+                ("droplet_id.txt", "987654322"),
                 ("region.txt", "ams3"),
                 ("helper.stat", "1000|777|1|regular file"),
                 ("helper.stat", "0|775|1|regular file"),
@@ -384,6 +393,60 @@ class HostPreflightReadonlyTest(unittest.TestCase):
         self.assertLess(source.index("BOOTSTRAP)"), source.index("PREBIRTH)"))
         self.assertLess(source.index("PREBIRTH)"), source.index("POSTSEAL)"))
         self.assertNotIn("RC6_EXPECTED_HELPER_SHA256:", source)
+
+    def test_droplet_identity_pins_must_come_from_protected_actions_secrets(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        python_source = (ROOT / "scripts/rc6_host_preflight_readonly.py").read_text()
+        self.assertIn("RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}", source)
+        self.assertIn("RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}", source)
+        self.assertNotIn("inputs.expected_do_id", source)
+        self.assertNotIn("inputs.expected_do_region", source)
+        self.assertNotIn("EXPECTED_DROPLET_ID =", python_source)
+        self.assertNotIn("EXPECTED_REGION =", python_source)
+        self.assertNotIn("RC6_EXPECTED_DO_ID: ${{ vars.", source)
+        self.assertNotIn("RC6_EXPECTED_DO_REGION: ${{ vars.", source)
+        self.assertNotIn("echo \"$RC6_EXPECTED_DO", source)
+
+    def test_missing_malformed_or_extra_host_identity_pins_hold_before_ssh(self):
+        for key, bad_value in (
+            ("RC6_EXPECTED_DO_ID", None),
+            ("RC6_EXPECTED_DO_ID", ""),
+            ("RC6_EXPECTED_DO_ID", "000000000"),
+            ("RC6_EXPECTED_DO_ID", "987654321;id"),
+            ("RC6_EXPECTED_DO_REGION", None),
+            ("RC6_EXPECTED_DO_REGION", ""),
+            ("RC6_EXPECTED_DO_REGION", "lab9;id"),
+            ("RC6_EXPECTED_DO_REGION", "LAB9"),
+        ):
+            for phase in ("BOOTSTRAP", "PREBIRTH", "POSTSEAL"):
+                with self.subTest(key=key, phase=phase):
+                    env = expected_env(phase)
+                    if bad_value is None:
+                        env.pop(key)
+                    else:
+                        env[key] = bad_value
+                    with self.assertRaises(preflight.PreflightHold) as caught:
+                        preflight.validate_expected(env)
+                    self.assertIn(caught.exception.reason,
+                                  {"DROPLET_TRUSTED_PIN_UNVERIFIED",
+                                   "REGION_TRUSTED_PIN_UNVERIFIED"})
+
+    def test_mismatched_secret_pins_never_leak_identity_in_hold_output(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            write_receipts(folder, phase="BOOTSTRAP")
+            for key, value in (("RC6_EXPECTED_DO_ID", "987654322"),
+                               ("RC6_EXPECTED_DO_REGION", "lab8")):
+                with self.subTest(key=key):
+                    output = io.StringIO()
+                    env = dict(expected_env("BOOTSTRAP"), **{key: value})
+                    with redirect_stdout(output):
+                        status = preflight.main(["--check-host", "--evidence-dir", temp],
+                                                env=env)
+                    self.assertEqual(status, 79)
+                    self.assertIn("DROPLET_IDENTITY_UNVERIFIED", output.getvalue())
+                    self.assertNotIn(SYNTHETIC_DO_ID, output.getvalue())
+                    self.assertNotIn(SYNTHETIC_DO_REGION, output.getvalue())
 
 
 if __name__ == "__main__":

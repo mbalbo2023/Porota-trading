@@ -68,6 +68,10 @@ jobs:
 
       - name: Reject malformed candidate/host selectors before any SSH
         shell: bash
+        env:
+          # Protected repo secrets, never workflow_dispatch inputs or literals.
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
         run: |
           set -Eeuo pipefail
           [[ "$GITHUB_EVENT_NAME" = workflow_dispatch && "$GITHUB_REF" = refs/heads/main ]] || exit 79
@@ -81,6 +85,8 @@ jobs:
           DO_USER: ${{ secrets.DO_USER }}
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
         run: |
           set -Eeuo pipefail
           umask 077

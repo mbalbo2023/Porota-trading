@@ -19,8 +19,9 @@ import sys
 
 SCHEMA = "RC6_HOST_PHYSICAL_PREFLIGHT_V1"
 HELPER_PATH = "/usr/local/sbin/porota-rc6-oci-custody"
-EXPECTED_DROPLET_ID = "594077619"
-EXPECTED_REGION = "nyc1"
+# The expected physical host identity MUST be passed by protected GitHub
+# Actions secrets. Never commit a real Droplet identifier/region into a public
+# repository or accept it from workflow_dispatch/freeform inputs. No fallback.
 # No independent installation/protector approval exists yet. BOOTSTRAP may
 # *observe* a helper hash, never trust it. Only a separately reviewed change
 # on protected trusted-main may pin an approved installed helper SHA here.
@@ -29,6 +30,8 @@ TRUSTED_HELPER_SHA256 = None
 _PHASES = frozenset({"BOOTSTRAP", "PREBIRTH", "POSTSEAL"})
 _HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+_DO_ID = re.compile(r"[1-9][0-9]{5,19}\Z")
+_DO_REGION = re.compile(r"[a-z]{2,12}[0-9]{1,2}\Z")
 _GENERATION = re.compile(r"[0-9a-f]{32}\Z")
 _DOCKER_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _DAEMON = re.compile(r"[A-Za-z0-9:_./-]{6,128}\Z")
@@ -66,6 +69,8 @@ def _require(condition, reason):
 @dataclass(frozen=True)
 class Expected:
     phase: str
+    droplet_id: str
+    region: str
     candidate_sha: str | None = None
     candidate_tree: str | None = None
     generation: str | None = None
@@ -98,6 +103,14 @@ def validate_expected(environment):
     phase = environment.get("RC6_PREFLIGHT_PHASE")
     _require(type(phase) is str and phase in _PHASES,
              "PHASE_UNKNOWN")
+    # These are authority inputs exclusively from protected Actions secrets;
+    # missing, malformed or empty pins must HOLD79 even for BOOTSTRAP.
+    droplet_id = environment.get("RC6_EXPECTED_DO_ID")
+    region = environment.get("RC6_EXPECTED_DO_REGION")
+    _require(type(droplet_id) is str and _DO_ID.fullmatch(droplet_id),
+             "DROPLET_TRUSTED_PIN_UNVERIFIED")
+    _require(type(region) is str and _DO_REGION.fullmatch(region),
+             "REGION_TRUSTED_PIN_UNVERIFIED")
     _require(not environment.get("RC6_EXPECTED_HELPER_SHA256"),
              "DISPATCH_CANNOT_APPROVE_HOST_HELPER")
     fields = {}
@@ -115,7 +128,8 @@ def validate_expected(environment):
                  _HEX64.fullmatch(TRUSTED_HELPER_SHA256),
                  "ROOT_HELPER_TRUSTED_MAIN_PIN_ABSENT")
         pin = TRUSTED_HELPER_SHA256
-    return Expected(phase=phase, helper_sha256=pin, **fields)
+    return Expected(phase=phase, droplet_id=droplet_id, region=region,
+                    helper_sha256=pin, **fields)
 
 
 def _read_bounded(folder, name):
@@ -173,14 +187,14 @@ def _receipt(folder, name):
     return doc
 
 
-def _validate_host_identity(folder):
-    _require(_text(folder, "droplet_id.txt") == EXPECTED_DROPLET_ID and
-             _text(folder, "region.txt") == EXPECTED_REGION,
+def _validate_host_identity(folder, expected):
+    _require(_text(folder, "droplet_id.txt") == expected.droplet_id and
+             _text(folder, "region.txt") == expected.region,
              "DROPLET_IDENTITY_UNVERIFIED")
 
 
 def _validate_installation(folder, expected):
-    _validate_host_identity(folder)
+    _validate_host_identity(folder, expected)
     observed = _text(folder, "helper.stat")
     parts = observed.split("|")
     _require(len(parts) == 4 and parts[0] == "0" and parts[2] == "1" and
@@ -324,7 +338,7 @@ def main(argv=None, *, env=None):
         _require(folder.is_absolute() and folder.is_dir() and not folder.is_symlink(),
                  "EVIDENCE_DIRECTORY_UNVERIFIED")
         if argv[0] == "--check-host":
-            _validate_host_identity(folder)
+            _validate_host_identity(folder, expected)
             print("RC6_HOST_IDENTITY=PINNED|host_control_verified=NO_VERIFICADO")
             return 0
         if argv[0] == "--check-helper":
