@@ -101,6 +101,99 @@ jobs:
               tests/test_rc6_r163_native_volume_proof.py::test_r203_offhost_workflow_never_uploads_private_inspect_or_skips_privacy \
               tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_decoded_escape_canary
           echo 'RC6_R203_REGRESSION_MATRIX=A976_A785_R164_R203_PY311_OFFHOST_ONLY'
+      - name: R205 signals risk exit ledger exact 191 fixture diagnostic (offline)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # All 10 script-defined scenario files; no Docker, host, provider
+          # credentials or raw pytest output enters GitHub Actions logs.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import xml.etree.ElementTree as ET
+
+          PATHS = (
+              "tests/test_rc6_owned_funnel_details.py",
+              "tests/test_rc6_convergence_core_admission.py",
+              "tests/test_exit_supervision_v17.py",
+              "tests/test_exit_ledger_isolation_v17.py",
+              "tests/test_rc6_future_programming_complete.py",
+              "tests/test_rc6_performance_runtime.py",
+              "tests/test_rc6_final_programming_runtime.py",
+              "tests/test_rc6_timestamp_atomicity.py",
+              "tests/test_rc6_catalog_publication_lifecycle.py",
+              "tests/test_rc6_go_startup_readiness.py",
+          )
+          try:
+              temporary = os.environ["RUNNER_TEMP"]
+              with tempfile.TemporaryDirectory(prefix="rc6-r205-", dir=temporary) as scratch:
+                  report = Path(scratch) / "junit.xml"
+                  env = {
+                      "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                      "HOME": scratch, "TMPDIR": scratch,
+                      "PYTHONDONTWRITEBYTECODE": "1",
+                      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                      "PAPER_HISTORICAL_CANDLE_SHADOW": "OFF",
+                      "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
+                      "PAPER_AI_GATE_MODE": "OFF",
+                  }
+                  cmd = [sys.executable, "-m", "pytest", "-q",
+                         "-p", "no:cacheprovider", *PATHS,
+                         "--junitxml=" + str(report)]
+                  with tempfile.TemporaryFile() as private_log:
+                      run = subprocess.run(
+                          cmd, cwd=Path.cwd(), env=env, stdout=private_log,
+                          stderr=private_log, timeout=300, check=False)
+                  with os.fdopen(os.open(report, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                      meta = os.fstat(source.fileno())
+                      if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                              not 0 < meta.st_size <= 8 * 1024 * 1024):
+                          raise ValueError("NO_JUNIT")
+                      raw = source.read(8 * 1024 * 1024 + 1)
+                      if len(raw) != meta.st_size:
+                          raise ValueError("CHANGED_JUNIT")
+                  if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                      raise ValueError("XML_META")
+                  xml = ET.fromstring(raw)
+                  if xml.tag not in ("testsuite", "testsuites"):
+                      raise ValueError("XML_ROOT")
+                  suites = ([xml] if xml.tag == "testsuite" else
+                            list(xml.findall(".//testsuite")))
+                  cases = list(xml.iter("testcase"))
+                  if not suites or len(cases) != 191:
+                      raise ValueError("CASE_COUNT")
+                  for suite in suites:
+                      attrs = [suite.get(key) for key in
+                               ("tests", "failures", "errors", "skipped")]
+                      if (any(value is None or
+                              re.fullmatch(r"[0-9]+", value) is None
+                              for value in attrs) or
+                              int(attrs[0]) != len(suite.findall("testcase"))):
+                          raise ValueError("JUNIT_COUNTERS")
+                  bad = [(index, tag) for index, case in enumerate(cases)
+                         for tag in ("failure", "error", "skipped")
+                         for _node in case.findall(tag)]
+                  if run.returncode != 0 or bad or any(
+                          int(suite.get(key)) != 0 for suite in suites
+                          for key in ("failures", "errors", "skipped")):
+                      print("RC6_R205_SIGNALS_FAST=HOLD79|cases=" +
+                            str(len(cases)) + "|bad=" + str(min(len(bad), 9999)))
+                      for index, kind in bad[:3]:
+                          print("RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=" +
+                                str(index) + "|kind=" + kind)
+                      raise SystemExit(79)
+                  print("RC6_R205_SIGNALS_FAST=PY311_OFFHOST_191_CASES|skipped=0|release_go=NO")
+          except SystemExit:
+              raise
+          except Exception:
+              print("RC6_R205_SIGNALS_FAST=HOLD79|diagnostic_unavailable")
+              raise SystemExit(79)
+          PY
       - name: PPI quota and capability fake-wire regressions on Python 3.11
         shell: bash
         run: |
@@ -307,7 +400,7 @@ jobs:
           [[ "$new_source" =~ ^[0-9a-f]{64}$ ]] || exit 79
           source_cid="$new_source"
           owned_cid "$source_cid" bundle || exit 79
-          # R191 full native proof under a no-public-raw-artifact HOLD.
+          # R203 full native proof remains PROBE_ONLY with public inspect V2.
           # The producer runs nine suites first; the collector is created RO
           # only after producer exit, preserving one frozen anonymous volume.
           docker start "$source_cid" >/dev/null
@@ -326,8 +419,60 @@ jobs:
             --junitxml=/app/data/native-bound.xml
           timeout 1200 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
             --full-catalog-check --output /app/data/catalog
-          timeout 1200 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
-            --output /app/data/session
+          if ! timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --output /app/data/session; then
+            # R205: the native scenario runner captures pytest logs privately.
+            # Before owned-CID cleanup, inspect ONLY the fixed session JUnit
+            # inside the still-running UID1000 source. Never publish raw XML,
+            # testcase traceback, parameters, absolute path or error message.
+            # RC6_R205_SIGNALS_DIAG_BEGIN
+            if ! docker exec -i --user 1000:1000 "$source_cid" \
+              python - /app/data/session/signals_risk_exit_ledger.xml \
+              2>/dev/null <<'PY'; then
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+          import xml.etree.ElementTree as ET
+
+          try:
+              target = Path(sys.argv[1])
+              with os.fdopen(os.open(target, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                  meta = os.fstat(source.fileno())
+                  if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                          meta.st_uid != 1000 or meta.st_gid != 1000 or
+                          not 0 < meta.st_size <= 8 * 1024 * 1024):
+                      raise ValueError("NOT_OWNED")
+                  raw = source.read(8 * 1024 * 1024 + 1)
+                  if len(raw) != meta.st_size:
+                      raise ValueError("CHANGED_JUNIT")
+              if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                  raise ValueError("XML_META")
+              xml = ET.fromstring(raw)
+              if xml.tag not in ("testsuites", "testsuite"):
+                  raise ValueError("XML_ROOT")
+              cases = list(xml.iter("testcase"))
+              if not 1 <= len(cases) <= 10000:
+                  raise ValueError("XML_COUNT")
+              bad = [(index, tag) for index, case in enumerate(cases)
+                     for tag in ("failure", "error", "skipped")
+                     for _node in case.findall(tag)]
+              if not bad:
+                  raise ValueError("NO_FAILURE_RECORD")
+              print("RC6_R205_SIGNALS_JUNIT=HOLD79|cases=" +
+                    str(len(cases)) + "|bad=" + str(min(len(bad), 9999)))
+              for index, kind in bad[:3]:
+                  print("RC6_R205_SIGNALS_CASE=HOLD79|index=" + str(index) +
+                        "|kind=" + kind)
+          except Exception:
+              print("RC6_R205_SIGNALS_JUNIT=HOLD79|diagnostic_unavailable")
+              sys.exit(79)
+          PY
+              echo 'RC6_R205_SIGNALS_JUNIT=HOLD79|docker_exec_unavailable' >&2
+            fi
+            # RC6_R205_SIGNALS_DIAG_END
+            exit 79
+          fi
           timeout 1800 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
             --cadence-stage fresh --output /app/data/cadence
           timeout 1800 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
@@ -524,6 +669,16 @@ jobs:
           PY
           echo 'RC6_NATIVE_EVIDENCE_PATHS=13_SEALED_OFFHOST'
           echo 'RC6_R203_NATIVE=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO'
+      - name: R205 raw JUnit privacy hold before any upload (R206 required)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Nine raw JUnit XMLs still contain untrusted XML attributes inside
+          # private native.tar. R203 regex scans are not exhaustive. Until
+          # R206 projects a canonical public allowlist and trusted byte audit
+          # verifies it, no ZIP can be sealed or uploaded, even for PROBE.
+          echo 'RC6_R205_JUNIT_PRIVACY=HOLD79|raw_junit_not_projected|no_artifact' >&2
+          exit 79
       - name: Seal all evidence before upload (artifact ID assigned later)
         shell: bash
         run: |

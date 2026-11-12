@@ -508,3 +508,327 @@ def test_r203_native_proof_requires_offhost_python_green_before_artifact_work():
     assert wf["jobs"]["offhost-independent-bytes"]["needs"] == ["offhost-native-proof"]
     assert native["timeout-minutes"] == "120"
 
+
+
+def _r205_signals_diagnostic_python() -> str:
+    native = _runs(_workflow()["jobs"]["offhost-native-proof"])
+    begin = native.split("# RC6_R205_SIGNALS_DIAG_BEGIN\n", 1)
+    assert len(begin) == 2, "R205 diagnostic missing"
+    embedded = begin[1].split("<<'PY'; then\n", 1)
+    assert len(embedded) == 2, "R205 bounded heredoc missing"
+    script = embedded[1].split("\nPY\n", 1)
+    assert len(script) == 2, "R205 heredoc not terminated"
+    assert "RC6_R205_SIGNALS_DIAG_END" in script[1]
+    ast.parse(script[0], filename="R205_SIGNALS_READ_ONLY_DIAGNOSTIC")
+    return script[0] + "\n"
+
+
+def _r205_run_diagnostic(xml_path: Path, monkeypatch, capsys,
+                        *, emulate_owned_uid1000: bool) -> tuple[str, int]:
+    """Run exact embedded diagnostic on XML fixtures, never Docker/host."""
+    original_fstat = os.fstat
+
+    def fixture_fstat(fd):
+        metadata = original_fstat(fd)
+        identity = 1000 if emulate_owned_uid1000 else 999
+        return SimpleNamespace(st_uid=identity, st_gid=identity,
+                               st_nlink=metadata.st_nlink,
+                               st_size=metadata.st_size,
+                               st_mode=metadata.st_mode)
+
+    payload = _r205_signals_diagnostic_python()
+    with monkeypatch.context() as scope:
+        scope.setattr(os, "fstat", fixture_fstat)
+        scope.setattr(sys, "argv", ["-", str(xml_path)])
+        try:
+            exec(compile(payload, "R205_SIGNALS_READ_ONLY_DIAGNOSTIC", "exec"),
+                 {"__name__": "__main__"})
+            rc = 0
+        except SystemExit as exc:
+            rc = exc.code if type(exc.code) is int else 79
+    output = capsys.readouterr()
+    assert output.err == ""
+    return output.out, rc
+
+
+def test_r205_signals_failure_diagnostic_bounded_and_no_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    xml = tmp_path / "signals.xml"
+    xml.write_bytes(
+        b'<testsuite tests="2" failures="1" errors="0" skipped="0">'
+        b'<testcase classname="tests.test_rc6_owned_funnel_details" '
+        b'name="test_causal_risk_case"><failure type="AssertionError">'
+        b'CANARY_SECRET_XML_TRACEBACK_NEVER_PRINT'
+        b'</failure></testcase>'
+        b'<testcase classname="tests.test_exit_ledger_isolation_v17" '
+        b'name="test_safe"/></testsuite>'
+    )
+    stdout, code = _r205_run_diagnostic(
+        xml, monkeypatch, capsys, emulate_owned_uid1000=True)
+    assert code == 0
+    assert "RC6_R205_SIGNALS_JUNIT=HOLD79|cases=2|bad=1" in stdout
+    assert "RC6_R205_SIGNALS_CASE=HOLD79|index=0|kind=failure" in stdout
+    assert "classname=" not in stdout and "name=" not in stdout
+    assert "type=" not in stdout
+    assert "CANARY_SECRET_XML_TRACEBACK_NEVER_PRINT" not in stdout
+    assert str(xml) not in stdout and len(stdout) < 500
+
+
+def test_r205_signals_diagnostic_never_prints_opaque_xml_attributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    xml = tmp_path / "signals.xml"
+    xml.write_bytes(
+        b'<testsuite tests="2" failures="1" errors="1">'
+        b'<testcase classname="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy" '
+        b'name="AKIAIOSFODNN7EXAMPLE"><failure type="https://invalid.example/token">'
+        b'PRIVATE_XML_DETAILS</failure></testcase>'
+        b'<testcase classname="/private/unsafe-name" '
+        b'name="CANARY_SECRET_TESTCASE"><error type="ErrorSecret">'
+        b'CANARY_SECRET_XML_TRACE</error></testcase></testsuite>'
+    )
+    stdout, code = _r205_run_diagnostic(
+        xml, monkeypatch, capsys, emulate_owned_uid1000=True)
+    assert code == 0
+    assert stdout.count("RC6_R205_SIGNALS_CASE=") == 2
+    assert "RC6_R205_SIGNALS_CASE=HOLD79|index=0|kind=failure" in stdout
+    assert "RC6_R205_SIGNALS_CASE=HOLD79|index=1|kind=error" in stdout
+    for forbidden in ("ghp_AbCd", "AKIAIOSF", "https://", "/private/unsafe-name",
+                      "CANARY_SECRET", "PRIVATE_XML_DETAILS", "ErrorSecret",
+                      "classname=", "name=", "type=", str(xml)):
+        assert forbidden not in stdout
+    assert len(stdout) < 500
+
+
+@pytest.mark.parametrize("case", (
+    "unowned_uid", "invalid_xml", "missing_file", "symlink", "empty_xml",
+))
+def test_r205_signals_diagnostic_is_failclosed_without_public_data(
+    case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    xml = tmp_path / "signals.xml"
+    if case == "symlink":
+        victim = tmp_path / "CANARY_SECRET_PRIVATE"
+        victim.write_text("CANARY_SECRET_PRIVATE_FILE")
+        xml.symlink_to(victim)
+    elif case != "missing_file":
+        xml.write_bytes(
+            b'<testsuite tests="1"><testcase classname="safe" name="safe">'
+            b'<failure type="AssertionError">CANARY_SECRET_BODY'
+            b'</failure></testcase></testsuite>'
+            if case not in ("invalid_xml", "empty_xml") else (
+                b'<testsuite unclosed CANARY_SECRET_BODY'
+                if case == "invalid_xml" else b""
+            )
+        )
+    stdout, code = _r205_run_diagnostic(
+        xml, monkeypatch, capsys,
+        emulate_owned_uid1000=case != "unowned_uid")
+    assert code == 79
+    assert stdout == "RC6_R205_SIGNALS_JUNIT=HOLD79|diagnostic_unavailable\n"
+    assert "CANARY_SECRET" not in stdout
+
+
+def test_r205_signals_native_failure_never_bypasses_exit79_or_cleanup() -> None:
+    native = _runs(_workflow()["jobs"]["offhost-native-proof"])
+    assert "if ! timeout 1200 docker exec --user 1000:1000" in native
+    assert "python scripts/rc6_postdeploy_stress.py --output /app/data/session" in native
+    assert "python - /app/data/session/signals_risk_exit_ledger.xml" in native
+    start = native.index("# RC6_R205_SIGNALS_DIAG_BEGIN")
+    end = native.index("# RC6_R205_SIGNALS_DIAG_END", start)
+    after = native[end:end + 120]
+    assert "exit 79" in after
+    assert "owned_cid" in native and "trap cleanup_owned EXIT" in native
+    assert "2>/dev/null <<'PY'; then" in native
+    assert "case.get(" not in native[start:end]
+    assert "node.get(" not in native[start:end]
+    assert "node.text" not in native[start:end]
+    assert "|kind=" in native[start:end]
+
+
+
+def _r205_fast_python() -> str:
+    wf = _workflow()
+    steps = wf["jobs"]["python311-lock-closure"]["steps"]
+    step = next(x for x in steps if
+                x.get("name") == "R205 signals risk exit ledger exact 191 fixture diagnostic (offline)")
+    source = step["run"]
+    assert source.count("python - <<'PY'") == 1
+    body = source.split("python - <<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    ast.parse(body, filename="R205_PY311_191_FAST")
+    return body + "\n"
+
+
+def test_r205_fast_replay_exact_stress_source_list_and_isolated_params() -> None:
+    script = _r205_fast_python()
+    module = ast.parse(script)
+    fast_paths = next(ast.literal_eval(item.value) for item in module.body
+                      if isinstance(item, ast.Assign) and any(
+                          isinstance(target, ast.Name) and target.id == "PATHS"
+                          for target in item.targets))
+    original = ast.parse((ROOT / "scripts/rc6_postdeploy_stress.py").read_text())
+    original_groups = next(ast.literal_eval(item.value) for item in original.body
+                           if isinstance(item, ast.Assign) and any(
+                               isinstance(target, ast.Name) and target.id == "GROUPS"
+                               for target in item.targets))
+    assert tuple(fast_paths) == tuple(original_groups["signals_risk_exit_ledger"])
+    assert len(fast_paths) == 10
+    assert 'PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"' in script
+    assert '"PAPER_HISTORICAL_CANDLE_SHADOW": "OFF"' in script
+    assert '"PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY"' in script
+    assert '"PAPER_AI_GATE_MODE": "OFF"' in script
+    assert '"-q",' in script and '"no:cacheprovider"' in script
+    assert "timeout=300" in script and "stdout=private_log" in script
+    assert "stderr=private_log" in script and "TemporaryDirectory" in script
+    assert "CANARY_SECRET_" not in script
+    assert "RC6_R205_SIGNALS_FAST=HOLD79" in script
+    assert "RC6_R205_SIGNALS_FAST=PY311_OFFHOST_191_CASES" in script
+
+
+@pytest.mark.parametrize("fail", (False, True))
+def test_r205_fast_replay_xml_fixture_never_logs_private_body(
+    fail: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    cases = []
+    for index in range(191):
+        cls = ("ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy"
+               if index == 3 else "tests.test_exit_ledger_isolation_v17")
+        name = "AKIAIOSFODNN7EXAMPLE" if index == 3 else f"test_safe_{index}"
+        case = f'<testcase classname="{cls}" name="{name}">'
+        if fail and index == 3:
+            case += ('<failure type="https://invalid.example/token">'
+                     'CANARY_SECRET_TRACEBACK_NEVER_PRINT</failure>')
+        case += "</testcase>"
+        cases.append(case)
+    xml = (f'<testsuite tests="191" failures="{int(fail)}" '
+           f'errors="0" skipped="0">' + "".join(cases) + "</testsuite>").encode()
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[:6] == [sys.executable, "-m", "pytest",
+                            "-q", "-p", "no:cacheprovider"]
+        assert kwargs["timeout"] == 300
+        assert kwargs["stdout"] is kwargs["stderr"]
+        assert "GITHUB_TOKEN" not in kwargs["env"]
+        assert kwargs["env"]["PAPER_AI_GATE_MODE"] == "OFF"
+        report = next(value.removeprefix("--junitxml=") for value in cmd
+                      if value.startswith("--junitxml="))
+        Path(report).write_bytes(xml)
+        return SimpleNamespace(returncode=int(fail))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    try:
+        exec(compile(_r205_fast_python(), "R205_PY311_191_FAST", "exec"),
+             {"__name__": "__main__"})
+        rc = 0
+    except SystemExit as exc:
+        rc = exc.code if type(exc.code) is int else 79
+    output = capsys.readouterr()
+    assert output.err == ""
+    assert "CANARY_SECRET_TRACEBACK_NEVER_PRINT" not in output.out
+    assert str(tmp_path) not in output.out
+    if fail:
+        assert rc == 79
+        assert "RC6_R205_SIGNALS_FAST=HOLD79|cases=191|bad=1" in output.out
+        assert "RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=3|kind=failure" in output.out
+        for forbidden in ("ghp_AbCd", "AKIAIOSF", "https://", "classname=",
+                          "name=", "type="):
+            assert forbidden not in output.out
+    else:
+        assert rc == 0
+        assert output.out.strip() == (
+            "RC6_R205_SIGNALS_FAST=PY311_OFFHOST_191_CASES|skipped=0|release_go=NO")
+
+
+
+@pytest.mark.parametrize("case", (
+    "no_xml", "empty_xml", "wrong_case_count", "wrong_suite_counter",
+    "bad_xml", "symlink", "skipped_case", "exit_code_only",
+))
+def test_r205_fast_junit_rejects_missing_corrupt_or_inconsistent_receipts(
+    case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No stdout/log/XML leak and no false offhost green after corrupt JUnit."""
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    real_cases = 190 if case == "wrong_case_count" else 191
+    cases = []
+    for index in range(real_cases):
+        node = ('<skipped type="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy">'
+                'CANARY_SECRET_LOG</skipped>'
+                if case == "skipped_case" and index == 3 else "")
+        cls = ("AKIAIOSFODNN7EXAMPLE" if index == 3
+               else "tests.test_safe")
+        cases.append(f'<testcase classname="{cls}" name="test_{index}">'
+                     f'{node}</testcase>')
+    reported_tests = 190 if case == "wrong_suite_counter" else 191
+    report_xml = (
+        f'<testsuite tests="{reported_tests}" failures="0" errors="0" '
+        f'skipped="{int(case == "skipped_case")}">' +
+        "".join(cases) + "</testsuite>"
+    ).encode()
+
+    def fake_run(cmd, **kwargs):
+        report = Path(next(item.removeprefix("--junitxml=") for item in cmd
+                           if item.startswith("--junitxml=")))
+        assert kwargs["timeout"] == 300
+        if case == "empty_xml":
+            report.write_bytes(b"")
+        elif case == "bad_xml":
+            report.write_bytes(b"<testsuite CANARY_SECRET_BROKEN")
+        elif case == "symlink":
+            private = Path(tmp_path) / "CANARY_SECRET_PRIVATE_XML"
+            private.write_bytes(report_xml)
+            report.symlink_to(private)
+        elif case != "no_xml":
+            report.write_bytes(report_xml)
+        return SimpleNamespace(returncode=1 if case == "exit_code_only" else 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    try:
+        exec(compile(_r205_fast_python(), "R205_PY311_191_FAST", "exec"),
+             {"__name__": "__main__"})
+        rc = 0
+    except SystemExit as exc:
+        rc = exc.code if type(exc.code) is int else 79
+    output = capsys.readouterr()
+    assert rc == 79
+    assert output.err == ""
+    assert "RC6_R205_SIGNALS_FAST=HOLD79|" in output.out
+    assert "PY311_OFFHOST_191_CASES" not in output.out
+    assert "CANARY_SECRET" not in output.out
+    assert "ghp_AbCd" not in output.out and "AKIAIOSF" not in output.out
+    assert str(tmp_path) not in output.out
+    assert len(output.out) < 500
+    if case == "skipped_case":
+        assert "|bad=1" in output.out
+    if case == "exit_code_only":
+        assert "|bad=0" in output.out
+
+
+def test_r205_raw_junit_privacy_gate_always_holds_before_seal_or_upload() -> None:
+    """Raw JUnit includes untrusted XML attributes; R206 projection required."""
+    steps = _workflow()["jobs"]["offhost-native-proof"]["steps"]
+    nstage = next(i for i, item in enumerate(steps)
+                  if item.get("name") == "Run native stages in one UID1000 anonymous volume")
+    stop = next(i for i, item in enumerate(steps)
+                if item.get("name") == "R205 raw JUnit privacy hold before any upload (R206 required)")
+    seal = next(i for i, item in enumerate(steps)
+                if item.get("name") == "Seal all evidence before upload (artifact ID assigned later)")
+    upload = next(i for i, item in enumerate(steps)
+                  if item.get("uses", "").startswith("actions/upload-artifact@"))
+    assert nstage < stop < seal < upload
+    guard = steps[stop]
+    assert guard["shell"] == "bash" and "continue-on-error" not in guard
+    assert "if" not in guard and "uses" not in guard
+    assert "set -Eeuo pipefail" in guard["run"]
+    assert "RC6_R205_JUNIT_PRIVACY=HOLD79|raw_junit_not_projected" in guard["run"]
+    assert "exit 79" in guard["run"]
+    assert "if:" not in guard["run"] and "exit 0" not in guard["run"]
+    assert steps[upload]["uses"] == "actions/upload-artifact@v4"
+    assert "if" not in steps[upload] and "continue-on-error" not in steps[upload]

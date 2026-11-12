@@ -67,7 +67,7 @@ def test_foreign_lock_alias_rejected_before_database_creation(tmp_path, kind):
     assert foreign.read_bytes() == b'FOREIGN'
 
 
-@pytest.mark.parametrize('suffix', ['-wal', '-shm'])
+@pytest.mark.parametrize('suffix', ['-wal', '-shm', '-journal'])
 def test_orphan_sidecar_is_not_adopted_by_fresh_start(tmp_path, suffix):
     path = tmp_path / 'paper.db'
     sidecar = tmp_path / ('paper.db' + suffix)
@@ -119,17 +119,35 @@ def test_ready_child_rejects_non_wal_without_changing_journal(tmp_path, monkeypa
 
 
 def test_ready_child_connect_cannot_recreate_main_removed_after_validation(tmp_path, monkeypatch):
-    """A READY child must never fall back to SQLite's create-if-missing URI mode."""
+    """Missing READY main stays absent; orphan WAL/SHM/journal must fail closed."""
     path = tmp_path / 'paper.db'
     workspace.runtime_store(path)
     gc.collect()
     monkeypatch.setenv('POROTA_RUNTIME_SCHEMA_READY', '1')
     child = PaperStore(str(path))
     path.unlink()
-    with pytest.raises(sqlite3.OperationalError, match='unable to open database file'):
-        child.connect()
+    # SQLite may retain sidecars while its WAL connection is closing. Either
+    # state is valid; the guard must never create a replacement main or mutate
+    # existing sidecars.
+    sidecars = {
+        suffix: path.with_name(path.name + suffix)
+        for suffix in ('-wal', '-shm', '-journal')
+    }
+    before = {
+        suffix: member.read_bytes() if member.exists() else None
+        for suffix, member in sidecars.items()
+    }
+    if any(contents is not None for contents in before.values()):
+        with pytest.raises(ValueError, match='^PAPER_V17_ORPHAN_SIDECAR_FORBIDDEN$'):
+            child.connect()
+    else:
+        with pytest.raises(sqlite3.OperationalError, match='^unable to open database file$'):
+            child.connect()
     assert not path.exists()
-
+    assert {
+        suffix: member.read_bytes() if member.exists() else None
+        for suffix, member in sidecars.items()
+    } == before
 
 def test_ready_child_rejects_symlink_retarget_after_validation(tmp_path, monkeypatch):
     """Opening another PAPER v17 DB after constructor validation is forbidden."""
