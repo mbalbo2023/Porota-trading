@@ -184,16 +184,28 @@ def _inspect(raw: bytes, *, cid: str, image_id: str, role: str,
     _require(type(mounts) is list and len(mounts) == 1 and
              type(mounts[0]) is dict, "MOUNT_CARDINALITY")
     mount = mounts[0]
-    _require(mount.get("Type") == "volume" and
-             mount.get("Destination") == "/app/data" and
-             type(mount.get("Name")) is str and
-             _CID.fullmatch(mount["Name"]) is not None and
-             type(mount.get("Source")) is str and
-             mount["Source"] != "" and
-             mount.get("Driver") == "local" and
-             mount.get("RW") is (not collector) and
-             mount.get("Mode") == ("ro" if collector else ""),
-             "MOUNT_VOLUME_IDENTITY")
+    # Log only fixed-name boolean checks, never inspect values or Docker paths.
+    # The original predicates and fail-closed HOLD79 remain unchanged.
+    checks = (
+        ("type", mount.get("Type") == "volume"),
+        ("target", mount.get("Destination") == "/app/data"),
+        ("name", type(mount.get("Name")) is str and
+         _CID.fullmatch(mount["Name"]) is not None),
+        ("source", type(mount.get("Source")) is str and
+         mount["Source"] != ""),
+        ("driver", mount.get("Driver") == "local"),
+        ("rw", mount.get("RW") is (not collector)),
+        ("mode", mount.get("Mode") == ("ro" if collector else "")),
+    )
+    all_ok = all(ok for _, ok in checks)
+    if not all_ok:
+        print(
+            "RC6_R163_MOUNT_SUBCHECKS=role=" +
+            ("collector" if collector else "producer") + "|" +
+            "|".join(name + "=" + str(int(ok)) for name, ok in checks),
+            file=sys.stderr,
+        )
+    _require(all_ok, "MOUNT_VOLUME_IDENTITY")
     return mount["Name"]
 
 
