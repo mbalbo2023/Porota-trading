@@ -138,10 +138,22 @@ def test_untrusted_candidate_script_cannot_be_release_authority():
 
 def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
     if not WORKFLOW.is_file():
-        # This exact candidate-workflow test runs on the product/candidate
-        # checkout.  The trusted-main bridge deliberately does not copy the
-        # mutable PR workflow into main as a second execution authority.
-        pytest.skip("candidate Predeploy V2 workflow is not on trusted main")
+        # Main-only R252 PR has no candidate/product Predeploy workflow by
+        # design: prove the trusted R251 D/E authority exists and the old
+        # same-run evidence cannot become a substitute (no CI skip/xfail).
+        d = ROOT / ".github/workflows/rc6-r251-trusted-release-build.yml"
+        e = ROOT / ".github/workflows/rc6-r251-trusted-release-postcompletion.yml"
+        assert d.is_file() and e.is_file()
+        assert (ROOT / "scripts/rc6_r163_artifact_byte_verifier.py").is_file()
+        d_content = d.read_text(encoding="utf-8")
+        e_content = e.read_text(encoding="utf-8")
+        assert "RC6 R251 Trusted Release Build (OFFHOST ONLY)" in d_content
+        assert "RC6 R251 Trusted Release Postcompletion Byte Audit (READ ONLY)" in e_content
+        assert "rc6-unified-paper-deploy" not in d_content or "cancel-in-progress: false" in d_content
+        with pytest.raises(guard.RequiredReleaseEvidenceRed):
+            guard.verify(evidence(RC6_RELEASE_GATE_RESULT="skipped"))
+        assert not WORKFLOW.exists(), "Predeploy must remain candidate-owned"
+        return
     workflow = yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     artifact = workflow["jobs"]["artifact-gate"]
     assert artifact["outputs"] == {
@@ -211,9 +223,10 @@ def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
     # A skipped candidate artifact-gate is neither accepted nor bypassed.
     assert check["env"]["RC6_BRIDGE_MODE"] == "PR_CANDIDATE"
     assert check["env"]["RC6_BRIDGE_CANDIDATE_SHA"] == "${{ github.event.pull_request.head.sha }}"
-    assert check["env"]["RC6_BRIDGE_E_RUN_ID"] == "${{ vars.RC6_TRUSTED_RELEASE_E_RUN_ID }}"
-    assert check["env"]["RC6_BRIDGE_E_RUN_ATTEMPT"] == "${{ vars.RC6_TRUSTED_RELEASE_E_ATTEMPT }}"
-    assert check["env"]["RC6_BRIDGE_E_ARTIFACT_ID"] == "${{ vars.RC6_TRUSTED_RELEASE_E_ARTIFACT_ID }}"
+    assert check["env"]["RC6_BRIDGE_PUBLISHER_MAIN_SHA"] == ""
+    assert check["env"]["RC6_BRIDGE_E_RUN_ID"] == ""
+    assert check["env"]["RC6_BRIDGE_E_RUN_ATTEMPT"] == ""
+    assert check["env"]["RC6_BRIDGE_E_ARTIFACT_ID"] == ""
     assert "RC6_RELEASE_GATE_RESULT" not in check["env"]
     assert "RC6_RELEASE_ARTIFACT_ID" not in check["env"]
     assert "RC6_RELEASE_ARTIFACT_DIGEST" not in check["env"]

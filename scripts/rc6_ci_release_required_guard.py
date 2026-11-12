@@ -18,6 +18,7 @@ import json
 import importlib.util
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -211,6 +212,82 @@ def _reopen_stable(github: Any, records: Mapping[str, Mapping[str, Any]]) -> Non
             _red()
 
 
+def _discover_unique_e(github: Any, *, candidate: str, publisher: str,
+                       records: dict[str, Mapping[str, Any]]) -> tuple[int, int, int]:
+    """Select the sole completed E receipt for exact candidate/trusted main.
+
+    The discovery only selects REST identities; the normal verifier still
+    re-fetches E, D, the real ZIP bytes, manifest/digest and PR/merge proof.
+    Never select the newest run or an ambiguously matching artifact.
+    """
+    path = (f"/repos/{REPO}/actions/workflows/"
+            f"rc6-r251-trusted-release-postcompletion.yml/runs"
+            f"?event=workflow_run&head_sha={publisher}&per_page=100&page=1")
+    page = records[path] = _github_get(github, path)
+    runs = page.get("workflow_runs")
+    count = page.get("total_count")
+    if (type(count) is not int or count < 0 or count > 100 or
+            type(runs) is not list or len(runs) != count):
+        _red()
+    matches: list[tuple[int, int, int]] = []
+    for run in runs:
+        if not isinstance(run, Mapping):
+            _red()
+        if run.get("head_sha") != publisher or run.get(
+                "name") != E_NAME or run.get("status") != "completed" or run.get(
+                "conclusion") != "success":
+            continue
+        run_id, attempt = run.get("id"), run.get("run_attempt")
+        if (type(run_id) is not int or run_id <= 0 or
+                type(attempt) is not int or attempt <= 0):
+            _red()
+        _run_matches(run, run_id=run_id, attempt=attempt, workflow=E_PATH,
+                     name=E_NAME, event="workflow_run", main_sha=publisher)
+        artifact_path = f"/repos/{REPO}/actions/runs/{run_id}/artifacts?per_page=100"
+        listing = records[artifact_path] = _github_get(github, artifact_path)
+        artifacts = listing.get("artifacts")
+        total = listing.get("total_count")
+        if (type(total) is not int or total < 0 or total > 100 or
+                type(artifacts) is not list or len(artifacts) != total):
+            _red()
+        for artifact in artifacts:
+            if not isinstance(artifact, Mapping) or type(artifact.get("name")) is not str:
+                _red()
+            match = re.fullmatch(
+                rf"rc6-r251-postcompletion-([1-9][0-9]{{0,16}})-"
+                rf"([1-9][0-9]{{0,16}})-{candidate}", artifact["name"])
+            if match is None:
+                continue
+            artifact_id = artifact.get("id")
+            if (total != 1 or type(artifact_id) is not int or artifact_id <= 0 or
+                    artifact.get("expired") is not False or
+                    not isinstance(artifact.get("workflow_run"), Mapping) or
+                    artifact["workflow_run"].get("id") != run_id or
+                    artifact["workflow_run"].get("head_sha") != publisher or
+                    type(artifact.get("digest")) is not str or
+                    HEX64.fullmatch(artifact.get("digest", "")) is None):
+                _red()
+            matches.append((run_id, attempt, artifact_id))
+    if len(matches) != 1:
+        _red()
+    return matches[0]
+
+
+def _trusted_checkout_sha() -> str:
+    """Use immutable reviewed checkout HEAD, never an untrusted PR hint."""
+    root = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, TimeoutError, subprocess.TimeoutExpired):
+        _red()
+    sha = result.stdout.strip()
+    if result.returncode != 0 or HEX40.fullmatch(sha) is None:
+        _red()
+    return sha
+
+
 def _load_trusted_module(filename: str) -> Any:
     """Load only reviewed sibling scripts under the -I trusted checkout.
 
@@ -256,16 +333,38 @@ def verify_trusted_release(
     publisher = data["RC6_BRIDGE_PUBLISHER_MAIN_SHA"]
     product_sha = data["RC6_BRIDGE_PRODUCT_SHA"]
     product_ref = data["RC6_BRIDGE_PRODUCT_REF"]
-    if any(HEX40.fullmatch(value) is None for value in (candidate, tree, publisher)):
+    if HEX40.fullmatch(publisher) is None:
         _red()
     if mode == "PR_CANDIDATE":
         if product_sha != "" or product_ref != "":
             _red()
     elif HEX40.fullmatch(product_sha) is None or product_ref != "refs/heads/" + PRODUCT:
         _red()
-    e_id = _positive_decimal(data["RC6_BRIDGE_E_RUN_ID"])
-    e_attempt = _positive_decimal(data["RC6_BRIDGE_E_RUN_ATTEMPT"])
-    e_artifact_id = _positive_decimal(data["RC6_BRIDGE_E_ARTIFACT_ID"])
+    prefix = "/repos/" + REPO
+    first: dict[str, Mapping[str, Any]] = {}
+    if mode == "PRODUCT_POSTMERGE" and candidate == "" and tree == "":
+        product_path = f"{prefix}/commits/{product_sha}"
+        product = first[product_path] = _github_get(github, product_path)
+        parents = product.get("parents")
+        commit = product.get("commit")
+        if (product.get("sha") != product_sha or type(parents) is not list or
+                len(parents) != 2 or not isinstance(parents[1], Mapping) or
+                not isinstance(commit, Mapping) or
+                not isinstance(commit.get("tree"), Mapping)):
+            _red()
+        candidate, tree = parents[1].get("sha"), commit["tree"].get("sha")
+    if any(type(x) is not str or HEX40.fullmatch(x) is None for x in (candidate, tree)):
+        _red()
+    hints = tuple(data[key] for key in
+                  ("RC6_BRIDGE_E_RUN_ID", "RC6_BRIDGE_E_RUN_ATTEMPT",
+                   "RC6_BRIDGE_E_ARTIFACT_ID"))
+    if all(hint == "" for hint in hints):
+        e_id, e_attempt, e_artifact_id = _discover_unique_e(
+            github, candidate=candidate, publisher=publisher, records=first)
+    elif all(hint != "" for hint in hints):
+        e_id, e_attempt, e_artifact_id = map(_positive_decimal, hints)
+    else:
+        _red()
     if byte_verifier is None:
         byte_verifier = _load_trusted_module("rc6_r163_artifact_byte_verifier.py")
     for name in ("verify_postcompletion_receipt_zip", "verify_artifact_bytes"):
@@ -275,17 +374,18 @@ def verify_trusted_release(
             not callable(getattr(github, "download_artifact", None))):
         _red()
 
-    prefix = "/repos/" + REPO
     e_run_path = f"{prefix}/actions/runs/{e_id}"
     e_attempt_path = f"{e_run_path}/attempts/{e_attempt}"
     e_art_path = f"{prefix}/actions/artifacts/{e_artifact_id}"
     e_list_path = f"{e_run_path}/artifacts?per_page=100"
     pr_path = f"{prefix}/pulls/{PR_NUMBER}"
     commit_path = f"{prefix}/git/commits/{candidate}"
-    first: dict[str, Mapping[str, Any]] = {}
     for path in (e_run_path, e_attempt_path, e_art_path, e_list_path,
                  pr_path, commit_path):
-        first[path] = _github_get(github, path)
+        reopened = _github_get(github, path)
+        if path in first and first[path] != reopened:
+            _red()
+        first[path] = reopened
     e_run, e_art = first[e_run_path], first[e_art_path]
     _run_matches(e_run, run_id=e_id, attempt=e_attempt, workflow=E_PATH,
                  name=E_NAME, event="workflow_run", main_sha=publisher)
@@ -300,7 +400,8 @@ def verify_trusted_release(
                   product_sha=product_sha)
     if product_sha:
         product_path = f"{prefix}/commits/{product_sha}"
-        first[product_path] = _github_get(github, product_path)
+        if product_path not in first:
+            first[product_path] = _github_get(github, product_path)
         commit = first[product_path]
         parents = commit.get("parents")
         if (commit.get("sha") != product_sha or
@@ -440,6 +541,11 @@ def _main_trusted_bridge(mode: str) -> int:
         token = os.environ.get("GITHUB_TOKEN", "")
         if not token:
             _red()
+        pinned_sha = _trusted_checkout_sha()
+        supplied_publisher = values["RC6_BRIDGE_PUBLISHER_MAIN_SHA"]
+        if supplied_publisher and supplied_publisher != pinned_sha:
+            _red()
+        values["RC6_BRIDGE_PUBLISHER_MAIN_SHA"] = pinned_sha
         # Use the established R206 read-only REST transport; R251 owns
         # storage-redirect allowlisting and both bounded ZIP parsers.
         client_type = _load_trusted_module(

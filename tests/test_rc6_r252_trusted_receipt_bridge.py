@@ -43,6 +43,10 @@ E_PATH = ".github/workflows/rc6-r251-trusted-release-postcompletion.yml"
 D_WORKFLOW_NAME = "RC6 R251 Trusted Release Build (OFFHOST ONLY)"
 E_WORKFLOW_NAME = "RC6 R251 Trusted Release Postcompletion Byte Audit (READ ONLY)"
 API = f"/repos/{REPO}"
+E_RUNS_PATH = (f"{API}/actions/workflows/rc6-r251-trusted-release-postcompletion.yml/runs"
+               f"?event=workflow_run&head_sha={M}&per_page=100&page=1")
+E_HINTS = ("RC6_BRIDGE_E_RUN_ID", "RC6_BRIDGE_E_RUN_ATTEMPT",
+           "RC6_BRIDGE_E_ARTIFACT_ID")
 
 
 def inputs(mode="PR_CANDIDATE"):
@@ -113,6 +117,11 @@ def github_records(mode="PR_CANDIDATE"):
         "base": {"ref": PRODUCT, "repo": {"full_name": REPO}},
     }
     return {
+        E_RUNS_PATH: {
+            "total_count": 1,
+            "workflow_runs": [run(E_ID, E_ATTEMPT, E_PATH, E_WORKFLOW_NAME,
+                "workflow_run", "2026-11-12T13:00:00Z", "2026-11-12T13:10:00Z")],
+        },
         f"{API}/actions/runs/{E_ID}": run(E_ID, E_ATTEMPT, E_PATH,
             E_WORKFLOW_NAME, "workflow_run", "2026-11-12T13:00:00Z", "2026-11-12T13:10:00Z"),
         f"{API}/actions/runs/{E_ID}/attempts/{E_ATTEMPT}": run(E_ID, E_ATTEMPT, E_PATH,
@@ -207,6 +216,146 @@ def bridge(mode="PR_CANDIDATE", *, changes=None, mutate=None, verifier=None):
     result = guard.verify_trusted_release(values, github=reader,
                                           byte_verifier=independent)
     return result, reader, independent
+
+
+def undisclosed_e_hints():
+    return {key: "" for key in E_HINTS}
+
+
+@pytest.mark.parametrize("mode", ["PR_CANDIDATE", "PRODUCT_POSTMERGE"])
+def test_single_completed_e_discovered_without_repository_variables(mode):
+    result, reader, _ = bridge(mode, changes=undisclosed_e_hints())
+    assert result["status"] == "TRUSTED_RELEASE_BYTES_BOUND"
+    assert result["trusted_main_audit_run_id"] == E_ID
+    assert E_RUNS_PATH in reader.requests
+
+
+@pytest.mark.parametrize("changes", [
+    {"RC6_BRIDGE_E_RUN_ID": ""},
+    {"RC6_BRIDGE_E_RUN_ATTEMPT": ""},
+    {"RC6_BRIDGE_E_ARTIFACT_ID": ""},
+    {"RC6_BRIDGE_E_RUN_ID": "", "RC6_BRIDGE_E_RUN_ATTEMPT": ""},
+])
+def test_partial_explicit_e_hints_rejected_instead_of_silent_discovery(changes):
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(changes=changes)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda r: r[E_RUNS_PATH].update(total_count=0, workflow_runs=[]),
+    lambda r: r[E_RUNS_PATH].update(total_count=101),
+    lambda r: r[E_RUNS_PATH]["workflow_runs"][0].update(conclusion="failure"),
+    lambda r: r[E_RUNS_PATH]["workflow_runs"][0].update(path="other.yml"),
+    lambda r: r[E_RUNS_PATH]["workflow_runs"][0].update(head_sha=S),
+    lambda r: r[f"{API}/actions/runs/{E_ID}/artifacts?per_page=100"]["artifacts"][0].update(expired=True),
+    lambda r: r[f"{API}/actions/runs/{E_ID}/artifacts?per_page=100"]["artifacts"][0].update(name="latest-e.zip"),
+])
+def test_autodiscovery_fails_closed_on_no_match_bad_listing_or_cap(mutation):
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(changes=undisclosed_e_hints(), mutate=mutation)
+
+
+def test_autodiscovery_rejects_two_successful_e_runs_for_same_candidate():
+    def add_second(records):
+        other_id, other_art = E_ID + 10, E_ART + 10
+        other_run = deepcopy(records[f"{API}/actions/runs/{E_ID}"])
+        other_run["id"] = other_id
+        records[E_RUNS_PATH]["workflow_runs"].append(other_run)
+        records[E_RUNS_PATH]["total_count"] = 2
+        records[f"{API}/actions/runs/{other_id}"] = other_run
+        second = deepcopy(records[f"{API}/actions/artifacts/{E_ART}"])
+        second["id"] = other_art
+        second["workflow_run"]["id"] = other_id
+        records[f"{API}/actions/runs/{other_id}/artifacts?per_page=100"] = {
+            "total_count": 1, "artifacts": [second],
+        }
+
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(changes=undisclosed_e_hints(), mutate=add_second)
+
+
+@pytest.mark.parametrize("mode", ["PR_CANDIDATE", "PRODUCT_POSTMERGE"])
+def test_e_discovery_listing_reopened_to_reject_replay(mode):
+    data = inputs(mode)
+    data.update(undisclosed_e_hints())
+    reader = FakeGitHub(github_records(mode))
+    replayed = deepcopy(reader.records[E_RUNS_PATH])
+    replayed["workflow_runs"][0]["run_attempt"] += 1
+    reader.after_reads[E_RUNS_PATH] = replayed
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        guard.verify_trusted_release(
+            data, github=reader, byte_verifier=FakeIndependentR251Verifier())
+
+
+def test_e_discovery_cannot_overwrite_snapshot_when_artifact_metadata_changes():
+    data = inputs()
+    data.update(undisclosed_e_hints())
+    reader = FakeGitHub(github_records())
+    artifact_path = f"{API}/actions/artifacts/{E_ART}"
+    listing_path = f"{API}/actions/runs/{E_ID}/artifacts?per_page=100"
+    changed = deepcopy(reader.records[artifact_path])
+    changed["digest"] = "sha256:" + "8" * 64
+    listing = deepcopy(reader.records[listing_path])
+    listing["artifacts"] = [changed]
+    # E artifact API has advanced to the new state before validation, while
+    # discovery saw the prior list. Without comparing the second list against
+    # the first, both normal and final re-GET would agree on the new state.
+    reader.records[artifact_path] = changed
+    reader.after_reads[listing_path] = listing
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        guard.verify_trusted_release(
+            data, github=reader, byte_verifier=FakeIndependentR251Verifier())
+
+
+def test_e_discovery_malformed_other_run_fails_even_if_one_valid_e_exists():
+    def add_malformed_row(records):
+        records[E_RUNS_PATH]["workflow_runs"].append(None)
+        records[E_RUNS_PATH]["total_count"] = 2
+
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(changes=undisclosed_e_hints(), mutate=add_malformed_row)
+
+
+def test_product_postmerge_can_derive_second_parent_and_tree_without_variables():
+    result, reader, _ = bridge(
+        "PRODUCT_POSTMERGE", changes={
+            **undisclosed_e_hints(),
+            "RC6_BRIDGE_CANDIDATE_SHA": "",
+            "RC6_BRIDGE_CANDIDATE_TREE_SHA": "",
+        })
+    assert (result["candidate_sha"], result["candidate_tree_sha"]) == (S, T)
+    assert reader.requests.count(f"{API}/commits/{P}") >= 2
+
+
+@pytest.mark.parametrize("changes", [
+    {"RC6_BRIDGE_CANDIDATE_SHA": ""},
+    {"RC6_BRIDGE_CANDIDATE_TREE_SHA": ""},
+])
+def test_partial_product_candidate_parent_or_tree_is_rejected(changes):
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge("PRODUCT_POSTMERGE", changes=changes)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda r: r[f"{API}/commits/{P}"].update(parents=[{"sha": S}]),
+    lambda r: r[f"{API}/commits/{P}"].update(parents=[{"sha": S}, {"sha": "x"}]),
+    lambda r: r[f"{API}/commits/{P}"]["commit"]["tree"].update(sha="x"),
+])
+def test_product_no_variables_still_requires_real_two_parent_sha_tree(mutation):
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge("PRODUCT_POSTMERGE", changes={
+            "RC6_BRIDGE_CANDIDATE_SHA": "",
+            "RC6_BRIDGE_CANDIDATE_TREE_SHA": "",
+        }, mutate=mutation)
+
+
+def test_discovery_invalid_artifact_digest_type_is_hold_not_traceback():
+    def wrong_type(records):
+        listing = records[f"{API}/actions/runs/{E_ID}/artifacts?per_page=100"]
+        listing["artifacts"][0]["digest"] = 42
+
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(changes=undisclosed_e_hints(), mutate=wrong_type)
 
 
 @pytest.mark.parametrize("mode", ["PR_CANDIDATE", "PRODUCT_POSTMERGE"])
@@ -438,6 +587,62 @@ def test_cli_without_e_or_r251_dependencies_is_hard_hold79():
     }, clear=True), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         assert guard.main(["--trusted-release-mode", "PR_CANDIDATE"]) == 79
     assert stdout.getvalue() == ""
+    assert "HOLD79" in stderr.getvalue()
+
+
+def test_cli_publisher_is_derived_from_exact_trusted_checkout_not_repo_variables():
+    selected = inputs()
+    selected["RC6_BRIDGE_PUBLISHER_MAIN_SHA"] = ""
+    selected.update(undisclosed_e_hints())
+    env = {**selected, "GITHUB_TOKEN": "test-token-not-printed",
+           "GITHUB_EVENT_NAME": "pull_request",
+           "GITHUB_REF": "refs/pull/1087/merge", "GITHUB_SHA": S,
+           "GITHUB_REPOSITORY": REPO}
+    captures = []
+
+    class RestFactory:
+        def __init__(self, token):
+            assert token == "test-token-not-printed"
+
+    def inspected(data, *, github):
+        captures.append(dict(data))
+        assert isinstance(github, RestFactory)
+        return {"status": "TRUSTED_RECEIPT_TEST_ONLY"}
+
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with patch.dict(os.environ, env, clear=True), \
+            patch.object(guard, "_trusted_checkout_sha", return_value=M), \
+            patch.object(guard, "_load_trusted_module", return_value=type(
+                "ReviewedTransport", (), {"GitHubReadOnlyREST": RestFactory})), \
+            patch.object(guard, "verify_trusted_release", side_effect=inspected), \
+            contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        assert guard.main(["--trusted-release-mode", "PR_CANDIDATE"]) == 0
+    assert captures[0]["RC6_BRIDGE_PUBLISHER_MAIN_SHA"] == M
+    assert all(captures[0][key] == "" for key in E_HINTS)
+    assert json.loads(stdout.getvalue())["status"] == "TRUSTED_RECEIPT_TEST_ONLY"
+    assert stderr.getvalue() == ""
+
+
+def test_actual_trusted_checkout_sha_matches_immutable_git_head():
+    # The same root is checked out at an exact SHA by R253/R254 before this
+    # script runs with -I; deriving it here needs no mutable repo variable.
+    root = Path(guard.__file__).resolve().parents[1]
+    read = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True)
+    assert guard._trusted_checkout_sha() == read.stdout.strip()
+
+
+def test_cli_publisher_hint_mismatch_is_hold79_before_rest_call():
+    env = {**inputs(), "GITHUB_TOKEN": "test-token-not-printed",
+           "GITHUB_EVENT_NAME": "pull_request",
+           "GITHUB_REF": "refs/pull/1087/merge", "GITHUB_SHA": S,
+           "GITHUB_REPOSITORY": REPO}
+    stderr = io.StringIO()
+    with patch.dict(os.environ, env, clear=True), \
+            patch.object(guard, "_trusted_checkout_sha", return_value="1" * 40), \
+            patch.object(guard, "_load_trusted_module", side_effect=AssertionError(
+                "REST must not run")), contextlib.redirect_stderr(stderr):
+        assert guard.main(["--trusted-release-mode", "PR_CANDIDATE"]) == 79
     assert "HOLD79" in stderr.getvalue()
 
 
