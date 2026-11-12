@@ -120,13 +120,17 @@ def sampling_plan(catalog, opened, focus, *, limit, cycle_seconds, required_samp
     active = ScanBudget(len(pool), len(warm), warm_slots, cycle_seconds,
                         required_samples, window_seconds).report()
     focus_feasible = bool(set(configured_focus) & set(pinned)) and math.floor(window_seconds / cycle_seconds) >= required_samples
+    # Missing Spot PIT focus must not veto a budgeted basket from other
+    # families. Exact Spot PIT and per-family entry gates remain downstream.
+    feasible = active["status"] == "FEASIBLE" and (
+        focus_feasible or (not configured_focus and bool(warm)))
     plan = {"schema": "rc6.active-sampling.v1", "warm": warm, "cold": cold,
             "pinned": pinned, "started_at": started.isoformat(), "basket_cursor": start,
             "warm_cursor": warm_cursor, "configuration_fingerprint": config,
             "active_budget": active, "full_catalog_budget": budget,
             "warm_slots": warm_slots, "cold_slots": cold_slots,
-            "focus_feasible": focus_feasible, "feasible": focus_feasible and active["status"] == "FEASIBLE",
+            "focus_feasible": focus_feasible, "feasible": feasible,
             "catalog_effect": "NONE", "basket_reused": keep,
-            "opening_identities": pinned + warm if focus_feasible and active["status"] == "FEASIBLE" else []}
+            "opening_identities": pinned + warm if feasible else []}
     advance = visited if cold else len(hot)
     return tuple(pinned + hot + cold), cursor, (cursor + advance) % max(1, len(catalog)), plan
