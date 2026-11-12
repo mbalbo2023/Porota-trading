@@ -17,7 +17,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # R164 fail-closed pre-host barrier. A PR/premerge Predeploy artifact never
+  # authenticates the postmerge product image. A future, separately reviewed
+  # trusted-main RELEASE auditor must bind product SHA/tree, artifact ID,
+  # digest and latest run attempt before this gate may publish any outputs.
+  # Deliberately NO outputs and an unconditional HOLD79 until that exists.
+  release-evidence-required:
+    name: Require postmerge product RELEASE bytes (R164 HOLD79)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse host promotion without exact trusted product-release audit
+        shell: bash
+        env:
+          RC6_EXPECTED_PRODUCT_REF: refs/heads/deploy/rc6-pr69-isolated-20260915
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != push || "$GITHUB_REF" != "$RC6_EXPECTED_PRODUCT_REF" ]]; then
+            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=SOURCE_EVENT_OR_REF_MISMATCH|automatic_go=NO"
+            exit 79
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=PRODUCT_SHA_INVALID|automatic_go=NO"
+            exit 79
+          fi
+          echo "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE|product_sha=${GITHUB_SHA}|trusted_main_release_audit=NO_VERIFICADO|artifact_id=NO_VERIFICADO|digest=NO_VERIFICADO|automatic_go=NO"
+          echo "::error::R164 postmerge product RELEASE byte verification, attempt-freshness and trusted-main receipt are not implemented; host promotion forbidden."
+          exit 79
+
   promote:
+    # GH job needs failure/skipped blocks ALL promotion steps including
+    # always()/failure()-guarded host cleanup inside this job.
+    needs: release-evidence-required
+    # Even if an incomplete future guard exits 0, no missing or mismatched
+    # verified receipt may unlock the SSH/Docker host job.
+    if: >-
+      ${{ needs.release-evidence-required.result == 'success' &&
+          needs.release-evidence-required.outputs.release_bytes_verified == 'true' &&
+          needs.release-evidence-required.outputs.release_product_sha == github.sha &&
+          needs.release-evidence-required.outputs.release_artifact_id != '' &&
+          needs.release-evidence-required.outputs.release_artifact_digest != '' &&
+          needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
