@@ -21,6 +21,12 @@ SCHEMA = "RC6_HOST_PHYSICAL_PREFLIGHT_V1"
 HELPER_PATH = "/usr/local/sbin/porota-rc6-oci-custody"
 EXPECTED_DROPLET_ID = "594077619"
 EXPECTED_REGION = "nyc1"
+# No independent installation/protector approval exists yet. BOOTSTRAP may
+# *observe* a helper hash, never trust it. Only a separately reviewed change
+# on protected trusted-main may pin an approved installed helper SHA here.
+# A user-controlled workflow_dispatch field MUST NOT establish that trust.
+TRUSTED_HELPER_SHA256 = None
+_PHASES = frozenset({"BOOTSTRAP", "PREBIRTH", "POSTSEAL"})
 _HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _GENERATION = re.compile(r"[0-9a-f]{32}\Z")
@@ -59,13 +65,14 @@ def _require(condition, reason):
 
 @dataclass(frozen=True)
 class Expected:
-    candidate_sha: str
-    candidate_tree: str
-    generation: str
-    artifact_digest: str
-    image_id: str
-    daemon_id: str
-    helper_sha256: str
+    phase: str
+    candidate_sha: str | None = None
+    candidate_tree: str | None = None
+    generation: str | None = None
+    artifact_digest: str | None = None
+    image_id: str | None = None
+    daemon_id: str | None = None
+    helper_sha256: str | None = None
 
 
 _EXPECTED_ENV = (
@@ -75,19 +82,40 @@ _EXPECTED_ENV = (
     ("artifact_digest", "RC6_EXPECTED_ARTIFACT_DIGEST", _DOCKER_DIGEST),
     ("image_id", "RC6_EXPECTED_IMAGE_ID", _DOCKER_DIGEST),
     ("daemon_id", "RC6_EXPECTED_DAEMON_ID", _DAEMON),
-    ("helper_sha256", "RC6_EXPECTED_HELPER_SHA256", _HEX64),
 )
+_REQUIRED_BY_PHASE = {
+    "BOOTSTRAP": frozenset(),
+    "PREBIRTH": frozenset({"candidate_sha", "candidate_tree"}),
+    "POSTSEAL": frozenset({
+        "candidate_sha", "candidate_tree", "generation", "artifact_digest",
+        "image_id", "daemon_id",
+    }),
+}
 
 
 def validate_expected(environment):
-    """Check every SSH-interpolated selector before host contact."""
+    """Select stage-specific inputs before SSH; never authorize freeform hash."""
+    phase = environment.get("RC6_PREFLIGHT_PHASE")
+    _require(type(phase) is str and phase in _PHASES,
+             "PHASE_UNKNOWN")
+    _require(not environment.get("RC6_EXPECTED_HELPER_SHA256"),
+             "DISPATCH_CANNOT_APPROVE_HOST_HELPER")
     fields = {}
     for field, key, pattern in _EXPECTED_ENV:
         value = environment.get(key)
-        _require(type(value) is str and pattern.fullmatch(value),
-                 "EXPECTED_SELECTOR_UNVERIFIED")
-        fields[field] = value
-    return Expected(**fields)
+        if field in _REQUIRED_BY_PHASE[phase]:
+            _require(type(value) is str and pattern.fullmatch(value),
+                     "EXPECTED_SELECTOR_UNVERIFIED")
+            fields[field] = value
+        else:
+            _require(value in (None, ""), "UNEXPECTED_PHASE_SELECTOR")
+    pin = None
+    if phase != "BOOTSTRAP":
+        _require(type(TRUSTED_HELPER_SHA256) is str and
+                 _HEX64.fullmatch(TRUSTED_HELPER_SHA256),
+                 "ROOT_HELPER_TRUSTED_MAIN_PIN_ABSENT")
+        pin = TRUSTED_HELPER_SHA256
+    return Expected(phase=phase, helper_sha256=pin, **fields)
 
 
 def _read_bounded(folder, name):
@@ -163,8 +191,16 @@ def _validate_installation(folder, expected):
     _require(mode & 0o100 and not mode & 0o022,
              "ROOT_HELPER_MODE_UNVERIFIED")
     observed_digest = _text(folder, "helper.sha")
-    _require(observed_digest == expected.helper_sha256 + "  " + HELPER_PATH,
+    digest_and_name = observed_digest.split("  ", 1)
+    _require(len(digest_and_name) == 2 and
+             _HEX64.fullmatch(digest_and_name[0]) and
+             digest_and_name[1] == HELPER_PATH,
              "ROOT_HELPER_DIGEST_UNVERIFIED")
+    observed_sha = digest_and_name[0]
+    if expected.phase != "BOOTSTRAP":
+        _require(observed_sha == expected.helper_sha256,
+                 "ROOT_HELPER_TRUSTED_PIN_MISMATCH")
+    return observed_sha
 
 
 def _validate_prebirth(proof, expected):
@@ -211,39 +247,64 @@ def _validate_current(proof, expected):
 
 
 def validate_evidence(folder, expected):
-    """Require *both* physical receipts; no source-only automatic GO."""
+    """Never require future POSTSEAL CIDs to authorize PREBIRTH observation."""
     _require(isinstance(expected, Expected), "EXPECTED_SELECTOR_UNVERIFIED")
-    _validate_installation(folder, expected)
-    prebirth = _receipt(folder, "prebirth.json")
-    current = _receipt(folder, "current.json")
-    _validate_prebirth(prebirth, expected)
-    fingerprints = _validate_current(current, expected)
+    observed_helper_sha = _validate_installation(folder, expected)
+    active_file = {"BOOTSTRAP": None, "PREBIRTH": "prebirth.json",
+                   "POSTSEAL": "current.json"}[expected.phase]
+    # Do not recycle or accidentally mix observations from different phases.
+    for name in ("prebirth.json", "current.json"):
+        if name != active_file:
+            path = folder / name
+            _require(not path.exists() and not path.is_symlink(),
+                     "CROSS_PHASE_RECEIPT_FORBIDDEN")
 
-    # A reproducible digest binds exact, unredacted bytes while public output
-    # discloses no host IP, login, full CID or runtime private contents.
-    digest = hashlib.sha256()
-    for name in _READ_LIMITS:
-        raw = _read_bounded(folder, name)
-        digest.update(name.encode("ascii") + b"\x00" + str(len(raw)).encode("ascii") + b"\x00" + raw)
-    return {
+    report = {
         "schema": SCHEMA,
-        "status": "READONLY_EVIDENCE_ONLY",
-        "candidate_sha": expected.candidate_sha,
-        "candidate_tree": expected.candidate_tree,
-        "generation": expected.generation,
-        "artifact_digest": expected.artifact_digest,
-        "image_id": expected.image_id,
-        "helper_sha256": expected.helper_sha256,
-        "daemon_fingerprint": hashlib.sha256(expected.daemon_id.encode()).hexdigest()[:16],
-        "role_cid_fingerprints": fingerprints,
-        "paper_mode": "PRODUCTION_PAPER",
-        "real_orders_sent": 0,
-        "ppi_watch_accessed": False,
-        "source_receipts_sha256": digest.hexdigest(),
+        "phase": expected.phase,
+        "status": {
+            "BOOTSTRAP": "BOOTSTRAP_OBSERVATION_ONLY",
+            "PREBIRTH": "PREBIRTH_EVIDENCE_ONLY",
+            "POSTSEAL": "POSTSEAL_EVIDENCE_ONLY",
+        }[expected.phase],
+        "helper_sha256_observed": observed_helper_sha,
+        "paper_mode": "NO_VERIFICADO",
+        "real_orders_sent": "NO_VERIFICADO",
+        "ppi_watch_accessed": "NO_VERIFICADO",
         "host_control_verified": False,
         "runtime_verified": False,
         "deploy_authorized": False,
     }
+    if expected.phase != "BOOTSTRAP":
+        report.update(candidate_sha=expected.candidate_sha,
+                      candidate_tree_requested=expected.candidate_tree,
+                      helper_sha256_trusted_main_pin=expected.helper_sha256)
+    if expected.phase == "PREBIRTH":
+        prebirth = _receipt(folder, "prebirth.json")
+        _validate_prebirth(prebirth, expected)
+        report.update(paper_mode="PRODUCTION_PAPER", real_orders_sent=0,
+                      ppi_watch_accessed=False)
+    elif expected.phase == "POSTSEAL":
+        current = _receipt(folder, "current.json")
+        fingerprints = _validate_current(current, expected)
+        report.update(generation=expected.generation,
+                      artifact_digest=expected.artifact_digest,
+                      image_id=expected.image_id,
+                      daemon_fingerprint=hashlib.sha256(
+                          expected.daemon_id.encode()).hexdigest()[:16],
+                      role_cid_fingerprints=fingerprints,
+                      declared_paper_mode="PRODUCTION_PAPER")
+
+    # A reproducible digest binds exact, unredacted bytes while public output
+    # discloses no host IP, login, full CID or runtime private contents.
+    digest = hashlib.sha256()
+    common = ("droplet_id.txt", "region.txt", "helper.stat", "helper.sha")
+    names = common + ((active_file,) if active_file is not None else ())
+    for name in names:
+        raw = _read_bounded(folder, name)
+        digest.update(name.encode("ascii") + b"\x00" + str(len(raw)).encode("ascii") + b"\x00" + raw)
+    report["source_receipts_sha256"] = digest.hexdigest()
+    return report
 
 
 def main(argv=None, *, env=None):
@@ -256,7 +317,8 @@ def main(argv=None, *, env=None):
         if argv == ["--check-inputs"]:
             print("RC6_HOST_PREFLIGHT_INPUTS=GREEN|host_control_verified=NO_VERIFICADO")
             return 0
-        if len(argv) != 3 or argv[0] not in ("--verify", "--check-host") or argv[1] != "--evidence-dir":
+        if len(argv) != 3 or argv[0] not in (
+                "--verify", "--check-host", "--check-helper") or argv[1] != "--evidence-dir":
             raise PreflightHold("CLI_SHAPE")
         folder = Path(argv[2])
         _require(folder.is_absolute() and folder.is_dir() and not folder.is_symlink(),
@@ -264,6 +326,10 @@ def main(argv=None, *, env=None):
         if argv[0] == "--check-host":
             _validate_host_identity(folder)
             print("RC6_HOST_IDENTITY=PINNED|host_control_verified=NO_VERIFICADO")
+            return 0
+        if argv[0] == "--check-helper":
+            _validate_installation(folder, expected)
+            print("RC6_HOST_HELPER=OBSERVED|host_control_verified=NO_VERIFICADO")
             return 0
         report = validate_evidence(folder, expected)
         print(json.dumps(report, sort_keys=True, separators=(",", ":")))

@@ -3,33 +3,37 @@ name: RC6 HOST physical evidence read-only R277
 on:
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: Exact SHA of the reviewed RC6 candidate (not host GO)
+      phase:
+        description: BOOTSTRAP before release, PREBIRTH before mutation, POSTSEAL after deploy
         required: true
+        type: choice
+        options:
+          - BOOTSTRAP
+          - PREBIRTH
+          - POSTSEAL
+      candidate_sha:
+        description: Reviewed candidate SHA (PREBIRTH/POSTSEAL only)
+        required: false
         type: string
       candidate_tree:
-        description: Exact candidate Git tree
-        required: true
+        description: Reviewed candidate tree (PREBIRTH/POSTSEAL only)
+        required: false
         type: string
       generation:
-        description: Independently approved root-owned OCI generation
-        required: true
+        description: Exact new root-owned generation (POSTSEAL only)
+        required: false
         type: string
       artifact_digest:
-        description: Exact immutable release artifact sha256 digest
-        required: true
+        description: Immutable artifact digest (POSTSEAL only)
+        required: false
         type: string
       image_id:
-        description: Exact immutable OCI image sha256 ID
-        required: true
+        description: New OCI image ID (POSTSEAL only)
+        required: false
         type: string
       daemon_id:
-        description: Pinned RC6 rootful Docker daemon identity
-        required: true
-        type: string
-      helper_sha256:
-        description: SHA256 of independently installed root-owned helper
-        required: true
+        description: Rootful Docker daemon ID (POSTSEAL only)
+        required: false
         type: string
 
 # This workflow cannot grant a deploy or modify a protected branch/issue.
@@ -47,13 +51,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 7
     env:
+      RC6_PREFLIGHT_PHASE: ${{ inputs.phase }}
       RC6_EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       RC6_EXPECTED_CANDIDATE_TREE: ${{ inputs.candidate_tree }}
       RC6_EXPECTED_GENERATION: ${{ inputs.generation }}
       RC6_EXPECTED_ARTIFACT_DIGEST: ${{ inputs.artifact_digest }}
       RC6_EXPECTED_IMAGE_ID: ${{ inputs.image_id }}
       RC6_EXPECTED_DAEMON_ID: ${{ inputs.daemon_id }}
-      RC6_EXPECTED_HELPER_SHA256: ${{ inputs.helper_sha256 }}
     steps:
       - name: Checkout only the exact protected main event SHA
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -143,13 +147,30 @@ jobs:
           capture helper.sha 256 \
             '/usr/bin/sha256sum /usr/local/sbin/porota-rc6-oci-custody'
 
-          # Missing root installer, external writer attestor or three sealed
-          # exact-CID proof MUST emit HOLD79. Never attempt an alternative
-          # interpreter, docker command, SSH sudo shell, or host mutation.
-          capture prebirth.json 2048 \
-            'sudo -n /usr/local/sbin/porota-rc6-oci-custody quiescence verify-prebirth'
-          CURRENT_COMMAND="sudo -n /usr/local/sbin/porota-rc6-oci-custody verify-current --candidate-sha $RC6_EXPECTED_CANDIDATE_SHA --candidate-tree $RC6_EXPECTED_CANDIDATE_TREE --generation $RC6_EXPECTED_GENERATION --artifact-digest $RC6_EXPECTED_ARTIFACT_DIGEST --image-id $RC6_EXPECTED_IMAGE_ID"
-          capture current.json 4096 "$CURRENT_COMMAND"
+          # Phase split breaks the former PREDEPLOY↔NEWBORN-CID circular gate.
+          # BOOTSTRAP has *no sudo* and only observes helper bytes; it cannot
+          # approve its own hash. PREBIRTH needs an independently trusted-main
+          # pin for the installed helper and an external writer attestor, but
+          # NEVER references an image/newborn CID. POSTSEAL is for after the
+          # consolidated Deploy V2 only; it never asserts live DB/PAPER/0.
+          case "$RC6_PREFLIGHT_PHASE" in
+            BOOTSTRAP)
+              echo 'RC6_HOST_PHASE=BOOTSTRAP|sudo=0|release_selectors=0|host_go=NO'
+              ;;
+            PREBIRTH)
+              python3 -I scripts/rc6_host_preflight_readonly.py \
+                --check-helper --evidence-dir "$EVID_DIR" >/dev/null || exit 79
+              capture prebirth.json 2048 \
+                'sudo -n /usr/local/sbin/porota-rc6-oci-custody quiescence verify-prebirth'
+              ;;
+            POSTSEAL)
+              python3 -I scripts/rc6_host_preflight_readonly.py \
+                --check-helper --evidence-dir "$EVID_DIR" >/dev/null || exit 79
+              CURRENT_COMMAND="sudo -n /usr/local/sbin/porota-rc6-oci-custody verify-current --candidate-sha $RC6_EXPECTED_CANDIDATE_SHA --candidate-tree $RC6_EXPECTED_CANDIDATE_TREE --generation $RC6_EXPECTED_GENERATION --artifact-digest $RC6_EXPECTED_ARTIFACT_DIGEST --image-id $RC6_EXPECTED_IMAGE_ID"
+              capture current.json 4096 "$CURRENT_COMMAND"
+              ;;
+            *) exit 79 ;;
+          esac
 
           set +e
           REPORT="$(python3 -I scripts/rc6_host_preflight_readonly.py --verify --evidence-dir "$EVID_DIR")"
@@ -160,5 +181,5 @@ jobs:
             exit 79
           fi
           # Public logs get a minimized binding, not IP, full CID or secrets.
-          echo 'RC6_HOST_PREFLIGHT=READONLY_EVIDENCE_ONLY|host_control_verified=NO_VERIFICADO|deploy_authorized=NO'
+          echo "RC6_HOST_PREFLIGHT=${RC6_PREFLIGHT_PHASE}_EVIDENCE_ONLY|host_control_verified=NO_VERIFICADO|deploy_authorized=NO"
           echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
