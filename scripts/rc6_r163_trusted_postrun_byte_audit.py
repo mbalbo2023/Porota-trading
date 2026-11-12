@@ -15,6 +15,7 @@ artifact ZIP digest must match GitHub REST. No R144/HOLD79/release gate is lifte
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import io
 import ipaddress
@@ -56,6 +57,7 @@ TAR_FILES = frozenset({
     "cadence/cadence-legacy.json",
 })
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
+UTC_RFC3339 = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 CID64 = re.compile(r"[0-9a-f]{64}\Z")
 PATH_SEGMENT = re.compile(r"[a-zA-Z0-9_.+@-]+\Z")
@@ -116,6 +118,17 @@ def _red(reason: str) -> None:
 
 def _positive(value: Any) -> bool:
     return type(value) is int and value > 0
+
+
+
+def _utc_timestamp(value: Any, reason: str) -> datetime:
+    """Exact GitHub UTC second/fraction timestamp; reject offsets/coercions."""
+    if type(value) is not str or UTC_RFC3339.fullmatch(value) is None:
+        _red(reason)
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        _red(reason)
 
 
 def _sha(value: Any) -> bool:
@@ -247,6 +260,40 @@ def _identity(event: Mapping[str, Any], run: Mapping[str, Any],
     return sha, commit["tree"]["sha"], _name(sha, expected_run_id, expected_run_attempt)
 
 
+
+def _attempt_window(attempt: Mapping[str, Any], *,
+                    sha: str, run_id: int, attempt_number: int) -> tuple[datetime, datetime]:
+    """Bind the *specific* REST run attempt, not the original run's created_at.
+
+    A previous attempt may upload an artifact bearing the future attempt name.
+    Only GitHub's authenticated attempt-N run_started_at establishes when
+    attempt N actually began; timestamp equality is ambiguous at seconds
+    precision and is intentionally rejected for artifact creation.
+    """
+    if (type(attempt) is not dict or
+            not _positive(attempt.get("id")) or attempt["id"] != run_id or
+            not _positive(attempt.get("run_attempt")) or
+            attempt["run_attempt"] != attempt_number or
+            attempt.get("head_sha") != sha or
+            attempt.get("head_branch") != CANDIDATE_REF or
+            attempt.get("path") != UPSTREAM_PATH or
+            attempt.get("name") != UPSTREAM_NAME or
+            attempt.get("event") != "pull_request" or
+            type(attempt.get("repository")) is not dict or
+            attempt["repository"].get("full_name") != REPOSITORY or
+            type(attempt.get("head_repository")) is not dict or
+            attempt["head_repository"].get("full_name") != REPOSITORY):
+        _red("ATTEMPT_IDENTITY_MISMATCH")
+    if attempt.get("status") != "completed" or attempt.get("conclusion") != "success":
+        _red("ATTEMPT_NOT_SUCCESS")
+    start = _utc_timestamp(attempt.get("run_started_at"), "ATTEMPT_TIMESTAMP_INVALID")
+    created = _utc_timestamp(attempt.get("created_at"), "ATTEMPT_TIMESTAMP_INVALID")
+    finish = _utc_timestamp(attempt.get("updated_at"), "ATTEMPT_TIMESTAMP_INVALID")
+    if not start <= created <= finish or not start < finish:
+        _red("ATTEMPT_TIMESTAMP_INVALID")
+    return start, finish
+
+
 def _select_attempt_artifact(artifact_list: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     if not isinstance(artifact_list, dict) or not isinstance(artifact_list.get("artifacts"), list):
         _red("ARTIFACT_LIST_AMBIGUOUS")
@@ -264,7 +311,8 @@ def _select_attempt_artifact(artifact_list: Mapping[str, Any], name: str) -> Map
 
 
 def _artifact_identity(artifact_list: Mapping[str, Any], artifact: Mapping[str, Any],
-                       *, name: str, sha: str, run_id: int) -> tuple[int, str, int]:
+                       *, name: str, sha: str, run_id: int,
+                       attempt_window: tuple[datetime, datetime]) -> tuple[int, str, int]:
     listed = _select_attempt_artifact(artifact_list, name)
     if not isinstance(artifact, dict) or artifact.get("id") != listed["id"]:
         _red("ARTIFACT_ID_MISMATCH")
@@ -286,6 +334,14 @@ def _artifact_identity(artifact_list: Mapping[str, Any], artifact: Mapping[str, 
         _red("ARTIFACT_RUN_MISMATCH")
     if workflow.get("head_sha") != sha:
         _red("ARTIFACT_SHA_MISMATCH")
+    for key in ("created_at", "updated_at"):
+        if listed.get(key) != artifact.get(key):
+            _red("ARTIFACT_TIMESTAMP_MISMATCH")
+    created = _utc_timestamp(artifact.get("created_at"), "ARTIFACT_TIMESTAMP_INVALID")
+    updated = _utc_timestamp(artifact.get("updated_at"), "ARTIFACT_TIMESTAMP_INVALID")
+    start, finish = attempt_window
+    if not start < created <= updated <= finish:
+        _red("ARTIFACT_ATTEMPT_WINDOW_INVALID")
     return artifact["id"], digest[7:], artifact["size_in_bytes"]
 
 
@@ -772,6 +828,7 @@ def _native_evidence(payload: Mapping[str, bytes], *, sha: str,
 
 
 def verify_postrun_bytes(*, event: Mapping[str, Any], run: Mapping[str, Any],
+                         attempt: Mapping[str, Any],
                          pr: Mapping[str, Any], commit: Mapping[str, Any],
                          artifact_list: Mapping[str, Any], artifact: Mapping[str, Any],
                          zip_bytes: bytes, expected_run_id: int,
@@ -779,8 +836,11 @@ def verify_postrun_bytes(*, event: Mapping[str, Any], run: Mapping[str, Any],
     """Authenticate caller-supplied REST receipts and exact bytes; no GO."""
     sha, tree, name = _identity(event, run, pr, commit,
                                 expected_run_id, expected_run_attempt)
+    window = _attempt_window(attempt, sha=sha, run_id=expected_run_id,
+                             attempt_number=expected_run_attempt)
     artifact_id, digest, size = _artifact_identity(
-        artifact_list, artifact, name=name, sha=sha, run_id=expected_run_id)
+        artifact_list, artifact, name=name, sha=sha, run_id=expected_run_id,
+        attempt_window=window)
     payload = _zip_evidence(zip_bytes, sha=sha, tree=tree, name=name,
                             run_id=expected_run_id, attempt=expected_run_attempt,
                             digest=digest, expected_size=size)
@@ -907,9 +967,11 @@ def audit_from_github(client: Any, *, event: Mapping[str, Any],
         _red("EXPECTED_RUN_INVALID")
     prefix = f"/repos/{REPOSITORY}"
     run_path = f"{prefix}/actions/runs/{expected_run_id}"
+    attempt_path = f"{run_path}/attempts/{expected_run_attempt}"
     pr_path = f"{prefix}/pulls/{PR_NUMBER}"
     list_path = f"{run_path}/artifacts?per_page=100"
     run = client.get_json(run_path)
+    attempt = client.get_json(attempt_path)
     pr = client.get_json(pr_path)
     sha = run.get("head_sha")
     if not _sha(sha):
@@ -917,32 +979,52 @@ def audit_from_github(client: Any, *, event: Mapping[str, Any],
     commit = client.get_json(f"{prefix}/git/commits/{sha}")
     sha_checked, tree, name = _identity(event, run, pr, commit,
                                         expected_run_id, expected_run_attempt)
+    window = _attempt_window(attempt, sha=sha_checked,
+                             run_id=expected_run_id,
+                             attempt_number=expected_run_attempt)
     artifact_list = client.get_json(list_path)
     artifact_id = _select_attempt_artifact(artifact_list, name)["id"]
     artifact_path = f"{prefix}/actions/artifacts/{artifact_id}"
     artifact = client.get_json(artifact_path)
     # Validate all metadata BEFORE accepting the potentially large download.
     _artifact_identity(artifact_list, artifact, name=name,
-                       sha=sha_checked, run_id=expected_run_id)
+                       sha=sha_checked, run_id=expected_run_id,
+                       attempt_window=window)
     raw = client.get_zip(artifact_id)
     verified = verify_postrun_bytes(
-        event=event, run=run, pr=pr, commit=commit,
+        event=event, run=run, attempt=attempt, pr=pr, commit=commit,
         artifact_list=artifact_list, artifact=artifact, zip_bytes=raw,
         expected_run_id=expected_run_id, expected_run_attempt=expected_run_attempt,
     )
     # A new PR push, rerun attempt, artifact replacement or deleted run during
     # the ZIP fetch invalidates the result. No stale-state or name fallback.
     run_after = client.get_json(run_path)
+    attempt_after = client.get_json(attempt_path)
     pr_after = client.get_json(pr_path)
     list_after = client.get_json(list_path)
     artifact_after = client.get_json(artifact_path)
+    immutable_attempt_keys = (
+        "id", "run_attempt", "head_sha", "head_branch", "path", "name",
+        "event", "status", "conclusion", "run_started_at", "created_at",
+        "updated_at",
+    )
+    if any(attempt_after.get(key) != attempt.get(key)
+           for key in immutable_attempt_keys):
+        _red("REST_RACE_RED")
     try:
         reverified = verify_postrun_bytes(
-            event=event, run=run_after, pr=pr_after, commit=commit,
+            event=event, run=run_after, attempt=attempt_after,
+            pr=pr_after, commit=commit,
             artifact_list=list_after, artifact=artifact_after, zip_bytes=raw,
             expected_run_id=expected_run_id,
             expected_run_attempt=expected_run_attempt,
         )
+        before_row = _select_attempt_artifact(artifact_list, name)
+        after_row = _select_attempt_artifact(list_after, name)
+        for key in ("created_at", "updated_at"):
+            if (artifact_after.get(key) != artifact.get(key) or
+                    after_row.get(key) != before_row.get(key)):
+                _red("REST_RACE_RED")
     except PostrunEvidenceRed:
         _red("REST_RACE_RED")
     if reverified != verified:
