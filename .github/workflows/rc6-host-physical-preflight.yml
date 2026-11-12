@@ -1,0 +1,164 @@
+name: RC6 HOST physical evidence read-only R277
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact SHA of the reviewed RC6 candidate (not host GO)
+        required: true
+        type: string
+      candidate_tree:
+        description: Exact candidate Git tree
+        required: true
+        type: string
+      generation:
+        description: Independently approved root-owned OCI generation
+        required: true
+        type: string
+      artifact_digest:
+        description: Exact immutable release artifact sha256 digest
+        required: true
+        type: string
+      image_id:
+        description: Exact immutable OCI image sha256 ID
+        required: true
+        type: string
+      daemon_id:
+        description: Pinned RC6 rootful Docker daemon identity
+        required: true
+        type: string
+      helper_sha256:
+        description: SHA256 of independently installed root-owned helper
+        required: true
+        type: string
+
+# This workflow cannot grant a deploy or modify a protected branch/issue.
+permissions:
+  contents: read
+
+# Prevent physical observation while a single consolidated deploy owns host.
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  evidence_only:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    env:
+      RC6_EXPECTED_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      RC6_EXPECTED_CANDIDATE_TREE: ${{ inputs.candidate_tree }}
+      RC6_EXPECTED_GENERATION: ${{ inputs.generation }}
+      RC6_EXPECTED_ARTIFACT_DIGEST: ${{ inputs.artifact_digest }}
+      RC6_EXPECTED_IMAGE_ID: ${{ inputs.image_id }}
+      RC6_EXPECTED_DAEMON_ID: ${{ inputs.daemon_id }}
+      RC6_EXPECTED_HELPER_SHA256: ${{ inputs.helper_sha256 }}
+    steps:
+      - name: Checkout only the exact protected main event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Reject malformed candidate/host selectors before any SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_EVENT_NAME" = workflow_dispatch && "$GITHUB_REF" = refs/heads/main ]] || exit 79
+          python3 -I scripts/rc6_host_preflight_readonly.py --check-inputs
+
+      - name: Capture exact host witness without mutations or broad inventory
+        timeout-minutes: 5
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          # The check is repeated inside the SSH step. Never interpolate a
+          # workflow_dispatch string into root shell syntax before validation.
+          python3 -I scripts/rc6_host_preflight_readonly.py --check-inputs >/dev/null
+          if [[ -z "${DO_HOST:-}" || -z "${DO_USER:-}" || -z "${DO_SSH_KEY:-}" ||
+                -z "${DO_KNOWN_HOSTS:-}" ||
+                ! "$DO_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$ ||
+                ! "$DO_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,30}$ ]]; then
+            echo 'RC6_HOST_PREFLIGHT=HOLD79|reason=SSH_IDENTITY_UNVERIFIED|host_control_verified=NO_VERIFICADO'
+            exit 79
+          fi
+
+          EVID_DIR="$(mktemp -d "$RUNNER_TEMP/rc6-host-preflight.XXXXXXXX")"
+          # Runner-only ephemeral files, never a host data cleanup command.
+          cleanup_runner_evidence() {
+            rm -f -- "$EVID_DIR/ssh_key" "$EVID_DIR/known_hosts" \
+              "$EVID_DIR/droplet_id.txt" "$EVID_DIR/region.txt" \
+              "$EVID_DIR/helper.stat" "$EVID_DIR/helper.sha" \
+              "$EVID_DIR/prebirth.json" "$EVID_DIR/current.json"
+            rmdir -- "$EVID_DIR" || true
+          }
+          trap cleanup_runner_evidence EXIT
+          printf '%s\n' "$DO_SSH_KEY" > "$EVID_DIR/ssh_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$EVID_DIR/known_hosts"
+          chmod 600 "$EVID_DIR/ssh_key" "$EVID_DIR/known_hosts"
+          SSH=(ssh -T -i "$EVID_DIR/ssh_key" -o BatchMode=yes \
+            -o ConnectTimeout=8 -o ConnectionAttempts=1 \
+            -o ServerAliveInterval=5 -o ServerAliveCountMax=2 \
+            -o IdentitiesOnly=yes -o ControlMaster=no \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$EVID_DIR/known_hosts")
+
+          # Each call has a fixed read-only remote verb and bounded stdout.
+          # The only privileged commands are the *literal* approved helper.
+          capture() {
+            local output_name="$1" cap="$2" command="$3" first second size
+            set +e
+            timeout --signal=TERM --kill-after=3s 22 \
+              "${SSH[@]}" "$DO_USER@$DO_HOST" "$command" 2>/dev/null \
+              | head -c "$((cap + 1))" > "$EVID_DIR/$output_name"
+            first="${PIPESTATUS[0]}" second="${PIPESTATUS[1]}"
+            set -e
+            size="$(wc -c < "$EVID_DIR/$output_name")"
+            if [[ "$first" -ne 0 || "$second" -ne 0 || "$size" -gt "$cap" ]]; then
+              echo 'RC6_HOST_PREFLIGHT=HOLD79|reason=REMOTE_WITNESS_UNVERIFIED|host_control_verified=NO_VERIFICADO'
+              exit 79
+            fi
+          }
+
+          # No Docker/global process/systemd/PPI/Boca inventory. Only the
+          # DigitalOcean link-local identity and fixed installed-helper inode.
+          capture droplet_id.txt 32 \
+            '/usr/bin/curl -fsS --connect-timeout 3 --max-time 5 http://169.254.169.254/metadata/v1/id'
+          capture region.txt 32 \
+            '/usr/bin/curl -fsS --connect-timeout 3 --max-time 5 http://169.254.169.254/metadata/v1/region'
+          # Validate exact Porota DO id/region before even probing a root
+          # executable. A different droplet (including Boca) MUST stop here.
+          python3 -I scripts/rc6_host_preflight_readonly.py \
+            --check-host --evidence-dir "$EVID_DIR" >/dev/null || exit 79
+          capture helper.stat 128 \
+            'LC_ALL=C /usr/bin/stat -c "%u|%a|%h|%F" /usr/local/sbin/porota-rc6-oci-custody'
+          capture helper.sha 256 \
+            '/usr/bin/sha256sum /usr/local/sbin/porota-rc6-oci-custody'
+
+          # Missing root installer, external writer attestor or three sealed
+          # exact-CID proof MUST emit HOLD79. Never attempt an alternative
+          # interpreter, docker command, SSH sudo shell, or host mutation.
+          capture prebirth.json 2048 \
+            'sudo -n /usr/local/sbin/porota-rc6-oci-custody quiescence verify-prebirth'
+          CURRENT_COMMAND="sudo -n /usr/local/sbin/porota-rc6-oci-custody verify-current --candidate-sha $RC6_EXPECTED_CANDIDATE_SHA --candidate-tree $RC6_EXPECTED_CANDIDATE_TREE --generation $RC6_EXPECTED_GENERATION --artifact-digest $RC6_EXPECTED_ARTIFACT_DIGEST --image-id $RC6_EXPECTED_IMAGE_ID"
+          capture current.json 4096 "$CURRENT_COMMAND"
+
+          set +e
+          REPORT="$(python3 -I scripts/rc6_host_preflight_readonly.py --verify --evidence-dir "$EVID_DIR")"
+          REPORT_RC=$?
+          set -e
+          if [[ "$REPORT_RC" -ne 0 ]]; then
+            echo "$REPORT"
+            exit 79
+          fi
+          # Public logs get a minimized binding, not IP, full CID or secrets.
+          echo 'RC6_HOST_PREFLIGHT=READONLY_EVIDENCE_ONLY|host_control_verified=NO_VERIFICADO|deploy_authorized=NO'
+          echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
