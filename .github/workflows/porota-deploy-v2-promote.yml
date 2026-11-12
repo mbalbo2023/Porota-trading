@@ -26,7 +26,8 @@ jobs:
   release-evidence-required:
     name: Require exact R252 postmerge RELEASE + independent host authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # R252 rehashes an exact GitHub D ZIP up to 2 GiB; bounded but not 5 min.
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read

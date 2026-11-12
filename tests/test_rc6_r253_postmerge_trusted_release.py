@@ -85,6 +85,17 @@ def test_r253_release_adapter_only_trusted_immutable_source_and_no_host_go():
     assert promote["needs"] == "release-evidence-required"
 
 
+def test_r253_r252_large_release_zip_audit_has_bounded_runner_time():
+    """A GitHub REST D artifact up to 2 GiB must not hit a 5-minute cutoff.
+
+    A 30-minute bound covers the trusted main R252 ZIP fetch+verification
+    without making the source guard a non-terminating worker.
+    """
+    _, gate, _ = _jobs()
+    assert 20 <= int(gate["timeout-minutes"]) <= 45
+    assert gate["timeout-minutes"] == "30"
+
+
 @pytest.mark.parametrize("event,ref,sha,reason", [
     ("push", PRODUCT_REF, PRODUCT_SHA, "TRUSTED_MAIN_SOURCE_UNPINNED"),
     ("pull_request", PRODUCT_REF, PRODUCT_SHA, "SOURCE_EVENT_OR_REF_MISMATCH"),

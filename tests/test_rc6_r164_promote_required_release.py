@@ -280,7 +280,7 @@ class R164PromoteRequiredReleaseTests(unittest.TestCase):
             ("fake_candidate_audit", "PYTHONDONTWRITEBYTECODE=1 python3 -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py", "PYTHONDONTWRITEBYTECODE=1 python3 -I scripts/rc6_ci_release_required_guard.py"),
             ("fake_github_event", 'if [[ "$GITHUB_EVENT_NAME" != push', 'if [[ "$GITHUB_EVENT_NAME" == push'),
             ("allow_secrets", "    permissions:\n      contents: read\n      actions: read\n", "    permissions:\n      contents: write\n      actions: read\n"),
-            ("ignore_failures", "    timeout-minutes: 5\n    permissions:\n      contents: read\n", "    continue-on-error: true\n    timeout-minutes: 5\n    permissions:\n      contents: read\n"),
+            ("ignore_failures", "    timeout-minutes: 30\n    permissions:\n      contents: read\n", "    continue-on-error: true\n    timeout-minutes: 30\n    permissions:\n      contents: read\n"),
             ("unreviewed_host_step", "    steps:\n      - name: Reject unpinned", "    steps:\n      - name: Unexpected host action\n        run: sudo -n true\n      - name: Reject unpinned"),
             ("change_mutex", "  group: rc6-unified-paper-deploy", "  group: rc6-split-promote-mutex"),
             ("new_host_job", "jobs:\n  # R253 adapter ONLY.", "jobs:\n  bypass-host:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh invalid-host\n  # R253 adapter ONLY."),
