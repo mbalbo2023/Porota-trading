@@ -109,7 +109,8 @@ jobs:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
             tests/test_rc6_r163_native_volume_proof.py::test_docker24_neutral_mount_serialization_remains_accepted \
             tests/test_rc6_r163_native_volume_proof.py::test_foreign_or_privileged_docker_identity_is_hold79 \
-            tests/test_rc6_r163_native_volume_proof.py::test_mount_hold79_reports_only_boolean_subchecks
+            tests/test_rc6_r163_native_volume_proof.py::test_mount_hold79_reports_only_boolean_subchecks \
+            tests/test_rc6_r163_native_volume_proof.py::test_r186_physical_linux_docker28_mode_semantics
           echo 'RC6_R163_MOUNT_DIAGNOSTIC=PY311_FIXTURES_ONLY'
 
   offhost-native-proof:
