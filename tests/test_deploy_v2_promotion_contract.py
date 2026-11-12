@@ -22,8 +22,19 @@ def test_deploy_v2_is_the_only_rc6_production_push_path():
 def test_deploy_v2_requires_merge_tree_identity_and_successful_predeploy():
     assert 'CANDIDATE_TREE="$(git rev-parse "$CANDIDATE_SHA^{tree}")"' in PROMOTE
     assert 'test "$CANDIDATE_TREE" = "$DEPLOY_TREE"' in PROMOTE
-    assert 'run.get("name")!="Porota Predeploy V2"' in PROMOTE
-    assert 'run.get("conclusion")!="success"' in PROMOTE
+    # R253 supersedes the unsafe latest-by-name/date Predeploy lookup with
+    # an immutable, independently audited R252 postmerge D/E byte receipt.
+    assert '--trusted-release-mode PRODUCT_POSTMERGE' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_bytes_verified == \'true\'' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_product_sha == github.sha' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_candidate_tree != \'\'' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_artifact_id != \'\'' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_artifact_digest != \'\'' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.release_run_attempt != \'\'' in PROMOTE
+    assert 'needs.release-evidence-required.outputs.trusted_main_audit_run_id != \'\'' in PROMOTE
+    assert 'candidate!=os.environ[\'CANDIDATE_SHA\'] or tree!=os.environ[\'CANDIDATE_TREE\']' in PROMOTE
+    assert '/actions/artifacts?name=' not in PROMOTE
+    assert 'created_at' not in PROMOTE
 
 
 def test_deploy_v2_preserves_paper_and_ppi_watch_invariants():
