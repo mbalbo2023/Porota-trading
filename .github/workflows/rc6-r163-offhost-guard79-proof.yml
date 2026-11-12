@@ -301,6 +301,10 @@ jobs:
               print("RC6_R163_JUNIT=HOLD79|" + reason, file=sys.stderr)
               raise SystemExit(79)
 
+          def bounded_count(value):
+              # Keep diagnostic output bounded even for untrusted XML counters.
+              return str(value) if value <= 999_999_999 else ">999999999"
+
           total = 0
           for relative in expected:
               path = root / relative
@@ -314,7 +318,7 @@ jobs:
               suites = [xml] if xml.tag == "testsuite" else list(xml.findall(".//testsuite"))
               if not suites:
                   hold("JUNIT_SUITE_MISSING")
-              for suite in suites:
+              for suite_index, suite in enumerate(suites):
                   counts = {}
                   for key in ("tests", "failures", "errors", "skipped"):
                       raw = suite.get(key)
@@ -324,6 +328,21 @@ jobs:
                   if (counts["tests"] < 1 or
                           counts["tests"] != len(suite.findall("testcase")) or
                           any(counts[key] for key in ("failures", "errors", "skipped"))):
+                      # No XML payload or absolute path: only the fixed relative
+                      # allowlist member, suite index and bounded counts.
+                      direct = len(suite.findall("testcase"))
+                      descendant = len(suite.findall(".//testcase"))
+                      print(
+                          "RC6_R163_JUNIT_DETAIL=HOLD79"
+                          f"|relative_path={relative}|suite_index={suite_index}"
+                          f"|tests={bounded_count(counts['tests'])}"
+                          f"|testcases_direct={bounded_count(direct)}"
+                          f"|testcases_descendant={bounded_count(descendant)}"
+                          f"|failures={bounded_count(counts['failures'])}"
+                          f"|errors={bounded_count(counts['errors'])}"
+                          f"|skipped={bounded_count(counts['skipped'])}",
+                          file=sys.stderr,
+                      )
                       hold("JUNIT_COUNTS_NOT_ZERO_SKIP")
                   total += counts["tests"]
               if any(next(xml.iter(tag), None) is not None

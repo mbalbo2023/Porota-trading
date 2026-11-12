@@ -13,6 +13,7 @@ from rc6_dynamic_universe.benchmark import run_benchmark
 from rc6_dynamic_universe.capacity import safe_capacity
 from rc6_dynamic_universe.common import digest
 from ppi_synthetic_budget_fixtures import SyntheticWireLease
+from ppi_synthetic_auth_fixtures import allow_fake_auth_only
 
 
 class Clock:
@@ -85,6 +86,7 @@ def wire(monkeypatch):
         return response
 
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    allow_fake_auth_only(monkeypatch)
     # A legacy capacity experiment uses a fake HTTP adapter, not real PPI.
     # Opt into an isolated synthetic lease rather than weakening production's
     # shared-budget fail-closed guard for unauthorised provider reads.

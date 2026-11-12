@@ -8,6 +8,7 @@ import requests
 
 from bd_ppi_readonly_guard import ProductionAuthResponseError, ProductionMarketReader
 from ppi_synthetic_budget_fixtures import SyntheticWireLease
+from ppi_synthetic_auth_fixtures import allow_fake_auth_only
 
 
 LOGIN = "https://clientapi.portfoliopersonal.com/api/1.0/account/loginapi"
@@ -38,6 +39,7 @@ def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
     # Patch before installing the allowlisted guard, so its original_send is
     # a strictly local fake. Any extra provider request is counted and fails.
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", fake_send)
+    allow_fake_auth_only(monkeypatch)
 
     class FakePPI:
         def __init__(self, *, sandbox):

@@ -239,6 +239,93 @@ def test_native_junit_guard_rejects_adversarial_false_pass_receipts(tmp_path, ca
     assert result.returncode != 0, case
 
 
+@pytest.mark.parametrize("relative,overrides,direct_cases", (
+    ("native-bound.xml", {"tests": "2"}, 1),
+    ("session/treasury_caucion.xml", {"skipped": "1"}, 1),
+    ("session/sql_shadow_wal.xml", {"errors": "1"}, 1),
+    ("session/dashboard_auth_52.xml", {"failures": "1"}, 1),
+    ("session/publication_io_identity.xml", {"tests": "0"}, 0),
+    ("session/scalping_capacity.xml", {"tests": "1"}, 2),
+    ("session/scheduler_monitor_backup.xml", {"tests": "1000000000000"}, 1),
+))
+def test_native_junit_count_hold_emits_bounded_path_and_exact_small_counts(
+        tmp_path, relative, overrides, direct_cases):
+    """A real HOLD79 must identify its offending JUnit without leaking XML content."""
+    _make_junit_proofs(tmp_path)
+    target = tmp_path / relative
+    xml = ET.parse(target).getroot()
+    suite = xml.find("testsuite")
+    assert suite is not None
+    suite.attrib.update(overrides)
+    for testcase in list(suite.findall("testcase")):
+        suite.remove(testcase)
+    for index in range(direct_cases):
+        ET.SubElement(suite, "testcase", {"name": f"synthetic-{index}"})
+    ET.ElementTree(xml).write(target, encoding="utf-8")
+
+    result = _run_junit_guard(tmp_path)
+    assert result.returncode == 79
+    expected_counts = {"tests": "1", "failures": "0", "errors": "0", "skipped": "0"}
+    expected_counts.update(overrides)
+    if len(expected_counts["tests"]) > 9:
+        expected_counts["tests"] = ">999999999"
+    detail = (f"RC6_R163_JUNIT_DETAIL=HOLD79|relative_path={relative}|suite_index=0"
+              f"|tests={expected_counts['tests']}|testcases_direct={direct_cases}"
+              f"|testcases_descendant={direct_cases}"
+              f"|failures={expected_counts['failures']}|errors={expected_counts['errors']}"
+              f"|skipped={expected_counts['skipped']}")
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        detail,
+        "RC6_R163_JUNIT=HOLD79|JUNIT_COUNTS_NOT_ZERO_SKIP",
+    ]
+
+
+def test_native_junit_count_hold_reports_offending_suite_index(tmp_path):
+    _make_junit_proofs(tmp_path)
+    relative = "session/treasury_caucion.xml"
+    target = tmp_path / relative
+    xml = ET.parse(target).getroot()
+    invalid = ET.SubElement(xml, "testsuite", {
+        "tests": "2", "failures": "0", "errors": "0", "skipped": "0",
+    })
+    ET.SubElement(invalid, "testcase", {"name": "synthetic"})
+    ET.ElementTree(xml).write(target, encoding="utf-8")
+
+    result = _run_junit_guard(tmp_path)
+    assert result.returncode == 79
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == [
+        "RC6_R163_JUNIT_DETAIL=HOLD79|relative_path=session/treasury_caucion.xml"
+        "|suite_index=1|tests=2|testcases_direct=1|testcases_descendant=1"
+        "|failures=0|errors=0|skipped=0",
+        "RC6_R163_JUNIT=HOLD79|JUNIT_COUNTS_NOT_ZERO_SKIP",
+    ]
+
+
+def test_native_junit_count_hold_distinguishes_nested_from_direct_cases(tmp_path):
+    _make_junit_proofs(tmp_path)
+    target = tmp_path / "session/sources_readiness_network.xml"
+    xml = ET.parse(target).getroot()
+    suite = xml.find("testsuite")
+    assert suite is not None
+    testcase = suite.find("testcase")
+    assert testcase is not None
+    suite.remove(testcase)
+    wrapper = ET.SubElement(suite, "properties")
+    wrapper.append(testcase)
+    ET.ElementTree(xml).write(target, encoding="utf-8")
+
+    result = _run_junit_guard(tmp_path)
+    assert result.returncode == 79
+    assert result.stderr.splitlines() == [
+        "RC6_R163_JUNIT_DETAIL=HOLD79|relative_path=session/sources_readiness_network.xml"
+        "|suite_index=0|tests=1|testcases_direct=0|testcases_descendant=1"
+        "|failures=0|errors=0|skipped=0",
+        "RC6_R163_JUNIT=HOLD79|JUNIT_COUNTS_NOT_ZERO_SKIP",
+    ]
+
+
 def test_all_bash_steps_have_valid_syntax_not_just_matching_policy_text():
     scripts = [(job_name, step["name"], step["run"])
                for job_name, job in _workflow()["jobs"].items()
