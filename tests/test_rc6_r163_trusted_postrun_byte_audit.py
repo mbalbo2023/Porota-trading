@@ -212,6 +212,20 @@ def _evidence():
             "expected_run_id": RUN, "expected_run_attempt": ATTEMPT}
 
 
+
+def _evidence_with_attempt():
+    evidence = _evidence()
+    evidence["attempt"] = dict(
+        evidence["run"], run_started_at="2026-11-12T03:04:13Z",
+        created_at="2026-11-12T03:04:14Z",
+        updated_at="2026-11-12T03:35:00Z",
+    )
+    for receipt in (evidence["artifact"], evidence["artifact_list"]["artifacts"][0]):
+        receipt["created_at"] = "2026-11-12T03:30:00Z"
+        receipt["updated_at"] = "2026-11-12T03:30:02Z"
+    return evidence
+
+
 def _red(evidence, reason):
     try:
         verify_postrun_bytes(**evidence)
@@ -871,11 +885,19 @@ class FakeGitHub:
         self.calls = []
         self.pr_call_count = 0
         self.change_pr_on_second_read = False
+        self.attempt_call_count = 0
+        self.change_attempt_on_second_read = False
 
     def get_json(self, path):
         self.calls.append(("json", path))
         if path.endswith("/actions/runs/991"):
             return self.evidence["run"]
+        if path.endswith("/actions/runs/991/attempts/2"):
+            self.attempt_call_count += 1
+            if self.change_attempt_on_second_read and self.attempt_call_count >= 2:
+                return dict(self.evidence["attempt"],
+                            run_started_at="2026-11-12T03:04:12Z")
+            return self.evidence["attempt"]
         if path.endswith("/pulls/1087"):
             self.pr_call_count += 1
             if self.change_pr_on_second_read and self.pr_call_count >= 2:
@@ -919,6 +941,82 @@ def test_pr_head_moved_during_download_fails_closed_after_initial_match():
         assert str(exc) == "REST_RACE_RED", str(exc)
     else:
         raise AssertionError("STALE_PR_HEAD_NOT_REJECTED")
+
+
+
+def test_future_attempt_named_artifact_created_in_previous_attempt_is_stale():
+    evidence = _evidence_with_attempt()
+    # All artifact/name/run/head/manifest/digest fields are valid for attempt 2,
+    # but artifact.created_at belongs to attempt 1, prior to attempt 2 start.
+    evidence["attempt"]["run_started_at"] = "2026-11-12T03:31:00Z"
+    evidence["attempt"]["created_at"] = "2026-11-12T03:31:01Z"
+    _red(evidence, "ARTIFACT_ATTEMPT_WINDOW_INVALID")
+
+
+def test_same_second_as_attempt_start_is_ambiguous_and_fails_closed():
+    evidence = _evidence_with_attempt()
+    at_start = evidence["attempt"]["run_started_at"]
+    for receipt in (evidence["artifact"], evidence["artifact_list"]["artifacts"][0]):
+        receipt["created_at"] = at_start
+    _red(evidence, "ARTIFACT_ATTEMPT_WINDOW_INVALID")
+
+
+def test_attempt_receipt_identity_and_success_are_mandatory():
+    for key, value, reason in (
+        ("id", RUN + 1, "ATTEMPT_IDENTITY_MISMATCH"),
+        ("run_attempt", ATTEMPT - 1, "ATTEMPT_IDENTITY_MISMATCH"),
+        ("head_sha", "c" * 40, "ATTEMPT_IDENTITY_MISMATCH"),
+        ("path", ".github/workflows/evil.yml", "ATTEMPT_IDENTITY_MISMATCH"),
+        ("name", "different workflow", "ATTEMPT_IDENTITY_MISMATCH"),
+        ("event", "workflow_dispatch", "ATTEMPT_IDENTITY_MISMATCH"),
+        ("status", "in_progress", "ATTEMPT_NOT_SUCCESS"),
+        ("conclusion", "failure", "ATTEMPT_NOT_SUCCESS"),
+    ):
+        evidence = _evidence_with_attempt()
+        evidence["attempt"][key] = value
+        _red(evidence, reason)
+
+
+def test_attempt_and_artifact_timestamp_malformed_missing_and_out_of_window_red():
+    for location, key, value, reason in (
+        ("attempt", "run_started_at", None, "ATTEMPT_TIMESTAMP_INVALID"),
+        ("attempt", "run_started_at", "2026-11-12T03:04:13+00:00", "ATTEMPT_TIMESTAMP_INVALID"),
+        ("attempt", "run_started_at", "2026-13-12T03:04:13Z", "ATTEMPT_TIMESTAMP_INVALID"),
+        ("attempt", "updated_at", "2026-11-12T03:02:00Z", "ATTEMPT_TIMESTAMP_INVALID"),
+        ("attempt", "created_at", "2026-11-12T03:40:00Z", "ATTEMPT_TIMESTAMP_INVALID"),
+        ("artifact", "created_at", None, "ARTIFACT_TIMESTAMP_INVALID"),
+        ("artifact", "created_at", "2026-11-12", "ARTIFACT_TIMESTAMP_INVALID"),
+        ("artifact", "created_at", "2026-11-12T03:20:00-00:00", "ARTIFACT_TIMESTAMP_INVALID"),
+        ("artifact", "updated_at", "2026-11-12T03:40:00Z", "ARTIFACT_ATTEMPT_WINDOW_INVALID"),
+        ("artifact", "updated_at", "2026-11-12T03:00:00Z", "ARTIFACT_ATTEMPT_WINDOW_INVALID"),
+    ):
+        evidence = _evidence_with_attempt()
+        evidence[location][key] = value
+        if location == "artifact":
+            evidence["artifact_list"]["artifacts"][0][key] = value
+        _red(evidence, reason)
+
+
+def test_artifact_list_and_detail_timestamps_cannot_disagree():
+    evidence = _evidence_with_attempt()
+    evidence["artifact_list"]["artifacts"][0]["created_at"] = "2026-11-12T03:30:01Z"
+    _red(evidence, "ARTIFACT_TIMESTAMP_MISMATCH")
+    evidence = _evidence_with_attempt()
+    del evidence["artifact_list"]["artifacts"][0]["updated_at"]
+    _red(evidence, "ARTIFACT_TIMESTAMP_MISMATCH")
+
+
+def test_attempt_metadata_changed_after_download_is_rest_race_red():
+    evidence = _evidence_with_attempt()
+    client = FakeGitHub(evidence)
+    client.change_attempt_on_second_read = True
+    try:
+        audit_from_github(client, event=evidence["event"],
+                          expected_run_id=RUN, expected_run_attempt=ATTEMPT)
+    except PostrunEvidenceRed as exc:
+        assert str(exc) == "REST_RACE_RED", str(exc)
+    else:
+        raise AssertionError("STALE_ATTEMPT_WINDOW_NOT_REJECTED")
 
 
 def test_zip_redirect_must_be_https_host_allowlisted_and_no_auth_in_url():
