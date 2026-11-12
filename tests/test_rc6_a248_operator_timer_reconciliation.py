@@ -197,7 +197,7 @@ def test_mutex_is_mandatory_before_any_systemd_mutation(scenario, monkeypatch):
     write_intent(path, historical=True)
     monkeypatch.setattr(host, "_require_inherited_finalizer_mutex", REAL_MUTEX_GUARD)
     monkeypatch.delenv("RC6_DEPLOY_MUTEX_FD", raising=False)
-    with pytest.raises(RuntimeError, match="MUTEX_CONSUMER_PROTOCOL_UNMIGRATED"):
+    with pytest.raises(RuntimeError, match="MUTEX_CONSUMER_WITNESS_REQUIRED"):
         host.reconcile_finalized_operator_paper_timer(CANDIDATE, TREE)
     assert calls == []
 
