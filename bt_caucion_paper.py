@@ -772,6 +772,21 @@ class CaucionBook:
 
     def settle_due(self, as_of):
         at = aware_datetime(as_of)
+        # Full-ledger/fee-receipt validation remains mandatory even when no
+        # OPEN position has matured. In the usual no-due case avoid reserving
+        # the SQLite writer lock on every observer tick (including BYMA T+1).
+        read = self.store.connect()
+        try:
+            with read:
+                read.execute("BEGIN")
+                pending = self.positions(status='OPEN', connection=read)
+                if not any(aware_datetime(p["maturity_at"]) <= at for p in pending):
+                    return []
+        finally:
+            read.close()
+
+        # Precheck is only an optimization. Re-read under the write lock:
+        # another contender may have settled the same PAPER maturity meanwhile.
         settled = []
         with self.store.connect() as c:
             c.execute("BEGIN IMMEDIATE")

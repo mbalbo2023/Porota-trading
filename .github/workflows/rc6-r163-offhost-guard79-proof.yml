@@ -152,10 +152,12 @@ jobs:
 
   offhost-native-proof:
     name: Native CID and anonymous volume producer (offhost)
+    needs: [python311-lock-closure]
     if: >-
       ${{ github.event_name == 'pull_request' &&
       github.event.pull_request.number == 1087 &&
-      github.event.pull_request.head.repo.full_name == github.repository }}
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.python311-lock-closure.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -239,6 +241,9 @@ jobs:
           proof_root="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r163-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-XXXXXXXX")"
           [[ -d "$proof_root" && ! -L "$proof_root" ]] || exit 79
           mkdir -m 700 "$proof_root/evidence"
+          # Private Docker inspect may contain host/source paths and secrets.
+          # Only PUBLIC_INSPECT_V2 may enter the artifact evidence directory.
+          mkdir -m 700 "$proof_root/private"
           printf 'RC6_EVIDENCE_ROOT=%s\n' "$proof_root/evidence" >> "$GITHUB_ENV"
           owned_cid() {
             local cid="$1" role="$2" actual expected
@@ -439,20 +444,46 @@ jobs:
             echo 'RC6_R191_COLLECTOR_RO=HOLD79|exec_unverified' >&2
             exit 79
           fi
-          docker inspect "$source_cid" > "$proof_root/evidence/source-inspect.json"
-          docker inspect "$collector_cid" > "$proof_root/evidence/collector-inspect.json"
+          # Treat Docker inspect as PRIVATE and unpublishable, even on error.
+          docker inspect "$source_cid" > "$proof_root/private/source-inspect.json" 2>/dev/null
+          docker inspect "$collector_cid" > "$proof_root/private/collector-inspect.json" 2>/dev/null
           python scripts/rc6_r163_native_volume_proof.py inspect \
-            --producer-inspect "$proof_root/evidence/source-inspect.json" \
-            --collector-inspect "$proof_root/evidence/collector-inspect.json" \
+            --producer-inspect "$proof_root/private/source-inspect.json" \
+            --collector-inspect "$proof_root/private/collector-inspect.json" \
             --source-cid "$source_cid" --collector-cid "$collector_cid" \
             --candidate-sha "$CANDIDATE_SHA" --candidate-tree-sha "$CANDIDATE_TREE_SHA" \
             --image-id "$IMAGE_ID" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --role bundle \
             > "$proof_root/evidence/custody.json"
+          python scripts/rc6_r163_native_volume_proof.py project \
+            --producer-inspect "$proof_root/private/source-inspect.json" \
+            --collector-inspect "$proof_root/private/collector-inspect.json" \
+            --producer-public "$proof_root/evidence/source-inspect.json" \
+            --collector-public "$proof_root/evidence/collector-inspect.json" \
+            --source-cid "$source_cid" --collector-cid "$collector_cid" \
+            --candidate-sha "$CANDIDATE_SHA" --candidate-tree-sha "$CANDIDATE_TREE_SHA" \
+            --image-id "$IMAGE_ID" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --role bundle
+          echo 'RC6_R203_PUBLIC_INSPECT=V2_PROJECTED_ONLY|raw_not_public|no_host_attestation'
           # Exact CID stdout binary USTAR. No TTY and no host bind or filesystem copy.
           docker exec --user 1000:1000 "$collector_cid" \
             python scripts/rc6_r163_native_volume_proof.py pack --proof-root /app/data \
             > "$proof_root/evidence/native.tar"
+          # Verify real TAR13 payload structure and known secret signatures.
+          # The marker is random FAKE data confined to memory, never uploaded.
+          python scripts/rc6_r163_native_volume_proof.py privacy \
+            --tar "$proof_root/evidence/native.tar"
+          python - "$proof_root/evidence" <<'PY'
+          from pathlib import Path
+          import sys
+          from scripts import rc6_r163_native_volume_proof as proof
+          root = Path(sys.argv[1])
+          proof.challenge_privacy_patterns(
+              (root / "native.tar").read_bytes(),
+              (root / "source-inspect.json").read_bytes(),
+              (root / "collector-inspect.json").read_bytes())
+          print("RC6_R203_PRIVACY=TAR13_AND_PUBLIC_V2_NEGATIVE_CANARY|not_host_proof")
+          PY
           python scripts/rc6_r163_native_volume_proof.py attest \
             --tar "$proof_root/evidence/native.tar" \
             --custody "$proof_root/evidence/custody.json" \
@@ -474,20 +505,32 @@ jobs:
           printf 'source_cid=%s\n' "$source_cid" >> "$GITHUB_OUTPUT"
           printf 'collector_cid=%s\n' "$collector_cid" >> "$GITHUB_OUTPUT"
           printf 'volume_name=%s\n' "$volume_name" >> "$GITHUB_OUTPUT"
+          # Exact private raw files are unlinked after CID/volume validation and
+          # public V2 digest commitments. Only this ephemeral runner subdir.
+          python - "$proof_root/private" <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+          assert root.is_dir() and not root.is_symlink()
+          assert sorted(p.name for p in root.iterdir()) == [
+              "collector-inspect.json", "source-inspect.json"]
+          for name in ("source-inspect.json", "collector-inspect.json"):
+              item = root / name
+              assert item.is_file() and not item.is_symlink()
+              os.unlink(item)
+          root.rmdir()
+          print("RC6_R203_PRIVATE_INSPECT=UNLINKED|digest_commitments_only")
+          PY
           echo 'RC6_NATIVE_EVIDENCE_PATHS=13_SEALED_OFFHOST'
-          # Security R181/R190: source/collector Docker inspect contains
-          # private Env, GraphDriver, LogPath and Source. Keep all raw files
-          # within the ephemeral runner and fail BEFORE zip/artifact upload
-          # until PUBLIC_INSPECT_V2 is independently proved trusted-main.
-          echo 'RC6_R191_PUBLIC_INSPECT=HOLD79|no_raw_artifact|no_release' >&2
-          exit 79
+          echo 'RC6_R203_NATIVE=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO'
       - name: Seal all evidence before upload (artifact ID assigned later)
         shell: bash
         run: |
           set -Eeuo pipefail
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json, os, re
+          import hashlib, io, json, os, re, secrets, zipfile
           root = Path(os.environ["RC6_EVIDENCE_ROOT"])
           assert root.is_dir() and not root.is_symlink()
           names = sorted(p.name for p in root.iterdir())
@@ -515,6 +558,39 @@ jobs:
           (root / "porota-artifact-byte-manifest-v1.json").write_text(
               json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
               encoding="utf-8")
+          # A preview assembled IN MEMORY from the exact six proposed files:
+          # this is a privacy challenge, not the GitHub-generated ZIP proof.
+          from scripts import rc6_r163_native_volume_proof as proof
+          custody = json.loads((root / "custody.json").read_bytes())
+          identity = {key: custody[key] for key in (
+              "source_cid", "collector_cid", "candidate_sha",
+              "candidate_tree_sha", "image_id", "run_id",
+              "run_attempt", "role")}
+          payloads = {p.name: p.read_bytes() for p in root.iterdir()}
+          assert sorted(payloads) == sorted((
+              "source-inspect.json", "collector-inspect.json", "custody.json",
+              "native.tar", "native-manifest.json",
+              "porota-artifact-byte-manifest-v1.json"))
+          def preview_zip(contents):
+              buffer = io.BytesIO()
+              with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as z:
+                  for relative in sorted(contents):
+                      z.writestr(relative, contents[relative])
+              return buffer.getvalue()
+          assert proof.verify_probe_zip_privacy(
+              preview_zip(payloads), **identity) == 13
+          marker = ("CANARY_SECRET_" + secrets.token_hex(16)).encode()
+          for relative in sorted(payloads):
+              challenged = dict(payloads)
+              challenged[relative] = marker + challenged[relative]
+              try:
+                  proof.verify_probe_zip_privacy(
+                      preview_zip(challenged), **identity)
+              except proof.VolumeProofHold as exc:
+                  assert exc.reason == "PRIVACY_ZIP_SECRET_SIGNATURE"
+              else:
+                  raise proof.VolumeProofHold("PRIVACY_ZIP_CANARY_BYPASS")
+          print("RC6_R203_PRIVACY=PREUPLOAD_6_ZIP_MEMBERS_CHALLENGED|not_rest_artifact")
           print("RC6_R163_UPLOAD=OFFHOST_BYTES_ONLY|artifact_id_not_in_zip")
           PY
       - name: Upload sealed offhost probe evidence (never release artifact)
@@ -673,13 +749,14 @@ jobs:
                   ("volume_name", os.environ["RC6_VOLUME_NAME"]),
               ):
                   assert native[key] == expected_value
-              # Independent runner re-parses Docker inspect source/collector
-              # and every raw TAR byte. The PR-supplied parser is still NOT
-              # a trusted default-ref release bootstrap.
+              # Public V2 projections are producer-controlled. This runner
+              # checks allowlisted claims and every TAR byte but CANNOT replay
+              # the private Docker inspect SHA256 preimages. Trusted-main is
+              # still an independent postrun byte verifier, not host proof.
               from scripts import rc6_r163_native_volume_proof as proof
-              recomputed_custody = proof.verify_volume_chain(
-                  producer_inspect_json=members.read("source-inspect.json"),
-                  collector_inspect_json=members.read("collector-inspect.json"),
+              recomputed_custody = proof.verify_public_inspects_v2(
+                  producer_public_json=members.read("source-inspect.json"),
+                  collector_public_json=members.read("collector-inspect.json"),
                   source_cid=os.environ["RC6_SOURCE_CID"],
                   collector_cid=os.environ["RC6_COLLECTOR_CID"],
                   candidate_sha=os.environ["RC6_EXPECTED_SHA"],
@@ -700,6 +777,16 @@ jobs:
                   expected_volume_name=os.environ["RC6_VOLUME_NAME"],
                   expected_image_id=os.environ["RC6_IMAGE_ID"],
                   expected_role="bundle") == native
+              assert proof.verify_probe_zip_privacy(
+                  archive,
+                  source_cid=os.environ["RC6_SOURCE_CID"],
+                  collector_cid=os.environ["RC6_COLLECTOR_CID"],
+                  candidate_sha=os.environ["RC6_EXPECTED_SHA"],
+                  candidate_tree_sha=os.environ["RC6_EXPECTED_TREE"],
+                  image_id=os.environ["RC6_IMAGE_ID"],
+                  run_id=os.environ["GITHUB_RUN_ID"],
+                  run_attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                  role="bundle") == 13
           print("RC6_R163_PRELIMINARY=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO")
           print("RC6_R163_POSTRUN=NO_VERIFICADO|POSTRUN_TRUSTED_DEFAULT_WORKFLOW_REQUIRED")
           PY
@@ -710,7 +797,9 @@ jobs:
           {
             echo '### R163 HITO D: OFFHOST PROBE ONLY'
             echo '- Real native source/collector CIDs and ephemeral anonymous volume attempted.'
-            echo '- Raw ZIP REST and member hashes checked preliminarily in separate runner.'
+            echo '- Raw REST ZIP/member hashes checked preliminarily in separate runner.'
+            echo '- Public Docker inspect V2 allowlist; PRIVATE raw never uploaded.'
+            echo '- Unpublished raw Docker SHA256 commitments cannot be replayed.'
             echo '- Final trusted completed-run bytes verification: NO_VERIFICADO.'
             echo '- R144/HOLD79 unchanged; release_go=NO; runtime_verified=NO.'
             echo '- Next: POSTRUN_TRUSTED_DEFAULT_WORKFLOW pinned after review.'

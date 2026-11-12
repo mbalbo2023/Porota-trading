@@ -211,8 +211,10 @@ def assert_product_promotion_fail_closed(source: str) -> None:
         "PROMOTE_ALTERNATE_JOB_IF",
     )
     _require(
-        "    if: ${{ always()" not in promote
-        and "    if: ${{ failure()" not in promote,
+        re.search(
+            r"(?m)^ {4}if:[ \t]*\$\{\{\s*(?:always|failure)\(", promote
+        )
+        is None,
         "PROMOTE_ALWAYS_OR_FAILURE_BYPASS",
     )
     _require(
@@ -239,6 +241,7 @@ class R164PromoteRequiredReleaseTests(unittest.TestCase):
             ("no_prerequisite", "    needs: release-evidence-required\n", ""),
             ("wrong_dependency", "    needs: release-evidence-required\n", "    needs: artifact-gate\n"),
             ("conditional_bypass", "    if: >-\n      ${{ needs.release-evidence-required.result", "    if: ${{ always() }}\n      ${{ needs.release-evidence-required.result"),
+            ("job_level_failure_bypass", "    if: >-\n      ${{ needs.release-evidence-required.result", "    if: ${{ failure() }}\n      ${{ needs.release-evidence-required.result"),
             ("drop_SHA_binding", "needs.release-evidence-required.outputs.release_product_sha == github.sha", "true"),
             ("drop_byte_proof", "needs.release-evidence-required.outputs.release_bytes_verified == 'true'", "true"),
             ("drop_artifact_id", "needs.release-evidence-required.outputs.release_artifact_id != ''", "true"),

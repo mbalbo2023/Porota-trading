@@ -165,5 +165,25 @@ class TestA785CaucionSettlementNoDueWAL(unittest.TestCase):
                              .fetchone()["n"], 1)
 
 
+    def test_no_due_closes_read_snapshot_when_reference_is_held(self):
+        self.store.insert("FUTURE", maturity=self.TOMORROW)
+        original_connect = self.store.connect
+        held = []
+
+        def tracked_connect():
+            connection = original_connect()
+            held.append(connection)
+            return connection
+
+        self.store.connect = tracked_connect
+        try:
+            self.assertEqual(self.settle(self.book, self.AT), [])
+        finally:
+            self.store.connect = original_connect
+        self.assertEqual(len(held), 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            held[0].execute("SELECT 1")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,9 @@ import re
 import stat
 import sys
 import tarfile
+import zipfile as _zipfile
+import secrets as _secrets
+import xml.etree.ElementTree as _etree
 from typing import Any
 
 
@@ -261,6 +264,431 @@ def verify_volume_chain(*, producer_inspect_json: bytes,
         "gid": 1000,
         "host_or_runtime_verified": False,
     }
+
+
+# R203 public producer projection. This is a privacy boundary, not a new
+# source of host/Docker trust. The independently pinned trusted-main parser
+# maintains a separate allowlist for the same versioned artifact schema.
+PUBLIC_INSPECT_SCHEMA = "RC6_R163_PUBLIC_INSPECT_V2"
+_PUBLIC_INSPECT_KEYS = frozenset({
+    "schema", "schema_version", "role", "status", "raw_inspect",
+    "source_redaction", "record", "host_or_runtime_verified",
+})
+_PUBLIC_RECORD_KEYS = frozenset({"Id", "Image", "Config", "HostConfig", "Mounts"})
+_PUBLIC_MOUNT_KEYS = frozenset({
+    "Type", "Name", "Driver", "Destination", "Mode", "RW",
+})
+_PUBLIC_HOST_KEYS = frozenset({
+    "Privileged", "ReadonlyRootfs", "NetworkMode", "CapDrop", "CapAdd",
+    "Devices", "Tmpfs", "PublishAllPorts", "PortBindings", "Links",
+    "ExtraHosts", "SecurityOpt", "Binds", "IpcMode", "UTSMode",
+    "PidMode", "UsernsMode", "CgroupnsMode", "GroupAdd", "DeviceRequests",
+    "DeviceCgroupRules", "Runtime", "Sysctls", "CgroupParent",
+    "VolumesFrom", "Mounts",
+})
+_PRIVACY_SECRET_RE = re.compile(
+    rb"(?i)(?:CANARY_SECRET|-----BEGIN [A-Z ]*PRIVATE KEY-----|"
+    rb"github_pat_[A-Za-z0-9_]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|"
+    rb"(?:authorization|proxy-authorization)\s*[\"']?\s*[:=]\s*[\"']?"
+    rb"(?:bearer|basic)\s+[A-Za-z0-9._~-]{8,}|"
+    rb"(?:api[_-]?key|client[_-]?secret|access[_-]?token|"
+    rb"refresh[_-]?token|password|passwd|private[_-]?key)"
+    rb"\s*[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{4,}|"
+    rb"/var/lib/docker/|/home/runner/work/|"
+    rb"https?://[^\s\"'/]+:[^\s\"'@/]+@)"
+)
+_PRIVACY_JSON_DENIED_KEYS = frozenset({
+    "authorization", "proxy-authorization", "password", "passwd",
+    "api_key", "apikey", "client_secret", "access_token", "refresh_token",
+    "private_key", "secret_key", "github_token", "ppi_token",
+})
+
+
+def _public_inspect_record(private_raw: bytes, *, collector: bool) -> dict:
+    parsed = _json_bytes(private_raw)
+    _require(type(parsed) is list and len(parsed) == 1 and
+             type(parsed[0]) is dict, "PUBLIC_PRIVATE_INSPECT_SHAPE")
+    entry = parsed[0]
+    host, config, mounts = entry.get("HostConfig"), entry.get("Config"), entry.get("Mounts")
+    # The mandatory private verifier has already checked every field below.
+    _require(type(host) is dict and type(config) is dict and
+             type(mounts) is list and len(mounts) == 1 and
+             type(mounts[0]) is dict, "PUBLIC_PRIVATE_INSPECT_SHAPE")
+    safe_host = {key: value for key, value in host.items() if key in _PUBLIC_HOST_KEYS}
+    declaration = "NOT_APPLICABLE"
+    if not collector:
+        declared = safe_host["Mounts"][0]
+        _require(type(declared) is dict, "PUBLIC_PRIVATE_MOUNT_SHAPE")
+        declaration = "EMPTY" if "Source" in declared else "ABSENT"
+        # Source is private even when the Docker declaration is empty.
+        safe_host["Mounts"] = [{key: value for key, value in declared.items()
+                               if key != "Source"}]
+    projected = {
+        "schema": PUBLIC_INSPECT_SCHEMA,
+        "schema_version": 2,
+        "role": "bundle-collector" if collector else "bundle",
+        "status": "OFFHOST_PROJECTED_EVIDENCE_ONLY",
+        "raw_inspect": {
+            "sha256": hashlib.sha256(private_raw).hexdigest(),
+            "size_bytes": len(private_raw),
+            "published": False,
+        },
+        "source_redaction": {
+            "hostconfig_declaration": declaration,
+            "runtime_source_nonempty_observed": True,
+        },
+        "record": {
+            "Id": entry["Id"],
+            "Image": entry["Image"],
+            "Config": {"User": config["User"], "Labels": config["Labels"]},
+            "HostConfig": safe_host,
+            "Mounts": [{key: mounts[0][key] for key in _PUBLIC_MOUNT_KEYS}],
+        },
+        "host_or_runtime_verified": False,
+    }
+    return projected
+
+
+def _canonical_public_inspect_bytes(document: dict) -> bytes:
+    return (json.dumps(document, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+
+
+def project_public_inspects_v2(*, producer_inspect_json: bytes,
+                               collector_inspect_json: bytes,
+                               source_cid: str, collector_cid: str,
+                               candidate_sha: str, candidate_tree_sha: str,
+                               image_id: str, run_id: str, run_attempt: str,
+                               role: str) -> tuple[bytes, bytes]:
+    """Verify the PRIVATE Docker inspect pair, then disclose a safe V2 projection.
+
+    Neither raw JSON, raw Docker mount paths, environment, driver state nor log
+    paths leave the ephemeral runner. SHA256/size are producer commitments only.
+    """
+    _require(role == "bundle", "PUBLIC_ROLE_UNSUPPORTED")
+    identity = {
+        "source_cid": source_cid, "collector_cid": collector_cid,
+        "candidate_sha": candidate_sha, "candidate_tree_sha": candidate_tree_sha,
+        "image_id": image_id, "run_id": run_id,
+        "run_attempt": run_attempt, "role": role,
+    }
+    verify_volume_chain(producer_inspect_json=producer_inspect_json,
+                        collector_inspect_json=collector_inspect_json, **identity)
+    projected = (
+        _canonical_public_inspect_bytes(_public_inspect_record(
+            producer_inspect_json, collector=False)),
+        _canonical_public_inspect_bytes(_public_inspect_record(
+            collector_inspect_json, collector=True)),
+    )
+    verify_public_inspects_v2(producer_public_json=projected[0],
+                              collector_public_json=projected[1],
+                              **identity)
+    return projected
+
+
+def _public_to_private_surrogate(raw: bytes, *, collector: bool) -> bytes:
+    """Strictly parse allowlisted claims; the surrogate is NOT Docker raw proof."""
+    document = _json_bytes(raw)
+    _require(type(document) is dict and
+             set(document) == _PUBLIC_INSPECT_KEYS and
+             document["schema"] == PUBLIC_INSPECT_SCHEMA and
+             type(document["schema_version"]) is int and
+             document["schema_version"] == 2 and
+             document["role"] == ("bundle-collector" if collector else "bundle") and
+             document["status"] == "OFFHOST_PROJECTED_EVIDENCE_ONLY" and
+             document["host_or_runtime_verified"] is False,
+             "PUBLIC_INSPECT_SCHEMA")
+    private = document["raw_inspect"]
+    _require(type(private) is dict and
+             set(private) == {"sha256", "size_bytes", "published"} and
+             type(private["sha256"]) is str and
+             _DIGEST.fullmatch(private["sha256"]) is not None and
+             type(private["size_bytes"]) is int and
+             0 < private["size_bytes"] <= 262144 and
+             private["published"] is False, "PUBLIC_RAW_DIGEST_INVALID")
+    redaction = document["source_redaction"]
+    _require(type(redaction) is dict and
+             set(redaction) == {"hostconfig_declaration",
+                                "runtime_source_nonempty_observed"} and
+             redaction["hostconfig_declaration"] in (
+                 ("NOT_APPLICABLE",) if collector else ("ABSENT", "EMPTY")) and
+             redaction["runtime_source_nonempty_observed"] is True,
+             "PUBLIC_SOURCE_REDACTION_INVALID")
+    record = document["record"]
+    _require(type(record) is dict and set(record) == _PUBLIC_RECORD_KEYS and
+             type(record["Config"]) is dict and
+             set(record["Config"]) == {"User", "Labels"} and
+             type(record["HostConfig"]) is dict and
+             set(record["HostConfig"]).issubset(_PUBLIC_HOST_KEYS) and
+             type(record["Mounts"]) is list and
+             len(record["Mounts"]) == 1 and
+             type(record["Mounts"][0]) is dict and
+             set(record["Mounts"][0]) == _PUBLIC_MOUNT_KEYS,
+             "PUBLIC_RECORD_ALLOWLIST")
+    safe_host = record["HostConfig"]
+    if not collector:
+        declaration = safe_host.get("Mounts")
+        _require(type(declaration) is list and len(declaration) == 1 and
+                 type(declaration[0]) is dict and
+                 "Source" not in declaration[0], "PUBLIC_MOUNT_SOURCE_PRESENT")
+    # A fixed surrogate satisfies the pre-existing pure contract verifier.
+    # Its synthetic Source cannot establish host/runtime custody or attest
+    # to the unpublished raw SHA256 preimage; trusted-main is independent.
+    surrogate = {
+        "Id": record["Id"], "Image": record["Image"],
+        "Config": record["Config"], "HostConfig": safe_host,
+        "Mounts": [{**record["Mounts"][0],
+                    "Source": "/redacted-untrusted-projection"}],
+    }
+    return json.dumps([surrogate], sort_keys=True,
+                      separators=(",", ":"), ensure_ascii=True).encode("ascii")
+
+
+def verify_public_inspects_v2(*, producer_public_json: bytes,
+                              collector_public_json: bytes,
+                              source_cid: str, collector_cid: str,
+                              candidate_sha: str, candidate_tree_sha: str,
+                              image_id: str, run_id: str, run_attempt: str,
+                              role: str) -> dict:
+    """Check public V2 semantics without pretending raw Docker replay."""
+    _require(role == "bundle", "PUBLIC_ROLE_UNSUPPORTED")
+    return verify_volume_chain(
+        producer_inspect_json=_public_to_private_surrogate(
+            producer_public_json, collector=False),
+        collector_inspect_json=_public_to_private_surrogate(
+            collector_public_json, collector=True),
+        source_cid=source_cid, collector_cid=collector_cid,
+        candidate_sha=candidate_sha, candidate_tree_sha=candidate_tree_sha,
+        image_id=image_id, run_id=run_id,
+        run_attempt=run_attempt, role=role,
+    )
+
+
+def _privacy_json_tree(value: Any, *, depth: int, budget: list[int]) -> None:
+    _require(depth <= 32 and budget[0] > 0, "PRIVACY_JSON_DEPTH_OR_SIZE")
+    budget[0] -= 1
+    if type(value) is dict:
+        for key, child in value.items():
+            _require(type(key) is str and
+                     key.lower() not in _PRIVACY_JSON_DENIED_KEYS,
+                     "PRIVACY_JSON_SECRET_KEY")
+            _privacy_json_tree(child, depth=depth + 1, budget=budget)
+    elif type(value) is list:
+        for child in value:
+            _privacy_json_tree(child, depth=depth + 1, budget=budget)
+    elif type(value) is str:
+        _require(_PRIVACY_SECRET_RE.search(value.encode("utf-8")) is None,
+                 "PRIVACY_JSON_DECODED_SECRET")
+    else:
+        _require(value is None or type(value) in (int, float, bool),
+                 "PRIVACY_JSON_TYPE")
+
+
+def _privacy_check_member(name: str, content: bytes) -> None:
+    """Best-effort high-signal privacy policy, not an absence-of-secrets proof."""
+    _require(b"\x00" not in content, "PRIVACY_PAYLOAD_BINARY")
+    _require(_PRIVACY_SECRET_RE.search(content) is None,
+             "PRIVACY_SECRET_SIGNATURE")
+    try:
+        content.decode("utf-8")  # one canonical text encoding only
+        if name.endswith(".xml"):
+            # Reject entity/DOCTYPE injection; JUnit must be synthetic XML.
+            _require(b"<!DOCTYPE" not in content.upper() and
+                     b"<!ENTITY" not in content.upper() and
+                     b"<![CDATA[" not in content.upper(),
+                     "PRIVACY_XML_META")
+            root = _etree.fromstring(content)
+            _require(root.tag in ("testsuite", "testsuites"),
+                     "PRIVACY_XML_ROOT")
+            for node in root.iter():
+                for value in (node.text, node.tail, *node.attrib.values()):
+                    if value is not None:
+                        _require(_PRIVACY_SECRET_RE.search(
+                            value.encode("utf-8")) is None,
+                            "PRIVACY_XML_DECODED_SECRET")
+        else:
+            parsed = json.loads(content.decode("utf-8"),
+                                object_pairs_hook=_pairs_unique,
+                                parse_constant=lambda _: _require(
+                                    False, "PRIVACY_JSON_NONFINITE"))
+            _require(type(parsed) in (dict, list), "PRIVACY_JSON_ROOT")
+            _privacy_json_tree(parsed, depth=0, budget=[50000])
+    except VolumeProofHold:
+        raise
+    except (ValueError, UnicodeError, TypeError, RecursionError,
+            _etree.ParseError) as exc:
+        raise VolumeProofHold("PRIVACY_PAYLOAD_INVALID") from exc
+
+
+def verify_native_tar_privacy(raw: bytes) -> list[str]:
+    """Inspect all 13 ALLOWLIST payload bytes before any public artifact upload.
+
+    This rejects known credential patterns and unknown malformed XML/JSON.
+    It cannot prove absence of arbitrary opaque secrets: no automatic GO.
+    """
+    files = _native_tar_files(raw)
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
+        for item in archive:
+            relative = item.name[2:] if item.name.startswith("./") else item.name
+            stream = archive.extractfile(item)
+            _require(stream is not None, "PRIVACY_CONTENT_MISSING")
+            _privacy_check_member(relative, stream.read(item.size + 1))
+    return [row["path"] for row in files]
+
+
+def verify_probe_zip_privacy(raw_zip: bytes, *,
+                             source_cid: str, collector_cid: str,
+                             candidate_sha: str, candidate_tree_sha: str,
+                             image_id: str, run_id: str,
+                             run_attempt: str, role: str) -> int:
+    """Fail closed on a preupload IN-MEMORY ZIP preview, not actual upload bytes.
+
+    The real GitHub-generated ZIP still requires independent trusted-main
+    byte verification; this guard checks only the six prospective members.
+    """
+    _require(type(raw_zip) is bytes and
+             0 < len(raw_zip) <= 64 * 1024 * 1024, "PRIVACY_ZIP_BYTES")
+    expected = sorted((
+        "source-inspect.json", "collector-inspect.json", "custody.json",
+        "native.tar", "native-manifest.json",
+        "porota-artifact-byte-manifest-v1.json",
+    ))
+    try:
+        with _zipfile.ZipFile(io.BytesIO(raw_zip)) as package:
+            info = package.infolist()
+            _require(len(info) == 6 and
+                     sorted(row.filename for row in info) == expected and
+                     all(not row.is_dir() and
+                         row.compress_type in (_zipfile.ZIP_STORED,
+                                               _zipfile.ZIP_DEFLATED) and
+                         row.flag_bits & 0x01 == 0 and
+                         0 < row.file_size <= (
+                             MAX_TAR_BYTES if row.filename == "native.tar"
+                             else 262144) and
+                         0 < row.compress_size and
+                         row.file_size <= row.compress_size * 200
+                         for row in info), "PRIVACY_ZIP_ALLOWLIST")
+            payloads = {row.filename: package.read(row) for row in info}
+    except (_zipfile.BadZipFile, OSError, ValueError, OverflowError) as exc:
+        if isinstance(exc, VolumeProofHold):
+            raise
+        raise VolumeProofHold("PRIVACY_ZIP_PARSE") from exc
+    # Inspect known-pattern secrets in every raw ZIP member before parsing.
+    # Native TAR is also traversed member by member below.
+    for value in payloads.values():
+        _require(_PRIVACY_SECRET_RE.search(value) is None,
+                 "PRIVACY_ZIP_SECRET_SIGNATURE")
+    identity = {
+        "source_cid": source_cid, "collector_cid": collector_cid,
+        "candidate_sha": candidate_sha, "candidate_tree_sha": candidate_tree_sha,
+        "image_id": image_id, "run_id": run_id,
+        "run_attempt": run_attempt, "role": role,
+    }
+    custody = verify_public_inspects_v2(
+        producer_public_json=payloads["source-inspect.json"],
+        collector_public_json=payloads["collector-inspect.json"],
+        **identity,
+    )
+    _require(_strict_equal(custody, _json_bytes(payloads["custody.json"])),
+             "PRIVACY_CUSTODY_MISMATCH")
+    for name in ("custody.json", "native-manifest.json",
+                 "porota-artifact-byte-manifest-v1.json"):
+        _privacy_check_member(name, payloads[name])
+    verified = verify_collector_manifest(
+        payloads["native.tar"], payloads["native-manifest.json"],
+        expected_candidate_sha=candidate_sha,
+        expected_candidate_tree_sha=candidate_tree_sha,
+        expected_run_id=run_id,
+        expected_run_attempt=run_attempt,
+        expected_source_cid=source_cid,
+        expected_collector_cid=collector_cid,
+        expected_volume_name=custody["volume_name"],
+        expected_image_id=image_id, expected_role=role,
+    )
+    _require(verified["host_or_runtime_verified"] is False,
+             "PRIVACY_NATIVE_STATUS")
+    paths = verify_native_tar_privacy(payloads["native.tar"])
+    artifact_manifest = _json_bytes(payloads[
+        "porota-artifact-byte-manifest-v1.json"])
+    expected_entries = sorted(x for x in expected if x !=
+                              "porota-artifact-byte-manifest-v1.json")
+    _require(type(artifact_manifest) is dict and
+             artifact_manifest.get("schema_version") == 1 and
+             artifact_manifest.get("candidate_sha") == candidate_sha and
+             artifact_manifest.get("candidate_tree_sha") == candidate_tree_sha and
+             artifact_manifest.get("run_id") == int(run_id) and
+             artifact_manifest.get("run_attempt") == int(run_attempt) and
+             artifact_manifest.get("file_count") == 5 and
+             type(artifact_manifest.get("files")) is list and
+             [row.get("path") for row in artifact_manifest["files"]
+              if type(row) is dict] == expected_entries,
+             "PRIVACY_ZIP_MANIFEST")
+    rows = artifact_manifest["files"]
+    _require(len(rows) == 5 and
+             all(type(row) is dict and set(row) == {
+                 "path", "type", "size_bytes", "sha256",
+             } and row["type"] == "file" and
+                 type(row["path"]) is str and
+                 row["path"] in payloads and
+                 type(row["size_bytes"]) is int and
+                 row["size_bytes"] == len(payloads[row["path"]]) and
+                 type(row["sha256"]) is str and
+                 row["sha256"] == hashlib.sha256(
+                     payloads[row["path"]]).hexdigest()
+                 for row in rows) and
+             artifact_manifest.get("total_size_bytes") ==
+             sum(row["size_bytes"] for row in rows),
+             "PRIVACY_ZIP_DIGESTS")
+    return len(paths)
+
+
+def challenge_privacy_patterns(raw_tar: bytes,
+                               producer_public_json: bytes,
+                               collector_public_json: bytes) -> None:
+    """Exercise each TAR13 path and both public docs using a random FAKE canary.
+
+    The marker lives only in volatile memory. It is never emitted or uploaded;
+    failing to recognize it is a preupload HOLD79, not a compromised credential.
+    """
+    marker = b"CANARY_SECRET_" + _secrets.token_hex(16).encode("ascii")
+    _require(type(producer_public_json) is bytes and
+             type(collector_public_json) is bytes and
+             _PRIVACY_SECRET_RE.search(producer_public_json) is None and
+             _PRIVACY_SECRET_RE.search(collector_public_json) is None,
+             "PRIVACY_PUBLIC_JSON_MARKER")
+    for path in NATIVE_EVIDENCE_PATHS:
+        try:
+            _privacy_check_member(path, marker)
+        except VolumeProofHold as exc:
+            _require(exc.reason == "PRIVACY_SECRET_SIGNATURE",
+                     "PRIVACY_CANARY_BYPASS")
+        else:
+            _require(False, "PRIVACY_CANARY_BYPASS")
+    for public_json in (producer_public_json, collector_public_json):
+        _require(_PRIVACY_SECRET_RE.search(public_json + marker) is not None,
+                 "PRIVACY_PUBLIC_CANARY_BYPASS")
+    # A valid TAR must be clean before the adversarial challenge counts.
+    verify_native_tar_privacy(raw_tar)
+
+
+
+def _create_exclusive_private_output(path: str, data: bytes) -> None:
+    """Write one public projection as a new, non-followed 0600 regular file."""
+    _require(type(path) is str and path != "" and
+             type(data) is bytes and 0 < len(data) <= 262144,
+             "PUBLIC_OUTPUT_INVALID")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            fd = -1
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
 
 
 _CUSTODY_KEYS = frozenset({
@@ -545,11 +973,18 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     pack = commands.add_parser("pack", help="collector-side fixed USTAR stdout")
     pack.add_argument("--proof-root", required=True)
-    inspect = commands.add_parser("inspect", help="Docker inspect bytes -> custody stdout")
-    for option in ("producer-inspect", "collector-inspect", "source-cid",
-                   "collector-cid", "candidate-sha", "candidate-tree-sha",
-                   "image-id", "run-id", "run-attempt", "role"):
-        inspect.add_argument("--" + option, required=True)
+    inspect = commands.add_parser("inspect", help="PRIVATE Docker inspect -> custody")
+    project = commands.add_parser(
+        "project", help="verified PRIVATE Docker inspect -> two PUBLIC V2 files")
+    for command in (inspect, project):
+        for option in ("producer-inspect", "collector-inspect", "source-cid",
+                       "collector-cid", "candidate-sha", "candidate-tree-sha",
+                       "image-id", "run-id", "run-attempt", "role"):
+            command.add_argument("--" + option, required=True)
+    project.add_argument("--producer-public", required=True)
+    project.add_argument("--collector-public", required=True)
+    privacy = commands.add_parser("privacy", help="TAR13 payload privacy HOLD79")
+    privacy.add_argument("--tar", required=True)
     attest = commands.add_parser("attest", help="collector TAR -> manifest stdout")
     attest.add_argument("--tar", required=True)
     attest.add_argument("--custody", required=True)
@@ -573,6 +1008,23 @@ def main(argv: list[str] | None = None) -> int:
                 candidate_tree_sha=args.candidate_tree_sha,
                 image_id=args.image_id, run_id=args.run_id,
                 run_attempt=args.run_attempt, role=args.role))
+        elif args.command == "project":
+            public_producer, public_collector = project_public_inspects_v2(
+                producer_inspect_json=_read_bounded(args.producer_inspect, 262144),
+                collector_inspect_json=_read_bounded(args.collector_inspect, 262144),
+                source_cid=args.source_cid, collector_cid=args.collector_cid,
+                candidate_sha=args.candidate_sha,
+                candidate_tree_sha=args.candidate_tree_sha,
+                image_id=args.image_id, run_id=args.run_id,
+                run_attempt=args.run_attempt, role=args.role)
+            _require(args.producer_public != args.collector_public,
+                     "PUBLIC_OUTPUT_PATHS_IDENTICAL")
+            _create_exclusive_private_output(args.producer_public, public_producer)
+            _create_exclusive_private_output(args.collector_public, public_collector)
+            result = b""
+        elif args.command == "privacy":
+            verify_native_tar_privacy(_read_bounded(args.tar, MAX_TAR_BYTES))
+            result = b""
         elif args.command == "attest":
             receipt = _json_bytes(_read_bounded(args.custody, 262144))
             result = canonical_manifest_bytes(attest_collector_tar(

@@ -496,3 +496,15 @@ def test_r203_private_inspect_is_not_uploaded_and_public_v2_is_failclosed():
     assert "proof.verify_probe_zip_privacy(" in independently_downloaded
     assert "private Docker inspect SHA256 preimages" in independently_downloaded
     assert "POSTRUN_TRUSTED_DEFAULT_WORKFLOW" in WORKFLOW.read_text()
+
+
+def test_r203_native_proof_requires_offhost_python_green_before_artifact_work():
+    wf = _workflow()
+    native = wf["jobs"]["offhost-native-proof"]
+    assert native["needs"] == ["python311-lock-closure"]
+    assert "needs.python311-lock-closure.result == 'success'" in native["if"]
+    assert "github.event.pull_request.number == 1087" in native["if"]
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in native["if"]
+    assert wf["jobs"]["offhost-independent-bytes"]["needs"] == ["offhost-native-proof"]
+    assert native["timeout-minutes"] == "120"
+

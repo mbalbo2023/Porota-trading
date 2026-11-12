@@ -328,11 +328,17 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        # Stable pathname for READY even if a worker changes cwd later.
+        self._ready_main_path = str(Path(path).absolute())
+        self._ready_main_inode = None
+        self._ready_main_identity = None
         runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
         if runtime_schema_ready:
-            # Child validation is read-only and must precede any mkdir/DDL.
+            # READY children validate before any mkdir, DDL or first SQLite write.
             from cg_paper_workspace import validate_child_ready
-            validate_child_ready(path)
+            self._ready_main_inode, self._ready_main_identity = validate_child_ready(
+                self._ready_main_path
+            )
             return
         new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -344,11 +350,32 @@ class PaperStore:
                 mark_new_database(c)
 
     def connect(self):
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        runtime_schema_ready = (
+            self._ready_main_inode is not None
+            or os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        )
         if runtime_schema_ready:
-            # READY children cannot recreate the DB if the pathname disappeared.
-            uri = Path(self.path).absolute().as_uri() + "?mode=rw"
+            from cg_paper_workspace import (
+                assert_ready_database_inode,
+                identity_from_connection,
+                validate_child_ready,
+            )
+            if self._ready_main_inode is None:
+                # The parent creates while READY=0, then raises READY after schema.
+                self._ready_main_inode, self._ready_main_identity = validate_child_ready(
+                    self._ready_main_path
+                )
+            # Sequential swaps to another DB or a symlink are denied before open.
+            assert_ready_database_inode(self._ready_main_path, self._ready_main_inode)
+            uri = Path(self._ready_main_path).as_uri() + "?mode=rw"
             conn = sqlite3.connect(uri, timeout=20, uri=True)
+            try:
+                assert_ready_database_inode(self._ready_main_path, self._ready_main_inode)
+                if identity_from_connection(conn) != self._ready_main_identity:
+                    raise ValueError("PAPER_V17_CHILD_DATABASE_REPLACED")
+            except Exception:
+                conn.close()
+                raise
         else:
             conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row

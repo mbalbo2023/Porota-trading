@@ -118,14 +118,39 @@ def read_identity(path):
         return identity_from_connection(c)
 
 
-def validate_child_ready(path):
-    """Bounded local sentinels only; never migration or physical attestation."""
+def _ready_database_inode(path):
+    """Bounded pathname check; requires separate directory custody for race-free use."""
     target = checked_path(path)
-    if not target.is_file():
-        raise ValueError('PAPER_V17_CHILD_DATABASE_REQUIRED')
+    try:
+        info = target.lstat()
+    except FileNotFoundError:
+        raise ValueError('PAPER_V17_CHILD_DATABASE_REQUIRED') from None
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
+    return (info.st_dev, info.st_ino)
+
+
+def assert_ready_database_inode(path, expected):
+    try:
+        current = _ready_database_inode(path)
+    except ValueError as exc:
+        if str(exc) == 'PAPER_V17_CHILD_DATABASE_REQUIRED':
+            # A vanished READY file fails exactly like sqlite mode=rw, without
+            # touching sqlite3.connect or implicitly creating a replacement.
+            raise sqlite3.OperationalError('unable to open database file') from None
+        raise
+    if current != expected:
+        raise ValueError('PAPER_V17_CHILD_DATABASE_REPLACED')
+
+
+def validate_child_ready(path):
+    """Read-only schema/identity plus pre/post inode; not a same-UID race barrier."""
+    target = checked_path(path)
+    before = _ready_database_inode(target)
     with closing(sqlite3.connect(target.as_uri() + '?mode=ro', uri=True, timeout=5)) as c:
         c.execute('PRAGMA query_only=ON')
-        if identity_from_connection(c).get('initial_capital_json') != capital_profile():
+        identity = identity_from_connection(c)
+        if identity.get('initial_capital_json') != capital_profile():
             raise ValueError('PAPER_V17_INITIAL_CAPITAL_OR_ORIGIN_MISMATCH')
         if c.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
             raise ValueError('PAPER_SQLITE_WAL_REQUIRED')
@@ -140,6 +165,8 @@ def validate_child_ready(path):
             actual = {row[1] for row in c.execute('PRAGMA table_info(' + table + ')')}
             if not columns <= actual:
                 raise ValueError('PAPER_V17_CHILD_SCHEMA_REQUIRED')
+    assert_ready_database_inode(target, before)
+    return before, identity
 
 
 @contextmanager
