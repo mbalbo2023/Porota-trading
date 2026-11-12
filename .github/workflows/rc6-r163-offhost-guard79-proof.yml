@@ -49,6 +49,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
       - name: Locked dependency closure and import smoke
         shell: bash
         env:
@@ -520,6 +522,12 @@ jobs:
           labels: |
             porota.commit=${{ env.CANDIDATE_SHA }}
             porota.predeploy=v2
+          # PROBE cache is only an iteration accelerator. GitHub's PR-ref
+          # cache boundary plus this PR-specific scope avoids cross-PR reuse.
+          # Trusted R206 B deliberately rebuilds without cache; R251 D never
+          # consumes this cache and still seals/tests its own RELEASE image.
+          cache-from: type=gha,scope=rc6-r163-probe-${{ github.event.pull_request.number }}
+          cache-to: type=gha,scope=rc6-r163-probe-${{ github.event.pull_request.number }},mode=max,timeout=2m,ignore-error=true
       - name: Run native stages in one UID1000 anonymous volume
         id: native
         shell: bash
