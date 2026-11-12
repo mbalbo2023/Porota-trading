@@ -87,7 +87,7 @@ def _inspect(*, collector: bool = False) -> dict:
             "Type": "volume", "Name": VOLUME,
             "Source": f"/var/lib/docker/volumes/{VOLUME}/_data",
             "Destination": "/app/data", "Driver": "local",
-            "Mode": "ro" if collector else "", "RW": not collector,
+            "Mode": "" if collector else "z", "RW": not collector,
             "Propagation": "",
         }],
         "State": {"Status": "exited"},
@@ -337,6 +337,9 @@ def test_foreign_or_privileged_docker_identity_is_hold79(case: str) -> None:
     (False, "Driver", "private-driver-do-not-print", "driver"),
     (False, "RW", False, "rw"),
     (False, "Mode", "rw", "mode"),
+    (False, "Mode", "", "mode"),
+    (False, "Mode", None, "mode"),
+    (False, "Mode", "z\\n/private/never-log", "mode"),
     (True, "Type", "bind", "type"),
     (True, "Destination", "/private/do-not-print", "target"),
     (True, "Name", "secret-volume-do-not-print", "name"),
@@ -344,6 +347,9 @@ def test_foreign_or_privileged_docker_identity_is_hold79(case: str) -> None:
     (True, "Driver", "private-driver-do-not-print", "driver"),
     (True, "RW", True, "rw"),
     (True, "Mode", "rw", "mode"),
+    (True, "Mode", "ro", "mode"),
+    (True, "Mode", "z", "mode"),
+    (True, "Mode", None, "mode"),
 ))
 def test_mount_hold79_reports_only_boolean_subchecks(
     collector: bool, field: str, value: object, bad_check: str,

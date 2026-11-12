@@ -195,7 +195,11 @@ def _inspect(raw: bytes, *, cid: str, image_id: str, role: str,
          mount["Source"] != ""),
         ("driver", mount.get("Driver") == "local"),
         ("rw", mount.get("RW") is (not collector)),
-        ("mode", mount.get("Mode") == ("ro" if collector else "")),
+        # Engine 28.0.4 Linux physical R186: local anonymous --mount
+        # reports SELinux shared Mode="z"; --volumes-from CID:ro
+        # reports Mode="" while the independent RW flag is False.
+        # Never infer write access or readonly authority from Mode alone.
+        ("mode", mount.get("Mode") == ("" if collector else "z")),
     )
     all_ok = all(ok for _, ok in checks)
     if not all_ok:
