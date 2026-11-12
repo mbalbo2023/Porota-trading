@@ -1128,7 +1128,7 @@ jobs:
         # Never use mutable main or execute PR HEAD's version of the guard.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: f831e2929d1a622f409211010fadaece6b15e953
+          ref: 1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96
           path: .rc6-release-guard-trusted
           persist-credentials: false
 
@@ -1155,7 +1155,7 @@ jobs:
           set -Eeuo pipefail
           # Fail closed on any mismatch with the independently reviewed main.
           test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
-            "f831e2929d1a622f409211010fadaece6b15e953" || exit 79
+            "1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96" || exit 79
           test "$RC6_RELEASE_PR_DRAFT" = false || exit 79
           test "${{ github.event.pull_request.number }}" = 1087 || exit 79
           test "$(git -C .rc6-release-head-inspect rev-parse HEAD)" = \

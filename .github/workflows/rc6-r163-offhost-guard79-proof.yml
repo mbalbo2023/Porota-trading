@@ -5,14 +5,17 @@ name: RC6 R163 Offhost Guard79 Proof (PROBE ONLY)
 on:
   pull_request:
     branches: [deploy/rc6-pr69-isolated-20260915]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # READY after D/E must not rebuild two offhost PROBE images for the same SHA.
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
+# New PR head updates supersede old probes; ready/reopened must not cancel
+# a running proof on the same SHA. Cancelled attempts cannot trigger R206 B.
 concurrency:
-  group: rc6-r163-offhost-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-  cancel-in-progress: false
+  group: rc6-r163-offhost-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event.action == 'synchronize' }}
 
 jobs:
   python311-lock-closure:

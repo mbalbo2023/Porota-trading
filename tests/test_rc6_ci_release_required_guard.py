@@ -21,7 +21,7 @@ from scripts import rc6_ci_release_required_guard as guard
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/porota-predeploy-v2.yml"
 SHA = "a" * 40
-PIN = "f831e2929d1a622f409211010fadaece6b15e953"
+PIN = "1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96"
 
 
 def evidence(**changes):

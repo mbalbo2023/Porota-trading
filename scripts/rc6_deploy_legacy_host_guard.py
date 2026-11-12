@@ -36,6 +36,14 @@ _CANDIDATE_ROOT_SHELL = re.compile(
     r"\bsudo\s+-n\s+(?:env\s+(?:[A-Z][A-Z0-9_]*=\S+\s+){1,6})?"
     r"bash\s+[\"']?\$(?:STAGE|REMOTE_DIR)/"
 )
+_CHECKOUT_ROOT_INTERPRETER = re.compile(
+    # sudo's env/timeout prefix is not a root-custody API. Neither an encoded
+    # mutex nor a stdin program, shell or staged checkout path may run as root.
+    r"\bsudo\s+-n\s+"
+    r"(?:(?:env|timeout)\s+|[A-Za-z_][A-Za-z_0-9]*=\S+\s+|"
+    r"--\S+\s+|[0-9]+s?\s+)*"
+    r"(?:/(?:[A-Za-z0-9_.-]+/)+)?(?:python(?:3(?:\.[0-9]+)?)?|bash|sh|dash)\b"
+)
 _MUTATION_BY_NAME = re.compile(
     # The candidate cannot supply any container-mutation argv directly:
     # even a harmless-looking variable may hide an unowned name or CID. The
@@ -75,7 +83,7 @@ _TRUSTED_RELEASE_STEPS = (
     "Authenticate exact R251 D/E receipts through R252",
     "Hold host control pending independent physical authority",
 )
-_TRUSTED_MAIN_R252_SHA = "f831e2929d1a622f409211010fadaece6b15e953"
+_TRUSTED_MAIN_R252_SHA = "1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96"
 _REVIEWED_RELEASE_STEP_HASHES = {
     # R164 historical hard HOLD; accepted ONLY with its exact original script.
     _LEGACY_RELEASE_STEPS[0]: "3407617b682e18ab64b85945f66984978d9a715b193f10edfd7acd6b1127a943",
@@ -227,6 +235,27 @@ def reject_untrusted_checkout_privilege(source: str) -> None:
         raise HostBoundaryViolation("ROOT_CHECKOUT_HOUSEKEEPING_UNTRUSTED")
     if re.search(r'\bbash\s+["\']\$STAGE/ops/rc6_deploy_critical_control_plane\.sh["\']', source):
         raise HostBoundaryViolation("STAGED_CHECKOUT_SUDO_BYPASS")
+    # A variation in whitespace, interpreter path or base64 spelling must not
+    # turn legacy checkout-root execution into an accepted host operation.
+    # This is a DENY, not an alternative installer or physical authority.
+    active = re.sub(r"[ \t]*\\\n[ \t]*", " ", source)
+    if _CHECKOUT_ROOT_INTERPRETER.search(active):
+        raise HostBoundaryViolation("ROOT_CHECKOUT_INTERPRETER_UNTRUSTED")
+
+
+def require_approved_critical_stage_cli(promotion_text: str) -> None:
+    """Pin the workflow's fixed CLI shape; do not infer staging authority."""
+    active = "\n".join(line for line in promotion_text.splitlines()
+                       if not re.match(r"^\s*#", line))
+    active = re.sub(r"[ \t]*\\\n[ \t]*", " ", active)
+    approved = (
+        'STAGE_RECEIPT="$(sudo -n "$CUSTODY_CLI" critical '
+        'stage-approved-protector --paper-only --source-sha "$CANDIDATE_SHA")"'
+    )
+    verbs = re.findall(r"\bcritical\s+stage-[a-z-]+\b", active)
+    if (active.count(approved) != 1 or
+            verbs != ["critical stage-approved-protector"]):
+        raise HostBoundaryViolation("CRITICAL_STAGE_CLI_UNTRUSTED")
 
 
 def audit_deploy_workflow(workflow: Mapping[str, Any]) -> dict[str, Any]:
@@ -380,6 +409,7 @@ def audit_deploy_workflow(workflow: Mapping[str, Any]) -> dict[str, Any]:
             raise HostBoundaryViolation("PREBIRTH_HOST_PRIVILEGE_BYPASS")
     if promotion_text is None:
         raise HostBoundaryViolation("PROMOTION_STEP_MISSING")
+    require_approved_critical_stage_cli(promotion_text)
     mode_line = "grep -q 'POROTA_MODE=PENDING_CUSTODY_SEAL'"
     if mode_line not in promotion_text or "grep -q 'POROTA_MODE=OK'" in promotion_text:
         raise HostBoundaryViolation("PREMATURE_MODE_READY")
@@ -422,12 +452,21 @@ def main(argv: list[str] | None = None) -> int:
     try:
         workflow = yaml.safe_load(args.workflow.read_text(encoding="utf-8"))
         receipt = audit_deploy_workflow(workflow)
-    except (OSError, UnicodeError, yaml.YAMLError, HostBoundaryViolation, TypeError):
-        print(json.dumps({"status": "BLOQUEADO", "source_validated": False,
-                          "host_mutation_authorized": False}, sort_keys=True))
-        return 79
-    print(json.dumps(receipt, sort_keys=True))
-    return 0
+    except HostBoundaryViolation as exc:
+        reason = str(exc)
+    except (OSError, UnicodeError, yaml.YAMLError, TypeError):
+        reason = "SOURCE_GUARD_INPUT_UNAVAILABLE"
+    else:
+        print(json.dumps(receipt, sort_keys=True))
+        return 0
+    # Only bounded enum-like reasons may be printed in public Actions logs;
+    # never interpolate raw workflow source or host/private paths.
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{2,79}", reason) is None:
+        reason = "UNSAFE_HOST_SOURCE"
+    print(json.dumps({"status": "BLOQUEADO", "source_validated": False,
+                      "host_mutation_authorized": False, "reason": reason},
+                     sort_keys=True))
+    return 79
 
 
 if __name__ == "__main__":

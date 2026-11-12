@@ -124,6 +124,28 @@ class HostHelperCommandContractTest(unittest.TestCase):
                                   "/tmp/boca.service", "--candidate-sha256", "b" * 64,
                                   "--expected-mainpid", "1234", "--source-sha", sha))
 
+    def test_promote_stage_approved_protector_accepts_only_paper_source_expectation(self):
+        sha = "a" * 40
+        command = helper.parse_command(("critical", "stage-approved-protector",
+                                        "--paper-only", "--source-sha", sha))
+        self.assertEqual((command.namespace, command.verb, command.expectations),
+                         ("critical", "stage-approved-protector", ("true", sha)))
+        for invalid in (
+            ("critical", "stage-approved-protector"),
+            ("critical", "stage-approved-protector", "--source-sha", sha),
+            ("critical", "stage-approved-protector", "--paper-only", "--source-sha", "bad"),
+            ("critical", "stage-approved-protector", "--source-sha", sha, "--paper-only"),
+            ("critical", "stage-approved-protector", "--paper-only", "--source-sha", sha,
+             "--force"),
+            ("critical", "stage-approved-protector", "--paper-only", "--source-sha", sha,
+             "--unit-template", "/tmp/unapproved.service"),
+            ("critical", "stage-approved-protector", "--paper-only", "--source-sha", sha,
+             "--expected-mainpid", "1234"),
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(helper.CustodyHold):
+                    helper.parse_command(invalid)
+
     def test_critical_start_has_root_manifest_expectations_not_docker_args(self):
         sha = "a" * 40
         generation = "e" * 32
@@ -907,6 +929,37 @@ class HostHelperBirthContractTest(unittest.TestCase):
             with self.assertRaises(helper.CustodyHold):
                 self.controller().dispatch(helper.parse_command(bad))
             self.assertEqual(self.authority.staged, [])
+
+    def test_promote_stage_approved_protector_holds_without_root_installer_or_pid(self):
+        command = helper.parse_command((
+            "critical", "stage-approved-protector", "--paper-only",
+            "--source-sha", "a" * 40))
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller().dispatch(command)
+        self.assertEqual(caught.exception.reason,
+                         "SYSTEMD_STAGE_INSTALLER_UNVERIFIED")
+        self.assertEqual(self.custody.calls, [])
+        self.assertEqual(self.session.events, [])
+        self.assertEqual(self.authority.staged, [])
+        self.assertEqual(self.commands, [])
+
+    def test_promote_stage_rejects_unapproved_source_before_installer_probe(self):
+        for command in (
+            helper.parse_command((
+                "critical", "stage-approved-protector", "--paper-only",
+                "--source-sha", "b" * 40)),
+            helper.Command("critical", "stage-approved-protector",
+                           expectations=("false", "a" * 40)),
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(command)
+                self.assertEqual(caught.exception.reason,
+                                 "CRITICAL_STAGE_APPROVAL_MISMATCH")
+                self.assertEqual(self.custody.calls, [])
+                self.assertEqual(self.session.events, [])
+                self.assertEqual(self.authority.staged, [])
+                self.assertEqual(self.commands, [])
 
     def test_stage_intent_is_a_bounded_read_only_root_receipt(self):
         cmd = helper.parse_command(("critical", "describe-stage-intent", "--paper-only",

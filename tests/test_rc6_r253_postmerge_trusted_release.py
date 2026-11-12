@@ -26,7 +26,7 @@ CANDIDATE_SHA = "b" * 40
 TREE_SHA = "c" * 40
 PUBLISHER_SHA = "d" * 40
 ARTIFACT_DIGEST = "sha256:" + "e" * 64
-TRUSTED_MAIN_SHA = "f831e2929d1a622f409211010fadaece6b15e953"
+TRUSTED_MAIN_SHA = "1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96"
 
 
 def _jobs():

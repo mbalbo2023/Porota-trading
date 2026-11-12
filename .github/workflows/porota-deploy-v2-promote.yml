@@ -36,7 +36,7 @@ jobs:
     env:
       # Exact independently reviewed/merged main R252 commit. Never use
       # mutable main, candidate HEAD, or an Actions repository variable.
-      RC6_R252_TRUSTED_MAIN_SHA: 'f831e2929d1a622f409211010fadaece6b15e953'
+      RC6_R252_TRUSTED_MAIN_SHA: '1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96'
     outputs:
       release_bytes_verified: ${{ steps.trusted_release.outputs.release_bytes_verified }}
       release_product_sha: ${{ steps.trusted_release.outputs.release_product_sha }}
@@ -375,8 +375,11 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/porota_rc6_deploy"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/porota_rc6_deploy" "$HOME/.ssh/known_hosts"
-          # Stream the frozen helper before any host mutation.  Every remote
-          # mutator uses the same root-owned inode under /run/lock.
+          # R265 HOLD79: this legacy checkout-sourced mutex is not a trusted
+          # root-owned host helper. The pre-SSH source guard rejects every
+          # root Python wrapper below; do not remove that guard or treat
+          # a SHA of this source as independent host approval.
+          # Streamed staging also remains untrusted for root execution.
           echo "RC6_MUTEX_B64=$(base64 -w0 scripts/rc6_deploy_host_mutex.py)" >> "$GITHUB_ENV"
           echo "RC6_STAGE_B64=$(base64 -w0 scripts/rc6_deploy_stage_transfer.py)" >> "$GITHUB_ENV"
 
@@ -1819,6 +1822,9 @@ jobs:
           # the old script itself contains nested sudo, even if outer bash is
           # unprivileged. Only a separately installed, immutable root-owned
           # helper may stage its independently approved critical protector.
+          # R265: this fixed CLI shape must HOLD79 unless an independent host
+          # installer/template approval and expected PID are physically proven;
+          # no fallback to candidate --unit-template or legacy stage-protector.
           CUSTODY_CLI=/usr/local/sbin/porota-rc6-oci-custody
           STAGE_RECEIPT="$(sudo -n "$CUSTODY_CLI" critical stage-approved-protector \
             --paper-only --source-sha "$CANDIDATE_SHA")" || {

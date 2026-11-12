@@ -376,11 +376,63 @@ def test_probe_only_pr_trigger_is_independent_and_draft_eligible():
     assert list(wf["on"]) == ["pull_request"]
     assert "push" not in wf["on"] and "pull_request_target" not in wf["on"]
     assert wf["permissions"] == {"contents": "read"}
-    assert wf["concurrency"]["cancel-in-progress"] == "false"
     assert "draft" not in wf["jobs"]["offhost-native-proof"].get("if", "").lower()
     assert "1087" in wf["jobs"]["offhost-native-proof"]["if"]
     assert "github.repository" in wf["jobs"]["offhost-native-proof"]["if"]
     assert set(wf["jobs"]) == {"python311-lock-closure", "offhost-native-proof", "offhost-independent-bytes"}
+
+
+def test_ready_transition_after_release_does_not_restart_offhost_probe_builds():
+    wf = _workflow()
+    # GitHub pull_request activity types are an allowlist: the READY transition
+    # happens after exact-SHA B/C and D/E, so A must not trigger another A/B.
+    assert wf["on"]["pull_request"]["types"] == [
+        "opened", "synchronize", "reopened",
+    ]
+    # A still reaches native/HOLD79 on DRAFT commits to seed trusted B/C.
+    assert "draft" not in wf["jobs"]["python311-lock-closure"].get("if", "").lower()
+    assert "draft" not in wf["jobs"]["offhost-native-proof"].get("if", "").lower()
+
+
+def test_new_pr_commit_cancels_superseded_probe_without_skipping_draft_native():
+    wf = _workflow()
+    # Two synchronize events with distinct head SHAs must use the same PR lock.
+    # The canonical release/deploy mutex is unrelated and must not be changed.
+    assert wf["concurrency"] == {
+        "group": "rc6-r163-offhost-${{ github.event.pull_request.number }}",
+        "cancel-in-progress": "${{ github.event.action == 'synchronize' }}",
+    }
+    assert wf["on"]["pull_request"]["types"] == [
+        "opened", "synchronize", "reopened",
+    ]
+    native = wf["jobs"]["offhost-native-proof"]
+    assert native["needs"] == ["python311-lock-closure"]
+    assert "needs.python311-lock-closure.result == 'success'" in native["if"]
+    # This native path must still reach the intentional privacy HOLD79 on DRAFT:
+    # trusted-main R206 B/C currently depend on that A failure for release proof.
+    assert "draft" not in native["if"].lower()
+    assert "ready_for_review" not in native["if"]
+    independent = wf["jobs"]["offhost-independent-bytes"]
+    assert independent["needs"] == ["offhost-native-proof"]
+    assert "needs.offhost-native-proof.result == 'success'" in independent["if"]
+
+
+@pytest.mark.parametrize("action,should_cancel", (
+    ("synchronize", True),
+    ("ready_for_review", False),
+    ("reopened", False),
+    ("opened", False),
+))
+def test_same_sha_pr_state_changes_do_not_cancel_running_native(action, should_cancel):
+    # GitHub Actions accepts an expression here. Evaluate this restricted
+    # one-comparison gate against the actual pull_request event actions.
+    expression = _workflow()["concurrency"]["cancel-in-progress"]
+    predicate = re.fullmatch(
+        r"\$\{\{\s*github\.event\.action\s*==\s*'([a-z_]+)'\s*\}\}",
+        expression,
+    )
+    assert predicate is not None
+    assert (action == predicate.group(1)) is should_cancel
 
 
 def test_no_product_host_permission_or_release_unlock_is_possible():

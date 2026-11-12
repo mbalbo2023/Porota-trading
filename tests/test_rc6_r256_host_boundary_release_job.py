@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import redirect_stdout
+import io
+import json
 from pathlib import Path
 import unittest
 
@@ -11,6 +14,8 @@ import yaml
 from scripts.rc6_deploy_legacy_host_guard import (
     HostBoundaryViolation,
     audit_deploy_workflow,
+    main as guard_main,
+    reject_untrusted_checkout_privilege,
 )
 
 
@@ -26,6 +31,84 @@ class R256TrustedReleaseJobBoundary(unittest.TestCase):
         """An added safe evidence job cannot silence downstream source checks."""
         with self.assertRaisesRegex(HostBoundaryViolation, "ROOT_CHECKOUT_MUTEX_UNTRUSTED"):
             audit_deploy_workflow(live_source())
+
+    def test_guard_cli_reports_exact_source_hold_reason_without_host_authority(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = guard_main(["--workflow", str(WORKFLOW)])
+        self.assertEqual(result, 79)
+        self.assertEqual(json.loads(output.getvalue()), {
+            "status": "BLOQUEADO",
+            "source_validated": False,
+            "host_mutation_authorized": False,
+            "reason": "ROOT_CHECKOUT_MUTEX_UNTRUSTED",
+        })
+
+    def test_root_checkout_python_and_shell_entrypoints_are_untrusted(self):
+        # These are direct source boundaries, not mocked host executions.
+        # A renamed/encoded checkout interpreter remains arbitrary root code.
+        unsafe = (
+            "sudo -n python3 -c 'import os;os.system(\"true\")'",
+            "sudo -n /usr/bin/python3 -c 'print(1)'",
+            "sudo -n env PYTHONDONTWRITEBYTECODE=1 python3 -c 'print(1)'",
+            "sudo -n python3 - <<'PY'\nprint(1)\nPY",
+            "sudo -n timeout 10 python3 - <<'PY'\nprint(1)\nPY",
+            'sudo -n env PYTHONPATH="$STAGE" python3 "$STAGE/scripts/a.py"',
+            "sudo -n bash -s <<'REMOTE'\necho executed\nREMOTE",
+            "sudo -n /bin/sh -c 'echo executed'",
+        )
+        for command in unsafe:
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(
+                    HostBoundaryViolation, "ROOT_CHECKOUT_INTERPRETER_UNTRUSTED"
+                ):
+                    reject_untrusted_checkout_privilege(command)
+
+    def test_altered_mutex_decoder_and_unbounded_subprocess_stay_denied(self):
+        unsafe = (
+            "sudo -n python3 -c 'import base64 ; exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' --phase reconcile",
+            "sudo -n /usr/bin/python3 scripts/rc6_deploy_host_mutex.py --phase classify sh -c 'echo arbitrary'",
+        )
+        for command in unsafe:
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(
+                    HostBoundaryViolation, "ROOT_CHECKOUT_INTERPRETER_UNTRUSTED"
+                ):
+                    reject_untrusted_checkout_privilege(command)
+
+    def test_promotion_rejects_legacy_critical_stage_cli_before_mutex_guard(self):
+        workflow = live_source()
+        promote = next(step for step in workflow["jobs"]["promote"]["steps"]
+                       if step.get("name") == "Promote exact frozen candidate and verify")
+        self.assertIn("critical stage-approved-protector", promote["run"])
+        promote["run"] = promote["run"].replace(
+            "critical stage-approved-protector", "critical stage-protector", 1)
+        with self.assertRaisesRegex(HostBoundaryViolation, "CRITICAL_STAGE_CLI_UNTRUSTED"):
+            audit_deploy_workflow(workflow)
+
+    def test_promotion_rejects_mismatched_stage_source_sha(self):
+        workflow = live_source()
+        promote = next(step for step in workflow["jobs"]["promote"]["steps"]
+                       if step.get("name") == "Promote exact frozen candidate and verify")
+        self.assertIn('--paper-only --source-sha "$CANDIDATE_SHA"', promote["run"])
+        promote["run"] = promote["run"].replace(
+            '--paper-only --source-sha "$CANDIDATE_SHA"',
+            '--paper-only --source-sha "$DEPLOY_SHA"', 1)
+        with self.assertRaisesRegex(HostBoundaryViolation, "CRITICAL_STAGE_CLI_UNTRUSTED"):
+            audit_deploy_workflow(workflow)
+
+    def test_promotion_rejects_stage_cli_extra_checkout_argument(self):
+        workflow = live_source()
+        promote = next(step for step in workflow["jobs"]["promote"]["steps"]
+                       if step.get("name") == "Promote exact frozen candidate and verify")
+        self.assertIn('stage-approved-protector', promote["run"])
+        promote["run"] = promote["run"].replace(
+            '--paper-only --source-sha "$CANDIDATE_SHA")"',
+            '--paper-only --source-sha "$CANDIDATE_SHA" --unit-template "$STAGE/critical.service")"',
+            1,
+        )
+        with self.assertRaisesRegex(HostBoundaryViolation, "CRITICAL_STAGE_CLI_UNTRUSTED"):
+            audit_deploy_workflow(workflow)
 
     def test_unknown_extra_job_remains_denied(self):
         workflow = live_source()

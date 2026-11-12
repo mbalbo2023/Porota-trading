@@ -22,7 +22,7 @@ WORKFLOW_PATH = (
     / "porota-deploy-v2-promote.yml"
 )
 PRODUCT_BRANCH = "deploy/rc6-pr69-isolated-20260915"
-REVIEWED_R252_MAIN_SHA = "f831e2929d1a622f409211010fadaece6b15e953"
+REVIEWED_R252_MAIN_SHA = "1b397b2cc5cf7645e5dfcb9abc4566a89efe8d96"
 EXPECTED_IF = (
     "$" + "{{ needs.release-evidence-required.result == 'success' && "
     "needs.release-evidence-required.outputs.release_bytes_verified == 'true' && "

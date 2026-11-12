@@ -648,7 +648,7 @@ def parse_command(argv):
         if verb in _CRITICAL_SIMPLE:
             _require(not remaining)
             return Command(namespace, verb)
-        if verb == "describe-stage-intent":
+        if verb in ("describe-stage-intent", "stage-approved-protector"):
             _require(len(remaining) == 3 and remaining[:2] ==
                      ("--paper-only", "--source-sha") and
                      _HEX40.fullmatch(remaining[2]))
@@ -902,6 +902,14 @@ class HostHelperController:
             # present an old container or a postseal error as a successful
             # proof of the new approved generation.
             raise CustodyHold("SEALED_CURRENT_CUSTODY_API_UNAVAILABLE")
+        if command.namespace == "critical" and command.verb == "stage-approved-protector":
+            _require(command.expectations == ("true", self.authority.candidate_sha),
+                     "CRITICAL_STAGE_APPROVAL_MISMATCH")
+            # Promote supplies no unit bytes or current PID. Even a pinned
+            # source and independently approved hash cannot prove a trusted
+            # root installer or unchanged critical process. HOLD before
+            # beginning an OCI custody session or touching host state.
+            raise CustodyHold("SYSTEMD_STAGE_INSTALLER_UNVERIFIED")
         session = self._session()
         if command.namespace == "quiescence" and command.verb in (
                 "verify-prebirth", "verify-receipt"):
