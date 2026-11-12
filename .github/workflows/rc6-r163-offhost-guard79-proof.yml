@@ -73,6 +73,15 @@ jobs:
             python -m pytest -q -p no:cacheprovider \
               tests/test_rc6_sre_health_paper_zero.py
           echo 'RC6_SRE_HEALTH_PAPER_ZERO=PY311_OFFHOST_FIXTURES_ONLY'
+      - name: A976 SQLite readiness regression (ephemeral fixture only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # SQLite tmp_path fixtures, no real DB, host, broker, or provider.
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            python -m pytest -q -p no:cacheprovider \
+              tests/test_rc6_a976_sqlite_readiness.py
+          echo 'RC6_A976_SQLITE_READINESS=PY311_OFFHOST_FIXTURES_ONLY'
       - name: PPI quota and capability fake-wire regressions on Python 3.11
         shell: bash
         run: |
