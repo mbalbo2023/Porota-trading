@@ -264,6 +264,47 @@ jobs:
           [[ "$new_source" =~ ^[0-9a-f]{64}$ ]] || exit 79
           source_cid="$new_source"
           owned_cid "$source_cid" bundle || exit 79
+          # R186 one-shot OFFHOST physical classifier. Never publishes inspect bytes.
+          # Both CIDs are generated under this run; the existing EXIT trap
+          # verifies exact ownership before removing only these two containers.
+          diag_collector="$(docker create "${labels[@]}" --label porota.native-role=bundle-collector \
+            "${isolation[@]}" --volumes-from "$source_cid:ro" \
+            "$IMAGE" sleep 7200)" || exit 79
+          [[ "$diag_collector" =~ ^[0-9a-f]{64}$ ]] || exit 79
+          collector_cid="$diag_collector"
+          owned_cid "$collector_cid" bundle-collector || exit 79
+          python - "$source_cid" "$collector_cid" <<'PY'
+          import json, subprocess, sys
+          for role, cid, expected_rw in (
+              ("producer", sys.argv[1], True),
+              ("collector", sys.argv[2], False),
+          ):
+              # Keep raw inspect entirely within this ephemeral runner's process.
+              raw = subprocess.check_output(
+                  ["docker", "inspect", "--format", "{{json .Mounts}}", cid],
+                  text=True)
+              mounts = json.loads(raw)
+              if not isinstance(mounts, list) or len(mounts) != 1 or not isinstance(mounts[0], dict):
+                  print(f"RC6_R186_MOUNT_MODE=role={role}|shape=HOLD79", file=sys.stderr)
+                  raise SystemExit(79)
+              mount = mounts[0]
+              mode = mount.get("Mode")
+              categories = {"": "empty", "z": "selinux_shared",
+                            "ro": "read_only_option", "rw": "read_write_option"}
+              mode_class = categories.get(mode, "other") if type(mode) is str else "invalid_type"
+              rw_ok = mount.get("RW") is expected_rw
+              type_ok = mount.get("Type") == "volume"
+              print(
+                  f"RC6_R186_MOUNT_MODE=role={role}|mode_class={mode_class}"
+                  f"|rw_contract={int(rw_ok)}|type_volume={int(type_ok)}"
+              )
+              if not rw_ok or not type_ok:
+                  raise SystemExit(79)
+          PY
+          # Diagnostic only: never reach nine suites, ZIP seal, artifact upload,
+          # trusted postrun, host Promote, or any deployment transition.
+          echo 'RC6_R186_DIAGNOSTIC=HOLD79|no_artifact|no_release' >&2
+          exit 79
           docker start "$source_cid" >/dev/null
           [[ "$(docker inspect -f '{{.State.Running}}' "$source_cid")" == true ]] || exit 79
           docker exec --user 1000:1000 "$source_cid" sh -ceu '
