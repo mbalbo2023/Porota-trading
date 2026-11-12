@@ -21,7 +21,7 @@ from scripts import rc6_ci_release_required_guard as guard
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/porota-predeploy-v2.yml"
 SHA = "a" * 40
-PIN = "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
+PIN = "f831e2929d1a622f409211010fadaece6b15e953"
 
 
 def evidence(**changes):
@@ -185,8 +185,13 @@ def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
         "${{ always() && github.event.pull_request.base.ref == "
         "'deploy/rc6-pr69-isolated-20260915' }}"
     )
-    assert required["permissions"] == {"contents": "read"}
+    # R254 consumes exact R251 D/E evidence via the reviewed R252 main guard.
+    # Only read-only REST privileges are necessary; never grant write scope.
+    assert required["permissions"] == {
+        "actions": "read", "contents": "read", "pull-requests": "read",
+    }
     assert "continue-on-error" not in required
+    assert required["timeout-minutes"] == "30"
     head, trusted, check = required["steps"]
     assert head["with"]["ref"] == "${{ github.event.pull_request.head.sha }}"
     assert head["with"]["path"] == ".rc6-release-head-inspect"
@@ -195,12 +200,16 @@ def test_required_job_fails_closed_even_when_artifact_gate_is_skipped():
     assert trusted["with"]["path"] == ".rc6-release-guard-trusted"
     assert trusted["with"]["persist-credentials"] == "false"
     assert "git -C .rc6-release-guard-trusted rev-parse HEAD" in check["run"]
-    assert "python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py" in check["run"]
+    assert "python3 -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py" in check["run"]
+    assert "--trusted-release-mode PR_CANDIDATE" in check["run"]
     assert "python -m scripts.rc6_ci_release_required_guard" not in check["run"]
-    assert check["env"]["RC6_RELEASE_GATE_RESULT"] == "${{ needs.artifact-gate.result }}"
-    assert check["env"]["RC6_RELEASE_ARTIFACT_ID"] == (
-        "${{ needs.artifact-gate.outputs.artifact_id }}"
-    )
-    assert check["env"]["RC6_RELEASE_ARTIFACT_DIGEST"] == (
-        "${{ needs.artifact-gate.outputs.artifact_digest }}"
-    )
+    assert check["env"]["RC6_BRIDGE_REPOSITORY"] == "${{ github.repository }}"
+    assert check["env"]["RC6_BRIDGE_MODE"] == "PR_CANDIDATE"
+    assert check["env"]["GITHUB_TOKEN"] == "${{ github.token }}"
+    assert check["env"]["RC6_RELEASE_PR_DRAFT"] == "${{ github.event.pull_request.draft }}"
+    for selector in ("RC6_BRIDGE_E_RUN_ID", "RC6_BRIDGE_E_RUN_ATTEMPT",
+                     "RC6_BRIDGE_E_ARTIFACT_ID", "RC6_BRIDGE_PUBLISHER_MAIN_SHA"):
+        assert check["env"][selector] == "", selector
+    assert "RC6_RELEASE_GATE_RESULT" not in check["env"]
+    assert "RC6_RELEASE_ARTIFACT_ID" not in check["env"]
+    assert "RC6_RELEASE_ARTIFACT_DIGEST" not in check["env"]

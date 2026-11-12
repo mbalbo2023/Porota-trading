@@ -4,7 +4,8 @@ Run with Python 3.11 stdlib:
     python3 -I -m unittest discover -s tests -p test_rc6_r164_promote_required_release.py -v
 
 Targeted YAML-shape/semantic static guard, not a substitute for GitHub Actions
-parsing, trusted RELEASE byte verification, or host preflight.
+parsing, R252 trusted RELEASE byte verification, or host preflight. R253 has a
+separately pinned source and an independent post-audit host HOLD79.
 """
 
 from __future__ import annotations
@@ -21,26 +22,20 @@ WORKFLOW_PATH = (
     / "porota-deploy-v2-promote.yml"
 )
 PRODUCT_BRANCH = "deploy/rc6-pr69-isolated-20260915"
-EXPECTED_HOLD79_RUN = """          set -Eeuo pipefail
-          if [[ "$GITHUB_EVENT_NAME" != push || "$GITHUB_REF" != "$RC6_EXPECTED_PRODUCT_REF" ]]; then
-            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=SOURCE_EVENT_OR_REF_MISMATCH|automatic_go=NO"
-            exit 79
-          fi
-          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "RC6_R164_RELEASE_REQUIRED=RED|reason=PRODUCT_SHA_INVALID|automatic_go=NO"
-            exit 79
-          fi
-          echo "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE|product_sha=${GITHUB_SHA}|trusted_main_release_audit=NO_VERIFICADO|artifact_id=NO_VERIFICADO|digest=NO_VERIFICADO|automatic_go=NO"
-          echo "::error::R164 postmerge product RELEASE byte verification, attempt-freshness and trusted-main receipt are not implemented; host promotion forbidden."
-          exit 79
-"""
+REVIEWED_R252_MAIN_SHA = "f831e2929d1a622f409211010fadaece6b15e953"
 EXPECTED_IF = (
     "$" + "{{ needs.release-evidence-required.result == 'success' && "
     "needs.release-evidence-required.outputs.release_bytes_verified == 'true' && "
     "needs.release-evidence-required.outputs.release_product_sha == github.sha && "
+    "needs.release-evidence-required.outputs.release_candidate_sha != '' && "
+    "needs.release-evidence-required.outputs.release_candidate_tree != '' && "
     "needs.release-evidence-required.outputs.release_artifact_id != '' && "
     "needs.release-evidence-required.outputs.release_artifact_digest != '' && "
-    "needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' }}"
+    "needs.release-evidence-required.outputs.release_run_id != '' && "
+    "needs.release-evidence-required.outputs.release_run_attempt != '' && "
+    "needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' && "
+    "needs.release-evidence-required.outputs.trusted_main_audit_run_attempt != '' && "
+    "needs.release-evidence-required.outputs.host_control_verified == 'true' }}"
 )
 
 
@@ -115,11 +110,21 @@ def assert_product_promotion_fail_closed(source: str) -> None:
     )
     _require(
         re.search(
-            r"(?m)^    permissions:\n      contents: read\n    steps:",
+            r"(?m)^    permissions:\n      contents: read\n      actions: read\n"
+            r"      pull-requests: read\n",
             gate,
         )
         is not None,
         "GATE_PERMISSIONS_NOT_READONLY",
+    )
+    _require(
+        f"RC6_R252_TRUSTED_MAIN_SHA: '{REVIEWED_R252_MAIN_SHA}'" in gate,
+        "R252_MAIN_SHA_NOT_EXACT_REVIEWED_PIN",
+    )
+    _require(
+        len(re.findall(r"(?m)^    outputs:\n", gate)) == 1 and
+        "host_control_verified:" not in gate,
+        "UNAUTHORIZED_HOST_RECEIPT_OUTPUT",
     )
     _require(
         re.search(
@@ -130,50 +135,81 @@ def assert_product_promotion_fail_closed(source: str) -> None:
         "PRODUCT_REF_NOT_PINNED",
     )
     _require(
-        len(re.findall(r"(?m)^      - name: ", gate)) == 1,
-        "MULTIPLE_PREHOST_STEPS",
+        len(re.findall(r"(?m)^      - name: ", gate)) == 4,
+        "R253_GUARD_STEP_COUNT_DRIFT",
     )
+    steps = re.split(r"(?m)^      - name: ", gate)
+    _require(len(steps) == 5, "MISSING_R253_STEP")
+    preflight, checkout, audit, host_hold = steps[1:]
     _require(
-        re.search(r"(?m)^        shell: bash$", gate) is not None,
-        "GATE_SHELL_CHANGED",
+        preflight.startswith("Reject unpinned postmerge verifier or wrong product event\n")
+        and "        shell: bash\n" in preflight
+        and ('        run: |\n          set -Eeuo pipefail\n'
+             '          if [[ "$GITHUB_EVENT_NAME" != push ||') in preflight,
+        "R253_PREFLIGHT_BASH_CHANGED",
     )
     _require(
         re.search(
             r"(?m)^          if \[\[ "
             r'"\$GITHUB_EVENT_NAME" != push \|\| '
             r'"\$GITHUB_REF" != "\$RC6_EXPECTED_PRODUCT_REF" \]\]; then$',
-            gate,
+            preflight,
         )
         is not None,
         "SOURCE_EVENT_OR_REF_GUARD_REMOVED",
     )
     _require(
-        re.search(r'(?m)^          if \[\[ ! "\$GITHUB_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]; then$', gate)
+        re.search(r'(?m)^          if \[\[ ! "\$GITHUB_SHA" =~ \^\[0-9a-f\]\{40\}\$ \]\]; then$', preflight)
         is not None,
         "PRODUCT_SHA_FORMAT_GUARD_REMOVED",
     )
     _require(
-        "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE"
-        in gate,
-        "TRUSTED_AUDIT_HOLD_MISSING",
+        "RC6_R164_RELEASE_REQUIRED=HOLD79|reason=TRUSTED_MAIN_SOURCE_UNPINNED"
+        in preflight and "$RC6_R252_TRUSTED_MAIN_SHA" in preflight,
+        "TRUSTED_SOURCE_HOLD_MISSING",
     )
     _require(
-        len(re.findall(r"(?m)^ {10,}exit 79[ \t]*$", gate)) == 3,
-        "MUST_EXIT79_ON_EACH_GUARD_BRANCH",
+        len(re.findall(r"(?m)^ {10,}exit 79[ \t]*$", preflight)) == 3,
+        "MUST_EXIT79_ON_EACH_PREFLIGHT_BRANCH",
     )
     _require(
-        gate.rstrip().endswith("          exit 79"),
-        "LAST_GATE_OPERATION_NOT_EXIT79",
-    )
-    script_parts = gate.split("        run: |\n")
-    _require(len(script_parts) == 2, "GATE_SCRIPT_AMBIGUOUS")
-    _require(
-        script_parts[1].rstrip() + "\n" == EXPECTED_HOLD79_RUN,
-        "GATE_SCRIPT_EARLY_SUCCESS_OR_UNREVIEWED_CHANGE",
+        "Checkout immutable R252 trusted-main verifier\n" in checkout
+        and "        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n" in checkout
+        and "          ref: ${{ env.RC6_R252_TRUSTED_MAIN_SHA }}\n" in checkout
+        and "          persist-credentials: false\n" in checkout,
+        "TRUSTED_MAIN_PINNED_CHECKOUT_CHANGED",
     )
     _require(
-        re.search(r"(?m)^    outputs:", gate) is None,
-        "UNREVIEWED_TRUST_RECEIPT_OUTPUTS",
+        "Authenticate exact R251 D/E receipts through R252\n" in audit
+        and "          GITHUB_TOKEN: ${{ github.token }}\n" in audit
+        and ("PYTHONDONTWRITEBYTECODE=1 python3 -I "
+             ".rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py") in audit
+        and "--trusted-release-mode PRODUCT_POSTMERGE" in audit
+        and "RC6_R164_RELEASE_BYTES=VERIFIED|host_authority=HOLD79" in audit,
+        "UNTRUSTED_R252_REPLACED_OR_BYPASSED",
+    )
+    _require(
+        all(field in audit for field in (
+            "RC6_BRIDGE_CANDIDATE_SHA", "RC6_BRIDGE_CANDIDATE_TREE_SHA",
+            "RC6_BRIDGE_PUBLISHER_MAIN_SHA", "RC6_BRIDGE_E_RUN_ID",
+            "RC6_BRIDGE_E_RUN_ATTEMPT", "RC6_BRIDGE_E_ARTIFACT_ID",
+            "RC6_BRIDGE_PRODUCT_SHA", "RC6_BRIDGE_PRODUCT_REF",
+        )),
+        "R252_D_E_POSTMERGE_BINDING_MISSING",
+    )
+    _require(
+        all(f"          {field}: ''\n" in audit for field in (
+            "RC6_BRIDGE_CANDIDATE_SHA", "RC6_BRIDGE_CANDIDATE_TREE_SHA",
+            "RC6_BRIDGE_PUBLISHER_MAIN_SHA", "RC6_BRIDGE_E_RUN_ID",
+            "RC6_BRIDGE_E_RUN_ATTEMPT", "RC6_BRIDGE_E_ARTIFACT_ID",
+        )) and "${{ vars.RC6_R251_" not in audit,
+        "R252_UNTRUSTED_SELECTOR_VARIABLES_REINTRODUCED",
+    )
+    _require(
+        "Hold host control pending independent physical authority\n" in host_hold
+        and "RC6_R164_HOST_CONTROL_HOLD79" in host_hold
+        and host_hold.rstrip().endswith("          exit 79"),
+        "HOST_HOLD79_REMOVED",
     )
     _require(
         re.search(r"(?m)^\s+continue-on-error:", gate) is None,
@@ -184,13 +220,10 @@ def assert_product_promotion_fail_closed(source: str) -> None:
         "CONDITIONAL_GATE_BYPASS",
     )
     _require(
-        re.search(r"(?m)^\s+uses:", gate) is None,
-        "PREHOST_UNREVIEWED_ACTION",
-    )
-    _require(
-        re.search(r"\b(?:sudo|ssh|docker)\b|secrets\.|GITHUB_TOKEN|GH_TOKEN", gate)
+        re.search(r"(?m)^\s*(?:sudo|ssh|docker)\b|secrets\.",
+                  re.sub(r"(?m)^\s*#.*$", "", gate), flags=re.IGNORECASE)
         is None,
-        "PREHOST_HOST_OR_TOKEN_ACCESS",
+        "PREHOST_HOST_COMMAND_FORBIDDEN",
     )
     _require(
         len(re.findall(r"(?m)^    needs: release-evidence-required[ \t]*$", promote))
@@ -247,19 +280,22 @@ class R164PromoteRequiredReleaseTests(unittest.TestCase):
             ("drop_artifact_id", "needs.release-evidence-required.outputs.release_artifact_id != ''", "true"),
             ("drop_artifact_digest", "needs.release-evidence-required.outputs.release_artifact_digest != ''", "true"),
             ("drop_trusted_audit_run", "needs.release-evidence-required.outputs.trusted_main_audit_run_id != ''", "true"),
-            ("forget_final_hard_stop", "          exit 79\n\n  promote:", "          exit 0\n\n  promote:"),
-            ("early_exit_success", "          echo \"RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE", "          exit 0\n          echo \"RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE"),
-            ("early_return_success", "          exit 79\n\n  promote:", "          return 0\n          exit 79\n\n  promote:"),
+            ("drop_attempt", "needs.release-evidence-required.outputs.release_run_attempt != ''", "true"),
+            ("drop_host_control", "needs.release-evidence-required.outputs.host_control_verified == 'true'", "true"),
+            ("host_final_stop", "          echo 'RC6_R164_HOST_CONTROL_HOLD79|host_ownership=NO_VERIFICADO|SSH=BLOCKED|sudo=BLOCKED|automatic_go=NO'\n          exit 79", "          echo 'RC6_R164_HOST_CONTROL_HOLD79|host_ownership=NO_VERIFICADO|SSH=BLOCKED|sudo=BLOCKED|automatic_go=NO'\n          exit 0"),
             ("early_exit_before_source_checks", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          exit 0\n          if [[ \"$GITHUB_EVENT_NAME\""),
-            ("disable_strict_bash", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          set +e\n          if [[ \"$GITHUB_EVENT_NAME\""),
-            ("success_if_true", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set -Eeuo pipefail\n          if true; then exit 0; fi\n          if [[ \"$GITHUB_EVENT_NAME\""),
+            ("disable_strict_bash", "        run: |\n          set -Eeuo pipefail\n          if [[ \"$GITHUB_EVENT_NAME\"", "        run: |\n          set +e\n          if [[ \"$GITHUB_EVENT_NAME\""),
+            ("pin_mutable_main", f"RC6_R252_TRUSTED_MAIN_SHA: '{REVIEWED_R252_MAIN_SHA}'", "RC6_R252_TRUSTED_MAIN_SHA: main"),
+            ("pin_other_valid_sha", f"RC6_R252_TRUSTED_MAIN_SHA: '{REVIEWED_R252_MAIN_SHA}'", "RC6_R252_TRUSTED_MAIN_SHA: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"),
+            ("reintroduce_untrusted_E_var", "          RC6_BRIDGE_E_RUN_ID: ''", "          RC6_BRIDGE_E_RUN_ID: ${{ vars.RC6_R251_E_RUN_ID }}"),
+            ("checkout_mutable_main", "          ref: ${{ env.RC6_R252_TRUSTED_MAIN_SHA }}", "          ref: main"),
+            ("fake_candidate_audit", "PYTHONDONTWRITEBYTECODE=1 python3 -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py", "PYTHONDONTWRITEBYTECODE=1 python3 -I scripts/rc6_ci_release_required_guard.py"),
             ("fake_github_event", 'if [[ "$GITHUB_EVENT_NAME" != push', 'if [[ "$GITHUB_EVENT_NAME" == push'),
-            ("allow_secrets", "    permissions:\n      contents: read\n", "    permissions:\n      contents: write\n"),
-            ("grant_token", "    timeout-minutes: 5\n    permissions:\n      contents: read\n", "    timeout-minutes: 5\n    env:\n      GITHUB_TOKEN: ${{ github.token }}\n    permissions:\n      contents: read\n"),
-            ("ignore_failures", "    timeout-minutes: 5\n    permissions:\n      contents: read\n", "    continue-on-error: true\n    timeout-minutes: 5\n    permissions:\n      contents: read\n"),
-            ("unreviewed_host_step", "    steps:\n      - name: Refuse host promotion", "    steps:\n      - name: Unexpected host action\n        run: sudo -n true\n      - name: Refuse host promotion"),
+            ("allow_secrets", "    permissions:\n      contents: read\n      actions: read\n", "    permissions:\n      contents: write\n      actions: read\n"),
+            ("ignore_failures", "    timeout-minutes: 30\n    permissions:\n      contents: read\n", "    continue-on-error: true\n    timeout-minutes: 30\n    permissions:\n      contents: read\n"),
+            ("unreviewed_host_step", "    steps:\n      - name: Reject unpinned", "    steps:\n      - name: Unexpected host action\n        run: sudo -n true\n      - name: Reject unpinned"),
             ("change_mutex", "  group: rc6-unified-paper-deploy", "  group: rc6-split-promote-mutex"),
-            ("new_host_job", "jobs:\n  # R164 fail-closed", "jobs:\n  bypass-host:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh invalid-host\n  # R164 fail-closed"),
+            ("new_host_job", "jobs:\n  # R262: R252/R259 trusted verifier", "jobs:\n  bypass-host:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: ssh invalid-host\n  # R262: R252/R259 trusted verifier"),
         ]
         for name, old, new in cases:
             with self.subTest(mutant=name):

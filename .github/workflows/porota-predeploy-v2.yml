@@ -1101,45 +1101,70 @@ jobs:
     name: RC6 required release evidence (offhost)
     # GitHub treats SKIPPED jobs as successful required checks. Unlike the
     # candidate gate, this product-targeted job must run on skipped/failure.
-    # The R144 publish lock and both existing exit79 holds remain untouched.
+    # R254: R144 remains the image/native publication lock. Only trusted-main
+    # R251 D/E release bytes may satisfy the separate required PR check.
+    # This job never builds an image and never authorizes host deployment.
     needs: artifact-gate
     if: ${{ always() && github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # R252 audits the immutable full ZIP/image (bounded at 2 GiB), not just
+    # the former small JSON. Do not time out legitimate, bounded verification.
+    timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
+      pull-requests: read
     steps:
       - name: Checkout untrusted PR head for exact SHA inspection only
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: .rc6-release-head-inspect
           persist-credentials: false
 
       - name: Checkout immutable reviewed release evidence guard
-        # Reviewed bootstrap pin: do not execute PR HEAD's version of guard.
-        uses: actions/checkout@v4
+        # R252 merged with independent SEC GO and required CI/attestation PASS.
+        # Pin the exact merge commit; this is never a mutable branch checkout.
+        # Never use mutable main or execute PR HEAD's version of the guard.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 7c1c60a7e050f2dc0bfa215f38e6e98dafac556e
+          ref: f831e2929d1a622f409211010fadaece6b15e953
           path: .rc6-release-guard-trusted
           persist-credentials: false
 
-      - name: Reject skipped or unbound frozen artifact evidence
+      - name: Verify pinned R252 trusted RELEASE receipt
         shell: bash
         env:
-          RC6_RELEASE_REPO: ${{ github.repository }}
-          RC6_RELEASE_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GITHUB_TOKEN: ${{ github.token }}
           RC6_RELEASE_PR_DRAFT: ${{ github.event.pull_request.draft }}
-          RC6_RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          RC6_RELEASE_GATE_RESULT: ${{ needs.artifact-gate.result }}
-          RC6_RELEASE_ARTIFACT_SHA: ${{ needs.artifact-gate.outputs.candidate_sha }}
-          RC6_RELEASE_ARTIFACT_NAME: ${{ needs.artifact-gate.outputs.artifact_name }}
-          RC6_RELEASE_ARTIFACT_ID: ${{ needs.artifact-gate.outputs.artifact_id }}
-          RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.artifact-gate.outputs.artifact_digest }}
+          RC6_BRIDGE_REPOSITORY: ${{ github.repository }}
+          RC6_BRIDGE_MODE: PR_CANDIDATE
+          RC6_BRIDGE_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+          RC6_BRIDGE_CANDIDATE_TREE_SHA: ''
+          # R259: derive publisher identity from immutable trusted checkout.
+          # Three empty E selectors trigger R252 bounded UNIQUE REST discovery;
+          # no repository Variables write credential, no latest-by-date choice.
+          # R252 must reauthenticate exact E/D run/attempt/artifact/ZIP bytes.
+          RC6_BRIDGE_PUBLISHER_MAIN_SHA: ''
+          RC6_BRIDGE_E_RUN_ID: ''
+          RC6_BRIDGE_E_RUN_ATTEMPT: ''
+          RC6_BRIDGE_E_ARTIFACT_ID: ''
+          RC6_BRIDGE_PRODUCT_SHA: ''
+          RC6_BRIDGE_PRODUCT_REF: ''
         run: |
           set -Eeuo pipefail
+          # Fail closed on any mismatch with the independently reviewed main.
           test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = \
-            "7c1c60a7e050f2dc0bfa215f38e6e98dafac556e"
-          export RC6_RELEASE_CHECKOUT_SHA
-          RC6_RELEASE_CHECKOUT_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD)"
-          python -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py
+            "f831e2929d1a622f409211010fadaece6b15e953" || exit 79
+          test "$RC6_RELEASE_PR_DRAFT" = false || exit 79
+          test "${{ github.event.pull_request.number }}" = 1087 || exit 79
+          test "$(git -C .rc6-release-head-inspect rev-parse HEAD)" = \
+            "$RC6_BRIDGE_CANDIDATE_SHA" || exit 79
+          RC6_BRIDGE_CANDIDATE_TREE_SHA="$(git -C .rc6-release-head-inspect rev-parse HEAD^{tree})"
+          export RC6_BRIDGE_CANDIDATE_TREE_SHA
+          [[ "$RC6_BRIDGE_CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$RC6_BRIDGE_CANDIDATE_TREE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          test -f .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py || exit 79
+          python3 -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py \
+            --trusted-release-mode PR_CANDIDATE || exit 79
+          echo 'RC6_R254=TRUSTED_RELEASE_BYTES_BOUND|automatic_go=NO|host=NO'

@@ -17,19 +17,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # R164 fail-closed pre-host barrier. A PR/premerge Predeploy artifact never
-  # authenticates the postmerge product image. A future, separately reviewed
-  # trusted-main RELEASE auditor must bind product SHA/tree, artifact ID,
-  # digest and latest run attempt before this gate may publish any outputs.
-  # Deliberately NO outputs and an unconditional HOLD79 until that exists.
+  # R262: R252/R259 trusted verifier is independently reviewed, merged and
+  # pinned to main@f831e292; candidate PRODUCT_POSTMERGE hints are derived
+  # from the authenticated two-parent product commit, not repository vars.
+  # R251 D/E REST evidence must bind the exact two-parent product merge,
+  # candidate/tree and completed D artifact id/run/attempt/digest. Repository
+  # Unique E is discovered by bounded read-only REST, never latest by date.
+  # Host authority remains separately HOLD79 (no SSH/sudo contact).
   release-evidence-required:
-    name: Require postmerge product RELEASE bytes (R164 HOLD79)
+    name: Require exact R252 postmerge RELEASE + independent host authority
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # R252 rehashes an exact GitHub D ZIP up to 2 GiB; bounded but not 5 min.
+    timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
+      pull-requests: read
+    env:
+      # Exact independently reviewed/merged main R252 commit. Never use
+      # mutable main, candidate HEAD, or an Actions repository variable.
+      RC6_R252_TRUSTED_MAIN_SHA: 'f831e2929d1a622f409211010fadaece6b15e953'
+    outputs:
+      release_bytes_verified: ${{ steps.trusted_release.outputs.release_bytes_verified }}
+      release_product_sha: ${{ steps.trusted_release.outputs.release_product_sha }}
+      release_candidate_sha: ${{ steps.trusted_release.outputs.release_candidate_sha }}
+      release_candidate_tree: ${{ steps.trusted_release.outputs.release_candidate_tree }}
+      release_artifact_id: ${{ steps.trusted_release.outputs.release_artifact_id }}
+      release_artifact_digest: ${{ steps.trusted_release.outputs.release_artifact_digest }}
+      release_run_id: ${{ steps.trusted_release.outputs.release_run_id }}
+      release_run_attempt: ${{ steps.trusted_release.outputs.release_run_attempt }}
+      trusted_main_audit_run_id: ${{ steps.trusted_release.outputs.trusted_main_audit_run_id }}
+      trusted_main_audit_run_attempt: ${{ steps.trusted_release.outputs.trusted_main_audit_run_attempt }}
     steps:
-      - name: Refuse host promotion without exact trusted product-release audit
+      - name: Reject unpinned postmerge verifier or wrong product event
         shell: bash
         env:
           RC6_EXPECTED_PRODUCT_REF: refs/heads/deploy/rc6-pr69-isolated-20260915
@@ -43,8 +63,134 @@ jobs:
             echo "RC6_R164_RELEASE_REQUIRED=RED|reason=PRODUCT_SHA_INVALID|automatic_go=NO"
             exit 79
           fi
-          echo "RC6_R164_RELEASE_REQUIRED=HOLD79|TRUSTED_RELEASE_AUDIT_UNAVAILABLE|product_sha=${GITHUB_SHA}|trusted_main_release_audit=NO_VERIFICADO|artifact_id=NO_VERIFICADO|digest=NO_VERIFICADO|automatic_go=NO"
-          echo "::error::R164 postmerge product RELEASE byte verification, attempt-freshness and trusted-main receipt are not implemented; host promotion forbidden."
+          if [[ ! "$RC6_R252_TRUSTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ||
+                "$RC6_R252_TRUSTED_MAIN_SHA" == 0000000000000000000000000000000000000000 ]]; then
+            echo "RC6_R164_RELEASE_REQUIRED=HOLD79|reason=TRUSTED_MAIN_SOURCE_UNPINNED|product_sha=${GITHUB_SHA}|automatic_go=NO"
+            exit 79
+          fi
+          echo "RC6_R164_RELEASE_SOURCE_PIN=GREEN|product_sha=${GITHUB_SHA}|trusted_sha=${RC6_R252_TRUSTED_MAIN_SHA}|host_go=NO"
+
+      - name: Checkout immutable R252 trusted-main verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: mbalbo2023/Porota-trading
+          ref: ${{ env.RC6_R252_TRUSTED_MAIN_SHA }}
+          path: .rc6-release-guard-trusted
+          persist-credentials: false
+
+      - name: Authenticate exact R251 D/E receipts through R252
+        id: trusted_release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RC6_BRIDGE_MODE: PRODUCT_POSTMERGE
+          RC6_BRIDGE_REPOSITORY: ${{ github.repository }}
+          RC6_BRIDGE_PRODUCT_SHA: ${{ github.sha }}
+          RC6_BRIDGE_PRODUCT_REF: ${{ github.ref }}
+          RC6_BRIDGE_CANDIDATE_SHA: ''
+          RC6_BRIDGE_CANDIDATE_TREE_SHA: ''
+          RC6_BRIDGE_PUBLISHER_MAIN_SHA: ''
+          RC6_BRIDGE_E_RUN_ID: ''
+          RC6_BRIDGE_E_RUN_ATTEMPT: ''
+          RC6_BRIDGE_E_ARTIFACT_ID: ''
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C .rc6-release-guard-trusted rev-parse HEAD)" = "$RC6_R252_TRUSTED_MAIN_SHA" || exit 79
+          test -f .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py || exit 79
+          for field in RC6_BRIDGE_REPOSITORY RC6_BRIDGE_PRODUCT_SHA RC6_BRIDGE_PRODUCT_REF; do
+            if [[ -z "${!field:-}" ]]; then
+              echo "RC6_R164_RELEASE_REQUIRED=HOLD79|reason=PRODUCT_SELECTOR_MISSING|automatic_go=NO"
+              exit 79
+            fi
+          done
+          # R252 is the sole authority to derive the candidate and select E.
+          # Nonempty/partial hints are unexpected for this unattended job.
+          for field in RC6_BRIDGE_CANDIDATE_SHA RC6_BRIDGE_CANDIDATE_TREE_SHA RC6_BRIDGE_PUBLISHER_MAIN_SHA RC6_BRIDGE_E_RUN_ID RC6_BRIDGE_E_RUN_ATTEMPT RC6_BRIDGE_E_ARTIFACT_ID; do
+            if [[ -n "${!field:-}" ]]; then
+              echo "RC6_R164_RELEASE_REQUIRED=HOLD79|reason=UNEXPECTED_RECEIPT_SELECTOR|automatic_go=NO"
+              exit 79
+            fi
+          done
+          # R252 independently re-reads REST E→D, product parents/tree and
+          # verified artifact bytes. Candidate code never establishes trust.
+          PYTHONDONTWRITEBYTECODE=1 python3 -I .rc6-release-guard-trusted/scripts/rc6_ci_release_required_guard.py \
+            --trusted-release-mode PRODUCT_POSTMERGE > "$RUNNER_TEMP/rc6-r252-postmerge-verified.json"
+          python3 -I - "$RUNNER_TEMP/rc6-r252-postmerge-verified.json" <<'PY'
+          import json, os, re, sys
+          from pathlib import Path
+
+          EXPECTED = frozenset({
+              'status', 'mode', 'candidate_sha', 'candidate_tree_sha',
+              'product_sha', 'release_artifact_id', 'release_artifact_digest',
+              'release_run_id', 'release_run_attempt',
+              'trusted_main_audit_run_id', 'trusted_main_audit_run_attempt',
+              'artifact_contents_verified_by_this_guard', 'owner_go_verified',
+              'runtime_verified', 'automatic_go',
+          })
+          def no_duplicates(pairs):
+              out = {}
+              for key, value in pairs:
+                  if key in out: raise ValueError('duplicate JSON field')
+                  out[key] = value
+              return out
+
+          try:
+              path = Path(sys.argv[1])
+              if path.stat().st_size > 16384: raise ValueError('receipt too large')
+              data = json.loads(path.read_text(encoding='utf-8'),
+                                object_pairs_hook=no_duplicates,
+                                parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+              if type(data) is not dict or set(data) != EXPECTED:
+                  raise ValueError('unexpected schema')
+              if data['status'] != 'TRUSTED_RELEASE_BYTES_BOUND' or data['mode'] != 'PRODUCT_POSTMERGE':
+                  raise ValueError('wrong mode')
+              for field, env in (
+                  ('candidate_sha', 'RC6_BRIDGE_CANDIDATE_SHA'),
+                  ('candidate_tree_sha', 'RC6_BRIDGE_CANDIDATE_TREE_SHA'),
+                  ('product_sha', 'RC6_BRIDGE_PRODUCT_SHA'),
+              ):
+                  if (type(data[field]) is not str or
+                      re.fullmatch('[0-9a-f]{40}', data[field]) is None or
+                      (field == 'product_sha' and data[field] != os.environ[env]) or
+                      (field != 'product_sha' and os.environ[env] and
+                       data[field] != os.environ[env])):
+                      raise ValueError('SHA mismatch')
+              if (type(data['release_artifact_digest']) is not str or
+                  re.fullmatch('sha256:[0-9a-f]{64}', data['release_artifact_digest']) is None):
+                  raise ValueError('digest malformed')
+              for field in ('release_artifact_id', 'release_run_id', 'release_run_attempt',
+                            'trusted_main_audit_run_id', 'trusted_main_audit_run_attempt'):
+                  if type(data[field]) is not int or data[field] <= 0:
+                      raise ValueError('identity malformed')
+              if (data['artifact_contents_verified_by_this_guard'] is not True or
+                  any(data[field] is not False for field in
+                      ('owner_go_verified', 'runtime_verified', 'automatic_go'))):
+                  raise ValueError('claimed unreviewed authority')
+              rows = {
+                  'release_bytes_verified': 'true',
+                  'release_product_sha': data['product_sha'],
+                  'release_candidate_sha': data['candidate_sha'],
+                  'release_candidate_tree': data['candidate_tree_sha'],
+                  'release_artifact_id': data['release_artifact_id'],
+                  'release_artifact_digest': data['release_artifact_digest'],
+                  'release_run_id': data['release_run_id'],
+                  'release_run_attempt': data['release_run_attempt'],
+                  'trusted_main_audit_run_id': data['trusted_main_audit_run_id'],
+                  'trusted_main_audit_run_attempt': data['trusted_main_audit_run_attempt'],
+              }
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+                  for key, value in rows.items(): output.write(f'{key}={value}\n')
+          except (ValueError, KeyError, TypeError, OSError, UnicodeError):
+              print('RC6_R164_RELEASE_REQUIRED=HOLD79|reason=TRUSTED_RECEIPT_SCHEMA_RED|automatic_go=NO')
+              sys.exit(79)
+          print('RC6_R164_RELEASE_BYTES=VERIFIED|host_authority=HOLD79|automatic_go=NO')
+          PY
+
+      - name: Hold host control pending independent physical authority
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo 'RC6_R164_HOST_CONTROL_HOLD79|host_ownership=NO_VERIFICADO|SSH=BLOCKED|sudo=BLOCKED|automatic_go=NO'
           exit 79
 
   promote:
@@ -57,9 +203,15 @@ jobs:
       ${{ needs.release-evidence-required.result == 'success' &&
           needs.release-evidence-required.outputs.release_bytes_verified == 'true' &&
           needs.release-evidence-required.outputs.release_product_sha == github.sha &&
+          needs.release-evidence-required.outputs.release_candidate_sha != '' &&
+          needs.release-evidence-required.outputs.release_candidate_tree != '' &&
           needs.release-evidence-required.outputs.release_artifact_id != '' &&
           needs.release-evidence-required.outputs.release_artifact_digest != '' &&
-          needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' }}
+          needs.release-evidence-required.outputs.release_run_id != '' &&
+          needs.release-evidence-required.outputs.release_run_attempt != '' &&
+          needs.release-evidence-required.outputs.trusted_main_audit_run_id != '' &&
+          needs.release-evidence-required.outputs.trusted_main_audit_run_attempt != '' &&
+          needs.release-evidence-required.outputs.host_control_verified == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
@@ -98,43 +250,46 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "POROTA_DEPLOY_V2_TREE_IDENTITY=GREEN|candidate=$CANDIDATE_SHA|deploy=$DEPLOY_SHA|tree=$DEPLOY_TREE"
 
-      - name: Locate successful Predeploy V2 artifact
+      - name: Use only exact R252-verified R251 D release artifact identity
         shell: bash
+        env:
+          RC6_RELEASE_CANDIDATE_SHA: ${{ needs.release-evidence-required.outputs.release_candidate_sha }}
+          RC6_RELEASE_CANDIDATE_TREE: ${{ needs.release-evidence-required.outputs.release_candidate_tree }}
+          RC6_RELEASE_ARTIFACT_ID: ${{ needs.release-evidence-required.outputs.release_artifact_id }}
+          RC6_RELEASE_ARTIFACT_DIGEST: ${{ needs.release-evidence-required.outputs.release_artifact_digest }}
+          RC6_RELEASE_RUN_ID: ${{ needs.release-evidence-required.outputs.release_run_id }}
+          RC6_RELEASE_RUN_ATTEMPT: ${{ needs.release-evidence-required.outputs.release_run_attempt }}
+          RC6_RELEASE_AUDIT_RUN_ID: ${{ needs.release-evidence-required.outputs.trusted_main_audit_run_id }}
+          RC6_RELEASE_AUDIT_RUN_ATTEMPT: ${{ needs.release-evidence-required.outputs.trusted_main_audit_run_attempt }}
         run: |
           set -Eeuo pipefail
-          python - <<'PY'
-          import json, os, urllib.parse, urllib.request
-          repo=os.environ["GITHUB_REPOSITORY"]
-          candidate=os.environ["CANDIDATE_SHA"]
-          token=os.environ["GH_TOKEN"]
-          name=f"porota-predeploy-v2-{candidate}"
-          headers={"Authorization":f"Bearer {token}","Accept":"application/vnd.github+json",
-                   "X-GitHub-Api-Version":"2022-11-28"}
-          def get(url):
-              req=urllib.request.Request(url,headers=headers)
-              with urllib.request.urlopen(req,timeout=30) as r:
-                  return json.load(r)
-          q=urllib.parse.quote(name,safe="")
-          data=get(f"https://api.github.com/repos/{repo}/actions/artifacts?name={q}&per_page=100")
-          candidates=[]
-          for artifact in data.get("artifacts",[]):
-              if artifact.get("expired") or artifact.get("name") != name:
-                  continue
-              run_id=(artifact.get("workflow_run") or {}).get("id")
-              if not run_id:
-                  continue
-              run=get(f"https://api.github.com/repos/{repo}/actions/runs/{run_id}")
-              if run.get("name")!="Porota Predeploy V2" or run.get("conclusion")!="success":
-                  continue
-              candidates.append((artifact.get("created_at") or "",artifact,run))
-          if not candidates:
-              raise SystemExit("NO_SUCCESSFUL_FROZEN_PREDEPLOY_ARTIFACT")
-          _,artifact,run=max(candidates,key=lambda x:x[0])
-          out=os.environ["GITHUB_ENV"]
-          with open(out,"a",encoding="utf-8") as f:
-              f.write(f"PREDEPLOY_ARTIFACT_ID={artifact['id']}\n")
-              f.write(f"PREDEPLOY_RUN_ID={run['id']}\n")
-          print(f"POROTA_FROZEN_PREDEPLOY_FOUND=GREEN|run={run['id']}|artifact={artifact['id']}|name={name}")
+          python3 -I - <<'PY'
+          import os, re, sys
+          try:
+              candidate=os.environ['RC6_RELEASE_CANDIDATE_SHA']
+              tree=os.environ['RC6_RELEASE_CANDIDATE_TREE']
+              if candidate!=os.environ['CANDIDATE_SHA'] or tree!=os.environ['CANDIDATE_TREE']:
+                  raise ValueError('candidate/tree mismatch')
+              if any(re.fullmatch('[0-9a-f]{40}', x) is None for x in (candidate,tree)):
+                  raise ValueError('invalid identity')
+              if re.fullmatch('sha256:[0-9a-f]{64}',os.environ['RC6_RELEASE_ARTIFACT_DIGEST']) is None:
+                  raise ValueError('digest invalid')
+              for item in ('RC6_RELEASE_ARTIFACT_ID','RC6_RELEASE_RUN_ID',
+                           'RC6_RELEASE_RUN_ATTEMPT','RC6_RELEASE_AUDIT_RUN_ID',
+                           'RC6_RELEASE_AUDIT_RUN_ATTEMPT'):
+                  if re.fullmatch('[1-9][0-9]{0,16}',os.environ[item]) is None:
+                      raise ValueError('missing exact run identity')
+              # Historical variable names retained only for the existing
+              # download/log consumer. There is NO Predeploy name/date lookup.
+              with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as out:
+                  out.write('PREDEPLOY_ARTIFACT_ID='+os.environ['RC6_RELEASE_ARTIFACT_ID']+'\n')
+                  out.write('PREDEPLOY_RUN_ID='+os.environ['RC6_RELEASE_RUN_ID']+'\n')
+                  out.write('RC6_RELEASE_ARTIFACT_SHA256='+
+                            os.environ['RC6_RELEASE_ARTIFACT_DIGEST'][7:]+'\n')
+          except (KeyError, ValueError, OSError):
+              print('RC6_R253_EXACT_ARTIFACT=HOLD79|reason=MISSING_TRUSTED_RECEIPT|automatic_go=NO')
+              sys.exit(79)
+          print('RC6_R253_EXACT_ARTIFACT=BOUND|selection=R252_D_E_ONLY|host_authority=NO')
           PY
 
       - name: Download and verify frozen artifact
@@ -148,8 +303,14 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$PREDEPLOY_ARTIFACT_ID/zip" \
             -o /tmp/porota-frozen-v2.zip
+          test "$(sha256sum /tmp/porota-frozen-v2.zip | cut -d' ' -f1)" = "$RC6_RELEASE_ARTIFACT_SHA256" || {
+            echo 'RC6_R253_D_ARTIFACT=HOLD79|reason=ZIP_DIGEST_MISMATCH|automatic_go=NO'
+            exit 79
+          }
           unzip -q /tmp/porota-frozen-v2.zip -d /tmp/porota-frozen-v2
-          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json; do
+          # Seven exact sealed R251 D payload files. Keep six legacy host
+          # transfer members; the seventh attests image build provenance.
+          for name in porota-frozen-candidate.json porota-predeploy-image.tar.gz porota-deploy-bundle-v2.tgz porota-deploy-bundle-v2-manifest.json porota-host-manifest-v2.json porota-host-policy-v2.json porota-image-build-receipt.json; do
             src="$(find /tmp/porota-frozen-v2 -type f -name "$name" -print -quit)"
             test -n "$src"
             cp "$src" "/tmp/$name"
