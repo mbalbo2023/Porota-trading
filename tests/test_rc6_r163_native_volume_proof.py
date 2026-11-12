@@ -104,6 +104,26 @@ def _verify(producer: dict | None = None, collector: dict | None = None):
     )
 
 
+@pytest.mark.parametrize("role,physical_mode", (
+    ("producer", "z"),
+    ("collector", ""),
+))
+def test_r186_physical_linux_docker28_mode_semantics(
+    role: str, physical_mode: str,
+) -> None:
+    """Mode is a Docker mount label; read-only authority is the separate RW bit.
+
+    Observed on GitHub-hosted Engine 28.0.4, run 43142337952.
+    This is initially RED against the old literal producer-empty/collector-ro gate.
+    """
+    producer = _inspect()
+    collector = _inspect(collector=True)
+    selected = producer if role == "producer" else collector
+    selected["Mounts"][0]["Mode"] = physical_mode
+    result = _verify(producer, collector)
+    assert result["volume_name"] == VOLUME
+
+
 def test_exact_cids_and_labels_allow_only_own_uid1000_anonymous_volume() -> None:
     receipt = _verify()
     assert receipt == {
