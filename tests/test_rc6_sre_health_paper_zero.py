@@ -68,6 +68,7 @@ class SreHealthPaperZeroTests(unittest.TestCase):
                 result = self._probe(full, counter)
                 self.assertEqual(expected, result["status"])
                 self.assertEqual(counter, result.get("real_orders_sent"))
+                self.assertIs(type(result.get("real_orders_sent")), type(counter))
                 if expected == "GREEN":
                     self.assertEqual("ok", result["quick_check"])
                 else:
