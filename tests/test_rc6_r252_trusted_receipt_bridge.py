@@ -278,6 +278,22 @@ def test_e_rest_artifact_identity_and_attempt_window_required(key, value):
         bridge(mutate=lambda data: data[f"{API}/actions/artifacts/{E_ART}"].update({key: value}))
 
 
+@pytest.mark.parametrize("run_id,artifact_id", [(E_ID, E_ART), (D_ID, D_ART)])
+def test_release_workflow_has_exactly_one_artifact_no_name_alias(run_id, artifact_id):
+    path = f"{API}/actions/runs/{run_id}/artifacts?per_page=100"
+
+    def add_alias(records):
+        listing = records[path]
+        second = deepcopy(listing["artifacts"][0])
+        second["id"] = artifact_id + 100
+        second["name"] = "ambiguous-debug-sidecar"
+        listing["artifacts"].append(second)
+        listing["total_count"] = 2
+
+    with pytest.raises(guard.RequiredReleaseEvidenceRed):
+        bridge(mutate=add_alias)
+
+
 @pytest.mark.parametrize("path,key,value", [
     (f"{API}/actions/artifacts/{E_ART}", "digest", 123),
     (f"{API}/actions/artifacts/{D_ART}", "digest", []),

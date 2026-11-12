@@ -165,13 +165,10 @@ def _unique_artifact_list(payload: Any, expected: Mapping[str, Any]) -> None:
     # Never take latest-by-created_at or an ambiguous rerun artifact.
     if (not isinstance(payload, Mapping) or
             type(payload.get("total_count")) is not int or
-            not 0 < payload["total_count"] <= 100 or
+            payload["total_count"] != 1 or
             type(payload.get("artifacts")) is not list or
-            len(payload["artifacts"]) != payload["total_count"]):
-        _red()
-    matches = [row for row in payload["artifacts"]
-               if isinstance(row, Mapping) and row.get("name") == expected["name"]]
-    if len(matches) != 1 or matches[0] != expected:
+            len(payload["artifacts"]) != 1 or
+            payload["artifacts"][0] != expected):
         _red()
 
 
