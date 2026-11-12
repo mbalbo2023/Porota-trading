@@ -150,7 +150,7 @@ def test_safe_docker24_hostconfig_defaults_remain_accepted(field, default) -> No
 
 @pytest.mark.parametrize("case", (
     "optional_neutral_mount_keys", "read_only_false_omitted",
-    "default_volume_options",
+    "anonymous_source_omitted", "default_volume_options",
 ))
 def test_docker24_neutral_mount_serialization_remains_accepted(case: str) -> None:
     producer = _inspect()
@@ -160,6 +160,8 @@ def test_docker24_neutral_mount_serialization_remains_accepted(case: str) -> Non
                          "VolumeOptions": None, "TmpfsOptions": None})
     elif case == "read_only_false_omitted":
         declared.pop("ReadOnly")
+    elif case == "anonymous_source_omitted":
+        declared.pop("Source")
     elif case == "default_volume_options":
         declared["VolumeOptions"] = {
             "NoCopy": False, "Labels": None, "DriverConfig": None,
@@ -172,6 +174,8 @@ def test_docker24_neutral_mount_serialization_remains_accepted(case: str) -> Non
     "wrong_run_attempt", "foreign_extra_label", "root_user",
     "host_bind_mount", "extra_mount", "unknown_volume",
     "wrong_collector_source", "collector_rw", "producer_ro", "volume_named_not_anonymous",
+    "mount_source_null", "mount_source_numeric", "mount_source_list",
+    "mount_source_64hex",
     "privileged", "network_enabled", "rootfs_writable",
     "cap_added", "host_pid_namespace", "device_mapped", "tmpfs_mounted",
     "ipc_host", "ipc_other_container", "uts_host", "uts_other_container",
@@ -214,6 +218,14 @@ def test_foreign_or_privileged_docker_identity_is_hold79(case: str) -> None:
         producer["Mounts"][0]["RW"] = False
     elif case == "volume_named_not_anonymous":
         producer["HostConfig"]["Mounts"][0]["Source"] = "shared-volume"
+    elif case == "mount_source_null":
+        producer["HostConfig"]["Mounts"][0]["Source"] = None
+    elif case == "mount_source_numeric":
+        producer["HostConfig"]["Mounts"][0]["Source"] = 0
+    elif case == "mount_source_list":
+        producer["HostConfig"]["Mounts"][0]["Source"] = []
+    elif case == "mount_source_64hex":
+        producer["HostConfig"]["Mounts"][0]["Source"] = VOLUME
     elif case == "privileged":
         producer["HostConfig"]["Privileged"] = True
     elif case == "network_enabled":

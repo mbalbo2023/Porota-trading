@@ -91,7 +91,7 @@ def _anonymous_volume_declaration(mounts: Any) -> bool:
     allowed = {"Type", "Source", "Target", "ReadOnly", "Consistency",
                "BindOptions", "VolumeOptions", "TmpfsOptions"}
     if (not set(mount).issubset(allowed) or
-            mount.get("Type") != "volume" or mount.get("Source") != "" or
+            mount.get("Type") != "volume" or mount.get("Source", "") != "" or
             mount.get("Target") != "/app/data" or
             ("ReadOnly" in mount and mount["ReadOnly"] is not False) or
             mount.get("Consistency") not in (None, "", "default", "consistent") or
