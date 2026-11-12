@@ -1,0 +1,62 @@
+# R206 C is a separate completed-run auditor; B cannot self-attest success.
+# Read-only GitHub REST, exactly one P/N public artifact; never releases R144.
+name: RC6 R206 Trusted Postcompletion Public Byte Audit (READ ONLY)
+
+on:
+  workflow_run:
+    workflows: [RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc6-r206-postcompletion-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  verify-public-bytes:
+    name: REST P/N completed SUCCESS plus U/M identity and six public bytes
+    if: >-
+      ${{ github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'workflow_run' &&
+      github.event.workflow_run.status == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.name == 'RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout trusted default main only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify completed P/N REST and exact public ZIP from publisher
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RC6_TRUSTED_MAIN_SHA: ${{ github.sha }}
+          RC6_PUBLISHER_RUN_ID: ${{ github.event.workflow_run.id }}
+          RC6_PUBLISHER_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main || exit 79
+          test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
+          [[ "$RC6_TRUSTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$RC6_PUBLISHER_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
+          [[ "$RC6_PUBLISHER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
+          RC6_TRUSTED_SOURCE_SHA256=c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f
+          printf '%s  %s\n' "$RC6_TRUSTED_SOURCE_SHA256" \
+            scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
+          python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py r206-postcompletion \
+            --event "$GITHUB_EVENT_PATH" --run-id "$RC6_PUBLISHER_RUN_ID" \
+            --run-attempt "$RC6_PUBLISHER_ATTEMPT" \
+            --trusted-main-sha "$RC6_TRUSTED_MAIN_SHA"
+          echo 'RC6_R206_C=PUBLIC_BYTES_VERIFIED_PENDING_OTHER_GATES|release_go=NO|R144=HOLD|runtime=NO_VERIFICADO'

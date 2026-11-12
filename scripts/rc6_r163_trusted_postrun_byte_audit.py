@@ -42,6 +42,8 @@ CANDIDATE_REF = "integration/rc6-a1115-r87-unified-paper-candidate-20261110"
 PR_NUMBER = 1087
 UPSTREAM_NAME = "RC6 R163 Offhost Guard79 Proof (PROBE ONLY)"
 UPSTREAM_PATH = ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
+TRUSTED_PUBLISHER_NAME = "RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)"
+TRUSTED_PUBLISHER_PATH = ".github/workflows/rc6-r163-postrun-trusted-main.yml"
 ZIP_MANIFEST = "porota-artifact-byte-manifest-v1.json"
 ZIP_PAYLOAD = frozenset({
     "source-inspect.json", "collector-inspect.json", "custody.json",
@@ -56,6 +58,19 @@ TAR_FILES = frozenset({
     "catalog/full-catalog.json", "cadence/cadence-fresh.json",
     "cadence/cadence-legacy.json",
 })
+# R206: the PR-owned collector already emits these 13 fixed public projections.
+# Validate them independently in trusted main; hash-only TAR verification is
+# insufficient because a fully resealed TAR could otherwise contain opaque
+# private XML attributes, arbitrary JSON fields or a forged release signal.
+PUBLIC_XML_FILES = frozenset(name for name in TAR_FILES if name.endswith(".xml"))
+PUBLIC_JSON_GENERATIONS = {
+    "session/stress.json": 2,
+    "catalog/full-catalog.json": 2,
+    "cadence/cadence-fresh.json": 12,
+    "cadence/cadence-legacy.json": 12,
+}
+MAX_PUBLIC_CASES = 100000
+MAX_PUBLIC_FILE_BYTES = 8 * 1024 * 1024
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 UTC_RFC3339 = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -185,9 +200,25 @@ def _name(sha: str, run_id: int, attempt: int) -> str:
     return f"rc6-r163-offhost-{run_id}-{attempt}-{sha}"
 
 
+def _workflow_path_exact(path: Any, expected: str, *,
+                         branch: str, sha: str,
+                         upstream_pull: bool = False) -> bool:
+    """Accept documented GitHub REST @ref variants without prefix matching.
+
+    GitHub's workflow-runs REST may report a workflow path followed by a
+    concrete ref. Never accept an arbitrary @branch or a different PR/SHA.
+    """
+    variants = {expected, f"{expected}@{branch}",
+                f"{expected}@refs/heads/{branch}", f"{expected}@{sha}"}
+    if upstream_pull:
+        variants.add(f"{expected}@refs/pull/{PR_NUMBER}/merge")
+    return type(path) is str and path in variants
+
+
 def _identity(event: Mapping[str, Any], run: Mapping[str, Any],
               pr: Mapping[str, Any], commit: Mapping[str, Any],
-              expected_run_id: int, expected_run_attempt: int) -> tuple[str, str, str]:
+              expected_run_id: int, expected_run_attempt: int, *,
+              expected_conclusion: str = "success") -> tuple[str, str, str]:
     if not _positive(expected_run_id) or not _positive(expected_run_attempt):
         _red("EXPECTED_RUN_INVALID")
     if (not isinstance(event, dict) or event.get("action") != "completed" or
@@ -202,7 +233,7 @@ def _identity(event: Mapping[str, Any], run: Mapping[str, Any],
             event_run.get("run_attempt") != expected_run_attempt):
         _red("EVENT_RUN_MISMATCH")
     if (event_run.get("status") != "completed" or
-            event_run.get("conclusion") != "success" or
+            event_run.get("conclusion") != expected_conclusion or
             event_run.get("event") != "pull_request" or
             event_run.get("name") != UPSTREAM_NAME):
         _red("EVENT_UPSTREAM_NOT_SUCCESS")
@@ -211,21 +242,27 @@ def _identity(event: Mapping[str, Any], run: Mapping[str, Any],
     if (run.get("run_attempt") != expected_run_attempt or
             not _positive(run.get("run_attempt"))):
         _red("RUN_ATTEMPT_MISMATCH")
-    if run.get("status") != "completed" or run.get("conclusion") != "success":
+    if run.get("status") != "completed" or run.get("conclusion") != expected_conclusion:
         _red("RUN_NOT_SUCCESS")
     if run.get("event") != "pull_request":
         _red("RUN_EVENT_MISMATCH")
-    if run.get("path") != UPSTREAM_PATH or run.get("name") != UPSTREAM_NAME:
+    sha = run.get("head_sha")
+    if (not _sha(sha) or
+            not _workflow_path_exact(
+                run.get("path"), UPSTREAM_PATH, branch=CANDIDATE_REF,
+                sha=sha, upstream_pull=True) or
+            run.get("name") != UPSTREAM_NAME):
         _red("RUN_WORKFLOW_MISMATCH")
     if (not isinstance(run.get("repository"), dict) or
             run["repository"].get("full_name") != REPOSITORY or
             not isinstance(run.get("head_repository"), dict) or
             run["head_repository"].get("full_name") != REPOSITORY):
         _red("RUN_REPO_MISMATCH")
-    sha = run.get("head_sha")
-    if not _sha(sha) or event_run.get("head_sha") != sha:
+    if event_run.get("head_sha") != sha:
         _red("RUN_SHA_MISMATCH")
-    if event_run.get("path") != UPSTREAM_PATH:
+    if not _workflow_path_exact(
+        event_run.get("path"), UPSTREAM_PATH, branch=CANDIDATE_REF,
+        sha=sha, upstream_pull=True):
         _red("EVENT_WORKFLOW_MISMATCH")
     linked_prs = run.get("pull_requests")
     if (not isinstance(linked_prs, list) or len(linked_prs) != 1 or
@@ -262,7 +299,12 @@ def _identity(event: Mapping[str, Any], run: Mapping[str, Any],
 
 
 def _attempt_window(attempt: Mapping[str, Any], *,
-                    sha: str, run_id: int, attempt_number: int) -> tuple[datetime, datetime]:
+                    sha: str, run_id: int, attempt_number: int,
+                    expected_branch: str = CANDIDATE_REF,
+                    expected_path: str = UPSTREAM_PATH,
+                    expected_name: str = UPSTREAM_NAME,
+                    expected_event: str = "pull_request",
+                    expected_conclusion: str = "success") -> tuple[datetime, datetime]:
     """Bind the *specific* REST run attempt, not the original run's created_at.
 
     A previous attempt may upload an artifact bearing the future attempt name.
@@ -275,16 +317,19 @@ def _attempt_window(attempt: Mapping[str, Any], *,
             not _positive(attempt.get("run_attempt")) or
             attempt["run_attempt"] != attempt_number or
             attempt.get("head_sha") != sha or
-            attempt.get("head_branch") != CANDIDATE_REF or
-            attempt.get("path") != UPSTREAM_PATH or
-            attempt.get("name") != UPSTREAM_NAME or
-            attempt.get("event") != "pull_request" or
+            attempt.get("head_branch") != expected_branch or
+            not _workflow_path_exact(
+                attempt.get("path"), expected_path,
+                branch=expected_branch, sha=sha,
+                upstream_pull=(expected_path == UPSTREAM_PATH)) or
+            attempt.get("name") != expected_name or
+            attempt.get("event") != expected_event or
             type(attempt.get("repository")) is not dict or
             attempt["repository"].get("full_name") != REPOSITORY or
             type(attempt.get("head_repository")) is not dict or
             attempt["head_repository"].get("full_name") != REPOSITORY):
         _red("ATTEMPT_IDENTITY_MISMATCH")
-    if attempt.get("status") != "completed" or attempt.get("conclusion") != "success":
+    if attempt.get("status") != "completed" or attempt.get("conclusion") != expected_conclusion:
         _red("ATTEMPT_NOT_SUCCESS")
     start = _utc_timestamp(attempt.get("run_started_at"), "ATTEMPT_TIMESTAMP_INVALID")
     created = _utc_timestamp(attempt.get("created_at"), "ATTEMPT_TIMESTAMP_INVALID")
@@ -292,6 +337,395 @@ def _attempt_window(attempt: Mapping[str, Any], *,
     if not start <= created <= finish or not start < finish:
         _red("ATTEMPT_TIMESTAMP_INVALID")
     return start, finish
+
+
+def verify_trusted_publisher_identity(*, upstream_event: Mapping[str, Any],
+                                      upstream_run: Mapping[str, Any],
+                                      upstream_attempt: Mapping[str, Any],
+                                      pr: Mapping[str, Any],
+                                      commit: Mapping[str, Any],
+                                      publisher_run: Mapping[str, Any],
+                                      publisher_attempt: Mapping[str, Any],
+                                      expected_upstream_run_id: int,
+                                      expected_upstream_attempt: int,
+                                      expected_publisher_run_id: int,
+                                      expected_publisher_attempt: int) -> dict[str, Any]:
+    """R206 two distinct REST identities; not publication or CI attestation.
+
+    The current PR producer intentionally exits 79 after its native tests.
+    A *failed* upstream run is therefore accepted only for identity inventory:
+    its test outcomes and the reason for failure are NOT authenticated here.
+    Publisher P/N must already be completed/success. Never use this during its
+    own upload to synthesize a completed receipt, or infer a release GO.
+    """
+    if (not _positive(expected_upstream_run_id) or
+            not _positive(expected_upstream_attempt) or
+            not _positive(expected_publisher_run_id) or
+            not _positive(expected_publisher_attempt) or
+            expected_upstream_run_id == expected_publisher_run_id):
+        _red("PUBLISHER_UPSTREAM_ALIAS")
+    sha, tree, _ = _identity(
+        upstream_event, upstream_run, pr, commit,
+        expected_upstream_run_id, expected_upstream_attempt,
+        expected_conclusion="failure")
+    _attempt_window(
+        upstream_attempt, sha=sha, run_id=expected_upstream_run_id,
+        attempt_number=expected_upstream_attempt,
+        expected_conclusion="failure")
+    if (type(publisher_run) is not dict or
+            publisher_run.get("id") != expected_publisher_run_id or
+            publisher_run.get("run_attempt") != expected_publisher_attempt or
+            publisher_run.get("status") != "completed" or
+            publisher_run.get("conclusion") != "success" or
+            publisher_run.get("event") != "workflow_run" or
+            not _workflow_path_exact(
+                publisher_run.get("path"), TRUSTED_PUBLISHER_PATH,
+                branch="main", sha=publisher_run.get("head_sha")) or
+            publisher_run.get("name") != TRUSTED_PUBLISHER_NAME or
+            publisher_run.get("head_branch") != "main" or
+            not _sha(publisher_run.get("head_sha")) or
+            type(publisher_run.get("repository")) is not dict or
+            publisher_run["repository"].get("full_name") != REPOSITORY or
+            type(publisher_run.get("head_repository")) is not dict or
+            publisher_run["head_repository"].get("full_name") != REPOSITORY):
+        _red("PUBLISHER_IDENTITY_MISMATCH")
+    if (type(publisher_attempt) is not dict or
+            publisher_attempt.get("run_attempt") != expected_publisher_attempt):
+        _red("PUBLISHER_ATTEMPT_MISMATCH")
+    _attempt_window(
+        publisher_attempt, sha=publisher_run["head_sha"],
+        run_id=expected_publisher_run_id,
+        attempt_number=expected_publisher_attempt,
+        expected_branch="main", expected_path=TRUSTED_PUBLISHER_PATH,
+        expected_name=TRUSTED_PUBLISHER_NAME,
+        expected_event="workflow_run")
+    return {
+        "status": "DUAL_IDENTITY_REST_SHAPE_ONLY",
+        "candidate_sha": sha, "candidate_tree_sha": tree,
+        "upstream_run_id": expected_upstream_run_id,
+        "upstream_attempt": expected_upstream_attempt,
+        "publisher_main_sha": publisher_run["head_sha"],
+        "publisher_run_id": expected_publisher_run_id,
+        "publisher_attempt": expected_publisher_attempt,
+        "upstream_ci_green_verified": False,
+        "publisher_to_upstream_event_link_verified": False,
+        "native_payload_verified": False,
+        "release_go": False, "runtime_verified": False,
+    }
+
+
+def assert_trusted_preupload_writer_isolation(*, publisher_uid: int,
+                                              candidate_writer_uid: int,
+                                              publisher_staging_root: Path,
+                                              candidate_can_access_staging: bool) -> None:
+    """Fail-closed host staging check; does not prove OCI/mount isolation.
+
+    A true caller-supplied reachability signal *always* fails. For a false
+    signal, a trusted executor must additionally verify its actual Docker
+    mounts/user namespace. This function alone can never authorize upload.
+    """
+    if (type(publisher_uid) is not int or publisher_uid < 0 or
+            type(candidate_writer_uid) is not int or candidate_writer_uid < 0 or
+            type(candidate_can_access_staging) is not bool or
+            not isinstance(publisher_staging_root, Path)):
+        _red("PREUPLOAD_IDENTITY_INVALID")
+    # A claimed inaccessible path is never enough if both processes have the
+    # same host UID. Docker namespacing alone is not an attestation of remap.
+    if publisher_uid == candidate_writer_uid:
+        _red("PREUPLOAD_SAME_UID_WRITER")
+    if candidate_can_access_staging:
+        _red("PREUPLOAD_WRITER_REACHABLE")
+    try:
+        metadata = publisher_staging_root.lstat()
+    except OSError:
+        _red("PREUPLOAD_STAGE_UNSAFE")
+    if (not stat.S_ISDIR(metadata.st_mode) or
+            metadata.st_uid != publisher_uid or
+            stat.S_IMODE(metadata.st_mode) != 0o700):
+        _red("PREUPLOAD_STAGE_UNSAFE")
+
+
+def _canonical_public_json(document: Mapping[str, Any]) -> bytes:
+    return (json.dumps(document, sort_keys=True, separators=(",", ":"),
+                       ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+
+
+def _trusted_project_private_inspect(*, raw: bytes, collector: bool,
+                                     source_cid: str, collector_cid: str,
+                                     candidate_sha: str, tree: str, image_id: str,
+                                     volume: str, run_id: int, attempt: int) -> bytes:
+    """Publish a fixed V2 projection from actual trusted-runner Docker bytes.
+
+    Raw Config.Env, Source mounts, logs, driver metadata and any unknown
+    private fields are never serialized. The commitment to raw inspect bytes
+    is *not* independently replayable by the later public auditor.
+    """
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_PUBLIC_INSPECT_BYTES:
+        _red("PREUPLOAD_PRIVATE_INSPECT_INVALID")
+    parsed = load_unique_json(raw)
+    if (type(parsed) is not list or len(parsed) != 1 or
+            type(parsed[0]) is not dict):
+        _red("PREUPLOAD_PRIVATE_INSPECT_INVALID")
+    entry = parsed[0]
+    host, config, mounts = (entry.get("HostConfig"), entry.get("Config"),
+                            entry.get("Mounts"))
+    if (type(host) is not dict or type(config) is not dict or
+            type(mounts) is not list or len(mounts) != 1 or
+            type(mounts[0]) is not dict or
+            type(host.get("Mounts")) not in (list, type(None))):
+        _red("PREUPLOAD_PRIVATE_INSPECT_INVALID")
+    private_mount = mounts[0]
+    if (private_mount.get("Source") is None or
+            type(private_mount.get("Source")) is not str or
+            not private_mount["Source"]):
+        _red("PREUPLOAD_PRIVATE_SOURCE_MISSING")
+    for key in PUBLIC_MOUNT_KEYS:
+        if key not in private_mount:
+            _red("PREUPLOAD_PRIVATE_MOUNT_INVALID")
+    safe_host = {key: value for key, value in host.items()
+                 if key in PUBLIC_HOST_KEYS}
+    declaration = "NOT_APPLICABLE"
+    if not collector:
+        original = safe_host.get("Mounts")
+        if type(original) is not list or len(original) != 1 or type(original[0]) is not dict:
+            _red("PREUPLOAD_PRIVATE_MOUNT_INVALID")
+        if "Source" in original[0] and original[0]["Source"] != "":
+            # An explicit named/bind source must never be relabeled as an
+            # empty anonymous-volume declaration by this redaction.
+            _red("PREUPLOAD_PRIVATE_MOUNT_INVALID")
+        declaration = "EMPTY" if "Source" in original[0] else "ABSENT"
+        safe_host["Mounts"] = [{key: value for key, value in original[0].items()
+                               if key != "Source"}]
+    document = {
+        "schema": PUBLIC_INSPECT_SCHEMA,
+        "schema_version": 2,
+        "role": "bundle-collector" if collector else "bundle",
+        "status": "OFFHOST_PROJECTED_EVIDENCE_ONLY",
+        "raw_inspect": {
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size_bytes": len(raw), "published": False,
+        },
+        "source_redaction": {
+            "hostconfig_declaration": declaration,
+            "runtime_source_nonempty_observed": True,
+        },
+        "record": {
+            "Id": entry.get("Id"), "Image": entry.get("Image"),
+            "Config": {"User": config.get("User"), "Labels": config.get("Labels")},
+            "HostConfig": safe_host,
+            "Mounts": [{key: private_mount[key] for key in PUBLIC_MOUNT_KEYS}],
+        },
+        "host_or_runtime_verified": False,
+    }
+    _validate_public_inspect(
+        document, cid=collector_cid if collector else source_cid,
+        source_cid=source_cid, image_id=image_id, volume=volume,
+        sha=candidate_sha, tree=tree, run_id=run_id,
+        attempt=attempt, collector=collector)
+    return _canonical_public_json(document)
+
+
+def build_trusted_preupload_members(*, producer_private_inspect: bytes,
+                                    collector_private_inspect: bytes,
+                                    native_tar: bytes,
+                                    candidate_sha: str, candidate_tree_sha: str,
+                                    run_id: int, run_attempt: int,
+                                    image_id: str, source_cid: str,
+                                    collector_cid: str, volume_name: str,
+                                    publisher_staging_root: Path,
+                                    publisher_uid: int, candidate_writer_uid: int,
+                                    candidate_can_access_staging: bool) -> dict[str, bytes]:
+    """Produce exactly five public members in trusted memory before upload.
+
+    A trusted workflow must gather Docker inspect/collector stdout itself and
+    assert the runner/container mount boundary; this pure verifier cannot
+    create OCI isolation or independently attest the candidate's test runs.
+    """
+    assert_trusted_preupload_writer_isolation(
+        publisher_uid=publisher_uid, candidate_writer_uid=candidate_writer_uid,
+        publisher_staging_root=publisher_staging_root,
+        candidate_can_access_staging=candidate_can_access_staging)
+    if (not _sha(candidate_sha) or not _sha(candidate_tree_sha) or
+            not _positive(run_id) or not _positive(run_attempt) or
+            type(image_id) is not str or
+            re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None or
+            any(type(value) is not str or CID64.fullmatch(value) is None
+                for value in (source_cid, collector_cid, volume_name)) or
+            source_cid == collector_cid):
+        _red("PREUPLOAD_EXPECTED_IDENTITY_INVALID")
+    files = _native_tar_files(native_tar)
+    members = {
+        "source-inspect.json": _trusted_project_private_inspect(
+            raw=producer_private_inspect, collector=False,
+            source_cid=source_cid, collector_cid=collector_cid,
+            candidate_sha=candidate_sha, tree=candidate_tree_sha,
+            image_id=image_id, volume=volume_name, run_id=run_id,
+            attempt=run_attempt),
+        "collector-inspect.json": _trusted_project_private_inspect(
+            raw=collector_private_inspect, collector=True,
+            source_cid=source_cid, collector_cid=collector_cid,
+            candidate_sha=candidate_sha, tree=candidate_tree_sha,
+            image_id=image_id, volume=volume_name, run_id=run_id,
+            attempt=run_attempt),
+        "native.tar": native_tar,
+    }
+    custody = {
+        "schema_version": 1, "status": "OFFHOST_CONTRACT_ONLY",
+        "candidate_sha": candidate_sha, "candidate_tree_sha": candidate_tree_sha,
+        "image_id": image_id, "run_id": str(run_id),
+        "run_attempt": str(run_attempt), "role": "bundle",
+        "source_cid": source_cid, "collector_cid": collector_cid,
+        "volume_name": volume_name, "mount_target": "/app/data",
+        "uid": 1000, "gid": 1000, "host_or_runtime_verified": False,
+    }
+    native = {
+        "schema": "RC6_R163_NATIVE_TAR_V1", "schema_version": 1,
+        "status": "OFFHOST_BYTES_ONLY", "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha, "image_id": image_id,
+        "run_id": str(run_id), "run_attempt": str(run_attempt),
+        "role": "bundle", "source_cid": source_cid,
+        "collector_cid": collector_cid, "volume_name": volume_name,
+        "tar_sha256": hashlib.sha256(native_tar).hexdigest(),
+        "tar_size_bytes": len(native_tar), "file_count": len(files),
+        "files": files, "host_or_runtime_verified": False,
+    }
+    members["custody.json"] = _canonical_public_json(custody)
+    members["native-manifest.json"] = _canonical_public_json(native)
+    if len(members) != 5 or set(members) != ZIP_PAYLOAD:
+        _red("PREUPLOAD_PAYLOAD_SET_INVALID")
+    if _native_evidence(members, sha=candidate_sha,
+                        tree=candidate_tree_sha, run_id=run_id,
+                        attempt=run_attempt) != 13:
+        _red("PREUPLOAD_PAYLOAD_INVALID")
+    return members
+
+
+def _read_owned_preupload_file(path: Path, *, owner_uid: int,
+                               limit: int) -> bytes:
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        _red("PREUPLOAD_INPUT_UNSAFE")
+    try:
+        before = os.fstat(fd)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != owner_uid or
+                before.st_nlink != 1 or stat.S_IMODE(before.st_mode) != 0o600 or
+                not 0 < before.st_size <= limit):
+            _red("PREUPLOAD_INPUT_UNSAFE")
+        data = bytearray()
+        while len(data) <= limit:
+            chunk = os.read(fd, min(1024 * 1024, limit + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        after = os.fstat(fd)
+        immutable = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid",
+                     "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if (len(data) != before.st_size or
+                any(getattr(before, key) != getattr(after, key)
+                    for key in immutable)):
+            _red("PREUPLOAD_INPUT_CHANGED")
+        return bytes(data)
+    except OSError:
+        _red("PREUPLOAD_INPUT_UNSAFE")
+    finally:
+        os.close(fd)
+
+
+def seal_trusted_preupload_directory(*, publisher_staging_root: Path,
+                                     input_root: Path, output_name: str,
+                                     candidate_sha: str, candidate_tree_sha: str,
+                                     run_id: int, run_attempt: int,
+                                     image_id: str, source_cid: str,
+                                     collector_cid: str, volume_name: str,
+                                     publisher_uid: int, candidate_writer_uid: int,
+                                     candidate_can_access_staging: bool) -> Path:
+    """Seal six public-only members into a trusted, exclusive 0700 directory.
+
+    Does not upload, self-attest, or grant release. Candidate Docker code must
+    never receive a bind mount of this staging tree; preupload caller verifies
+    the Docker inspect contract independently before using this helper.
+    """
+    assert_trusted_preupload_writer_isolation(
+        publisher_uid=publisher_uid, candidate_writer_uid=candidate_writer_uid,
+        publisher_staging_root=publisher_staging_root,
+        candidate_can_access_staging=candidate_can_access_staging)
+    if (not isinstance(input_root, Path) or input_root.parent != publisher_staging_root or
+            type(output_name) is not str or
+            not re.fullmatch(r"[a-z0-9_-]{1,40}", output_name)):
+        _red("PREUPLOAD_INPUT_ROOT_UNSAFE")
+    try:
+        input_meta = input_root.lstat()
+    except OSError:
+        _red("PREUPLOAD_INPUT_ROOT_UNSAFE")
+    if (not stat.S_ISDIR(input_meta.st_mode) or
+            input_meta.st_uid != publisher_uid or
+            stat.S_IMODE(input_meta.st_mode) != 0o700 or
+            sorted(p.name for p in input_root.iterdir()) !=
+            ["collector-inspect.json", "native.tar", "source-inspect.json"]):
+        _red("PREUPLOAD_INPUT_ROOT_UNSAFE")
+    private_source = _read_owned_preupload_file(
+        input_root / "source-inspect.json", owner_uid=publisher_uid,
+        limit=MAX_PUBLIC_INSPECT_BYTES)
+    private_collector = _read_owned_preupload_file(
+        input_root / "collector-inspect.json", owner_uid=publisher_uid,
+        limit=MAX_PUBLIC_INSPECT_BYTES)
+    native_tar = _read_owned_preupload_file(
+        input_root / "native.tar", owner_uid=publisher_uid,
+        limit=MAX_TAR_BYTES)
+    members = build_trusted_preupload_members(
+        producer_private_inspect=private_source,
+        collector_private_inspect=private_collector,
+        native_tar=native_tar, candidate_sha=candidate_sha,
+        candidate_tree_sha=candidate_tree_sha,
+        run_id=run_id, run_attempt=run_attempt, image_id=image_id,
+        source_cid=source_cid, collector_cid=collector_cid,
+        volume_name=volume_name, publisher_staging_root=publisher_staging_root,
+        publisher_uid=publisher_uid, candidate_writer_uid=candidate_writer_uid,
+        candidate_can_access_staging=candidate_can_access_staging)
+    name = _name(candidate_sha, run_id, run_attempt)
+    rows = [{"path": key, "type": "file", "size_bytes": len(value),
+             "sha256": hashlib.sha256(value).hexdigest()}
+            for key, value in sorted(members.items())]
+    manifest = {
+        "schema_version": 1, "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree_sha,
+        "run_id": run_id, "run_attempt": run_attempt,
+        "artifact_name": name, "file_count": len(rows),
+        "total_size_bytes": sum(row["size_bytes"] for row in rows),
+        "files": rows,
+    }
+    members[ZIP_MANIFEST] = _canonical_public_json(manifest)
+    preview = io.BytesIO()
+    with zipfile.ZipFile(preview, mode="w", compression=zipfile.ZIP_STORED) as zf:
+        for relative, data in sorted(members.items()):
+            zf.writestr(relative, data)
+    raw = preview.getvalue()
+    payload = _zip_evidence(
+        raw, sha=candidate_sha, tree=candidate_tree_sha, name=name,
+        run_id=run_id, attempt=run_attempt,
+        digest=hashlib.sha256(raw).hexdigest(), expected_size=len(raw))
+    _native_evidence(payload, sha=candidate_sha, tree=candidate_tree_sha,
+                     run_id=run_id, attempt=run_attempt)
+    output_dir = publisher_staging_root / output_name
+    try:
+        output_dir.mkdir(mode=0o700)
+        for relative, data in sorted(members.items()):
+            fd = os.open(output_dir / relative, os.O_WRONLY | os.O_CREAT |
+                         os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+            try:
+                with os.fdopen(fd, "wb", closefd=False) as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(fd)
+            finally:
+                os.close(fd)
+        if (sorted(p.name for p in output_dir.iterdir()) != sorted(members) or
+                stat.S_IMODE(output_dir.stat().st_mode) != 0o700):
+            _red("PREUPLOAD_OUTPUT_UNSAFE")
+    except OSError:
+        _red("PREUPLOAD_OUTPUT_UNSAFE")
+    return output_dir
 
 
 def _select_attempt_artifact(artifact_list: Mapping[str, Any], name: str) -> Mapping[str, Any]:
@@ -575,6 +1009,86 @@ def _zip_evidence(raw: bytes, *, sha: str, tree: str, name: str,
         _red("ZIP_INVALID")
 
 
+def _public_native_schema(name: str, raw: bytes) -> None:
+    """Reconstruct the sole allowed projection, never parse raw private data.
+
+    XML is a literal synthetic sequence of numbered case elements; JSON is a
+    canonical fixed-key object. Nothing from a candidate-controlled raw XML
+    attribute, JSON nested field, header or trailer may survive publication.
+    The private SHA is explicitly unattested, never proof of source bytes.
+    """
+    reason = "PUBLIC_NATIVE_SCHEMA_INVALID"
+    if (type(name) is not str or name not in TAR_FILES or type(raw) is not bytes or
+            not 0 < len(raw) <= MAX_PUBLIC_FILE_BYTES or b"\x00" in raw):
+        _red(reason)
+    if name in PUBLIC_XML_FILES:
+        prefix = (
+            '<testsuite schema="RC6_R206_PUBLIC_JUNIT_V1" '
+            'status="PRIVATE_SOURCE_UNATTESTED" path="' + name +
+            '" name="R206_PUBLIC_SYNTHETIC_ONLY" tests="'
+        ).encode("ascii")
+        pattern = (
+            rb'([1-9][0-9]{0,5})" failures="0" errors="0" skipped="0" '
+            rb'private_raw_size_bytes="([1-9][0-9]{0,7})" '
+            rb'private_raw_sha256_unattested="([0-9a-f]{64})" release_go="false">'
+        )
+        if not raw.startswith(prefix):
+            _red(reason)
+        matched = re.match(pattern, raw[len(prefix):])
+        if matched is None:
+            _red(reason)
+        count, private_size, raw_hash = matched.groups()
+        if (int(count) > MAX_PUBLIC_CASES or
+                int(private_size) > MAX_PUBLIC_FILE_BYTES):
+            _red(reason)
+        header = prefix + matched.group(0)
+        expected = (
+            header + b"".join(
+                f'<testcase name="case-{index:06d}"/>'.encode("ascii")
+                for index in range(1, int(count) + 1)
+            ) + b"</testsuite>\n"
+        )
+        if raw != expected:
+            _red(reason)
+    elif name in PUBLIC_JSON_GENERATIONS:
+        if len(raw) > 2048:
+            _red(reason)
+        try:
+            document = load_unique_json(raw)
+        except PostrunEvidenceRed:
+            _red(reason)
+        keys = {
+            "schema", "status", "source_path", "private_raw_size_bytes",
+            "private_raw_sha256_unattested", "synthetic_fixture_only",
+            "release_go", "real_orders_sent", "catalog_count",
+            "ready_fixture_count", "required_generations",
+        }
+        if (type(document) is not dict or set(document) != keys or
+                document.get("schema") != "RC6_R206_PUBLIC_JSON_V1" or
+                document.get("status") != "PRIVATE_SOURCE_UNATTESTED" or
+                document.get("source_path") != name or
+                type(document.get("private_raw_size_bytes")) is not int or
+                not 0 < document["private_raw_size_bytes"] <= MAX_PUBLIC_FILE_BYTES or
+                not _hex64(document.get("private_raw_sha256_unattested")) or
+                document.get("synthetic_fixture_only") is not True or
+                document.get("release_go") is not False or
+                type(document.get("real_orders_sent")) is not int or
+                document["real_orders_sent"] != 0 or
+                type(document.get("catalog_count")) is not int or
+                document["catalog_count"] != 14611 or
+                type(document.get("ready_fixture_count")) is not int or
+                document["ready_fixture_count"] != 9902 or
+                type(document.get("required_generations")) is not int or
+                document["required_generations"] != PUBLIC_JSON_GENERATIONS[name]):
+            _red(reason)
+        expected = (json.dumps(document, sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+        if raw != expected:
+            _red(reason)
+    else:
+        _red(reason)
+
+
 def _native_tar_files(raw: bytes) -> list[dict[str, Any]]:
     if (type(raw) is not bytes or not 1024 <= len(raw) <= MAX_TAR_BYTES or
             len(raw) % 512 or raw[-1024:] != bytes(1024)):
@@ -608,6 +1122,7 @@ def _native_tar_files(raw: bytes) -> list[dict[str, Any]]:
                 data = stream.read(item.size + 1)
                 if len(data) != item.size:
                     _red("TAR_CONTENT_INVALID")
+                _public_native_schema(name, data)
                 found[name] = {"path": name, "size_bytes": len(data),
                                "sha256": hashlib.sha256(data).hexdigest()}
                 contents[name] = data
@@ -1032,6 +1547,215 @@ def audit_from_github(client: Any, *, event: Mapping[str, Any],
     return verified
 
 
+def verify_upstream_preupload_from_github(client: Any, *,
+                                          event: Mapping[str, Any],
+                                          expected_run_id: int,
+                                          expected_run_attempt: int) -> dict[str, Any]:
+    """Authenticate a currently failed-by-HOLD upstream before fresh B probe.
+
+    This source receipt is not native proof: R205 deliberately caused exit79,
+    and GitHub REST cannot attest why a run failed from run metadata alone.
+    Trusted B must independently reproduce/validate all native tests before
+    any public projection is sealed and uploaded. No U/M artifact is allowed.
+    """
+    prefix = f"/repos/{REPOSITORY}"
+    run_path = f"{prefix}/actions/runs/{expected_run_id}"
+    attempt_path = f"{run_path}/attempts/{expected_run_attempt}"
+    pr_path = f"{prefix}/pulls/{PR_NUMBER}"
+    list_path = f"{run_path}/artifacts?per_page=100"
+    run = client.get_json(run_path)
+    attempt = client.get_json(attempt_path)
+    pr = client.get_json(pr_path)
+    sha = run.get("head_sha") if type(run) is dict else None
+    if not _sha(sha):
+        _red("RUN_SHA_MISMATCH")
+    commit = client.get_json(f"{prefix}/git/commits/{sha}")
+    candidate_sha, candidate_tree, _ = _identity(
+        event, run, pr, commit, expected_run_id, expected_run_attempt,
+        expected_conclusion="failure")
+    _attempt_window(attempt, sha=candidate_sha, run_id=expected_run_id,
+                    attempt_number=expected_run_attempt,
+                    expected_conclusion="failure")
+    artifacts = client.get_json(list_path)
+    if (type(artifacts) is not dict or
+            artifacts.get("total_count") != 0 or
+            artifacts.get("artifacts") != []):
+        _red("PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT")
+    run_after = client.get_json(run_path)
+    attempt_after = client.get_json(attempt_path)
+    pr_after = client.get_json(pr_path)
+    art_after = client.get_json(list_path)
+    if (run_after != run or attempt_after != attempt or
+            pr_after != pr or art_after != artifacts):
+        _red("PREUPLOAD_UPSTREAM_REST_RACE")
+    return {
+        "status": "UPSTREAM_IDENTITY_ONLY_REPRODUCE_REQUIRED",
+        "candidate_sha": candidate_sha,
+        "candidate_tree_sha": candidate_tree,
+        "upstream_run_id": expected_run_id,
+        "upstream_attempt": expected_run_attempt,
+        "upstream_ci_green_verified": False,
+        "upstream_artifact_count": 0,
+        "release_go": False,
+        "runtime_verified": False,
+    }
+
+
+def audit_publisher_from_github(client: Any, *, event: Mapping[str, Any],
+                                expected_publisher_run_id: int,
+                                expected_publisher_attempt: int,
+                                trusted_main_sha: str) -> dict[str, Any]:
+    """C: authenticate B/P/N success and exact public ZIP, never self-attest B.
+
+    The failed upstream U/M has no artifact. B/P/N independently reproduced
+    a fresh OFFHOST probe, and its artifact has the U/M source identity in its
+    fixed manifest. GitHub REST authenticates the run/attempt/bytes, but does
+    NOT expose a separately signed B-to-U workflow_run webhook edge. That
+    stronger event linkage, host/runtime custody, and release stay unverified.
+    """
+    if (not _positive(expected_publisher_run_id) or
+            not _positive(expected_publisher_attempt) or
+            not _sha(trusted_main_sha)):
+        _red("POSTCOMPLETION_EXPECTED_IDENTITY_INVALID")
+    if (type(event) is not dict or event.get("action") != "completed" or
+            type(event.get("repository")) is not dict or
+            event["repository"].get("full_name") != REPOSITORY or
+            type(event.get("workflow_run")) is not dict):
+        _red("POSTCOMPLETION_EVENT_MISMATCH")
+    triggered = event["workflow_run"]
+    if (triggered.get("id") != expected_publisher_run_id or
+            triggered.get("run_attempt") != expected_publisher_attempt or
+            triggered.get("event") != "workflow_run" or
+            triggered.get("status") != "completed" or
+            triggered.get("conclusion") != "success" or
+            triggered.get("name") != TRUSTED_PUBLISHER_NAME or
+            triggered.get("head_sha") != trusted_main_sha or
+            not _workflow_path_exact(
+                triggered.get("path"), TRUSTED_PUBLISHER_PATH,
+                branch="main", sha=trusted_main_sha)):
+        _red("POSTCOMPLETION_EVENT_MISMATCH")
+
+    prefix = f"/repos/{REPOSITORY}"
+    publisher_path = f"{prefix}/actions/runs/{expected_publisher_run_id}"
+    publisher_attempt_path = f"{publisher_path}/attempts/{expected_publisher_attempt}"
+    publisher_artifacts_path = f"{publisher_path}/artifacts?per_page=100"
+    publisher = client.get_json(publisher_path)
+    publisher_attempt = client.get_json(publisher_attempt_path)
+    if publisher.get("head_sha") != trusted_main_sha:
+        _red("POSTCOMPLETION_MAIN_SHA_MISMATCH")
+    artifacts = client.get_json(publisher_artifacts_path)
+    if (type(artifacts) is not dict or artifacts.get("total_count") != 1 or
+            type(artifacts.get("artifacts")) is not list or
+            len(artifacts["artifacts"]) != 1 or
+            type(artifacts["artifacts"][0]) is not dict):
+        _red("POSTCOMPLETION_ARTIFACT_AMBIGUOUS")
+    name = artifacts["artifacts"][0].get("name")
+    match = (re.fullmatch(
+        r"rc6-r163-offhost-([1-9][0-9]*)-([1-9][0-9]*)-([0-9a-f]{40})",
+        name) if type(name) is str else None)
+    if match is None:
+        _red("POSTCOMPLETION_ARTIFACT_AMBIGUOUS")
+    upstream_id, upstream_number, expected_candidate_sha = (
+        int(match.group(1)), int(match.group(2)), match.group(3))
+    if upstream_id == expected_publisher_run_id:
+        _red("PUBLISHER_UPSTREAM_ALIAS")
+    upstream_path = f"{prefix}/actions/runs/{upstream_id}"
+    upstream_attempt_path = f"{upstream_path}/attempts/{upstream_number}"
+    upstream_artifacts_path = f"{upstream_path}/artifacts?per_page=100"
+    pr_path = f"{prefix}/pulls/{PR_NUMBER}"
+    upstream = client.get_json(upstream_path)
+    upstream_attempt = client.get_json(upstream_attempt_path)
+    upstream_artifacts = client.get_json(upstream_artifacts_path)
+    pr = client.get_json(pr_path)
+    if upstream.get("head_sha") != expected_candidate_sha:
+        _red("POSTCOMPLETION_SOURCE_SHA_MISMATCH")
+    commit = client.get_json(f"{prefix}/git/commits/{expected_candidate_sha}")
+    # The upstream webhook was delivered to B, not C. A REST-derived event
+    # asserts the same GitHub run identity but is NOT a webhook-edge proof.
+    upstream_rest_event = {
+        "action": "completed", "repository": {"full_name": REPOSITORY},
+        "workflow_run": upstream,
+    }
+    identity = verify_trusted_publisher_identity(
+        upstream_event=upstream_rest_event, upstream_run=upstream,
+        upstream_attempt=upstream_attempt, pr=pr, commit=commit,
+        publisher_run=publisher, publisher_attempt=publisher_attempt,
+        expected_upstream_run_id=upstream_id,
+        expected_upstream_attempt=upstream_number,
+        expected_publisher_run_id=expected_publisher_run_id,
+        expected_publisher_attempt=expected_publisher_attempt)
+    if (type(upstream_artifacts) is not dict or
+            upstream_artifacts.get("total_count") != 0 or
+            upstream_artifacts.get("artifacts") != []):
+        _red("PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT")
+    # Do not silently allow a publisher on a retired or changed main commit.
+    if identity["publisher_main_sha"] != trusted_main_sha:
+        _red("POSTCOMPLETION_MAIN_SHA_MISMATCH")
+    publisher_window = _attempt_window(
+        publisher_attempt, sha=trusted_main_sha,
+        run_id=expected_publisher_run_id,
+        attempt_number=expected_publisher_attempt,
+        expected_branch="main", expected_path=TRUSTED_PUBLISHER_PATH,
+        expected_name=TRUSTED_PUBLISHER_NAME,
+        expected_event="workflow_run")
+    if (publisher_window[0] <=
+            _utc_timestamp(upstream_attempt.get("updated_at"),
+                           "ATTEMPT_TIMESTAMP_INVALID")):
+        _red("POSTCOMPLETION_SOURCE_ORDER_INVALID")
+    artifact_id = _select_attempt_artifact(artifacts, name)["id"]
+    artifact_path = f"{prefix}/actions/artifacts/{artifact_id}"
+    artifact = client.get_json(artifact_path)
+    artifact_id, digest, size = _artifact_identity(
+        artifacts, artifact, name=name, sha=trusted_main_sha,
+        run_id=expected_publisher_run_id, attempt_window=publisher_window)
+    zip_bytes = client.get_zip(artifact_id)
+    payload = _zip_evidence(
+        zip_bytes, sha=expected_candidate_sha,
+        tree=identity["candidate_tree_sha"], name=name,
+        run_id=upstream_id, attempt=upstream_number,
+        digest=digest, expected_size=size)
+    native_count = _native_evidence(
+        payload, sha=expected_candidate_sha,
+        tree=identity["candidate_tree_sha"],
+        run_id=upstream_id, attempt=upstream_number)
+    # Every remote receipt can change during a ZIP download. Reject stale
+    # PR heads, rerun attempts, artifact substitutions and mutable main.
+    endpoints = {
+        publisher_path: publisher,
+        publisher_attempt_path: publisher_attempt,
+        publisher_artifacts_path: artifacts,
+        upstream_path: upstream,
+        upstream_attempt_path: upstream_attempt,
+        upstream_artifacts_path: upstream_artifacts,
+        pr_path: pr,
+        f"{prefix}/git/commits/{expected_candidate_sha}": commit,
+        artifact_path: artifact,
+    }
+    if any(client.get_json(path) != receipt for path, receipt in endpoints.items()):
+        _red("POSTCOMPLETION_REST_RACE")
+    if (event["workflow_run"].get("head_sha") != trusted_main_sha or
+            identity["upstream_ci_green_verified"] is not False or
+            identity["publisher_to_upstream_event_link_verified"] is not False):
+        _red("POSTCOMPLETION_IDENTITY_MISMATCH")
+    return {
+        "status": "POSTCOMPLETION_PUBLIC_PROBE_BYTES_MATCH",
+        "candidate_sha": expected_candidate_sha,
+        "candidate_tree_sha": identity["candidate_tree_sha"],
+        "upstream_run_id": upstream_id, "upstream_attempt": upstream_number,
+        "publisher_main_sha": trusted_main_sha,
+        "publisher_run_id": expected_publisher_run_id,
+        "publisher_attempt": expected_publisher_attempt,
+        "artifact_id": artifact_id, "artifact_name": name,
+        "artifact_digest": "sha256:" + digest,
+        "native_file_count": native_count,
+        "public_artifact_contents_verified": True,
+        "upstream_ci_green_verified": False,
+        "publisher_to_upstream_event_link_verified": False,
+        "raw_inspect_contents_verified": False,
+        "release_go": False, "runtime_verified": False,
+    }
+
+
 def _read_event_file(path: Path) -> Mapping[str, Any]:
     try:
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -1057,6 +1781,64 @@ def _read_event_file(path: Path) -> Mapping[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("r206-upstream", "r206-seal", "r206-postcompletion"):
+        mode = argv[0]
+        parser = argparse.ArgumentParser(description="R206 trusted-main probe verification")
+        parser.add_argument("--run-id", type=int, required=True)
+        parser.add_argument("--run-attempt", type=int, required=True)
+        if mode in ("r206-upstream", "r206-postcompletion"):
+            parser.add_argument("--event", type=Path, required=True)
+            if mode == "r206-postcompletion":
+                parser.add_argument("--trusted-main-sha", required=True)
+        else:
+            parser.add_argument("--staging-root", type=Path, required=True)
+            parser.add_argument("--input-root", type=Path, required=True)
+            parser.add_argument("--candidate-sha", required=True)
+            parser.add_argument("--candidate-tree-sha", required=True)
+            parser.add_argument("--image-id", required=True)
+            parser.add_argument("--source-cid", required=True)
+            parser.add_argument("--collector-cid", required=True)
+            parser.add_argument("--volume-name", required=True)
+            parser.add_argument("--candidate-writer-uid", type=int, default=1000)
+        args = parser.parse_args(argv[1:])
+        try:
+            if mode == "r206-upstream":
+                client = GitHubReadOnlyREST(os.environ.get("GITHUB_TOKEN", ""))
+                result = verify_upstream_preupload_from_github(
+                    client, event=_read_event_file(args.event),
+                    expected_run_id=args.run_id,
+                    expected_run_attempt=args.run_attempt)
+                print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+            elif mode == "r206-postcompletion":
+                client = GitHubReadOnlyREST(os.environ.get("GITHUB_TOKEN", ""))
+                result = audit_publisher_from_github(
+                    client, event=_read_event_file(args.event),
+                    expected_publisher_run_id=args.run_id,
+                    expected_publisher_attempt=args.run_attempt,
+                    trusted_main_sha=args.trusted_main_sha)
+                print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+            else:
+                seal_trusted_preupload_directory(
+                    publisher_staging_root=args.staging_root,
+                    input_root=args.input_root,
+                    output_name="public",
+                    candidate_sha=args.candidate_sha,
+                    candidate_tree_sha=args.candidate_tree_sha,
+                    run_id=args.run_id, run_attempt=args.run_attempt,
+                    image_id=args.image_id, source_cid=args.source_cid,
+                    collector_cid=args.collector_cid, volume_name=args.volume_name,
+                    publisher_uid=os.getuid(),
+                    candidate_writer_uid=args.candidate_writer_uid,
+                    candidate_can_access_staging=False)
+                # P/N is still in_progress. Only C can attest its REST bytes.
+                print("RC6_R206_TRUSTED_PREUPLOAD=SEALED_PUBLIC_SIX|"
+                      "PROBE_PUBLISHED_PENDING_POSTRUN|release_go=NO")
+        except PostrunEvidenceRed as exc:
+            print(f"RC6_R206_TRUSTED=HOLD79|reason={exc}|release_go=NO",
+                  file=sys.stderr)
+            return 79
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", type=Path, required=True)
     parser.add_argument("--run-id", type=int, required=True)
