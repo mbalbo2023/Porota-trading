@@ -1009,6 +1009,67 @@ class HostHelperBirthContractTest(unittest.TestCase):
                     self.assertEqual(self.session.events, [])
                     self.assertEqual(self.commands, [])
 
+    def test_prebirth_verifies_root_pinned_backend_contract_fail_closed(self):
+        # A fake backend checks adapter semantics OFFHOST. The real installed
+        # custody currently has no physical attestor: HOLD79 remains required.
+        expected = {
+            "candidate_sha": "a" * 40,
+            "candidate_tree": "b" * 40,
+            "generation": "e" * 32,
+            "artifact_digest": "sha256:" + "d" * 64,
+            "image_id": "sha256:" + "8" * 64,
+            "daemon_id": "daemon-rootful-rc6",
+            "run_id": "42644665843",
+            "run_attempt": "1",
+        }
+        physical = {
+            "schema": "RC6_PREBIRTH_QUIESCENCE_V1",
+            "status": "OK",
+            "candidate_sha": expected["candidate_sha"],
+            "runtime_writers": "QUIESCENT",
+            "paper_mode": "PRODUCTION_PAPER",
+            "real_orders_sent": 0,
+            "ppi_watch_accessed": False,
+        }
+
+        def independent_attestor(**kwargs):
+            self.assertEqual(kwargs, expected)
+            return dict(physical)
+
+        self.custody.attest_prebirth = independent_attestor
+        cmd = helper.parse_command(("quiescence", "verify-prebirth"))
+        result = self.controller().dispatch(cmd)
+        self.assertEqual(json.loads(result), physical)
+        self.assertEqual(self.custody.calls, [])
+        self.assertEqual(self.session.events, [])
+        self.assertEqual(self.commands, [])
+
+        for field, rejected in (
+            ("status", "UNVERIFIED"),
+            ("candidate_sha", "b" * 40),
+            ("runtime_writers", "ACTIVE"),
+            ("paper_mode", "LIVE"),
+            ("real_orders_sent", False),
+            ("real_orders_sent", 0.0),
+            ("real_orders_sent", "0"),
+            ("ppi_watch_accessed", True),
+        ):
+            with self.subTest(field=field, rejected=rejected):
+                malformed = dict(physical, **{field: rejected})
+                self.custody.attest_prebirth = lambda **_kwargs: malformed
+                with self.assertRaises(helper.CustodyHold) as caught:
+                    self.controller().dispatch(cmd)
+                self.assertEqual(caught.exception.reason,
+                                 "EXTERNAL_QUIESCENCE_RECEIPT_UNVERIFIED")
+                self.assertEqual(self.custody.calls, [])
+                self.assertEqual(self.session.events, [])
+                self.assertEqual(self.commands, [])
+        self.custody.attest_prebirth = lambda **_kwargs: dict(physical, extra="raw_docker")
+        with self.assertRaises(helper.CustodyHold) as caught:
+            self.controller().dispatch(cmd)
+        self.assertEqual(caught.exception.reason,
+                         "EXTERNAL_QUIESCENCE_RECEIPT_UNVERIFIED")
+
 
 class HostHelperIndependentApprovalTest(unittest.TestCase):
     def setUp(self):

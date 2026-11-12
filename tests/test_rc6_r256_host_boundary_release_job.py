@@ -16,6 +16,7 @@ from scripts.rc6_deploy_legacy_host_guard import (
     audit_deploy_workflow,
     main as guard_main,
     reject_untrusted_checkout_privilege,
+    require_approved_critical_stage_cli,
 )
 
 
@@ -140,6 +141,48 @@ class R256TrustedReleaseJobBoundary(unittest.TestCase):
                 'quiescence verify-prebirth\n'
                 'sudo -n find /tmp -exec /bin/sh -c "true" \\;'
             )
+
+    def test_promote_six_privileged_custody_invocations_are_literal(self):
+        workflow = live_source()
+        promote = next(step["run"] for step in workflow["jobs"]["promote"]["steps"]
+                       if step.get("id") == "promotion")
+        fixed = "sudo -n /usr/local/sbin/porota-rc6-oci-custody "
+        self.assertNotIn('CUSTODY_CLI=', promote)
+        self.assertNotIn('sudo -n "$CUSTODY_CLI"', promote)
+        for verb in (
+            "critical stage-approved-protector",
+            "critical describe-stage-intent",
+            "critical birth",
+            "critical start-newborn",
+            "verify-current",
+            "image preflight-cleanup",
+        ):
+            with self.subTest(verb=verb):
+                self.assertIn(fixed + verb, promote)
+                reject_untrusted_checkout_privilege(fixed + verb)
+        for spoofed in (
+            'sudo -n "$CUSTODY_CLI" critical birth',
+            'CUSTODY_CLI=/usr/local/sbin/porota-rc6-oci-custody\n'
+            'sudo -n "$CUSTODY_CLI" critical birth',
+        ):
+            with self.subTest(spoofed=spoofed):
+                with self.assertRaisesRegex(HostBoundaryViolation,
+                                            'ROOT_CHECKOUT_PRIVILEGE_UNTRUSTED'):
+                    reject_untrusted_checkout_privilege(spoofed)
+
+    def test_stage_cli_direct_guard_rejects_mutable_root_command(self):
+        promote = next(step["run"] for step in live_source()["jobs"]["promote"]["steps"]
+                       if step.get("id") == "promotion")
+        require_approved_critical_stage_cli(promote)
+        tampered = promote.replace(
+            'STAGE_RECEIPT="$(sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+            'critical stage-approved-protector',
+            'STAGE_RECEIPT="$(sudo -n "$CUSTODY_CLI" '
+            'critical stage-approved-protector', 1)
+        self.assertNotEqual(tampered, promote)
+        with self.assertRaisesRegex(HostBoundaryViolation,
+                                    'CRITICAL_STAGE_CLI_UNTRUSTED'):
+            require_approved_critical_stage_cli(tampered)
 
     def test_altered_mutex_decoder_and_unbounded_subprocess_stay_denied(self):
         unsafe = (

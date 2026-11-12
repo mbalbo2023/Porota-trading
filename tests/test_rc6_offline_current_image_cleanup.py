@@ -158,13 +158,16 @@ def test_lock_contention_and_symlink_reject_before_docker(host, tmp_path, monkey
     assert not host.calls
 
 
-def test_workflow_wires_current_identity_helper():
+def test_workflow_retires_stdin_cleanup_and_requires_fixed_root_custody():
     import subprocess
     import yaml
     workflow = Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml'
     step = next(s['run'] for s in yaml.safe_load(workflow.read_text())['jobs']['promote']['steps']
                 if s.get('id') == 'diskguard')
-    assert '< scripts/rc6_offline_current_image_cleanup.py' in step
+    assert '< scripts/rc6_offline_current_image_cleanup.py' not in step
+    assert ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+            'image preflight-cleanup') in step
+    assert '--phase offline_preclean' not in step
     assert '< scripts/rc6_offline_failed_image_cleanup.py' not in step
     assert subprocess.run(['bash','-n'], input=step, text=True, capture_output=True).returncode == 0
 

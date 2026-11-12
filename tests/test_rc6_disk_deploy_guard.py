@@ -114,7 +114,8 @@ def test_final_cleanup_requires_earlier_three_cid_seal_and_root_owned_reference_
     tail = text[native:cleanup + 400]
 
     assert "RC6_CUSTODY_SEAL_ATTESTED" in tail
-    assert 'sudo -n "$CUSTODY_CLI" image preflight-cleanup' in tail
+    assert ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+            'image preflight-cleanup') in tail
     assert "RC6_IMAGE_CLEANUP=HOLD79|references_unverified" in tail
     assert "RC6_IMAGE_CLEANUP=GREEN|root_attested|porota_only" in tail
     assert "systemctl restart porota-critical-approval-rc6.service" not in tail

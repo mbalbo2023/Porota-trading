@@ -138,8 +138,9 @@ class DeployV2HostBoundaryTests(unittest.TestCase):
         promote = next(step for step in source["jobs"]["promote"]["steps"]
                        if step.get("name") == "Promote exact frozen candidate and verify")
         text = promote["run"]
-        self.assertNotIn('"$CUSTODY_CLI" verify "$role"', text)
-        self.assertIn('"$CUSTODY_CLI" verify-current', text)
+        self.assertNotIn('"$CUSTODY_CLI"', text)
+        self.assertIn('sudo -n /usr/local/sbin/porota-rc6-oci-custody verify-current',
+                      text)
         self.assertIn('--candidate-sha "$CANDIDATE_SHA"', text)
         self.assertIn('--candidate-tree "$CANDIDATE_TREE"', text)
         self.assertIn('--generation "$CRIT_GENERATION"', text)

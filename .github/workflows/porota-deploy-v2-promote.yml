@@ -1225,9 +1225,15 @@ jobs:
               "sudo -n docker inspect -f '{{.State.Status}}' porota_production_observer && sudo -n docker inspect -f '{{.State.Status}}' porota_production_dashboard")"
             if [ "$OWNED_STATE" != $'running\nrunning' ]; then
               RC6_DISK_PRECLEAN_TRIGGERED=1
+              # R271: never stream candidate Python across a root boundary.
+              # This fixed root-owned verb currently HOLD79s unconditionally
+              # until independently installed code can prove exact owned-image
+              # references, all consumers and authorized mutation scope.
+              # The source guard still rejects the 21 unrelated legacy root
+              # wrappers. Future approved cleanup must be idempotent because
+              # the normal preflight calls the same typed verb again below.
               "${SSH[@]}" "$DO_USER@$DO_HOST" \
-                "sudo -n python3 -c 'import base64;exec(base64.b64decode(\"$RC6_MUTEX_B64\"))' '$DO_USER' root --attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' '$GITHUB_RUN_ATTEMPT' --phase offline_preclean python3 - '$REQUIRED_PRETRANSFER_FREE'" \
-                < scripts/rc6_offline_current_image_cleanup.py
+                'sudo -n /usr/local/sbin/porota-rc6-oci-custody image preflight-cleanup'
               mapfile -t METRICS < <(probe_disk)
               test "${#METRICS[@]}" -eq 2
               AVAILABLE_BYTES="${METRICS[0]}"
@@ -1825,15 +1831,14 @@ jobs:
           # R265: this fixed CLI shape must HOLD79 unless an independent host
           # installer/template approval and expected PID are physically proven;
           # no fallback to candidate --unit-template or legacy stage-protector.
-          CUSTODY_CLI=/usr/local/sbin/porota-rc6-oci-custody
-          STAGE_RECEIPT="$(sudo -n "$CUSTODY_CLI" critical stage-approved-protector \
+          STAGE_RECEIPT="$(sudo -n /usr/local/sbin/porota-rc6-oci-custody critical stage-approved-protector \
             --paper-only --source-sha "$CANDIDATE_SHA")" || {
               echo 'RC6_CRITICAL_STAGE=HOLD79|installed_root_protector_unavailable'; exit 79;
             }
           test "$STAGE_RECEIPT" = RC6_CUSTODY=STAGED || {
             echo 'RC6_CRITICAL_STAGE=HOLD79|unapproved_protector_receipt'; exit 79;
           }
-          STAGE_INTENT="$(sudo -n "$CUSTODY_CLI" critical describe-stage-intent \
+          STAGE_INTENT="$(sudo -n /usr/local/sbin/porota-rc6-oci-custody critical describe-stage-intent \
             --paper-only --source-sha "$CANDIDATE_SHA")" || {
               echo 'RC6_CRITICAL_INTENT=HOLD79|root_intent_unverified'; exit 79;
             }
@@ -1847,10 +1852,10 @@ jobs:
           test "$INTENT_RUN" = "$GITHUB_RUN_ID"
           test "$INTENT_ATTEMPT" = "$GITHUB_RUN_ATTEMPT"
           test "$INTENT_NAME" = "porota_rc6_critical_g_$CRIT_GENERATION"
-          sudo -n "$CUSTODY_CLI" critical birth >/dev/null || {
+          sudo -n /usr/local/sbin/porota-rc6-oci-custody critical birth >/dev/null || {
             echo 'RC6_CRITICAL_BIRTH=HOLD79|root_cid_unverified'; exit 79;
           }
-          sudo -n "$CUSTODY_CLI" critical start-newborn --paper-only \
+          sudo -n /usr/local/sbin/porota-rc6-oci-custody critical start-newborn --paper-only \
             --source-sha "$CANDIDATE_SHA" --generation "$CRIT_GENERATION" >/dev/null || {
               echo 'RC6_CRITICAL_START=HOLD79|external_telegram_fencer_unverified'; exit 79;
             }
@@ -1861,7 +1866,7 @@ jobs:
           # begin_attempt intent (which can replay or verify prior CIDs).
           # Until an independent current-generation read API is installed,
           # this fixed typed verb returns HOLD79. No legacy-name fallback.
-          POSTSEAL_PROOF="$(sudo -n "$CUSTODY_CLI" verify-current \
+          POSTSEAL_PROOF="$(sudo -n /usr/local/sbin/porota-rc6-oci-custody verify-current \
             --candidate-sha "$CANDIDATE_SHA" --candidate-tree "$CANDIDATE_TREE" \
             --generation "$CRIT_GENERATION" \
             --artifact-digest "$INTENT_DIGEST" --image-id "$RUNTIME_IMAGE_ID")" || {
@@ -2758,7 +2763,7 @@ jobs:
 
           # The same trusted helper must prove reference-safe candidate-only
           # image cleanup. No host-global inventories or tags-by-name.
-          sudo -n "$CUSTODY_CLI" image preflight-cleanup >/dev/null || {
+          sudo -n /usr/local/sbin/porota-rc6-oci-custody image preflight-cleanup >/dev/null || {
             echo 'RC6_IMAGE_CLEANUP=HOLD79|references_unverified'; exit 79;
           }
           echo 'RC6_IMAGE_CLEANUP=GREEN|root_attested|porota_only'

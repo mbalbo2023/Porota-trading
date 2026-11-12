@@ -80,6 +80,10 @@ _APPROVAL_KEYS = frozenset({
     "paper_mode", "real_orders_allowed", "helper_sha256", "custody_sha256",
     "profiles_sha256", "unit_template_sha256", "expires_at",
 })
+_PREBIRTH_KEYS = frozenset({
+    "schema", "status", "candidate_sha", "runtime_writers", "paper_mode",
+    "real_orders_sent", "ppi_watch_accessed",
+})
 
 
 def _require(condition, reason="CLI_SHAPE"):
@@ -699,6 +703,53 @@ class HostHelperController:
             return self.custody.begin_genesis()
         return self.custody.begin_attempt()
 
+    def _verify_external_prebirth(self):
+        """Consume a physical host attestor; never infer it from CI/source.
+
+        The custody backend is imported exclusively from the root-owned,
+        independently hash-approved installation. Missing backend capability
+        must HOLD before any OCI session/journal or Docker access. This is a
+        receipt verifier, not an attestor or a host-control approval.
+        """
+        attest = getattr(self.custody, "attest_prebirth", None)
+        _require(callable(attest), "EXTERNAL_QUIESCENCE_ATTESTOR_UNVERIFIED")
+        keys = ("candidate_sha", "candidate_tree", "generation",
+                "artifact_digest", "image_id", "daemon_id", "run_id",
+                "run_attempt")
+        expected = {key: getattr(self.authority, key, None) for key in keys}
+        _require(type(expected["candidate_sha"]) is str and
+                 _HEX40.fullmatch(expected["candidate_sha"]) and
+                 type(expected["candidate_tree"]) is str and
+                 _HEX40.fullmatch(expected["candidate_tree"]) and
+                 type(expected["generation"]) is str and
+                 re.fullmatch(r"[0-9a-f]{32}", expected["generation"]) and
+                 all(type(expected[key]) is str and
+                     _IMMUTABLE_ID.fullmatch(expected[key]) for key in
+                     ("artifact_digest", "image_id")) and
+                 type(expected["daemon_id"]) is str and
+                 re.fullmatch(r"[A-Za-z0-9:_./-]{6,128}", expected["daemon_id"]) and
+                 all(type(expected[key]) is str and
+                     re.fullmatch(r"[1-9][0-9]{0,19}", expected[key]) for key in
+                     ("run_id", "run_attempt")),
+                 "EXTERNAL_QUIESCENCE_INTENT_UNVERIFIED")
+        proof = attest(**expected)
+        _require(type(proof) is dict and set(proof) == _PREBIRTH_KEYS and
+                 proof["schema"] == "RC6_PREBIRTH_QUIESCENCE_V1" and
+                 proof["status"] == "OK" and
+                 type(proof["candidate_sha"]) is str and
+                 proof["candidate_sha"] == expected["candidate_sha"] and
+                 proof["runtime_writers"] == "QUIESCENT" and
+                 proof["paper_mode"] == "PRODUCTION_PAPER" and
+                 type(proof["real_orders_sent"]) is int and
+                 proof["real_orders_sent"] == 0 and
+                 proof["ppi_watch_accessed"] is False,
+                 "EXTERNAL_QUIESCENCE_RECEIPT_UNVERIFIED")
+        result = json.dumps(proof, sort_keys=True, separators=(",", ":"),
+                            ensure_ascii=True)
+        _require(len(result.encode("ascii")) <= 2048,
+                 "EXTERNAL_QUIESCENCE_RECEIPT_UNVERIFIED")
+        return result
+
     def _verify_current_sealed(self, command):
         # This command intentionally bypasses begin_attempt(): A1079's
         # attempt session proves the PREVIOUS receipt and fails replay after
@@ -910,12 +961,12 @@ class HostHelperController:
             # root installer or unchanged critical process. HOLD before
             # beginning an OCI custody session or touching host state.
             raise CustodyHold("SYSTEMD_STAGE_INSTALLER_UNVERIFIED")
-        if command.namespace == "quiescence" and command.verb in (
-                "verify-prebirth", "verify-receipt"):
-            # PRE-BIRTH must come from a separate, independent host writer
-            # attestor; POST-SEAL must correlate 3 new CIDs/journal. Neither
-            # exists in the installed contract yet. Deny before opening an
-            # A1079 session, which may journal an attempt or acquire a lock.
+        if command.namespace == "quiescence" and command.verb == "verify-prebirth":
+            return self._verify_external_prebirth()
+        if command.namespace == "quiescence" and command.verb == "verify-receipt":
+            # POST-SEAL needs independent 3-CID/journal writer evidence.
+            # The installed adapter cannot currently prove this. Deny before
+            # opening A1079 session/journal or acquiring its host lock.
             raise CustodyHold("EXTERNAL_QUIESCENCE_ATTESTOR_UNVERIFIED")
         if command.namespace == "image":
             # No global prune or image removal by name/tag; shared refs unknown.

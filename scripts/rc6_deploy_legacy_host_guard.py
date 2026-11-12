@@ -274,7 +274,7 @@ def require_approved_critical_stage_cli(promotion_text: str) -> None:
                        if not re.match(r"^\s*#", line))
     active = re.sub(r"[ \t]*\\\n[ \t]*", " ", active)
     approved = (
-        'STAGE_RECEIPT="$(sudo -n "$CUSTODY_CLI" critical '
+        'STAGE_RECEIPT="$(sudo -n /usr/local/sbin/porota-rc6-oci-custody critical '
         'stage-approved-protector --paper-only --source-sha "$CANDIDATE_SHA")"'
     )
     verbs = re.findall(r"\bcritical\s+stage-[a-z-]+\b", active)

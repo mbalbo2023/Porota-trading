@@ -1007,7 +1007,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 6)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 22)
+        self.assertEqual(len(boundaries), 21)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
@@ -1019,9 +1019,16 @@ class WorkflowIntegrationTests(unittest.TestCase):
                         workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'))
         self.assertLess(workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'),
                         workflow.index('name: Classify current flat PAPER session'))
-        self.assertIn('--phase offline_preclean python3 -', by_id['diskguard'])
+        # R271: the deprecated streamed root Python cleanup is no longer
+        # exposed through the candidate-controlled mutex; the independently
+        # installed fixed-verb helper must HOLD79 without ownership proof.
+        self.assertNotIn('--phase offline_preclean', by_id['diskguard'])
         self.assertNotIn('--phase disk_probe python3 -', by_id['diskguard'])
-        self.assertIn('rc6_offline_current_image_cleanup.py', by_id['diskguard'])
+        self.assertNotIn('< scripts/rc6_offline_current_image_cleanup.py',
+                         by_id['diskguard'])
+        fixed_cleanup = ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+                         'image preflight-cleanup')
+        self.assertIn(fixed_cleanup, by_id['diskguard'])
         self.assertIn('--apply-plan "$PLAN" --require-empty', by_id['backup_retire'])
         self.assertEqual(sum('--phase finalize ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_final ' in line for line in boundaries), 1)
