@@ -280,10 +280,18 @@ jobs:
               ("collector", sys.argv[2], False),
           ):
               # Keep raw inspect entirely within this ephemeral runner's process.
-              raw = subprocess.check_output(
-                  ["docker", "inspect", "--format", "{{json .Mounts}}", cid],
-                  text=True)
-              mounts = json.loads(raw)
+              try:
+                  result = subprocess.run(
+                      ["docker", "inspect", "--format", "{{json .Mounts}}", cid],
+                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                      text=True, timeout=20, check=False)
+                  if result.returncode != 0 or len(result.stdout) > 16384:
+                      raise ValueError("bounded_inspect_failed")
+                  mounts = json.loads(result.stdout)
+              except (OSError, ValueError, subprocess.TimeoutExpired):
+                  # Do not log an exception containing an ephemeral CID.
+                  print(f"RC6_R186_MOUNT_MODE=role={role}|inspect=HOLD79", file=sys.stderr)
+                  raise SystemExit(79)
               if not isinstance(mounts, list) or len(mounts) != 1 or not isinstance(mounts[0], dict):
                   print(f"RC6_R186_MOUNT_MODE=role={role}|shape=HOLD79", file=sys.stderr)
                   raise SystemExit(79)
