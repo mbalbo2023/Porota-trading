@@ -22,6 +22,7 @@ from pathlib import Path
 import re
 import secrets
 import stat
+from types import MappingProxyType
 
 
 class InstallHold(RuntimeError):
@@ -71,6 +72,7 @@ SOURCE_NAMES = {
     "custody": "custody.py",
     "profiles": "profiles.json",
     "approval": "approval.json",
+    "unit_template": "critical-unit-template.service",
 }
 TARGETS = {
     "helper": ("/usr/local/sbin/porota-rc6-oci-custody", 0o555, 2 * 1024 * 1024),
@@ -88,6 +90,7 @@ TARGETS = {
     ),
 }
 ORDER = ("helper", "custody", "profiles", "approval")
+SOURCE_ORDER = ORDER + ("unit_template",)
 _TARGET_BASENAMES = frozenset(Path(value[0]).name for value in TARGETS.values())
 _TARGET_MODES = {Path(value[0]).name: value[1] for value in TARGETS.values()}
 
@@ -96,7 +99,8 @@ _TARGET_MODES = {Path(value[0]).name: value[1] for value in TARGETS.values()}
 class VerifiedBundle:
     candidate_sha: str
     manifest_sha256: str
-    files: dict[str, bytes]
+    manifest_raw: bytes
+    files: MappingProxyType
     host_control_verified: bool = False
 
 
@@ -137,6 +141,9 @@ def _validate_approval(doc, manifest, sources, *, now):
     _require(all(doc[role + "_sha256"] == hashlib.sha256(sources[role]).hexdigest()
                  for role in ("helper", "custody", "profiles")),
              "ROOT_APPROVAL_SOURCE_MISMATCH")
+    _require(doc["unit_template_sha256"] ==
+             hashlib.sha256(sources["unit_template"]).hexdigest(),
+             "ROOT_APPROVAL_SOURCE_MISMATCH")
     _require(all(type(doc[key]) is str and _DIGEST.fullmatch(doc[key]) for key in
                  ("image_id", "artifact_digest")) and
              type(doc["daemon_id"]) is str and _DAEMON.fullmatch(doc["daemon_id"]) and
@@ -173,14 +180,15 @@ def verify_approved_bundle(manifest_raw, source_bytes, *, now):
              manifest["paper_mode"] == "PRODUCTION_PAPER" and
              manifest["real_orders_allowed"] is False and
              type(manifest["files"]) is dict and
-             set(manifest["files"]) == set(ORDER), "ROOT_MANIFEST_SCHEMA")
-    _require(type(source_bytes) is dict and set(source_bytes) == set(ORDER),
+             set(manifest["files"]) == set(SOURCE_ORDER), "ROOT_MANIFEST_SCHEMA")
+    _require(type(source_bytes) is dict and set(source_bytes) == set(SOURCE_ORDER),
              "ROOT_BUNDLE_ROLE_SCOPE")
-    for role in ORDER:
+    for role in SOURCE_ORDER:
         expected_sha = manifest["files"][role]
         data = source_bytes[role]
+        max_bytes = TARGETS[role][2] if role in TARGETS else 128 * 1024
         _require(type(expected_sha) is str and _HEX64.fullmatch(expected_sha) and
-                 type(data) is bytes and 0 < len(data) <= TARGETS[role][2],
+                 type(data) is bytes and 0 < len(data) <= max_bytes,
                  "ROOT_BUNDLE_ROLE_SCHEMA")
         _require(hashlib.sha256(data).hexdigest() == expected_sha,
                  "ROOT_BUNDLE_HASH_MISMATCH")
@@ -190,7 +198,8 @@ def verify_approved_bundle(manifest_raw, source_bytes, *, now):
     _validate_approval(approval, manifest, source_bytes, now=now)
     return VerifiedBundle(candidate_sha=manifest["candidate_sha"],
                           manifest_sha256=manifest_digest,
-                          files=dict(source_bytes))
+                          manifest_raw=manifest_raw,
+                          files=MappingProxyType(dict(source_bytes)))
 
 
 def _protected_inode(inode, *, is_dir):
@@ -317,9 +326,19 @@ def publish_verified_bundle(verified):
     reject use until all files match independently approved intent.
     """
     _require(type(verified) is VerifiedBundle and
-             set(verified.files) == set(ORDER) and
+             type(verified.files) is MappingProxyType and
+             set(verified.files) == set(SOURCE_ORDER) and
              verified.host_control_verified is False,
              "ROOT_VERIFIED_BUNDLE_REQUIRED")
+    # Do not accept an instance's self-declared validation status. Re-open
+    # independent trust against the immutable manifest and ALL bytes at the
+    # mutation boundary. This closes forged-object and post-verify TOCTOU.
+    rechecked = verify_approved_bundle(verified.manifest_raw,
+                                       dict(verified.files),
+                                       now=datetime.now(timezone.utc))
+    _require(rechecked.manifest_sha256 == verified.manifest_sha256 and
+             rechecked.candidate_sha == verified.candidate_sha,
+             "ROOT_VERIFIED_BUNDLE_CHANGED")
     for role in ORDER:
         target, mode, _max_bytes = TARGETS[role]
         target_dir_fd = _open_root_directory(str(Path(target).parent))
@@ -355,7 +374,9 @@ def install_approved_bundle():
     try:
         manifest = _read_root_inbox_file(inbox_fd, "manifest.json", 8192)
         sources = {role: _read_root_inbox_file(inbox_fd, SOURCE_NAMES[role],
-                                             TARGETS[role][2]) for role in ORDER}
+                                             TARGETS[role][2] if role in TARGETS
+                                             else 128 * 1024)
+                   for role in SOURCE_ORDER}
     finally:
         os.close(inbox_fd)
     verified = verify_approved_bundle(manifest, sources, now=datetime.now(timezone.utc))

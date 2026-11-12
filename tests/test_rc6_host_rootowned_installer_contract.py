@@ -13,7 +13,7 @@ from unittest.mock import patch
 from scripts import rc6_host_rootowned_installer_contract as installer
 
 
-NOW = datetime(2026, 11, 12, 20, 0, tzinfo=timezone.utc)
+NOW = datetime.now(timezone.utc)
 SHA = "a" * 40
 TREE = "b" * 40
 ARTIFACT = "sha256:" + "c" * 64
@@ -35,6 +35,7 @@ def bundle():
         "helper": b"#!/usr/bin/python3 -I\n# reviewed helper bytes\n",
         "custody": b"# reviewed root-only custody\n",
         "profiles": b'{"roles":{}}\n',
+        "unit_template": b"[Unit]\nDescription=reviewed critical PAPER template\n",
     }
     expires_at = (NOW + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     approval = {
@@ -53,7 +54,7 @@ def bundle():
         "helper_sha256": digest(files["helper"]),
         "custody_sha256": digest(files["custody"]),
         "profiles_sha256": digest(files["profiles"]),
-        "unit_template_sha256": "f" * 64,
+        "unit_template_sha256": digest(files["unit_template"]),
         "expires_at": expires_at,
     }
     files["approval"] = encode(approval)
@@ -75,7 +76,8 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
             verified = installer.verify_approved_bundle(manifest, source, now=NOW)
         self.assertEqual(verified.candidate_sha, SHA)
         self.assertEqual(verified.manifest_sha256, digest(manifest))
-        self.assertEqual(set(verified.files), {"helper", "custody", "profiles", "approval"})
+        self.assertEqual(set(verified.files),
+                         {"helper", "custody", "profiles", "approval", "unit_template"})
         self.assertEqual(verified.files["helper"], source["helper"])
         self.assertIs(verified.host_control_verified, False)
 
@@ -85,6 +87,69 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
             with self.assertRaises(installer.InstallHold) as caught:
                 installer.verify_approved_bundle(manifest, source, now=NOW)
         self.assertEqual(caught.exception.reason, "ROOT_MANIFEST_TRUST_PIN_ABSENT")
+
+    def test_verified_bundle_is_immutable_snapshot_not_alias_of_caller_dict(self):
+        manifest, sources, _, _ = bundle()
+        original = sources["helper"]
+        with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)):
+            verified = installer.verify_approved_bundle(manifest, sources, now=NOW)
+        sources["helper"] = b"unapproved-late-mutation"
+        self.assertEqual(verified.files["helper"], original)
+        with self.assertRaises(TypeError):
+            verified.files["helper"] = b"mutated-through-dataclass"
+
+    def test_publisher_rejects_forged_verifiedbundle_even_when_shape_looks_valid(self):
+        manifest, sources, _, _ = bundle()
+        forged = installer.VerifiedBundle(
+            candidate_sha=SHA, manifest_sha256="0" * 64,
+            manifest_raw=manifest, files={role: b"unapproved" for role in sources},
+            host_control_verified=False)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)):
+                    with self.assertRaises(installer.InstallHold):
+                        installer.publish_verified_bundle(forged)
+            finally:
+                os.close(fd)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_publisher_rechecks_tampered_bytes_before_first_file(self):
+        manifest, sources, _, _ = bundle()
+        with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)):
+            verified = installer.verify_approved_bundle(manifest, sources, now=NOW)
+            forged = installer.VerifiedBundle(
+                candidate_sha=SHA, manifest_sha256=digest(manifest),
+                manifest_raw=manifest,
+                files={**dict(verified.files), "helper": b"unapproved"},
+                host_control_verified=False)
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    with patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)):
+                        with self.assertRaises(installer.InstallHold):
+                            installer.publish_verified_bundle(forged)
+                finally:
+                    os.close(fd)
+                self.assertEqual(list(root.iterdir()), [])
+
+    def test_template_bytes_required_as_readonly_pinned_evidence_not_unit_install(self):
+        manifest, sources, document, approval = bundle()
+        with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)):
+            with self.assertRaises(installer.InstallHold):
+                installer.verify_approved_bundle(
+                    manifest, {k: v for k, v in sources.items() if k != "unit_template"},
+                    now=NOW)
+        changed = {**approval, "unit_template_sha256": "0" * 64}
+        forged = dict(sources, approval=encode(changed))
+        updated = {**document, "files": {**document["files"],
+                                         "approval": digest(forged["approval"])}}
+        new_manifest = encode(updated)
+        with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(new_manifest)):
+            with self.assertRaises(installer.InstallHold):
+                installer.verify_approved_bundle(new_manifest, forged, now=NOW)
 
     def test_manifest_hash_is_not_self_authorized_by_supplied_content(self):
         manifest, source, _, _ = bundle()
@@ -115,7 +180,7 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
 
     def test_manifest_rejects_changed_helper_or_approval_bytes(self):
         manifest, files, _, _ = bundle()
-        for role in ("helper", "custody", "profiles", "approval"):
+        for role in ("helper", "custody", "profiles", "approval", "unit_template"):
             changed = dict(files, **{role: files[role] + b"changed"})
             with self.subTest(role=role), patch.object(
                     installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)):
@@ -130,6 +195,7 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
             {**approval, "paper_mode": "LIVE"},
             {**approval, "candidate_sha": "f" * 40},
             {**approval, "helper_sha256": "0" * 64},
+            {**approval, "unit_template_sha256": "0" * 64},
             {**approval, "expires_at": (NOW - timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")},
             {**approval, "expires_at": (NOW + timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%SZ")},
             {**approval, "extra": "forged"},
@@ -289,7 +355,8 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
                 return real_publish(handle, name, raw, mode)
 
             try:
-                with patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)), \
+                with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)), \
+                        patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)), \
                         patch.object(installer, "atomic_publish", side_effect=publish):
                     with self.assertRaises(installer.InstallHold) as caught:
                         installer.publish_verified_bundle(verified)
@@ -306,12 +373,14 @@ class RootOwnedInstallerContractTest(unittest.TestCase):
             root = Path(temp)
             fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
             try:
-                with patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)):
+                with patch.object(installer, "TRUSTED_MANIFEST_SHA256", digest(manifest)), \
+                        patch.object(installer, "_open_root_directory", side_effect=lambda _p: os.dup(fd)):
                     installer.publish_verified_bundle(verified)
             finally:
                 os.close(fd)
             self.assertEqual((root / "host-helper-approval.json").read_bytes(),
                              sources["approval"])
+            self.assertFalse((root / "critical-unit-template.service").exists())
             self.assertEqual(stat.S_IMODE((root / "porota-rc6-oci-custody").stat().st_mode),
                              0o555)
 
