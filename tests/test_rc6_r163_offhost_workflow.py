@@ -710,6 +710,15 @@ def test_r205_fast_replay_xml_fixture_never_logs_private_body(
            f'errors="0" skipped="0">' + "".join(cases) + "</testsuite>").encode()
 
     def fake_run(cmd, **kwargs):
+        if cmd[1] == "-c":
+            assert kwargs["timeout"] <= 90
+            assert kwargs["stdout"] is kwargs["stderr"]
+            # Simulate a validated private collector receipt for the red case.
+            Path(cmd[3]).write_text(
+                '{"schema":"rc6_r205_collect_v1","index":3,'
+                '"module_ordinal":4,"source_line":123,'
+                '"collected":191,"module_count":10}')
+            return SimpleNamespace(returncode=0)
         assert cmd[:6] == [sys.executable, "-m", "pytest",
                             "-q", "-p", "no:cacheprovider"]
         assert kwargs["timeout"] == 300
@@ -736,6 +745,8 @@ def test_r205_fast_replay_xml_fixture_never_logs_private_body(
         assert rc == 79
         assert "RC6_R205_SIGNALS_FAST=HOLD79|cases=191|bad=1" in output.out
         assert "RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=3|kind=failure" in output.out
+        assert ("RC6_R205_SIGNALS_ISOLATE=HOLD79|index=3|"
+                "module_ordinal=4|source_line=123") in output.out
         for forbidden in ("ghp_AbCd", "AKIAIOSF", "https://", "classname=",
                           "name=", "type="):
             assert forbidden not in output.out
@@ -749,6 +760,7 @@ def test_r205_fast_replay_xml_fixture_never_logs_private_body(
 @pytest.mark.parametrize("case", (
     "no_xml", "empty_xml", "wrong_case_count", "wrong_suite_counter",
     "bad_xml", "symlink", "skipped_case", "exit_code_only",
+    "nested_skipped", "rogue_failure", "rogue_testcase", "nested_suite",
 ))
 def test_r205_fast_junit_rejects_missing_corrupt_or_inconsistent_receipts(
     case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -761,19 +773,44 @@ def test_r205_fast_junit_rejects_missing_corrupt_or_inconsistent_receipts(
     for index in range(real_cases):
         node = ('<skipped type="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy">'
                 'CANARY_SECRET_LOG</skipped>'
-                if case == "skipped_case" and index == 3 else "")
+                if case == "skipped_case" and index == 3 else (
+                    '<system-out><skipped type="AKIAIOSFODNN7EXAMPLE">'
+                    'CANARY_SECRET_NESTED</skipped></system-out>'
+                    if case == "nested_skipped" and index == 3 else ""
+                ))
         cls = ("AKIAIOSFODNN7EXAMPLE" if index == 3
                else "tests.test_safe")
         cases.append(f'<testcase classname="{cls}" name="test_{index}">'
                      f'{node}</testcase>')
     reported_tests = 190 if case == "wrong_suite_counter" else 191
-    report_xml = (
-        f'<testsuite tests="{reported_tests}" failures="0" errors="0" '
-        f'skipped="{int(case == "skipped_case")}">' +
-        "".join(cases) + "</testsuite>"
-    ).encode()
+    if case == "rogue_testcase":
+        report_xml = (
+            '<testsuites><testsuite tests="0" failures="0" errors="0" '
+            'skipped="0"/>' + "".join(cases) + '</testsuites>'
+        ).encode()
+    elif case == "nested_suite":
+        report_xml = (
+            '<testsuites><testsuite tests="0" failures="0" errors="0" '
+            'skipped="0"><testsuite tests="191" failures="0" errors="0" '
+            'skipped="0">' + "".join(cases) + '</testsuite>'
+            '</testsuite></testsuites>'
+        ).encode()
+    else:
+        report_xml = (
+            f'<testsuite tests="{reported_tests}" failures="0" errors="0" '
+            f'skipped="{int(case == "skipped_case")}">' +
+            "".join(cases) +
+            ('<failure type="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy">'
+             'CANARY_SECRET_ROGUE</failure>' if case == "rogue_failure" else '') +
+            "</testsuite>"
+        ).encode()
 
     def fake_run(cmd, **kwargs):
+        if cmd[1] == "-c":
+            assert kwargs["timeout"] <= 90
+            assert kwargs["stdout"] is kwargs["stderr"]
+            # Malformed/skipped fixtures never become public proof.
+            return SimpleNamespace(returncode=79)
         report = Path(next(item.removeprefix("--junitxml=") for item in cmd
                            if item.startswith("--junitxml=")))
         assert kwargs["timeout"] == 300
@@ -832,3 +869,100 @@ def test_r205_raw_junit_privacy_gate_always_holds_before_seal_or_upload() -> Non
     assert "if:" not in guard["run"] and "exit 0" not in guard["run"]
     assert steps[upload]["uses"] == "actions/upload-artifact@v4"
     assert "if" not in steps[upload] and "continue-on-error" not in steps[upload]
+
+
+@pytest.mark.parametrize("receipt_case", (
+    "valid", "missing", "wrong_count", "wrong_index", "unsafe_extra",
+    "string_ordinal", "bad_line", "collector_red",
+))
+def test_r205b_collector_receipt_produces_only_numeric_indices(
+    receipt_case: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    source_xml = (
+        '<testsuite tests="191" failures="1" errors="0" skipped="0">' +
+        "".join(
+            f'<testcase classname="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy" '
+            f'name="AKIAIOSFODNN7EXAMPLE">'
+            + ('<failure type="https://invalid.example/credential">'
+               'CANARY_SECRET_PRIVATE</failure>' if i == 83 else '')
+            + '</testcase>' for i in range(191)
+        ) + '</testsuite>'
+    ).encode()
+    collection_seen = []
+
+    def fake_run(cmd, **kwargs):
+        assert kwargs["stdout"] is kwargs["stderr"]
+        assert "GITHUB_TOKEN" not in kwargs["env"]
+        if cmd[1] == "-c":
+            collection_seen.append(True)
+            assert kwargs["timeout"] <= 90
+            assert "pytest_collection_finish" in cmd[2]
+            assert int(cmd[4]) == 83
+            assert "tests/test_rc6_go_startup_readiness.py" in cmd[5]
+            if receipt_case != "missing":
+                document = {
+                    "schema": "rc6_r205_collect_v1",
+                    "index": 83, "module_ordinal": 4, "source_line": 123,
+                    "collected": 191, "module_count": 10,
+                }
+                if receipt_case == "wrong_count":
+                    document["collected"] = 190
+                elif receipt_case == "wrong_index":
+                    document["index"] = 82
+                elif receipt_case == "unsafe_extra":
+                    document["nodeid"] = "ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy"
+                elif receipt_case == "string_ordinal":
+                    document["module_ordinal"] = "AKIAIOSFODNN7EXAMPLE"
+                elif receipt_case == "bad_line":
+                    document["source_line"] = -1
+                Path(cmd[3]).write_text(__import__("json").dumps(document))
+            return SimpleNamespace(returncode=79 if receipt_case == "collector_red"
+                                   else 0)
+        assert kwargs["timeout"] == 300
+        report = next(value.removeprefix("--junitxml=") for value in cmd
+                      if value.startswith("--junitxml="))
+        Path(report).write_bytes(source_xml)
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    try:
+        exec(compile(_r205_fast_python(), "R205_PY311_191_FAST", "exec"),
+             {"__name__": "__main__"})
+        rc = 0
+    except SystemExit as exc:
+        rc = exc.code if type(exc.code) is int else 79
+    output = capsys.readouterr()
+    assert rc == 79 and output.err == ""
+    assert collection_seen == [True]
+    assert "RC6_R205_SIGNALS_FAST=HOLD79|cases=191|bad=1" in output.out
+    assert "RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=83|kind=failure" in output.out
+    if receipt_case == "valid":
+        assert ("RC6_R205_SIGNALS_ISOLATE=HOLD79|index=83|"
+                "module_ordinal=4|source_line=123") in output.out
+    else:
+        assert "RC6_R205_SIGNALS_ISOLATE=HOLD79|collection_unavailable" in output.out
+    for secret in ("ghp_AbCd", "AKIAIOSF", "https://", "CANARY_SECRET",
+                   "nodeid", "classname=", "name=", "type=", str(tmp_path)):
+        assert secret not in output.out
+    assert len(output.out) < 600
+
+
+def test_r205b_collector_uses_pytest_session_items_and_enforces_ten_file_order() -> None:
+    script = ast.parse(_r205_fast_python())
+    collector = next(ast.literal_eval(item.value) for item in script.body
+                     if isinstance(item, ast.Assign) and any(
+                         isinstance(name, ast.Name) and name.id == "COLLECTOR_CODE"
+                         for name in item.targets))
+    ast.parse(collector)
+    assert "pytest_collection_finish" in collector
+    assert "session.items" in collector
+    assert "len(items) != 191" in collector
+    assert "ordinals != sorted(ordinals)" in collector
+    assert "source_line" in collector
+    assert '["--collect-only", "-q", "-p", "no:cacheprovider"' in collector
+    assert "print(" not in collector
+    assert "item.nodeid" not in collector
+    assert "case.get(" not in collector
+    assert "write_text" in collector

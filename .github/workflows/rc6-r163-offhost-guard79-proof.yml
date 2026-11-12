@@ -108,6 +108,7 @@ jobs:
           # All 10 script-defined scenario files; no Docker, host, provider
           # credentials or raw pytest output enters GitHub Actions logs.
           python - <<'PY'
+          import json
           import os
           from pathlib import Path
           import re
@@ -129,6 +130,89 @@ jobs:
               "tests/test_rc6_catalog_publication_lifecycle.py",
               "tests/test_rc6_go_startup_readiness.py",
           )
+          COLLECTOR_CODE = '''
+          import json
+          from pathlib import Path
+          import sys
+          import pytest
+          
+          PATHS = json.loads(sys.argv[3])
+          TARGET = int(sys.argv[2])
+          if len(PATHS) != 10 or not 0 <= TARGET < 191:
+              raise SystemExit(79)
+          
+          class Collector:
+              def pytest_collection_finish(self, session):
+                  items = session.items
+                  if len(items) != 191:
+                      return
+                  root = Path.cwd().resolve()
+                  files = [(root / name).resolve(strict=True) for name in PATHS]
+                  if len(set(files)) != 10:
+                      return
+                  ordinals = []
+                  for item in items:
+                      current = Path(item.path).resolve(strict=True)
+                      if current not in files:
+                          return
+                      ordinals.append(files.index(current))
+                  if ordinals != sorted(ordinals) or set(ordinals) != set(range(10)):
+                      return
+                  location = items[TARGET].location
+                  if not isinstance(location, (list, tuple)) or len(location) < 2:
+                      return
+                  relative, line = location[:2]
+                  if type(relative) is not str or type(line) is not int or not 0 <= line < 1000000:
+                      return
+                  if (root / relative).resolve(strict=True) != files[ordinals[TARGET]]:
+                      return
+                  receipt = {"schema": "rc6_r205_collect_v1", "index": TARGET,
+                             "module_ordinal": ordinals[TARGET], "source_line": line + 1,
+                             "collected": 191, "module_count": 10}
+                  Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+          
+          try:
+              code = pytest.main(["--collect-only", "-q", "-p", "no:cacheprovider", *PATHS],
+                                 plugins=[Collector()])
+          except BaseException:
+              raise SystemExit(79)
+          raise SystemExit(0 if int(code) == 0 and Path(sys.argv[1]).is_file() else 79)
+          '''
+          def collect_location(index, scratch, env):
+              receipt = Path(scratch) / "collection.json"
+              cmd = [sys.executable, "-c", COLLECTOR_CODE, str(receipt),
+                     str(index), json.dumps(PATHS)]
+              with tempfile.TemporaryFile() as private_log:
+                  result = subprocess.run(cmd, cwd=Path.cwd(), env=env,
+                                          stdout=private_log, stderr=private_log,
+                                          timeout=90, check=False)
+              if result.returncode != 0:
+                  raise ValueError("COLLECTOR_RED")
+              with os.fdopen(os.open(receipt, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                  meta = os.fstat(source.fileno())
+                  if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                          meta.st_uid != os.getuid() or not 0 < meta.st_size <= 4096):
+                      raise ValueError("COLLECTOR_RECEIPT_NOT_OWNED")
+                  raw = source.read(4097)
+                  if len(raw) != meta.st_size:
+                      raise ValueError("COLLECTOR_RECEIPT_CHANGED")
+              data = json.loads(raw)
+              if type(data) is not dict or set(data) != {
+                  "schema", "index", "module_ordinal", "source_line",
+                  "collected", "module_count",
+              } or data["schema"] != "rc6_r205_collect_v1":
+                  raise ValueError("COLLECTOR_RECEIPT_SCHEMA")
+              for field in ("index", "module_ordinal", "source_line",
+                            "collected", "module_count"):
+                  if type(data[field]) is not int:
+                      raise ValueError("COLLECTOR_RECEIPT_TYPE")
+              if (data["index"] != index or data["collected"] != 191 or
+                      data["module_count"] != 10 or
+                      not 0 <= data["module_ordinal"] < 10 or
+                      not 1 <= data["source_line"] <= 1000000):
+                  raise ValueError("COLLECTOR_RECEIPT_COUNTS")
+              return data["module_ordinal"], data["source_line"]
+
           try:
               temporary = os.environ["RUNNER_TEMP"]
               with tempfile.TemporaryDirectory(prefix="rc6-r205-", dir=temporary) as scratch:
@@ -163,10 +247,15 @@ jobs:
                   if xml.tag not in ("testsuite", "testsuites"):
                       raise ValueError("XML_ROOT")
                   suites = ([xml] if xml.tag == "testsuite" else
-                            list(xml.findall(".//testsuite")))
+                            list(xml.findall("testsuite")))
                   cases = list(xml.iter("testcase"))
-                  if not suites or len(cases) != 191:
-                      raise ValueError("CASE_COUNT")
+                  direct = [case for suite in suites
+                            for case in suite.findall("testcase")]
+                  if (not suites or len(cases) != 191 or
+                          len(direct) != len(cases) or
+                          len(list(xml.iter("testsuite"))) != len(suites)):
+                      raise ValueError("CASE_COUNT_OR_ROGUE")
+                  total = 0
                   for suite in suites:
                       attrs = [suite.get(key) for key in
                                ("tests", "failures", "errors", "skipped")]
@@ -175,9 +264,16 @@ jobs:
                               for value in attrs) or
                               int(attrs[0]) != len(suite.findall("testcase"))):
                           raise ValueError("JUNIT_COUNTERS")
-                  bad = [(index, tag) for index, case in enumerate(cases)
+                      total += int(attrs[0])
+                  if total != len(cases):
+                      raise ValueError("JUNIT_COVERAGE")
+                  bad = [(index, tag) for index, case in enumerate(direct)
                          for tag in ("failure", "error", "skipped")
-                         for _node in case.findall(tag)]
+                         for _node in case.iter(tag)]
+                  actual_alerts = sum(1 for tag in ("failure", "error", "skipped")
+                                      for _node in xml.iter(tag))
+                  if actual_alerts != len(bad):
+                      raise ValueError("ROGUE_ALERT")
                   if run.returncode != 0 or bad or any(
                           int(suite.get(key)) != 0 for suite in suites
                           for key in ("failures", "errors", "skipped")):
@@ -186,6 +282,17 @@ jobs:
                       for index, kind in bad[:3]:
                           print("RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=" +
                                 str(index) + "|kind=" + kind)
+                      if bad:
+                          index = bad[0][0]
+                          try:
+                              module_ordinal, source_line = collect_location(
+                                  index, scratch, env)
+                              print("RC6_R205_SIGNALS_ISOLATE=HOLD79|index=" +
+                                    str(index) + "|module_ordinal=" +
+                                    str(module_ordinal) + "|source_line=" +
+                                    str(source_line))
+                          except Exception:
+                              print("RC6_R205_SIGNALS_ISOLATE=HOLD79|collection_unavailable")
                       raise SystemExit(79)
                   print("RC6_R205_SIGNALS_FAST=PY311_OFFHOST_191_CASES|skipped=0|release_go=NO")
           except SystemExit:
