@@ -373,7 +373,7 @@ def test_product_pr_must_be_merged_by_exact_product_commit():
             data[f"{API}/pulls/1087"].update({"merge_commit_sha": "0" * 40}))
 
 
-def test_no_r251_import_never_accepts_unaudited_data():
+def test_missing_or_invalid_r251_bytes_never_accepts_unaudited_data():
     with pytest.raises(guard.RequiredReleaseEvidenceRed):
         guard.verify_trusted_release(inputs(), github=FakeGitHub(github_records()))
 
@@ -425,12 +425,14 @@ def test_real_python_isolated_import_only_from_trusted_sibling_file():
     assert p.returncode == 0, p.stderr
 
 
-def test_real_python_isolated_cli_fail_closed_missing_r251_no_traceback():
+def test_real_python_isolated_cli_invalid_selector_holds_without_network():
     source = Path(guard.__file__).resolve()
-    env = {**os.environ, **inputs("PRODUCT_POSTMERGE"),
+    selected = inputs("PRODUCT_POSTMERGE")
+    selected["RC6_BRIDGE_E_RUN_ID"] = "0"  # pre-network parser defense, before R251 import
+    env = {**os.environ, **selected,
            "GITHUB_EVENT_NAME": "push", "GITHUB_REF": f"refs/heads/{PRODUCT}",
            "GITHUB_SHA": P, "GITHUB_REPOSITORY": REPO,
-           "GITHUB_TOKEN": "test-only-not-used-because-r251-unavailable"}
+           "GITHUB_TOKEN": "test-only-never-used-on-invalid-selector"}
     p = subprocess.run([sys.executable, "-I", "-B", str(source),
                         "--trusted-release-mode", "PRODUCT_POSTMERGE"],
                        env=env, capture_output=True, text=True, check=False)
