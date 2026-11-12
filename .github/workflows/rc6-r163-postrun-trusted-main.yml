@@ -1,7 +1,7 @@
-# R163 proposal only. This file MUST be reviewed and merged through an
-# authorized PR to protected default main before workflow_run can fire.
-# R144/HOLD79 unchanged: no release, host access, build, or deploy.
-name: RC6 R163 Trusted Main Postrun Bytes (AUDIT ONLY)
+# R206 B trusted-main PREUPLOAD publisher. Upstream HOLD79 does not upload.
+# This workflow must reproduce a fresh OFFHOST probe before trusted publish.
+# R144, PAPER safety, host control and release GO remain held.
+name: RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)
 
 on:
   workflow_run:
@@ -13,54 +13,233 @@ permissions:
   contents: read
 
 concurrency:
-  group: rc6-r163-trusted-main-postrun-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  group: rc6-r206-publisher-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
 
 jobs:
-  authenticate-postrun-zip:
-    name: Authenticated REST ZIP bytes (TRUSTED MAIN AUDIT ONLY)
+  trusted-public-probe:
+    name: Independent offhost native and trusted PUBLIC six-member seal
     if: >-
       ${{ github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.status == 'completed' &&
+      github.event.workflow_run.conclusion == 'failure' &&
       github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.name == 'RC6 R163 Offhost Guard79 Proof (PROBE ONLY)' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 90
     permissions:
       actions: read
       contents: read
+    env:
+      RC6_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RC6_UPSTREAM_ID: ${{ github.event.workflow_run.id }}
+      RC6_UPSTREAM_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      RC6_PROBE_IMAGE: rc6-r206-offhost:${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Checkout exact default-main SHA, never upstream PR
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2, immutable
+      - name: Checkout trusted main only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify trusted main source and audit raw ZIP
+      - name: Verify trusted main source and upstream hold via REST
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RC6_TRUSTED_MAIN_SHA: ${{ github.sha }}
-          RC6_EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
-          RC6_EXPECTED_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -Eeuo pipefail
           test "$GITHUB_REF" = refs/heads/main || exit 79
           test "$(git rev-parse HEAD)" = "$RC6_TRUSTED_MAIN_SHA" || exit 79
-          RC6_TRUSTED_SOURCE_SHA256=489de91f76be8c7d5ab6c9fa391d8bbd4e2650e2e2f0ae73e48c0891967fcb67
+          [[ "$RC6_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$RC6_UPSTREAM_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
+          [[ "$RC6_UPSTREAM_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
+          RC6_TRUSTED_SOURCE_SHA256=c9767f35ee8c98bde98faa263161bc89dd80cdc349099f2ad4fd74179878f56f
           printf '%s  %s\n' "$RC6_TRUSTED_SOURCE_SHA256" \
             scripts/rc6_r163_trusted_postrun_byte_audit.py | sha256sum --check --status || exit 79
-          [[ "$RC6_EXPECTED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
-          [[ "$RC6_EXPECTED_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
-          python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py \
-            --event "$GITHUB_EVENT_PATH" \
-            --run-id "$RC6_EXPECTED_RUN_ID" \
-            --run-attempt "$RC6_EXPECTED_RUN_ATTEMPT"
-          echo 'RC6_R163_TRUSTED_MAIN=BYTES_MATCH_READONLY|automatic_go=NO|release_go=NO|runtime_verified=NO'
-      - name: Keep release and runtime gates closed
-        if: always()
+          python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py r206-upstream \
+            --event "$GITHUB_EVENT_PATH" --run-id "$RC6_UPSTREAM_ID" \
+            --run-attempt "$RC6_UPSTREAM_ATTEMPT"
+          echo 'RC6_R206_UPSTREAM=IDENTITY_ONLY|fresh_reproduction_required|release_go=NO'
+      - name: Checkout candidate as Docker-only build context
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: .rc6-untrusted-source
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build ephemeral OFFHOST probe without credentials or push
         shell: bash
         run: |
           set -Eeuo pipefail
-          echo 'RC6_R163_TRUSTED_POSTRUN=AUDIT_ONLY|R144=UNCHANGED|HOLD79=UNCHANGED|automatic_go=NO'
-          echo 'Final PAPER, Deploy V2 and runtime gates are not exercised by this workflow.'
+          test "$(git -C .rc6-untrusted-source rev-parse HEAD)" = "$RC6_SOURCE_SHA" || exit 79
+          RC6_SOURCE_TREE="$(git -C .rc6-untrusted-source rev-parse HEAD^{tree})"
+          [[ "$RC6_SOURCE_TREE" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          printf 'RC6_SOURCE_TREE=%s\n' "$RC6_SOURCE_TREE" >> "$GITHUB_ENV"
+          # Dockerfile RUN executes inside ephemeral BuildKit, never host shell.
+          # No build secrets, SSH, host volume mount, cache reuse or push.
+          DOCKER_BUILDKIT=1 docker build --no-cache \
+            --build-arg "POROTA_BUILD_SHA=$RC6_SOURCE_SHA" \
+            --build-arg "POROTA_CANDIDATE_TREE_SHA=$RC6_SOURCE_TREE" \
+            --label "porota.commit=$RC6_SOURCE_SHA" \
+            --label "porota.predeploy=v2" \
+            -t "$RC6_PROBE_IMAGE" .rc6-untrusted-source
+          echo 'RC6_R206_IMAGE=OFFHOST_EPHEMERAL|release_go=NO'
+      - name: Reproduce native test stages in UID1000 anonymous source and RO collector
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(id -u)" != 1000 || exit 79
+          source_cid=
+          collector_cid=
+          image_id="$(docker image inspect -f '{{.Id}}' "$RC6_PROBE_IMAGE")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 79
+          stage="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r206-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-XXXXXXXX")"
+          test -d "$stage" && test ! -L "$stage" || exit 79
+          mkdir -m 700 "$stage/private"
+          printf 'RC6_TRUSTED_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+          owned_cid() {
+            local cid="$1" role="$2" actual expected
+            [[ "$cid" =~ ^[0-9a-f]{64}$ ]] || return 1
+            actual="$(docker inspect -f '{{.Id}}|{{.Image}}|{{.Config.User}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.candidate_tree"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.native-proof"}}|{{index .Config.Labels "porota.native-role"}}|{{index .Config.Labels "porota.run_id"}}|{{index .Config.Labels "porota.run_attempt"}}' "$cid")" || return 1
+            expected="$cid|$image_id|1000:1000|$RC6_SOURCE_SHA|$RC6_SOURCE_TREE|v2|v3|$role|$RC6_UPSTREAM_ID|$RC6_UPSTREAM_ATTEMPT"
+            test "$actual" = "$expected"
+          }
+          cleanup_owned() {
+            local previous=$? cleanup=0 cid role running
+            trap - EXIT
+            for role in bundle-collector bundle; do
+              if [[ "$role" == bundle ]]; then cid="$source_cid"; else cid="$collector_cid"; fi
+              test -n "$cid" || continue
+              if ! owned_cid "$cid" "$role"; then cleanup=79; continue; fi
+              running="$(docker inspect -f '{{.State.Running}}' "$cid")" || { cleanup=79; continue; }
+              if [[ "$running" == true ]]; then
+                docker stop --time 10 "$cid" >/dev/null || { cleanup=79; continue; }
+              elif [[ "$running" != false ]]; then cleanup=79; continue; fi
+              owned_cid "$cid" "$role" || { cleanup=79; continue; }
+              docker rm -v "$cid" >/dev/null || cleanup=79
+            done
+            if (( previous != 0 || cleanup != 0 )); then
+              echo 'RC6_R206_NATIVE=HOLD79|owned_probe_or_cleanup_failed' >&2
+              exit 79
+            fi
+            echo 'RC6_R206_NATIVE=FRESH_OFFHOST_PROBE|release_go=NO'
+          }
+          trap cleanup_owned EXIT
+          trap 'exit 143' INT TERM HUP
+          labels=(
+            --label "porota.commit=$RC6_SOURCE_SHA"
+            --label "porota.candidate_tree=$RC6_SOURCE_TREE"
+            --label "porota.run_id=$RC6_UPSTREAM_ID"
+            --label "porota.run_attempt=$RC6_UPSTREAM_ATTEMPT"
+            --label porota.predeploy=v2 --label porota.native-proof=v3
+          )
+          isolated=(
+            --pull never --read-only --network none --no-healthcheck
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges
+            --pids-limit 128 --memory 256m --memory-swap 256m --cpus .75 --workdir /app
+          )
+          source_cid="$(docker create "${labels[@]}" --label porota.native-role=bundle \
+            "${isolated[@]}" --mount type=volume,target=/app/data \
+            -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/app/data/tmp \
+            -e MPLCONFIGDIR=/app/data/tmp/matplotlib \
+            -e XDG_CACHE_HOME=/app/data/tmp/cache \
+            "$RC6_PROBE_IMAGE" sleep 7200)" || exit 79
+          owned_cid "$source_cid" bundle || exit 79
+          docker start "$source_cid" >/dev/null || exit 79
+          docker exec --user 1000:1000 "$source_cid" sh -ceu '
+            umask 077
+            mkdir -p /app/data/tmp /app/data/catalog /app/data/session /app/data/cadence
+            test -w /app/data/tmp
+          '
+          timeout 900 docker exec --user 1000:1000 "$source_cid" \
+            python -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
+            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py \
+            tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py \
+            --junitxml=/app/data/native-bound.xml
+          timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --full-catalog-check --output /app/data/catalog
+          timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --output /app/data/session
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --cadence-stage fresh --output /app/data/cadence
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --cadence-stage legacy --output /app/data/cadence
+          owned_cid "$source_cid" bundle || exit 79
+          docker stop --time 10 "$source_cid" >/dev/null || exit 79
+          test "$(docker inspect -f '{{.State.Running}}' "$source_cid")" = false || exit 79
+          collector_cid="$(docker create "${labels[@]}" --label porota.native-role=bundle-collector \
+            "${isolated[@]}" --volumes-from "$source_cid:ro" \
+            "$RC6_PROBE_IMAGE" sleep 7200)" || exit 79
+          owned_cid "$collector_cid" bundle-collector || exit 79
+          docker start "$collector_cid" >/dev/null || exit 79
+          docker exec -i --user 1000:1000 "$collector_cid" python - <<'PY'
+          import errno, os, sys
+          try:
+              fd = os.open('/app/data/.r206_ro_probe',
+                           os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          except OSError as exc:
+              if exc.errno != errno.EROFS:
+                  sys.exit(79)
+              print('RC6_R206_COLLECTOR=PHYSICAL_EROFS')
+          else:
+              os.close(fd)
+              sys.exit(79)
+          PY
+          # The candidate controls image config/exec stdout. Bound all private
+          # capture BEFORE trusted disk writes; fail closed under pipefail.
+          docker inspect "$source_cid" 2>/dev/null |
+            head -c 262145 > "$stage/private/source-inspect.json" || exit 79
+          docker inspect "$collector_cid" 2>/dev/null |
+            head -c 262145 > "$stage/private/collector-inspect.json" || exit 79
+          timeout 90 docker exec --user 1000:1000 "$collector_cid" \
+            python scripts/rc6_r163_native_volume_proof.py pack --proof-root /app/data \
+            2>/dev/null | head -c 33554433 > "$stage/private/native.tar" || exit 79
+          test "$(wc -c < "$stage/private/native.tar")" -le 33554432 || exit 79
+          volume_name="$(docker inspect -f '{{(index .Mounts 0).Name}}' "$source_cid")"
+          [[ "$volume_name" =~ ^[0-9a-f]{64}$ ]] || exit 79
+          printf 'RC6_PROBE_IMAGE_ID=%s\n' "$image_id" >> "$GITHUB_ENV"
+          printf 'RC6_PROBE_SOURCE_CID=%s\n' "$source_cid" >> "$GITHUB_ENV"
+          printf 'RC6_PROBE_COLLECTOR_CID=%s\n' "$collector_cid" >> "$GITHUB_ENV"
+          printf 'RC6_PROBE_VOLUME=%s\n' "$volume_name" >> "$GITHUB_ENV"
+          echo 'RC6_R206_PROBE=CAPDROP_NETNONE_RO_ANONYMOUS|release_go=NO'
+      - name: Trusted main seals public six-member evidence before any upload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main || exit 79
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA" || exit 79
+          python3 -I scripts/rc6_r163_trusted_postrun_byte_audit.py r206-seal \
+            --staging-root "$RC6_TRUSTED_STAGE" \
+            --input-root "$RC6_TRUSTED_STAGE/private" \
+            --candidate-sha "$RC6_SOURCE_SHA" \
+            --candidate-tree-sha "$RC6_SOURCE_TREE" \
+            --run-id "$RC6_UPSTREAM_ID" --run-attempt "$RC6_UPSTREAM_ATTEMPT" \
+            --image-id "$RC6_PROBE_IMAGE_ID" \
+            --source-cid "$RC6_PROBE_SOURCE_CID" \
+            --collector-cid "$RC6_PROBE_COLLECTOR_CID" \
+            --volume-name "$RC6_PROBE_VOLUME" --candidate-writer-uid 1000
+          printf 'RC6_R206_PUBLIC_DIR=%s\n' "$RC6_TRUSTED_STAGE/public" >> "$GITHUB_ENV"
+          printf 'RC6_R206_ARTIFACT_NAME=rc6-r163-offhost-%s-%s-%s\n' \
+            "$RC6_UPSTREAM_ID" "$RC6_UPSTREAM_ATTEMPT" "$RC6_SOURCE_SHA" >> "$GITHUB_ENV"
+          echo 'RC6_R206_PREUPLOAD=PUBLIC_SIX_SEALED|release_go=NO|postrun_required=YES'
+      - name: Upload trusted public OFFHOST probe only
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.RC6_R206_ARTIFACT_NAME }}
+          path: ${{ env.RC6_R206_PUBLIC_DIR }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+      - name: P/N pending, never self-attest completion
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n '${{ steps.upload.outputs.artifact-id }}' || exit 79
+          echo 'RC6_R206_PUBLISHER=PROBE_PUBLISHED_PENDING_POSTRUN|release_go=NO|R144=HOLD'

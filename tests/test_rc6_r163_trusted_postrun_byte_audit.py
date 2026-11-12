@@ -6,12 +6,15 @@ These are synthetic REST replies and TAR/ZIP bytes; never a GitHub/runtime GO.
 from __future__ import annotations
 
 import hashlib
+import copy
 import io
 import json
+import os
 from pathlib import Path
 import stat
 import struct
 import tarfile
+import tempfile
 import unittest
 from unittest import mock
 import warnings
@@ -26,6 +29,7 @@ from scripts.rc6_r163_trusted_postrun_byte_audit import (
     load_unique_json,
     verify_postrun_bytes,
 )
+from scripts import rc6_r163_trusted_postrun_byte_audit as trusted
 
 
 REPO = "mbalbo2023/Porota-trading"
@@ -64,11 +68,41 @@ def _json(data: object) -> bytes:
     return (json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
-def _tar(paths=NATIVE_PATHS) -> bytes:
+def _public_native_member(relative):
+    raw_size = 67
+    raw_digest = "0" * 64
+    if relative.endswith(".xml"):
+        return (
+            '<testsuite schema="RC6_R206_PUBLIC_JUNIT_V1" '
+            'status="PRIVATE_SOURCE_UNATTESTED" path="' + relative +
+            '" name="R206_PUBLIC_SYNTHETIC_ONLY" tests="1" '
+            'failures="0" errors="0" skipped="0" private_raw_size_bytes="' +
+            str(raw_size) + '" private_raw_sha256_unattested="' +
+            raw_digest + '" release_go="false">'
+            '<testcase name="case-000001"/></testsuite>\n'
+        ).encode("ascii")
+    generations = 12 if relative.startswith("cadence/") else 2
+    return _json({
+        "schema": "RC6_R206_PUBLIC_JSON_V1",
+        "status": "PRIVATE_SOURCE_UNATTESTED",
+        "source_path": relative,
+        "private_raw_size_bytes": raw_size,
+        "private_raw_sha256_unattested": raw_digest,
+        "synthetic_fixture_only": True,
+        "release_go": False,
+        "real_orders_sent": 0,
+        "catalog_count": 14611,
+        "ready_fixture_count": 9902,
+        "required_generations": generations,
+    })
+
+
+def _tar(paths=NATIVE_PATHS, overrides=None) -> bytes:
+    overrides = overrides or {}
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as tf:
         for path in sorted(paths):
-            data = ("R163 synthetic evidence for " + path).encode()
+            data = overrides.get(path, _public_native_member(path))
             info = tarfile.TarInfo("./" + path)
             info.uid = info.gid = 1000
             info.mode = 0o600
@@ -78,9 +112,14 @@ def _tar(paths=NATIVE_PATHS) -> bytes:
 
 
 def _native(tar_bytes):
-    files = [{"path": path, "size_bytes": len(("R163 synthetic evidence for " + path).encode()),
-              "sha256": hashlib.sha256(("R163 synthetic evidence for " + path).encode()).hexdigest()}
-             for path in sorted(NATIVE_PATHS)]
+    files = []
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:") as archive:
+        for item in archive:
+            path = item.name.removeprefix("./")
+            data = archive.extractfile(item).read()
+            files.append({"path": path, "size_bytes": len(data),
+                          "sha256": hashlib.sha256(data).hexdigest()})
+    files.sort(key=lambda row: row["path"])
     native = {
         "schema": "RC6_R163_NATIVE_TAR_V1", "schema_version": 1,
         "status": "OFFHOST_BYTES_ONLY", "candidate_sha": SHA,
@@ -400,6 +439,8 @@ def _reseal_native_tar(evidence, raw_tar):
     native = json.loads(payload["native-manifest.json"])
     native["tar_sha256"] = hashlib.sha256(raw_tar).hexdigest()
     native["tar_size_bytes"] = len(raw_tar)
+    native["files"] = _native(raw_tar)["files"]
+    native["file_count"] = len(native["files"])
     payload["native.tar"] = raw_tar
     payload["native-manifest.json"] = _json(native)
     manifest = json.loads(payload[MANIFEST])
@@ -444,6 +485,318 @@ def test_trusted_bytes_attest_exact_run_artifact_tree_and_tar_without_release_go
     assert result["release_go"] is False
     assert result["runtime_verified"] is False
     assert result["raw_inspect_contents_verified_by_this_guard"] is False
+
+
+def test_r206_trusted_main_independently_rejects_opaque_native_members():
+    """A coherent, fully resealed ZIP must not hide private fields in TAR13."""
+    for name in NATIVE_PATHS:
+        evidence = _evidence()
+        forged = _tar(overrides={
+            name: _public_native_member(name) + b"RC6_OPAQUE_PRIVATE_CANARY"
+        })
+        _reseal_native_tar(evidence, forged)
+        _red(evidence, "PUBLIC_NATIVE_SCHEMA_INVALID")
+
+
+def test_r206_trusted_main_rejects_forged_zero_orders_and_release_in_json():
+    name = "session/stress.json"
+    for key, value in (("real_orders_sent", 1), ("release_go", True)):
+        evidence = _evidence()
+        forged = json.loads(_public_native_member(name))
+        forged[key] = value
+        _reseal_native_tar(evidence, _tar(overrides={name: _json(forged)}))
+        _red(evidence, "PUBLIC_NATIVE_SCHEMA_INVALID")
+
+
+def _r206_publisher_receipts():
+    upstream = _evidence()
+    for record in (upstream["event"]["workflow_run"], upstream["run"],
+                   upstream["attempt"]):
+        record["conclusion"] = "failure"
+    publisher = {
+        "id": 2002, "run_attempt": 3, "status": "completed",
+        "conclusion": "success", "event": "workflow_run",
+        "name": "RC6 R206 Trusted Main Preupload Publisher (PROBE ONLY)",
+        "path": ".github/workflows/rc6-r163-postrun-trusted-main.yml",
+        "head_sha": "c" * 40, "head_branch": "main",
+        "repository": {"full_name": REPO},
+        "head_repository": {"full_name": REPO},
+    }
+    attempt = dict(
+        publisher, run_started_at="2026-11-12T08:00:00Z",
+        created_at="2026-11-12T08:00:01Z",
+        updated_at="2026-11-12T08:05:00Z",
+    )
+    return upstream, publisher, attempt
+
+
+def test_r206_trusted_main_binds_distinct_upstream_and_publisher_attempts():
+    upstream, publisher, attempt = _r206_publisher_receipts()
+    identity = trusted.verify_trusted_publisher_identity(
+        upstream_event=upstream["event"], upstream_run=upstream["run"],
+        upstream_attempt=upstream["attempt"], pr=upstream["pr"],
+        commit=upstream["commit"], publisher_run=publisher,
+        publisher_attempt=attempt, expected_upstream_run_id=RUN,
+        expected_upstream_attempt=ATTEMPT, expected_publisher_run_id=2002,
+        expected_publisher_attempt=3,
+    )
+    assert identity["candidate_sha"] == SHA
+    assert identity["candidate_tree_sha"] == TREE
+    assert identity["upstream_run_id"] == RUN
+    assert identity["upstream_attempt"] == ATTEMPT
+    assert identity["publisher_main_sha"] == "c" * 40
+    assert identity["publisher_run_id"] == 2002
+    assert identity["publisher_attempt"] == 3
+    assert identity["release_go"] is False
+    assert identity["upstream_ci_green_verified"] is False
+
+
+def test_r206_trusted_main_rejects_prior_attempt_as_current_publisher():
+    upstream, publisher, attempt = _r206_publisher_receipts()
+    attempt["run_attempt"] = 2
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PUBLISHER_ATTEMPT_MISMATCH$"
+    ):
+        trusted.verify_trusted_publisher_identity(
+            upstream_event=upstream["event"], upstream_run=upstream["run"],
+            upstream_attempt=upstream["attempt"], pr=upstream["pr"],
+            commit=upstream["commit"], publisher_run=publisher,
+            publisher_attempt=attempt, expected_upstream_run_id=RUN,
+            expected_upstream_attempt=ATTEMPT, expected_publisher_run_id=2002,
+            expected_publisher_attempt=3,
+        )
+
+
+def test_r206_preupload_refuses_reachable_same_uid_writer():
+    with tempfile.TemporaryDirectory(prefix="rc6-r206-main-guard-") as root:
+        for false_claim in (False, True):
+            with __import__("pytest").raises(
+                PostrunEvidenceRed, match="^PREUPLOAD_SAME_UID_WRITER$"
+            ):
+                trusted.assert_trusted_preupload_writer_isolation(
+                    publisher_uid=os.getuid(), candidate_writer_uid=os.getuid(),
+                    publisher_staging_root=Path(root),
+                    candidate_can_access_staging=false_claim,
+                )
+
+
+def test_r206_trusted_preupload_seals_public_five_members_without_raw_inspect():
+    with tempfile.TemporaryDirectory(prefix="rc6-r206-main-seal-") as root:
+        members = trusted.build_trusted_preupload_members(
+            producer_private_inspect=_json([_inspect(SOURCE_CID, collector=False)]),
+            collector_private_inspect=_json([_inspect(COLLECTOR_CID, collector=True)]),
+            native_tar=_tar(), candidate_sha=SHA, candidate_tree_sha=TREE,
+            run_id=RUN, run_attempt=ATTEMPT, image_id=IMAGE_ID,
+            source_cid=SOURCE_CID, collector_cid=COLLECTOR_CID,
+            volume_name=VOLUME, publisher_staging_root=Path(root),
+            publisher_uid=os.getuid(), candidate_writer_uid=os.getuid() + 1,
+            candidate_can_access_staging=False,
+        )
+    assert set(members) == {
+        "source-inspect.json", "collector-inspect.json", "custody.json",
+        "native.tar", "native-manifest.json",
+    }
+    assert members["native.tar"] == _tar()
+    assert all(b"/var/lib/docker/" not in value for value in members.values())
+    assert all(b"Config.Env" not in value for value in members.values())
+    assert json.loads(members["source-inspect.json"])["raw_inspect"]["published"] is False
+
+
+def test_r206_private_source_declaration_cannot_hide_nonempty_named_source():
+    private = _inspect(SOURCE_CID, collector=False)
+    private["HostConfig"]["Mounts"][0]["Source"] = "attacker-named-volume"
+    with tempfile.TemporaryDirectory(prefix="rc6-r206-source-red-") as root:
+        with __import__("pytest").raises(
+            PostrunEvidenceRed, match="^PREUPLOAD_PRIVATE_MOUNT_INVALID$"
+        ):
+            trusted.build_trusted_preupload_members(
+                producer_private_inspect=_json([private]),
+                collector_private_inspect=_json([_inspect(COLLECTOR_CID, collector=True)]),
+                native_tar=_tar(), candidate_sha=SHA, candidate_tree_sha=TREE,
+                run_id=RUN, run_attempt=ATTEMPT, image_id=IMAGE_ID,
+                source_cid=SOURCE_CID, collector_cid=COLLECTOR_CID,
+                volume_name=VOLUME, publisher_staging_root=Path(root),
+                publisher_uid=os.getuid(), candidate_writer_uid=os.getuid() + 1,
+                candidate_can_access_staging=False,
+            )
+
+
+def test_r206_trusted_preupload_writes_six_privacy_verified_files_in_private_stage():
+    with tempfile.TemporaryDirectory(prefix="rc6-r206-main-writer-") as root:
+        staging = Path(root)
+        input_root = staging / "private"
+        input_root.mkdir(mode=0o700)
+        (input_root / "source-inspect.json").write_bytes(
+            _json([_inspect(SOURCE_CID, collector=False)]))
+        (input_root / "collector-inspect.json").write_bytes(
+            _json([_inspect(COLLECTOR_CID, collector=True)]))
+        (input_root / "native.tar").write_bytes(_tar())
+        for path in input_root.iterdir():
+            path.chmod(0o600)
+        output = trusted.seal_trusted_preupload_directory(
+            publisher_staging_root=staging, input_root=input_root,
+            output_name="public", candidate_sha=SHA, candidate_tree_sha=TREE,
+            run_id=RUN, run_attempt=ATTEMPT, image_id=IMAGE_ID,
+            source_cid=SOURCE_CID, collector_cid=COLLECTOR_CID,
+            volume_name=VOLUME, publisher_uid=os.getuid(),
+            candidate_writer_uid=os.getuid() + 1,
+            candidate_can_access_staging=False,
+        )
+        files = {path.name: path.read_bytes() for path in output.iterdir()}
+        assert set(files) == set(trusted.ZIP_PAYLOAD) | {MANIFEST}
+        assert output.stat().st_mode & 0o777 == 0o700
+        assert all(path.stat().st_mode & 0o777 == 0o600 for path in output.iterdir())
+        assert all(b"/var/lib/docker/" not in data for data in files.values())
+        assert json.loads(files[MANIFEST])["run_id"] == RUN
+        assert json.loads(files[MANIFEST])["run_attempt"] == ATTEMPT
+
+
+def test_r206_trusted_publisher_rechecks_upstream_failure_and_zero_artifacts():
+    upstream, _, _ = _r206_publisher_receipts()
+    prefix = f"/repos/{REPO}"
+    route = f"{prefix}/actions/runs/{RUN}"
+    rows = {
+        route: upstream["run"],
+        route + f"/attempts/{ATTEMPT}": upstream["attempt"],
+        f"{prefix}/pulls/1087": upstream["pr"],
+        f"{prefix}/git/commits/{SHA}": upstream["commit"],
+        route + "/artifacts?per_page=100": {"total_count": 0, "artifacts": []},
+    }
+
+    class Client:
+        def get_json(self, path):
+            return rows[path]
+
+    result = trusted.verify_upstream_preupload_from_github(
+        Client(), event=upstream["event"],
+        expected_run_id=RUN, expected_run_attempt=ATTEMPT)
+    assert result["candidate_sha"] == SHA
+    assert result["candidate_tree_sha"] == TREE
+    assert result["upstream_ci_green_verified"] is False
+    rows[route + "/artifacts?per_page=100"] = {
+        "total_count": 1, "artifacts": [{"id": 88}],
+    }
+    with __import__("pytest").raises(
+        PostrunEvidenceRed, match="^PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT$"
+    ):
+        trusted.verify_upstream_preupload_from_github(
+            Client(), event=upstream["event"],
+            expected_run_id=RUN, expected_run_attempt=ATTEMPT)
+
+
+def test_r206_workflow_path_accepts_only_exact_github_at_ref_forms():
+    for allowed in (WORKFLOW, WORKFLOW + "@" + HEAD_REF,
+                    WORKFLOW + "@refs/heads/" + HEAD_REF,
+                    WORKFLOW + "@refs/pull/1087/merge", WORKFLOW + "@" + SHA):
+        evidence = _evidence()
+        evidence["event"]["workflow_run"]["path"] = allowed
+        evidence["run"]["path"] = allowed
+        evidence["attempt"]["path"] = allowed
+        assert verify_postrun_bytes(**evidence)["candidate_sha"] == SHA
+    for bad in (WORKFLOW + "@main", WORKFLOW + "@refs/pull/999/merge",
+                WORKFLOW + "@" + "f" * 40, WORKFLOW + "@HEAD"):
+        evidence = _evidence()
+        evidence["event"]["workflow_run"]["path"] = bad
+        evidence["run"]["path"] = bad
+        evidence["attempt"]["path"] = bad
+        _red(evidence, "RUN_WORKFLOW_MISMATCH")
+
+
+def _r206_c_postcompletion_client():
+    """Separate P/N publisher artifact; U/M failed and has zero artifacts."""
+    evidence, publisher, publisher_attempt = _r206_publisher_receipts()
+    package = copy.deepcopy(evidence["artifact"])
+    package["workflow_run"] = {"id": 2002, "head_sha": "c" * 40}
+    package["created_at"] = "2026-11-12T08:03:00Z"
+    package["updated_at"] = "2026-11-12T08:03:01Z"
+    prefix = f"/repos/{REPO}"
+    upstream_path = f"{prefix}/actions/runs/{RUN}"
+    publisher_path = f"{prefix}/actions/runs/2002"
+    routes = {
+        upstream_path: evidence["run"],
+        upstream_path + f"/attempts/{ATTEMPT}": evidence["attempt"],
+        upstream_path + "/artifacts?per_page=100": {"total_count": 0, "artifacts": []},
+        f"{prefix}/pulls/1087": evidence["pr"],
+        f"{prefix}/git/commits/{SHA}": evidence["commit"],
+        publisher_path: publisher,
+        publisher_path + "/attempts/3": publisher_attempt,
+        publisher_path + "/artifacts?per_page=100": {
+            "total_count": 1, "artifacts": [copy.deepcopy(package)]},
+        f"{prefix}/actions/artifacts/{ARTIFACT_ID}": package,
+    }
+
+    class Client:
+        def __init__(self):
+            self.after_download = False
+            self.mutate = None
+
+        def get_json(self, path):
+            if self.after_download and self.mutate is not None:
+                self.mutate(routes)
+                self.mutate = None
+            return copy.deepcopy(routes[path])
+
+        def get_zip(self, artifact_id):
+            assert artifact_id == ARTIFACT_ID
+            self.after_download = True
+            return evidence["zip_bytes"]
+
+    event = {"action": "completed", "repository": {"full_name": REPO},
+             "workflow_run": copy.deepcopy(publisher)}
+    return Client(), event, routes
+
+
+def test_r206_c_audits_completed_publisher_bytes_not_failed_upstream_artifacts():
+    client, event, _ = _r206_c_postcompletion_client()
+    outcome = trusted.audit_publisher_from_github(
+        client, event=event, expected_publisher_run_id=2002,
+        expected_publisher_attempt=3, trusted_main_sha="c" * 40)
+    assert outcome["status"] == "POSTCOMPLETION_PUBLIC_PROBE_BYTES_MATCH"
+    assert outcome["upstream_run_id"] == RUN
+    assert outcome["publisher_run_id"] == 2002
+    assert outcome["publisher_attempt"] == 3
+    assert outcome["native_file_count"] == 13
+    assert outcome["publisher_to_upstream_event_link_verified"] is False
+    assert outcome["upstream_ci_green_verified"] is False
+    assert outcome["release_go"] is False and outcome["runtime_verified"] is False
+
+
+def test_r206_c_rejects_wrong_publisher_receipts_or_upstream_replay():
+    for mutator, reason in (
+        (lambda e, r: e["workflow_run"].__setitem__("run_attempt", 2),
+         "POSTCOMPLETION_EVENT_MISMATCH"),
+        (lambda e, r: r[f"/repos/{REPO}/actions/runs/2002"].__setitem__(
+            "conclusion", "failure"), "PUBLISHER_IDENTITY_MISMATCH"),
+        (lambda e, r: r[f"/repos/{REPO}/actions/runs/2002"].__setitem__(
+            "head_sha", "d" * 40), "POSTCOMPLETION_MAIN_SHA_MISMATCH"),
+        (lambda e, r: r[f"/repos/{REPO}/actions/artifacts/{ARTIFACT_ID}"][
+            "workflow_run"].__setitem__("id", RUN), "ARTIFACT_RUN_MISMATCH"),
+        (lambda e, r: r[f"/repos/{REPO}/actions/runs/{RUN}/artifacts?per_page=100"
+                        ].update(total_count=1, artifacts=[{"id": 777}]),
+         "PREUPLOAD_UPSTREAM_ARTIFACT_PRESENT"),
+        (lambda e, r: r[f"/repos/{REPO}/actions/runs/2002/artifacts?per_page=100"
+                        ].update(total_count=2, artifacts=[{"id": 883}, {"id": 884}]),
+         "POSTCOMPLETION_ARTIFACT_AMBIGUOUS"),
+    ):
+        client, event, routes = _r206_c_postcompletion_client()
+        mutator(event, routes)
+        with __import__("pytest").raises(PostrunEvidenceRed, match="^" + reason + "$"):
+            trusted.audit_publisher_from_github(
+                client, event=event, expected_publisher_run_id=2002,
+                expected_publisher_attempt=3, trusted_main_sha="c" * 40)
+
+
+def test_r206_c_detects_pr_replay_during_rest_zip_fetch():
+    client, event, _ = _r206_c_postcompletion_client()
+
+    def rewrite_after_download(routes):
+        routes[f"/repos/{REPO}/pulls/1087"]["head"]["sha"] = "d" * 40
+
+    client.mutate = rewrite_after_download
+    with __import__("pytest").raises(PostrunEvidenceRed, match="^POSTCOMPLETION_REST_RACE$"):
+        trusted.audit_publisher_from_github(
+            client, event=event, expected_publisher_run_id=2002,
+            expected_publisher_attempt=3, trusted_main_sha="c" * 40)
 
 
 MUTATIONS = [
