@@ -448,6 +448,30 @@ class HostPreflightReadonlyTest(unittest.TestCase):
                     self.assertNotIn(SYNTHETIC_DO_ID, output.getvalue())
                     self.assertNotIn(SYNTHETIC_DO_REGION, output.getvalue())
 
+    def test_public_receipt_digest_never_includes_low_entropy_physical_identity(self):
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            folder_a, folder_b = Path(first), Path(second)
+            write_receipts(folder_a, phase="BOOTSTRAP")
+            write_receipts(folder_b, phase="BOOTSTRAP")
+            (folder_b / "droplet_id.txt").write_text("987654322\n")
+            (folder_b / "region.txt").write_text("lab8\n")
+            expected_a = preflight.validate_expected(expected_env("BOOTSTRAP"))
+            expected_b = preflight.validate_expected(dict(
+                expected_env("BOOTSTRAP"),
+                RC6_EXPECTED_DO_ID="987654322", RC6_EXPECTED_DO_REGION="lab8"))
+            report_a = preflight.validate_evidence(folder_a, expected_a)
+            report_b = preflight.validate_evidence(folder_b, expected_b)
+            # Public hash may bind approved helper bytes/phase receipt, NEVER
+            # a guessable DO ID/region checked only in ephemeral runner memory.
+            self.assertNotIn("source_receipts_sha256", report_a)
+            self.assertNotIn("source_receipts_sha256", report_b)
+            self.assertEqual(report_a["helper_and_phase_receipts_sha256"],
+                             report_b["helper_and_phase_receipts_sha256"])
+            self.assertNotIn(SYNTHETIC_DO_ID, json.dumps(report_a))
+            self.assertNotIn(SYNTHETIC_DO_REGION, json.dumps(report_a))
+            self.assertNotIn("987654322", json.dumps(report_b))
+            self.assertNotIn("lab8", json.dumps(report_b))
+
 
 if __name__ == "__main__":
     unittest.main()

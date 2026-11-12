@@ -309,15 +309,18 @@ def validate_evidence(folder, expected):
                       role_cid_fingerprints=fingerprints,
                       declared_paper_mode="PRODUCTION_PAPER")
 
-    # A reproducible digest binds exact, unredacted bytes while public output
-    # discloses no host IP, login, full CID or runtime private contents.
+    # A public, reproducible digest binds only the helper/active-phase proof.
+    # NEVER hash low-entropy DO ID or region into public output: enumeration
+    # could recover that sensitive metadata from a plain sha256 preimage.
+    # Host identity is verified privately against protected Actions secrets;
+    # its source files stay in the runner's ephemeral directory only.
     digest = hashlib.sha256()
-    common = ("droplet_id.txt", "region.txt", "helper.stat", "helper.sha")
+    common = ("helper.stat", "helper.sha")
     names = common + ((active_file,) if active_file is not None else ())
     for name in names:
         raw = _read_bounded(folder, name)
         digest.update(name.encode("ascii") + b"\x00" + str(len(raw)).encode("ascii") + b"\x00" + raw)
-    report["source_receipts_sha256"] = digest.hexdigest()
+    report["helper_and_phase_receipts_sha256"] = digest.hexdigest()
     return report
 
 
