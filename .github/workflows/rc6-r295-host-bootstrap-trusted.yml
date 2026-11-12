@@ -1,7 +1,8 @@
-name: RC6 R295 HOST bootstrap guard (CODE ONLY; HOLD79)
+name: RC6 R297 owner-GO OFFHOST review only (NO host GO)
 
-# Deliberately inoperable physical step. This reviewed main-only scaffold
-# cannot become a second deployment route or bypass R277/PAPER checks.
+# This step verifies owner-GO/reviewed source bytes OFFHOST only. GREEN is
+# explicitly NOT host_control_verified, NOT a root bootstrap, NOT a deploy.
+# Do not promote this scaffold to main as a host-physical workflow.
 on:
   workflow_dispatch:
     inputs:
@@ -12,13 +13,14 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 concurrency:
   group: rc6-unified-paper-deploy
   cancel-in-progress: false
 
 jobs:
-  bootstrap_authority_guard_only:
+  owner_go_offhost_evidence_only:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -39,7 +41,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Assert host authority still absent; no physical operations
+      - name: Verify owner-GO and pinned R280 SHA offhost; NO physical operations
         shell: bash
         run: |
           set -Eeuo pipefail
