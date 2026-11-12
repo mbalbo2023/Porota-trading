@@ -64,6 +64,15 @@ jobs:
               importlib.import_module(module)
           print("RC6_PY311=OFFHOST_LOCK_IMPORT_ONLY")
           PY
+      - name: SRE health PAPER-zero regression (in-memory SQLite only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # In-memory SQLite and fake adapters only: no host, provider or DB writes.
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 \
+            python -m pytest -q -p no:cacheprovider \
+              tests/test_rc6_sre_health_paper_zero.py
+          echo 'RC6_SRE_HEALTH_PAPER_ZERO=PY311_OFFHOST_FIXTURES_ONLY'
       - name: PPI quota and capability fake-wire regressions on Python 3.11
         shell: bash
         run: |
