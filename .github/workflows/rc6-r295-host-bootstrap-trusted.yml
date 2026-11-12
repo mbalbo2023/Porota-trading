@@ -1,0 +1,46 @@
+name: RC6 R295 HOST bootstrap guard (CODE ONLY; HOLD79)
+
+# Deliberately inoperable physical step. This reviewed main-only scaffold
+# cannot become a second deployment route or bypass R277/PAPER checks.
+on:
+  workflow_dispatch:
+    inputs:
+      owner_comment_id:
+        description: Immutable GitHub OWNER GO issue-comment ID (future review)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  bootstrap_authority_guard_only:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    env:
+      RC6_R295_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
+      RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+      RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact trusted main event SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Assert host authority still absent; no physical operations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -I scripts/rc6_r295_host_bootstrap_guard.py --check-offhost
