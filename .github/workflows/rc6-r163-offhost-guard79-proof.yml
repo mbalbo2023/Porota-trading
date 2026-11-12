@@ -5,24 +5,35 @@ name: RC6 R163 Offhost Guard79 Proof (PROBE ONLY)
 on:
   pull_request:
     branches: [deploy/rc6-pr69-isolated-20260915]
+    # PR edits are lightweight; owner labels the frozen DRAFT SHA for one A.
     # READY after D/E must not rebuild two offhost PROBE images for the same SHA.
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
 
-# New PR head updates supersede old probes; ready/reopened must not cancel
-# a running proof on the same SHA. Cancelled attempts cannot trigger R206 B.
+# A synchronize event cancels stale A when the candidate SHA changes.
+# Removing the specific freeze label revokes its in-flight probe. Other labels,
+# reopen and READY must not cancel the same frozen SHA. Skipped lightweight A
+# runs never trigger B, which only accepts the authenticated R205 failure.
 concurrency:
   group: rc6-r163-offhost-${{ github.event.pull_request.number }}
-  cancel-in-progress: ${{ github.event.action == 'synchronize' }}
+  cancel-in-progress: ${{ github.event.action == 'synchronize' || (github.event.action == 'unlabeled' && github.event.label.name == 'rc6-offhost-owner-freeze') }}
 
 jobs:
   python311-lock-closure:
     name: Python 3.11 lock and incident fixtures (offhost)
     if: >-
       ${{ github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'rc6-offhost-owner-freeze' &&
+      github.event.sender.login == 'mbalbo2023' &&
+      github.triggering_actor == 'mbalbo2023' &&
       github.event.pull_request.number == 1087 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
       github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -449,7 +460,15 @@ jobs:
     needs: [python311-lock-closure]
     if: >-
       ${{ github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'rc6-offhost-owner-freeze' &&
+      github.event.sender.login == 'mbalbo2023' &&
+      github.triggering_actor == 'mbalbo2023' &&
       github.event.pull_request.number == 1087 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.base.ref == 'deploy/rc6-pr69-isolated-20260915' &&
+      github.event.pull_request.base.repo.full_name == github.repository &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       needs.python311-lock-closure.result == 'success' }}
     runs-on: ubuntu-24.04
