@@ -7,14 +7,23 @@ from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
 from unittest import TestCase, mock
 import os
+import json
 import sys
 import traceback
 
 from scripts.rc6_r309_bounded_mux_host import R309BoundedMuxHost, R309Hold
+from scripts.rc6_host_rootowned_installer_cli import validate_installer_receipt
+from scripts.rc6_r295_host_bootstrap_guard import (
+    BootstrapHold, run_bounded_ssh_command,
+)
 
 
 R305_NAME = "scripts.rc6_r305_root_pin_transition_guard"
 READ_CMD = "/usr/bin/sudo -n /usr/bin/test -e /var/lib/porota-rc6-oci-custody"
+INSTALL_CMD = (
+    "/usr/bin/sudo -n /usr/bin/python3 -I "
+    "/usr/local/sbin/porota-rc6-host-installer install-approved"
+)
 HOST_ID_CMD = (
     "/usr/bin/curl -fsS --connect-timeout 3 --max-time 5 "
     "http://169.254.169.254/metadata/v1/id"
@@ -42,10 +51,22 @@ def _env():
 
 def _trusted_r305():
     module = ModuleType(R305_NAME)
-    module.reviewed_root_commands = lambda: frozenset((READ_CMD,))
+    module.reviewed_root_commands = lambda: frozenset((READ_CMD, INSTALL_CMD))
     module.HOST_ID_COMMAND = HOST_ID_CMD
     module.HOST_REGION_COMMAND = HOST_REGION_CMD
     return module
+
+
+def _r280_success_output():
+    pin = "b" * 64
+    receipt = validate_installer_receipt({
+        "schema": "RC6_ROOT_INSTALL_CODE_ONLY_V1",
+        "status": "INSTALLED_FILES_ONLY_NOT_HOST_GO",
+        "manifest_sha256": pin,
+        "candidate_sha": "c" * 40,
+        "host_control_verified": False,
+    }, pin)
+    return (json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
 class _FakeMaster:
@@ -173,6 +194,43 @@ class R309BoundedMuxHostTests(TestCase):
                         with self.assertRaises(R309Hold):
                             host.call(READ_CMD, **args)
                 runner.assert_not_called()
+
+    def test_fixed_installer_261_byte_receipt_requires_512_cap_only_for_installer(self):
+        receipt = _r280_success_output()
+        self.assertEqual(len(receipt), 261)
+        with _host_session() as (host, _, _):
+            with mock.patch("scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command",
+                            return_value=(0, receipt)) as runner:
+                self.assertEqual(host.call(INSTALL_CMD, max_output_bytes=512),
+                                 (0, receipt))
+                self.assertEqual(runner.call_args.kwargs["output_cap"], 512)
+                for cmd in (READ_CMD, HOST_ID_CMD, HOST_REGION_CMD):
+                    with self.subTest(command=cmd):
+                        with self.assertRaises(R309Hold):
+                            host.call(cmd, max_output_bytes=512)
+                self.assertEqual(runner.call_count, 1)
+
+    def test_installer_default_256_cap_holds_before_any_remote_mutation(self):
+        with _host_session() as (host, _, _):
+            with mock.patch("scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command") as runner:
+                for requested in ({}, {"max_output_bytes": 256},
+                                  {"max_output_bytes": 128},
+                                  {"max_output_bytes": 513}):
+                    with self.subTest(requested=requested):
+                        with self.assertRaises(R309Hold):
+                            host.call(INSTALL_CMD, **requested)
+                runner.assert_not_called()
+
+    def test_r295_upstream_streamer_handles_actual_r280_receipt_at_512(self):
+        receipt = _r280_success_output()
+        command = [sys.executable, "-c",
+                   "import sys;sys.stdout.buffer.write(" + repr(receipt) + ")"]
+        with self.assertRaises(BootstrapHold):
+            run_bounded_ssh_command(command, b"", timeout_s=5, output_cap=256)
+        code, returned = run_bounded_ssh_command(
+            command, b"", timeout_s=5, output_cap=512)
+        self.assertEqual(code, 0)
+        self.assertEqual(returned, receipt)
 
     def test_stdin_8192_passes_exactly_once_without_logging(self):
         with _host_session() as (host, _, _):

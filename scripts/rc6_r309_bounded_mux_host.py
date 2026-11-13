@@ -25,6 +25,13 @@ _HOST = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}\Z")
 _USER = re.compile(r"[A-Za-z_][A-Za-z0-9_-]{0,30}\Z")
 _REASON = re.compile(r"[A-Z][A-Z0-9_]{0,70}\Z")
 _CAPS = frozenset((0, 32, 128, 256))
+# R280 emits a 261-byte success receipt; reject smaller caps before mutation.
+# Only the exact reviewed installed-CLI verb may use 512 bytes.
+_INSTALL_RECEIPT_CAP = 512
+_INSTALL_APPROVED_COMMAND = (
+    "/usr/bin/sudo -n /usr/bin/python3 -I "
+    "/usr/local/sbin/porota-rc6-host-installer install-approved"
+)
 _MAX_STDIN = 8192
 _MAX_CALL_SECONDS = 15
 _TOTAL_SECONDS = 540
@@ -187,7 +194,10 @@ class R309BoundedMuxHost:
         _require(stdin is None or type(stdin) is bytes and
                  0 < len(stdin) <= _MAX_STDIN,
                  "SSH_STDIN_INVALID")
-        _require(type(max_output_bytes) is int and max_output_bytes in _CAPS,
+        _require(type(max_output_bytes) is int and
+                 (max_output_bytes == _INSTALL_RECEIPT_CAP
+                  if command == _INSTALL_APPROVED_COMMAND else
+                  max_output_bytes in _CAPS),
                  "SSH_OUTPUT_CAP_INVALID")
         _require(type(timeout_s) in (int, float) and
                  math.isfinite(timeout_s) and
