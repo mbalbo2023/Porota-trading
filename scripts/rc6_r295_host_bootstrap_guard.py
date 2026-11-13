@@ -94,6 +94,16 @@ def _require(ok, reason):
         raise BootstrapHold(reason)
 
 
+def _safe_bearer_header_value(token):
+    """Treat GitHub installation tokens as opaque, rejecting HTTP controls.
+
+    Since 2026 Actions GITHUB_TOKEN may be a longer ghs_APPID_JWT whose
+    dots would be rejected by a narrow alphanumeric token regex.
+    """
+    return (type(token) is str and 10 <= len(token) < 32768 and
+            token.isascii() and all("!" <= char <= "~" for char in token))
+
+
 @dataclass(frozen=True)
 class BootstrapContext:
     main_sha: str
@@ -144,7 +154,7 @@ def validate_context(env, *, require_host=True):
         _require(type(value) is str and 0 < len(value) < 32768 and
                  "\x00" not in value and "\r" not in value,
                  "PROTECTED_SECRET_UNVERIFIED")
-    _require(re.fullmatch(r"[A-Za-z0-9_-]{10,4096}", env["GITHUB_TOKEN"]) is not None,
+    _require(_safe_bearer_header_value(env["GITHUB_TOKEN"]),
              "GITHUB_TOKEN_HEADER_UNVERIFIED")
     return BootstrapContext(main_sha=sha, owner_comment_id=int(comment_raw),
                             droplet_id=droplet, region=region, host=host, user=user)
@@ -240,7 +250,7 @@ def fetch_github_https_bytes(path, token):
         _DECIMAL.fullmatch(path.rsplit("/", 1)[-1]))
     _require((allowed_owner_comment or
              path == f"/repos/{REPOSITORY}/git/ref/heads/main") and
-        type(token) is str and re.fullmatch(r"[A-Za-z0-9_-]{10,4096}", token),
+        _safe_bearer_header_value(token),
         "GITHUB_RECEIPT_SELECTOR_UNVERIFIED")
     connection = None
     try:
@@ -271,7 +281,7 @@ def fetch_and_verify_owner_go(context, *, token, fetch_bytes=None, now=None):
         fetch_bytes = fetch_github_https_bytes
     path = (f"/repos/{REPOSITORY}/issues/comments/" +
             str(context.owner_comment_id))
-    _require(type(token) is str and re.fullmatch(r"[A-Za-z0-9_-]{10,4096}", token),
+    _require(_safe_bearer_header_value(token),
              "GITHUB_TOKEN_HEADER_UNVERIFIED")
     raw = fetch_bytes(path, token)
     _require(type(raw) is bytes and 0 < len(raw) <= 16384,
