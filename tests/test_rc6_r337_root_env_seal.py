@@ -1,5 +1,6 @@
 """R337 local internals only: no host authority, no private input fixtures."""
 import hashlib
+import fcntl
 import importlib.util
 import json
 import os
@@ -51,7 +52,7 @@ def test_public_entrypoint_always_holds_without_side_effects(capsys):
     ('paper_mode', 'LIVE'), ('real_orders_allowed', True),
     ('expires_at', '2026-11-13T15:01:00Z'), ('issued_at', '2026-11-13T15:02:00Z'),
     ('expires_at', '2026-11-13T16:00:00Z'), ('extra', 'unreviewed')])
-def test_intent_rejects_changed_or_unsafe_independent_authority(field, value):
+def test_intent_rejects_changed_or_unsafe_consistency_fields(field, value):
     doc, _, pins = fixture()
     doc[field] = value
     raw = json.dumps(doc).encode()
@@ -190,3 +191,110 @@ def test_dependency_absent_or_changed_never_executes(directory):
     leaf.chmod(0o400)
     with pytest.raises(mod().SealHold):
         mod()._load_pinned_r334(fd)
+
+
+def test_transaction_refuses_lock_contention_without_creating_stage(directory):
+    path, fd = directory
+    lock = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(mod().SealHold):
+            mod()._stage_pair(fd, intent(), b'dashboard', b'observer')
+        assert list(path.iterdir()) == []
+    finally:
+        os.close(lock)
+
+
+def test_racing_generation_winner_is_preserved(directory, monkeypatch):
+    path, fd = directory
+    real_publish = mod()._rename_no_replace
+    def racing_publish(parent, source, target):
+        winner = path / target
+        winner.mkdir()
+        (winner / 'unique').write_bytes(b'winner')
+        return real_publish(parent, source, target)
+    monkeypatch.setattr(mod(), '_rename_no_replace', racing_publish)
+    with pytest.raises(mod().SealHold):
+        mod()._stage_pair(fd, intent(), b'dashboard', b'observer')
+    assert (path / ('c'*32) / 'unique').read_bytes() == b'winner'
+    assert sorted(p.name for p in path.iterdir()) == ['c'*32]
+
+
+def test_receipt_failure_is_last_and_only_incomplete_stage_is_cleaned(directory, monkeypatch):
+    path, fd = directory
+    real_write = mod()._write_exclusive
+    def fail_receipt(stage_fd, name, raw):
+        if name == 'receipt.json':
+            stage = next(path.iterdir())
+            assert (stage / 'env/dashboard.env').read_bytes() == b'dashboard'
+            assert (stage / 'env/observer.env').read_bytes() == b'observer'
+            raise OSError('private receipt failure')
+        return real_write(stage_fd, name, raw)
+    monkeypatch.setattr(mod(), '_write_exclusive', fail_receipt)
+    with pytest.raises(mod().SealHold):
+        mod()._stage_pair(fd, intent(), b'dashboard', b'observer')
+    assert list(path.iterdir()) == []
+
+
+def test_postpublication_fsync_failure_never_rolls_back_generation(directory, monkeypatch):
+    path, fd = directory
+    real_sync = os.fsync
+    def fail_parent_sync(target_fd):
+        if target_fd == fd:
+            raise OSError('private postpublication failure')
+        return real_sync(target_fd)
+    monkeypatch.setattr(mod().os, 'fsync', fail_parent_sync)
+    with pytest.raises(mod().SealHold):
+        mod()._stage_pair(fd, intent(), b'dashboard', b'observer')
+    assert (path / ('c'*32) / 'receipt.json').is_file()
+    assert list(p.name for p in path.iterdir()) == ['c'*32]
+
+
+def test_pinned_dependency_and_optional_r271_semantics(directory, monkeypatch):
+    path, fd = directory
+    normalizer_source = os.environ.get('RC6_R334_NORMALIZER_SOURCE')
+    if not normalizer_source:
+        # Clean CI checkout: do not skip or pretend the combined build exists.
+        assert mod().main([]) == 79
+        with pytest.raises(mod().SealHold):
+            mod()._load_pinned_r334(fd)
+        return
+    normalizer_raw = Path(normalizer_source).read_bytes()
+    assert sha(normalizer_raw) == 'c7060a643b0a72ee6b0416fd38967c5c741abe340667b8988e79dd3768f12fb8'
+    (path / 'rc6_r334_root_env_genesis.py').write_bytes(normalizer_raw)
+    (path / 'rc6_r334_root_env_genesis.py').chmod(0o400)
+    dashboard_source = b'ENVIRONMENT=PRODUCTION\nDASHBOARD_USER=synthetic\n'
+    observer_source = b'TELEGRAM_BOT_TOKEN=synthetic=a==\n'
+    expected_dashboard = (b'DASHBOARD_USER=synthetic\nENVIRONMENT=PRODUCTION\n'
+        b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\nREAL_ORDERS_ALLOWED=false\n')
+    expected_observer = (b'MARKET_OPEN_HOUR=10\nMARKET_OPEN_MINUTE=30\n'
+        b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\nREAL_ORDERS_ALLOWED=false\n'
+        b'TELEGRAM_BOT_TOKEN=synthetic=a==\n')
+    for name, raw in [('dashboard_mode_v17.env', dashboard_source),
+                      ('observer_runtime_v17.env', observer_source)]:
+        (path / name).write_bytes(raw)
+        (path / name).chmod(0o600)
+    doc, _, pins = fixture()
+    doc['source_sha256'] = dict(dashboard=sha(dashboard_source), observer=sha(observer_source))
+    doc['output_sha256'] = dict(dashboard=sha(expected_dashboard), observer=sha(expected_observer))
+    raw = json.dumps(doc).encode()
+    pins['intent_sha256'] = sha(raw)
+    approved = mod()._validate_intent(raw, **pins)
+    pair = mod()._propose_fixed_sources(fd, fd, approved)
+    assert pair.dashboard.payload == expected_dashboard
+    assert pair.observer.payload == expected_observer
+    mod()._stage_pair(fd, approved, pair.dashboard.payload, pair.observer.payload)
+    consumer_source = os.environ.get('RC6_R271_HELPER_SOURCE')
+    if not consumer_source:
+        assert mod()._StageResult().r271_semantics == 'NO_VERIFICADO'
+        return
+    assert sha(Path(consumer_source).read_bytes()) == 'd83550318fd4e38f88d072cc15f19fbef710fd0b752a226ec13c3f16e6c88aa5'
+    spec = importlib.util.spec_from_file_location('r337_fixture_r271', consumer_source)
+    consumer = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, consumer)
+    spec.loader.exec_module(consumer)
+    for role in ('dashboard', 'observer'):
+        sealed = (path / ('c'*32) / 'env' / (role + '.env')).read_bytes()
+        monkeypatch.setattr(consumer, '_read_root_owned', lambda path, expected_mode: sealed)
+        consumer._verify_root_sealed_env(mod().GENERATIONS_DIRECTORY + '/' + 'c'*32 +
+            '/env/' + role + '.env', sha(sealed))
