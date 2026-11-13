@@ -3,11 +3,12 @@
 This is an explicit fail-closed bridge toward R305/R308/R309/R280. The
 immutable plan is **not** authority: the caller-supplied expected digest is
 only a shape/hash check, not independent witness, owner GO or ROOT pin.
-Nothing here opens SSH, runs sudo, writes files or starts Docker/systemd.
-
-The physical entry stays HOLD79 until a separate, reviewed executor can
-prove its R305 literal staging commands, R309 transport, genuine D/E artifact,
-independent ROOT witness and fresh owner GO at each mutation boundary.
+The library contains an explicit, narrowly bounded host-call executor using
+R309's existing transport and R305's reviewed sudo command literals. That
+executor remains unconnected to the workflow/CLI: neither currently opens
+SSH, writes host files or starts Docker/systemd. Workflow entry stays HOLD79
+until a separately reviewed source producer, genuine D/E artifact, independent
+ROOT witness, and fresh owner GO are proven at each mutation boundary.
 """
 
 from dataclasses import dataclass, field
@@ -692,7 +693,7 @@ def execute_root_install_files_only(
                  fresh["release_d_artifact_digest"] ==
                  approval["artifact_digest"],
                  "GH_INSTALL_OWNER_MAIN_OR_ARTIFACT_DRIFT")
-        verify_install_owner_go(
+        install_go = verify_install_owner_go(
             fresh["owner_comment"], context,
             expected_comment_id=owner_go_id, witness=witness,
             release_e_receipt_raw=release_e_receipt_raw,
@@ -701,6 +702,8 @@ def execute_root_install_files_only(
             release_e_artifact_id=release_e_artifact_id,
             release_e_artifact_digest=release_e_artifact_digest,
             approval=approval, now=clock(), initial_budget=initial)
+        _require(install_go["r305_pin_owner_go_id"] == pin_owner_go_id,
+                 "R305_PIN_GO_ID_MISMATCH")
 
     def guard(*, initial=False):
         check_install_authority(initial=initial)

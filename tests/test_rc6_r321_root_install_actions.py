@@ -438,6 +438,27 @@ class R321RootInstallActionsTest(unittest.TestCase):
         self.assertEqual(host.pin_transitions, 1)
         self.assertEqual(host.install_count, 1)
 
+    def test_install_go_pin_comment_id_must_equal_actual_separate_pin_go(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        original = kwargs["recheck_install_authority"]
+        forged = dict(kwargs["owner_comment"])
+        body = json.loads(forged["body"].split("=", 1)[1])
+        body["r305_pin_owner_go_id"] = 999  # Genuine PIN GO still id 123.
+        forged["body"] = "RC6_R321_ROOT_INSTALL_GO_V1=" + canonical(body).decode()
+        kwargs["owner_comment"] = forged
+        def current():
+            proof = original()
+            proof["owner_comment"] = forged
+            return proof
+        kwargs["recheck_install_authority"] = current
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(caught.exception.reason, "R305_PIN_GO_ID_MISMATCH")
+        self.assertFalse(host.mutations)
+        self.assertEqual(host.pin_transitions, 0)
+        self.assertEqual(host.install_count, 0)
+
     def test_expiry_mid_chunks_holds_before_final_file_link(self):
         host, _r305, context, kwargs, imports = simulated_install()
         current = [NOW + timedelta(minutes=1)]
