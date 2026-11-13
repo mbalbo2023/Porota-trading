@@ -19,6 +19,36 @@ Work branch: <completar>
 Base SHA: <completar>
 Scope paths: <completar>
 
+El recibo vigente debe estar en #980, aprobado por `mbalbo2023`, con campos
+literales `Workstream ID`, `Ownership status: ACTIVE`, `Work branch`, `Base SHA`,
+`Scope paths` y `WRITE_OWNER`. Revisar comentarios posteriores: liberación,
+supersesión o nueva decisión estructurada del Workstream ID exacto requieren
+reconciliar el recibo antes de continuar; notas de avance no revocan ownership.
+El check es un snapshot con fecha UTC: comentarios posteriores no lo reejecutan.
+- [ ] Revalidé ownership y scopes solapados inmediatamente antes del merge; un PASS anterior no prueba lease vigente.
+
+## Checklist histórico previo a código y tests (revisión, no prueba automática)
+
+- [ ] Leí #1093 (sucesor de #732 saturado), sus correcciones y cualquier sucesor verificado.
+- [ ] Busqué implementaciones equivalentes en código, commits, PRs abiertos/cerrados, issues, tests y Actions antes de escribir código o tests.
+- [ ] Reconcilié HEAD real, ownership vigente #980 y scopes únicos; no repetí trabajo ya verificado.
+- [ ] Cada test nuevo tiene aplicabilidad actual y una regresión concreta; documenté lo no aplicable.
+
+**Búsquedas exactas, enlaces y resultados (implementado/parcial/faltante/supersedido/no aplicable):**
+
+**Checkpoint vigente: URL/comentario y fecha UTC; correcciones posteriores revisadas:**
+
+**Evidencia separada: código SHA/PR; Actions run; artifact/manifest/digest; runtime receipt o NO_VERIFICADO por capa:**
+
+**Solapamientos descartados y motivo verificable de alcance único:**
+
+El guard técnico no acredita memoria perfecta, búsqueda exhaustiva, ausencia total
+de duplicados ni runtime. Distinguir política publicada, template, CI probado,
+branch protection, deploy y validación runtime. Cambios del propio guard sólo
+entran en vigor al usarse desde una base confiable posterior a su integración.
+El workflow del PR sigue siendo modificable; protección del propio workflow y
+enforcement automático al momento de merge permanecen NO_VERIFICADO.
+
 El enlace debe apuntar al comentario de ownership en un issue de este repositorio,
 publicado por el owner. La rama y el SHA base deben coincidir con el PR actual.
 No usar un comentario histórico como prueba de ownership vigente: reconciliar
