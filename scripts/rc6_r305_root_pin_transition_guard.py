@@ -82,6 +82,10 @@ STAGE_LOCK_STAT = (
 STAGE_INBOX_STAT = (
     f"/usr/bin/sudo -n /usr/bin/stat -c {_STAGE_FMT} -- {STAGE_INBOX}"
 )
+STAGE_LOCK_TEST_E = f"/usr/bin/sudo -n /usr/bin/test -e {STAGE_LOCK}"
+STAGE_LOCK_TEST_L = f"/usr/bin/sudo -n /usr/bin/test -L {STAGE_LOCK}"
+STAGE_INBOX_TEST_E = f"/usr/bin/sudo -n /usr/bin/test -e {STAGE_INBOX}"
+STAGE_INBOX_TEST_L = f"/usr/bin/sudo -n /usr/bin/test -L {STAGE_INBOX}"
 STAGE_LOCK_SYNC = f"/usr/bin/sudo -n /usr/bin/sync -- {STAGE_LOCK}"
 STAGE_INBOX_SYNC = f"/usr/bin/sudo -n /usr/bin/sync -- {STAGE_INBOX}"
 _STAGE_SOURCE_NAMES = MappingProxyType({
@@ -315,9 +319,15 @@ def verify_owner_go(comment, context, *, owner_go_id, operation, now,
              approval["host_identity_source"] == "PROTECTED_DO_PINS",
              "OWNER_GO_SCOPE_OR_HASH_MISMATCH")
     issued, expiry = _utc(comment["created_at"]), _utc(approval["expires_at"])
-    actual_now = now.astimezone(timezone.utc)
-    _require(issued - timedelta(minutes=5) <= actual_now < expiry <=
-             issued + timedelta(hours=2), "OWNER_GO_EXPIRED_OR_FUTURE")
+    try:
+        actual_now = now.astimezone(timezone.utc)
+        window_start = issued - timedelta(minutes=5)
+        window_end = issued + timedelta(hours=2)
+    except (ValueError, OverflowError):
+        # ISO year 0001/9999 and exotic tz offsets cannot escape HOLD79.
+        raise PinHold("OWNER_GO_CLOCK_INVALID") from None
+    _require(window_start <= actual_now < expiry <= window_end,
+             "OWNER_GO_EXPIRED_OR_FUTURE")
     if operation == "RESUME":
         old_id = approval.get("original_owner_go_comment_id")
         _require(type(old_id) is int and 0 < old_id < owner_go_id and
@@ -373,7 +383,9 @@ def reviewed_root_commands():
         commands.update(part.values())
     commands.update((
         STAGE_LOCK_CREATE, STAGE_INBOX_CREATE, STAGE_LOCK_STAT,
-        STAGE_INBOX_STAT, STAGE_LOCK_SYNC, STAGE_INBOX_SYNC,
+        STAGE_INBOX_STAT, STAGE_LOCK_TEST_E, STAGE_LOCK_TEST_L,
+        STAGE_INBOX_TEST_E, STAGE_INBOX_TEST_L, STAGE_LOCK_SYNC,
+        STAGE_INBOX_SYNC,
     ))
     return frozenset(commands)
 
@@ -395,6 +407,13 @@ def reviewed_stage_commands():
         staged = f"{STAGE_INBOX}/.r321-{role}.stage"
         final = f"{STAGE_INBOX}/{basename}"
         mapping[role] = MappingProxyType({
+            # `stat` follows symlinks, so its rc=1 cannot prove absent:
+            # controller MUST perform both tests (-L first, -e second)
+            # before the fixed-path create/link to reject dangling symlinks.
+            "stage_test_e": f"/usr/bin/sudo -n /usr/bin/test -e {staged}",
+            "stage_test_l": f"/usr/bin/sudo -n /usr/bin/test -L {staged}",
+            "final_test_e": f"/usr/bin/sudo -n /usr/bin/test -e {final}",
+            "final_test_l": f"/usr/bin/sudo -n /usr/bin/test -L {final}",
             "create": (
                 f"/usr/bin/sudo -n /usr/bin/install -m 0400 -o 0 -g 0 "
                 f"/dev/null {staged}"
@@ -491,8 +510,12 @@ def _identity(host, context):
     _validate_context(context)
     _, droplet = _call(host, HOST_ID_COMMAND, cap=32)
     _, region = _call(host, HOST_REGION_COMMAND, cap=32)
-    _require(droplet == (context.do_id + "\n").encode("ascii") and
-             region == (context.do_region + "\n").encode("ascii"),
+    # DigitalOcean metadata bodies are raw HTTP bytes; a single optional
+    # terminal LF is harmless, but CR, padding or multiple lines are not.
+    expected_id = context.do_id.encode("ascii")
+    expected_region = context.do_region.encode("ascii")
+    _require(droplet in (expected_id, expected_id + b"\n") and
+             region in (expected_region, expected_region + b"\n"),
              "PROTECTED_DO_IDENTITY_MISMATCH")
 
 
@@ -649,8 +672,11 @@ def execute_root_pin_transition(
                  "ROOT_NEW_ATTEMPT_COLLISION")
         _snapshot_pin(host, HISTORICAL_D_PIN, links=1)
     else:
-        _require(is_locked and archive_exists,
-                 "ROOT_RECOVERY_ORIGIN_UNVERIFIED")
+        _require(is_locked, "ROOT_RECOVERY_ORIGIN_UNVERIFIED")
+        # A bare root0700 lock has no immutable comment/nonce/receipt inside
+        # it; owner GO for RESUME cannot prove who created this directory.
+        # A separate root forensic decision is required, never auto-adopt.
+        _require(archive_exists, "FORENSIC_RESUME_REQUIRED")
         _preflight_dirs(host, require_lock=True)
         _stat(host, ROOT_OLD_ARCHIVE, mode=0o400)
         _sha_file(host, ROOT_OLD_ARCHIVE, old_pin_hash)

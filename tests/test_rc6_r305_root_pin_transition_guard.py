@@ -203,6 +203,28 @@ class OfflineRootPinTests(unittest.TestCase):
             guard.verify_owner_go(original, context(), owner_go_id=601,
                                   operation="RESUME", now=NOW)
 
+    def test_extreme_iso_years_hold79_without_datetime_overflow_traceback(self):
+        """Malformed owner GO clock boundaries fail as HOLD, never OverflowError."""
+        guard = _guard()
+        for issued, expiry in (
+            ("9999-12-31T23:59:58Z", "9999-12-31T23:59:59Z"),
+            ("0001-01-01T00:00:00Z", "0001-01-01T00:01:00Z"),
+        ):
+            comment = go_comment()
+            comment["created_at"] = issued
+            comment["updated_at"] = issued
+            doc = json.loads(comment["body"].split("=", 1)[1])
+            doc["expires_at"] = expiry
+            comment["body"] = guard.OWNER_GO_MARKER + json.dumps(
+                doc, sort_keys=True)
+            with self.subTest(issued=issued):
+                with self.assertRaises(guard.PinHold) as held:
+                    guard.verify_owner_go(
+                        comment, context(), owner_go_id=601,
+                        operation="NEW", now=guard._utc(issued))
+                self.assertEqual(held.exception.reason,
+                                 "OWNER_GO_CLOCK_INVALID")
+
     def test_bootstrap_receipt_hash_is_frozen_not_inferred_from_host(self):
         """Unexpected R301 receipt must be rejected, not treated as host GO."""
         guard = _guard()
@@ -231,7 +253,8 @@ class OfflineRootPinTests(unittest.TestCase):
             self.assertEqual(set(verbs), {
                 "create", "append", "stage_stat", "stage_hash", "link",
                 "remove_stage", "final_stat", "final_hash",
-                "sync", "final_sync",
+                "sync", "final_sync", "stage_test_e", "stage_test_l",
+                "final_test_e", "final_test_l",
             })
             for command in verbs.values():
                 self.assertIn(command, allowed)
@@ -242,6 +265,14 @@ class OfflineRootPinTests(unittest.TestCase):
                          r280.SOURCE_NAMES[role]
             self.assertTrue(verbs["final_stat"].endswith(
                 f"/install-inbox/{final_name}"))
+            for target in ("stage", "final"):
+                path = verbs[f"{target}_stat"].rsplit(" -- ", 1)[-1]
+                self.assertEqual(
+                    verbs[f"{target}_test_e"],
+                    f"/usr/bin/sudo -n /usr/bin/test -e {path}")
+                self.assertEqual(
+                    verbs[f"{target}_test_l"],
+                    f"/usr/bin/sudo -n /usr/bin/test -L {path}")
             self.assertIn("bs=8192", verbs["append"])
             self.assertIn("oflag=append", verbs["append"])
             self.assertIn("conv=notrunc", verbs["append"])
@@ -249,8 +280,16 @@ class OfflineRootPinTests(unittest.TestCase):
             self.assertIn("-m 0400", verbs["create"])
         for name in ("STAGE_LOCK_CREATE", "STAGE_INBOX_CREATE",
                      "STAGE_LOCK_STAT", "STAGE_INBOX_STAT", "STAGE_LOCK_SYNC",
-                     "STAGE_INBOX_SYNC"):
+                     "STAGE_INBOX_SYNC", "STAGE_LOCK_TEST_E",
+                     "STAGE_LOCK_TEST_L", "STAGE_INBOX_TEST_E",
+                     "STAGE_INBOX_TEST_L"):
             self.assertIn(getattr(guard, name), allowed)
+        for prefix in ("STAGE_LOCK", "STAGE_INBOX"):
+            path = getattr(guard, prefix)
+            self.assertEqual(getattr(guard, prefix + "_TEST_E"),
+                             f"/usr/bin/sudo -n /usr/bin/test -e {path}")
+            self.assertEqual(getattr(guard, prefix + "_TEST_L"),
+                             f"/usr/bin/sudo -n /usr/bin/test -L {path}")
         with self.assertRaises(TypeError):
             stage["helper"]["append"] = "untrusted"
         with self.assertRaises(TypeError):
@@ -393,6 +432,25 @@ def execute(host, *, operation="NEW", comment=None, original=None,
 
 
 class RootPinTransactionTests(unittest.TestCase):
+    def test_metadata_identity_exact_body_accepts_optional_single_lf(self):
+        """Metadata HTTP body may be newline-terminated or not, never padded."""
+        g = _guard()
+        for droplet, region in ((b"123456789", b"nyc1"),
+                                (b"123456789\n", b"nyc1\n")):
+            host = FakeRootHost()
+            host.identity = droplet, region
+            self.assertEqual(execute(host)["status"],
+                             "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO")
+        for droplet, region in ((b"123456789\r\n", b"nyc1"),
+                                (b"123456789 ", b"nyc1"),
+                                (b"123456789", b"nyc1\n\n"),
+                                (b"123456789\nother", b"nyc1")):
+            host = FakeRootHost()
+            host.identity = droplet, region
+            with self.assertRaises(g.PinHold):
+                execute(host)
+            self.assertNotIn(g.ROOT_LOCK, host.dirs)
+
     def test_new_switch_is_root0400_atomic_and_files_only(self):
         """Replacing pin without archive or receipt-last breaks recovery."""
         g = _guard()
@@ -516,10 +574,13 @@ class RootPinTransactionTests(unittest.TestCase):
             resume = go_comment(operation="RESUME",
                                 now=NOW + timedelta(minutes=8),
                                 comment_id=602, original_id=601)
-            with self.assertRaises(g.PinHold):
+            with self.assertRaises(g.PinHold) as raised:
                 execute(host, operation="RESUME", comment=resume,
                         original=go_comment(), go_id=602,
                         now=NOW + timedelta(minutes=8))
+            if not foreign:
+                self.assertEqual(raised.exception.reason,
+                                 "FORENSIC_RESUME_REQUIRED")
             self.assertNotIn(g.ROOT_TRANSITION_RECEIPT, host.files)
 
     def test_resume_authenticates_original_go_again_at_GH_recheck(self):
