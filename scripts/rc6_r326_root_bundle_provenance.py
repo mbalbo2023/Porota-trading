@@ -3,14 +3,16 @@
 R252/R163 must authenticate D externally before constructing the boundary below.
 Its frozen descriptor is an integration trust boundary, NOT a signature or a
 replacement ZIP/GitHub verifier. R326 only cross-binds supplied source bytes.
-Candidate code is never imported or executed. R308 outputs remain untrusted
-inputs; their documented bindings are checked, not the full helper contract.
+Code from D is never imported or executed. R308 outputs remain untrusted until
+byte-identical to the reviewed trusted-main R308/R271 producer's output.
 R309 review, R305 PIN GO and R321 INSTALL GO remain separate, absent authorities.
-No filesystem/network/host operations or wall clock reads are performed here.
+Only bounded reviewed trusted-main dependency source reads/imports are made;
+no candidate-source execution, network/host operation or wall clock read occurs.
 """
 from dataclasses import dataclass, field
 import hashlib
 from importlib import import_module
+from pathlib import Path
 import io
 import json
 import re
@@ -180,8 +182,54 @@ def _trusted_freezer():
         raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R304") from exc
 
 
+# Reviewed CODE pins, not per-release D/image/profile pins. Updates to the
+# reviewed producer/consumer require code review; each release context remains
+# an input to their deterministic producer. No dependency is read from D.
+_R308_SHA256 = "f9e1b8dc4d32ebd662eebe382be5989b1f72bb36b17a0fe3f2f3072691712db9"
+_R271_SHA256 = "d83550318fd4e38f88d072cc15f19fbef710fd0b752a226ec13c3f16e6c88aa5"
+
+
+def _trusted_dependency_root():
+    return Path(__file__).resolve().parent
+
+
+def _trusted_consumer(helper_bytes):
+    """Load only physically integrated, reviewed trusted-main R308/R271 code.
+
+    This is the sole bounded local-source read boundary, never a candidate
+    archive path. A fresh trusted-main controller must additionally enforce its
+    checkout identity and real R252/R163/Git/image receipts. This pure producer
+    does not implement or certify that controller.
+    """
+    root = _trusted_dependency_root()
+    loaded = {}
+    for name, pin in (("rc6_oci_host_helper", _R271_SHA256),
+                      ("rc6_r308_root_launch_profile_freeze", _R308_SHA256)):
+        path = root / (name + ".py")
+        try:
+            with path.open("rb") as handle:
+                raw = handle.read(2 * 1024**2 + 1)
+        except OSError as exc:
+            raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R308_CONSUMER") from exc
+        _require(len(raw) <= 2 * 1024**2 and _hash(raw) == pin,
+                 "MISSING_TRUSTED_R308_CONSUMER")
+        if name == "rc6_oci_host_helper":
+            _require(type(helper_bytes) is bytes and raw == helper_bytes,
+                     "TRUSTED_R271_D_BLOB_MISMATCH")
+        try:
+            module = import_module("scripts." + name)
+        except ImportError as exc:
+            raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R308_CONSUMER") from exc
+        _require(Path(module.__file__).resolve() == path.resolve(),
+                 "MISSING_TRUSTED_R308_CONSUMER")
+        loaded[name] = module
+    _require(loaded["rc6_r308_root_launch_profile_freeze"].host_contract is loaded["rc6_oci_host_helper"],
+             "MISSING_TRUSTED_R308_CONSUMER")
+    return loaded["rc6_r308_root_launch_profile_freeze"].freeze_root_launch_profiles
+
+
 def validate_generated_inputs(boundary, sources, profiles_raw, unit_raw, context):
-    """Check R308 identity/source bindings, NOT its full consumer semantics."""
+    """Require exact reviewed R308/R271 output, never hash-only equivalence."""
     _boundary(boundary)
     keys = {"daemon_id", "generation", "root_stage", "dashboard_env_sha256", "observer_env_sha256"}
     _require(type(context) is dict and set(context) == keys, "CONTEXT_SCOPE")
@@ -193,6 +241,19 @@ def validate_generated_inputs(boundary, sources, profiles_raw, unit_raw, context
     _require(type(stage) is str and len(stage) <= 150 and
              (stage == "/opt/porota-trading" or stage.startswith("/opt/porota-trading/"))
              and _path(stage[1:]), "CONTEXT_STAGE")
+    consumer = _trusted_consumer(sources["helper"])
+    generated = consumer(
+        candidate_sha=boundary.candidate_sha, candidate_tree=boundary.candidate_tree,
+        artifact_digest=boundary.artifact_digest, image_id=boundary.image_id,
+        daemon_id=context["daemon_id"], generation=context["generation"], root_stage=stage,
+        dashboard_env_sha256=context["dashboard_env_sha256"],
+        observer_env_sha256=context["observer_env_sha256"],
+        observer_source_sha256={"/app/" + path: _hash(sources[path]) for path in
+                                ("cf_intraday_scalping.py", "co_market_sessions_hf6.py")},
+        critical_source_sha=boundary.candidate_sha)
+    _require(type(profiles_raw) is bytes and type(unit_raw) is bytes and
+             profiles_raw == generated.profiles_bytes and unit_raw == generated.unit_template_bytes,
+             "R308_BYTE_EQUIVALENCE")
     doc = _json(profiles_raw, 128 * 1024)
     _require(set(doc) == {"schema_version", "candidate_sha", "artifact_digest", "image_tag", "root_stage", "observer_source_sha256", "roles"}
              and type(doc["schema_version"]) is int and doc["schema_version"] == 1
@@ -233,6 +294,7 @@ def validate_generated_inputs(boundary, sources, profiles_raw, unit_raw, context
         and [line for line in lines if line.startswith("ExecStart=")] == [
         "ExecStart=/usr/local/sbin/porota-rc6-oci-custody critical start-newborn --paper-only --source-sha "
         + boundary.candidate_sha + " --generation " + context["generation"]], "UNIT_HOLD_AND_SOURCE")
+    return {"profiles": generated.profiles_sha256, "unit_template": generated.unit_template_sha256}
 
 
 @dataclass(frozen=True)
@@ -258,9 +320,12 @@ def propose_root_bundle(*, boundary, bundle_bytes, outer_manifest_bytes,
     Approval intent is independently supplied, fresh and checked by trusted R304.
     Neither a previous D digest nor an old approval is rewritten/recycled.
     """
+    # Snapshot mutable caller inputs before any dependency boundary can run.
+    context = _json(_canonical(context), 4096)
+    approval_intent = _json(_canonical(approval_intent), 65536)
     freezer = _trusted_freezer()  # fail closed on standalone unintegrated main
     extracted = extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes)
-    validate_generated_inputs(boundary, extracted, profiles_bytes, unit_template_bytes, context)
+    generated_hashes = validate_generated_inputs(boundary, extracted, profiles_bytes, unit_template_bytes, context)
     _require(type(approval_intent) is dict and all(approval_intent.get(key) == value for key, value in {
         "candidate_sha": boundary.candidate_sha, "candidate_tree": boundary.candidate_tree,
         "artifact_digest": boundary.artifact_digest, "image_id": boundary.image_id,
@@ -268,8 +333,15 @@ def propose_root_bundle(*, boundary, bundle_bytes, outer_manifest_bytes,
         "run_id": str(boundary.release_run_id), "run_attempt": str(boundary.release_run_attempt)}.items()), "APPROVAL_D_CONTEXT_BINDING")
     raw = {"helper": extracted["helper"], "custody": extracted["custody"],
            "profiles": profiles_bytes, "unit_template": unit_template_bytes}
+    # Raw hashes are taken from the separately D-bound INNER manifest, not
+    # newly self-asserted caller source hashes. Generated hashes come from the
+    # reviewed deterministic R308 producer after exact-byte equivalence.
+    manifest = _json(outer_manifest_bytes, 4 * 1024**2)
+    source_hashes = {role: next(row["sha256"] for row in manifest["files"] if row["path"] == path)
+                     for path, role in _SOURCE_PATHS.items() if role in {"helper", "custody"}}
+    source_hashes.update(generated_hashes)
     frozen = freezer(candidate_sha=boundary.candidate_sha, candidate_tree=boundary.candidate_tree,
-                     source_bytes=raw, expected_source_sha256={key: _hash(value) for key, value in raw.items()},
+                     source_bytes=raw, expected_source_sha256=source_hashes,
                      approval_intent=approval_intent, now=now)
     sources = {"helper.bin": raw["helper"], "custody.py": raw["custody"],
                "profiles.json": profiles_bytes, "critical-unit-template.service": unit_template_bytes,
