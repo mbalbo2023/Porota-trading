@@ -1,8 +1,7 @@
-name: RC6 R297 owner-GO OFFHOST review only (NO host GO)
+name: RC6 R298 trusted files bootstrap (OFFHOST default; no deploy GO)
 
-# This step verifies owner-GO/reviewed source bytes OFFHOST only. GREEN is
-# explicitly NOT host_control_verified, NOT a root bootstrap, NOT a deploy.
-# Do not promote this scaffold to main as a host-physical workflow.
+# OFFHOST verifies owner-GO without host secrets. Physical modes are explicit,
+# require SHA/digest owner authority and never imply host_control_verified.
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +9,15 @@ on:
         description: Immutable GitHub OWNER GO issue-comment ID (future review)
         required: true
         type: string
+      bootstrap_action:
+        description: OFFHOST by default; physical modes require scoped GO
+        required: true
+        type: choice
+        default: offhost
+        options:
+          - offhost
+          - install_files
+          - resume_files
 
 permissions:
   contents: read
@@ -21,17 +29,11 @@ concurrency:
 
 jobs:
   owner_go_offhost_evidence_only:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && inputs.bootstrap_action == 'offhost' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     env:
       RC6_R295_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
-      RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
-      RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout exact trusted main event SHA without persisted credentials
@@ -46,3 +48,41 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -I scripts/rc6_r295_host_bootstrap_guard.py --check-offhost
+
+  approved_root_files_only:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && (inputs.bootstrap_action == 'install_files' || inputs.bootstrap_action == 'resume_files') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      RC6_R295_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
+      BOOTSTRAP_ACTION: ${{ inputs.bootstrap_action }}
+      RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+      RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact trusted main SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Execute only the selected OWNER-approved files transaction
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          case "${BOOTSTRAP_ACTION}" in
+            install_files)
+              python3 -I scripts/rc6_r295_host_bootstrap_guard.py --execute-approved-bootstrap
+              ;;
+            resume_files)
+              python3 -I scripts/rc6_r295_host_bootstrap_guard.py --resume-approved-bootstrap
+              ;;
+            *)
+              echo "RC6_R298_BOOTSTRAP=HOLD79|reason=UNKNOWN_ACTION|host_control_verified=NO_VERIFICADO"
+              exit 79
+              ;;
+          esac

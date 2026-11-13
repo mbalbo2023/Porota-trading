@@ -7,7 +7,7 @@ pin from a candidate, a dispatch field, or a newly uploaded package.  Even a
 successful bootstrap is INSTALLED_FILES_ONLY, not host_control_verified.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import base64
 import hashlib
@@ -16,10 +16,13 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import subprocess
 import stat
 import sys
 import tempfile
+import time
 
 
 REPOSITORY = "mbalbo2023/Porota-trading"
@@ -46,6 +49,7 @@ ROOT_DIRECTORY_CREATE = (
     "/usr/local/libexec/porota-rc6-custody",
     "/var/lib/porota-rc6-oci-custody",
 )
+SSH_BOOTSTRAP_TOTAL_BUDGET_S = 9 * 60  # below 12-minute Actions physical-job budget
 ROOT_PARENTS_EXISTING = (
     "/", "/usr", "/usr/local", "/usr/local/sbin",
     "/var", "/var/lib",
@@ -66,10 +70,9 @@ ROOT_STAGE_TARGETS = (
     ("pin", "/var/lib/porota-rc6-oci-custody/.approved-manifest-pin.r297-stage",
      "/var/lib/porota-rc6-oci-custody/installer-approved-manifest.sha256", 0o400),
 )
-# Physical root commands intentionally DO NOT live in this guard.  A later
-# reviewed implementation must solve independent trust pinning, nofollow,
-# atomic fsync publication, stale/replay protection, and bounded host scope
-# BEFORE exposing any executable bootstrap entrypoint.
+# The reviewed file-only root commands are assembled below from literal,
+# bounded paths. This guard never runs sudo Python, Docker or systemd and
+# never authorizes runtime promotion or automatic removal of a stale lock.
 _HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _DECIMAL = re.compile(r"[1-9][0-9]{0,19}\Z")
@@ -112,7 +115,7 @@ class RootStageInstall:
     sha256: str
 
 
-def validate_context(env):
+def validate_context(env, *, require_host=True):
     """Check all authority selectors before network and certainly before sudo."""
     _require(type(env) is dict or hasattr(env, "get"), "CONTEXT_UNVERIFIED")
     _require(env.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and
@@ -123,18 +126,20 @@ def validate_context(env):
     comment_raw = env.get("RC6_R295_OWNER_COMMENT_ID")
     _require(type(comment_raw) is str and _DECIMAL.fullmatch(comment_raw),
              "OWNER_GO_COMMENT_ID_UNVERIFIED")
-    droplet = env.get("RC6_EXPECTED_DO_ID")
-    region = env.get("RC6_EXPECTED_DO_REGION")
-    _require(type(droplet) is str and re.fullmatch(r"[1-9][0-9]{5,19}", droplet),
-             "DROPLET_TRUSTED_PIN_UNVERIFIED")
-    _require(type(region) is str and _DO_REGION.fullmatch(region),
-             "REGION_TRUSTED_PIN_UNVERIFIED")
-    host = env.get("DO_HOST")
-    user = env.get("DO_USER")
-    _require(type(host) is str and _HOST.fullmatch(host) and
-             type(user) is str and _USER.fullmatch(user),
-             "SSH_SELECTOR_UNVERIFIED")
-    for name in ("DO_SSH_KEY", "DO_KNOWN_HOSTS", "GITHUB_TOKEN"):
+    droplet = env.get("RC6_EXPECTED_DO_ID") if require_host else ""
+    region = env.get("RC6_EXPECTED_DO_REGION") if require_host else ""
+    host = env.get("DO_HOST") if require_host else ""
+    user = env.get("DO_USER") if require_host else ""
+    if require_host:
+        _require(type(droplet) is str and re.fullmatch(r"[1-9][0-9]{5,19}", droplet),
+                 "DROPLET_TRUSTED_PIN_UNVERIFIED")
+        _require(type(region) is str and _DO_REGION.fullmatch(region),
+                 "REGION_TRUSTED_PIN_UNVERIFIED")
+        _require(type(host) is str and _HOST.fullmatch(host) and
+                 type(user) is str and _USER.fullmatch(user),
+                 "SSH_SELECTOR_UNVERIFIED")
+    for name in (("DO_SSH_KEY", "DO_KNOWN_HOSTS", "GITHUB_TOKEN")
+                 if require_host else ("GITHUB_TOKEN",)):
         value = env.get(name)
         _require(type(value) is str and 0 < len(value) < 32768 and
                  "\x00" not in value and "\r" not in value,
@@ -199,6 +204,16 @@ def verify_owner_go(comment, main_sha, expected_comment_id, *, now=None):
         "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
         "host_control_verified": False,
     }
+    if actual.get("operation") == "TRUSTED_MAIN_ROOT_BOOTSTRAP_RESUME_FILES_ONLY":
+        old_id = actual.get("original_owner_go_comment_id")
+        old_sha = actual.get("original_trusted_main_sha")
+        _require(type(old_id) is int and 0 < old_id < expected_comment_id and
+                 type(old_sha) is str and
+                 _HEX40.fullmatch(old_sha),
+                 "ROOT_RECOVERY_ORIGINAL_GO_UNVERIFIED")
+        expected.update(operation="TRUSTED_MAIN_ROOT_BOOTSTRAP_RESUME_FILES_ONLY",
+                        original_owner_go_comment_id=old_id,
+                        original_trusted_main_sha=old_sha)
     _require(type(actual) is dict and
              set(actual) == set(expected) | {"approved_manifest_sha256", "expires_at"} and
              type(actual.get("approved_manifest_sha256")) is str and
@@ -263,6 +278,36 @@ def fetch_and_verify_owner_go(context, *, token, fetch_bytes=None, now=None):
              "GITHUB_RECEIPT_SIZE")
     doc = _strict_json(raw, limit=16384)
     return verify_owner_go(doc, context.main_sha, context.owner_comment_id, now=now)
+
+
+def fetch_original_recovery_go(context, recovery_go, *, token, fetch_bytes=None):
+    """Authenticate the stale original GO for byte-identical forward recovery.
+
+    The original is checked at its issuance instant for exact schema, not
+    reused as current authority. Only the new, unexpired recovery GO can write.
+    """
+    _require(type(context) is BootstrapContext and type(recovery_go) is dict and
+             recovery_go.get("operation") ==
+             "TRUSTED_MAIN_ROOT_BOOTSTRAP_RESUME_FILES_ONLY",
+             "ROOT_RECOVERY_OWNER_GO_UNVERIFIED")
+    old_id = recovery_go.get("original_owner_go_comment_id")
+    old_sha = recovery_go.get("original_trusted_main_sha")
+    _require(type(old_id) is int and 0 < old_id < context.owner_comment_id and
+             type(old_sha) is str and _HEX40.fullmatch(old_sha),
+             "ROOT_RECOVERY_ORIGINAL_GO_UNVERIFIED")
+    if fetch_bytes is None:
+        fetch_bytes = fetch_github_https_bytes
+    raw = fetch_bytes(f"/repos/{REPOSITORY}/issues/comments/{old_id}", token)
+    doc = _strict_json(raw, limit=16384)
+    _require(type(doc) is dict, "ROOT_ORIGINAL_GO_RESPONSE_UNVERIFIED")
+    issued = _utc_timestamp(doc.get("created_at"))
+    original = verify_owner_go(doc, old_sha, old_id, now=issued)
+    _require(original.get("operation") ==
+             "TRUSTED_MAIN_ROOT_BOOTSTRAP_FILES_ONLY" and
+             original.get("approved_manifest_sha256") ==
+             recovery_go.get("approved_manifest_sha256"),
+             "ROOT_RECOVERY_MANIFEST_OR_GO_MISMATCH")
+    return replace(context, main_sha=old_sha, owner_comment_id=old_id), original
 
 
 def verify_live_main_head(context, *, token, fetch_bytes=None):
@@ -344,6 +389,10 @@ def reviewed_remote_root_commands():
     commands.add("/usr/bin/sudo -n /usr/bin/sync -- /var/lib")
     commands.add(f"/usr/bin/sudo -n /usr/bin/sha256sum -- {ROOT_RECEIPT}")
     commands.add(f"/usr/bin/sudo -n /usr/bin/sync -- {ROOT_RECEIPT}")
+    for path in (ROOT_RECEIPT, ROOT_RECEIPT_STAGE,
+                 *(p for _, stage, target, _ in ROOT_STAGE_TARGETS
+                   for p in (stage, target))):
+        commands.add(f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%a|%h|%F|%d|%i' -- {path}")
     return frozenset(commands)
 
 
@@ -397,6 +446,74 @@ def _root_sync(host, path):
     _host_command(host, f"/usr/bin/sudo -n /usr/bin/sync -- {path}", cap=0)
 
 
+def _root_stat_inode(host, path, mode):
+    """Return device/inode/link count of an exact root-owned regular file."""
+    _rc, raw = _host_command(host,
+        f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%a|%h|%F|%d|%i' -- {path}", cap=128)
+    _require(type(raw) is bytes and len(raw) <= 128, "ROOT_INODE_STAT_SIZE")
+    try:
+        owner, permissions, links, kind, device, inode = (
+            raw.decode("ascii", "strict").strip("\n").split("|"))
+        bits, count, dev, ino = int(permissions, 8), int(links), int(device), int(inode)
+    except (ValueError, UnicodeError) as exc:
+        raise BootstrapHold("ROOT_INODE_STAT_INVALID") from exc
+    _require(owner == "0" and kind == "regular file" and bits == mode and
+             count in (1, 2) and dev > 0 and ino > 0,
+             "ROOT_INODE_KIND_LINKS_OR_MODE_UNVERIFIED")
+    return dev, ino, count
+
+
+def _verified_partial_state(host, items):
+    """Inspect every known path before any recovery write; reject ambiguity."""
+    states = []
+    for item in items:
+        stage = _root_exists(host, item.stage)
+        target = _root_exists(host, item.target)
+        ids = {}
+        for path in (item.stage if stage else None, item.target if target else None):
+            if path is None:
+                continue
+            ids[path] = _root_stat_inode(host, path, item.mode)
+            _root_digest(host, path, item.sha256)
+        if stage and target:
+            a, b = ids[item.stage], ids[item.target]
+            _require(a[:2] == b[:2] and a[2] == b[2] == 2,
+                     "ROOT_PARTIAL_HARDLINK_MISMATCH")
+        elif stage or target:
+            _require(next(iter(ids.values()))[2] == 1, "ROOT_FOREIGN_HARDLINK")
+        states.append((stage, target))
+    # The three installer files may all be staged before publishing, but
+    # targets only appear in CLI → contract → independent pin order.
+    if len(states) == 4:
+        for index in (1, 2, 3):
+            if states[index][1]:
+                _require(all(states[earlier][1] for earlier in range(index)),
+                         "ROOT_PARTIAL_PUBLICATION_ORDER_UNVERIFIED")
+        _require(not any(states[3]) or
+                 (all(s[1] and not s[0] for s in states[:3])),
+                 "ROOT_RECEIPT_PREMATURE")
+        _require(not states[2][1] or
+                 (states[0][1] and states[1][1]),
+                 "ROOT_PIN_PREMATURE")
+    return states
+
+
+def _continue_pinned_stage(host, item):
+    """Idempotent forward-only completion; no overwrite/lock deletion."""
+    stage, target = _verified_partial_state(host, (item,))[0]
+    if stage and target:
+        _host_command(host, f"/usr/bin/sudo -n /usr/bin/rm -- {item.stage}", cap=0)
+        _root_sync(host, item.target)
+        _root_sync(host, str(Path(item.target).parent))
+    elif stage:
+        _publish_stage(host, item)
+    elif not target:
+        _install_stage(host, item)
+        _publish_stage(host, item)
+    _root_stat(host, item.target, is_dir=False, mode=item.mode)
+    _root_digest(host, item.target, item.sha256)
+
+
 def _install_stage(host, item):
     _require(type(item) is RootStageInstall and not _root_exists(host, item.stage),
              "ROOT_STAGE_COLLISION")
@@ -438,19 +555,45 @@ def _bootstrap_receipt_bytes(context, go):
 
 
 def execute_one_shot_root_bootstrap(host, context, owner_go, sources, *,
-                                    recheck_authority):
-    """Bounded root files-only transaction via a reviewed transport.
+                                    recheck_authority, recovery=False,
+                                    original_context=None, original_go=None):
+    """Bounded root files-only transaction, callable by R298 physical workflow.
 
-    This function has NO CLI entrypoint and cannot run from the R297 workflow.
-    Actual physical activation needs independent QA, trusted SSH transport,
-    protected DO pins, owner-GO and a new change controlling its invocation.
+    Physical activation still requires independent QA, reviewed main merge,
+    trusted SSH transport, protected DO pins and a fresh exact OWNER GO.
     A durable, root-owned lock is created before the first write. Any crash
     leaves the lock to force fresh human-reviewed fix-forward: never auto retry.
     """
     _require(type(context) is BootstrapContext and type(owner_go) is dict and
              owner_go.get("host_control_verified") is False and
              callable(recheck_authority), "ROOT_AUTHORITY_UNVERIFIED")
+    if recovery:
+        _require(owner_go.get("operation") ==
+                 "TRUSTED_MAIN_ROOT_BOOTSTRAP_RESUME_FILES_ONLY" and
+                 type(original_context) is BootstrapContext and
+                 type(original_go) is dict and
+                 original_go.get("operation") ==
+                 "TRUSTED_MAIN_ROOT_BOOTSTRAP_FILES_ONLY" and
+                 original_context.owner_comment_id != context.owner_comment_id and
+                 owner_go.get("original_owner_go_comment_id") ==
+                 original_context.owner_comment_id and
+                 owner_go.get("original_trusted_main_sha") ==
+                 original_context.main_sha and
+                 owner_go.get("approved_manifest_sha256") ==
+                 original_go.get("approved_manifest_sha256"),
+                 "ROOT_RECOVERY_OWNER_GO_UNVERIFIED")
+    else:
+        _require(owner_go.get("operation") ==
+                 "TRUSTED_MAIN_ROOT_BOOTSTRAP_FILES_ONLY",
+                 "ROOT_FRESH_OWNER_GO_REQUIRED")
     plan = build_root_bootstrap_plan(owner_go, sources)
+    receipt_raw = _bootstrap_receipt_bytes(
+        original_context if recovery else context,
+        original_go if recovery else owner_go)
+    receipt_item = RootStageInstall(
+        role="receipt", stage=ROOT_RECEIPT_STAGE, target=ROOT_RECEIPT,
+        mode=0o400, bytes=receipt_raw,
+        sha256=hashlib.sha256(receipt_raw).hexdigest())
 
     def check_authority():
         latest_go, live_main_sha = recheck_authority()
@@ -466,20 +609,32 @@ def execute_one_shot_root_bootstrap(host, context, owner_go, sources, *,
     for parent in ROOT_PARENTS_EXISTING:
         _require(_root_exists(host, parent), "ROOT_PARENT_MISSING")
         _root_stat(host, parent, is_dir=True)
-    _require(not _root_exists(host, ROOT_LOCK_DIR) and
-             not _root_exists(host, ROOT_RECEIPT), "ROOT_ONE_SHOT_REPLAY")
-    for item in plan:
-        _require(not _root_exists(host, item.stage) and
-                 not _root_exists(host, item.target), "ROOT_TARGET_OR_STAGE_COLLISION")
-    _require(not _root_exists(host, ROOT_RECEIPT_STAGE),
-             "ROOT_RECEIPT_STAGE_COLLISION")
+    if recovery:
+        _require(_root_exists(host, ROOT_LOCK_DIR), "ROOT_RECOVERY_LOCK_REQUIRED")
+        _root_stat(host, ROOT_LOCK_DIR, is_dir=True, mode=0o700)
+        state = _verified_partial_state(host, (*plan, receipt_item))
+        # A bare lock contains no immutable evidence of which old OWNER GO
+        # reserved it. Stop for independent physical forensics; do not claim
+        # that a new recovery comment can assign ownership retroactively.
+        _require(any(stage or target for stage, target in state),
+                 "ROOT_EMPTY_LOCK_ORIGIN_UNVERIFIED")
+    else:
+        _require(not _root_exists(host, ROOT_LOCK_DIR) and
+                 not _root_exists(host, ROOT_RECEIPT), "ROOT_ONE_SHOT_REPLAY")
+        for item in plan:
+            _require(not _root_exists(host, item.stage) and
+                     not _root_exists(host, item.target), "ROOT_TARGET_OR_STAGE_COLLISION")
+        _require(not _root_exists(host, ROOT_RECEIPT_STAGE),
+                 "ROOT_RECEIPT_STAGE_COLLISION")
     for directory in ROOT_DIRECTORY_CREATE:
         if _root_exists(host, directory):
             _root_stat(host, directory, is_dir=True)
 
-    # First mutation is durable one-shot reservation. No root code is
-    # executed, only fixed system commands with pinned operator-approved data.
-    _host_command(host, f"/usr/bin/sudo -n /usr/bin/mkdir -m 0700 -- {ROOT_LOCK_DIR}", cap=0)
+    # First mutation in fresh mode is a durable one-shot reservation.
+    # Recovery never deletes/replaces it and requires a fresh distinct GO.
+    check_authority()  # preflight may outlast the time-limited owner approval
+    if not recovery:
+        _host_command(host, f"/usr/bin/sudo -n /usr/bin/mkdir -m 0700 -- {ROOT_LOCK_DIR}", cap=0)
     _root_stat(host, ROOT_LOCK_DIR, is_dir=True, mode=0o700)
     _root_sync(host, "/var/lib")
     for directory in ROOT_DIRECTORY_CREATE:
@@ -490,21 +645,26 @@ def execute_one_shot_root_bootstrap(host, context, owner_go, sources, *,
         _root_stat(host, directory, is_dir=True)
         _root_sync(host, directory)
 
-    for item in plan:
-        _install_stage(host, item)
-    check_authority()  # no byte publication while main/owner-GO drifted
-    for item in plan[:2]:
-        _publish_stage(host, item)
-    check_authority()  # external digest approval checked AGAIN before pin
-    _publish_stage(host, plan[2])  # independent manifest SHA pin LAST
-    check_authority()
-    receipt_raw = _bootstrap_receipt_bytes(context, owner_go)
-    receipt_item = RootStageInstall(
-        role="receipt", stage=ROOT_RECEIPT_STAGE, target=ROOT_RECEIPT,
-        mode=0o400, bytes=receipt_raw,
-        sha256=hashlib.sha256(receipt_raw).hexdigest())
-    _install_stage(host, receipt_item)
-    _publish_stage(host, receipt_item)
+    if recovery:
+        # Even with a published receipt, its hardlinked stage must be
+        # finished before reporting success. A crash after ln -T and before
+        # rm is a *partial* transaction, never an implicit HOST GO.
+        if not state[3][1] or state[3][0]:
+            for item in (*plan, receipt_item):
+                check_authority()
+                _continue_pinned_stage(host, item)
+    else:
+        for item in plan:
+            _install_stage(host, item)
+        for item in plan[:2]:
+            check_authority()
+            _publish_stage(host, item)
+        check_authority()  # external digest approval checked AGAIN before pin
+        _publish_stage(host, plan[2])  # independent manifest SHA pin LAST
+        check_authority()
+        _install_stage(host, receipt_item)
+        check_authority()
+        _publish_stage(host, receipt_item)
     return {"schema": "RC6_R297_ROOT_BOOTSTRAP_FILES_ONLY_V1",
             "status": "INSTALLED_FILES_ONLY_NOT_HOST_GO",
             "trusted_main_sha": context.main_sha,
@@ -596,6 +756,90 @@ def verify_host_identity(observed_id, observed_region, context):
              "DROPLET_IDENTITY_UNVERIFIED")
 
 
+def run_bounded_ssh_command(argv, input_data, *, timeout_s=22, output_cap=4096):
+    """Stream both pipes with a hard cap; never accumulate unbounded SSH logs.
+
+    This runner only transports bytes. The caller independently enforces the
+    literal remote command allowlist and never includes credentials in argv.
+    """
+    _require(type(argv) is list and len(argv) > 0 and
+             all(type(arg) is str and arg and "\x00" not in arg for arg in argv) and
+             type(input_data) is bytes and len(input_data) <= 1024 * 1024 and
+             type(output_cap) is int and 0 <= output_cap <= 4096 and
+             isinstance(timeout_s, (float, int)) and 0 < timeout_s <= 60,
+             "SSH_TRANSPORT_BOUNDS_INVALID")
+    process = None
+    selector = selectors.DefaultSelector()
+    stdout_bytes = bytearray()
+    total_output = 0
+    completed = False
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   bufsize=0, close_fds=True, start_new_session=True)
+        deadline = time.monotonic() + timeout_s
+        for stream in (process.stdout, process.stderr):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ)
+        sent = 0
+        if input_data:
+            os.set_blocking(process.stdin.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE)
+        else:
+            process.stdin.close()
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise BootstrapHold("SSH_TRANSPORT_TIMEOUT")
+            for key, _event in selector.select(remaining):
+                stream = key.fileobj
+                if stream is process.stdin:
+                    try:
+                        size = os.write(stream.fileno(), input_data[sent:sent + 16384])
+                    except BrokenPipeError as exc:
+                        raise BootstrapHold("SSH_STDIN_EARLY_CLOSE") from exc
+                    _require(size > 0, "SSH_STDIN_EARLY_CLOSE")
+                    sent += size
+                    if sent == len(input_data):
+                        selector.unregister(stream)
+                        stream.close()
+                    continue
+                chunk = os.read(stream.fileno(), min(4096, output_cap + 1 - total_output))
+                if not chunk:
+                    selector.unregister(stream)
+                    stream.close()
+                    continue
+                total_output += len(chunk)
+                _require(total_output <= output_cap, "SSH_OUTPUT_SIZE_UNVERIFIED")
+                if stream is process.stdout:
+                    stdout_bytes.extend(chunk)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 and process.poll() is None:
+            raise BootstrapHold("SSH_TRANSPORT_TIMEOUT")
+        rc = process.wait(timeout=max(0.01, remaining))
+        # stderr contributes to the cap but never reaches logs/API output.
+        completed = True
+        return rc, bytes(stdout_bytes)
+    except subprocess.TimeoutExpired as exc:
+        raise BootstrapHold("SSH_TRANSPORT_TIMEOUT") from exc
+    except OSError as exc:
+        raise BootstrapHold("SSH_TRANSPORT_UNVERIFIED") from exc
+    finally:
+        selector.close()
+        if process is not None:
+            if not completed:
+                # Each SSH transport runs in its own new session; kill the
+                # entire process group to stop inherited pipe writers.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.wait()
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+
 class StrictSSHHost:
     """One-shot trusted-runner SSH transport with a literal remote allowlist.
 
@@ -614,85 +858,129 @@ class StrictSSHHost:
         self.known = env["DO_KNOWN_HOSTS"].encode("utf-8") + b"\n"
         self.temp = None
         self.ssh_args = None
+        self.control_socket = None
+        self.master = None
+        self.transaction_deadline = None
 
     def __enter__(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="rc6-r297-ssh-")
-        folder = Path(self.temp.name)
-        key_path, known_path = folder / "id_ed25519", folder / "known_hosts"
-        for path, raw in ((key_path, self.key), (known_path, self.known)):
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                         getattr(os, "O_NOFOLLOW", 0), 0o600)
-            try:
-                os.fchmod(fd, 0o600)
-                start = 0
-                while start < len(raw):
-                    count = os.write(fd, raw[start:])
-                    _require(count > 0, "SSH_SECRET_TEMP_WRITE_SHORT")
-                    start += count
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        self.ssh_args = [
-            "/usr/bin/ssh", "-T", "-F", "/dev/null", "-i", str(key_path),
-            "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + str(known_path),
-            "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ProxyCommand=none",
-            "-o", "ProxyJump=none", "-o", "ControlMaster=no",
-            "-o", "ClearAllForwardings=yes", "-o", "UpdateHostKeys=no",
-            "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
-            "-o", "ConnectTimeout=8", "-o", "ConnectionAttempts=1",
-            "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
-            "-o", "LogLevel=ERROR",
-            f"{self.context.user}@{self.context.host}",
-        ]
-        return self
+        try:
+            self.transaction_deadline = time.monotonic() + SSH_BOOTSTRAP_TOTAL_BUDGET_S
+            self.temp = tempfile.TemporaryDirectory(prefix="rc6-r297-ssh-")
+            folder = Path(self.temp.name)
+            key_path, known_path = folder / "id_ed25519", folder / "known_hosts"
+            for path, raw in ((key_path, self.key), (known_path, self.known)):
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                             getattr(os, "O_NOFOLLOW", 0), 0o600)
+                try:
+                    os.fchmod(fd, 0o600)
+                    start = 0
+                    while start < len(raw):
+                        count = os.write(fd, raw[start:])
+                        _require(count > 0, "SSH_SECRET_TEMP_WRITE_SHORT")
+                        start += count
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            self.control_socket = folder / "ssh-control.sock"
+            self.ssh_args = [
+                "/usr/bin/ssh", "-T", "-F", "/dev/null", "-i", str(key_path),
+                "-S", str(self.control_socket),
+                "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+                "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + str(known_path),
+                "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ProxyCommand=/usr/bin/false",
+                "-o", "ProxyJump=none", "-o", "ControlMaster=auto",
+                "-o", "ClearAllForwardings=yes", "-o", "UpdateHostKeys=no",
+                "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
+                "-o", "ConnectTimeout=8", "-o", "ConnectionAttempts=1",
+                "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
+                "-o", "LogLevel=ERROR",
+                f"{self.context.user}@{self.context.host}",
+            ]
+            # The master alone may open a real TCP connection. A multiplex
+            # child has a fail-closed /usr/bin/false proxy: OpenSSH's normal
+            # ControlMaster=auto fallback cannot reconnect independently.
+            master_args = ["ProxyCommand=none" if arg == "ProxyCommand=/usr/bin/false"
+                           else arg for arg in self.ssh_args]
+            self.master = subprocess.Popen(
+                master_args[:-1] + ["-M", "-N", master_args[-1]],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if self.master.poll() is not None:
+                    raise BootstrapHold("SSH_MASTER_START_FAILED")
+                if self._verified_master_socket():
+                    return self
+                time.sleep(0.05)
+            raise BootstrapHold("SSH_MASTER_SOCKET_TIMEOUT")
+        except BaseException:
+            self.__exit__(None, None, None)
+            raise
+
+    def _verified_master_socket(self):
+        if self.control_socket is None:
+            return False
+        try:
+            info = self.control_socket.lstat()
+        except FileNotFoundError:
+            return False
+        return stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()
 
     def call(self, command, stdin=None):
-        _require(self.ssh_args is not None and
+        _require(self.ssh_args is not None and self.master is not None and
+                 self.master.poll() is None and self._verified_master_socket() and
                  (command in reviewed_remote_root_commands() or
                   command in (HOST_ID_COMMAND, HOST_REGION_COMMAND)),
                  "SSH_COMMAND_NOT_REVIEWED")
         _require(stdin is None or type(stdin) is bytes and len(stdin) <= 1024 * 1024,
                  "SSH_STDIN_INVALID")
-        try:
-            finished = subprocess.run(self.ssh_args + [command],
-                                      input=b"" if stdin is None else stdin,
-                                      capture_output=True, timeout=22, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise BootstrapHold("SSH_TRANSPORT_UNVERIFIED") from exc
-        _require(type(finished.stdout) is bytes and len(finished.stdout) <= 4096 and
-                 type(finished.stderr) is bytes and len(finished.stderr) <= 4096,
-                 "SSH_OUTPUT_SIZE_UNVERIFIED")
-        return finished.returncode, finished.stdout
+        remaining = (self.transaction_deadline - time.monotonic()
+                     if self.transaction_deadline is not None else 0)
+        _require(remaining > 0.01, "SSH_TRANSACTION_DEADLINE_EXCEEDED")
+        return run_bounded_ssh_command(
+            self.ssh_args + [command], b"" if stdin is None else stdin,
+            timeout_s=min(22, remaining), output_cap=4096)
 
     def __exit__(self, *_exc):
         try:
+            if self.master is not None:
+                if self.master.poll() is None:
+                    self.master.terminate()
+                    try:
+                        self.master.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        self.master.kill()
+                        self.master.wait(timeout=3)
+                self.master = None
             if self.temp is not None:
                 self.temp.cleanup()  # runner-only SSH credentials, never host data
         finally:
             self.ssh_args = None
+            self.control_socket = None
+            self.transaction_deadline = None
             self.key = b""
             self.known = b""
 
 
 
 def main(argv=None, *, env=None, owner_getter=None, main_ref_getter=None,
-         host_factory=None):
-    """Two distinctly labeled paths: offhost GO evidence or root files-only.
+         host_factory=None, original_go_getter=None):
+    """OFFHOST check and two explicitly authorized root files-only paths.
 
     Root mode can run only with issue OWNER-GO + exact live main SHA, source
     SHA pins, DO metadata, strict SSH and a fresh root-only one-shot lock.
-    The shipped R297 workflow calls only --check-offhost. Physical root mode
-    remains un-dispatched/unmerged until independent QA of code and transport.
+    R298 workflow dispatch selects OFFHOST, install or guarded recovery.
+    Passing a unit test or installing files does not confer HOST GO.
     """
     if argv is None:
         argv = sys.argv[1:]
     if env is None:
         env = os.environ
     try:
-        _require(argv in (["--check-offhost"], ["--execute-approved-bootstrap"]),
+        _require(argv in (["--check-offhost"], ["--execute-approved-bootstrap"],
+                          ["--resume-approved-bootstrap"]),
                  "FIXED_BOOTSTRAP_VERB_ONLY")
-        context = validate_context(env)
+        context = validate_context(env, require_host=(argv != ["--check-offhost"]))
         sources = verify_reviewed_sources(Path(__file__).resolve().parents[1])
 
         def current_main():
@@ -714,12 +1002,29 @@ def main(argv=None, *, env=None, owner_getter=None, main_ref_getter=None,
             print("RC6_R297_BOOTSTRAP=OWNER_GO_OFFHOST_VERIFIED|"
                   "host_control_verified=NO_VERIFICADO|deploy_authorized=NO")
             return 0
+        recovery = argv == ["--resume-approved-bootstrap"]
+        if recovery:
+            _require(go.get("operation") ==
+                     "TRUSTED_MAIN_ROOT_BOOTSTRAP_RESUME_FILES_ONLY",
+                     "ROOT_RECOVERY_OWNER_GO_UNVERIFIED")
+            if original_go_getter is None:
+                original_context, original_go = fetch_original_recovery_go(
+                    context, go, token=env["GITHUB_TOKEN"])
+            else:
+                original_context, original_go = original_go_getter(context, go)
+        else:
+            _require(go.get("operation") ==
+                     "TRUSTED_MAIN_ROOT_BOOTSTRAP_FILES_ONLY",
+                     "ROOT_FRESH_OWNER_GO_REQUIRED")
+            original_context, original_go = None, None
         if host_factory is None:
             host_factory = StrictSSHHost
         with host_factory(context, env) as host:
             report = execute_one_shot_root_bootstrap(
                 host, context, go, sources,
-                recheck_authority=lambda: (current_go(), current_main()))
+                recheck_authority=lambda: (current_go(), current_main()),
+                recovery=recovery, original_context=original_context,
+                original_go=original_go)
         _require(report.get("status") == "INSTALLED_FILES_ONLY_NOT_HOST_GO" and
                  report.get("host_control_verified") is False,
                  "ROOT_BOOTSTRAP_RECEIPT_INVALID")
