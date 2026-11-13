@@ -657,8 +657,10 @@ class R321RootInstallActionsTest(unittest.TestCase):
         self.assertEqual(workflow["concurrency"]["group"],
                          "rc6-unified-paper-deploy")
         self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
-        self.assertEqual(workflow["permissions"],
-                         {"contents": "read", "issues": "read"})
+        self.assertEqual(workflow["permissions"], {
+            "contents": "read", "issues": "read",
+            "actions": "read", "pull-requests": "read",
+        })
         self.assertEqual(set(workflow["jobs"]), {"root_install_offhost_preflight"})
         job = workflow["jobs"]["root_install_offhost_preflight"]
         self.assertIn("github.ref == 'refs/heads/main'", job["if"])
@@ -668,7 +670,9 @@ class R321RootInstallActionsTest(unittest.TestCase):
         self.assertEqual(checkout["with"]["persist-credentials"], "false")
         self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
         commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
+        self.assertIn("rc6_r340_trusted_root_env_controller --verify-offhost", commands)
         self.assertIn("--check-offhost", commands)
+        self.assertLess(commands.index("--verify-offhost"), commands.index("--check-offhost"))
         for forbidden in ("sudo ", "ssh ", "docker ", "install-approved", "--install-approved"):
             self.assertNotIn(forbidden, commands)
         self.assertFalse(job.get("secrets"))

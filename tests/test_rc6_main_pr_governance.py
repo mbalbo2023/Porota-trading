@@ -61,6 +61,37 @@ class MainPrGovernanceTest(unittest.TestCase):
             with self.subTest(path=path, source="PR"), self.assertRaises(ValueError):
                 namespace["validate"](event(invalid_body), receipt(body="RC6_A281_MAIN_GOVERNANCE WRITE_OWNER " + path), {path})
 
+    def test_app_enriched_list_receipt_compares_immutable_identity_not_extra_metadata(self):
+        from copy import deepcopy
+        validate_lease = guard()["validate_lease"]
+        declaration = receipt(issue="980", url=URL.replace("/732#", "/980#"))
+        declaration.update(
+            id=10, node_id="IC_10",
+            created_at="2026-11-13T19:37:27Z",
+            updated_at="2026-11-13T19:37:27Z",
+            user={"login": "mbalbo2023", "id": 42},
+            body=BODY + "\nOwnership status: ACTIVE\nWRITE_OWNER",
+            performed_via_github_app={"id": 1144995, "slug": "chatgpt-codex-connector"},
+        )
+        listed = deepcopy(declaration)
+        listed["performed_via_github_app"]["client_id"] = "Iv23liVemv8A9if9v0F2"
+        validate_lease(event(), declaration, [listed], FILES)
+        for key, wrong in (
+            ("node_id", "IC_wrong"),
+            ("created_at", "2026-11-13T19:37:28Z"),
+            ("updated_at", "2026-11-13T19:37:28Z"),
+            ("body", declaration["body"] + " changed"),
+            ("html_url", declaration["html_url"] + "changed"),
+            ("issue_url", declaration["issue_url"] + "/wrong"),
+            ("user", {"login": "other", "id": 7}),
+        ):
+            altered = deepcopy(listed)
+            altered[key] = wrong
+            with self.subTest(key=key), self.assertRaisesRegex(
+                ValueError, "MAIN_PR_LEASE_NOT_IN_CURRENT_LEDGER"
+            ):
+                validate_lease(event(), declaration, [altered], FILES)
+
     def test_lease_conflict_and_later_release_are_reconciled(self):
         validate = guard()["validate_lease"]
         declaration = receipt(issue="980")

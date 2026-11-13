@@ -234,7 +234,17 @@ jobs:
                   if not isinstance(comment, dict) or type(comment.get("id")) is not int:
                       raise ValueError("MAIN_PR_COMMENTS_ENTRY_INVALID")
                   if comment["id"] == receipt["id"]:
-                      found = comment == receipt
+                      # GitHub LIST may include App client_id absent in single-comment GET.
+                      # Stable security identity is required; ignore representation-only enrichment.
+                      stable_keys = ("id", "node_id", "html_url", "issue_url",
+                                     "body", "created_at", "updated_at",
+                                     "author_association")
+                      found = (all(comment.get(key) == receipt.get(key)
+                                   for key in stable_keys)
+                               and comment.get("user", {}).get("login") ==
+                                   receipt.get("user", {}).get("login")
+                               and comment.get("user", {}).get("id") ==
+                                   receipt.get("user", {}).get("id"))
                   text = comment.get("body") or ""
                   if comment.get("user", {}).get("login") != OWNER:
                       continue
