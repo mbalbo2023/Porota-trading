@@ -1,0 +1,33 @@
+name: RC6 R321 ROOT install authority (OFFHOST HOLD79 only)
+
+# Only the code-level preflight exists in R321. There is NO host transaction,
+# SSH connection, ROOT pin change or installation stage in this revision.
+# Future physical stages require separate audited approval/transport code.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  root_install_offhost_preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Checkout exact trusted main event SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Keep ROOT authority fail-closed until distinct GO/transport integration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m scripts.rc6_r321_root_install_actions --check-offhost
