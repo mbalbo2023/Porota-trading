@@ -1,0 +1,44 @@
+name: RC6 R302 root receipt physical witness READ_ONLY (NO HOST GO)
+
+# Independently observe the R301 files-only root bootstrap in place. Never
+# install/update an inode, launch the installed helper, or promote a candidate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A physical witness cannot overlap the single unified deploy's host custody.
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  physical_files_only:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed trusted-main event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Independently witness exact R301 root files lock receipt and stages
+        timeout-minutes: 3
+        shell: bash
+        env:
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          # Two bounded SSH connections at most: DO metadata identity first,
+          # then literal sudo -n stat/sha256sum/test observations only.
+          # This never grants HOST GO, root-bundle approval or Deploy V2.
+          python3 -I scripts/rc6_r302_bootstrap_receipt_preflight.py --physical
