@@ -160,9 +160,11 @@ def freeze_root_launch_profiles(*, candidate_sha, candidate_tree,
         raise FreezeHold("PROFILE_RUNTIME_CONTRACT_REJECTED") from exc
     profiles_raw = _canonical_json(profile_document)
 
-    # Inert source template: no [Install], no shell, no direct Docker/systemctl
-    # and RefuseManualStart until a separately witnessed owner GO+root stage.
-    # The exact root-installed helper will later verify approvals before any OCI.
+    # Reuse the candidate's existing critical protector-stage semantics:
+    # ExecCondition stays HOLD79 until a separate, independently reviewed GO.
+    # Systemd consumes '$', so the existing shell arithmetic uses '$$' in unit
+    # bytes. Nothing here runs that shell, enables the unit or stages systemd.
+    # The exact root-installed helper additionally enforces its own approval.
     unit_raw = ("# RC6_ROOT_UNIT_TEMPLATE_V1 CODE_ONLY NO_HOST_GO\n"
                 "# candidate_sha=" + candidate_sha + "\n"
                 "# candidate_tree=" + candidate_tree + "\n"
@@ -172,15 +174,24 @@ def freeze_root_launch_profiles(*, candidate_sha, candidate_tree,
                 "# generation=" + generation + "\n"
                 "[Unit]\n"
                 "Description=Porota RC6 PAPER critical approval staged template\n"
-                "Requires=docker.service\nAfter=docker.service\n"
+                "Requires=docker.service porota-critical-github-proxy-rc6.service\n"
+                "After=docker.service porota-critical-github-proxy-rc6.service\n"
                 "ConditionPathExists=" + _APPROVAL_PATH + "\n"
-                "RefuseManualStart=yes\n"
                 "[Service]\n"
                 "Type=oneshot\nUser=root\nGroup=root\n"
-                "RemainAfterExit=no\nNoNewPrivileges=yes\n"
+                "RemainAfterExit=yes\nNoNewPrivileges=yes\n"
+                "ExecCondition=/bin/sh -c 'echo "
+                "RC6_OCI_CUSTODY_HOLD79:CRITICAL_CUTOVER_NOT_AUTHORIZED"
+                " >&2; exit 79'\n"
+                "ExecStartPre=/bin/sh -c 'i=0; while [ ! -S "
+                "/run/porota-critical-approval-rc6/github.sock ]; do "
+                "i=$$((i+1)); [ $$i -lt 30 ] || exit 1; "
+                "sleep 1; done'\n"
                 "ExecStart=/usr/local/sbin/porota-rc6-oci-custody critical start-newborn"
                 " --paper-only --source-sha " + critical_source_sha +
-                " --generation " + generation + "\n").encode("ascii")
+                " --generation " + generation + "\n"
+                "Restart=no\nRestartSec=5\n"
+                "TimeoutStartSec=60\nTimeoutStopSec=30\n").encode("ascii")
     _require(len(profiles_raw) <= 128 * 1024 and len(unit_raw) <= 128 * 1024,
              "PROFILE_OUTPUT_TOO_LARGE")
     return FrozenLaunchProfileProposal(

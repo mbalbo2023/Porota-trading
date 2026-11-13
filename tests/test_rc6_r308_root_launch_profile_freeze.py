@@ -99,15 +99,20 @@ class RootLaunchProfileFreezeTest(unittest.TestCase):
         source["/app/cf_intraday_scalping.py"] = "9" * 64
         self.assertEqual(before.profiles_bytes, later.profiles_bytes)
 
-    def test_systemd_unit_is_inert_until_owner_go_and_never_uses_shell(self):
+    def test_systemd_template_reuses_existing_hold79_protector_semantics(self):
         unit = self.make().unit_template_bytes.decode("utf-8")
         self.assertIn("ExecStart=/usr/local/sbin/porota-rc6-oci-custody critical start-newborn", unit)
         self.assertIn("--paper-only --source-sha " + "4" * 40, unit)
         self.assertIn("--generation " + "e" * 32, unit)
-        self.assertIn("RefuseManualStart=yes", unit)
+        self.assertIn("Requires=docker.service porota-critical-github-proxy-rc6.service", unit)
+        self.assertIn("After=docker.service porota-critical-github-proxy-rc6.service", unit)
         self.assertIn("ConditionPathExists=/var/lib/porota-rc6-oci-custody/host-helper-approval.json", unit)
-        for forbidden in ("ExecStop", "[Install]", "/bin/sh", "systemctl", "docker ",
-                          "%", "$", "ExecStartPre=", "WantedBy="):
+        self.assertIn("ExecCondition=/bin/sh -c 'echo RC6_OCI_CUSTODY_HOLD79:CRITICAL_CUTOVER_NOT_AUTHORIZED >&2; exit 79'", unit)
+        self.assertIn("i=$$((i+1)); [ $$i -lt 30 ]", unit)
+        self.assertNotIn("i=$((i+1))", unit)
+        self.assertNotIn("[ $i -lt 30 ]", unit)
+        for forbidden in ("ExecStop", "[Install]", "RefuseManualStart=yes",
+                          "systemctl", "docker rm", "docker stop", "WantedBy="):
             self.assertNotIn(forbidden, unit)
         for source in ("a" * 40, "b" * 40, "sha256:" + "c" * 64,
                        "sha256:" + "d" * 64, "docker-rootful-rc6"):
