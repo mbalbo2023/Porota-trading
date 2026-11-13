@@ -227,6 +227,38 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(guard.BootstrapHold):
                 guard.validate_context(context(**case))
 
+    def test_github_2026_app_jwt_token_is_opaque_and_safe_as_header(self):
+        """A new ghs_APPID_JWT must survive entry and fixed GitHub GET."""
+        from unittest import mock
+
+        # Deliberately synthetic, not a secret or a cryptographically valid JWT.
+        token = "ghs_123456_eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig-_.~+/="
+        guard.validate_context(context(GITHUB_TOKEN=token))
+        response = mock.Mock(status=200)
+        response.getheader.return_value = "application/json"
+        response.read.return_value = b'{}'
+        connection = mock.Mock()
+        connection.getresponse.return_value = response
+        with mock.patch.object(guard.http.client, "HTTPSConnection",
+                               return_value=connection):
+            self.assertEqual(guard.fetch_github_https_bytes(
+                "/repos/mbalbo2023/Porota-trading/git/ref/heads/main",
+                token), b'{}')
+        self.assertEqual(connection.request.call_args.kwargs["headers"]["Authorization"],
+                         "Bearer " + token)
+
+    def test_opaque_token_must_never_inject_http_header_or_escape_ascii(self):
+        for token in ("a" * 12 + "\rInjected:yes", "a" * 12 + "\nInjected:yes",
+                      "a" * 12 + "\x00", "a" * 12 + "\t", "a" * 12 + " ",
+                      "a" * 12 + "\u00e9", "short"):
+            with self.subTest(token_kind=repr(token[-4:])), self.assertRaises(
+                    guard.BootstrapHold):
+                guard.validate_context(context(GITHUB_TOKEN=token))
+            with self.subTest(token_kind=repr(token[-4:])), self.assertRaises(
+                    guard.BootstrapHold):
+                guard.fetch_github_https_bytes(
+                    "/repos/mbalbo2023/Porota-trading/git/ref/heads/main", token)
+
     def test_owner_receipt_edited_spoofed_or_replayed_on_new_main_fails(self):
         valid = owner_comment()
         now = datetime(2026, 11, 12, 22, 35, tzinfo=timezone.utc)
