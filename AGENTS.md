@@ -1,6 +1,6 @@
 # POROTA TRADING — CODEX / AGENT ENTRYPOINT
 
-Version: `2026-10-28/1`
+Version: `2026-11-13/R335`
 
 This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
@@ -9,10 +9,10 @@ This file is the repository entrypoint for agents that start from the default br
 For any RC6 analysis, development, audit, CI, deploy, dashboard, broker, market-data, strategy, or runtime task:
 
 1. Resolve the current canonical RC6 product branch from fresh GitHub/release evidence.
-2. Governance bootstrap at the A149 (28-Oct-2026 ART) documentary cut:
+2. Governance bootstrap (verify all pointers from fresh GitHub):
    - product branch: `deploy/rc6-pr69-isolated-20260915` (verify the current canonical branch);
    - **do not pin a product SHA from main**; verify current HEAD/PRs/Actions live;
-   - open the [latest #732 continuity and handoff](https://github.com/mbalbo2023/Porota-trading/issues/732), starting with [A148](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6459266846) and its [GREEN addendum](https://github.com/mbalbo2023/Porota-trading/issues/732#issuecomment-6459290988), then all newer corrections;
+   - open [#1093 continuity](https://github.com/mbalbo2023/Porota-trading/issues/1093), successor to saturated [#732](https://github.com/mbalbo2023/Porota-trading/issues/732); read its newest corrections and follow any explicitly verified newer successor;
    - apply [RC6 Deploy V2 / Continuity A149](docs/governance/RC6_DEPLOY_V2_CONTINUITY_20261028.md) before claiming ownership or deployment.
 3. Read the `AGENTS.md` from that product branch.
 4. Read that branch's `ops/policy/porota-policy.yaml`.
@@ -20,6 +20,29 @@ For any RC6 analysis, development, audit, CI, deploy, dashboard, broker, market-
 6. Inspect current PRs/workstreams and ownership before choosing a writable scope.
 7. Branch from the verified current product SHA for RC6 work unless a newer canonical integration base is explicitly proven.
 8. Never continue from chat memory, an old checkpoint, or this file alone.
+
+Before any new code **or tests**, complete a historical applicability checklist:
+search current code, commits, open/closed PRs, issues, tests and Actions for an
+equivalent implementation; record exact queries/links, SHA and findings. Classify
+each requested item as implemented, partial, missing, superseded or not applicable,
+using the evidence states below separately. Reuse verified work rather than
+reimplementing it. Record why each proposed test applies to current behavior and
+what real regression it detects. Absence from chat memory proves nothing.
+
+Obtain and re-read fresh scope-specific WRITE_OWNER approval in
+[#980 ownership ledger](https://github.com/mbalbo2023/Porota-trading/issues/980)
+before writes, including tests; reconcile later releases/supersessions, overlapping
+owners, exact branch/base SHA and paths. For main CI, use explicit single-line
+`Workstream ID`, `Ownership status: ACTIVE`, `Work branch`, `Base SHA`, and
+`Scope paths` fields in the owner-approved comment, plus `WRITE_OWNER`. A later
+structured owner decision with the exact Workstream ID and explicit Ownership
+status blocks that lease until reconciled; ordinary progress notes do not.
+READ_ONLY remains nonblocking. Never claim perfect agent memory: fresh evidence
+and fail-closed checks reduce omissions; unknowns stay NO_VERIFICADO.
+
+Keep the current SHA/PR, Actions run, artifact/manifest/digest and runtime receipt
+separate, timestamped and linked; say NO_VERIFICADO for unavailable layers. A
+historical checklist, prose rule or PR-template checkbox is not technical CI.
 
 If the current product branch or SHA differs from the pointer above, the fresh GitHub/runtime evidence wins. Do not "correct" current reality back to this document.
 
@@ -194,9 +217,30 @@ The default branch still has a legacy PR check that asks for September checkpoin
 
 ## 12. Continuity and 100%-electronic validation update (A149, 28-Oct-2026 ART)
 
-- Treat the A149 governance runbook as **process**, not as runtime truth; reconcile it with the newest #732/#624, protected product workflow and machine receipts before every action.
+- Treat the A149 governance runbook as **historical process**, not as runtime truth; reconcile it with newest #1093 (or verified successor)/#624, protected product workflow and machine receipts before every action.
 - Every meaningful incident must close the loop `ERROR → RCA → FIX → GUARD → TEST/CI/PREFLIGHT → EVIDENCE → DOC UPDATE`; if a permanent automated guard is impossible, document why and retain `NO_VERIFICADO`/`BLOQUEADO` as appropriate.
 - The operator's objective is **100% electronic evidence coverage of the applicable acceptance criteria**, including SHA/tree/artifact/digest, code/tests, host/runtime, PAPER/0, DB, timers/workers, family readiness and UI when in scope. Never call unmeasured or impossible-to-observe criteria GREEN; market-OPEN events cannot be fabricated outside the session.
 - Parallelize independent `READ_ONLY` evidence lanes (PAPER/SHADOW/scalping architecture, readiness by ten families, scheduler/IOL guardian, SQLite/cauciones/disk, QA/PR governance) without overlapping the single integration `WRITE_OWNER` or global `DEPLOY_OWNER`.
 - A125 date-bound permission for 27-Oct cannot automatically authorize 28-Oct timer rearming; E09 host stress is cancelled / E10 not applicable. Exact #624 comments are per candidate SHA/tree. Preserve SHADOW dependencies and source freshness; do not conflate cauciones-accounting NO_GO with a scalping-algorithm failure.
 - Docs-only governance changes belong on a non-deploy branch and must not promote, restart, or mutate the Droplet. Do not add these documentary changes to the live #752 candidate or its frozen artifact.
+
+## 13. Technical enforcement boundary (R335)
+
+The existing main checkpoint-attestation workflow validates declared metadata,
+exact changed paths, pinned base/head and an owner-approved #980 lease against
+the paginated ledger, rejecting overlapping structured ACTIVE leases of other
+workstreams after reconciling their latest RELEASED/SUPERSEDED decisions.
+It fails closed on later exact structured owner decisions or API/budget errors.
+The authored workflow executes tests and its validator from the pinned trusted
+base, not proposed source. The PR workflow itself remains modifiable; this is
+not immutable workflow enforcement. Initial adoption uses the previous base
+validator; new rules only execute after integration. Real Actions enforcement is
+NO_VERIFICADO until the exact run and negative acceptance evidence are recorded.
+Required-check branch protection and protection of the workflow itself require
+separate verification; this PR does not establish them. Metadata cannot prove a
+human performed the historical search, completeness, runtime correctness or
+absence of all duplicate work. This is a timestamped ownership snapshot, not a
+permanent lease lock: later #980 comments do not rerun the PR check. A human must
+recheck ownership and overlapping scopes immediately before merge. Automatic
+merge-time enforcement remains NO_VERIFICADO. Narrative policy and template
+remain review duties.

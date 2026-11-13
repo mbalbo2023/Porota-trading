@@ -47,6 +47,75 @@ def receipt(*, body="RC6_A281_MAIN_GOVERNANCE WRITE_OWNER " + " ".join(FILES),
 
 
 class MainPrGovernanceTest(unittest.TestCase):
+    def test_noncanonical_paths_fail_for_pr_and_every_active_lease(self):
+        namespace = guard()
+        declaration = receipt(issue="980")
+        declaration.update(id=10, body=BODY + "\nOwnership status: ACTIVE\nWRITE_OWNER")
+        for path in ("./tests", ".", "tests/./subdir", "tests//subdir", "/tests", "tests/../other", "/", "tests/"):
+            other = dict(declaration, id=9, body="Workstream ID: OTHER_WORKSTREAM\nOwnership status: ACTIVE\nWRITE_OWNER\nScope paths: " + path)
+            with self.subTest(path=path, source="ledger"), self.assertRaises(ValueError):
+                namespace["validate_lease"](event(), declaration, [other, declaration], FILES)
+            invalid_body = BODY.replace("Scope paths: " + ", ".join((
+                ".github/pull_request_template.md", ".github/workflows/checkpoint-attestation.yml",
+                "tests/test_rc6_main_pr_governance.py")), "Scope paths: " + path)
+            with self.subTest(path=path, source="PR"), self.assertRaises(ValueError):
+                namespace["validate"](event(invalid_body), receipt(body="RC6_A281_MAIN_GOVERNANCE WRITE_OWNER " + path), {path})
+
+    def test_lease_conflict_and_later_release_are_reconciled(self):
+        validate = guard()["validate_lease"]
+        declaration = receipt(issue="980")
+        declaration.update(id=10, body=BODY + "\nOwnership status: ACTIVE\nWRITE_OWNER")
+        other = dict(declaration, id=9, body=declaration["body"].replace(
+            "RC6_A281_MAIN_GOVERNANCE", "OTHER_WORKSTREAM"))
+        with self.assertRaisesRegex(ValueError, "OVERLAPPING_ACTIVE"):
+            validate(event(), declaration, [other, declaration], FILES)
+        release = dict(other, id=11, body="Workstream ID: OTHER_WORKSTREAM\nOwnership status: RELEASED")
+        validate(event(), declaration, [other, declaration, release], FILES)
+
+    def test_status_note_and_prefix_workstream_do_not_revoke_lease(self):
+        validate = guard()["validate_lease"]
+        declaration = receipt(issue="980")
+        declaration.update(id=10, body=BODY + "\nOwnership status: ACTIVE\nWRITE_OWNER")
+        note = dict(declaration, id=11, body="RC6_A281_MAIN_GOVERNANCE tests passed")
+        validate(event(), declaration, [declaration, note], FILES)
+        prefix = dict(note, body="Workstream ID: RC6_A281_MAIN_GOVERNANCE_OTHER\nOwnership status: RELEASED")
+        validate(event(), declaration, [declaration, prefix], FILES)
+
+    def test_current_lease_rejects_release_supersession_and_wrong_identity(self):
+        validate_lease = guard()["validate_lease"]
+        declaration = receipt(issue="980", url=URL.replace("/732#", "/980#"))
+        declaration["id"] = 10
+        declaration["body"] = "\n".join(("Workstream ID: RC6_A281_MAIN_GOVERNANCE",
+            "Ownership status: ACTIVE", "Work branch: fix/rc6-a281-main-pr-governance",
+            "Base SHA: " + BASE, "Scope paths: " + ", ".join(sorted(FILES)), "WRITE_OWNER"))
+        validate_lease(event(), declaration, [declaration], FILES)
+        for status in ("RELEASED", "SUPERSEDED", "ACTIVE"):
+            later = dict(declaration, id=11)
+            later["body"] = declaration["body"].replace("Ownership status: ACTIVE", "Ownership status: " + status)
+            with self.subTest(status=status), self.assertRaises(ValueError):
+                validate_lease(event(), declaration, [declaration, later], FILES)
+        for key, replacement in (("Base SHA: " + BASE, "Base SHA: " + "f" * 40),
+                                 ("Ownership status: ACTIVE", "Ownership status: RELEASED"),
+                                 ("Work branch: fix/rc6-a281-main-pr-governance", "Work branch: other"),
+                                 ("Scope paths: " + ", ".join(sorted(FILES)), "Scope paths: unrelated.py")):
+            invalid = dict(declaration, body=declaration["body"].replace(key, replacement))
+            with self.assertRaises(ValueError):
+                validate_lease(event(), invalid, [invalid], FILES)
+        for invalid in (dict(declaration, user={"login": "attacker"}),
+                        dict(declaration, issue_url=declaration["issue_url"].replace("980", "732"))):
+            with self.assertRaises(ValueError):
+                validate_lease(event(), invalid, [invalid], FILES)
+        with self.assertRaisesRegex(ValueError, "NOT_IN_CURRENT_LEDGER"):
+            validate_lease(event(), declaration, [], FILES)
+
+    def test_comment_pagination_requires_terminal_page_and_budget(self):
+        comments = guard()["owner_comments"]
+        self.assertEqual(comments(lambda page: [{"id": 1}] if page == 1 else []), [{"id": 1}])
+        first = [{"id": i} for i in range(100)]
+        self.assertEqual(comments(lambda page: first if page == 1 else []), first)
+        with self.assertRaisesRegex(ValueError, "COMMENTS_BUDGET"):
+            comments(lambda page: [{"id": page * 100 + i} for i in range(100)])
+
     def test_template_matches_guard_and_has_no_autofilled_evidence(self):
         template = TEMPLATE.read_text(encoding="utf-8")
         for name in ("Workstream ID", "Owner declaration URL", "Work branch",
