@@ -1,0 +1,43 @@
+name: RC6 R321 ROOT install authority (OFFHOST HOLD79 only)
+
+# Retain the existing R321 workflow path and original fixed HOLD79 stage.
+# R340 now authenticates live GitHub main/PR and unique R252 D/E ZIP bytes first.
+# This revision has NO SSH/ROOT/install/seal/deploy action. A separate future
+# approved integration must wire the existing R309/R305/R321 host executors.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  root_install_offhost_preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact trusted main event SHA without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Authenticate exact current D/E release bytes (R340 OFFHOST only)
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m scripts.rc6_r340_trusted_root_env_controller --verify-offhost
+      - name: Keep ROOT install fail-closed until distinct PIN/INSTALL/ENV GO and transport
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m scripts.rc6_r321_root_install_actions --check-offhost
