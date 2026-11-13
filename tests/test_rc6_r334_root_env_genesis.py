@@ -123,10 +123,37 @@ def test_pair_digests_are_role_bound_and_no_output(capsys):
     assert capsys.readouterr() == ('', '')
 
 
-def test_real_r271_semantic_consumer_accepts_payload(monkeypatch):
+def test_missing_external_r271_exercises_local_contract_without_skip(monkeypatch):
+    monkeypatch.delenv('RC6_R271_HELPER_SOURCE', raising=False)
+    try:
+        evidence = _check_r271_or_local_contract(monkeypatch)
+    except pytest.skip.Exception:
+        pytest.fail('missing external R271 must test local contract, not skip CI')
+    assert evidence == 'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO'
+
+
+def test_r271_pinned_consumer_or_explicit_local_contract(monkeypatch):
+    evidence = _check_r271_or_local_contract(monkeypatch)
+    assert evidence in ('PINNED_R271_SEMANTICS_VALIDATED',
+                        'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO')
+
+
+def _check_r271_or_local_contract(monkeypatch):
     path = os.environ.get('RC6_R271_HELPER_SOURCE')
     if not path:
-        pytest.skip('NO_VERIFICADO: separate pinned R271 source not consolidated')
+        # A clean checkout lacks the separate R271 implementation. Exercise
+        # the local byte contract instead; this is NOT external R271 evidence.
+        dashboard = build(b'ENVIRONMENT=PRODUCTION\n')
+        observer = build(b'TELEGRAM_BOT_TOKEN=synthetic-observer=a==\n', 'observer')
+        assert dashboard.payload == (b'ENVIRONMENT=PRODUCTION\n'
+            b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n'
+            b'REAL_ORDERS_ALLOWED=false\n')
+        assert observer.payload == (b'MARKET_OPEN_HOUR=10\nMARKET_OPEN_MINUTE=30\n'
+            b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n'
+            b'REAL_ORDERS_ALLOWED=false\nTELEGRAM_BOT_TOKEN=synthetic-observer=a==\n')
+        assert not dashboard.host_go and not observer.host_go
+        assert not dashboard.deploy_authorized and not observer.deploy_authorized
+        return 'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO'
     assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
         'd83550318fd4e38f88d072cc15f19fbef710fd0b752a226ec13c3f16e6c88aa5'
     ), 'R271 consumer source changed: review new pinned source before compatibility claim'
@@ -141,3 +168,4 @@ def test_real_r271_semantic_consumer_accepts_payload(monkeypatch):
         monkeypatch.setattr(consumer, '_read_root_owned', lambda path, expected_mode: proposal.payload)
         consumer._verify_root_sealed_env('/var/lib/porota-rc6-oci-custody/generations/' +
             'a' * 32 + '/env/' + role + '.env', proposal.sha256)
+    return 'PINNED_R271_SEMANTICS_VALIDATED'
