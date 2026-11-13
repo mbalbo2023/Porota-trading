@@ -6,10 +6,13 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 import yaml
+from unittest.mock import patch
 
 from scripts import rc6_r321_root_install_actions as r321
+from scripts import rc6_host_rootowned_installer_contract as r280
 
 
 NOW = datetime(2026, 11, 13, 14, 0, tzinfo=timezone.utc)
@@ -119,6 +122,25 @@ class R321RootInstallActionsTest(unittest.TestCase):
                                     expected_manifest_sha256=SHA256(manifest), now=NOW)
         self.assertEqual(caught.exception.reason, "ROOT_SOURCE_HASH_MISMATCH")
 
+    def test_source_mutated_after_approval_does_not_change_frozen_staged_bytes(self):
+        manifest, sources = fixture(large=False)
+        original = r280._validate_approval
+
+        def concurrent_source_change(*args, **kwargs):
+            result = original(*args, **kwargs)
+            sources["custody"] = b"ATTACKER_CHANGED_SOURCE_AFTER_VALIDATION"
+            return result
+
+        with patch.object(r280, "_validate_approval",
+                          side_effect=concurrent_source_change):
+            plan = r321.build_staging_plan(
+                manifest, sources, expected_manifest_sha256=SHA256(manifest), now=NOW)
+        staged = b"".join(chunk.data for chunk in plan.chunks
+                          if chunk.role == "custody")
+        self.assertEqual(staged, b"C" * 10)
+        self.assertNotEqual(staged, sources["custody"])
+        self.assertEqual(SHA256(staged), json.loads(manifest)["files"]["custody"])
+
     def test_roles_are_exact_and_no_unknown_paths_are_planned(self):
         manifest, sources = fixture(large=False)
         for bad in (dict(sources, new_file=b"bad"),
@@ -150,6 +172,24 @@ class R321RootInstallActionsTest(unittest.TestCase):
                                     now=datetime(2026, 11, 13, 16, 0, tzinfo=timezone.utc))
         self.assertEqual(caught.exception.reason, "ROOT_APPROVAL_R280_REJECTED")
 
+    def test_overflow_from_r280_approval_expiry_is_normalized_to_hold79(self):
+        _manifest, sources = fixture(large=False)
+        approval = json.loads(sources["approval"])
+        approval["expires_at"] = "9999-12-31T23:30:00Z"
+        sources["approval"] = canonical(approval)
+        manifest = canonical({
+            "schema": "RC6_ROOT_INSTALL_MANIFEST_V1", "candidate_sha": CANDIDATE,
+            "candidate_tree": TREE, "paper_mode": "PRODUCTION_PAPER",
+            "real_orders_allowed": False,
+            "files": {role: SHA256(raw) for role, raw in sources.items()},
+        })
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(
+                manifest, sources,
+                expected_manifest_sha256=SHA256(manifest),
+                now=datetime(9999, 12, 31, 23, 0, tzinfo=timezone.utc))
+        self.assertEqual(caught.exception.reason, "ROOT_APPROVAL_R280_REJECTED")
+
     def test_stage_size_budget_blocks_large_total_without_host(self):
         manifest, sources = fixture(large=False)
         sources["custody"] = b"C" * (512 * 1024)
@@ -179,14 +219,23 @@ class R321RootInstallActionsTest(unittest.TestCase):
                 r321.validate_dispatch_context(bad)
 
     def test_literal_installer_is_accepted_only_from_reviewed_r305_allowlist(self):
-        allowed = frozenset({r321.INSTALLER_COMMAND})
-        self.assertEqual(r321.require_reviewed_installer_command(allowed),
-                         r321.INSTALLER_COMMAND)
         with self.assertRaises(r321.R321Hold):
-            r321.require_reviewed_installer_command(frozenset())
-        with self.assertRaises(r321.R321Hold):
-            r321.require_reviewed_installer_command(
-                frozenset({"/usr/bin/sudo -n /bin/sh -c id"}))
+            r321.require_reviewed_installer_command()
+        reviewed = SimpleNamespace(
+            reviewed_root_commands=lambda: frozenset({r321.INSTALLER_COMMAND}))
+        with patch.object(r321, "import_module", return_value=reviewed):
+            self.assertEqual(r321.require_reviewed_installer_command(),
+                             r321.INSTALLER_COMMAND)
+        unreviewed = SimpleNamespace(reviewed_root_commands=lambda: frozenset())
+        with patch.object(r321, "import_module", return_value=unreviewed):
+            with self.assertRaises(r321.R321Hold):
+                r321.require_reviewed_installer_command()
+        malformed = SimpleNamespace(reviewed_root_commands=lambda: {r321.INSTALLER_COMMAND})
+        with patch.object(r321, "import_module", return_value=malformed):
+            with self.assertRaises(r321.R321Hold):
+                r321.require_reviewed_installer_command()
+        with self.assertRaises(TypeError):
+            r321.require_reviewed_installer_command(frozenset({r321.INSTALLER_COMMAND}))
 
     def test_physical_entry_is_fail_closed_even_with_a_valid_offhost_plan(self):
         result = io.StringIO()

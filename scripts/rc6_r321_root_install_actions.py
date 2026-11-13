@@ -13,6 +13,7 @@ independent ROOT witness and fresh owner GO at each mutation boundary.
 from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
+from importlib import import_module
 import json
 import os
 import re
@@ -113,34 +114,41 @@ def build_staging_plan(manifest_raw, source_bytes, *, expected_manifest_sha256, 
              "ROOT_MANIFEST_SCHEMA")
     _require(type(source_bytes) is dict and set(source_bytes) == set(_SOURCE_ORDER),
              "ROOT_SOURCE_ROLE_SCOPE")
+    # An upstream source map is mutable. Capture each immutable byte string once,
+    # before hashing, approval and chunking; subsequent reads of the caller's map
+    # would let the physical stage differ from the independently reviewed manifest.
+    try:
+        frozen_sources = {role: source_bytes[role] for role in _SOURCE_ORDER}
+    except (KeyError, RuntimeError, TypeError) as exc:
+        raise R321Hold("ROOT_SOURCE_SNAPSHOT_UNVERIFIED") from exc
     _require(type(now) is datetime and now.tzinfo is not None,
              "ROOT_APPROVAL_CLOCK_REQUIRED")
     _require(all(type(raw) is bytes and 0 < len(raw) <=
                  (r280.TARGETS[role][2] if role in r280.TARGETS else 128 * 1024)
-                 for role, raw in source_bytes.items()), "ROOT_SOURCE_SIZE")
-    total = len(manifest_raw) + sum(len(raw) for raw in source_bytes.values())
+                 for role, raw in frozen_sources.items()), "ROOT_SOURCE_SIZE")
+    total = len(manifest_raw) + sum(len(raw) for raw in frozen_sources.values())
     _require(total <= MAX_TOTAL_BYTES, "ROOT_STAGE_TOTAL_BUDGET")
 
-    for role, raw in source_bytes.items():
+    for role, raw in frozen_sources.items():
         expected = manifest["files"][role]
         _require(type(expected) is str and _HEX64.fullmatch(expected),
                  "ROOT_SOURCE_HASH_INVALID")
         _require(hashlib.sha256(raw).hexdigest() == expected,
                  "ROOT_SOURCE_HASH_MISMATCH")
-    _require(source_bytes["helper"].startswith(b"#!/usr/bin/python3 -I\n"),
+    _require(frozen_sources["helper"].startswith(b"#!/usr/bin/python3 -I\n"),
              "ROOT_HELPER_ISOLATED_PYTHON_REQUIRED")
     try:
-        approval = r280._strict_json(source_bytes["approval"],
+        approval = r280._strict_json(frozen_sources["approval"],
                                       limit=r280.TARGETS["approval"][2])
-        _require(source_bytes["approval"] == _canonical(approval),
+        _require(frozen_sources["approval"] == _canonical(approval),
                  "ROOT_APPROVAL_NONCANONICAL")
-        r280._validate_approval(approval, manifest, source_bytes, now=now)
-    except r280.InstallHold as exc:
+        r280._validate_approval(approval, manifest, frozen_sources, now=now)
+    except (r280.InstallHold, OverflowError) as exc:
         raise R321Hold("ROOT_APPROVAL_R280_REJECTED") from exc
 
     chunks = []
     for role in STAGE_ORDER:
-        raw = manifest_raw if role == "manifest" else source_bytes[role]
+        raw = manifest_raw if role == "manifest" else frozen_sources[role]
         for offset in range(0, len(raw), CHUNK_BYTES):
             chunks.append(StageChunk(role, offset // CHUNK_BYTES, offset,
                                      raw[offset:offset + CHUNK_BYTES]))
@@ -170,10 +178,15 @@ def validate_dispatch_context(env):
     return env["GITHUB_SHA"]
 
 
-def require_reviewed_installer_command(allowed_commands):
-    """R305 finite allowlist must independently include this literal."""
-    _require(type(allowed_commands) is frozenset and
-             INSTALLER_COMMAND in allowed_commands,
+def require_reviewed_installer_command():
+    """Require R305's trusted-code finite allowlist, never caller authority."""
+    try:
+        r305 = import_module("scripts.rc6_r305_root_pin_transition_guard")
+        reviewed = r305.reviewed_root_commands()
+    except (ImportError, AttributeError, TypeError) as exc:
+        raise R321Hold("R305_INSTALLER_LITERAL_NOT_REVIEWED") from exc
+    _require(type(reviewed) is frozenset and
+             INSTALLER_COMMAND in reviewed,
              "R305_INSTALLER_LITERAL_NOT_REVIEWED")
     return INSTALLER_COMMAND
 
