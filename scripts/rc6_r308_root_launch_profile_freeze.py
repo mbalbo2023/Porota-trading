@@ -87,6 +87,10 @@ def freeze_root_launch_profiles(*, candidate_sha, candidate_tree,
               (critical_source_sha, _HEX40))
     _require(all(type(value) is str and pattern.fullmatch(value)
                  for value, pattern in fields), "PROFILE_SOURCE_IDENTITY")
+    # The actual candidate helper checks this for BOTH critical start-newborn
+    # and stage-protector. A distinct, syntactically valid SHA stays HOLD79.
+    _require(critical_source_sha == candidate_sha,
+             "CRITICAL_SOURCE_CANDIDATE_MISMATCH")
     _validate_stage(root_stage)
     _require(type(observer_source_sha256) is dict and
              set(observer_source_sha256) == set(_SOURCES) and

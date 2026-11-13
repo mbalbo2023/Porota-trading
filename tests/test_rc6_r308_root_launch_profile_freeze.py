@@ -25,7 +25,7 @@ class RootLaunchProfileFreezeTest(unittest.TestCase):
                 "/app/cf_intraday_scalping.py": "2" * 64,
                 "/app/co_market_sessions_hf6.py": "3" * 64,
             },
-            "critical_source_sha": "4" * 40,
+            "critical_source_sha": "a" * 40,
         }
 
     def make(self, **overrides):
@@ -102,7 +102,7 @@ class RootLaunchProfileFreezeTest(unittest.TestCase):
     def test_systemd_template_reuses_existing_hold79_protector_semantics(self):
         unit = self.make().unit_template_bytes.decode("utf-8")
         self.assertIn("ExecStart=/usr/local/sbin/porota-rc6-oci-custody critical start-newborn", unit)
-        self.assertIn("--paper-only --source-sha " + "4" * 40, unit)
+        self.assertIn("--paper-only --source-sha " + "a" * 40, unit)
         self.assertIn("--generation " + "e" * 32, unit)
         self.assertIn("Requires=docker.service porota-critical-github-proxy-rc6.service", unit)
         self.assertIn("After=docker.service porota-critical-github-proxy-rc6.service", unit)
@@ -156,6 +156,12 @@ class RootLaunchProfileFreezeTest(unittest.TestCase):
             with self.subTest(path=path):
                 with self.assertRaises(freeze.FreezeHold):
                     self.make(root_stage=path)
+
+    def test_critical_source_must_equal_approved_candidate_sha(self):
+        # HostHelperController.dispatch(start-newborn/stage-protector) checks
+        # exact equality; a different valid hex SHA can never be activated.
+        with self.assertRaises(freeze.FreezeHold):
+            self.make(critical_source_sha="4" * 40)
 
 
 if __name__ == "__main__":
