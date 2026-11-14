@@ -40,8 +40,14 @@ class StubREST:
             PREFIX + "/pulls/1087": {
                 "number": 1087, "state": "open", "merged": False,
                 "draft": False,
-                "head": {"sha": CANDIDATE},
-                "base": {"ref": "deploy/rc6-pr69-isolated-20260915"},
+                "head": {
+                    "sha": CANDIDATE, "ref": "candidate-reviewed",
+                    "repo": {"full_name": REPO},
+                },
+                "base": {
+                    "ref": "deploy/rc6-pr69-isolated-20260915",
+                    "sha": "e" * 40, "repo": {"full_name": REPO},
+                },
             },
         }
         self.calls = []
@@ -145,6 +151,59 @@ class R340OffhostTests(unittest.TestCase):
         with self.assertRaises(ControlHold):
             verify_authenticated_release(self.event, checkout_sha=MAIN,
                                          github=self.rest, trusted_release=verified_r252)
+
+    def test_volatile_rest_metadata_during_byte_authentication_is_ignored(self):
+        # A PR's mergeable and updated_at can change without changing its
+        # authenticated Git identity; commit verification metadata can too.
+        def metadata_only(data, *, github):
+            proof = verified_r252(data, github=github)
+            github.records[PREFIX + "/pulls/1087"]["mergeable"] = False
+            github.records[PREFIX + "/pulls/1087"]["updated_at"] = "2026-11-13T23:59:59Z"
+            github.records[PREFIX + "/git/ref/heads/main"]["url"] = "metadata-only"
+            github.records[PREFIX + "/git/commits/" + MAIN]["verification"] = {
+                "verified": True,
+            }
+            return proof
+
+        result = verify_authenticated_release(
+            self.event, checkout_sha=MAIN, github=self.rest,
+            trusted_release=metadata_only,
+        )
+        self.assertEqual(result["status"], "OFFHOST_D_E_BYTES_AUTHENTICATED")
+
+    def test_authority_identity_drift_during_byte_authentication_is_rejected(self):
+        # A change to any selected source, unlike REST presentation metadata,
+        # must still stop the gate even when the R252 proof was valid.
+        drift_cases = (
+            ("head_sha", PREFIX + "/pulls/1087", ("head", "sha"), "0" * 40),
+            ("head_repo", PREFIX + "/pulls/1087", ("head", "repo", "full_name"), "attacker/fork"),
+            ("base_sha", PREFIX + "/pulls/1087", ("base", "sha"), "0" * 40),
+            ("base_ref", PREFIX + "/pulls/1087", ("base", "ref"), "wrong-product"),
+            ("draft", PREFIX + "/pulls/1087", ("draft",), True),
+            ("state", PREFIX + "/pulls/1087", ("state",), "closed"),
+            ("main_ref", PREFIX + "/git/ref/heads/main", ("object", "sha"), "0" * 40),
+            ("main_tree", PREFIX + "/git/commits/" + MAIN, ("tree", "sha"), "0" * 40),
+            ("candidate_tree", PREFIX + "/git/commits/" + CANDIDATE,
+             ("tree", "sha"), "0" * 40),
+        )
+        for label, source, keys, replacement in drift_cases:
+            with self.subTest(drift=label):
+                rest = StubREST()
+
+                def change_identity(data, *, github):
+                    proof = verified_r252(data, github=github)
+                    target = github.records[source]
+                    for key in keys[:-1]:
+                        target = target[key]
+                    target[keys[-1]] = replacement
+                    return proof
+
+                with self.assertRaisesRegex(ControlHold,
+                                            "GITHUB_HEAD_CHANGED_DURING_AUTH"):
+                    verify_authenticated_release(
+                        self.event, checkout_sha=MAIN, github=rest,
+                        trusted_release=change_identity,
+                    )
 
     def test_r252_receipt_must_prove_downloaded_bytes(self):
         def liar(data, *, github):

@@ -158,9 +158,43 @@ def verify_authenticated_release(
              "RELEASE_PROOF_FIELDS_NOT_EXACT")
 
     # Reopen every source after R252's artifact download (TOCTOU guard).
-    for path, original in ((main_ref_path, main_ref), (main_commit_path, main_commit),
-                           (pr_path, pr), (candidate_commit_path, candidate_commit)):
-        _require(rest(path) == original, "GITHUB_HEAD_CHANGED_DURING_AUTH")
+    # GitHub can alter mergeability, timestamps and other REST presentation
+    # fields mid-download; only the authenticated Git/source identities are
+    # immutable requirements, not entire REST response dictionaries.
+    def ref_identity(record: Mapping[str, Any]) -> tuple[Any, ...]:
+        obj = record.get("object")
+        _require(isinstance(obj, Mapping), "GITHUB_HEAD_CHANGED_DURING_AUTH")
+        return (record.get("ref"), obj.get("type"), obj.get("sha"))
+
+    def commit_identity(record: Mapping[str, Any]) -> tuple[Any, ...]:
+        tree = record.get("tree")
+        _require(isinstance(tree, Mapping), "GITHUB_HEAD_CHANGED_DURING_AUTH")
+        return (record.get("sha"), tree.get("sha"))
+
+    def pr_identity(record: Mapping[str, Any]) -> tuple[Any, ...]:
+        head, base = record.get("head"), record.get("base")
+        _require(isinstance(head, Mapping) and isinstance(base, Mapping),
+                 "GITHUB_HEAD_CHANGED_DURING_AUTH")
+
+        def repo_identity(part: Mapping[str, Any]) -> Any:
+            repo = part.get("repo")
+            _require(repo is None or isinstance(repo, Mapping),
+                     "GITHUB_HEAD_CHANGED_DURING_AUTH")
+            return repo.get("full_name") if isinstance(repo, Mapping) else None
+
+        return (
+            record.get("number"), record.get("state"), record.get("draft"),
+            record.get("merged"), head.get("sha"), head.get("ref"),
+            repo_identity(head), base.get("sha"), base.get("ref"),
+            repo_identity(base),
+        )
+
+    _require(ref_identity(rest(main_ref_path)) == ref_identity(main_ref) and
+             commit_identity(rest(main_commit_path)) == commit_identity(main_commit) and
+             pr_identity(rest(pr_path)) == pr_identity(pr) and
+             commit_identity(rest(candidate_commit_path)) ==
+             commit_identity(candidate_commit),
+             "GITHUB_HEAD_CHANGED_DURING_AUTH")
 
     return {
         "status": "OFFHOST_D_E_BYTES_AUTHENTICATED",
