@@ -366,6 +366,43 @@ class R309BoundedMuxHostTests(TestCase):
                     host.call(command)
             runner.assert_not_called()
 
+    def test_custodian_and_python_version_have_only_observation_commands(self):
+        target = '/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian'
+        version = '/usr/bin/python3 -I --version'
+        sudo = '/usr/bin/sudo -n /usr/bin/'
+        target_reads = {sudo + verb + ' ' + target for verb in (
+            'test ! -L', 'test -e', 'test ! -e',
+            "stat -c '%u|%g|%a|%h|%F|%d|%i|%s' --", 'sha256sum --')}
+        parents = ('/', '/usr', '/usr/local', '/usr/local/libexec', '/usr/local/libexec/porota-rc6-custody')
+        search_checks = {sudo + 'test -x ' + path for path in parents}
+        reads = target_reads | search_checks | {version}
+        with _host_session(operation='PROBE_FILES_ONLY') as (host, _, _), \
+                mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command',
+                           return_value=(0, b'')) as runner:
+            self.assertEqual({cmd for cmd in host.commands if target in cmd}, target_reads)
+            self.assertEqual({cmd for cmd in host.commands if 'python' in cmd}, {version})
+            self.assertEqual({cmd for cmd in host.commands if 'test -x ' in cmd}, search_checks)
+            for command in sorted(reads):
+                self.assertEqual(host.call(command), (0, b''))
+            for command in ('/usr/bin/sudo -n ' + target + ' prepare-env',
+                            '/usr/bin/sudo -n ' + target + ' apply', sudo + 'chmod 0555 -- ' + target,
+                            sudo + 'tee ' + target, sudo + 'sha256sum -- ' + target + '.other',
+                            '/usr/bin/sudo -n ' + version, 'python3 -I --version',
+                            '/usr/bin/python3 --version', '/usr/bin/python3 -I -c print(1)'):
+                with self.subTest(command=command), self.assertRaisesRegex(R309Hold, 'SSH_COMMAND_NOT_REVIEWED'):
+                    host.call(command)
+            for command in (version, sudo + 'sha256sum -- ' + target):
+                with self.subTest(command=command), self.assertRaisesRegex(R309Hold, 'STDIN_FORBIDDEN'):
+                    host.call(command, stdin=b'payload')
+            self.assertEqual(runner.call_count, len(reads))
+
+        with _host_session(r305_module=import_module(R305_NAME)) as (host, _, _), \
+                mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command') as runner:
+            for command in sorted(target_reads | {version}):
+                with self.subTest(command=command), self.assertRaisesRegex(R309Hold, 'SSH_COMMAND_NOT_REVIEWED'):
+                    host.call(command)
+            runner.assert_not_called()
+
     def test_rejects_untrusted_dispatch_before_creating_files_or_ssh(self):
         for key, wrong in (
             ("GITHUB_REF", "refs/heads/product"),
