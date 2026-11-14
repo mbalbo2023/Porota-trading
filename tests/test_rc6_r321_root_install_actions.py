@@ -1,6 +1,7 @@
 """R321 finite ROOT-stage planning only; no SSH, sudo or host changes."""
 
 from contextlib import redirect_stdout
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import io
@@ -12,6 +13,7 @@ import yaml
 from unittest.mock import patch
 
 from scripts import rc6_r321_root_install_actions as r321
+from scripts import rc6_r305_root_pin_transition_guard as real_r305
 from scripts import rc6_host_rootowned_installer_contract as r280
 from scripts import rc6_host_rootowned_installer_cli as r280_cli
 
@@ -310,6 +312,7 @@ def fake_r305_with_host():
         validate_independent_witness=lambda _raw, **_kwargs: {
             "run_id": "43306221122", "run_attempt": "1"},
         verify_owner_go=pin_verify,
+        owner_go_identity=real_r305.owner_go_identity,
         execute_root_pin_transition=pin_transition,
     )
 
@@ -381,6 +384,76 @@ class R321RootInstallActionsTest(unittest.TestCase):
             self.assertIn(path, host.files)
             self.assertEqual(sum(other is host.files[path]
                                  for other in host.files.values()), 1)
+
+    def test_install_recheck_ignores_only_presentation_metadata(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        kwargs["owner_comment"]["user"].update(id=42, node_id="actor-node")
+        kwargs["owner_comment"]["node_id"] = "comment-node"
+        original = kwargs["recheck_install_authority"]
+        def current():
+            proof = original()
+            fresh = deepcopy(proof["owner_comment"])
+            fresh.update(reactions={"total_count": 1}, html_url="presentation-only")
+            fresh["user"].update(avatar_url="new-avatar", followers_url="metadata-only")
+            proof["owner_comment"] = fresh
+            return proof
+        kwargs["recheck_install_authority"] = current
+        with patch.object(r321, "import_module", side_effect=imports):
+            result = r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(result["status"], "ROOT_INSTALLED_FILES_ONLY_NOT_HOST_GO")
+
+    def test_install_snapshot_rejects_in_place_stable_identity_drift_before_link(self):
+        changed = install_go_fixture()[-1]
+        body = json.loads(changed["body"].split("=", 1)[1])
+        body["nonce"] = "d" * 32  # Valid scope, but a different signed-off body.
+        changed["body"] = r321.OWNER_GO_MARKER + canonical(body).decode()
+        cases = (
+            (("id",), 457), (("id",), 456.0),
+            (("issue_url",), "foreign-issue"),
+            (("user", "login"), "other"), (("user", "id"), 43),
+            (("user", "id"), 42.0), (("user", "node_id"), "other-node"),
+            (("node_id",), "other-comment"),
+            (("author_association",), "CONTRIBUTOR"),
+            (("created_at",), "2026-11-13T13:59:00Z"),
+            (("updated_at",), "2026-11-13T14:00:01Z"),
+            (("body",), install_go_fixture()[-1]["body"] + " "),
+            (("body",), changed["body"]),
+            (("user", "id"), None),
+        )
+        for keys, value in cases:
+            with self.subTest(keys=keys, value=value):
+                host, _r305, context, kwargs, imports = simulated_install()
+                comment = kwargs["owner_comment"]
+                comment["user"].update(id=42, node_id="actor-node")
+                comment["node_id"] = "comment-node"
+                def mutate(_host, _path):
+                    target = comment
+                    for key in keys[:-1]:
+                        target = target[key]
+                    target[keys[-1]] = value
+                host.on_append = mutate
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertTrue(any(x.startswith("append:") for x in host.mutations))
+                self.assertFalse(any(x.startswith("link:") for x in host.mutations))
+                self.assertEqual(host.install_count, 0)
+
+    def test_install_snapshot_preserves_optional_actor_id_presence(self):
+        for initial, replacement in (({}, {"id": None}), ({"id": None}, {})):
+            with self.subTest(initial=initial):
+                host, _r305, context, kwargs, imports = simulated_install()
+                comment = kwargs["owner_comment"]
+                comment["user"].update(initial)
+                original = kwargs["recheck_install_authority"]
+                def current():
+                    comment["user"] = {"login": "mbalbo2023", **replacement}
+                    return original()
+                kwargs["recheck_install_authority"] = current
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
 
     def test_staging_rejects_root_lock_collisions_dangling_symlinks_and_partial_files(self):
         for conflict in ("lock", "stage-link", "final-link", "partial-stage"):

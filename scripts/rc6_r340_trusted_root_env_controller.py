@@ -99,8 +99,12 @@ def verify_authenticated_release(
              isinstance(pr.get("head"), Mapping) and
              type(pr["head"].get("sha")) is str and
              _SHA40.fullmatch(pr["head"]["sha"]) is not None and
+             isinstance(pr["head"].get("repo"), Mapping) and
+             pr["head"]["repo"].get("full_name") == REPO and
              isinstance(pr.get("base"), Mapping) and
-             pr["base"].get("ref") == PRODUCT,
+             pr["base"].get("ref") == PRODUCT and
+             isinstance(pr["base"].get("repo"), Mapping) and
+             pr["base"]["repo"].get("full_name") == REPO,
              "SINGLE_CANDIDATE_PR_NOT_READY")
     candidate_sha = pr["head"]["sha"]
     candidate_commit_path = _ROOT + "/git/commits/" + candidate_sha

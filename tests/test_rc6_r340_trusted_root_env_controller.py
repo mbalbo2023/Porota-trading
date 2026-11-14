@@ -146,6 +146,29 @@ class R340OffhostTests(unittest.TestCase):
                 verify_authenticated_release(self.event, checkout_sha=MAIN,
                                              github=rest, trusted_release=verified_r252)
 
+    def test_initial_head_and_base_repositories_must_be_exact_mappings(self):
+        invalid = ("foreign", "missing", None, "malformed", [], {},
+                   {"full_name": None}, {"full_name": "attacker/fork"})
+        for side in ("head", "base"):
+            for value in invalid:
+                with self.subTest(side=side, repo=value):
+                    rest = StubREST()
+                    part = rest.records[PREFIX + "/pulls/1087"][side]
+                    if value == "missing":
+                        del part["repo"]
+                    else:
+                        part["repo"] = value
+                    called = []
+                    def release(data, *, github):
+                        called.append(True)
+                        return verified_r252(data, github=github)
+                    with self.assertRaisesRegex(ControlHold,
+                                                "SINGLE_CANDIDATE_PR_NOT_READY"):
+                        verify_authenticated_release(
+                            self.event, checkout_sha=MAIN, github=rest,
+                            trusted_release=release)
+                    self.assertFalse(called)
+
     def test_head_drift_between_authentication_and_receipt_rejected(self):
         self.rest.change_second_pr = True
         with self.assertRaises(ControlHold):
@@ -177,6 +200,7 @@ class R340OffhostTests(unittest.TestCase):
         drift_cases = (
             ("head_sha", PREFIX + "/pulls/1087", ("head", "sha"), "0" * 40),
             ("head_repo", PREFIX + "/pulls/1087", ("head", "repo", "full_name"), "attacker/fork"),
+            ("base_repo", PREFIX + "/pulls/1087", ("base", "repo", "full_name"), "attacker/fork"),
             ("base_sha", PREFIX + "/pulls/1087", ("base", "sha"), "0" * 40),
             ("base_ref", PREFIX + "/pulls/1087", ("base", "ref"), "wrong-product"),
             ("draft", PREFIX + "/pulls/1087", ("draft",), True),
