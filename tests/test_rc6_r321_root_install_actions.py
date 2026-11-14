@@ -72,8 +72,8 @@ def fixture(*, large=True):
     return manifest_raw, sources
 
 
-def install_go_fixture(*, created=NOW, expires=None):
-    _manifest, sources = fixture(large=False)
+def install_go_fixture(*, created=NOW, expires=None, large=False):
+    _manifest, sources = fixture(large=large)
     approval = json.loads(sources["approval"])
     approval["artifact_digest"] = RELEASE_D_DIGEST
     sources["approval"] = canonical(approval)
@@ -294,17 +294,13 @@ def fake_r305_with_host():
                           {cmd for each in stage.values() for cmd in each.values()})
 
     def pin_transition(host, context, **_kwargs):
+        _kwargs["recheck_authority"]()  # Real R305 rechecks inside its transaction.
         host.pin_sha = ("0" * 64 if host.pin_corrupt else context.manifest_sha256)
         host.pin_transitions += 1
         return {"status": "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO"}
 
-    def pin_verify(_comment, _context, **kwargs):
-        if kwargs.get("owner_go_id") != 123 or kwargs.get("operation") != "NEW":
-            raise RuntimeError("wrong pin GO")
-        return {"operation": "RC6_ROOT_PIN_NEW"}
-
     return SimpleNamespace(
-        **constants, PinContext=r321.RootInstallContext,
+        **constants, PinContext=real_r305.PinContext,
         OWNER_GO_MARKER="RC6_R305_ROOT_PIN_GO_V1=",
         reviewed_stage_commands=lambda: MappingProxyType(stage),
         reviewed_root_commands=lambda: whitelist,
@@ -318,15 +314,15 @@ def fake_r305_with_host():
         validate_root_manifest=lambda raw, **_kwargs: json.loads(raw),
         validate_independent_witness=lambda _raw, **_kwargs: {
             "run_id": "43306221122", "run_attempt": "1"},
-        verify_owner_go=pin_verify,
+        verify_owner_go=real_r305.verify_owner_go,
         owner_go_identity=real_r305.owner_go_identity,
         execute_root_pin_transition=pin_transition,
     )
 
 
-def simulated_install():
+def simulated_install(*, large=False):
     (context, manifest, sources, receipt_raw, witness,
-     approval, owner_comment) = install_go_fixture()
+     approval, owner_comment) = install_go_fixture(large=large)
     r305 = fake_r305_with_host()
     host = FakeR309Host(r305.reviewed_root_commands())
     host.staged_receipt = canonical({
@@ -336,7 +332,21 @@ def simulated_install():
         "candidate_sha": context.candidate_sha,
         "host_control_verified": False,
     })
-    pin_comment = {"id": 123, "body": "RC6_R305_ROOT_PIN_GO_V1={}\n"}
+    pin_comment = {
+        "id": 123, "issue_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/1093",
+        "user": {"login": "mbalbo2023"}, "author_association": "OWNER",
+        "created_at": "2026-11-13T14:00:00Z", "updated_at": "2026-11-13T14:00:00Z",
+        "body": real_r305.OWNER_GO_MARKER + canonical({
+            "operation": "RC6_ROOT_PIN_NEW", "issue": 1093,
+            "trusted_main_sha": context.main_sha, "candidate_sha": context.candidate_sha,
+            "candidate_tree": context.candidate_tree, "manifest_sha256": context.manifest_sha256,
+            "witness_artifact_sha256": context.witness_artifact_sha256,
+            "witness_run_id": witness["run_id"], "witness_run_attempt": witness["run_attempt"],
+            "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
+            "host_control_verified": False, "host_identity_source": "PROTECTED_DO_PINS",
+            "expires_at": "2026-11-13T16:00:00Z",
+        }).decode(),
+    }
     def fresh_authority():
         return {
             "owner_comment": owner_comment,
@@ -351,6 +361,12 @@ def simulated_install():
             "release_d_artifact_id": 123456,
             "release_d_artifact_digest": RELEASE_D_DIGEST,
         }
+    ownership = {
+        "operation": "RC6_ROOT_INSTALL_NEW_FILES_ONLY", "authority": "DEPLOY_OWNER",
+        "status": "ACTIVE", "record_id": 901, "owner": "mbalbo2023",
+        "pin_go_id": 123, "install_go_id": 456,
+        "do_id": context.do_id, "do_region": context.do_region,
+    }
     kwargs = dict(
         manifest_raw=manifest, source_bytes=sources, witness_raw=b"simulated-witness",
         owner_comment=owner_comment, owner_go_id=456,
@@ -358,6 +374,7 @@ def simulated_install():
         release_e_receipt_raw=receipt_raw, release_e_run_id="43304509783",
         release_e_run_attempt="1", release_e_artifact_id=78910,
         release_e_artifact_digest=RELEASE_E_DIGEST,
+        ownership_record_id=901, recheck_ownership=lambda: ownership,
         recheck_install_authority=fresh_authority,
         recheck_pin_authority=lambda: (pin_comment, context.main_sha,
                                        context.witness_artifact_sha256),
@@ -373,6 +390,196 @@ def simulated_install():
 
 
 class R321RootInstallActionsTest(unittest.TestCase):
+    def test_install_requires_an_external_global_ownership_provider(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        kwargs.pop("recheck_ownership", None)
+        kwargs.pop("ownership_record_id", None)
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_ownership_requires_the_expected_global_record_and_exact_operation_scope(self):
+        cases = (
+            None, True, {}, {"authority": "WRITE_OWNER"}, {"record_id": True},
+            {"record_id": 901.0}, {"record_id": 902}, {"status": "RELEASED"},
+            {"operation": "OTHER_OPERATION"}, {"owner": "other"},
+            {"pin_go_id": 124}, {"install_go_id": 457},
+            {"do_id": "other-host"}, {"do_region": "nyc1"},
+        )
+        for change in cases:
+            with self.subTest(change=change):
+                host, _r305, context, kwargs, imports = simulated_install()
+                fresh = kwargs["recheck_ownership"]()
+                result = ({**fresh, **change} if type(change) is dict and change else change)
+                kwargs["recheck_ownership"] = lambda: result
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_ownership_revocation_stops_each_next_staging_mutation(self):
+        for after in ("lock", "create", "append", "link"):
+            with self.subTest(after=after):
+                host, r305, context, kwargs, imports = simulated_install(large=True)
+                lease = kwargs["recheck_ownership"]()
+                original_call = host.call
+                def tracked(command, **options):
+                    result = original_call(command, **options)
+                    changed = (after == "lock" and command == r305.STAGE_LOCK_CREATE or
+                               after == "create" and "/dev/null " in command or
+                               after == "append" and "/usr/bin/dd " in command or
+                               after == "link" and "/usr/bin/ln -T " in command)
+                    if changed:
+                        lease["status"] = "RELEASED"
+                    return result
+                host.call = tracked
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                mutations = [x for x in host.mutations if x != "sync"]
+                self.assertEqual(len(mutations), {"lock": 1, "create": 3, "append": 4, "link": 7}[after])
+                self.assertFalse(any(x.startswith("rm:") for x in mutations))
+                self.assertEqual(host.pin_transitions, 0)
+                self.assertEqual(host.install_count, 0)
+
+    def test_r305_internal_recheck_keeps_both_gos_lease_and_original_pin_snapshot(self):
+        for revoked in ("install", "pin", "ownership"):
+            with self.subTest(revoked=revoked):
+                host, r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                pin["user"]["id"] = 42
+                lease = kwargs["recheck_ownership"]()
+                def transition(fake, _context, **options):
+                    if revoked == "install":
+                        kwargs["owner_comment"]["user"]["login"] = "other"
+                    elif revoked == "pin":
+                        pin["user"]["id"] = 43
+                    else:
+                        lease["record_id"] = 902
+                    options["recheck_authority"]()
+                    fake.pin_transitions += 1
+                    return {"status": "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO"}
+                r305.execute_root_pin_transition = transition
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertEqual(sum(x.startswith("link:") for x in host.mutations), 6)
+                self.assertEqual(host.pin_transitions, 0)
+                self.assertEqual(host.install_count, 0)
+
+    def test_pin_recheck_accepts_presentation_metadata_and_rejects_bad_tuple_identity(self):
+        for case in ("metadata", "main", "witness", "tuple"):
+            with self.subTest(case=case):
+                host, _r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                pin["user"].update(id=42, node_id="actor-node")
+                def fresh():
+                    comment = deepcopy(pin)
+                    comment["reactions"] = {"total_count": 2}
+                    comment["user"]["avatar_url"] = "presentation-only"
+                    if case == "tuple":
+                        return (comment,)
+                    return (comment, "0" * 40 if case == "main" else context.main_sha,
+                            "0" * 64 if case == "witness" else context.witness_artifact_sha256)
+                kwargs["recheck_pin_authority"] = fresh
+                with patch.object(r321, "import_module", side_effect=imports):
+                    if case == "metadata":
+                        result = r321.execute_root_install_files_only(host, context, **kwargs)
+                        self.assertEqual(result["status"], "ROOT_INSTALLED_FILES_ONLY_NOT_HOST_GO")
+                    else:
+                        with self.assertRaises(r321.R321Hold):
+                            r321.execute_root_install_files_only(host, context, **kwargs)
+                        self.assertFalse(host.mutations)
+
+    def test_slow_identity_cannot_move_writes_past_expiry_or_lease_revocation(self):
+        for changed in ("expiry", "ownership"):
+            with self.subTest(changed=changed):
+                host, r305, context, kwargs, imports = simulated_install()
+                current = [NOW + timedelta(minutes=1)]
+                kwargs["clock"] = lambda: current[0]
+                lease = kwargs["recheck_ownership"]()
+                original_identity = r305._identity
+                def slow_identity(fake, pin_context):
+                    original_identity(fake, pin_context)
+                    if fake.identity_checks == 2:
+                        if changed == "expiry":
+                            current[0] = NOW + timedelta(hours=2, seconds=1)
+                        else:
+                            lease["status"] = "RELEASED"
+                r305._identity = slow_identity
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_pin_witness_run_and_attempt_must_match_before_any_mutation(self):
+        for field in ("witness_run_id", "witness_run_attempt"):
+            with self.subTest(field=field):
+                host, _r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                body = json.loads(pin["body"].split("=", 1)[1])
+                body[field] = "999"
+                pin["body"] = real_r305.OWNER_GO_MARKER + canonical(body).decode()
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_first_pin_recheck_denial_prevents_all_staging(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        def denied():
+            raise RuntimeError("authenticated PIN revoked")
+        kwargs["recheck_pin_authority"] = denied
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_pin_identity_is_frozen_before_install_callback_can_mutate_it(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        pin = kwargs["pin_owner_comment"]
+        pin["user"]["id"] = 42
+        original = kwargs["recheck_install_authority"]
+        def changed():
+            pin["user"]["id"] = 43
+            return original()
+        kwargs["recheck_install_authority"] = changed
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_pin_revocation_or_expiry_stops_next_chunk(self):
+        for change in ("revoked", "expired"):
+            with self.subTest(change=change):
+                host, _r305, context, kwargs, imports = simulated_install(large=True)
+                current = [NOW + timedelta(minutes=1)]
+                kwargs["clock"] = lambda: current[0]
+                pin = kwargs["pin_owner_comment"]
+                body = json.loads(pin["body"].split("=", 1)[1])
+                body["expires_at"] = "2026-11-13T14:15:00Z"
+                pin["body"] = real_r305.OWNER_GO_MARKER + canonical(body).decode()
+                original = kwargs["recheck_pin_authority"]
+                revoked = [False]
+                def fresh():
+                    if revoked[0]:
+                        raise RuntimeError("authenticated PIN revoked")
+                    return original()
+                kwargs["recheck_pin_authority"] = fresh
+                def change_after_first_append(_host, _path):
+                    if change == "revoked":
+                        revoked[0] = True
+                    else:
+                        current[0] = NOW + timedelta(minutes=20)
+                host.on_append = change_after_first_append
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertEqual(sum(x.startswith("append:") for x in host.mutations), 1)
+                self.assertFalse(any(x.startswith("link:") for x in host.mutations))
+                self.assertEqual(host.install_count, 0)
+
     def test_probe_cli_runs_one_real_mux_and_observes_bootstrap_and_five_targets(self):
         env = {
             'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_REF': 'refs/heads/main',
@@ -610,7 +817,7 @@ class R321RootInstallActionsTest(unittest.TestCase):
         def revoked():
             calls[0] += 1
             proof = original()
-            if calls[0] >= 4:
+            if any(item.startswith("append:") for item in host.mutations):
                 proof["main_sha"] = "0" * 40
             return proof
         kwargs["recheck_install_authority"] = revoked

@@ -535,16 +535,16 @@ def _stage_sha(host, command, reviewed, raw):
 
 def _stage_one(host, cmds, reviewed, *, raw, check_go):
     """One root-only source role, from immutable preapproved plan bytes."""
-    check_go()
     _absence(host, cmds["stage_test_l"], cmds["stage_test_e"], reviewed)
     _absence(host, cmds["final_test_l"], cmds["final_test_e"], reviewed)
+    check_go()
     _host_call(host, cmds["create"], reviewed)
     first = _stage_stat(host, cmds["stage_stat"], reviewed,
                         expected_kind="regular file", expected_mode=0o400,
                         expected_size=0, expected_links=1)
     for offset in range(0, len(raw), CHUNK_BYTES):
-        # Append commands are from R305's finite, six-path allowlist only.
-        # Guard per FILE transaction and AGAIN before publication.
+        # Recheck both GOs and global ownership before every bounded write.
+        check_go()
         _host_call(host, cmds["append"], reviewed,
                    stdin=raw[offset:offset + CHUNK_BYTES])
     _require(_stage_stat(host, cmds["stage_stat"], reviewed,
@@ -553,7 +553,6 @@ def _stage_one(host, cmds, reviewed, *, raw, check_go):
              "ROOT_STAGE_SOURCE_INODE_DRIFT")
     _stage_sha(host, cmds["stage_hash"], reviewed, raw)
     _host_call(host, cmds["sync"], reviewed)
-    check_go()
     # Stage itself exists; only its link type is checked while final stays absent.
     link, output = _host_call(host, cmds["stage_test_l"], reviewed,
                               statuses=(0, 1))
@@ -564,6 +563,7 @@ def _stage_one(host, cmds, reviewed, *, raw, check_go):
                          expected_size=len(raw), expected_links=1) == first,
              "ROOT_STAGE_SOURCE_INODE_DRIFT")
     _stage_sha(host, cmds["stage_hash"], reviewed, raw)
+    check_go()
     _host_call(host, cmds["link"], reviewed)
     _require(_stage_stat(host, cmds["stage_stat"], reviewed,
                          expected_kind="regular file", expected_mode=0o400,
@@ -575,6 +575,7 @@ def _stage_one(host, cmds, reviewed, *, raw, check_go):
              "ROOT_STAGE_FINAL_ALIAS_MISMATCH")
     _stage_sha(host, cmds["final_hash"], reviewed, raw)
     _host_call(host, cmds["final_sync"], reviewed)
+    check_go()
     _host_call(host, cmds["remove_stage"], reviewed)
     _require(_stage_stat(host, cmds["final_stat"], reviewed,
                          expected_kind="regular file", expected_mode=0o400,
@@ -596,14 +597,19 @@ def execute_root_install_files_only(
     owner_go_id, pin_owner_comment, pin_owner_go_id, release_e_receipt_raw,
     release_e_run_id, release_e_run_attempt, release_e_artifact_id,
     release_e_artifact_digest, recheck_install_authority,
-    recheck_pin_authority, clock,
+    recheck_pin_authority, clock, ownership_record_id=None, recheck_ownership=None,
 ):
     """Reviewed R309 transport only; one new ROOT stage+pin+R280 FILES-ONLY.
 
     GH recheck callbacks MUST be implemented in trusted-main Actions from
     authenticated REST (owner, main ref, witness and R251 E/D artifacts). This
     library cannot authenticate caller-provided callbacks or download source
-    artifacts itself. Therefore it is NOT exposed by `main()` or workflow yet.
+    artifacts itself. The required recheck_ownership provider must resolve the
+    complete authenticated #980 ledger to the externally expected active global
+    DEPLOY_OWNER record, then project the operation, owner, two GO IDs and host.
+    Its scalar projection is not a signed GO or proof of API authentication;
+    the trusted controller owns that boundary. No lease expiry is invented.
+    Therefore installation is NOT exposed by `main()` or workflow yet.
     Missing installed R305/R309 code, provenance or GO always HOLD79. Any
     partial ROOT filesystem state is forensics-only; never auto-resume/delete.
     """
@@ -614,6 +620,8 @@ def execute_root_install_files_only(
              type(pin_owner_go_id) is int and pin_owner_go_id > 0 and
              pin_owner_go_id != owner_go_id,
              "ROOT_SEPARATE_GO_OR_RECHECK_REQUIRED")
+    _require(type(ownership_record_id) is int and ownership_record_id > 0 and
+             callable(recheck_ownership), "ROOT_GLOBAL_OWNERSHIP_REQUIRED")
     try:
         r305 = import_module("scripts.rc6_r305_root_pin_transition_guard")
         r309 = import_module("scripts.rc6_r309_bounded_mux_host")
@@ -640,6 +648,13 @@ def execute_root_install_files_only(
     # Freeze the original authorization before any recheck callback can
     # mutate caller-owned mappings. Presentation fields carry no authority.
     owner_identity = comment_identity(owner_comment)
+    pin_identity = comment_identity(pin_owner_comment)
+    expected_ownership = {
+        "operation": "RC6_ROOT_INSTALL_NEW_FILES_ONLY", "authority": "DEPLOY_OWNER",
+        "status": "ACTIVE", "record_id": ownership_record_id, "owner": "mbalbo2023",
+        "pin_go_id": pin_owner_go_id, "install_go_id": owner_go_id,
+        "do_id": context.do_id, "do_region": context.do_region,
+    }
 
     try:
         manifest = r305.validate_root_manifest(
@@ -669,11 +684,55 @@ def execute_root_install_files_only(
     except r280.InstallHold as exc:
         raise R321Hold("ROOT_INSTALL_APPROVAL_UNVERIFIED") from exc
 
+    def verify_ownership(fresh):
+        _require(type(fresh) is dict and set(fresh) == set(expected_ownership) and
+                 all(type(fresh[key]) is type(value) and fresh[key] == value
+                     for key, value in expected_ownership.items()),
+                 "GH_GLOBAL_OWNERSHIP_DRIFT")
+
+    def check_ownership():
+        try:
+            fresh = recheck_ownership()
+        except Exception:
+            raise R321Hold("GH_GLOBAL_OWNERSHIP_UNAVAILABLE") from None
+        verify_ownership(fresh)
+        return fresh
+
+    def verify_pin(comment, current):
+        _require(comment_identity(comment) == pin_identity,
+                 "GH_PIN_OWNER_MAIN_OR_WITNESS_DRIFT")
+        try:
+            pin_go = r305.verify_owner_go(
+                comment, pin_context, owner_go_id=pin_owner_go_id,
+                operation="NEW", now=current)
+        except (RuntimeError, TypeError, ValueError):
+            raise R321Hold("R305_PIN_GO_UNVERIFIED") from None
+        _require(pin_go["witness_run_id"] == witness["run_id"] and
+                 pin_go["witness_run_attempt"] == witness["run_attempt"],
+                 "R305_PIN_GO_WITNESS_RUN_MISMATCH")
+
+    def check_pin_authority():
+        try:
+            fresh = recheck_pin_authority()
+        except Exception:
+            raise R321Hold("GH_PIN_AUTHORITY_UNAVAILABLE") from None
+        current = clock()
+        _require(type(fresh) is tuple and len(fresh) == 3,
+                 "GH_PIN_AUTHORITY_RESPONSE_INVALID")
+        comment, main_sha, witness_sha = fresh
+        _require(comment_identity(comment) == pin_identity and
+                 main_sha == context.main_sha and
+                 witness_sha == context.witness_artifact_sha256,
+                 "GH_PIN_OWNER_MAIN_OR_WITNESS_DRIFT")
+        verify_pin(comment, current)
+        return fresh
+
     def check_install_authority(*, initial=False):
         try:
             fresh = recheck_install_authority()
         except Exception:
             raise R321Hold("GH_INSTALL_AUTHORITY_UNAVAILABLE") from None
+        current = clock()
         _require(type(fresh) is dict and set(fresh) == _RECHECK_KEYS and
                  comment_identity(fresh["owner_comment"]) == owner_identity and
                  fresh["main_sha"] == context.main_sha and
@@ -694,24 +753,42 @@ def execute_root_install_files_only(
                  fresh["release_d_artifact_digest"] ==
                  approval["artifact_digest"],
                  "GH_INSTALL_OWNER_MAIN_OR_ARTIFACT_DRIFT")
+        verify_install(fresh["owner_comment"], current, initial=initial)
+        return fresh["owner_comment"]
+
+    def verify_install(comment, current, *, initial=False):
         install_go = verify_install_owner_go(
-            fresh["owner_comment"], context,
+            comment, context,
             expected_comment_id=owner_go_id, witness=witness,
             release_e_receipt_raw=release_e_receipt_raw,
             release_e_run_id=release_e_run_id,
             release_e_run_attempt=release_e_run_attempt,
             release_e_artifact_id=release_e_artifact_id,
             release_e_artifact_digest=release_e_artifact_digest,
-            approval=approval, now=clock(), initial_budget=initial)
+            approval=approval, now=current, initial_budget=initial)
         _require(install_go["r305_pin_owner_go_id"] == pin_owner_go_id,
                  "R305_PIN_GO_ID_MISMATCH")
 
     def guard(*, initial=False):
-        check_install_authority(initial=initial)
+        # Finish slow SSH/REST first. The lease is the last external read;
+        # both GO windows are then checked at one fresh instant without I/O.
         try:
             r305._identity(host, pin_context)
         except Exception:
             raise R321Hold("ROOT_PROTECTED_DO_IDENTITY_DRIFT") from None
+        install_comment = check_install_authority(initial=initial)
+        pin_authority = check_pin_authority()
+        ownership = check_ownership()
+        current = clock()
+        # Callbacks cannot redefine original or freshly returned mappings.
+        _require(comment_identity(owner_comment) == owner_identity and
+                 comment_identity(pin_owner_comment) == pin_identity and
+                 comment_identity(install_comment) == owner_identity,
+                 "GH_AUTHORITY_INPUT_DRIFT")
+        verify_ownership(ownership)
+        verify_install(install_comment, current, initial=initial)
+        verify_pin(pin_authority[0], current)
+        return pin_authority
 
     guard(initial=True)
     _require(type(pin_owner_comment) is dict and
@@ -720,9 +797,6 @@ def execute_root_install_files_only(
              pin_owner_comment["body"].startswith(r305.OWNER_GO_MARKER),
              "R305_PIN_GO_DISTINCT_REQUIRED")
     try:
-        r305.verify_owner_go(
-            pin_owner_comment, pin_context, owner_go_id=pin_owner_go_id,
-            operation="NEW", now=clock())
         r305._preflight_dirs(host)
         r305._bootstrap_receipt(host)
     except Exception:
@@ -745,6 +819,7 @@ def execute_root_install_files_only(
                 expected_kind="directory", expected_mode=0o700)
     _host_call(host, r305.STAGE_LOCK_SYNC, reviewed)
     if not inbox_exists:
+        guard()
         _host_call(host, r305.STAGE_INBOX_CREATE, reviewed)
     _stage_stat(host, r305.STAGE_INBOX_STAT, reviewed,
                 expected_kind="directory", expected_mode=0o700)
@@ -762,7 +837,7 @@ def execute_root_install_files_only(
             host, pin_context, manifest_raw=manifest_raw,
             witness_raw=witness_raw, owner_comment=pin_owner_comment,
             owner_go_id=pin_owner_go_id,
-            recheck_authority=recheck_pin_authority, operation="NEW",
+            recheck_authority=guard, operation="NEW",
             now=clock(), clock=clock)
         _require(type(pin_result) is dict and
                  pin_result.get("status") ==
