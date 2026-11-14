@@ -272,6 +272,31 @@ def _utc(value):
         raise PinHold("OWNER_GO_CLOCK_INVALID") from None
 
 
+def owner_go_identity(comment):
+    """Freeze authorization scalars, excluding GitHub presentation metadata.
+
+    Presence and exact scalar type matter, including optional REST actor IDs.
+    No dictionary/list aliases survive a recheck callback mutating its inputs.
+    This projection is not authentication: callers still verify the fresh GO.
+    """
+    _require(type(comment) is dict and type(comment.get("user")) is dict,
+             "OWNER_GO_AUTHORITY_UNVERIFIED")
+
+    def fields(record, keys):
+        captured = []
+        for key in keys:
+            present = key in record
+            value = record.get(key)
+            _require(type(value) in (str, int, float, bool, type(None)),
+                     "OWNER_GO_AUTHORITY_UNVERIFIED")
+            captured.append((present, type(value), value))
+        return tuple(captured)
+
+    return (fields(comment, ("id", "node_id", "issue_url", "author_association",
+                             "created_at", "updated_at", "body")),
+            fields(comment["user"], ("login", "id", "node_id")))
+
+
 def verify_owner_go(comment, context, *, owner_go_id, operation, now,
                     original_go_comment=None):
     """Authenticate one immutable owner comment, scoped to ONE ROOT pin.
@@ -631,6 +656,12 @@ def execute_root_pin_transition(
     old_pin_hash = _sha(_new_pin_bytes(HISTORICAL_D_PIN))
     receipt_hash = _sha(receipt_raw)
 
+    # Capture before callbacks: comparing caller-owned dicts would let an
+    # in-place mutation silently redefine the originally authorized identity.
+    owner_identity = owner_go_identity(owner_comment)
+    original_identity = (owner_go_identity(original_go_comment)
+                         if operation == "RESUME" else None)
+
     def check_go():
         try:
             fresh = recheck_authority()
@@ -640,17 +671,19 @@ def execute_root_pin_transition(
                  (4 if operation == "RESUME" else 3),
                  "GH_AUTHORITY_RECHECK_RESPONSE_INVALID")
         actual, main_ref_sha, artifact_sha = fresh[:3]
-        _require(type(actual) is dict and actual == owner_comment and
+        _require(type(actual) is dict and
+                 owner_go_identity(actual) == owner_identity and
                  main_ref_sha == context.main_sha and
                  artifact_sha == context.witness_artifact_sha256,
                  "GH_OWNER_MAIN_OR_WITNESS_DRIFT")
         if operation == "RESUME":
             _require(type(fresh[3]) is dict and
-                     fresh[3] == original_go_comment,
+                     owner_go_identity(fresh[3]) == original_identity,
                      "GH_ORIGINAL_OWNER_GO_DRIFT")
         verify_owner_go(
             actual, context, owner_go_id=owner_go_id, operation=operation,
-            now=clock(), original_go_comment=original_go_comment)
+            now=clock(), original_go_comment=(fresh[3] if operation == "RESUME"
+                                            else None))
 
     # All deterministic authority checks precede any potentially slow
     # network/physical read. Identity and R301 provenance precede first write.

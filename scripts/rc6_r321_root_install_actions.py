@@ -640,6 +640,17 @@ def execute_root_install_files_only(
         )
     except (ImportError, AttributeError, TypeError) as exc:
         raise R321Hold("TRUSTED_R305_R309_CODE_NOT_IN_MAIN") from exc
+
+    def comment_identity(comment):
+        try:
+            return r305.owner_go_identity(comment)
+        except (AttributeError, TypeError, RuntimeError):
+            raise R321Hold("GH_INSTALL_OWNER_MAIN_OR_ARTIFACT_DRIFT") from None
+
+    # Freeze the original authorization before any recheck callback can
+    # mutate caller-owned mappings. Presentation fields carry no authority.
+    owner_identity = comment_identity(owner_comment)
+
     try:
         manifest = r305.validate_root_manifest(
             manifest_raw, expected_digest=context.manifest_sha256)
@@ -674,7 +685,7 @@ def execute_root_install_files_only(
         except Exception:
             raise R321Hold("GH_INSTALL_AUTHORITY_UNAVAILABLE") from None
         _require(type(fresh) is dict and set(fresh) == _RECHECK_KEYS and
-                 fresh["owner_comment"] == owner_comment and
+                 comment_identity(fresh["owner_comment"]) == owner_identity and
                  fresh["main_sha"] == context.main_sha and
                  fresh["candidate_tree"] == context.candidate_tree and
                  fresh["witness_artifact_sha256"] ==

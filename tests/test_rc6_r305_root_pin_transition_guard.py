@@ -4,6 +4,7 @@ No SSH, sudo, Docker or runtime operations; only an in-memory host.
 The historical R305 131/131 result is not inherited by this new implementation.
 """
 
+from copy import deepcopy
 import hashlib
 import importlib
 import json
@@ -477,6 +478,102 @@ class RootPinTransactionTests(unittest.TestCase):
                 f"{g.ROOT_TRANSITION_RECEIPT_STAGE} {g.ROOT_TRANSITION_RECEIPT}"))
         self.assertTrue(all(stdin is None or len(stdin) <= 8192
                             for _, stdin, *_ in host.calls))
+
+    def test_authorization_recheck_ignores_only_presentation_metadata(self):
+        comment = go_comment()
+        comment["user"].update(id=42, node_id="actor-node")
+        comment["node_id"] = "comment-node"
+        fresh = deepcopy(comment)
+        fresh.update(reactions={"total_count": 1}, html_url="presentation-only")
+        fresh["user"].update(avatar_url="new-avatar", followers_url="metadata-only")
+        result = execute(FakeRootHost(), comment=comment, recheck=lambda: (
+            fresh, MAIN_SHA, digest(witness(manifest()))))
+        self.assertEqual(result["status"], "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO")
+
+    def test_authorization_snapshot_rejects_in_place_stable_identity_drift(self):
+        # These mutations previously changed both sides of the dict comparison.
+        renewed = go_comment()
+        body = json.loads(renewed["body"].split("=", 1)[1])
+        body["expires_at"] = "2026-11-13T14:36:00Z"
+        renewed["body"] = _guard().OWNER_GO_MARKER + json.dumps(body, sort_keys=True)
+        cases = (
+            (("id",), 602), (("id",), 601.0),
+            (("issue_url",), "foreign-issue"),
+            (("user", "login"), "other"), (("user", "id"), 43),
+            (("user", "id"), 42.0), (("user", "node_id"), "other-node"),
+            (("node_id",), "other-comment"),
+            (("author_association",), "CONTRIBUTOR"),
+            (("created_at",), "2026-11-13T13:49:00Z"),
+            (("updated_at",), "2026-11-13T13:50:01Z"),
+            (("body",), go_comment()["body"] + " "),
+            (("body",), renewed["body"]),
+            (("user", "id"), None),
+        )
+        for keys, value in cases:
+            with self.subTest(keys=keys, value=value):
+                comment = go_comment()
+                comment["user"].update(id=42, node_id="actor-node")
+                comment["node_id"] = "comment-node"
+                host = FakeRootHost()
+                checks = [0]
+                def current():
+                    checks[0] += 1
+                    if checks[0] == 2:
+                        target = comment
+                        for key in keys[:-1]:
+                            target = target[key]
+                        target[keys[-1]] = value
+                    return comment, MAIN_SHA, digest(witness(manifest()))
+                with self.assertRaises(_guard().PinHold):
+                    execute(host, comment=comment, recheck=current)
+                self.assertNotIn(_guard().ROOT_LOCK, host.dirs)
+
+    def test_authorization_snapshot_preserves_optional_actor_id_presence(self):
+        for initial, replacement in (({}, {"id": None}), ({"id": None}, {})):
+            with self.subTest(initial=initial):
+                comment = go_comment()
+                comment["user"].update(initial)
+                host = FakeRootHost()
+                def current():
+                    comment["user"] = {"login": "mbalbo2023", **replacement}
+                    return comment, MAIN_SHA, digest(witness(manifest()))
+                with self.assertRaises(_guard().PinHold):
+                    execute(host, comment=comment, recheck=current)
+                self.assertFalse(host.calls)
+
+    def test_resume_original_snapshot_ignores_metadata_but_rejects_in_place_drift(self):
+        for drift in ("metadata", "actor_id", "body"):
+            with self.subTest(drift=drift):
+                host = FakeRootHost()
+                host.fail_match = "/usr/bin/mv -T"
+                with self.assertRaises(_guard().PinHold):
+                    execute(host)
+                original = go_comment()
+                original["user"]["id"] = 42
+                resume = go_comment(operation="RESUME", now=NOW + timedelta(minutes=8),
+                                    comment_id=602, original_id=601)
+                before = list(host.calls)
+                authenticated_original = deepcopy(original)
+                def current():
+                    if drift == "actor_id":
+                        original["user"]["id"] = 43
+                    elif drift == "body":
+                        original["body"] += " "  # Still valid R305 JSON.
+                    else:
+                        authenticated_original["reactions"] = {"total_count": 3}
+                    return (resume, MAIN_SHA, digest(witness(manifest())),
+                            authenticated_original if drift == "metadata" else original)
+                if drift != "metadata":
+                    with self.assertRaises(_guard().PinHold):
+                        execute(host, operation="RESUME", comment=resume,
+                                original=original, go_id=602,
+                                now=NOW + timedelta(minutes=8), recheck=current)
+                    self.assertEqual(host.calls, before)
+                else:
+                    self.assertEqual(execute(
+                        host, operation="RESUME", comment=resume, original=original,
+                        go_id=602, now=NOW + timedelta(minutes=8), recheck=current
+                    )["owner_go_comment_id"], 601)
 
     def test_missing_witness_rechecks_or_wrong_DO_id_prevent_first_mutation(self):
         """A forged input or wrong physical host never reaches mkdir lock."""
