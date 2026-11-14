@@ -42,6 +42,7 @@ INSTALLER_RECEIPT_CAP = 512  # Full R280 JSON is 261 bytes, not R309 legacy cap 
 # Public SSH/DO commitment from the R363 physical GO (#1093/6882469161).
 R363_HOST_IDENTITY_SHA256 = 'ede3589a375077b3d40d6941cd82e5e6b141c615e616cdd693a046199232d1b3'
 R358_LAUNCHER_SIZE = 12086
+R367_CUSTODIAN_SIZE = 197793
 MAX_TOTAL_BYTES = 512 * 1024
 MAX_TOTAL_CHUNKS = 64
 MIN_OWNER_GO_REMAINING = timedelta(minutes=10)
@@ -916,14 +917,35 @@ def _probe_exists(host, path):
     return status == 0
 
 
-def _probe_launcher_sample(host):
-    path = r362.LAUNCHER_TARGET
+def _probe_executable_sample(host, role, path, size, expected_sha256):
     if not _probe_exists(host, path):
         return None
-    metadata = _probe_stat(host, path, mode=0o555, size=R358_LAUNCHER_SIZE)
+    metadata = _probe_stat(host, path, mode=0o555, size=size)
     digest = _probe_hash(host, path)
-    _require(digest == r362.LAUNCHER_SHA256, 'FILE_PROBE_LAUNCHER_HASH_DRIFT')
+    _require(digest == expected_sha256, f'FILE_PROBE_{role.upper()}_HASH_DRIFT')
     return metadata, digest
+
+
+def _probe_executable_receipt(host, role, path, size, expected_sha256, first, host_commitment):
+    changed = f'FILE_PROBE_{role.upper()}_CHANGED'
+    _require(_probe_executable_sample(host, role, path, size, expected_sha256) == first, changed)
+    result = {'state': 'ABSENT', 'host_identity_sha256': host_commitment}
+    if first is not None:
+        metadata, digest = first
+        # Bind the final hash to the same file even if its name moved during sha256sum.
+        _require(_probe_stat(host, path, mode=0o555, size=size) == metadata, changed)
+        result.update(state='PRESENT_VERIFIED', observed_sha256=digest, size_bytes=size,
+                      uid=0, gid=0, mode='0555', nlink=1)
+    return result
+
+
+def _probe_python_version(host):
+    try:
+        _, raw = _probe_call(host, r309.PROBE_PYTHON_VERSION_COMMAND, cap=32)
+    except (R321Hold, r309.R309Hold):
+        return 'NO_VERIFICADO'
+    match = re.fullmatch(rb'Python ([1-9][0-9]?\.(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]{0,2}))\n', raw)
+    return match.group(1).decode('ascii') if match else 'NO_VERIFICADO'
 
 
 def _probe_files(host, host_commitment):
@@ -933,7 +955,15 @@ def _probe_files(host, host_commitment):
     parents = {path: _probe_stat(host, path, directory=True,
                                  mode=0o700 if path in private_dirs else None)
                for path in r302.ROOT_DIRECTORIES}
-    launcher = _probe_launcher_sample(host)
+    # A failed traversal must never turn an unobservable target into ABSENT.
+    for path in r309.CUSTODIAN_DIRS:
+        _probe_call(host, r309.probe_test_command('-x', path))
+    executables = (
+        ('launcher', r362.LAUNCHER_TARGET, R358_LAUNCHER_SIZE, r362.LAUNCHER_SHA256),
+        ('custodian', r362.CUSTODIAN_TARGET, R367_CUSTODIAN_SIZE, r362.CUSTODIAN_SHA256),
+    )
+    first_executables = {role: _probe_executable_sample(host, role, path, size, digest)
+                         for role, path, size, digest in executables}
     expected_hashes = r302._expected_hashes()
     bootstrap_sizes = {r302.ROOT_PIN: 65, r302.ROOT_RECEIPT: len(r302._expected_receipt_bytes())}
     bootstrap_stats = {}
@@ -966,16 +996,12 @@ def _probe_files(host, host_commitment):
     for path, mode, _ in r302.ROOT_FILES:
         _require(_probe_stat(host, path, mode=mode) == bootstrap_stats[path],
                  'FILE_PROBE_BOOTSTRAP_CHANGED')
-    _require(_probe_launcher_sample(host) == launcher, 'FILE_PROBE_LAUNCHER_CHANGED')
-    genesis = {'state': 'ABSENT', 'host_identity_sha256': host_commitment}
-    if launcher is not None:
-        metadata, digest = launcher
-        # Bind the final hash to the same file even if its name moved during sha256sum.
-        _require(_probe_stat(host, r362.LAUNCHER_TARGET, mode=0o555, size=R358_LAUNCHER_SIZE) == metadata,
-                 'FILE_PROBE_LAUNCHER_CHANGED')
-        genesis.update(state='PRESENT_VERIFIED', observed_sha256=digest, size_bytes=R358_LAUNCHER_SIZE,
-                       uid=0, gid=0, mode='0555', nlink=1)
+    genesis = {'genesis_' + role: _probe_executable_receipt(
+        host, role, path, size, digest, first_executables[role], host_commitment)
+        for role, path, size, digest in executables}
     for path in reversed(r302.ROOT_DIRECTORIES):
+        if path in r309.CUSTODIAN_DIRS:
+            _probe_call(host, r309.probe_test_command('-x', path))
         _require(_probe_stat(host, path, directory=True) == parents[path],
                  'FILE_PROBE_PARENT_CHANGED')
     return result, genesis
@@ -1001,10 +1027,13 @@ def probe_files_only(env):
             identity.append(raw.removesuffix(b'\n'))
         r302.verify_host_identity(b'\n'.join(identity) + b'\n', env)
         observations, genesis = _probe_files(host, host_commitment)
+        # Optional data cannot invalidate the independently completed filesystem observation.
+        python_version = _probe_python_version(host)
     return {'schema': 'RC6_R321_PROBE_FILES_ONLY_V1', 'trusted_main_sha': env['GITHUB_SHA'],
             'run_id': run, 'run_attempt': attempt,
             'observed_at_utc': datetime.now(timezone.utc).isoformat(),
-            'bootstrap_files_verified': True, 'r271': observations, 'genesis_launcher': genesis,
+            'bootstrap_files_verified': True, 'r271': observations, **genesis,
+            'host_python_version': python_version,
             'host_control_verified': False, 'runtime_verified': False, 'deploy_authorized': False}
 
 

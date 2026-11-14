@@ -43,10 +43,11 @@ _FILE_PROBE_SECONDS = 180
 _R305_MODULE = "scripts.rc6_r305_root_pin_transition_guard"
 PROBE_OPERATION = "PROBE_FILES_ONLY"
 PROBE_UID_COMMAND = "/usr/bin/id -u"
+PROBE_PYTHON_VERSION_COMMAND = "/usr/bin/python3 -I --version"
 PROBE_GENERATIONS = "/var/lib/porota-rc6-oci-custody/generations"
 _SUDO = "/usr/bin/sudo -n /usr/bin/"
 CUSTODIAN_TARGET = "/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian"
-_CUSTODIAN_DIRS = ("/", "/usr", "/usr/local", "/usr/local/libexec", "/usr/local/libexec/porota-rc6-custody")
+CUSTODIAN_DIRS = ("/", "/usr", "/usr/local", "/usr/local/libexec", "/usr/local/libexec/porota-rc6-custody")
 _CUSTODIAN_VERBS = {"PREPARE_ENV": "prepare-env", "APPLY_GENESIS": "apply"}
 
 
@@ -63,17 +64,18 @@ def probe_hash_command(path):
 
 
 def _file_probe_commands():
-    """Read-only commands for the R302 bootstrap, R280 targets and R358 launcher."""
+    """Read-only filesystem observations and the version of the custodian's interpreter."""
     from scripts.rc6_genesis_launcher_authority import LAUNCHER_TARGET
 
     bootstrap = tuple(path for path, _, _ in r302.ROOT_FILES)
-    targets = tuple(row[0] for row in r280.TARGETS.values()) + (PROBE_GENERATIONS, LAUNCHER_TARGET)
+    targets = tuple(row[0] for row in r280.TARGETS.values()) + (PROBE_GENERATIONS, LAUNCHER_TARGET, CUSTODIAN_TARGET)
     paths = (*r302.ROOT_DIRECTORIES, *bootstrap, *targets)
-    hashes = (*bootstrap, r280.TARGETS['helper'][0], r280.TARGETS['custody'][0], LAUNCHER_TARGET)
+    hashes = (*bootstrap, r280.TARGETS['helper'][0], r280.TARGETS['custody'][0], LAUNCHER_TARGET, CUSTODIAN_TARGET)
     return frozenset((
-        HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND,
+        HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND, PROBE_PYTHON_VERSION_COMMAND,
         *(probe_stat_command(path) for path in paths),
         *(probe_test_command('! -L', path) for path in paths),
+        *(probe_test_command('-x', path) for path in CUSTODIAN_DIRS),
         *(probe_test_command('! -e', path) for path in targets),
         *(probe_test_command('-e', path) for path in targets),
         *(probe_hash_command(path) for path in hashes),
@@ -338,7 +340,7 @@ class R367CustodianTransport(R309BoundedMuxHost):
 
     def _snapshot(self):
         snapshot = []
-        for path in (*_CUSTODIAN_DIRS, CUSTODIAN_TARGET):
+        for path in (*CUSTODIAN_DIRS, CUSTODIAN_TARGET):
             directory = path != CUSTODIAN_TARGET
             self._read(probe_test_command('! -L', path), 0)
             raw = self._read(probe_stat_command(path), 128)
