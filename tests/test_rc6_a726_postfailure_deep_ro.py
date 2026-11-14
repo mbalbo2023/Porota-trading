@@ -1,16 +1,17 @@
 """A726 off-host hermetic and adversarial guard tests. Never opens a host."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import gzip
 import hashlib
 import json
 import os
 from pathlib import Path
-from types import SimpleNamespace
+import shutil
 import sqlite3
 import stat
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -83,7 +84,7 @@ class A726Test(unittest.TestCase):
         base = self.data / "paper_v17"
         base.mkdir(exist_ok=True)
         path = base / "observer_v17.db"
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("CREATE TABLE observer_state(id INT,mode TEXT,real_orders_sent INT,"
                        "process_state TEXT,session_state TEXT)")
             db.execute("INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,"
@@ -96,6 +97,26 @@ class A726Test(unittest.TestCase):
             if fci:
                 db.execute("CREATE TABLE paper_family_lifecycle(id INT,family TEXT,state TEXT)")
         return path
+
+    @contextmanager
+    def wal_writer(self, path):
+        with closing(sqlite3.connect(path)) as writer:
+            self.assertEqual(writer.execute("PRAGMA journal_mode=WAL").fetchone(), ("wal",))
+            # Materialize both sidecars before the reader samples their names.
+            with writer:
+                writer.execute("INSERT INTO paper_positions VALUES (0,'CLOSED')")
+            yield writer
+
+    def assert_unknown_book(self, book):
+        self.assertEqual(book, {
+            "state": "NO_VERIFICADO",
+            "observer": {"state": "QUERY_UNAVAILABLE", "mode_paper": None,
+                         "orders_zero": None, "process": None, "session": None},
+            "ledgers": {key: {"state": "QUERY_UNAVAILABLE", "count": None}
+                        for key in ("spot", "futures", "caucion", "fci")},
+            "three_ledgers_flat": None, "four_ledgers_flat": None,
+            "quiescence_verified": False,
+        })
 
     def mkpack(self, content=b"A726-pack-evidence", *, snapshot=SNAP):
         shadow = self.data / "paper_v17/artifacts/observer_v17.db/dynamic-shadow"
@@ -149,9 +170,6 @@ class A726Test(unittest.TestCase):
 
     def test_book_keeps_observer_and_spot_on_one_wal_snapshot(self):
         path = self.mkdb()
-        writer = sqlite3.connect(path)
-        self.addCleanup(writer.close)
-        self.assertEqual(writer.execute("PRAGMA journal_mode=WAL").fetchone(), ("wal",))
         read_ledger = d._ledger
 
         def read_after_commit(db, table, predicate, required):
@@ -161,7 +179,7 @@ class A726Test(unittest.TestCase):
                     writer.execute("INSERT INTO paper_positions VALUES (1,'OPEN')")
             return read_ledger(db, table, predicate, required)
 
-        with ro_statvfs():
+        with self.wal_writer(path) as writer, ro_statvfs():
             with mock.patch.object(d, "_ledger", read_after_commit):
                 before = d._book(path)
             after = d._book(path)
@@ -170,6 +188,81 @@ class A726Test(unittest.TestCase):
                          (True, 0))
         self.assertEqual((after["observer"]["orders_zero"], after["ledgers"]["spot"]["count"]),
                          (False, 1))
+
+    def test_book_rejects_aliases_of_database_wal_or_shm(self):
+        path = self.mkdb()
+        with self.wal_writer(path), ro_statvfs():
+            for suffix in ("", "-wal", "-shm"):
+                member = Path(str(path) + suffix)
+                outside = Path(self.tmp.name) / ("other" + suffix)
+                with self.subTest(member=member.name, alias="hardlink"):
+                    os.link(member, outside)
+                    try:
+                        self.assert_unknown_book(d._book(path))
+                    finally:
+                        outside.unlink()
+                with self.subTest(member=member.name, alias="symlink"):
+                    member.rename(outside)
+                    member.symlink_to(outside)
+                    try:
+                        self.assert_unknown_book(d._book(path))
+                    finally:
+                        member.unlink()
+                        outside.rename(member)
+
+    def test_book_discards_all_aggregates_after_replacement_or_disappearance(self):
+        path = self.mkdb()
+        read_ledger = d._ledger
+        with self.wal_writer(path), ro_statvfs():
+            for suffix in ("", "-wal", "-shm"):
+                member = Path(str(path) + suffix)
+                saved = member.with_name("saved")
+                for change in ("replace", "remove"):
+                    with self.subTest(member=member.name, change=change):
+                        def change_after_last_read(db, table, predicate, required):
+                            result = read_ledger(db, table, predicate, required)
+                            if table == "paper_family_lifecycle":
+                                member.rename(saved)
+                                if change == "replace":
+                                    shutil.copyfile(saved, member)
+                            return result
+
+                        try:
+                            with mock.patch.object(d, "_ledger", change_after_last_read):
+                                self.assert_unknown_book(d._book(path))
+                        finally:
+                            saved.replace(member)
+
+    def test_book_discards_all_aggregates_when_a_sidecar_appears(self):
+        path = self.mkdb()
+        read_ledger = d._ledger
+        for suffix in ("-wal", "-shm"):
+            with self.subTest(sidecar=suffix):
+                member = Path(str(path) + suffix)
+
+                def create_after_last_read(db, table, predicate, required):
+                    result = read_ledger(db, table, predicate, required)
+                    if table == "paper_family_lifecycle":
+                        member.touch()
+                    return result
+
+                try:
+                    with ro_statvfs(), mock.patch.object(d, "_ledger", create_after_last_read):
+                        self.assert_unknown_book(d._book(path))
+                finally:
+                    member.unlink(missing_ok=True)
+
+    def test_book_refuses_writable_sidecar_on_read_only_database_mount(self):
+        path = self.mkdb()
+        with self.wal_writer(path):
+            for suffix in ("-wal", "-shm"):
+                member = Path(str(path) + suffix)
+                with self.subTest(sidecar=member.name):
+                    def mount_status(target):
+                        return SimpleNamespace(f_flag=0 if target == member else os.ST_RDONLY)
+
+                    with mock.patch.object(d.os, "statvfs", mount_status):
+                        self.assert_unknown_book(d._book(path))
 
     def test_book_missing_fci_not_falsely_flat(self):
         with ro_statvfs():
@@ -191,7 +284,7 @@ class A726Test(unittest.TestCase):
 
     def test_book_positive_spot_is_definite_not_flat(self):
         path = self.mkdb()
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("INSERT INTO paper_positions VALUES (1,'OPEN')")
         with ro_statvfs():
             row = d._book(path)
@@ -200,7 +293,7 @@ class A726Test(unittest.TestCase):
 
     def test_book_positive_spot_even_with_unknown_fci_false(self):
         path = self.mkdb(fci=False)
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("INSERT INTO paper_positions VALUES (1,'OPEN')")
         with ro_statvfs():
             row = d._book(path)
@@ -208,7 +301,7 @@ class A726Test(unittest.TestCase):
 
     def test_book_schema_missing_status_bounded(self):
         path = self.mkdb()
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("DROP TABLE paper_cauciones")
             db.execute("CREATE TABLE paper_cauciones(id INT,ticker TEXT)")
         with ro_statvfs():
