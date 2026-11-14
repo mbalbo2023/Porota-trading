@@ -13,11 +13,15 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Mapping
+
+if TYPE_CHECKING:
+    from scripts.rc6_r326_root_bundle_provenance import ExternalReleaseBoundary
 
 
 REPO = "mbalbo2023/Porota-trading"
@@ -74,7 +78,18 @@ def _source_blobs(rest: Callable, tree_sha: str) -> tuple:
                  for path in r326.SOURCE_PATHS)
 
 
-def _material_projection(proof: Mapping, blobs: tuple) -> dict[str, Any]:
+@dataclass(frozen=True, repr=False)
+class VerifiedInstallMaterial:
+    """The four immutable D members and original E receipt for the installation job."""
+
+    boundary: ExternalReleaseBoundary
+    source_bytes: Mapping[str, bytes]
+    postcompletion_receipt_bytes: bytes
+
+
+def _material_projection(
+    proof: Mapping, blobs: tuple, consume_material: Callable[[VerifiedInstallMaterial], None] | None,
+) -> dict[str, Any]:
     """Consume private verified bytes only after all live source rereads pass."""
     from scripts import rc6_r326_root_bundle_provenance as r326
     material = proof.get("release_material")
@@ -111,7 +126,7 @@ def _material_projection(proof: Mapping, blobs: tuple) -> dict[str, Any]:
     except (ValueError, OSError, EOFError, TypeError, KeyError):
         raise ControlHold("RELEASE_SOURCE_BYTES_NOT_BOUND") from None
     git_blobs = dict(blobs)
-    return {
+    projection = {
         "status": "FOUR_SOURCES_BOUND_OFFHOST", "image_id": boundary.image_id,
         "postcompletion_receipt_sha256": hashlib.sha256(raw_e).hexdigest(),
         "release": {"run_id": proof["release_run_id"],
@@ -126,12 +141,18 @@ def _material_projection(proof: Mapping, blobs: tuple) -> dict[str, Any]:
                             "bytes": len(sources[role]), "git_blob_sha": git_blobs[path]}
                     for path, role in r326.SOURCE_PATHS.items()},
     }
+    if consume_material is not None:
+        frozen = replace(boundary, source_sha256=tuple(
+            (path, entry["sha256"]) for path, entry in projection["sources"].items()))
+        consume_material(VerifiedInstallMaterial(frozen, sources, raw_e))
+    return projection
 
 
 def verify_authenticated_release(
     event: Mapping[str, str], *, checkout_sha: str, github: Any,
     trusted_release: Callable[..., Mapping[str, Any]],
     include_material: bool = False,
+    consume_material: Callable[[VerifiedInstallMaterial], None] | None = None,
 ) -> dict[str, Any]:
     """Bind actual trusted-main dispatch, live PR and R252 byte-checked D/E.
 
@@ -142,6 +163,8 @@ def verify_authenticated_release(
     The normal CLI requests bounded material and emits only a four-source
     hash projection after the final recheck, without creating a ROOT authority.
     """
+    _require(consume_material is None or (include_material is True and callable(consume_material)),
+             "RELEASE_MATERIAL_CONSUMER_INVALID")
     _require(type(include_material) is bool and
              isinstance(event, Mapping) and type(checkout_sha) is str and
              _SHA40.fullmatch(checkout_sha) is not None and
@@ -308,7 +331,7 @@ def verify_authenticated_release(
         "deploy_authorized": False,
         "real_orders_allowed": False,
         "runtime_verified": False,
-        **({"source_material": _material_projection(proof, blobs)} if include_material else {}),
+        **({"source_material": _material_projection(proof, blobs, consume_material)} if include_material else {}),
     }
 
 

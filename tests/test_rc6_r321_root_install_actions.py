@@ -1195,8 +1195,10 @@ class R321RootInstallActionsTest(unittest.TestCase):
         selector = workflow['on']['workflow_dispatch']['inputs']['operation']
         self.assertEqual(selector['default'], 'OFFHOST_HOLD')
         self.assertEqual(selector['type'], 'choice')
-        self.assertEqual(set(selector['options']), {'OFFHOST_HOLD', 'PROBE_FILES_ONLY'})
-        self.assertEqual(set(workflow['jobs']), {'root_install_offhost_preflight', 'probe_files_only'})
+        self.assertEqual(set(selector['options']),
+                         {'OFFHOST_HOLD', 'PROBE_FILES_ONLY', 'PREPARE_ENV', 'APPLY_GENESIS'})
+        self.assertEqual(set(workflow['jobs']),
+                         {'root_install_offhost_preflight', 'probe_files_only', 'genesis_controller'})
         job = workflow["jobs"]["root_install_offhost_preflight"]
         self.assertIn("github.ref == 'refs/heads/main'", job["if"])
         self.assertIn("github.actor == 'mbalbo2023'", job["if"])
@@ -1212,7 +1214,7 @@ class R321RootInstallActionsTest(unittest.TestCase):
             self.assertNotIn(forbidden, commands)
         self.assertFalse(job.get("secrets"))
         self.assertNotIn('DO_SSH_KEY', str(job))
-        self.assertIn("inputs.operation != 'PROBE_FILES_ONLY'", job['if'])
+        self.assertIn("inputs.operation == 'OFFHOST_HOLD'", job['if'])
         self.assertIn('operation_unknown', commands)
         probe = workflow['jobs']['probe_files_only']
         self.assertIn("inputs.operation == 'PROBE_FILES_ONLY'", probe['if'])
@@ -1225,6 +1227,31 @@ class R321RootInstallActionsTest(unittest.TestCase):
         self.assertNotIn('--install-approved', str(probe))
         self.assertNotIn('--verify-offhost', str(probe))
         self.assertIn('secrets.DO_SSH_KEY', str(probe))
+
+    def test_genesis_workflow_only_routes_exact_selectors_through_trusted_main(self):
+        path = Path(__file__).resolve().parents[1] / '.github/workflows/rc6-r321-root-install-approved.yml'
+        workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        job = workflow['jobs']['genesis_controller']
+        for condition in ("inputs.operation == 'PREPARE_ENV'", "inputs.operation == 'APPLY_GENESIS'",
+                          "github.ref == 'refs/heads/main'", "github.actor == 'mbalbo2023'",
+                          "github.triggering_actor == 'mbalbo2023'"):
+            self.assertIn(condition, job['if'])
+        checkout = job['steps'][0]['with']
+        self.assertEqual((checkout['ref'], checkout['persist-credentials']), ('${{ github.sha }}', 'false'))
+        self.assertEqual(job['permissions'], {**workflow['permissions'], 'id-token': 'write'})
+        call = next(step for step in job['steps'] if '--prepare-env' in step.get('run', ''))
+        self.assertIn('scripts.rc6_r321_root_install_actions --prepare-env', call['run'])
+        self.assertIn('scripts.rc6_r321_root_install_actions --apply-genesis', call['run'])
+        self.assertNotIn('${{', call['run'])
+        self.assertNotIn('--install-approved', call['run'])
+        inputs = workflow['on']['workflow_dispatch']['inputs']
+        for name in ('lease_id', 'prepare_go_id', 'pin_go_id', 'install_go_id', 'env_go_id',
+                     'predeploy_run_id', 'predeploy_run_attempt'):
+            self.assertEqual(inputs[name]['type'], 'string')
+            self.assertEqual(call['env']['RC6_R367_' + name.upper()], '${{ inputs.' + name + ' }}')
+        self.assertEqual(set(inputs['prepare_phase']['options']), {'INITIAL', 'POST_D_E'})
+        self.assertEqual(call['env']['RC6_R321_OPERATION'], '${{ inputs.operation }}')
+        self.assertNotIn('upload-artifact', str(job))
 
     def test_valid_root_bundle_plan_chunks_all_five_roles_and_manifest_below_8192(self):
         manifest, sources = fixture()

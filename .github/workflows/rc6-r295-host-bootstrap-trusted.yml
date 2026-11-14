@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       owner_comment_id:
-        description: Immutable OWNER GO comment ID, or PREPARE for the GENESIS launcher host fingerprint
+        description: Immutable OWNER GO comment ID, or PREPARE for the selected GENESIS bootstrap
         required: true
         type: string
       bootstrap_action:
@@ -19,6 +19,7 @@ on:
           - install_files
           - resume_files
           - install_genesis_launcher
+          - install_genesis_custodian
 
 permissions:
   contents: read
@@ -97,13 +98,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Checkout the reviewed main commit
+      - &genesis_checkout
+        name: Checkout the reviewed main commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Verify checkout identity before passing host credentials
+      - &genesis_checkout_identity
+        name: Verify checkout identity before passing host credentials
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -143,7 +146,7 @@ jobs:
       - name: Publish the approved GENESIS launcher
         if: ${{ inputs.owner_comment_id != 'PREPARE' }}
         shell: bash
-        env:
+        env: &genesis_publication_credentials
           BOOTSTRAP_ACTION: ${{ inputs.bootstrap_action }}
           RC6_R295_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -156,3 +159,35 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -B -m scripts.rc6_genesis_launcher_bootstrap --install-approved-launcher
+
+  approved_genesis_custodian_only:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' &&
+          github.ref == 'refs/heads/main' && github.ref_protected &&
+          github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
+          inputs.bootstrap_action == 'install_genesis_custodian' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - *genesis_checkout
+      - *genesis_checkout_identity
+      - name: Prepare the verified custodian package and host fingerprints
+        if: ${{ inputs.owner_comment_id == 'PREPARE' }}
+        shell: bash
+        env:
+          BOOTSTRAP_ACTION: ${{ inputs.bootstrap_action }}
+          RC6_R295_OWNER_COMMENT_ID: ${{ inputs.owner_comment_id }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m scripts.rc6_genesis_launcher_bootstrap --prepare-custodian
+      - name: Publish the approved GENESIS custodian package
+        if: ${{ inputs.owner_comment_id != 'PREPARE' }}
+        shell: bash
+        env: *genesis_publication_credentials
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m scripts.rc6_genesis_launcher_bootstrap --install-approved-custodian

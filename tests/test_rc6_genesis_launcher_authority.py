@@ -128,6 +128,51 @@ class AuthorityTest(unittest.TestCase):
     def verify(self):
         return self.auth.verify_authority(self.env)
 
+    def test_custodian_needs_its_own_go_and_lease_and_honors_other_global_owners(self):
+        custodian = "RC6_R367_CUSTODIAN_DEPLOY_OWNER_V1="
+        control = "RC6_R367_GENESIS_DEPLOY_OWNER_V1="
+        protected = "e" * 64
+        scope = {"operation": "install_genesis_custodian", "trusted_main_sha": MAIN,
+                 "custodian_target": "/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian",
+                 "custodian_sha256": protected, "host_identity_source": "PROTECTED_DO_PINS",
+                 "host_identity_sha256": HOST_FINGERPRINT}
+        owner_go = {**scope, "inventory_comment_id": 6883049719, "lease_comment_id": LEASE_ID,
+                    "expires_at": self.go["expires_at"]}
+        control_scope = {"operation": "APPLY_GENESIS", "trusted_main_sha": MAIN,
+                         "candidate_sha": "b" * 40, "candidate_tree": "c" * 40,
+                         "nonce": "a" * 32, "host_identity_source": "PROTECTED_DO_PINS",
+                         "host_identity_sha256": HOST_FINGERPRINT}
+        self.env["BOOTSTRAP_ACTION"] = "install_genesis_custodian"
+        with self.rest(), patch.object(self.auth, "CUSTODIAN_SHA256", protected, create=True):
+            with self.assertRaises(r295.BootstrapHold):
+                self.verify()  # The historical launcher GO and lease cannot authorize these bytes.
+            self.go_comment["body"] = encoded("RC6_R367_CUSTODIAN_GO_V1=", owner_go)
+            with self.assertRaises(r295.BootstrapHold):
+                self.verify()
+            self.lc["body"] = encoded(custodian, {**scope, "status": "ACTIVE"})
+            self.assertIsNone(self.verify())
+            for marker, other_scope in ((LEASE_MARKER, SCOPE), (control, control_scope)):
+                opened = comment(LEASE_ID-2, 980, encoded(marker, {**other_scope, "status": "ACTIVE"}), self.created)
+                closed = comment(LEASE_ID-1, 980, encoded(marker, {"status": "RELEASED",
+                                                                    "lease_comment_id": LEASE_ID-2}), self.created)
+                original = self.ledger[:-1]
+                for rows, passes in (([opened], False), ([opened, closed], True),
+                                     ([opened, {**closed, "body": closed["body"].replace(marker, custodian)}], False)):
+                    with self.subTest(marker=marker, passes=passes), patch.object(
+                            self, "ledger", original + rows + [self.lc]):
+                        if passes:
+                            self.assertIsNone(self.verify())
+                        else:
+                            with self.assertRaises(r295.BootstrapHold):
+                                self.verify()
+            with patch.dict(self.env, BOOTSTRAP_ACTION="install_genesis_launcher"), self.assertRaises(r295.BootstrapHold):
+                self.verify()
+            for field, value in (("custodian_sha256", "a" * 64), ("custodian_target", SCOPE["launcher_target"]),
+                                 ("inventory_comment_id", 6881987698), ("host_identity_sha256", "c" * 64)):
+                with self.subTest(field=field), patch.dict(self.go_comment, body=encoded(
+                        "RC6_R367_CUSTODIAN_GO_V1=", {**owner_go, field: value})), self.assertRaises(r295.BootstrapHold):
+                    self.verify()
+
 
     def test_validly_formed_new_do_pins_cannot_rebind_an_approved_host(self):
         for change in ({"RC6_EXPECTED_DO_ID": "12345679"}, {"RC6_EXPECTED_DO_REGION": "sfo3"},

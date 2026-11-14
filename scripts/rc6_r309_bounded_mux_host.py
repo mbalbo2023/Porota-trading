@@ -20,7 +20,7 @@ import time
 from scripts import rc6_host_rootowned_installer_contract as r280
 from scripts import rc6_r302_bootstrap_receipt_preflight as r302
 from scripts.rc6_r295_host_bootstrap_guard import (
-    HOST_ID_COMMAND, HOST_REGION_COMMAND, run_bounded_ssh_command,
+    BootstrapHold, HOST_ID_COMMAND, HOST_REGION_COMMAND, _strict_json, run_bounded_ssh_command,
 )
 
 
@@ -45,6 +45,9 @@ PROBE_OPERATION = "PROBE_FILES_ONLY"
 PROBE_UID_COMMAND = "/usr/bin/id -u"
 PROBE_GENERATIONS = "/var/lib/porota-rc6-oci-custody/generations"
 _SUDO = "/usr/bin/sudo -n /usr/bin/"
+CUSTODIAN_TARGET = "/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian"
+_CUSTODIAN_DIRS = ("/", "/usr", "/usr/local", "/usr/local/libexec", "/usr/local/libexec/porota-rc6-custody")
+_CUSTODIAN_VERBS = {"PREPARE_ENV": "prepare-env", "APPLY_GENESIS": "apply"}
 
 
 def probe_stat_command(path):
@@ -160,6 +163,7 @@ class R309BoundedMuxHost:
         _require(operation in ("R305", PROBE_OPERATION), "SSH_OPERATION_UNKNOWN")
         self.host, self.user, self.key_bytes, self.known_bytes = _validated_secrets(env)
         self._file_probe = operation == PROBE_OPERATION
+        self._total_seconds = _FILE_PROBE_SECONDS if self._file_probe else _TOTAL_SECONDS
         self.commands = _file_probe_commands() if self._file_probe else _trusted_r305_commands()
         self.temp = None
         self.control_socket = None
@@ -184,8 +188,7 @@ class R309BoundedMuxHost:
     def __enter__(self):
         _require(self.temp is None and self.master is None, "SSH_CONTEXT_REENTRY")
         try:
-            budget = _FILE_PROBE_SECONDS if self._file_probe else _TOTAL_SECONDS
-            self.transaction_deadline = time.monotonic() + budget
+            self.transaction_deadline = time.monotonic() + self._total_seconds
             self.temp = tempfile.TemporaryDirectory(prefix="rc6-r309-ssh-")
             folder = Path(self.temp.name)
             self.key_path = folder / "id_ed25519"
@@ -246,6 +249,10 @@ class R309BoundedMuxHost:
                  math.isfinite(timeout_s) and
                  0 < timeout_s <= _MAX_CALL_SECONDS,
                  "SSH_CALL_TIMEOUT_INVALID")
+        return self._run_child(command, stdin, max_output_bytes, timeout_s)
+
+    def _run_child(self, command, stdin, max_output_bytes, timeout_s):
+        _require(not self.poisoned, "SSH_TRANSPORT_POISONED")
         _require(self.ssh_args is not None and self.master is not None and
                  self.master.poll() is None and self._verified_master_socket(),
                  "SSH_MASTER_UNAVAILABLE")
@@ -291,3 +298,113 @@ class R309BoundedMuxHost:
             self.transaction_deadline = None
             self.key_bytes = b""
             self.known_bytes = b""
+
+
+class R367CustodianTransport(R309BoundedMuxHost):
+    """One verified mux and a fixed zipapp verb. Input is data, never executable stdin.
+
+    Both verbs accept at most 1 MiB, including the signed claims and the public
+    release sources used by POST_D_E. The custodian authenticates GitHub OIDC
+    independently. R321 checks the lease and validates receipts before export.
+    """
+
+    def __init__(self, env, *, operation, custodian_sha256, host_identity_sha256):
+        from scripts import rc6_genesis_launcher_authority as authority
+
+        _require(type(operation) is str and operation in _CUSTODIAN_VERBS, "CUSTODIAN_OPERATION")
+        _require(type(custodian_sha256) is str and re.fullmatch("[0-9a-f]{64}", custodian_sha256),
+                 "CUSTODIAN_PACKAGE_PIN")
+        try:
+            r302.validate_environment(env)
+            commitment = authority.host_identity_sha256(env)
+        except (r302.R302Hold, BootstrapHold):
+            raise R309Hold("CUSTODIAN_HOST_PINS_UNVERIFIED") from None
+        _require(type(host_identity_sha256) is str and commitment == host_identity_sha256,
+                 "CUSTODIAN_HOST_COMMITMENT_MISMATCH")
+        super().__init__(env, operation=PROBE_OPERATION)
+        self.commands = frozenset()
+        self._total_seconds = _TOTAL_SECONDS
+        self._expected_identity = {k: env[k] for k in ("RC6_EXPECTED_DO_ID", "RC6_EXPECTED_DO_REGION")}
+        self._operation = operation
+        self._package_sha = custodian_sha256
+
+    def call(self, *args, **kwargs):
+        raise R309Hold("CUSTODIAN_FIXED_VERB_REQUIRED")
+
+    def _read(self, command, cap):
+        status, raw = self._run_child(command, None, cap, _MAX_CALL_SECONDS)
+        _require(status == 0, "CUSTODIAN_PHYSICAL_READ_FAILED")
+        return raw
+
+    def _snapshot(self):
+        snapshot = []
+        for path in (*_CUSTODIAN_DIRS, CUSTODIAN_TARGET):
+            directory = path != CUSTODIAN_TARGET
+            self._read(probe_test_command('! -L', path), 0)
+            raw = self._read(probe_stat_command(path), 128)
+            try:
+                _require(re.fullmatch(rb'[ -~]{1,127}\n', raw), 'CUSTODIAN_PHYSICAL_STAT')
+                row = raw[:-1].decode('ascii')
+                r302._expected_stat(path, f'STAT|{path}|{row}', directory=directory,
+                                    mode=None if directory else 0o555)
+                if not directory:
+                    _require(0 < int(row.rsplit('|', 1)[1]) <= 1024**2, "CUSTODIAN_PACKAGE_SIZE")
+            except (ValueError, r302.R302Hold):
+                raise R309Hold("CUSTODIAN_PHYSICAL_STAT") from None
+            snapshot.append(raw)
+        return snapshot
+
+    @staticmethod
+    def _validate_request(request_bytes):
+        try:
+            document = _strict_json(request_bytes, limit=1024**2)
+        except BootstrapHold:
+            raise R309Hold("CUSTODIAN_REQUEST_INVALID") from None
+        _require(type(document) is dict and document, "CUSTODIAN_REQUEST_INVALID")
+
+    def invoke(self, request_bytes, *, recheck_authority):
+        """A zero-argument factory mints its short-lived OIDC after the final recheck.
+
+        Bytes supplied directly are validated before any physical reads. The
+        bounded private response is returned only to the validating caller.
+        """
+        _require(callable(recheck_authority), "CUSTODIAN_AUTHORITY_REQUIRED")
+        factory = request_bytes if callable(request_bytes) else None
+        if factory is None:
+            self._validate_request(request_bytes)
+        try:
+            observations = [self._read(command, 32).removesuffix(b'\n')
+                            for command in (HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND)]
+            r302.verify_host_identity(b'\n'.join(observations) + b'\n', self._expected_identity)
+        except r302.R302Hold:
+            raise R309Hold("CUSTODIAN_PHYSICAL_IDENTITY") from None
+        before = self._snapshot()
+        digest = self._read(probe_hash_command(CUSTODIAN_TARGET), 256)
+        _require(digest == f'{self._package_sha}  {CUSTODIAN_TARGET}\n'.encode('ascii'),
+                 "CUSTODIAN_PACKAGE_DIGEST")
+        _require(self._snapshot() == before, "CUSTODIAN_PHYSICAL_CHANGED")
+        try:
+            authorized = recheck_authority()
+        except Exception:
+            raise R309Hold("CUSTODIAN_AUTHORITY_UNVERIFIED") from None
+        _require(authorized is True, "CUSTODIAN_AUTHORITY_UNVERIFIED")
+        command = "/usr/bin/sudo -n " + CUSTODIAN_TARGET + " " + _CUSTODIAN_VERBS[self._operation]
+        if factory is not None:
+            try:
+                request_bytes = factory()
+            except Exception:
+                raise R309Hold("CUSTODIAN_REQUEST_UNAVAILABLE") from None
+            self._validate_request(request_bytes)
+        status, receipt = self._run_child(command, request_bytes, 4096, 60)
+        if status != 0:
+            self.poisoned = True
+            raise R309Hold("CUSTODIAN_VERB_HOLD")
+        try:
+            result = _strict_json(receipt, limit=4096)
+        except BootstrapHold:
+            self.poisoned = True
+            raise R309Hold("CUSTODIAN_RECEIPT_INVALID") from None
+        if type(result) is not dict or not result:
+            self.poisoned = True
+            raise R309Hold("CUSTODIAN_RECEIPT_INVALID")
+        return receipt

@@ -1081,7 +1081,7 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
         action = event["workflow_dispatch"]["inputs"]["bootstrap_action"]
         self.assertEqual(action["default"], "offhost")
         self.assertEqual(action["options"], [
-            "offhost", "install_files", "resume_files", "install_genesis_launcher"])
+            "offhost", "install_files", "resume_files", "install_genesis_launcher", "install_genesis_custodian"])
         jobs = document["jobs"]
         offhost = jobs["owner_go_offhost_evidence_only"]
         physical = jobs["approved_root_files_only"]
@@ -1179,6 +1179,25 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 79)
                 self.assertEqual(result.stdout, "RC6_R362_PREPARE=HOLD79\n")
                 self.assertEqual(result.stderr, "")
+
+    def test_custodian_workflow_separates_preparation_from_go_and_credentials(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / ".github/workflows/rc6-r295-host-bootstrap-trusted.yml").read_text())
+        job = workflow["jobs"]["approved_genesis_custodian_only"]
+        launcher = workflow["jobs"]["approved_genesis_launcher_only"]
+        self.assertEqual(job["if"], launcher["if"].replace("install_genesis_launcher", "install_genesis_custodian"))
+        checkout, check, prepare, publish = job["steps"]
+        self.assertEqual([checkout, check], launcher["steps"][:2])
+        self.assertNotIn("env", job)
+        self.assertEqual(prepare["if"], "${{ inputs.owner_comment_id == 'PREPARE' }}")
+        self.assertEqual(publish["if"], "${{ inputs.owner_comment_id != 'PREPARE' }}")
+        self.assertEqual(set(prepare["env"]), set(launcher["steps"][2]["env"]) | {"BOOTSTRAP_ACTION"})
+        self.assertEqual(publish["env"], launcher["steps"][3]["env"])
+        self.assertIn("--prepare-custodian", prepare["run"])
+        self.assertIn("--install-approved-custodian", publish["run"])
+        for step in (prepare, publish):
+            self.assertIn("python3 -B -m scripts.rc6_genesis_launcher_bootstrap ", step["run"])
+            self.assertNotIn("${{", step["run"])
 
     def test_offhost_check_stays_hold79_even_with_a_context(self):
         from contextlib import redirect_stdout
