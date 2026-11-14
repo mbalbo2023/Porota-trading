@@ -2,6 +2,8 @@
 
 Version: `2026-11-13/R335`
 
+**Autonomous night-shift / Deploy V2 operations (R349):** [RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md](docs/governance/RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md) is the detailed step-by-step entrypoint for blocker triage, owner-controlled implementation, CI/CD simplification, source/PR hygiene and immutable release to physical droplet. It includes a dated snapshot **not** a live authority. Before acting, recheck the latest #1093, #980, HEADs, Actions, artifact manifests and host receipts. No repeated ordinary authorization requests; technical exact-identity GO and host/security guards still apply. Safety remains PAPER/SHADOW ONLY, PPI Watch untouched, no rollback, Actions first and one deploy owner.
+
 This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
 ## 1. Mandatory RC6 handoff before any write
