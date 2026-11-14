@@ -88,6 +88,10 @@ FD_INVARIANTS = {
 }
 FD_MAX_PIDS = 64
 FD_MAX_PER_PID = 1024
+# Use the RC6 rootful daemon even if the invoking user selects another context.
+DOCKER_COMMAND = ("/usr/bin/docker", "--host", "unix:///var/run/docker.sock")
+DOCKER_ENV = {"HOME": "/root", "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+              "DOCKER_CONFIG": "/root/.docker", "DOCKER_CLI_HINTS": "false"}
 
 
 class MetadataReject(Exception):
@@ -300,8 +304,8 @@ def _docker_pids(name: str, deadline: float) -> list[int] | None:
         return None
     try:
         result = subprocess.run(
-            ["docker", "top", name, "-eo", "pid"],
-            capture_output=True, text=True, check=False,
+            [*DOCKER_COMMAND, "top", name, "-eo", "pid"],
+            capture_output=True, text=True, check=False, env=DOCKER_ENV,
             timeout=min(4, remaining))
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
         return None
@@ -324,9 +328,9 @@ def _docker_runtime(name: str, deadline: float) -> str:
         return "NO_VERIFICADO"
     try:
         result = subprocess.run(
-            ["docker", "inspect", "--type", "container", "--format",
+            [*DOCKER_COMMAND, "inspect", "--type", "container", "--format",
              "{{.State.Running}}", name], capture_output=True, text=True,
-            check=False, timeout=min(2, remaining))
+            check=False, env=DOCKER_ENV, timeout=min(2, remaining))
     except (OSError, UnicodeError, subprocess.TimeoutExpired):
         return "NO_VERIFICADO"
     if result.returncode == 0:

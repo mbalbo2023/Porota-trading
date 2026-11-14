@@ -415,7 +415,8 @@ class ObserverFdTests(unittest.TestCase):
             self.assertEqual(probe._docker_pids("porota_production_observer",
                                                 time.monotonic() + 8), [321, 322])
             self.assertEqual(runner.call_args.args[0],
-                             ["docker", "top", "porota_production_observer", "-eo", "pid"])
+                             ["/usr/bin/docker", "--host", "unix:///var/run/docker.sock",
+                              "top", "porota_production_observer", "-eo", "pid"])
         for bad in ("PID\n321\n321\n", "PID\n321  --privileged\n",
                     "PID\n9999999999\n", "USER PID\n123\n", "PID\n"):
             with mock.patch.object(probe.subprocess, "run", return_value=
@@ -433,7 +434,8 @@ class ObserverFdTests(unittest.TestCase):
                 self.assertEqual(probe._docker_runtime("porota_production_observer",
                                                        time.monotonic() + 5), expected)
                 self.assertEqual(runner.call_args.args[0],
-                                 ["docker", "inspect", "--type", "container",
+                                 ["/usr/bin/docker", "--host", "unix:///var/run/docker.sock",
+                                  "inspect", "--type", "container",
                                   "--format", "{{.State.Running}}",
                                   "porota_production_observer"])
         with mock.patch.object(probe.subprocess, "run", return_value=
@@ -443,6 +445,32 @@ class ObserverFdTests(unittest.TestCase):
                                                    time.monotonic() + 5), "ABSENT")
         self.assertEqual(probe._docker_runtime("other_service", time.monotonic() + 5),
                          "NO_VERIFICADO")
+
+    def test_hostile_docker_environment_cannot_redirect_either_query(self):
+        caller = {
+            "PATH": "/tmp/fixture/bin", "HOME": "/tmp/fixture/home",
+            "DOCKER_HOST": "unix:///tmp/other.sock", "DOCKER_CONTEXT": "other",
+            "DOCKER_CONFIG": "/tmp/fixture/config", "DOCKER_TLS_VERIFY": "1",
+            "DOCKER_CERT_PATH": "/tmp/fixture/tls", "LC_ALL": "C.UTF-8",
+        }
+        # A denied daemon must stay unknown. The boundary records which
+        # executable, endpoint and environment the two real probes selected.
+        denied = subprocess.CompletedProcess([], 1, "", "permission denied")
+        with mock.patch.dict(os.environ, caller, clear=True), \
+             mock.patch.object(probe.subprocess, "run", return_value=denied) as runner:
+            deadline = time.monotonic() + 8
+            self.assertIsNone(probe._docker_pids("porota_production_dashboard", deadline))
+            self.assertEqual(probe._docker_runtime("porota_production_dashboard", deadline),
+                             "NO_VERIFICADO")
+        self.assertEqual(runner.call_count, 2)
+        for call in runner.call_args_list:
+            with self.subTest(command=call.args[0]):
+                self.assertEqual(call.kwargs.get("env"), {
+                    "HOME": "/root", "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                    "DOCKER_CONFIG": "/root/.docker", "DOCKER_CLI_HINTS": "false",
+                })
+                self.assertEqual(call.args[0][:3],
+                                 ["/usr/bin/docker", "--host", "unix:///var/run/docker.sock"])
 
     def test_two_probes_identify_live_holder_only_in_exact_named_container(self):
         with (mock.patch.object(probe, "_docker_runtime", return_value="RUNNING"),
