@@ -1,4 +1,6 @@
 """OFFHOST provenance checks; external verification is not simulated as GO."""
+from dataclasses import replace
+import gzip
 import hashlib
 import io
 import json
@@ -22,7 +24,7 @@ def canonical(doc):
     return (json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
-def fixture(helper=None):
+def fixture(helper=None, *, member_type=tarfile.REGTYPE):
     sources = {
         "scripts/rc6_oci_host_helper.py": b"#!/usr/bin/python3 -I\n# helper\n",
         "scripts/rc6_runtime_oci_custody.py": b"# custody\n",
@@ -38,6 +40,7 @@ def fixture(helper=None):
     with tarfile.open(fileobj=output, mode="w:gz") as archive:
         for path, raw in {**sources, "POROTA_DEPLOY_BUNDLE_MANIFEST.json": canonical(inner)}.items():
             entry = tarfile.TarInfo(path)
+            entry.type = member_type
             entry.size = len(raw)
             archive.addfile(entry, io.BytesIO(raw))
     bundle = output.getvalue()
@@ -52,6 +55,16 @@ def fixture(helper=None):
         git_blobs=tuple((path, hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest())
                         for path, raw in sorted(sources.items())))
     return boundary, bundle, outer
+
+
+def rebound_bundle(boundary, bundle, outer):
+    document = json.loads(outer)
+    document["bundle_sha256"] = sha(bundle)
+    outer = canonical(document)
+    return replace(boundary, member_sha256=(
+        ("porota-deploy-bundle-v2.tgz", sha(bundle)),
+        ("porota-deploy-bundle-v2-manifest.json", sha(outer)),
+    )), bundle, outer
 
 
 def generated_fixture(boundary):
@@ -111,7 +124,6 @@ def real_bundle_arguments():
 
 class ProvenanceTest(unittest.TestCase):
     def test_authenticated_tar_still_rejects_duplicate_link_and_traversal_members(self):
-        from dataclasses import replace
         boundary, bundle, outer = fixture()
         for name, kind in (("scripts/rc6_oci_host_helper.py", "duplicate"),
                            ("linked.py", "link"), ("../outside.py", "traversal")):
@@ -125,16 +137,49 @@ class ProvenanceTest(unittest.TestCase):
                     extra.type = tarfile.SYMTYPE
                     extra.linkname = "/outside"
                 changed.addfile(extra)
-            new_bundle = output.getvalue()
-            document = json.loads(outer)
-            document["bundle_sha256"] = sha(new_bundle)
-            new_outer = canonical(document)
             # Model an authenticated but structurally invalid D; no generic
             # verification bypass is added to production for this fixture.
-            rebound = replace(boundary, member_sha256=(("porota-deploy-bundle-v2.tgz", sha(new_bundle)),
-                ("porota-deploy-bundle-v2-manifest.json", sha(new_outer))))
             with self.subTest(kind=kind), self.assertRaisesRegex(producer.ProvenanceHold, "TAR_MEMBER_SCOPE"):
-                producer.extract_bound_sources(rebound, new_bundle, new_outer)
+                producer.extract_bound_sources(*rebound_bundle(boundary, output.getvalue(), outer))
+
+    def test_extension_headers_hold_before_tarfile_reads_their_payload(self):
+        boundary, _, outer = fixture()
+        handlers = {
+            "_proc_pax": (tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE),
+            "_proc_gnulong": (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK),
+            "_proc_sparse": (tarfile.GNUTYPE_SPARSE,),
+        }
+        for handler, kinds in handlers.items():
+            for kind in kinds:
+                with self.subTest(kind=kind):
+                    header = tarfile.TarInfo("unexpected")
+                    header.type = kind
+                    header.size = 512 * 1024**2
+                    # Only the one physical header exists. The stdlib would act
+                    # on its size before yielding an entry for R326 to check.
+                    bundle = gzip.compress(header.tobuf(tarfile.USTAR_FORMAT))
+                    with patch.object(tarfile.TarInfo, handler,
+                                      side_effect=AssertionError("extension handler reached")), \
+                         self.assertRaisesRegex(producer.ProvenanceHold, "TAR_MEMBER_SCOPE"):
+                        producer.extract_bound_sources(*rebound_bundle(boundary, bundle, outer))
+
+    def test_inflating_the_first_regular_header_does_not_buffer_the_member(self):
+        helper = bytes(2 * 1024**2)
+        arguments = fixture(helper)
+        first_header_buffer = []
+
+        def observe_header(entry, archive):
+            # _proc_builtin has only consumed the 512-byte header here. The
+            # tar stream must not hold a whole decompressed member in reserve.
+            first_header_buffer.append(len(getattr(archive.fileobj, "dbuf", b"")))
+            return process_header(entry, archive)
+
+        process_header = tarfile.TarInfo._proc_builtin
+        with patch.object(tarfile.TarInfo, "_proc_builtin", observe_header):
+            result = producer.extract_bound_sources(*arguments)
+        self.assertEqual(result["helper"], helper)
+        self.assertTrue(first_header_buffer)
+        self.assertLessEqual(first_header_buffer[0], tarfile.RECORDSIZE)
 
     def test_real_reviewed_r308_consumer_is_required_in_integrated_main(self):
         import scripts
@@ -351,13 +396,20 @@ class ProvenanceTest(unittest.TestCase):
         freezer.assert_not_called()
 
     def test_bound_sources_are_extracted_without_importing_candidate_code(self):
-        boundary, bundle, outer = fixture()
-        result = producer.extract_bound_sources(boundary, bundle, outer)
-        self.assertEqual(result["helper"], b"#!/usr/bin/python3 -I\n# helper\n")
-        self.assertEqual(set(result), {"helper", "custody", "cf_intraday_scalping.py", "co_market_sessions_hf6.py"})
+        for kind in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.CONTTYPE):
+            with self.subTest(kind=kind):
+                result = producer.extract_bound_sources(*fixture(member_type=kind))
+                self.assertEqual(result["helper"], b"#!/usr/bin/python3 -I\n# helper\n")
+                self.assertEqual(set(result), {"helper", "custody", "cf_intraday_scalping.py",
+                                               "co_market_sessions_hf6.py"})
+
+    def test_controller_source_paths_share_the_immutable_provenance_contract(self):
+        paths = getattr(producer, "SOURCE_PATHS", None)
+        self.assertIs(paths, producer._SOURCE_PATHS)
+        with self.assertRaises(TypeError):
+            paths["scripts/extra.py"] = "extra"
 
     def test_missing_boundary_changed_tar_outer_or_git_blob_fails_closed(self):
-        from dataclasses import replace
         boundary, bundle, outer = fixture()
         cases = ((None, bundle, outer), (boundary, bundle + b"changed", outer),
                  (boundary, bundle, outer + b"changed"),

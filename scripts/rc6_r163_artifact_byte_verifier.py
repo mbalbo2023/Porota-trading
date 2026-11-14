@@ -50,6 +50,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
+from types import MappingProxyType
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -122,6 +123,7 @@ MAX_ZIP_EXPANSION_RATIO = 200
 MAX_MEMBERS = 4096
 MAX_MANIFEST_BYTES = 512 * 1024
 CHUNK_BYTES = 1024 * 1024
+MAX_RETAINED_BUNDLE_BYTES = 128 * 1024**2
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 SAFE_SEGMENT = re.compile(r"[a-zA-Z0-9_.+@-]+\Z")
@@ -442,7 +444,7 @@ def _cross_bind_release_inner_claims(
     documents: Mapping[str, bytes], hashes: Mapping[str, str], *,
     candidate_sha: str, candidate_tree_sha: str, trusted_main_sha: str,
     run_id: int, run_attempt: int,
-) -> None:
+) -> str:
     """Independent, bounded PAPER/frozen-hash cross-bind of already hashed ZIP.
 
     The canonical full tar validator remains PRODUCT's pinned
@@ -510,6 +512,7 @@ def _cross_bind_release_inner_claims(
             trusted_main_sha=trusted_main_sha,
             run_id=run_id, run_attempt=run_attempt,
         )
+        return frozen["image_id"]
     except (ArtifactByteEvidenceRed, KeyError, TypeError, ValueError):
         _red("RELEASE_INNER_CLAIM_RED")
 
@@ -872,7 +875,8 @@ def _snapshot_archive(source: Path, snapshot: Any, *, limit: int) -> tuple[str, 
 
 def _verify_zip(snapshot: Any, *, sha: str, tree: str, run_id: int,
                 attempt: int, name: str,
-                publisher_main_sha: str | None = None) -> tuple[int, int]:
+                publisher_main_sha: str | None = None,
+                retained_material: dict[str, Any] | None = None) -> tuple[int, int]:
     try:
         with zipfile.ZipFile(snapshot, "r") as archive:
             infos = archive.infolist()
@@ -983,6 +987,12 @@ def _verify_zip(snapshot: Any, *, sha: str, tree: str, run_id: int,
                 info = members[item["path"]]
                 if info.file_size != item["size_bytes"]:
                     _red("FILE_SIZE_MISMATCH")
+                retain = retained_material is not None and item["path"] in {
+                    "porota-deploy-bundle-v2.tgz", "porota-deploy-bundle-v2-manifest.json"}
+                if retain and info.file_size > (MAX_RETAINED_BUNDLE_BYTES
+                        if item["path"].endswith(".tgz") else MAX_MANIFEST_BYTES):
+                    _red("RELEASE_MATERIAL_BUDGET")
+                chunks = []
                 digest = hashlib.sha256()
                 read_size = 0
                 with archive.open(info, "r") as stream:
@@ -991,10 +1001,14 @@ def _verify_zip(snapshot: Any, *, sha: str, tree: str, run_id: int,
                         if read_size > item["size_bytes"]:
                             _red("FILE_SIZE_MISMATCH")
                         digest.update(chunk)
+                        if retain:
+                            chunks.append(chunk)
                 if read_size != item["size_bytes"]:
                     _red("FILE_SIZE_MISMATCH")
                 if digest.hexdigest() != item["sha256"]:
                     _red("FILE_DIGEST_MISMATCH")
+                if retain:
+                    retained_material[item["path"]] = b"".join(chunks)
             if publisher_main_sha is not None:
                 documents = {}
                 for path in RELEASE_SMALL_JSON_FILES:
@@ -1003,12 +1017,18 @@ def _verify_zip(snapshot: Any, *, sha: str, tree: str, run_id: int,
                         _red("RELEASE_INNER_CLAIM_RED")
                     with archive.open(info, "r") as stream:
                         documents[path] = stream.read(MAX_MANIFEST_BYTES + 1)
-                _cross_bind_release_inner_claims(
+                image_id = _cross_bind_release_inner_claims(
                     documents, {row["path"]: row["sha256"] for row in rows},
                     candidate_sha=sha, candidate_tree_sha=tree,
                     trusted_main_sha=publisher_main_sha,
                     run_id=run_id, run_attempt=attempt,
                 )
+                if retained_material is not None:
+                    retained_material["image_id"] = image_id
+                    retained_material["member_sha256"] = tuple(
+                        (row["path"], row["sha256"]) for row in rows
+                        if row["path"] in {"porota-deploy-bundle-v2.tgz",
+                                            "porota-deploy-bundle-v2-manifest.json"})
             return len(rows), expected_total
     except (zipfile.BadZipFile, EOFError, RuntimeError, OSError, ValueError) as exc:
         if isinstance(exc, ArtifactByteEvidenceRed):
@@ -1024,8 +1044,17 @@ def verify_artifact_bytes(
     expected_workflow_path: str = PREDEPLOY_WORKFLOW,
     expected_publisher_sha: str | None = None,
     max_archive_bytes: int = MAX_ARCHIVE_BYTES,
+    include_material: bool = False,
 ) -> dict[str, Any]:
-    """Verify exact REST-bound ZIP bytes without declaring deployment approval."""
+    """Verify exact REST-bound ZIP bytes without declaring deployment approval.
+
+    Release-only material opt-in retains two bounded members while hashing
+    the private snapshot, never the image. It is exposed after the final
+    snapshot digest check. The default summary is unchanged.
+    """
+    if type(include_material) is not bool or (include_material and
+            expected_workflow_path != RELEASE_WORKFLOW):
+        _red("RELEASE_MATERIAL_MODE_INVALID")
     if not isinstance(expected_candidate_sha, str) or not HEX40.fullmatch(expected_candidate_sha):
         _red("EXPECTED_SHA_INVALID")
     if not isinstance(expected_tree_sha, str) or not HEX40.fullmatch(expected_tree_sha):
@@ -1065,10 +1094,12 @@ def verify_artifact_bytes(
             if (not _integer(artifact_receipt.get("size_in_bytes"), minimum=1) or
                     artifact_receipt["size_in_bytes"] != size):
                 _red("ARTIFACT_SIZE_MISMATCH")
+            retained = {} if include_material else None
             files, total = _verify_zip(
                 snapshot, sha=expected_candidate_sha, tree=expected_tree_sha,
                 run_id=expected_run_id, attempt=expected_run_attempt, name=name,
                 publisher_main_sha=expected_publisher_sha,
+                **({"retained_material": retained} if include_material else {}),
             )
             snapshot.seek(0)
             last = hashlib.sha256()
@@ -1096,18 +1127,28 @@ def verify_artifact_bytes(
         "owner_go_verified": False,
         "automatic_go": False,
         "runtime_verified": False,
+        **({"release_material": MappingProxyType({
+            "bundle_bytes": retained["porota-deploy-bundle-v2.tgz"],
+            "outer_manifest_bytes": retained["porota-deploy-bundle-v2-manifest.json"],
+            "image_id": retained["image_id"],
+            "member_sha256": retained["member_sha256"],
+        })} if include_material else {}),
     }
 
 
 def verify_postcompletion_receipt_zip(
     archive: Path, *, expected_digest: str, expected_size_bytes: int,
+    include_material: bool = False,
 ) -> dict[str, Any]:
     """R251 E one-member receipt ZIP reader for downstream R252/R253 gates.
 
     Caller MUST independently authenticate the completed E REST run/attempt,
     artifact ID/name/digest and freshness before using the returned document.
     This does not validate the D RELEASE ZIP; use verify_artifact_bytes for D.
+    Material opt-in also returns the original JSON bytes, never a serialization.
     """
+    if type(include_material) is not bool:
+        _red("RELEASE_MATERIAL_MODE_INVALID")
     digest = _digest(expected_digest)
     if digest is None or not _integer(expected_size_bytes, minimum=1):
         _red("POST_RECEIPT_EXPECTED_INVALID")
@@ -1162,6 +1203,8 @@ def verify_postcompletion_receipt_zip(
             receipt["runtime_verified"] is not False or
             receipt["real_orders_physical_verified"] is not False):
         _red("POST_RECEIPT_SCHEMA_INVALID")
+    if include_material:
+        receipt["postcompletion_receipt_bytes"] = raw
     return receipt
 
 

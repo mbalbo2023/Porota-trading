@@ -2,6 +2,15 @@
 
 from copy import deepcopy
 import unittest
+import hashlib
+import json
+from functools import partial
+from unittest.mock import patch
+
+import pytest
+
+from scripts import rc6_r340_trusted_root_env_controller as controller
+from scripts import rc6_r326_root_bundle_provenance as provenance
 
 from scripts.rc6_r340_trusted_root_env_controller import (
     ControlHold,
@@ -23,6 +32,139 @@ EVENT = {
     "GITHUB_TRIGGERING_ACTOR": "mbalbo2023",
     "GITHUB_SHA": MAIN,
 }
+
+
+def authenticated_material_fixture(tmp_path, *, canonical_e=True, e_padding=0):
+    from test_rc6_r252_trusted_receipt_bridge import (
+        real_material_fixture, S, T, M, API, guard, real_r251_bytes)
+    reader, payload, raw_e, boundary, d_zip, e_zip = real_material_fixture(
+        tmp_path, canonical_e=canonical_e, e_padding=e_padding)
+    reader.records[API + "/git/ref/heads/main"] = {
+        "ref": "refs/heads/main", "object": {"type": "commit", "sha": M}}
+    reader.records[API + "/git/commits/" + M] = {"sha": M, "tree": {"sha": "8" * 40}}
+    blobs = dict(boundary.git_blobs)
+    scripts_tree = "9" * 40
+    def entry(path, kind, mode, sha):
+        return {"path": path, "type": kind, "mode": mode, "sha": sha}
+    reader.records[API + "/git/trees/" + T] = {
+        "sha": T, "truncated": False, "tree": [
+            entry("scripts", "tree", "040000", scripts_tree),
+            *[entry(name, "blob", "100644", blobs[name]) for name in
+              ("cf_intraday_scalping.py", "co_market_sessions_hf6.py")]]}
+    reader.records[API + "/git/trees/" + scripts_tree] = {
+        "sha": scripts_tree, "truncated": False, "tree": [
+            entry(name.removeprefix("scripts/"), "blob", "100644", blobs[name])
+            for name in blobs if name.startswith("scripts/")]}
+    event = {**EVENT, "GITHUB_SHA": M}
+    release = partial(guard.verify_trusted_release, byte_verifier=real_r251_bytes)
+    return reader, event, release, payload, raw_e, d_zip, e_zip
+
+
+def test_real_d_e_material_reaches_r326_and_only_final_hash_projection(tmp_path):
+    reader, event, release, payload, raw_e, d_zip, e_zip = authenticated_material_fixture(tmp_path)
+    from test_rc6_r252_trusted_receipt_bridge import D_ID, D_ATTEMPT, D_ART, E_ID, E_ATTEMPT, E_ART
+    try:
+        proof = verify_authenticated_release(event, checkout_sha=event["GITHUB_SHA"],
+                    github=reader, trusted_release=release, include_material=True)
+    except TypeError as exc:
+        pytest.fail("R340 material integration is unavailable: " + str(exc))
+    material = proof["source_material"]
+    assert material["status"] == "FOUR_SOURCES_BOUND_OFFHOST"
+    assert material["postcompletion_receipt_sha256"] == hashlib.sha256(raw_e).hexdigest()
+    assert material.get("release") == {
+        "run_id": D_ID, "run_attempt": D_ATTEMPT, "artifact_id": D_ART,
+        "artifact_digest": "sha256:" + hashlib.sha256(d_zip.read_bytes()).hexdigest()}
+    assert material.get("postcompletion") == {
+        "run_id": E_ID, "run_attempt": E_ATTEMPT, "artifact_id": E_ART,
+        "artifact_digest": "sha256:" + hashlib.sha256(e_zip.read_bytes()).hexdigest()}
+    assert material["postcompletion"]["artifact_digest"] != "sha256:" + material["postcompletion_receipt_sha256"]
+    assert material["image_id"] == json.loads(payload["porota-frozen-candidate.json"])["image_id"]
+    assert set(material["sources"]) == {
+        "scripts/rc6_oci_host_helper.py", "scripts/rc6_runtime_oci_custody.py",
+        "cf_intraday_scalping.py", "co_market_sessions_hf6.py"}
+    assert all(row["bytes"] > 0 and len(row["sha256"]) == 64 and len(row["git_blob_sha"]) == 40
+               for row in material["sources"].values())
+    assert reader.downloads == [402, 401]
+    assert "bundle_bytes" not in json.dumps(proof)
+    for key in ("owner_go_verified", "host_control_verified", "root_env_genesis_verified",
+                "deploy_authorized", "real_orders_allowed", "runtime_verified"):
+        assert proof[key] is False
+
+
+@pytest.mark.parametrize("drift", [False, True])
+def test_normal_verify_offhost_cli_consumes_material_or_redacts_drift(tmp_path, capsys, drift):
+    from test_rc6_r252_trusted_receipt_bridge import real_r251_bytes
+    from scripts import rc6_ci_release_required_guard as r252
+    from scripts import rc6_r163_trusted_postrun_byte_audit as r163
+    reader, event, _, _, _, _, _ = authenticated_material_fixture(tmp_path)
+    if drift:
+        path = PREFIX + "/git/ref/heads/main"
+        reader.after_reads[path] = {"ref": "refs/heads/main", "object": {
+            "type": "commit", "sha": "0" * 40}}
+    with patch.dict(controller.os.environ, {**event, "GITHUB_TOKEN": "test-read-token"}, clear=True), \
+         patch.object(controller, "_checkout_head", return_value=event["GITHUB_SHA"]), \
+         patch.object(r163, "GitHubReadOnlyREST", return_value=reader), \
+         patch.object(r252, "_load_trusted_module", return_value=real_r251_bytes):
+        assert controller.main(["--verify-offhost"]) == (79 if drift else 0)
+    output = capsys.readouterr().out
+    if drift:
+        assert "GITHUB_HEAD_CHANGED_DURING_AUTH" in output
+        assert "source_material" not in output and "git_blob_sha" not in output
+        assert "bundle_bytes" not in output
+        return
+    proof = json.loads(output)
+    assert len(proof.get("source_material", {}).get("sources", {})) == 4
+
+
+@pytest.mark.parametrize("mutation", ["blob", "truncated", "tree", "mode", "duplicate", "d_zip", "attempt"])
+def test_material_rejects_git_or_artifact_mismatch(tmp_path, mutation):
+    reader, event, release, _, _, d_zip, _ = authenticated_material_fixture(tmp_path)
+    from test_rc6_r252_trusted_receipt_bridge import T, API, D_ID
+    root = reader.records[API + "/git/trees/" + T]
+    if mutation == "blob":
+        root["tree"][1]["sha"] = "0" * 40
+    elif mutation == "truncated":
+        root["truncated"] = True
+    elif mutation == "tree":
+        root["sha"] = "0" * 40
+    elif mutation == "mode":
+        root["tree"][1]["mode"] = "120000"
+    elif mutation == "duplicate":
+        root["tree"].append(deepcopy(root["tree"][1]))
+    elif mutation == "d_zip":
+        d_zip.write_bytes(d_zip.read_bytes() + b"unbound bytes")
+    else:
+        reader.records[API + f"/actions/runs/{D_ID}"]["run_attempt"] += 1
+    try:
+        with pytest.raises(ControlHold):
+            verify_authenticated_release(event, checkout_sha=event["GITHUB_SHA"],
+                        github=reader, trusted_release=release, include_material=True)
+    except TypeError as exc:
+        pytest.fail("R340 material integration is unavailable: " + str(exc))
+
+
+def test_final_source_recheck_precedes_r326_consumption(tmp_path):
+    reader, event, release, _, _, _, _ = authenticated_material_fixture(tmp_path)
+    from test_rc6_r252_trusted_receipt_bridge import API
+    path = API + "/git/ref/heads/main"
+    reader.after_reads[path] = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": "0" * 40}}
+    with patch.object(provenance, "extract_bound_sources", wraps=provenance.extract_bound_sources) as extract:
+        try:
+            with pytest.raises(ControlHold, match="GITHUB_HEAD_CHANGED_DURING_AUTH"):
+                verify_authenticated_release(event, checkout_sha=event["GITHUB_SHA"],
+                            github=reader, trusted_release=release, include_material=True)
+        except TypeError as exc:
+            pytest.fail("R340 material integration is unavailable: " + str(exc))
+        assert extract.call_count == 0
+
+
+@pytest.mark.parametrize("canonical_e,e_padding", [(False, 0), (True, 32768)])
+def test_material_projection_requires_original_canonical_bounded_e(tmp_path, canonical_e, e_padding):
+    reader, event, release, _, _, _, _ = authenticated_material_fixture(
+        tmp_path, canonical_e=canonical_e, e_padding=e_padding)
+    with pytest.raises(ControlHold, match="RELEASE_E_MATERIAL_FORMAT"):
+        verify_authenticated_release(event, checkout_sha=event["GITHUB_SHA"],
+                    github=reader, trusted_release=release, include_material=True)
 
 
 class StubREST:
