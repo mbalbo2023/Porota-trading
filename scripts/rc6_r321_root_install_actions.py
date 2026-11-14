@@ -21,6 +21,7 @@ from types import MappingProxyType
 
 from scripts import rc6_host_rootowned_installer_contract as r280
 from scripts import rc6_host_rootowned_installer_cli as r280_cli
+from scripts import rc6_genesis_launcher_authority as r362
 from scripts import rc6_r163_artifact_byte_verifier as r163
 from scripts import rc6_r302_bootstrap_receipt_preflight as r302
 from scripts import rc6_r309_bounded_mux_host as r309
@@ -38,6 +39,9 @@ _DO_REGION = re.compile(r"[a-z]{2,12}[0-9]{1,2}\Z")
 _REASON = re.compile(r"[A-Z][A-Z0-9_]{0,70}\Z")
 CHUNK_BYTES = 8192  # Matches, never expands, R309BoundedMuxHost.call stdin.
 INSTALLER_RECEIPT_CAP = 512  # Full R280 JSON is 261 bytes, not R309 legacy cap 256.
+# Public SSH/DO commitment from the R363 physical GO (#1093/6882469161).
+R363_HOST_IDENTITY_SHA256 = 'ede3589a375077b3d40d6941cd82e5e6b141c615e616cdd693a046199232d1b3'
+R358_LAUNCHER_SIZE = 12086
 MAX_TOTAL_BYTES = 512 * 1024
 MAX_TOTAL_CHUNKS = 64
 MIN_OWNER_GO_REMAINING = timedelta(minutes=10)
@@ -912,13 +916,24 @@ def _probe_exists(host, path):
     return status == 0
 
 
-def _probe_files(host):
+def _probe_launcher_sample(host):
+    path = r362.LAUNCHER_TARGET
+    if not _probe_exists(host, path):
+        return None
+    metadata = _probe_stat(host, path, mode=0o555, size=R358_LAUNCHER_SIZE)
+    digest = _probe_hash(host, path)
+    _require(digest == r362.LAUNCHER_SHA256, 'FILE_PROBE_LAUNCHER_HASH_DRIFT')
+    return metadata, digest
+
+
+def _probe_files(host, host_commitment):
     # An observation is stable only when the same protected ancestors and
     # leaves bracket the hashes, including the parents of absent targets.
     private_dirs = {r302.ROOT_LOCK, r309.PROBE_GENERATIONS.rsplit('/', 1)[0]}
     parents = {path: _probe_stat(host, path, directory=True,
                                  mode=0o700 if path in private_dirs else None)
                for path in r302.ROOT_DIRECTORIES}
+    launcher = _probe_launcher_sample(host)
     expected_hashes = r302._expected_hashes()
     bootstrap_sizes = {r302.ROOT_PIN: 65, r302.ROOT_RECEIPT: len(r302._expected_receipt_bytes())}
     bootstrap_stats = {}
@@ -951,10 +966,19 @@ def _probe_files(host):
     for path, mode, _ in r302.ROOT_FILES:
         _require(_probe_stat(host, path, mode=mode) == bootstrap_stats[path],
                  'FILE_PROBE_BOOTSTRAP_CHANGED')
+    _require(_probe_launcher_sample(host) == launcher, 'FILE_PROBE_LAUNCHER_CHANGED')
+    genesis = {'state': 'ABSENT', 'host_identity_sha256': host_commitment}
+    if launcher is not None:
+        metadata, digest = launcher
+        # Bind the final hash to the same file even if its name moved during sha256sum.
+        _require(_probe_stat(host, r362.LAUNCHER_TARGET, mode=0o555, size=R358_LAUNCHER_SIZE) == metadata,
+                 'FILE_PROBE_LAUNCHER_CHANGED')
+        genesis.update(state='PRESENT_VERIFIED', observed_sha256=digest, size_bytes=R358_LAUNCHER_SIZE,
+                       uid=0, gid=0, mode='0555', nlink=1)
     for path in reversed(r302.ROOT_DIRECTORIES):
         _require(_probe_stat(host, path, directory=True) == parents[path],
                  'FILE_PROBE_PARENT_CHANGED')
-    return result
+    return result, genesis
 
 
 def probe_files_only(env):
@@ -965,17 +989,22 @@ def probe_files_only(env):
     _require(type(run) is str and _POSITIVE.fullmatch(run) and
              type(attempt) is str and _POSITIVE.fullmatch(attempt), 'FILE_PROBE_RUN_INVALID')
     r302.validate_environment(env)
+    try:
+        host_commitment = r362.host_identity_sha256(env)
+    except r362.r295.BootstrapHold:
+        raise R321Hold('FILE_PROBE_HOST_COMMITMENT_UNVERIFIED') from None
+    _require(host_commitment == R363_HOST_IDENTITY_SHA256, 'FILE_PROBE_HOST_COMMITMENT_MISMATCH')
     with r309.R309BoundedMuxHost(env, operation=r309.PROBE_OPERATION) as host:
         identity = []
         for cmd in (r309.HOST_ID_COMMAND, r309.HOST_REGION_COMMAND, r309.PROBE_UID_COMMAND):
             _, raw = _probe_call(host, cmd, cap=32)
             identity.append(raw.removesuffix(b'\n'))
         r302.verify_host_identity(b'\n'.join(identity) + b'\n', env)
-        observations = _probe_files(host)
+        observations, genesis = _probe_files(host, host_commitment)
     return {'schema': 'RC6_R321_PROBE_FILES_ONLY_V1', 'trusted_main_sha': env['GITHUB_SHA'],
             'run_id': run, 'run_attempt': attempt,
             'observed_at_utc': datetime.now(timezone.utc).isoformat(),
-            'bootstrap_files_verified': True, 'r271': observations,
+            'bootstrap_files_verified': True, 'r271': observations, 'genesis_launcher': genesis,
             'host_control_verified': False, 'runtime_verified': False, 'deploy_authorized': False}
 
 

@@ -17,6 +17,7 @@ import zipfile
 from unittest.mock import patch
 
 from scripts import rc6_r321_root_install_actions as r321
+from scripts import rc6_genesis_launcher_authority as r362
 from scripts import rc6_r305_root_pin_transition_guard as real_r305
 from scripts import rc6_r302_bootstrap_receipt_preflight as r302
 from scripts import rc6_r309_bounded_mux_host as r309
@@ -580,7 +581,12 @@ class R321RootInstallActionsTest(unittest.TestCase):
                 self.assertFalse(any(x.startswith("link:") for x in host.mutations))
                 self.assertEqual(host.install_count, 0)
 
-    def test_probe_cli_runs_one_real_mux_and_observes_bootstrap_and_five_targets(self):
+    def test_probe_commitment_is_the_public_r363_host_commitment(self):
+        self.assertEqual(r321.R363_HOST_IDENTITY_SHA256,
+                         'ede3589a375077b3d40d6941cd82e5e6b141c615e616cdd693a046199232d1b3')
+
+    def test_probe_cli_observes_bootstrap_five_targets_and_the_independent_launcher(self):
+        host_key = 'AAAAC3NzaC1lZDI1NTE5AAAAIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8g'
         env = {
             'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_REF': 'refs/heads/main',
             'GITHUB_REPOSITORY': 'mbalbo2023/Porota-trading', 'GITHUB_SHA': MAIN,
@@ -588,7 +594,7 @@ class R321RootInstallActionsTest(unittest.TestCase):
             'GITHUB_RUN_ID': '87654', 'GITHUB_RUN_ATTEMPT': '2',
             'DO_USER': 'porotaadmin', 'DO_HOST': '192.0.2.14',
             'DO_SSH_KEY': '-----BEGIN OPENSSH PRIVATE KEY-----\nprivate-fixture-only\n',
-            'DO_KNOWN_HOSTS': '192.0.2.14 ssh-ed25519 TEST-KEY',
+            'DO_KNOWN_HOSTS': '192.0.2.14 ssh-ed25519 ' + host_key,
             'RC6_EXPECTED_DO_ID': '981177665', 'RC6_EXPECTED_DO_REGION': 'nyc1',
             'RC6_R321_OPERATION': 'PROBE_FILES_ONLY',
         }
@@ -599,16 +605,34 @@ class R321RootInstallActionsTest(unittest.TestCase):
         generations = directory + '/generations'
         targets = {row[0]: role for role, row in r280.TARGETS.items()}
         targets[generations] = 'generations'
+        launcher = r362.LAUNCHER_TARGET
+        host_commitment = r362.host_identity_sha256(env)
         dirs = set(r302.ROOT_DIRECTORIES)
-        paths = {path: i for i, path in enumerate(sorted(dirs | files.keys() | targets.keys()), 10)}
+        paths = {path: i for i, path in enumerate(sorted(dirs | files.keys() | targets.keys() | {launcher}), 10)}
 
-        for scenario, expected in (('missing', 0), ('present', 0), ('denied', 79),
+        for scenario, expected in (('missing', 0), ('present', 0), ('launcher_only', 0), ('denied', 79),
                                    ('dangling', 79), ('drift', 79), ('foreign_uid', 79),
                                    ('unsafe_parent', 79), ('target_reappears', 79),
                                    ('target_hardlink', 79), ('bootstrap_oversize', 79),
-                                   ('bootstrap_pin_drift', 79), ('private_mode_drift', 79)):
+                                   ('bootstrap_pin_drift', 79), ('private_mode_drift', 79),
+                                   ('host_key_replaced', 79), ('host_key_invalid', 79),
+                                   ('launcher_wrong_hash', 79), ('launcher_digest_changes', 79),
+                                   ('launcher_inode_changes', 79), ('launcher_device_changes', 79),
+                                   ('launcher_swapped_during_final_hash', 79),
+                                   ('launcher_appears', 79), ('launcher_disappears', 79),
+                                   ('launcher_denied', 79), ('launcher_symlink', 79),
+                                   ('launcher_wrong_size', 79), ('launcher_wrong_owner', 79),
+                                   ('launcher_wrong_group', 79), ('launcher_wrong_mode', 79),
+                                   ('launcher_hardlink', 79), ('launcher_directory', 79),
+                                   ('launcher_absent_parent_drift', 79)):
             with self.subTest(scenario=scenario):
                 commands = []
+                case_env = dict(env)
+                if scenario == 'host_key_replaced':
+                    other = 'AAAAC3NzaC1lZDI1NTE5AAAAIAIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAh'
+                    case_env['DO_KNOWN_HOSTS'] = '192.0.2.14 ssh-ed25519 ' + other
+                elif scenario == 'host_key_invalid':
+                    case_env['DO_KNOWN_HOSTS'] = '192.0.2.14 ssh-ed25519 invalid'
                 def response(argv, data, **kwargs):
                     self.assertEqual(data, b'')
                     cmd = argv[-1]
@@ -627,12 +651,21 @@ class R321RootInstallActionsTest(unittest.TestCase):
                         'present', 'target_hardlink', 'private_mode_drift')
                     if scenario == 'target_reappears' and path == r280.TARGETS['helper'][0]:
                         exists = commands.count('/usr/bin/sudo -n /usr/bin/test -e ' + path) > 1
+                    if path == launcher:
+                        exists = scenario not in ('missing', 'launcher_absent_parent_drift')
+                        reads = commands.count(r309.probe_test_command('-e', launcher))
+                        if scenario == 'launcher_appears':
+                            exists = reads >= 2
+                        elif scenario == 'launcher_disappears':
+                            exists = reads < 2
                     if op == '/usr/bin/test':
-                        if (path in targets and scenario == 'denied' and
-                                args[3:-1] in (['-e'], ['!', '-e'])):
+                        denied = (path in targets and scenario == 'denied' or
+                                  path == launcher and scenario == 'launcher_denied')
+                        if denied and args[3:-1] in (['-e'], ['!', '-e']):
                             return 1, b''  # sudo denied both positive and negative tests
                         if args[3:-1] == ['!', '-L']:
-                            return int(scenario == 'dangling' and path in targets), b''
+                            return int(scenario == 'dangling' and path in targets or
+                                       scenario == 'launcher_symlink' and path == launcher), b''
                         if args[3:-1] == ['-e']:
                             return int(not exists), b''
                         if args[3:-1] == ['!', '-e']:
@@ -658,26 +691,49 @@ class R321RootInstallActionsTest(unittest.TestCase):
                         links = 2 if directory_kind else 1
                         if scenario == 'target_hardlink' and path in targets:
                             links = 2
-                        return 0, f'0|0|{mode:o}|{links}|{kind}|3|{inode}|{size}\n'.encode()
+                        uid, gid, device = 0, 0, 3
+                        if path == launcher:
+                            uid = int(scenario == 'launcher_wrong_owner')
+                            gid = int(scenario == 'launcher_wrong_group')
+                            mode = 0o444 if scenario == 'launcher_wrong_mode' else 0o555
+                            size = 12086 + int(scenario == 'launcher_wrong_size')
+                            links = 2 if scenario == 'launcher_hardlink' else 1
+                            kind = 'directory' if scenario == 'launcher_directory' else 'regular file'
+                            if commands.count(cmd) > 1:
+                                inode += int(scenario == 'launcher_inode_changes')
+                                device += int(scenario == 'launcher_device_changes')
+                            if (scenario == 'launcher_swapped_during_final_hash' and
+                                    commands.count(r309.probe_hash_command(launcher)) == 2):
+                                inode += 1
+                        if (scenario == 'launcher_absent_parent_drift' and path == '/usr/local/sbin'
+                                and commands.count(cmd) > 1):
+                            inode += 1
+                        return 0, f'{uid}|{gid}|{mode:o}|{links}|{kind}|{device}|{inode}|{size}\n'.encode()
                     if op == '/usr/bin/sha256sum':
-                        self.assertIn(path, set(files) | {r280.TARGETS['helper'][0],
+                        self.assertIn(path, set(files) | {launcher, r280.TARGETS['helper'][0],
                                                           r280.TARGETS['custody'][0]})
                         digest = r302._expected_hashes().get(path, '9' * 64)
+                        if path == launcher:
+                            digest = r362.LAUNCHER_SHA256
+                            if (scenario == 'launcher_wrong_hash' or
+                                    scenario == 'launcher_digest_changes' and commands.count(cmd) > 1):
+                                digest = 'a' * 64
                         if scenario == 'bootstrap_pin_drift' and path == r302.ROOT_PIN:
                             digest = '1' * 64
                         return 0, (digest + '  ' + path + '\n').encode()
                     self.fail('unexpected remote verb')
                 output = io.StringIO()
-                with patch.object(r309.subprocess, 'Popen') as master, \
+                with patch.object(r321, 'R363_HOST_IDENTITY_SHA256', host_commitment, create=True), \
+                        patch.object(r309.subprocess, 'Popen') as master, \
                         patch.object(r309.R309BoundedMuxHost, '_verified_master_socket', return_value=True), \
                         patch.object(r309, 'run_bounded_ssh_command', side_effect=response), \
                         redirect_stdout(output):
                     master.return_value.poll.return_value = None
-                    code = r321.main(['--probe-files-only'], env=env)
+                    code = r321.main(['--probe-files-only'], env=case_env)
                 self.assertEqual(code, expected, output.getvalue())
-                self.assertEqual(master.call_count, 1)
+                self.assertEqual(master.call_count, 0 if scenario.startswith('host_key_') else 1)
                 result = output.getvalue()
-                for sensitive in ('981177665', 'nyc1', 'private-fixture', '/var/lib'):
+                for sensitive in ('981177665', 'nyc1', 'private-fixture', '/var/lib', '192.0.2.14', host_key):
                     self.assertNotIn(sensitive, result)
                 if expected == 79:
                     self.assertIn('HOLD79', result)
@@ -691,6 +747,20 @@ class R321RootInstallActionsTest(unittest.TestCase):
                                   receipt['run_attempt']), (MAIN, '87654', '2'))
                 self.assertEqual(set(receipt['r271']), set(targets.values()))
                 self.assertTrue(receipt['bootstrap_files_verified'])
+                genesis = {'state': 'ABSENT', 'host_identity_sha256': host_commitment}
+                if scenario != 'missing':
+                    genesis.update(state='PRESENT_VERIFIED', observed_sha256=r362.LAUNCHER_SHA256,
+                                   size_bytes=12086, uid=0, gid=0, mode='0555', nlink=1)
+                self.assertEqual(receipt['genesis_launcher'], genesis)
+                self.assertEqual(commands.count(r309.probe_test_command('-e', launcher)), 2)
+                self.assertEqual(commands.count(r309.probe_hash_command(launcher)), 0 if scenario == 'missing' else 2)
+                if scenario == 'missing':
+                    self.assertEqual(commands.count(r309.probe_test_command('! -e', launcher)), 2)
+                else:
+                    stats = [i for i, v in enumerate(commands) if v == r309.probe_stat_command(launcher)]
+                    hashes = [i for i, v in enumerate(commands) if v == r309.probe_hash_command(launcher)]
+                    self.assertLess(stats[0], hashes[0])
+                    self.assertLess(hashes[-1], stats[-1])
                 for row in receipt['r271'].values():
                     self.assertEqual(row['state'], 'PRESENT' if scenario == 'present' else 'ABSENT')
                 self.assertFalse(receipt['host_control_verified'])

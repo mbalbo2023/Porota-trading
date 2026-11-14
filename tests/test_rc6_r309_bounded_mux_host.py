@@ -99,7 +99,7 @@ def _host_session(*, env=None, master=None, r305_module=None, **mode):
     """Only the subprocess boundary is fake; adapter state and secret files are real."""
     source = r305_module if r305_module is not None else _trusted_r305()
     fake_master = master or _FakeMaster()
-    with mock.patch.dict(sys.modules, {R305_NAME: source}), \
+    with mock.patch('scripts.rc6_r309_bounded_mux_host.import_module', return_value=source), \
          mock.patch("scripts.rc6_r309_bounded_mux_host.subprocess.Popen",
                     return_value=fake_master) as popen, \
          mock.patch.object(R309BoundedMuxHost, "_verified_master_socket",
@@ -228,6 +228,31 @@ class R309BoundedMuxHostTests(TestCase):
                     host.call(HOST_ID_CMD, stdin=data)
             self.assertEqual(runner.call_count, 1)
             self.assertEqual(popen.call_count, 1)
+
+    def test_genesis_launcher_reads_are_exact_and_exclusive_to_file_probe(self):
+        target = '/usr/local/sbin/porota-rc6-host-installer-genesis'
+        sudo = '/usr/bin/sudo -n /usr/bin/'
+        reads = {sudo + verb + ' ' + target for verb in (
+            'test ! -L', 'test -e', 'test ! -e',
+            "stat -c '%u|%g|%a|%h|%F|%d|%i|%s' --", 'sha256sum --')}
+        with _host_session(operation='PROBE_FILES_ONLY') as (host, _, _), \
+                mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command',
+                           return_value=(0, b'')) as runner:
+            self.assertEqual({cmd for cmd in host.commands if target in cmd}, reads)
+            for command in reads:
+                self.assertEqual(host.call(command), (0, b''))
+            for command in (sudo + 'chmod 0555 -- ' + target, sudo + 'dd of=' + target,
+                            sudo + 'python3 -I ' + target, sudo + 'sha256sum -- ' + target + '.other'):
+                with self.subTest(command=command), self.assertRaisesRegex(R309Hold, 'SSH_COMMAND_NOT_REVIEWED'):
+                    host.call(command)
+            self.assertEqual(runner.call_count, len(reads))
+
+        with _host_session(r305_module=import_module(R305_NAME)) as (host, _, _), \
+                mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command') as runner:
+            for command in reads:
+                with self.subTest(command=command), self.assertRaisesRegex(R309Hold, 'SSH_COMMAND_NOT_REVIEWED'):
+                    host.call(command)
+            runner.assert_not_called()
 
     def test_rejects_untrusted_dispatch_before_creating_files_or_ssh(self):
         for key, wrong in (
