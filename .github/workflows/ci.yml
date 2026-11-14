@@ -16,6 +16,16 @@ on:
 permissions:
   contents: read
 
+# Only a first PR attempt shares a group with the next update to that PR.
+# Manual reruns, pushes and dispatches use a group keyed by run ID.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.repository }}-${{ github.event_name == 'pull_request' &&
+    github.run_attempt == '1' && github.event.number > 0 &&
+    format('pr-{0}', github.event.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: >-
+    ${{ github.event_name == 'pull_request' && github.run_attempt == '1' && github.event.number > 0 }}
+
 jobs:
   infrastructure:
     name: Infrastructure preflight

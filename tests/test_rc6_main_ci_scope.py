@@ -98,6 +98,21 @@ class MainCiScopeTests(unittest.TestCase):
         self.assertIn("if: steps.detect.outputs.scope == 'APPLICATION'", workflow)
         self.assertNotIn("Application package not installed yet", workflow)
 
+    def test_only_first_pr_attempts_share_a_cancellable_ci_group(self):
+        workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+        workflow = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        self.assertEqual(set(workflow["on"]), {"pull_request", "push", "workflow_dispatch"})
+        self.assertIn("concurrency", workflow)
+        policy = workflow["concurrency"]
+        first_pr = ("github.event_name == 'pull_request' && "
+                    "github.run_attempt == '1' && github.event.number > 0")
+        self.assertEqual(policy["cancel-in-progress"], "${{ " + first_pr + " }}")
+        # The PR number isolates simultaneous PRs. The distinct run prefix also
+        # isolates manual reruns of an earlier SHA, pushes and dispatches.
+        self.assertEqual(policy["group"],
+                         "${{ github.workflow }}-${{ github.repository }}-${{ " + first_pr +
+                         " && format('pr-{0}', github.event.number) || format('run-{0}', github.run_id) }}")
+
     def test_control_dependency_guard_requires_all_three_exact_pins(self):
         dependency_file = self.root / ".github/requirements-control-ci.txt"
         with self.assertRaisesRegex(ScopeError, "CI_CONTROL_DEPS_MISSING"):

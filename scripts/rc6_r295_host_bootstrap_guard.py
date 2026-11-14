@@ -936,11 +936,14 @@ class StrictSSHHost:
             return False
         return stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()
 
+    def _allows(self, command):
+        return (command in reviewed_remote_root_commands() or
+                command in (HOST_ID_COMMAND, HOST_REGION_COMMAND))
+
     def call(self, command, stdin=None):
         _require(self.ssh_args is not None and self.master is not None and
                  self.master.poll() is None and self._verified_master_socket() and
-                 (command in reviewed_remote_root_commands() or
-                  command in (HOST_ID_COMMAND, HOST_REGION_COMMAND)),
+                 self._allows(command),
                  "SSH_COMMAND_NOT_REVIEWED")
         _require(stdin is None or type(stdin) is bytes and len(stdin) <= 1024 * 1024,
                  "SSH_STDIN_INVALID")

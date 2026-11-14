@@ -1,0 +1,1331 @@
+"""R321 finite ROOT-stage planning only; no SSH, sudo or host changes."""
+
+from contextlib import redirect_stdout
+from copy import deepcopy
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+import hashlib
+import io
+import json
+from pathlib import Path
+import shlex
+from tempfile import TemporaryDirectory
+from types import MappingProxyType, SimpleNamespace
+import unittest
+import yaml
+import zipfile
+from unittest.mock import patch
+
+from scripts import rc6_r321_root_install_actions as r321
+from scripts import rc6_r305_root_pin_transition_guard as real_r305
+from scripts import rc6_r302_bootstrap_receipt_preflight as r302
+from scripts import rc6_r309_bounded_mux_host as r309
+from scripts import rc6_r163_artifact_byte_verifier as r163
+from scripts import rc6_host_rootowned_installer_contract as r280
+from scripts import rc6_host_rootowned_installer_cli as r280_cli
+
+
+NOW = datetime(2026, 11, 13, 14, 0, tzinfo=timezone.utc)
+CANDIDATE = "a" * 40
+TREE = "b" * 40
+MAIN = "f" * 40
+MAIN_TREE = "0" * 40
+WITNESS_SHA = "1" * 64
+RELEASE_D_DIGEST = "sha256:" + "2" * 64
+RELEASE_E_DIGEST = "sha256:" + "4" * 64
+SHA256 = lambda raw: hashlib.sha256(raw).hexdigest()
+
+
+def canonical(data):
+    return (json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def fixture(*, large=True):
+    sources = {
+        "helper": b"#!/usr/bin/python3 -I\n" + b"H" * (17000 if large else 10),
+        "custody": b"C" * (18000 if large else 10),
+        "profiles": b'{"paper_mode":"PRODUCTION_PAPER"}\n',
+        "unit_template": b"[Service]\nExecStart=/usr/bin/false\n",
+    }
+    approval = {
+        "schema_version": 1, "phase": "GENESIS",
+        "candidate_sha": CANDIDATE, "candidate_tree": TREE,
+        "artifact_digest": "sha256:" + "c" * 64,
+        "image_id": "sha256:" + "d" * 64,
+        "daemon_id": "engine-28.0.4", "generation": "e" * 32,
+        "run_id": "43301355473", "run_attempt": "1",
+        "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
+        "helper_sha256": SHA256(sources["helper"]),
+        "custody_sha256": SHA256(sources["custody"]),
+        "profiles_sha256": SHA256(sources["profiles"]),
+        "unit_template_sha256": SHA256(sources["unit_template"]),
+        "expires_at": "2026-11-13T16:00:00Z",
+    }
+    sources["approval"] = canonical(approval)
+    manifest = {
+        "schema": "RC6_ROOT_INSTALL_MANIFEST_V1", "candidate_sha": CANDIDATE,
+        "candidate_tree": TREE, "paper_mode": "PRODUCTION_PAPER",
+        "real_orders_allowed": False,
+        "files": {key: SHA256(data) for key, data in sources.items()},
+    }
+    manifest_raw = canonical(manifest)
+    return manifest_raw, sources
+
+
+def install_go_fixture(*, created=NOW, expires=None, large=False):
+    _manifest, sources = fixture(large=large)
+    approval = json.loads(sources["approval"])
+    approval["artifact_digest"] = RELEASE_D_DIGEST
+    sources["approval"] = canonical(approval)
+    manifest = canonical({
+        "schema": "RC6_ROOT_INSTALL_MANIFEST_V1", "candidate_sha": CANDIDATE,
+        "candidate_tree": TREE, "paper_mode": "PRODUCTION_PAPER",
+        "real_orders_allowed": False,
+        "files": {role: SHA256(raw) for role, raw in sources.items()},
+    })
+    context = r321.RootInstallContext(
+        main_sha=MAIN, main_tree=MAIN_TREE,
+        candidate_sha=CANDIDATE, candidate_tree=TREE,
+        manifest_sha256=SHA256(manifest),
+        witness_artifact_sha256=WITNESS_SHA,
+        do_id="1029384756", do_region="nyc3",
+    )
+    receipt = {
+        "schema_version": 1, "status": "RELEASE_BYTES_VERIFIED_POSTCOMPLETION",
+        "repository": "mbalbo2023/Porota-trading", "candidate_sha": CANDIDATE,
+        "candidate_tree_sha": TREE, "publisher_main_sha": MAIN,
+        "publisher_workflow_path": ".github/workflows/rc6-r251-trusted-release-build.yml",
+        "publisher_run_id": 43301355473, "publisher_run_attempt": 1,
+        "release_artifact_id": 123456,
+        "release_artifact_name": "rc6-r251-release-43301355473-1-" + CANDIDATE,
+        "release_artifact_digest": RELEASE_D_DIGEST,
+        "release_artifact_size_bytes": 20480, "file_count": len(r163.RELEASE_PAYLOAD_FILES),
+        "total_size_bytes": 90000, "release_manifest_verified": True,
+        "r144_release_go": False, "runtime_verified": False,
+        "real_orders_physical_verified": False,
+    }
+    receipt_raw = canonical(receipt)
+    witness = {"run_id": "43306221122", "run_attempt": "1"}
+    if expires is None:
+        expires = created + timedelta(hours=2)
+    payload = {
+        "operation": "RC6_ROOT_INSTALL_NEW_FILES_ONLY",
+        "issue": 1093, "trusted_main_sha": MAIN,
+        "trusted_main_tree": MAIN_TREE,
+        "candidate_sha": CANDIDATE, "candidate_tree": TREE,
+        "root_manifest_sha256": SHA256(manifest),
+        "witness_artifact_sha256": WITNESS_SHA,
+        "witness_run_id": witness["run_id"],
+        "witness_run_attempt": witness["run_attempt"],
+        "release_e_run_id": "43304509783", "release_e_run_attempt": "1",
+        "release_e_artifact_id": 78910,
+        "release_e_artifact_digest": RELEASE_E_DIGEST,
+        "release_e_receipt_sha256": SHA256(receipt_raw),
+        "release_d_run_id": str(receipt["publisher_run_id"]),
+        "release_d_run_attempt": str(receipt["publisher_run_attempt"]),
+        "release_d_artifact_id": receipt["release_artifact_id"],
+        "release_d_artifact_digest": RELEASE_D_DIGEST,
+        "generation": approval["generation"],
+        "r305_pin_owner_go_id": 123,
+        "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
+        "host_control_verified": False,
+        "host_identity_source": "PROTECTED_DO_PINS",
+        "nonce": "c" * 32,
+        "expires_at": expires.isoformat().replace("+00:00", "Z"),
+    }
+    comment = {
+        "id": 456, "issue_url": (
+            "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/1093"),
+        "user": {"login": "mbalbo2023"}, "author_association": "OWNER",
+        "created_at": created.isoformat().replace("+00:00", "Z"),
+        "updated_at": created.isoformat().replace("+00:00", "Z"),
+        "body": "RC6_R321_ROOT_INSTALL_GO_V1=" + canonical(payload).decode(),
+    }
+    return context, manifest, sources, receipt_raw, witness, approval, comment
+
+
+class FakeR309Host:
+    """In-memory finite OS-command transport: never SSH, sudo or root."""
+
+    def __init__(self, commands, *, pin=None):
+        self.allowed = set(commands)
+        self.files = {}
+        self.directories = {}
+        self.symlinks = set()
+        self.commands = []
+        self.mutations = []
+        self.next_inode = 20
+        self.pin_sha = pin
+        self.pin_transitions = 0
+        self.install_count = 0
+        self.identity_checks = 0
+        self.staged_receipt = None
+        self.on_append = None
+        self.on_create = None
+        self.pin_corrupt = False
+
+    def call(self, command, *, stdin=None, max_output_bytes=256, timeout_s=15):
+        if command not in self.allowed:
+            raise RuntimeError("not a reviewed command")
+        if stdin is not None and (type(stdin) is not bytes or len(stdin) > 8192):
+            raise RuntimeError("invalid R309 stdin budget")
+        if timeout_s > 15:
+            raise RuntimeError("invalid R309 timeout")
+        self.commands.append(command)
+        status, output = self._run(command, stdin)
+        if len(output) > max_output_bytes:
+            raise RuntimeError("bounded SSH output would overflow")
+        return status, output
+
+    def _run(self, command, stdin):
+        if command == r321.INSTALLER_COMMAND:
+            self.mutations.append("installer")
+            self.install_count += 1
+            return 0, self.staged_receipt or b""
+        if "/usr/bin/test -L " in command:
+            return (0 if command.split()[-1] in self.symlinks else 1), b""
+        if "/usr/bin/test -e " in command:
+            path = command.split()[-1]
+            return (0 if path in self.files or path in self.directories or
+                    path in self.symlinks else 1), b""
+        if "/usr/bin/mkdir -m 0700 -- " in command:
+            path = command.split("-- ", 1)[1]
+            if path in self.directories or path in self.symlinks:
+                return 1, b""
+            self.next_inode += 1
+            self.directories[path] = self.next_inode
+            self.mutations.append("mkdir:" + path)
+            return 0, b""
+        if "/usr/bin/stat -c " in command:
+            path = command.split("-- ", 1)[1]
+            if path in self.directories:
+                output = f"0|0|700|2|directory|1|{self.directories[path]}|4096\n"
+                return 0, output.encode()
+            if path not in self.files or path in self.symlinks:
+                return 1, b""
+            node = self.files[path]
+            links = sum(other is node for other in self.files.values())
+            output = f"0|0|400|{links}|regular file|1|{node['inode']}|{len(node['data'])}\n"
+            return 0, output.encode()
+        if "/usr/bin/sha256sum -- " in command:
+            path = command.split("-- ", 1)[1]
+            if path not in self.files:
+                return 1, b""
+            return 0, (SHA256(bytes(self.files[path]["data"])) +
+                       "  " + path + "\n").encode()
+        if "/usr/bin/install -m 0400 -o 0 -g 0 /dev/null " in command:
+            path = command.rsplit(" ", 1)[-1]
+            if path in self.files or path in self.symlinks:
+                return 1, b""
+            self.next_inode += 1
+            self.files[path] = {"inode": self.next_inode, "data": bytearray()}
+            self.mutations.append("create:" + path)
+            if callable(self.on_create):
+                self.on_create(self, path)
+            return 0, b""
+        if "/usr/bin/dd if=/dev/stdin of=" in command:
+            path = command.split(" of=", 1)[1].split(" ", 1)[0]
+            if path not in self.files:
+                return 1, b""
+            self.files[path]["data"].extend(stdin or b"")
+            self.mutations.append("append:" + path)
+            if callable(self.on_append):
+                self.on_append(self, path)
+            return 0, b""
+        if "/usr/bin/ln -T -- " in command:
+            stage, final = command.split("-- ", 1)[1].split(" ")
+            if stage not in self.files or final in self.files or final in self.symlinks:
+                return 1, b""
+            self.files[final] = self.files[stage]
+            self.mutations.append("link:" + final)
+            return 0, b""
+        if "/usr/bin/rm -- " in command:
+            stage = command.split("-- ", 1)[1]
+            if stage not in self.files:
+                return 1, b""
+            del self.files[stage]
+            self.mutations.append("rm:" + stage)
+            return 0, b""
+        if "/usr/bin/sync -- " in command:
+            self.mutations.append("sync")
+            return 0, b""
+        raise RuntimeError("unsupported fake command")
+
+
+def fake_r305_with_host():
+    inbox = r280.INBOX_DIR
+    lock = "/var/lib/.porota-rc6-r321-root-stage-reserved"
+    stage = {}
+    for role in r321.STAGE_ORDER:
+        target = r280.SOURCE_NAMES.get(role, "manifest.json")
+        source = f"{inbox}/.r321-{role}.stage"
+        final = f"{inbox}/{target}"
+        stage[role] = MappingProxyType({
+            "stage_test_l": f"/usr/bin/sudo -n /usr/bin/test -L {source}",
+            "stage_test_e": f"/usr/bin/sudo -n /usr/bin/test -e {source}",
+            "final_test_l": f"/usr/bin/sudo -n /usr/bin/test -L {final}",
+            "final_test_e": f"/usr/bin/sudo -n /usr/bin/test -e {final}",
+            "create": f"/usr/bin/sudo -n /usr/bin/install -m 0400 -o 0 -g 0 /dev/null {source}",
+            "append": f"/usr/bin/sudo -n /usr/bin/dd if=/dev/stdin of={source} bs=8192 oflag=append conv=notrunc status=none",
+            "stage_stat": f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%g|%a|%h|%F|%d|%i|%s' -- {source}",
+            "stage_hash": f"/usr/bin/sudo -n /usr/bin/sha256sum -- {source}",
+            "link": f"/usr/bin/sudo -n /usr/bin/ln -T -- {source} {final}",
+            "remove_stage": f"/usr/bin/sudo -n /usr/bin/rm -- {source}",
+            "final_stat": f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%g|%a|%h|%F|%d|%i|%s' -- {final}",
+            "final_hash": f"/usr/bin/sudo -n /usr/bin/sha256sum -- {final}",
+            "sync": f"/usr/bin/sudo -n /usr/bin/sync -- {source}",
+            "final_sync": f"/usr/bin/sudo -n /usr/bin/sync -- {final}",
+        })
+    constants = dict(
+        STAGE_LOCK_CREATE=f"/usr/bin/sudo -n /usr/bin/mkdir -m 0700 -- {lock}",
+        STAGE_INBOX_CREATE=f"/usr/bin/sudo -n /usr/bin/mkdir -m 0700 -- {inbox}",
+        STAGE_LOCK_STAT=f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%g|%a|%h|%F|%d|%i|%s' -- {lock}",
+        STAGE_INBOX_STAT=f"/usr/bin/sudo -n /usr/bin/stat -c '%u|%g|%a|%h|%F|%d|%i|%s' -- {inbox}",
+        STAGE_LOCK_TEST_L=f"/usr/bin/sudo -n /usr/bin/test -L {lock}",
+        STAGE_LOCK_TEST_E=f"/usr/bin/sudo -n /usr/bin/test -e {lock}",
+        STAGE_INBOX_TEST_L=f"/usr/bin/sudo -n /usr/bin/test -L {inbox}",
+        STAGE_INBOX_TEST_E=f"/usr/bin/sudo -n /usr/bin/test -e {inbox}",
+        STAGE_LOCK_SYNC=f"/usr/bin/sudo -n /usr/bin/sync -- {lock}",
+        STAGE_INBOX_SYNC=f"/usr/bin/sudo -n /usr/bin/sync -- {inbox}",
+        INSTALL_APPROVED_COMMAND=r321.INSTALLER_COMMAND,
+    )
+    whitelist = frozenset({r321.INSTALLER_COMMAND} |
+                          set(constants.values()) |
+                          {cmd for each in stage.values() for cmd in each.values()})
+
+    def pin_transition(host, context, **_kwargs):
+        _kwargs["recheck_authority"]()  # Real R305 rechecks inside its transaction.
+        host.pin_sha = ("0" * 64 if host.pin_corrupt else context.manifest_sha256)
+        host.pin_transitions += 1
+        return {"status": "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO"}
+
+    return SimpleNamespace(
+        **constants, PinContext=real_r305.PinContext,
+        OWNER_GO_MARKER="RC6_R305_ROOT_PIN_GO_V1=",
+        reviewed_stage_commands=lambda: MappingProxyType(stage),
+        reviewed_root_commands=lambda: whitelist,
+        _identity=lambda host, _context: setattr(
+            host, "identity_checks", host.identity_checks + 1),
+        _preflight_dirs=lambda host: None,
+        _bootstrap_receipt=lambda host: None,
+        _snapshot_pin=lambda host, pin, **_kwargs: (
+            None if host.pin_sha == pin else (_ for _ in ()).throw(
+                RuntimeError("ROOT_PIN_CHANGED"))),
+        validate_root_manifest=lambda raw, **_kwargs: json.loads(raw),
+        validate_independent_witness=lambda _raw, **_kwargs: {
+            "run_id": "43306221122", "run_attempt": "1"},
+        verify_owner_go=real_r305.verify_owner_go,
+        owner_go_identity=real_r305.owner_go_identity,
+        execute_root_pin_transition=pin_transition,
+    )
+
+
+def simulated_install(*, large=False):
+    (context, manifest, sources, receipt_raw, witness,
+     approval, owner_comment) = install_go_fixture(large=large)
+    r305 = fake_r305_with_host()
+    host = FakeR309Host(r305.reviewed_root_commands())
+    host.staged_receipt = canonical({
+        "schema": "RC6_ROOT_INSTALL_CODE_ONLY_V1",
+        "status": "INSTALLED_FILES_ONLY_NOT_HOST_GO",
+        "manifest_sha256": context.manifest_sha256,
+        "candidate_sha": context.candidate_sha,
+        "host_control_verified": False,
+    })
+    pin_comment = {
+        "id": 123, "issue_url": "https://api.github.com/repos/mbalbo2023/Porota-trading/issues/1093",
+        "user": {"login": "mbalbo2023"}, "author_association": "OWNER",
+        "created_at": "2026-11-13T14:00:00Z", "updated_at": "2026-11-13T14:00:00Z",
+        "body": real_r305.OWNER_GO_MARKER + canonical({
+            "operation": "RC6_ROOT_PIN_NEW", "issue": 1093,
+            "trusted_main_sha": context.main_sha, "candidate_sha": context.candidate_sha,
+            "candidate_tree": context.candidate_tree, "manifest_sha256": context.manifest_sha256,
+            "witness_artifact_sha256": context.witness_artifact_sha256,
+            "witness_run_id": witness["run_id"], "witness_run_attempt": witness["run_attempt"],
+            "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
+            "host_control_verified": False, "host_identity_source": "PROTECTED_DO_PINS",
+            "expires_at": "2026-11-13T16:00:00Z",
+        }).decode(),
+    }
+    def fresh_authority():
+        return {
+            "owner_comment": owner_comment,
+            "main_sha": context.main_sha,
+            "candidate_tree": context.candidate_tree,
+            "witness_artifact_sha256": context.witness_artifact_sha256,
+            "release_e_run_id": "43304509783",
+            "release_e_run_attempt": "1",
+            "release_e_artifact_id": 78910,
+            "release_e_artifact_digest": RELEASE_E_DIGEST,
+            "release_e_receipt_sha256": SHA256(receipt_raw),
+            "release_d_artifact_id": 123456,
+            "release_d_artifact_digest": RELEASE_D_DIGEST,
+        }
+    ownership = {
+        "operation": "RC6_ROOT_INSTALL_NEW_FILES_ONLY", "authority": "DEPLOY_OWNER",
+        "status": "ACTIVE", "record_id": 901, "owner": "mbalbo2023",
+        "pin_go_id": 123, "install_go_id": 456,
+        "do_id": context.do_id, "do_region": context.do_region,
+    }
+    kwargs = dict(
+        manifest_raw=manifest, source_bytes=sources, witness_raw=b"simulated-witness",
+        owner_comment=owner_comment, owner_go_id=456,
+        pin_owner_comment=pin_comment, pin_owner_go_id=123,
+        release_e_receipt_raw=receipt_raw, release_e_run_id="43304509783",
+        release_e_run_attempt="1", release_e_artifact_id=78910,
+        release_e_artifact_digest=RELEASE_E_DIGEST,
+        ownership_record_id=901, recheck_ownership=lambda: ownership,
+        recheck_install_authority=fresh_authority,
+        recheck_pin_authority=lambda: (pin_comment, context.main_sha,
+                                       context.witness_artifact_sha256),
+        clock=lambda: NOW + timedelta(minutes=1),
+    )
+    def imports(name):
+        if name == "scripts.rc6_r305_root_pin_transition_guard":
+            return r305
+        if name == "scripts.rc6_r309_bounded_mux_host":
+            return SimpleNamespace(R309BoundedMuxHost=FakeR309Host)
+        raise ImportError(name)
+    return host, r305, context, kwargs, imports
+
+
+class R321RootInstallActionsTest(unittest.TestCase):
+    def test_install_requires_an_external_global_ownership_provider(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        kwargs.pop("recheck_ownership", None)
+        kwargs.pop("ownership_record_id", None)
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_ownership_requires_the_expected_global_record_and_exact_operation_scope(self):
+        cases = (
+            None, True, {}, {"authority": "WRITE_OWNER"}, {"record_id": True},
+            {"record_id": 901.0}, {"record_id": 902}, {"status": "RELEASED"},
+            {"operation": "OTHER_OPERATION"}, {"owner": "other"},
+            {"pin_go_id": 124}, {"install_go_id": 457},
+            {"do_id": "other-host"}, {"do_region": "nyc1"},
+        )
+        for change in cases:
+            with self.subTest(change=change):
+                host, _r305, context, kwargs, imports = simulated_install()
+                fresh = kwargs["recheck_ownership"]()
+                result = ({**fresh, **change} if type(change) is dict and change else change)
+                kwargs["recheck_ownership"] = lambda: result
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_ownership_revocation_stops_each_next_staging_mutation(self):
+        for after in ("lock", "create", "append", "link"):
+            with self.subTest(after=after):
+                host, r305, context, kwargs, imports = simulated_install(large=True)
+                lease = kwargs["recheck_ownership"]()
+                original_call = host.call
+                def tracked(command, **options):
+                    result = original_call(command, **options)
+                    changed = (after == "lock" and command == r305.STAGE_LOCK_CREATE or
+                               after == "create" and "/dev/null " in command or
+                               after == "append" and "/usr/bin/dd " in command or
+                               after == "link" and "/usr/bin/ln -T " in command)
+                    if changed:
+                        lease["status"] = "RELEASED"
+                    return result
+                host.call = tracked
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                mutations = [x for x in host.mutations if x != "sync"]
+                self.assertEqual(len(mutations), {"lock": 1, "create": 3, "append": 4, "link": 7}[after])
+                self.assertFalse(any(x.startswith("rm:") for x in mutations))
+                self.assertEqual(host.pin_transitions, 0)
+                self.assertEqual(host.install_count, 0)
+
+    def test_r305_internal_recheck_keeps_both_gos_lease_and_original_pin_snapshot(self):
+        for revoked in ("install", "pin", "ownership"):
+            with self.subTest(revoked=revoked):
+                host, r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                pin["user"]["id"] = 42
+                lease = kwargs["recheck_ownership"]()
+                def transition(fake, _context, **options):
+                    if revoked == "install":
+                        kwargs["owner_comment"]["user"]["login"] = "other"
+                    elif revoked == "pin":
+                        pin["user"]["id"] = 43
+                    else:
+                        lease["record_id"] = 902
+                    options["recheck_authority"]()
+                    fake.pin_transitions += 1
+                    return {"status": "PIN_TRANSITION_FILES_ONLY_NOT_HOST_GO"}
+                r305.execute_root_pin_transition = transition
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertEqual(sum(x.startswith("link:") for x in host.mutations), 6)
+                self.assertEqual(host.pin_transitions, 0)
+                self.assertEqual(host.install_count, 0)
+
+    def test_pin_recheck_accepts_presentation_metadata_and_rejects_bad_tuple_identity(self):
+        for case in ("metadata", "main", "witness", "tuple"):
+            with self.subTest(case=case):
+                host, _r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                pin["user"].update(id=42, node_id="actor-node")
+                def fresh():
+                    comment = deepcopy(pin)
+                    comment["reactions"] = {"total_count": 2}
+                    comment["user"]["avatar_url"] = "presentation-only"
+                    if case == "tuple":
+                        return (comment,)
+                    return (comment, "0" * 40 if case == "main" else context.main_sha,
+                            "0" * 64 if case == "witness" else context.witness_artifact_sha256)
+                kwargs["recheck_pin_authority"] = fresh
+                with patch.object(r321, "import_module", side_effect=imports):
+                    if case == "metadata":
+                        result = r321.execute_root_install_files_only(host, context, **kwargs)
+                        self.assertEqual(result["status"], "ROOT_INSTALLED_FILES_ONLY_NOT_HOST_GO")
+                    else:
+                        with self.assertRaises(r321.R321Hold):
+                            r321.execute_root_install_files_only(host, context, **kwargs)
+                        self.assertFalse(host.mutations)
+
+    def test_slow_identity_cannot_move_writes_past_expiry_or_lease_revocation(self):
+        for changed in ("expiry", "ownership"):
+            with self.subTest(changed=changed):
+                host, r305, context, kwargs, imports = simulated_install()
+                current = [NOW + timedelta(minutes=1)]
+                kwargs["clock"] = lambda: current[0]
+                lease = kwargs["recheck_ownership"]()
+                original_identity = r305._identity
+                def slow_identity(fake, pin_context):
+                    original_identity(fake, pin_context)
+                    if fake.identity_checks == 2:
+                        if changed == "expiry":
+                            current[0] = NOW + timedelta(hours=2, seconds=1)
+                        else:
+                            lease["status"] = "RELEASED"
+                r305._identity = slow_identity
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_pin_witness_run_and_attempt_must_match_before_any_mutation(self):
+        for field in ("witness_run_id", "witness_run_attempt"):
+            with self.subTest(field=field):
+                host, _r305, context, kwargs, imports = simulated_install()
+                pin = kwargs["pin_owner_comment"]
+                body = json.loads(pin["body"].split("=", 1)[1])
+                body[field] = "999"
+                pin["body"] = real_r305.OWNER_GO_MARKER + canonical(body).decode()
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_first_pin_recheck_denial_prevents_all_staging(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        def denied():
+            raise RuntimeError("authenticated PIN revoked")
+        kwargs["recheck_pin_authority"] = denied
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_pin_identity_is_frozen_before_install_callback_can_mutate_it(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        pin = kwargs["pin_owner_comment"]
+        pin["user"]["id"] = 42
+        original = kwargs["recheck_install_authority"]
+        def changed():
+            pin["user"]["id"] = 43
+            return original()
+        kwargs["recheck_install_authority"] = changed
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+    def test_pin_revocation_or_expiry_stops_next_chunk(self):
+        for change in ("revoked", "expired"):
+            with self.subTest(change=change):
+                host, _r305, context, kwargs, imports = simulated_install(large=True)
+                current = [NOW + timedelta(minutes=1)]
+                kwargs["clock"] = lambda: current[0]
+                pin = kwargs["pin_owner_comment"]
+                body = json.loads(pin["body"].split("=", 1)[1])
+                body["expires_at"] = "2026-11-13T14:15:00Z"
+                pin["body"] = real_r305.OWNER_GO_MARKER + canonical(body).decode()
+                original = kwargs["recheck_pin_authority"]
+                revoked = [False]
+                def fresh():
+                    if revoked[0]:
+                        raise RuntimeError("authenticated PIN revoked")
+                    return original()
+                kwargs["recheck_pin_authority"] = fresh
+                def change_after_first_append(_host, _path):
+                    if change == "revoked":
+                        revoked[0] = True
+                    else:
+                        current[0] = NOW + timedelta(minutes=20)
+                host.on_append = change_after_first_append
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertEqual(sum(x.startswith("append:") for x in host.mutations), 1)
+                self.assertFalse(any(x.startswith("link:") for x in host.mutations))
+                self.assertEqual(host.install_count, 0)
+
+    def test_probe_cli_runs_one_real_mux_and_observes_bootstrap_and_five_targets(self):
+        env = {
+            'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_REF': 'refs/heads/main',
+            'GITHUB_REPOSITORY': 'mbalbo2023/Porota-trading', 'GITHUB_SHA': MAIN,
+            'GITHUB_ACTOR': 'mbalbo2023', 'GITHUB_TRIGGERING_ACTOR': 'mbalbo2023',
+            'GITHUB_RUN_ID': '87654', 'GITHUB_RUN_ATTEMPT': '2',
+            'DO_USER': 'porotaadmin', 'DO_HOST': '192.0.2.14',
+            'DO_SSH_KEY': '-----BEGIN OPENSSH PRIVATE KEY-----\nprivate-fixture-only\n',
+            'DO_KNOWN_HOSTS': '192.0.2.14 ssh-ed25519 TEST-KEY',
+            'RC6_EXPECTED_DO_ID': '981177665', 'RC6_EXPECTED_DO_REGION': 'nyc1',
+            'RC6_R321_OPERATION': 'PROBE_FILES_ONLY',
+        }
+        files = {p: (m, 123) for p, m, _ in r302.ROOT_FILES}
+        files[r302.ROOT_PIN] = (0o400, 65)
+        files[r302.ROOT_RECEIPT] = (0o400, len(r302._expected_receipt_bytes()))
+        directory = '/var/lib/porota-rc6-oci-custody'
+        generations = directory + '/generations'
+        targets = {row[0]: role for role, row in r280.TARGETS.items()}
+        targets[generations] = 'generations'
+        dirs = set(r302.ROOT_DIRECTORIES)
+        paths = {path: i for i, path in enumerate(sorted(dirs | files.keys() | targets.keys()), 10)}
+
+        for scenario, expected in (('missing', 0), ('present', 0), ('denied', 79),
+                                   ('dangling', 79), ('drift', 79), ('foreign_uid', 79),
+                                   ('unsafe_parent', 79), ('target_reappears', 79),
+                                   ('target_hardlink', 79), ('bootstrap_oversize', 79),
+                                   ('bootstrap_pin_drift', 79), ('private_mode_drift', 79)):
+            with self.subTest(scenario=scenario):
+                commands = []
+                def response(argv, data, **kwargs):
+                    self.assertEqual(data, b'')
+                    cmd = argv[-1]
+                    commands.append(cmd)
+                    if cmd == real_r305.HOST_ID_COMMAND:
+                        return 0, b'981177665'
+                    if cmd == real_r305.HOST_REGION_COMMAND:
+                        return 0, b'nyc1\n'
+                    if cmd == '/usr/bin/id -u':
+                        return 0, (b'0\n' if scenario == 'foreign_uid' else b'1000\n')
+                    args = shlex.split(cmd)
+                    self.assertEqual(args[:2], ['/usr/bin/sudo', '-n'])
+                    op, path = args[2], args[-1]
+                    self.assertIn(path, paths)
+                    exists = path in dirs or path in files or scenario in (
+                        'present', 'target_hardlink', 'private_mode_drift')
+                    if scenario == 'target_reappears' and path == r280.TARGETS['helper'][0]:
+                        exists = commands.count('/usr/bin/sudo -n /usr/bin/test -e ' + path) > 1
+                    if op == '/usr/bin/test':
+                        if (path in targets and scenario == 'denied' and
+                                args[3:-1] in (['-e'], ['!', '-e'])):
+                            return 1, b''  # sudo denied both positive and negative tests
+                        if args[3:-1] == ['!', '-L']:
+                            return int(scenario == 'dangling' and path in targets), b''
+                        if args[3:-1] == ['-e']:
+                            return int(not exists), b''
+                        if args[3:-1] == ['!', '-e']:
+                            return int(exists), b''
+                        self.fail('unexpected test grammar')
+                    if op == '/usr/bin/stat':
+                        self.assertTrue(exists)
+                        directory_kind = path in dirs or path == generations
+                        mode, size = files.get(path, (0o755, 4096))
+                        if path in targets and not directory_kind:
+                            mode, size = r280.TARGETS[targets[path]][1], 100
+                        if path in (directory, r302.ROOT_LOCK, generations):
+                            mode = 0o700
+                        if scenario == 'unsafe_parent' and path == directory:
+                            mode = 0o777
+                        if scenario == 'private_mode_drift' and path == r280.TARGETS['approval'][0]:
+                            mode = 0o600
+                        if scenario == 'bootstrap_oversize' and path == r302.ROOT_CLI:
+                            size = 1024 * 1024 + 1
+                        inode = paths[path] + int(scenario == 'drift' and
+                            path == r302.ROOT_CLI and commands.count(cmd) > 1)
+                        kind = 'directory' if directory_kind else 'regular file'
+                        links = 2 if directory_kind else 1
+                        if scenario == 'target_hardlink' and path in targets:
+                            links = 2
+                        return 0, f'0|0|{mode:o}|{links}|{kind}|3|{inode}|{size}\n'.encode()
+                    if op == '/usr/bin/sha256sum':
+                        self.assertIn(path, set(files) | {r280.TARGETS['helper'][0],
+                                                          r280.TARGETS['custody'][0]})
+                        digest = r302._expected_hashes().get(path, '9' * 64)
+                        if scenario == 'bootstrap_pin_drift' and path == r302.ROOT_PIN:
+                            digest = '1' * 64
+                        return 0, (digest + '  ' + path + '\n').encode()
+                    self.fail('unexpected remote verb')
+                output = io.StringIO()
+                with patch.object(r309.subprocess, 'Popen') as master, \
+                        patch.object(r309.R309BoundedMuxHost, '_verified_master_socket', return_value=True), \
+                        patch.object(r309, 'run_bounded_ssh_command', side_effect=response), \
+                        redirect_stdout(output):
+                    master.return_value.poll.return_value = None
+                    code = r321.main(['--probe-files-only'], env=env)
+                self.assertEqual(code, expected, output.getvalue())
+                self.assertEqual(master.call_count, 1)
+                result = output.getvalue()
+                for sensitive in ('981177665', 'nyc1', 'private-fixture', '/var/lib'):
+                    self.assertNotIn(sensitive, result)
+                if expected == 79:
+                    self.assertIn('HOLD79', result)
+                    if scenario == 'foreign_uid':
+                        self.assertFalse(any('/usr/bin/sudo' in cmd for cmd in commands))
+                    if scenario == 'bootstrap_oversize':
+                        self.assertNotIn('/usr/bin/sudo -n /usr/bin/sha256sum -- ' + r302.ROOT_CLI, commands)
+                    continue
+                receipt = json.loads(result)
+                self.assertEqual((receipt['trusted_main_sha'], receipt['run_id'],
+                                  receipt['run_attempt']), (MAIN, '87654', '2'))
+                self.assertEqual(set(receipt['r271']), set(targets.values()))
+                self.assertTrue(receipt['bootstrap_files_verified'])
+                for row in receipt['r271'].values():
+                    self.assertEqual(row['state'], 'PRESENT' if scenario == 'present' else 'ABSENT')
+                self.assertFalse(receipt['host_control_verified'])
+                self.assertFalse(receipt['runtime_verified'])
+                self.assertFalse(receipt['deploy_authorized'])
+                self.assertLessEqual(len(result), 2048)
+                self.assertEqual(datetime.fromisoformat(receipt['observed_at_utc']).utcoffset(),
+                                 timedelta(0))
+
+    def test_simulated_six_role_stage_pin_then_fixed_r280_install_files_only(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        with patch.object(r321, "import_module", side_effect=imports):
+            result = r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(result["status"], "ROOT_INSTALLED_FILES_ONLY_NOT_HOST_GO")
+        self.assertFalse(result["host_control_verified"])
+        self.assertFalse(result["real_orders_allowed"])
+        self.assertEqual(host.pin_transitions, 1)
+        self.assertEqual(host.install_count, 1)
+        self.assertGreaterEqual(host.identity_checks, 8)
+        self.assertEqual(sum(v.startswith("link:") for v in host.mutations), 6)
+        self.assertEqual(sum(v.startswith("append:") for v in host.mutations), 6)
+        self.assertEqual(host.commands[-1], r321.INSTALLER_COMMAND)
+        for role in r321.STAGE_ORDER:
+            path = r280.INBOX_DIR + "/" + r280.SOURCE_NAMES.get(role, "manifest.json")
+            self.assertIn(path, host.files)
+            self.assertEqual(sum(other is host.files[path]
+                                 for other in host.files.values()), 1)
+
+    def test_install_recheck_ignores_only_presentation_metadata(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        kwargs["owner_comment"]["user"].update(id=42, node_id="actor-node")
+        kwargs["owner_comment"]["node_id"] = "comment-node"
+        original = kwargs["recheck_install_authority"]
+        def current():
+            proof = original()
+            fresh = deepcopy(proof["owner_comment"])
+            fresh.update(reactions={"total_count": 1}, html_url="presentation-only")
+            fresh["user"].update(avatar_url="new-avatar", followers_url="metadata-only")
+            proof["owner_comment"] = fresh
+            return proof
+        kwargs["recheck_install_authority"] = current
+        with patch.object(r321, "import_module", side_effect=imports):
+            result = r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(result["status"], "ROOT_INSTALLED_FILES_ONLY_NOT_HOST_GO")
+
+    def test_install_snapshot_rejects_in_place_stable_identity_drift_before_link(self):
+        changed = install_go_fixture()[-1]
+        body = json.loads(changed["body"].split("=", 1)[1])
+        body["nonce"] = "d" * 32  # Valid scope, but a different signed-off body.
+        changed["body"] = r321.OWNER_GO_MARKER + canonical(body).decode()
+        cases = (
+            (("id",), 457), (("id",), 456.0),
+            (("issue_url",), "foreign-issue"),
+            (("user", "login"), "other"), (("user", "id"), 43),
+            (("user", "id"), 42.0), (("user", "node_id"), "other-node"),
+            (("node_id",), "other-comment"),
+            (("author_association",), "CONTRIBUTOR"),
+            (("created_at",), "2026-11-13T13:59:00Z"),
+            (("updated_at",), "2026-11-13T14:00:01Z"),
+            (("body",), install_go_fixture()[-1]["body"] + " "),
+            (("body",), changed["body"]),
+            (("user", "id"), None),
+        )
+        for keys, value in cases:
+            with self.subTest(keys=keys, value=value):
+                host, _r305, context, kwargs, imports = simulated_install()
+                comment = kwargs["owner_comment"]
+                comment["user"].update(id=42, node_id="actor-node")
+                comment["node_id"] = "comment-node"
+                def mutate(_host, _path):
+                    target = comment
+                    for key in keys[:-1]:
+                        target = target[key]
+                    target[keys[-1]] = value
+                host.on_append = mutate
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertTrue(any(x.startswith("append:") for x in host.mutations))
+                self.assertFalse(any(x.startswith("link:") for x in host.mutations))
+                self.assertEqual(host.install_count, 0)
+
+    def test_install_snapshot_preserves_optional_actor_id_presence(self):
+        for initial, replacement in (({}, {"id": None}), ({"id": None}, {})):
+            with self.subTest(initial=initial):
+                host, _r305, context, kwargs, imports = simulated_install()
+                comment = kwargs["owner_comment"]
+                comment["user"].update(initial)
+                original = kwargs["recheck_install_authority"]
+                def current():
+                    comment["user"] = {"login": "mbalbo2023", **replacement}
+                    return original()
+                kwargs["recheck_install_authority"] = current
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertFalse(host.mutations)
+
+    def test_staging_rejects_root_lock_collisions_dangling_symlinks_and_partial_files(self):
+        for conflict in ("lock", "stage-link", "final-link", "partial-stage"):
+            with self.subTest(conflict=conflict):
+                host, r305, context, kwargs, imports = simulated_install()
+                stage_path = r280.INBOX_DIR + "/.r321-helper.stage"
+                final_path = r280.INBOX_DIR + "/helper.bin"
+                if conflict == "lock":
+                    host.directories[r305.STAGE_LOCK_CREATE.split("-- ", 1)[1]] = 42
+                elif conflict == "stage-link":
+                    host.symlinks.add(stage_path)
+                elif conflict == "final-link":
+                    host.symlinks.add(final_path)
+                elif conflict == "partial-stage":
+                    host.files[stage_path] = {"inode": 44, "data": bytearray(b"partial")}
+                with patch.object(r321, "import_module", side_effect=imports):
+                    with self.assertRaises(r321.R321Hold):
+                        r321.execute_root_install_files_only(host, context, **kwargs)
+                self.assertEqual(host.pin_transitions, 0)
+                self.assertEqual(host.install_count, 0)
+                self.assertFalse(host.mutations)
+
+    def test_mutated_authority_at_next_file_boundary_never_executes_installer(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        original = kwargs["recheck_install_authority"]
+        calls = [0]
+        def revoked():
+            calls[0] += 1
+            proof = original()
+            if any(item.startswith("append:") for item in host.mutations):
+                proof["main_sha"] = "0" * 40
+            return proof
+        kwargs["recheck_install_authority"] = revoked
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertGreater(calls[0], 2)
+        self.assertEqual(host.pin_transitions, 0)
+        self.assertEqual(host.install_count, 0)
+        self.assertTrue(any(x.startswith("create:") for x in host.mutations))
+
+    def test_pin_go_cannot_substitute_install_go_or_install_receipt(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        kwargs["owner_comment"] = kwargs["pin_owner_comment"]
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertFalse(host.mutations)
+
+        host, _r305, context, kwargs, imports = simulated_install()
+        host.staged_receipt = host.staged_receipt[:256]
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(host.pin_transitions, 1)
+        self.assertEqual(host.install_count, 1)
+
+    def test_install_go_pin_comment_id_must_equal_actual_separate_pin_go(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        original = kwargs["recheck_install_authority"]
+        forged = dict(kwargs["owner_comment"])
+        body = json.loads(forged["body"].split("=", 1)[1])
+        body["r305_pin_owner_go_id"] = 999  # Genuine PIN GO still id 123.
+        forged["body"] = "RC6_R321_ROOT_INSTALL_GO_V1=" + canonical(body).decode()
+        kwargs["owner_comment"] = forged
+        def current():
+            proof = original()
+            proof["owner_comment"] = forged
+            return proof
+        kwargs["recheck_install_authority"] = current
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(caught.exception.reason, "R305_PIN_GO_ID_MISMATCH")
+        self.assertFalse(host.mutations)
+        self.assertEqual(host.pin_transitions, 0)
+        self.assertEqual(host.install_count, 0)
+
+    def test_expiry_mid_chunks_holds_before_final_file_link(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        current = [NOW + timedelta(minutes=1)]
+        host.on_append = lambda _host, _path: current.__setitem__(
+            0, NOW + timedelta(hours=2))
+        kwargs["clock"] = lambda: current[0]
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(caught.exception.reason,
+                         "ROOT_INSTALL_GO_EXPIRED_OR_TOO_SHORT")
+        self.assertTrue(any(x.startswith("append:") for x in host.mutations))
+        self.assertFalse(any(x.startswith("link:") for x in host.mutations))
+        self.assertEqual(host.install_count, 0)
+
+    def test_extra_stage_hardlink_and_pin_drift_fail_closed(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        def alias_created(fake, path):
+            fake.files[path + ".foreign-alias"] = fake.files[path]
+            fake.on_create = None
+        host.on_create = alias_created
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(caught.exception.reason,
+                         "ROOT_STAGE_STAT_INODE_MODE_SIZE_INVALID")
+        self.assertEqual(host.install_count, 0)
+
+        host, _r305, context, kwargs, imports = simulated_install()
+        host.pin_corrupt = True
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(caught.exception.reason, "R305_ROOT_PIN_TRANSITION_HOLD")
+        self.assertEqual(host.pin_transitions, 1)
+        self.assertEqual(host.install_count, 0)
+
+    def test_revocation_after_pin_and_successful_attempt_never_auto_retry(self):
+        host, _r305, context, kwargs, imports = simulated_install()
+        original = kwargs["recheck_install_authority"]
+        def revoked_before_cli():
+            proof = original()
+            if host.pin_transitions:
+                proof["main_sha"] = "0" * 40
+            return proof
+        kwargs["recheck_install_authority"] = revoked_before_cli
+        with patch.object(r321, "import_module", side_effect=imports):
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(host.pin_transitions, 1)
+        self.assertEqual(host.install_count, 0)
+
+        host, _r305, context, kwargs, imports = simulated_install()
+        with patch.object(r321, "import_module", side_effect=imports):
+            r321.execute_root_install_files_only(host, context, **kwargs)
+            with self.assertRaises(r321.R321Hold):
+                r321.execute_root_install_files_only(host, context, **kwargs)
+        self.assertEqual(host.pin_transitions, 1)
+        self.assertEqual(host.install_count, 1)
+
+    def test_exact_r280_installer_receipt_is_261_bytes_and_must_be_fully_checked(self):
+        receipt = canonical({
+            "schema": "RC6_ROOT_INSTALL_CODE_ONLY_V1",
+            "status": "INSTALLED_FILES_ONLY_NOT_HOST_GO",
+            "manifest_sha256": "e" * 64,
+            "candidate_sha": CANDIDATE,
+            "host_control_verified": False,
+        })
+        self.assertEqual(len(receipt), 261)
+        self.assertEqual(r321.INSTALLER_RECEIPT_CAP, 512)
+        self.assertEqual(r321.validate_installer_receipt(
+            receipt, expected_manifest_sha256="e" * 64,
+            candidate_sha=CANDIDATE), r280_cli.validate_installer_receipt(
+                json.loads(receipt), "e" * 64))
+        with self.assertRaises(r321.R321Hold):
+            r321.validate_installer_receipt(
+                receipt[:256], expected_manifest_sha256="e" * 64,
+                candidate_sha=CANDIDATE)
+
+    def test_r321_accepts_the_receipt_written_by_the_release_e_producer(self):
+        from scripts import rc6_r163_trusted_postrun_byte_audit as r206
+        from tests import test_rc6_r163_artifact_byte_verifier as release_fixtures
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            rest, event, release_zip = release_fixtures._e_audit_rest(root)
+            event_path = root / "event.json"
+            event_path.write_bytes(canonical(event))
+            receipt_path = root / r163.POSTCOMPLETION_RECEIPT_NAME
+            publisher = event["workflow_run"]
+
+            def download_fixture(_client, _artifact_id, dest):
+                dest.write_bytes(release_zip.read_bytes())
+
+            with patch.object(r163, "_load_trusted_r206_module", return_value=r206), \
+                 patch.object(r206, "GitHubReadOnlyREST", return_value=rest), \
+                 patch.object(r163, "download_release_zip", side_effect=download_fixture), \
+                 redirect_stdout(io.StringIO()):
+                status = r163.main([
+                    "release-postcompletion", "--event", str(event_path),
+                    "--publisher-run-id", str(publisher["id"]),
+                    "--publisher-run-attempt", str(publisher["run_attempt"]),
+                    "--expected-publisher-sha", publisher["head_sha"],
+                    "--receipt-out", str(receipt_path),
+                ])
+            self.assertEqual(status, 0)
+            raw = receipt_path.read_bytes()
+            audit_zip = root / "audit.zip"
+            with zipfile.ZipFile(audit_zip, "w") as archive:
+                archive.write(receipt_path, arcname=r163.POSTCOMPLETION_RECEIPT_NAME)
+            verified = r163.verify_postcompletion_receipt_zip(
+                audit_zip, expected_digest=SHA256(audit_zip.read_bytes()),
+                expected_size_bytes=audit_zip.stat().st_size)
+            context = replace(install_go_fixture()[0], main_sha=publisher["head_sha"],
+                              candidate_sha=release_fixtures.SHA, candidate_tree=release_fixtures.TREE)
+            self.assertEqual(r321.validate_release_e_receipt(raw, context), verified)
+
+    def test_release_e_rejects_noninteger_identifiers_wrong_count_and_noncanonical_bytes(self):
+        context, _, _, raw, _, _, _ = install_go_fixture()
+        receipt = json.loads(raw)
+        for key, value in (("publisher_run_id", "43301355473"), ("publisher_run_id", 0),
+                           ("publisher_run_id", True), ("publisher_run_attempt", "1"),
+                           ("publisher_run_attempt", 0), ("publisher_run_attempt", True),
+                           ("file_count", 80), ("file_count", True),
+                           ("release_artifact_name", "rc6-r251-release-991-1-" + CANDIDATE)):
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(
+                    r321.R321Hold, "RELEASE_E_RECEIPT_SCOPE_INVALID"):
+                r321.validate_release_e_receipt(canonical({**receipt, key: value}), context)
+        with self.assertRaisesRegex(r321.R321Hold, "RELEASE_E_RECEIPT_SCOPE_INVALID"):
+            r321.validate_release_e_receipt(raw + b"\n", context)
+
+    def test_separate_install_go_binds_owner_witness_release_e_generation_and_paper(self):
+        (context, manifest, sources, receipt_raw, witness,
+         approval, owner_comment) = install_go_fixture()
+        approved = r321.verify_install_owner_go(
+            owner_comment, context, expected_comment_id=456,
+            witness=witness, release_e_receipt_raw=receipt_raw,
+            release_e_run_id="43304509783", release_e_run_attempt="1",
+            release_e_artifact_id=78910, release_e_artifact_digest=RELEASE_E_DIGEST,
+            approval=approval, now=NOW + timedelta(minutes=1))
+        self.assertEqual(approved["operation"], "RC6_ROOT_INSTALL_NEW_FILES_ONLY")
+        self.assertEqual(approved["root_manifest_sha256"], SHA256(manifest))
+        self.assertEqual(approved["release_e_receipt_sha256"], SHA256(receipt_raw))
+        self.assertEqual(approved["generation"], approval["generation"])
+        self.assertEqual(approved["host_identity_source"], "PROTECTED_DO_PINS")
+        self.assertFalse(approved["real_orders_allowed"])
+        self.assertNotIn(context.do_id, json.dumps(approved))
+
+    def test_install_go_is_not_pin_go_and_rejects_missing_stale_or_forged_owner(self):
+        (context, _manifest, _sources, receipt_raw, witness,
+         approval, owner_comment) = install_go_fixture()
+
+        def verify(comment, **changes):
+            return r321.verify_install_owner_go(
+                comment, context, expected_comment_id=456,
+                witness=witness, release_e_receipt_raw=receipt_raw,
+                release_e_run_id="43304509783", release_e_run_attempt="1",
+                release_e_artifact_id=78910, release_e_artifact_digest=RELEASE_E_DIGEST,
+                approval=approval, now=NOW + timedelta(minutes=1), **changes)
+
+        with self.assertRaises(r321.R321Hold):
+            verify(None)
+        for mutated in (
+            dict(owner_comment, user={"login": "other"}),
+            dict(owner_comment, updated_at="2026-11-13T14:01:00Z"),
+            dict(owner_comment, body=owner_comment["body"].replace(
+                "RC6_R321_ROOT_INSTALL_GO_V1", "RC6_R305_ROOT_PIN_GO_V1")),
+            dict(owner_comment, author_association="CONTRIBUTOR"),
+            dict(owner_comment, issue_url="https://api.github.com/repos/x/y/issues/1"),
+        ):
+            with self.subTest(mutated=mutated), self.assertRaises(r321.R321Hold):
+                verify(mutated)
+
+        stale = install_go_fixture(created=NOW - timedelta(hours=3),
+                                   expires=NOW - timedelta(hours=1))[-1]
+        with self.assertRaises(r321.R321Hold):
+            verify(stale)
+        short = install_go_fixture(created=NOW,
+                                   expires=NOW + timedelta(minutes=3))[-1]
+        with self.assertRaises(r321.R321Hold):
+            verify(short)
+
+    def test_install_go_rejects_self_asserted_release_or_altered_manifest_fields(self):
+        (context, _manifest, _sources, receipt_raw, witness,
+         approval, owner_comment) = install_go_fixture()
+        parameters = dict(
+            expected_comment_id=456, witness=witness,
+            release_e_receipt_raw=receipt_raw,
+            release_e_run_id="43304509783", release_e_run_attempt="1",
+            release_e_artifact_id=78910, release_e_artifact_digest=RELEASE_E_DIGEST,
+            approval=approval, now=NOW + timedelta(minutes=1),
+        )
+        for key, altered_value in (
+            ("release_e_receipt_sha256", "0" * 64),
+            ("release_e_artifact_id", 1),
+            ("release_e_artifact_digest", "sha256:" + "0" * 64),
+            ("release_d_artifact_digest", "sha256:" + "0" * 64),
+            ("release_d_artifact_id", 1),
+            ("release_d_run_id", 43301355473),
+            ("release_d_run_attempt", True),
+            ("witness_artifact_sha256", "0" * 64),
+            ("root_manifest_sha256", "0" * 64),
+            ("generation", "0" * 32),
+            ("real_orders_allowed", True),
+            ("nonce", "z" * 32),
+        ):
+            with self.subTest(key=key):
+                bad = dict(owner_comment)
+                body = json.loads(bad["body"].split("=", 1)[1])
+                body[key] = altered_value
+                bad["body"] = "RC6_R321_ROOT_INSTALL_GO_V1=" + canonical(body).decode()
+                with self.assertRaises(r321.R321Hold):
+                    r321.verify_install_owner_go(bad, context, **parameters)
+        with self.assertRaises(r321.R321Hold):
+            r321.verify_install_owner_go(
+                owner_comment, context, **dict(parameters, release_e_run_id="444"))
+
+    def test_install_go_extreme_clock_bounds_return_hold79_not_overflow(self):
+        for issued, expiry, current in (
+            (datetime(1, 1, 1, tzinfo=timezone.utc),
+             datetime(1, 1, 1, 1, tzinfo=timezone.utc),
+             datetime(1, 1, 1, tzinfo=timezone.utc)),
+            (datetime(9999, 12, 31, 22, tzinfo=timezone.utc),
+             datetime(9999, 12, 31, 23, tzinfo=timezone.utc),
+             datetime(9999, 12, 31, 22, tzinfo=timezone.utc)),
+        ):
+            with self.subTest(issued=issued):
+                (context, _manifest, _sources, receipt_raw, witness,
+                 approval, comment) = install_go_fixture(created=issued,
+                                                         expires=expiry)
+                try:
+                    r321.verify_install_owner_go(
+                        comment, context, expected_comment_id=456,
+                        witness=witness, release_e_receipt_raw=receipt_raw,
+                        release_e_run_id="43304509783", release_e_run_attempt="1",
+                        release_e_artifact_id=78910,
+                        release_e_artifact_digest=RELEASE_E_DIGEST,
+                        approval=approval, now=current)
+                except r321.R321Hold:
+                    pass
+                except OverflowError:
+                    self.fail("R321 leaked raw datetime overflow instead of HOLD79")
+
+    def test_workflow_defaults_to_offhost_and_isolates_the_manual_file_probe(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = yaml.load(
+            (root / ".github/workflows/rc6-r321-root-install-approved.yml").read_text(),
+            Loader=yaml.BaseLoader)
+        self.assertIn("workflow_dispatch", workflow["on"])
+        self.assertEqual(workflow["concurrency"]["group"],
+                         "rc6-unified-paper-deploy")
+        self.assertEqual(workflow["concurrency"]["cancel-in-progress"], "false")
+        self.assertEqual(workflow["permissions"], {
+            "contents": "read", "issues": "read",
+            "actions": "read", "pull-requests": "read",
+        })
+        selector = workflow['on']['workflow_dispatch']['inputs']['operation']
+        self.assertEqual(selector['default'], 'OFFHOST_HOLD')
+        self.assertEqual(selector['type'], 'choice')
+        self.assertEqual(set(selector['options']), {'OFFHOST_HOLD', 'PROBE_FILES_ONLY'})
+        self.assertEqual(set(workflow['jobs']), {'root_install_offhost_preflight', 'probe_files_only'})
+        job = workflow["jobs"]["root_install_offhost_preflight"]
+        self.assertIn("github.ref == 'refs/heads/main'", job["if"])
+        self.assertIn("github.actor == 'mbalbo2023'", job["if"])
+        self.assertIn("github.triggering_actor == 'mbalbo2023'", job["if"])
+        checkout = job["steps"][0]
+        self.assertEqual(checkout["with"]["persist-credentials"], "false")
+        self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
+        commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
+        self.assertIn("rc6_r340_trusted_root_env_controller --verify-offhost", commands)
+        self.assertIn("--check-offhost", commands)
+        self.assertLess(commands.index("--verify-offhost"), commands.index("--check-offhost"))
+        for forbidden in ("sudo ", "ssh ", "docker ", "install-approved", "--install-approved"):
+            self.assertNotIn(forbidden, commands)
+        self.assertFalse(job.get("secrets"))
+        self.assertNotIn('DO_SSH_KEY', str(job))
+        self.assertIn("inputs.operation != 'PROBE_FILES_ONLY'", job['if'])
+        self.assertIn('operation_unknown', commands)
+        probe = workflow['jobs']['probe_files_only']
+        self.assertIn("inputs.operation == 'PROBE_FILES_ONLY'", probe['if'])
+        for guard in ("github.ref == 'refs/heads/main'", "github.actor == 'mbalbo2023'",
+                      "github.triggering_actor == 'mbalbo2023'"):
+            self.assertIn(guard, probe['if'])
+        self.assertEqual(probe['permissions'], {'contents': 'read'})
+        self.assertEqual(probe['steps'][0]['with']['ref'], '${{ github.sha }}')
+        self.assertIn('--probe-files-only', str(probe))
+        self.assertNotIn('--install-approved', str(probe))
+        self.assertNotIn('--verify-offhost', str(probe))
+        self.assertIn('secrets.DO_SSH_KEY', str(probe))
+
+    def test_valid_root_bundle_plan_chunks_all_five_roles_and_manifest_below_8192(self):
+        manifest, sources = fixture()
+        planned = r321.build_staging_plan(
+            manifest, sources, expected_manifest_sha256=SHA256(manifest), now=NOW)
+        self.assertEqual(planned.state, "PROPUESTO")
+        self.assertFalse(planned.host_control_verified)
+        self.assertFalse(planned.executable)
+        self.assertEqual(planned.candidate_sha, CANDIDATE)
+        self.assertEqual(planned.candidate_tree, TREE)
+        self.assertEqual(planned.manifest_sha256, SHA256(manifest))
+        self.assertEqual(planned.total_bytes, len(manifest) + sum(map(len, sources.values())))
+        self.assertEqual(
+            tuple(dict.fromkeys(chunk.role for chunk in planned.chunks)),
+            ("helper", "custody", "profiles", "approval", "unit_template", "manifest"))
+        self.assertTrue(all(0 < len(chunk.data) <= 8192 for chunk in planned.chunks))
+        self.assertEqual(sum(len(chunk.data) for chunk in planned.chunks), planned.total_bytes)
+        self.assertEqual(
+            b"".join(chunk.data for chunk in planned.chunks if chunk.role == "helper"),
+            sources["helper"])
+        self.assertEqual(
+            b"".join(chunk.data for chunk in planned.chunks if chunk.role == "custody"),
+            sources["custody"])
+        self.assertEqual(planned.chunks[-1].role, "manifest")
+
+    def test_order_source_bytes_do_not_authorize_their_own_digest(self):
+        manifest, sources = fixture(large=False)
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(manifest, sources,
+                                    expected_manifest_sha256="f" * 64, now=NOW)
+        self.assertEqual(caught.exception.reason, "INDEPENDENT_ROOT_PIN_MISMATCH")
+
+    def test_modified_role_is_rejected_before_staging_plan(self):
+        manifest, sources = fixture(large=False)
+        sources["custody"] += b"changed"
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(manifest, sources,
+                                    expected_manifest_sha256=SHA256(manifest), now=NOW)
+        self.assertEqual(caught.exception.reason, "ROOT_SOURCE_HASH_MISMATCH")
+
+    def test_source_mutated_after_approval_does_not_change_frozen_staged_bytes(self):
+        manifest, sources = fixture(large=False)
+        original = r280._validate_approval
+
+        def concurrent_source_change(*args, **kwargs):
+            result = original(*args, **kwargs)
+            sources["custody"] = b"ATTACKER_CHANGED_SOURCE_AFTER_VALIDATION"
+            return result
+
+        with patch.object(r280, "_validate_approval",
+                          side_effect=concurrent_source_change):
+            plan = r321.build_staging_plan(
+                manifest, sources, expected_manifest_sha256=SHA256(manifest), now=NOW)
+        staged = b"".join(chunk.data for chunk in plan.chunks
+                          if chunk.role == "custody")
+        self.assertEqual(staged, b"C" * 10)
+        self.assertNotEqual(staged, sources["custody"])
+        self.assertEqual(SHA256(staged), json.loads(manifest)["files"]["custody"])
+
+    def test_roles_are_exact_and_no_unknown_paths_are_planned(self):
+        manifest, sources = fixture(large=False)
+        for bad in (dict(sources, new_file=b"bad"),
+                    {key: value for key, value in sources.items() if key != "unit_template"}):
+            with self.subTest(roles=set(bad)), self.assertRaises(r321.R321Hold):
+                r321.build_staging_plan(manifest, bad,
+                                        expected_manifest_sha256=SHA256(manifest), now=NOW)
+
+    def test_release_d_schema_is_never_a_root_install_manifest(self):
+        _manifest, sources = fixture(large=False)
+        legacy = canonical({"schema": "RC6_RELEASE_MANIFEST_D_V1",
+                            "files": {key: SHA256(data) for key, data in sources.items()}})
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(legacy, sources,
+                                    expected_manifest_sha256=SHA256(legacy), now=NOW)
+        self.assertEqual(caught.exception.reason, "ROOT_MANIFEST_SCHEMA")
+
+    def test_paper_false_or_approval_expired_is_rejected(self):
+        manifest, sources = fixture(large=False)
+        bad_manifest = json.loads(manifest)
+        bad_manifest["real_orders_allowed"] = True
+        altered = canonical(bad_manifest)
+        with self.assertRaises(r321.R321Hold):
+            r321.build_staging_plan(altered, sources,
+                                    expected_manifest_sha256=SHA256(altered), now=NOW)
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(manifest, sources,
+                                    expected_manifest_sha256=SHA256(manifest),
+                                    now=datetime(2026, 11, 13, 16, 0, tzinfo=timezone.utc))
+        self.assertEqual(caught.exception.reason, "ROOT_APPROVAL_R280_REJECTED")
+
+    def test_overflow_from_r280_approval_expiry_is_normalized_to_hold79(self):
+        _manifest, sources = fixture(large=False)
+        approval = json.loads(sources["approval"])
+        approval["expires_at"] = "9999-12-31T23:30:00Z"
+        sources["approval"] = canonical(approval)
+        manifest = canonical({
+            "schema": "RC6_ROOT_INSTALL_MANIFEST_V1", "candidate_sha": CANDIDATE,
+            "candidate_tree": TREE, "paper_mode": "PRODUCTION_PAPER",
+            "real_orders_allowed": False,
+            "files": {role: SHA256(raw) for role, raw in sources.items()},
+        })
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(
+                manifest, sources,
+                expected_manifest_sha256=SHA256(manifest),
+                now=datetime(9999, 12, 31, 23, 0, tzinfo=timezone.utc))
+        self.assertEqual(caught.exception.reason, "ROOT_APPROVAL_R280_REJECTED")
+
+    def test_stage_size_budget_blocks_large_total_without_host(self):
+        manifest, sources = fixture(large=False)
+        sources["custody"] = b"C" * (512 * 1024)
+        with self.assertRaises(r321.R321Hold) as caught:
+            r321.build_staging_plan(manifest, sources,
+                                    expected_manifest_sha256=SHA256(manifest), now=NOW)
+        self.assertEqual(caught.exception.reason, "ROOT_STAGE_TOTAL_BUDGET")
+
+    def test_only_exact_trusted_main_owner_dispatch_is_eligible(self):
+        context = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch",
+            "GITHUB_REPOSITORY": "mbalbo2023/Porota-trading",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_ACTOR": "mbalbo2023",
+            "GITHUB_TRIGGERING_ACTOR": "mbalbo2023",
+            "GITHUB_SHA": "a" * 40,
+        }
+        self.assertEqual(r321.validate_dispatch_context(context), "a" * 40)
+        for name, value in (("GITHUB_EVENT_NAME", "pull_request"),
+                            ("GITHUB_REF", "refs/heads/deploy/rc6-pr69-isolated-20260915"),
+                            ("GITHUB_ACTOR", "fork-user"),
+                            ("GITHUB_TRIGGERING_ACTOR", "fork-user"),
+                            ("GITHUB_REPOSITORY", "some-other/repo"),
+                            ("GITHUB_SHA", "a" * 39)):
+            bad = dict(context, **{name: value})
+            with self.subTest(name=name), self.assertRaises(r321.R321Hold):
+                r321.validate_dispatch_context(bad)
+
+    def test_literal_installer_is_accepted_only_from_reviewed_r305_allowlist(self):
+        # R305 is now present in the integrated trusted-main checkout: the
+        # exact reviewed literal must be accepted without a fixture override.
+        self.assertEqual(r321.require_reviewed_installer_command(),
+                         r321.INSTALLER_COMMAND)
+        # An isolated runner without R305 must still HOLD, never fall back.
+        with patch.object(r321, "import_module", side_effect=ImportError):
+            with self.assertRaises(r321.R321Hold) as caught:
+                r321.require_reviewed_installer_command()
+        self.assertEqual(caught.exception.reason,
+                         "R305_INSTALLER_LITERAL_NOT_REVIEWED")
+        reviewed = SimpleNamespace(
+            reviewed_root_commands=lambda: frozenset({r321.INSTALLER_COMMAND}))
+        with patch.object(r321, "import_module", return_value=reviewed):
+            self.assertEqual(r321.require_reviewed_installer_command(),
+                             r321.INSTALLER_COMMAND)
+        unreviewed = SimpleNamespace(reviewed_root_commands=lambda: frozenset())
+        with patch.object(r321, "import_module", return_value=unreviewed):
+            with self.assertRaises(r321.R321Hold):
+                r321.require_reviewed_installer_command()
+        malformed = SimpleNamespace(reviewed_root_commands=lambda: {r321.INSTALLER_COMMAND})
+        with patch.object(r321, "import_module", return_value=malformed):
+            with self.assertRaises(r321.R321Hold):
+                r321.require_reviewed_installer_command()
+        with self.assertRaises(TypeError):
+            r321.require_reviewed_installer_command(frozenset({r321.INSTALLER_COMMAND}))
+
+    def test_physical_entry_is_fail_closed_even_with_a_valid_offhost_plan(self):
+        result = io.StringIO()
+        with redirect_stdout(result):
+            status = r321.main(["--install-approved"])
+        self.assertEqual(status, 79)
+        self.assertIn("PHYSICAL_TRANSPORT_NOT_CERTIFIED", result.getvalue())
+        self.assertIn("host_control_verified=NO_VERIFICADO", result.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

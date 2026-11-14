@@ -1,10 +1,16 @@
 """R334: fail closed on unreviewed bytes; never grant physical authority."""
 import hashlib
-import importlib.util
 import os
 from pathlib import Path
+import stat
+import sys
+from types import ModuleType
 
 import pytest
+
+
+_R271_HELPER = Path(__file__).resolve().parents[1] / 'scripts' / 'rc6_oci_host_helper.py'
+_R271_SHA256 = 'aa68cc1def24096d32fc91c77c2076bee44ca8290000fdbd58b945cfc820ae1d'
 
 
 # Synthetic credentials, never captured host values.
@@ -123,49 +129,46 @@ def test_pair_digests_are_role_bound_and_no_output(capsys):
     assert capsys.readouterr() == ('', '')
 
 
-def test_missing_external_r271_exercises_local_contract_without_skip(monkeypatch):
-    monkeypatch.delenv('RC6_R271_HELPER_SOURCE', raising=False)
-    try:
-        evidence = _check_r271_or_local_contract(monkeypatch)
-    except pytest.skip.Exception:
-        pytest.fail('missing external R271 must test local contract, not skip CI')
-    assert evidence == 'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO'
+def _load_r271(monkeypatch):
+    path = Path(os.environ.get('RC6_R271_HELPER_SOURCE') or _R271_HELPER)
+    raw = path.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == _R271_SHA256, 'unreviewed R271 source'
+    consumer = ModuleType('r334_reviewed_r271')
+    monkeypatch.setitem(sys.modules, consumer.__name__, consumer)
+    exec(compile(raw, str(path), 'exec'), consumer.__dict__)
+    return consumer
 
 
-def test_r271_pinned_consumer_or_explicit_local_contract(monkeypatch):
-    evidence = _check_r271_or_local_contract(monkeypatch)
-    assert evidence in ('PINNED_R271_SEMANTICS_VALIDATED',
-                        'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO')
+@pytest.mark.parametrize('role,source', [
+    ('dashboard', _DASHBOARD_AUTH),
+    ('observer', b'TELEGRAM_BOT_TOKEN=synthetic-observer=a==\n'),
+])
+def test_r271_verifies_each_sealed_proposal(monkeypatch, tmp_path, role, source):
+    consumer = _load_r271(monkeypatch)
+    proposal = build(source, role)
+    assert not proposal.host_go and not proposal.deploy_authorized
+    sealed = tmp_path / (role + '.env')
+    sealed.write_bytes(proposal.payload)
+    sealed.chmod(0o400)
+    canonical = f'/var/lib/porota-rc6-oci-custody/generations/{"a" * 32}/env/{role}.env'
+
+    # The host root boundary is simulated. Use the real role validator, mode and bytes.
+    def read_fixture(path, *, expected_mode):
+        assert path == canonical
+        assert expected_mode == stat.S_IMODE(sealed.stat().st_mode) == 0o400
+        return sealed.read_bytes()
+
+    monkeypatch.setattr(consumer, '_read_root_owned', read_fixture)
+    consumer._verify_root_sealed_env(canonical, proposal.sha256)
+    with pytest.raises(consumer.CustodyHold, match='ENV_SEAL_DIGEST_MISMATCH'):
+        consumer._verify_root_sealed_env(canonical, '0' * 64)
 
 
-def _check_r271_or_local_contract(monkeypatch):
-    path = os.environ.get('RC6_R271_HELPER_SOURCE')
-    if not path:
-        # A clean checkout lacks the separate R271 implementation. Exercise
-        # the local byte contract instead; this is NOT external R271 evidence.
-        dashboard = build(b'ENVIRONMENT=PRODUCTION\n')
-        observer = build(b'TELEGRAM_BOT_TOKEN=synthetic-observer=a==\n', 'observer')
-        assert dashboard.payload == (b'ENVIRONMENT=PRODUCTION\n'
-            b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n'
-            b'REAL_ORDERS_ALLOWED=false\n')
-        assert observer.payload == (b'MARKET_OPEN_HOUR=10\nMARKET_OPEN_MINUTE=30\n'
-            b'POROTA_RUNTIME_MODE=PRODUCTION_PAPER\nPPI_ORDERS=BLOCKED\n'
-            b'REAL_ORDERS_ALLOWED=false\nTELEGRAM_BOT_TOKEN=synthetic-observer=a==\n')
-        assert not dashboard.host_go and not observer.host_go
-        assert not dashboard.deploy_authorized and not observer.deploy_authorized
-        return 'LOCAL_CONTRACT_ONLY:R271_NO_VERIFICADO'
-    assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == (
-        'd83550318fd4e38f88d072cc15f19fbef710fd0b752a226ec13c3f16e6c88aa5'
-    ), 'R271 consumer source changed: review new pinned source before compatibility claim'
-    spec = importlib.util.spec_from_file_location('r334_real_r271', path)
-    consumer = importlib.util.module_from_spec(spec)
-    import sys
-    monkeypatch.setitem(sys.modules, spec.name, consumer)
-    spec.loader.exec_module(consumer)
-    for role in ('dashboard', 'observer'):
-        proposal = build(_DASHBOARD_AUTH if role == 'dashboard' else
-                         b'TELEGRAM_BOT_TOKEN=synthetic-observer=a==\n', role=role)
-        monkeypatch.setattr(consumer, '_read_root_owned', lambda path, expected_mode: proposal.payload)
-        consumer._verify_root_sealed_env('/var/lib/porota-rc6-oci-custody/generations/' +
-            'a' * 32 + '/env/' + role + '.env', proposal.sha256)
-    return 'PINNED_R271_SEMANTICS_VALIDATED'
+def test_r271_requires_reviewed_source_before_execution(monkeypatch, tmp_path):
+    helper = tmp_path / 'rc6_oci_host_helper.py'
+    monkeypatch.setenv('RC6_R271_HELPER_SOURCE', str(helper))
+    with pytest.raises(FileNotFoundError):
+        _load_r271(monkeypatch)
+    helper.write_bytes(b'raise RuntimeError("unreviewed code executed")\n')
+    with pytest.raises(AssertionError, match='unreviewed R271 source'):
+        _load_r271(monkeypatch)

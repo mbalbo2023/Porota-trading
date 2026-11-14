@@ -872,6 +872,28 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
             self.assertEqual(len(master_processes), 1)
             self.assertTrue(master_processes[0].terminated)
 
+    def test_mux_checks_only_the_selected_bootstrap_command_set(self):
+        from unittest import mock
+
+        class UidOnlyHost(guard.StrictSSHHost):
+            def _allows(self, command):
+                return command == "/usr/bin/id -u"
+
+        env = context()
+        parsed = guard.validate_context(env)
+        master = mock.Mock()
+        master.poll.return_value = None
+        with mock.patch.object(guard.subprocess, "Popen", return_value=master), \
+             mock.patch.object(guard.StrictSSHHost, "_verified_master_socket", return_value=True), \
+             mock.patch.object(guard, "run_bounded_ssh_command", return_value=(0, b"1000\n")):
+            with guard.StrictSSHHost(parsed, env) as historical:
+                with self.assertRaisesRegex(guard.BootstrapHold, "SSH_COMMAND_NOT_REVIEWED"):
+                    historical.call("/usr/bin/id -u")
+            with UidOnlyHost(parsed, env) as selected:
+                with self.assertRaisesRegex(guard.BootstrapHold, "SSH_COMMAND_NOT_REVIEWED"):
+                    selected.call(guard.HOST_ID_COMMAND)
+                self.assertEqual(selected.call("/usr/bin/id -u"), (0, b"1000\n"))
+
     def test_ssh_transaction_global_deadline_denies_new_commands(self):
         import time
         from unittest import mock
@@ -1058,7 +1080,8 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
         self.assertEqual(set(event), {"workflow_dispatch"})
         action = event["workflow_dispatch"]["inputs"]["bootstrap_action"]
         self.assertEqual(action["default"], "offhost")
-        self.assertEqual(action["options"], ["offhost", "install_files", "resume_files"])
+        self.assertEqual(action["options"], [
+            "offhost", "install_files", "resume_files", "install_genesis_launcher"])
         jobs = document["jobs"]
         offhost = jobs["owner_go_offhost_evidence_only"]
         physical = jobs["approved_root_files_only"]
@@ -1077,6 +1100,85 @@ class R295HostBootstrapGuardTest(unittest.TestCase):
         self.assertIn("install_files)", physical_script)
         self.assertIn("resume_files)", physical_script)
         self.assertEqual(document["concurrency"]["cancel-in-progress"], False)
+
+    def test_genesis_launcher_dispatch_binds_owner_checkout_and_secret_scope(self):
+        import subprocess
+        import yaml
+
+        source = (ROOT / ".github/workflows/rc6-r295-host-bootstrap-trusted.yml").read_text()
+        jobs = yaml.safe_load(source)["jobs"]
+        self.assertIn("approved_genesis_launcher_only", jobs)
+        job = jobs["approved_genesis_launcher_only"]
+        for expression in ("github.event_name == 'workflow_dispatch'",
+                           "github.repository == 'mbalbo2023/Porota-trading'",
+                           "github.ref == 'refs/heads/main'", "github.ref_protected",
+                           "github.actor == 'mbalbo2023'", "github.triggering_actor == 'mbalbo2023'",
+                           "inputs.bootstrap_action == 'install_genesis_launcher'"):
+            self.assertIn(expression, job["if"])
+        self.assertNotIn("||", job["if"])
+        for name in ("owner_go_offhost_evidence_only", "approved_root_files_only"):
+            self.assertNotIn("install_genesis_launcher", jobs[name]["if"])
+        checkout, verify, _prepare, install = job["steps"]
+        self.assertEqual(checkout["uses"], "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683")
+        self.assertEqual(checkout["with"]["ref"], "${{ github.sha }}")
+        self.assertIs(checkout["with"]["persist-credentials"], False)
+        for scope in (job, checkout, verify):
+            self.assertNotIn("env", scope)
+        for checkout_sha, expected_rc in ((MAIN, 0), ("f" * 40, 1)):
+            with self.subTest(checkout_sha=checkout_sha):
+                result = subprocess.run(
+                    ["/bin/bash", "-c", 'git() { test "$*" = "rev-parse HEAD" && echo "$CHECKOUT_SHA"; }\n'
+                     + verify["run"]], env={"CHECKOUT_SHA": checkout_sha, "GITHUB_SHA": MAIN})
+                self.assertEqual(result.returncode, expected_rc)
+        physical_env = {name: "${{ secrets." + name + " }}" for name in (
+            "DO_SSH_KEY", "DO_KNOWN_HOSTS", "DO_HOST", "DO_USER",
+            "RC6_EXPECTED_DO_ID", "RC6_EXPECTED_DO_REGION")}
+        physical_env.update(BOOTSTRAP_ACTION="${{ inputs.bootstrap_action }}",
+                            RC6_R295_OWNER_COMMENT_ID="${{ inputs.owner_comment_id }}",
+                            GITHUB_TOKEN="${{ github.token }}")
+        self.assertEqual(install["env"], physical_env)
+        call = subprocess.run(
+            ["/bin/bash", "-c", 'python3() { printf "%s\\n" "$@"; }\n' + install["run"]],
+            env={"BOOTSTRAP_ACTION": "install_genesis_launcher"},
+            check=True, capture_output=True, text=True)
+        self.assertEqual(call.stdout.splitlines(), [
+            "-B", "-m", "scripts.rc6_genesis_launcher_bootstrap", "--install-approved-launcher"])
+
+    def test_prepare_has_no_ssh_credentials_and_only_publishes_verified_fingerprint(self):
+        import subprocess
+        import sys
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/rc6-r295-host-bootstrap-trusted.yml").read_text())
+        job = workflow["jobs"]["approved_genesis_launcher_only"]
+        self.assertEqual(len(job["steps"]), 4)
+        prepare, install = job["steps"][-2:]
+        self.assertEqual(prepare["if"], "${{ inputs.owner_comment_id == 'PREPARE' }}")
+        self.assertEqual(install["if"], "${{ inputs.owner_comment_id != 'PREPARE' }}")
+        pins = ("DO_HOST", "RC6_EXPECTED_DO_ID", "RC6_EXPECTED_DO_REGION", "DO_KNOWN_HOSTS")
+        prepare_env = {name: "${{ secrets." + name + " }}" for name in pins}
+        prepare_env["RC6_R295_OWNER_COMMENT_ID"] = "${{ inputs.owner_comment_id }}"
+        self.assertEqual(prepare["env"], prepare_env)
+        env = {"DO_HOST": "host.example", "RC6_EXPECTED_DO_ID": "12345678",
+               "RC6_EXPECTED_DO_REGION": "nyc1", "DO_KNOWN_HOSTS": (
+                   "host.example ssh-ed25519 "
+                   "AAAAC3NzaC1lZDI1NTE5AAAAIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8g"),
+               "GITHUB_SHA": MAIN, "RC6_R295_OWNER_COMMENT_ID": "PREPARE",
+               "PATH": str(Path(sys.executable).parent) + ":/usr/bin:/bin"}
+        expected = "3b13435c2e35275b6642a717bce9b7b865512d0d9448949a324623b53e20cde8"
+        result = subprocess.run(["/bin/bash", "-c", prepare["run"]], cwd=ROOT, env=env,
+                                check=True, capture_output=True, text=True)
+        self.assertEqual(result.stdout.splitlines(), [
+            "RC6_R362_HOST_IDENTITY_SHA256=" + expected, "GITHUB_SHA=" + MAIN])
+        self.assertEqual(result.stderr, "")
+        for invalid in ({"RC6_R295_OWNER_COMMENT_ID": "prepare"}, {"DO_KNOWN_HOSTS": ""},
+                        {"GITHUB_SHA": "untrusted"}):
+            with self.subTest(invalid=invalid):
+                result = subprocess.run(["/bin/bash", "-c", prepare["run"]], cwd=ROOT,
+                                        env={**env, **invalid}, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 79)
+                self.assertEqual(result.stdout, "RC6_R362_PREPARE=HOLD79\n")
+                self.assertEqual(result.stderr, "")
 
     def test_offhost_check_stays_hold79_even_with_a_context(self):
         from contextlib import redirect_stdout
