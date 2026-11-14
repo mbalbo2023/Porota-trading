@@ -60,11 +60,13 @@ def probe_hash_command(path):
 
 
 def _file_probe_commands():
-    """Only exact R302 bootstrap and R280 target paths. No R305 write verbs."""
+    """Read-only commands for the R302 bootstrap, R280 targets and R358 launcher."""
+    from scripts.rc6_genesis_launcher_authority import LAUNCHER_TARGET
+
     bootstrap = tuple(path for path, _, _ in r302.ROOT_FILES)
-    targets = tuple(row[0] for row in r280.TARGETS.values()) + (PROBE_GENERATIONS,)
+    targets = tuple(row[0] for row in r280.TARGETS.values()) + (PROBE_GENERATIONS, LAUNCHER_TARGET)
     paths = (*r302.ROOT_DIRECTORIES, *bootstrap, *targets)
-    hashes = (*bootstrap, r280.TARGETS['helper'][0], r280.TARGETS['custody'][0])
+    hashes = (*bootstrap, r280.TARGETS['helper'][0], r280.TARGETS['custody'][0], LAUNCHER_TARGET)
     return frozenset((
         HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND,
         *(probe_stat_command(path) for path in paths),
