@@ -147,6 +147,30 @@ class A726Test(unittest.TestCase):
         self.assertTrue(row["four_ledgers_flat"])
         self.assertFalse(row["quiescence_verified"])
 
+    def test_book_keeps_observer_and_spot_on_one_wal_snapshot(self):
+        path = self.mkdb()
+        writer = sqlite3.connect(path)
+        self.addCleanup(writer.close)
+        self.assertEqual(writer.execute("PRAGMA journal_mode=WAL").fetchone(), ("wal",))
+        read_ledger = d._ledger
+
+        def read_after_commit(db, table, predicate, required):
+            if table == "paper_positions":
+                with writer:
+                    writer.execute("UPDATE observer_state SET real_orders_sent=1 WHERE id=1")
+                    writer.execute("INSERT INTO paper_positions VALUES (1,'OPEN')")
+            return read_ledger(db, table, predicate, required)
+
+        with ro_statvfs():
+            with mock.patch.object(d, "_ledger", read_after_commit):
+                before = d._book(path)
+            after = d._book(path)
+
+        self.assertEqual((before["observer"]["orders_zero"], before["ledgers"]["spot"]["count"]),
+                         (True, 0))
+        self.assertEqual((after["observer"]["orders_zero"], after["ledgers"]["spot"]["count"]),
+                         (False, 1))
+
     def test_book_missing_fci_not_falsely_flat(self):
         with ro_statvfs():
             row = d._book(self.mkdb(fci=False))

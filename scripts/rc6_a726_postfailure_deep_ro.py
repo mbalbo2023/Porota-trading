@@ -206,6 +206,7 @@ def _book(path: Path) -> dict:
             db.execute("PRAGMA busy_timeout=200")
             deadline = time.monotonic() + 4
             db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            db.execute("BEGIN")
             result["state"] = "READ_ONLY_OPENED"
             try:
                 row = db.execute("SELECT mode,real_orders_sent,process_state,session_state "
