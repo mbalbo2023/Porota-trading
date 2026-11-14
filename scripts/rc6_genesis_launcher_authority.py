@@ -1,4 +1,4 @@
-"""Authenticate one files-only R358 bootstrap against trusted main and the global ledger."""
+"""Authenticate the two fixed files-only bootstraps and reconcile global physical leases."""
 
 import base64
 from datetime import datetime, timedelta, timezone
@@ -15,10 +15,17 @@ from scripts import rc6_r340_trusted_root_env_controller as r340
 
 LAUNCHER_SHA256 = "76eac14930a913ff7ed5c0720ccb5ff5bfc050b7bebe5b4725a76685ee67aaff"
 LAUNCHER_TARGET = "/usr/local/sbin/porota-rc6-host-installer-genesis"
+CUSTODIAN_TARGET = "/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian"
+CUSTODIAN_SHA256 = "2d37cd16d0b682425ceb64349d1765d4ca7cd080729faf0555d286d1d6962be9"
 GO_MARKER = "RC6_R362_LAUNCHER_GO_V1="
 LEASE_MARKER = "RC6_R362_DEPLOY_OWNER_V1="
+CUSTODIAN_GO_MARKER = "RC6_R367_CUSTODIAN_GO_V1="
+CUSTODIAN_LEASE_MARKER = "RC6_R367_CUSTODIAN_DEPLOY_OWNER_V1="
+CONTROL_LEASE_MARKER = "RC6_R367_GENESIS_DEPLOY_OWNER_V1="
+LEASE_MARKERS = (LEASE_MARKER, CUSTODIAN_LEASE_MARKER, CONTROL_LEASE_MARKER)
 OWNER_ID = 151845499
 INVENTORY_COMMENT_ID = 6881987698
+CUSTODIAN_DECISION_ID = 6883049719
 HISTORY_CUTOFF = 6872471009
 # The two historic narrative physical acquisitions and their respective releases in #980.
 # Only these four prior authority decisions are pinned; ordinary code/coordination notes can evolve.
@@ -159,19 +166,25 @@ def _document(body, marker):
     return doc
 
 
-def _scope(main_sha, host_hash):
-    return {"operation": "install_genesis_launcher", "trusted_main_sha": main_sha,
-            "launcher_target": LAUNCHER_TARGET, "launcher_sha256": LAUNCHER_SHA256,
-            "host_identity_source": "PROTECTED_DO_PINS", "host_identity_sha256": host_hash}
+def _scope(main_sha, host_hash, marker=LEASE_MARKER):
+    common = {"trusted_main_sha": main_sha, "host_identity_source": "PROTECTED_DO_PINS",
+              "host_identity_sha256": host_hash}
+    if marker == LEASE_MARKER:
+        return {**common, "operation": "install_genesis_launcher",
+                "launcher_target": LAUNCHER_TARGET, "launcher_sha256": LAUNCHER_SHA256}
+    require(marker == CUSTODIAN_LEASE_MARKER and _hex(CUSTODIAN_SHA256, 64),
+            "CUSTODIAN_PACKAGE_PIN_UNVERIFIED")
+    return {**common, "operation": "install_genesis_custodian",
+            "custodian_target": CUSTODIAN_TARGET, "custodian_sha256": CUSTODIAN_SHA256}
 
 
-def _check_go(comment, go_id, main_sha, host_hash):
+def _check_go(comment, go_id, scope, marker, decision):
     issued = _owner_comment(comment, go_id, 1093)
-    doc = _document(comment["body"], GO_MARKER)
+    doc = _document(comment["body"], marker)
     lease = doc.get("lease_comment_id")
     expires = r295._utc_timestamp(doc.get("expires_at"))
     require(type(lease) is int and HISTORY_CUTOFF < lease < go_id
-            and doc == {**_scope(main_sha, host_hash), "inventory_comment_id": INVENTORY_COMMENT_ID,
+            and doc == {**scope, "inventory_comment_id": decision,
                         "lease_comment_id": lease, "expires_at": doc["expires_at"]}
             and type(doc["inventory_comment_id"]) is int, "LAUNCHER_GO_SCOPE_UNVERIFIED")
     require(issued <= datetime.now(timezone.utc) < expires <= issued + timedelta(hours=2),
@@ -216,12 +229,31 @@ def _noncanonical_decision(body, *, reconciled=False):
     return False
 
 
-def _ledger(github, selected, lease_id, main_sha, host_hash):
+def _hex(value, width):
+    return type(value) is str and len(value) == width and re.fullmatch(r"[0-9a-f]+", value) is not None
+
+
+def _valid_lease_scope(marker, scope):
+    sha, host = scope.get("trusted_main_sha"), scope.get("host_identity_sha256")
+    if not _hex(sha, 40) or not _hex(host, 64) or scope.get("host_identity_source") != "PROTECTED_DO_PINS":
+        return False
+    if marker == CONTROL_LEASE_MARKER:
+        return (set(scope) == {"operation", "trusted_main_sha", "candidate_sha", "candidate_tree",
+                                "host_identity_source", "host_identity_sha256", "nonce"}
+                and scope["operation"] in ("PREPARE_ENV", "APPLY_GENESIS")
+                and _hex(scope["candidate_sha"], 40) and _hex(scope["candidate_tree"], 40)
+                and _hex(scope["nonce"], 32))
+    return marker in (LEASE_MARKER, CUSTODIAN_LEASE_MARKER) and scope == _scope(sha, host, marker)
+
+
+def verify_global_lease(github, selected, lease_id, *, marker, scope):
+    """Read all owner events; only the selected immutable ACTIVE acquisition may remain."""
+    require(type(scope) is dict and _valid_lease_scope(marker, scope), "LAUNCHER_GLOBAL_LEASE_MISMATCH")
     version = _ledger_version(github)
     count = version[0]
     previous = 0
     seen = set()
-    active = set()
+    active = None
     found = False
     for start in range(0, count, PAGE_SIZE):
         page = start // PAGE_SIZE + 1
@@ -250,35 +282,34 @@ def _ledger(github, selected, lease_id, main_sha, host_hash):
                 require(not _noncanonical_decision(body, reconciled=True),
                         "LAUNCHER_AMBIGUOUS_GLOBAL_OWNER")
                 seen.add(ident)
-            elif body.startswith(LEASE_MARKER):
+            elif body.startswith(LEASE_MARKERS):
                 _owner_comment(row, ident, 980)
-                doc = _document(body, LEASE_MARKER)
+                event_marker = next(candidate for candidate in LEASE_MARKERS if body.startswith(candidate))
+                doc = _document(body, event_marker)
                 require(ident > HISTORY_CUTOFF, "LAUNCHER_LEDGER_LEGACY_UNKNOWN")
                 if doc.get("status") == "ACTIVE":
                     # Honor a competing global lease across other main SHAs. The selected
                     # acquisition must match this workflow's exact scope and commit.
-                    other_sha = doc.get("trusted_main_sha")
-                    other_host = doc.get("host_identity_sha256")
-                    require(type(other_sha) is str and re.fullmatch(r"[0-9a-f]{40}", other_sha)
-                            and type(other_host) is str and re.fullmatch(r"[0-9a-f]{64}", other_host)
-                            and doc == {**_scope(other_sha, other_host), "status": "ACTIVE"} and not active,
+                    event_scope = {k: v for k, v in doc.items() if k != "status"}
+                    require(_valid_lease_scope(event_marker, event_scope) and active is None,
                             "LAUNCHER_GLOBAL_LEASE_CONFLICT")
-                    active.add(ident)
+                    active = (event_marker, ident)
                 else:
                     original = doc.get("lease_comment_id")
-                    require(type(original) is int and original in active
+                    require(type(original) is int and active == (event_marker, original)
                             and doc == {"status": "RELEASED", "lease_comment_id": original},
                             "LAUNCHER_GLOBAL_RELEASE_AMBIGUOUS")
-                    active.remove(original)
+                    active = None
                 if ident == lease_id:
-                    require(doc == {**_scope(main_sha, host_hash), "status": "ACTIVE"}
+                    require(event_marker == marker and doc == {**scope, "status": "ACTIVE"}
                             and r305.owner_go_identity(row) == r305.owner_go_identity(selected),
                             "LAUNCHER_GLOBAL_LEASE_MISMATCH")
                     found = True
             else:
                 require(not _noncanonical_decision(body, reconciled=ident < HISTORY_CUTOFF)
-                        and "RC6_R362_DEPLOY_OWNER" not in body, "LAUNCHER_AMBIGUOUS_GLOBAL_OWNER")
-    require(seen == set(LEGACY_EVENTS) | {HISTORY_CUTOFF} and found and active == {lease_id},
+                        and not any(prefix.split("_V1=")[0] in body for prefix in LEASE_MARKERS),
+                        "LAUNCHER_AMBIGUOUS_GLOBAL_OWNER")
+    require(seen == set(LEGACY_EVENTS) | {HISTORY_CUTOFF} and found and active == (marker, lease_id),
             "LAUNCHER_ACTIVE_GLOBAL_OWNER_UNVERIFIED")
     return version
 
@@ -289,10 +320,15 @@ def verify_authority(env):
     require(env.get("GITHUB_REPOSITORY") == r295.REPOSITORY
             and env.get("GITHUB_TRIGGERING_ACTOR") == r295.OWNER
             and env.get("GITHUB_ACTOR_ID") == str(OWNER_ID)
-            and env.get("BOOTSTRAP_ACTION") == "install_genesis_launcher"
+            and env.get("BOOTSTRAP_ACTION") in ("install_genesis_launcher", "install_genesis_custodian")
             and env.get("DO_USER") == "porotaadmin",
             "LAUNCHER_TRUSTED_DISPATCH_REQUIRED")
     host_hash = host_identity_sha256(env)
+    if env["BOOTSTRAP_ACTION"] == "install_genesis_custodian":
+        marker, go_marker, decision = CUSTODIAN_LEASE_MARKER, CUSTODIAN_GO_MARKER, CUSTODIAN_DECISION_ID
+    else:
+        marker, go_marker, decision = LEASE_MARKER, GO_MARKER, INVENTORY_COMMENT_ID
+    scope = _scope(context.main_sha, host_hash, marker)
     try:
         require(r340._checkout_head() == context.main_sha, "LAUNCHER_CHECKOUT_CHANGED")
         github = _GitHub(env["GITHUB_TOKEN"])
@@ -304,11 +340,11 @@ def verify_authority(env):
         current_main()
         go_path = f"/issues/comments/{context.owner_comment_id}"
         go = github.read(go_path)
-        lease_id, issued = _check_go(go, context.owner_comment_id, context.main_sha, host_hash)
+        lease_id, issued = _check_go(go, context.owner_comment_id, scope, go_marker, decision)
         lease_path = f"/issues/comments/{lease_id}"
         lease = github.read(lease_path)
         require(_owner_comment(lease, lease_id, 980) <= issued, "LAUNCHER_LEASE_POSTDATES_GO")
-        version = _ledger(github, lease, lease_id, context.main_sha, host_hash)
+        version = verify_global_lease(github, lease, lease_id, marker=marker, scope=scope)
         fresh_lease = github.read(lease_path)
         _owner_comment(fresh_lease, lease_id, 980)
         require(r305.owner_go_identity(fresh_lease) == r305.owner_go_identity(lease),
@@ -317,6 +353,7 @@ def verify_authority(env):
         require(r305.owner_go_identity(fresh_go) == r305.owner_go_identity(go), "LAUNCHER_GO_CHANGED")
         current_main()
         require(_ledger_version(github) == version, "LAUNCHER_LEDGER_CHANGED")
-        _check_go(fresh_go, context.owner_comment_id, context.main_sha, host_identity_sha256(env))
+        _check_go(fresh_go, context.owner_comment_id, _scope(context.main_sha, host_identity_sha256(env), marker),
+                  go_marker, decision)
     except (r340.ControlHold, r305.PinHold, r163.PostrunEvidenceRed, UnicodeError, RecursionError) as exc:
         raise r295.BootstrapHold("LAUNCHER_AUTHORITY_UNVERIFIED") from exc

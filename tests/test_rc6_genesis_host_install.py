@@ -204,3 +204,20 @@ class FixedInstall(unittest.TestCase):
         with self.assertRaisesRegex(private.CustodianHold, "^INSTALL_LAUNCHER_RECEIPT$"):
             self.install()
         self.assertFalse(self.path(r305.ROOT_DIRECTORY).joinpath(self.app._DONE).exists())
+
+    def test_fresh_authority_required_at_r358_and_final_receipt(self):
+        def record():
+            self.boundaries.extend(["network", "go"])
+        invoke = self.invoke
+        def checked(argv, **kwargs):
+            self.assertEqual(self.boundaries[-3:], ["env", "network", "go"])
+            self.boundaries[-3:] = ["env", "go"]
+            return invoke(argv, **kwargs)
+        self.runner.side_effect = checked
+        self.app.install(self.auth, self.files, check_authority=lambda:self.boundaries.append("go"),
+                         verify_env=lambda:self.boundaries.append("env"), final_authority=record)
+        self.assertEqual(self.boundaries[-3:], ["env", "network", "go"])
+        with self.assertRaisesRegex(private.CustodianHold, "AUTHORITY"):
+            self.app.install(self.auth, self.files, check_authority=lambda:True, verify_env=lambda:None,
+                             final_authority=lambda:False)
+        self.assertEqual(self.runner.call_count, 1)

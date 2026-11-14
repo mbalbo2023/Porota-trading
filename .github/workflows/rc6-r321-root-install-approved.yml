@@ -14,6 +14,36 @@ on:
         options:
           - OFFHOST_HOLD
           - PROBE_FILES_ONLY
+          - PREPARE_ENV
+          - APPLY_GENESIS
+      prepare_phase:
+        description: Phase of PREPARE_ENV
+        type: choice
+        default: INITIAL
+        options:
+          - INITIAL
+          - POST_D_E
+      lease_id:
+        description: Global lease comment ID
+        type: string
+      prepare_go_id:
+        description: Current PREPARE owner GO comment ID
+        type: string
+      pin_go_id:
+        description: APPLY pin GO comment ID
+        type: string
+      install_go_id:
+        description: APPLY install GO comment ID
+        type: string
+      env_go_id:
+        description: APPLY environment GO comment ID
+        type: string
+      predeploy_run_id:
+        description: APPLY successful Porota Predeploy V2 run ID
+        type: string
+      predeploy_run_attempt:
+        description: APPLY successful Predeploy run attempt
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +57,7 @@ concurrency:
 
 jobs:
   root_install_offhost_preflight:
-    if: ${{ inputs.operation != 'PROBE_FILES_ONLY' && github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    if: ${{ inputs.operation == 'OFFHOST_HOLD' && github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -153,3 +183,50 @@ jobs:
           printf 'FILES_OBSERVED_ONLY main=%s run=%s attempt=%s receipt_sha256=%s artifact_id=%s artifact_zip_sha256=%s\n' \
             "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$receipt_sha" "$ARTIFACT_ID" "$ARTIFACT_DIGEST" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+  genesis_controller:
+    if: ${{ (inputs.operation == 'PREPARE_ENV' || inputs.operation == 'APPLY_GENESIS') && github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    # POST/APPLY may reopen a large immutable D/E. Every phase separately
+    # validates its live lease, GO expiry and short-lived OIDC token.
+    timeout-minutes: 40
+    steps:
+      - name: Checkout the exact controller commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Run the authorized GENESIS operation
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RC6_R321_OPERATION: ${{ inputs.operation }}
+          RC6_R367_PREPARE_PHASE: ${{ inputs.prepare_phase }}
+          RC6_R367_LEASE_ID: ${{ inputs.lease_id }}
+          RC6_R367_PREPARE_GO_ID: ${{ inputs.prepare_go_id }}
+          RC6_R367_PIN_GO_ID: ${{ inputs.pin_go_id }}
+          RC6_R367_INSTALL_GO_ID: ${{ inputs.install_go_id }}
+          RC6_R367_ENV_GO_ID: ${{ inputs.env_go_id }}
+          RC6_R367_PREDEPLOY_RUN_ID: ${{ inputs.predeploy_run_id }}
+          RC6_R367_PREDEPLOY_RUN_ATTEMPT: ${{ inputs.predeploy_run_attempt }}
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          case "$RC6_R321_OPERATION" in
+            PREPARE_ENV) exec python3 -B -m scripts.rc6_r321_root_install_actions --prepare-env ;;
+            APPLY_GENESIS) exec python3 -B -m scripts.rc6_r321_root_install_actions --apply-genesis ;;
+            *) exit 79 ;;
+          esac

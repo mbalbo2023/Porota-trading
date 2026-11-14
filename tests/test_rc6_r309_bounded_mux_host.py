@@ -141,7 +141,10 @@ class R309BoundedMuxHostTests(TestCase):
                         if cmd == command:
                             self.assertEqual(data, request if calls.count(cmd) == 1 else post_de)
                             self.assertEqual(limits['output_cap'], 4096)
-                            self.assertEqual(calls[-2], 'authority')
+                            if calls.count(cmd) == 1:
+                                self.assertEqual(calls[-3:-1], ['authority', 'mint'])
+                            else:
+                                self.assertEqual(calls[-2], 'authority')
                             if drift == 'remote-hold':
                                 return 79, b'private source value'
                             if drift == 'remote-array':
@@ -182,8 +185,12 @@ class R309BoundedMuxHostTests(TestCase):
                         self.assertTrue(hasattr(transport, 'R367CustodianTransport'))
                         with transport.R367CustodianTransport(env, operation=operation,
                                 custodian_sha256=package_sha, host_identity_sha256=commitment) as session:
+                            def mint():
+                                calls.append('mint')
+                                return request
                             if drift == 'none':
-                                self.assertEqual(session.invoke(request, recheck_authority=check), receipt)
+                                self.assertEqual(session.invoke(mint, recheck_authority=check), receipt)
+                                self.assertEqual(calls.count('mint'), 1)
                                 self.assertEqual(calls.count(command), 1)
                                 self.assertGreaterEqual(calls.count('/usr/bin/sudo -n /usr/bin/sha256sum -- ' + target), 1)
                                 self.assertEqual(session.invoke(post_de, recheck_authority=check), receipt)
@@ -204,9 +211,10 @@ class R309BoundedMuxHostTests(TestCase):
                                 self.assertEqual(calls.count(command), 3)
                             else:
                                 with self.assertRaises(R309Hold) as error:
-                                    session.invoke(request, recheck_authority=check)
+                                    session.invoke(mint, recheck_authority=check)
                                 self.assertNotIn('private', ''.join(traceback.format_exception(error.exception)))
                                 remote_ran = drift in ('remote-hold', 'remote-array')
+                                self.assertEqual(calls.count('mint'), int(remote_ran))
                                 self.assertEqual(calls.count(command), int(remote_ran))
                                 if remote_ran:
                                     count = len(calls)

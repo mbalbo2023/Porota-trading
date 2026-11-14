@@ -1011,6 +1011,17 @@ def probe_files_only(env):
 def main(argv=None, *, env=None):
     """The physical CLI can observe files. Installation remains a separate HOLD."""
     options = sys.argv[1:] if argv is None else argv
+    if options in (['--prepare-env'], ['--apply-genesis']):
+        try:
+            from scripts import rc6_genesis_control_actions as genesis
+            report = genesis.dispatch(os.environ if env is None else env, options[0])
+            print(json.dumps(report, sort_keys=True, separators=(',', ':'), allow_nan=False))
+            return 0
+        except Exception:
+            # A lost physical reply may follow a write. Never disclose incoming
+            # data, OIDC tokens, or infer a physical state from an exception.
+            print('RC6_R367=HOLD79|physical_state=NO_VERIFICADO|deploy_authorized=false')
+            return 79
     try:
         if options == ["--probe-files-only"]:
             report = probe_files_only(os.environ if env is None else env)

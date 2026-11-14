@@ -354,14 +354,24 @@ class R367CustodianTransport(R309BoundedMuxHost):
             snapshot.append(raw)
         return snapshot
 
-    def invoke(self, request_bytes, *, recheck_authority):
-        """Return bounded private receipt bytes to the validating caller. Never print remote output."""
-        _require(callable(recheck_authority), "CUSTODIAN_AUTHORITY_REQUIRED")
+    @staticmethod
+    def _validate_request(request_bytes):
         try:
             document = _strict_json(request_bytes, limit=1024**2)
         except BootstrapHold:
             raise R309Hold("CUSTODIAN_REQUEST_INVALID") from None
         _require(type(document) is dict and document, "CUSTODIAN_REQUEST_INVALID")
+
+    def invoke(self, request_bytes, *, recheck_authority):
+        """A zero-argument factory mints its short-lived OIDC after the final recheck.
+
+        Bytes supplied directly are validated before any physical reads. The
+        bounded private response is returned only to the validating caller.
+        """
+        _require(callable(recheck_authority), "CUSTODIAN_AUTHORITY_REQUIRED")
+        factory = request_bytes if callable(request_bytes) else None
+        if factory is None:
+            self._validate_request(request_bytes)
         try:
             observations = [self._read(command, 32).removesuffix(b'\n')
                             for command in (HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND)]
@@ -379,6 +389,12 @@ class R367CustodianTransport(R309BoundedMuxHost):
             raise R309Hold("CUSTODIAN_AUTHORITY_UNVERIFIED") from None
         _require(authorized is True, "CUSTODIAN_AUTHORITY_UNVERIFIED")
         command = "/usr/bin/sudo -n " + CUSTODIAN_TARGET + " " + _CUSTODIAN_VERBS[self._operation]
+        if factory is not None:
+            try:
+                request_bytes = factory()
+            except Exception:
+                raise R309Hold("CUSTODIAN_REQUEST_UNAVAILABLE") from None
+            self._validate_request(request_bytes)
         status, receipt = self._run_child(command, request_bytes, 4096, 60)
         if status != 0:
             self.poisoned = True

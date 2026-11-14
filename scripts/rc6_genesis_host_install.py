@@ -153,7 +153,7 @@ def _invoke(expected, authorize):
         _require(result.returncode == 0 and output.read(513) == expected, "INSTALL_LAUNCHER_RECEIPT")
 
 
-def install(authority, files, *, check_authority, verify_env):
+def install(authority, files, *, check_authority, verify_env, final_authority=None):
     """Acknowledge an identical completed installation or publish from proven absence."""
     _require(isinstance(files, Mapping) and set(files) == set(r280.SOURCE_NAMES.values()) | {"manifest.json"},
              "INSTALL_SOURCES")
@@ -175,12 +175,12 @@ def install(authority, files, *, check_authority, verify_env):
 
     with custody._directory(_VAULT) as (vault, parents):
         fcntl.flock(vault, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        def authorize():
+        def authorize(*, fresh=False):
             custody._check_directory(_VAULT, parents)
             _require(verify_transition(authority, raw) == transition and _launcher() == launcher,
                      "INSTALL_BOUNDARY_CHANGED")
             custody._authorized(verify_env)
-            custody._authorized(check_authority)
+            custody._authorized(final_authority if fresh and final_authority is not None else check_authority)
         authorize()
         completed = custody._exists(vault, _DONE)
         if not completed:
@@ -188,7 +188,7 @@ def install(authority, files, *, check_authority, verify_env):
         inbox = _inbox(vault, files, scope, authorize)
         if not completed:
             _targets(files, absent=True)
-            _invoke(expected, authorize)
+            _invoke(expected, lambda: authorize(fresh=True))
             targets = _targets(files)
             authorize()
             custody._write_record(vault, _DONE, {"scope": scope, "inbox": inbox, "targets": targets})
@@ -196,5 +196,5 @@ def install(authority, files, *, check_authority, verify_env):
         _require(done == {"scope": scope, "inbox": _inbox_snapshot(vault, _INBOX, files), "targets": _targets(files)},
                  "INSTALL_COMPLETION_UNVERIFIED")
         os.fsync(vault)
-        authorize()
+        authorize(fresh=True)
     return _RESULT
