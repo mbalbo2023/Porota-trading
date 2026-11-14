@@ -1,15 +1,18 @@
 """R309 trusted Actions transport: fake subprocess only, never real SSH."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 from unittest import TestCase, mock
+import io
 import os
 import json
+import subprocess
 import sys
 import traceback
+import yaml
 
 from scripts.rc6_r309_bounded_mux_host import R309BoundedMuxHost, R309Hold
 from scripts.rc6_host_rootowned_installer_cli import validate_installer_receipt
@@ -92,7 +95,7 @@ class _FakeMaster:
 
 
 @contextmanager
-def _host_session(*, env=None, master=None, r305_module=None):
+def _host_session(*, env=None, master=None, r305_module=None, **mode):
     """Only the subprocess boundary is fake; adapter state and secret files are real."""
     source = r305_module if r305_module is not None else _trusted_r305()
     fake_master = master or _FakeMaster()
@@ -101,12 +104,131 @@ def _host_session(*, env=None, master=None, r305_module=None):
                     return_value=fake_master) as popen, \
          mock.patch.object(R309BoundedMuxHost, "_verified_master_socket",
                            return_value=True):
-        host = R309BoundedMuxHost(_env() if env is None else env)
+        host = R309BoundedMuxHost(_env() if env is None else env, **mode)
         with host:
             yield host, popen, fake_master
 
 
 class R309BoundedMuxHostTests(TestCase):
+    def test_probe_times_out_before_the_workflow_cuts_off_the_receipt(self):
+        with mock.patch('scripts.rc6_r309_bounded_mux_host.time.monotonic', return_value=100), \
+                _host_session(operation='PROBE_FILES_ONLY') as (host, _, _):
+            with mock.patch('scripts.rc6_r309_bounded_mux_host.time.monotonic', return_value=281), \
+                    mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command') as run:
+                with self.assertRaisesRegex(R309Hold, 'SSH_TOTAL_DEADLINE_EXCEEDED'):
+                    host.call(HOST_ID_CMD, max_output_bytes=32)
+                run.assert_not_called()
+
+    def test_workflow_reads_live_main_before_ssh_and_publication(self):
+        from scripts.rc6_r163_trusted_postrun_byte_audit import GitHubReadOnlyREST
+        from scripts import rc6_r340_trusted_root_env_controller as control
+        path = Path(__file__).resolve().parents[1] / '.github/workflows/rc6-r321-root-install-approved.yml'
+        steps = yaml.safe_load(path.read_text())['jobs']['probe_files_only']['steps']
+        ids = [step.get('id') for step in steps]
+        for name in ('current_main', 'observe', 'recheck_main', 'upload'):
+            self.assertIn(name, ids)
+        self.assertLess(ids.index('current_main'), ids.index('observe'))
+        self.assertLess(ids.index('observe'), ids.index('recheck_main'))
+        self.assertLess(ids.index('recheck_main'), ids.index('upload'))
+        for name in ('current_main', 'recheck_main'):
+            step = steps[ids.index(name)]
+            self.assertEqual(set(step['env']), {'GITHUB_TOKEN'})
+            self.assertNotIn('if', step)
+            program = step['run'].split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+            sha = 'a' * 40
+            for checkout, ref, kind, live, expect in (
+                    (sha, 'refs/heads/main', 'commit', sha, 0),
+                    (sha, 'refs/heads/main', 'commit', 'b' * 40, 79),
+                    ('c' * 40, 'refs/heads/main', 'commit', sha, 79),
+                    (sha, 'refs/heads/main', 'tag', sha, 79),
+                    (sha, 'refs/heads/other', 'commit', sha, 79)):
+                with self.subTest(name=name, checkout=checkout, ref=ref, kind=kind, live=live):
+                    result = {'ref': ref, 'object': {'type': kind, 'sha': live}}
+                    output = io.StringIO()
+                    with mock.patch.dict(os.environ, {'GITHUB_SHA': sha, 'GITHUB_TOKEN': 'private-test'}), \
+                            mock.patch.object(control, '_checkout_head', return_value=checkout), \
+                            mock.patch.object(GitHubReadOnlyREST, 'get_json', return_value=result) as api, \
+                            redirect_stdout(output):
+                        status = 0
+                        try:
+                            exec(compile(program, '<R321 workflow trusted-main check>', 'exec'), {})
+                        except SystemExit as stop:
+                            status = stop.code
+                    self.assertEqual(status, expect)
+                    self.assertNotIn('private-test', output.getvalue())
+                    if expect == 0:
+                        api.assert_called_once_with('/repos/mbalbo2023/Porota-trading/git/ref/heads/main')
+
+    def test_workflow_persists_only_the_sanitized_json_and_checks_both_digests(self):
+        import hashlib
+        path = Path(__file__).resolve().parents[1] / '.github/workflows/rc6-r321-root-install-approved.yml'
+        steps = yaml.safe_load(path.read_text())['jobs']['probe_files_only']['steps']
+        by_id = {step.get('id'): step for step in steps}
+        for name in ('observe', 'upload', 'verify_upload'):
+            self.assertIn(name, by_id)
+        obs, upload, verify = (by_id[key] for key in ('observe', 'upload', 'verify_upload'))
+        self.assertEqual(upload['uses'], 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02')
+        opts = upload['with']
+        self.assertEqual(opts['if-no-files-found'], 'error')
+        self.assertFalse(opts['include-hidden-files'])
+        self.assertGreater(int(opts['retention-days']), 0)
+        self.assertEqual(opts['path'], '${{ runner.temp }}/r352/evidence.json')
+        for selector in ('github.sha', 'github.run_id', 'github.run_attempt'):
+            self.assertIn(selector, opts['name'])
+        self.assertIn('steps.upload.outputs.artifact-id', verify['env']['ARTIFACT_ID'])
+        self.assertIn('steps.upload.outputs.artifact-digest', verify['env']['ARTIFACT_DIGEST'])
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            fake = root / 'python3'
+            raw = b'{"schema":"RC6_R321_PROBE_FILES_ONLY_V1"}\n'
+            fake.write_text("#!/bin/sh\nprintf '%s\\n' '" + raw.decode().strip() + "'\n")
+            fake.chmod(0o700)
+            summary = root / 'summary'
+            env = dict(os.environ, RUNNER_TEMP=temp, PATH=temp + os.pathsep + os.environ['PATH'],
+                       GITHUB_STEP_SUMMARY=str(summary), GITHUB_SHA='a' * 40,
+                       GITHUB_RUN_ID='134', GITHUB_RUN_ATTEMPT='2')
+            def run(block, **updates):
+                return subprocess.run(['/bin/bash', '-c', block], env=dict(env, **updates),
+                                      capture_output=True, text=True, timeout=5)
+            observed = run(obs['run'])
+            self.assertEqual(observed.returncode, 0, observed.stderr)
+            self.assertNotIn(raw.decode().strip(), observed.stdout)
+            receipt = root / 'r352/evidence.json'
+            self.assertEqual(receipt.read_bytes(), raw)
+            self.assertEqual(receipt.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(receipt.parent.stat().st_mode & 0o777, 0o700)
+            for aid, digest in (('', 'e' * 64), ('123', ''), ('bad', 'e' * 64), ('123', 'x' * 64)):
+                check = run(verify['run'], ARTIFACT_ID=aid, ARTIFACT_DIGEST=digest)
+                self.assertEqual(check.returncode, 79)
+                self.assertNotIn(raw.decode().strip(), check.stdout)
+            result = run(verify['run'], ARTIFACT_ID='123', ARTIFACT_DIGEST='e' * 64)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(raw.decode().strip(), result.stdout)
+            self.assertIn(hashlib.sha256(raw).hexdigest(), summary.read_text())
+            self.assertIn('e' * 64, summary.read_text())
+
+    def test_files_probe_has_an_independent_vocabulary_and_no_stdin(self):
+        private = '/var/lib/porota-rc6-oci-custody/host-helper-approval.json'
+        generations = '/var/lib/porota-rc6-oci-custody/generations'
+        sudo = '/usr/bin/sudo -n /usr/bin/'
+        with mock.patch('scripts.rc6_r309_bounded_mux_host._trusted_r305_commands',
+                        side_effect=AssertionError('probe requested write capability')), \
+                _host_session(operation='PROBE_FILES_ONLY') as (host, popen, _), \
+                mock.patch('scripts.rc6_r309_bounded_mux_host.run_bounded_ssh_command',
+                           return_value=(0, b'')) as runner:
+            self.assertEqual(host.call(sudo + 'test ! -e ' + private,
+                                       max_output_bytes=0), (0, b''))
+            for command in (INSTALL_CMD, sudo + 'sha256sum -- ' + private,
+                            sudo + 'ls ' + generations, sudo + 'tee ' + private,
+                            sudo + 'test ! -e /tmp/unowned', '/bin/sh'):
+                with self.subTest(command=command), self.assertRaises(R309Hold):
+                    host.call(command)
+            for data in (b'', b'X'):
+                with self.subTest(data=data), self.assertRaises(R309Hold):
+                    host.call(HOST_ID_CMD, stdin=data)
+            self.assertEqual(runner.call_count, 1)
+            self.assertEqual(popen.call_count, 1)
+
     def test_rejects_untrusted_dispatch_before_creating_files_or_ssh(self):
         for key, wrong in (
             ("GITHUB_REF", "refs/heads/product"),

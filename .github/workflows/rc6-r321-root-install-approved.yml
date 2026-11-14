@@ -1,11 +1,19 @@
-name: RC6 R321 ROOT install authority (OFFHOST HOLD79 only)
+name: RC6 R321 ROOT evidence and file observation
 
 # Retain the existing R321 workflow path and original fixed HOLD79 stage.
 # R340 now authenticates live GitHub main/PR and unique R252 D/E ZIP bytes first.
-# This revision has NO SSH/ROOT/install/seal/deploy action. A separate future
-# approved integration must wire the existing R309/R305/R321 host executors.
+# An explicit file probe uses a separate read-only R309 command vocabulary.
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation
+        type: choice
+        required: true
+        default: OFFHOST_HOLD
+        options:
+          - OFFHOST_HOLD
+          - PROBE_FILES_ONLY
 
 permissions:
   contents: read
@@ -19,7 +27,7 @@ concurrency:
 
 jobs:
   root_install_offhost_preflight:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    if: ${{ inputs.operation != 'PROBE_FILES_ONLY' && github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -33,11 +41,115 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          RC6_R321_OPERATION: ${{ inputs.operation }}
         run: |
           set -Eeuo pipefail
+          [[ "$RC6_R321_OPERATION" = OFFHOST_HOLD ]] || { echo 'RC6_R321=HOLD79|operation_unknown'; exit 79; }
           python3 -m scripts.rc6_r340_trusted_root_env_controller --verify-offhost
       - name: Keep ROOT install fail-closed until distinct PIN/INSTALL/ENV GO and transport
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 -m scripts.rc6_r321_root_install_actions --check-offhost
+
+  probe_files_only:
+    if: ${{ inputs.operation == 'PROBE_FILES_ONLY' && github.event_name == 'workflow_dispatch' && github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact trusted main event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify current main before opening the host connection
+        id: current_main
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: &check_current_probe_main |
+          set -Eeuo pipefail
+          python3 -B - <<'PY'
+          import os
+          import sys
+          from scripts.rc6_r163_trusted_postrun_byte_audit import GitHubReadOnlyREST
+          from scripts.rc6_r340_trusted_root_env_controller import _checkout_head
+
+          try:
+              repo = 'mbalbo2023/Porota-trading'
+              head = _checkout_head()
+              ref = GitHubReadOnlyREST(os.environ['GITHUB_TOKEN']).get_json(
+                  f'/repos/{repo}/git/ref/heads/main')
+              target = ref.get('object')
+              valid = (head == os.environ['GITHUB_SHA'] and ref.get('ref') == 'refs/heads/main'
+                       and isinstance(target, dict) and target.get('type') == 'commit'
+                       and target.get('sha') == head)
+          except (KeyError, TypeError, ValueError, OSError, RuntimeError):
+              valid = False
+          if not valid:
+              print('RC6_R321_PROBE=HOLD79|live_main_unverified')
+              sys.exit(79)
+          PY
+      - name: Observe R302 bootstrap and R271 file metadata
+        id: observe
+        shell: bash
+        env:
+          RC6_R321_OPERATION: ${{ inputs.operation }}
+          RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}
+          RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          mkdir -m 700 -- "$RUNNER_TEMP/r352"
+          receipt="$RUNNER_TEMP/r352/evidence.json"
+          if ! python3 -B -m scripts.rc6_r321_root_install_actions --probe-files-only > "$receipt"; then
+            if failure=$(grep -Ex 'RC6_R321_ROOT_ACTIONS=HOLD79\|reason=[A-Z0-9_]{1,70}\|host_control_verified=NO_VERIFICADO(\|real_orders_allowed=false)?' "$receipt"); then
+              printf '%s\n' "$failure"
+            else
+              echo 'RC6_R321_PROBE=HOLD79|observation_unverified'
+            fi
+            exit 79
+          fi
+          bytes=$(wc -c < "$receipt")
+          [[ "$bytes" -gt 0 && "$bytes" -le 2048 ]] || exit 79
+      - name: Recheck current main before publishing the receipt
+        id: recheck_main
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: *check_current_probe_main
+      - name: Upload FILES_OBSERVED_ONLY receipt
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc6-r352-files-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/r352/evidence.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+          compression-level: 0
+      - name: Record receipt and GitHub artifact digests
+        id: verify_upload
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "$ARTIFACT_ID" =~ ^[1-9][0-9]{0,19}$ || ! "$ARTIFACT_DIGEST" =~ ^[a-f0-9]{64}$ ]]; then
+            echo 'RC6_R321_PROBE=HOLD79|upload_identity_unverified'
+            exit 79
+          fi
+          receipt="$RUNNER_TEMP/r352/evidence.json"
+          read -r receipt_sha _ < <(sha256sum -- "$receipt")
+          cat "$receipt"
+          printf 'FILES_OBSERVED_ONLY main=%s run=%s attempt=%s receipt_sha256=%s artifact_id=%s artifact_zip_sha256=%s\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$receipt_sha" "$ARTIFACT_ID" "$ARTIFACT_DIGEST" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

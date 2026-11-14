@@ -1,14 +1,12 @@
-"""R321 CODE-ONLY trusted-main ROOT staging plan; NOT a host installer.
+"""R321 trusted-main file observation and offhost ROOT staging plan.
 
 This is an explicit fail-closed bridge toward R305/R308/R309/R280. The
 immutable plan is **not** authority: the caller-supplied expected digest is
 only a shape/hash check, not independent witness, owner GO or ROOT pin.
 The library contains an explicit, narrowly bounded host-call executor using
 R309's existing transport and R305's reviewed sudo command literals. That
-executor remains unconnected to the workflow/CLI: neither currently opens
-SSH, writes host files or starts Docker/systemd. Workflow entry stays HOLD79
-until a separately reviewed source producer, genuine D/E artifact, independent
-ROOT witness, and fresh owner GO are proven at each mutation boundary.
+install executor remains unconnected to the workflow/CLI. The separate file
+probe can observe installed paths through R309's read-only vocabulary.
 """
 
 from dataclasses import dataclass, field
@@ -23,6 +21,9 @@ from types import MappingProxyType
 
 from scripts import rc6_host_rootowned_installer_contract as r280
 from scripts import rc6_host_rootowned_installer_cli as r280_cli
+from scripts import rc6_r163_artifact_byte_verifier as r163
+from scripts import rc6_r302_bootstrap_receipt_preflight as r302
+from scripts import rc6_r309_bounded_mux_host as r309
 
 
 STAGE_ORDER = ("helper", "custody", "profiles", "approval", "unit_template", "manifest")
@@ -51,15 +52,6 @@ _GO_KEYS = frozenset({
     "release_d_artifact_digest",
     "generation", "r305_pin_owner_go_id", "paper_mode", "real_orders_allowed",
     "host_control_verified", "host_identity_source", "nonce", "expires_at",
-})
-_RELEASE_E_KEYS = frozenset({
-    "schema_version", "status", "repository", "candidate_sha",
-    "candidate_tree_sha", "publisher_main_sha", "publisher_workflow_path",
-    "publisher_run_id", "publisher_run_attempt", "release_artifact_id",
-    "release_artifact_name", "release_artifact_digest",
-    "release_artifact_size_bytes", "file_count", "total_size_bytes",
-    "release_manifest_verified", "r144_release_go", "runtime_verified",
-    "real_orders_physical_verified",
 })
 
 # Exact installed root-owned R280 launcher; needs independent allowance in
@@ -159,30 +151,25 @@ def validate_release_e_receipt(raw, context):
         receipt = r280._strict_json(raw, limit=32768)
     except r280.InstallHold as exc:
         raise R321Hold("RELEASE_E_RECEIPT_JSON_INVALID") from exc
-    _require(raw == _canonical(receipt) and set(receipt) == _RELEASE_E_KEYS and
+    _require(raw == _canonical(receipt) and set(receipt) == r163.POSTCOMPLETION_RECEIPT_KEYS and
              type(receipt.get("schema_version")) is int and
              receipt["schema_version"] == 1 and
              receipt.get("status") == "RELEASE_BYTES_VERIFIED_POSTCOMPLETION" and
-             receipt.get("repository") == "mbalbo2023/Porota-trading" and
+             receipt.get("repository") == r163.REPOSITORY and
              receipt.get("candidate_sha") == context.candidate_sha and
              receipt.get("candidate_tree_sha") == context.candidate_tree and
              receipt.get("publisher_main_sha") == context.main_sha and
-             receipt.get("publisher_workflow_path") ==
-             ".github/workflows/rc6-r251-trusted-release-build.yml" and
-             type(receipt.get("publisher_run_id")) is str and
-             _POSITIVE.fullmatch(receipt["publisher_run_id"]) and
-             type(receipt.get("publisher_run_attempt")) is str and
-             _POSITIVE.fullmatch(receipt["publisher_run_attempt"]) and
-             type(receipt.get("release_artifact_id")) is int and
-             receipt["release_artifact_id"] > 0 and
+             receipt.get("publisher_workflow_path") == r163.RELEASE_WORKFLOW and
+             all(r163._integer(receipt[key], minimum=1) for key in (
+                 "publisher_run_id", "publisher_run_attempt", "release_artifact_id",
+                 "release_artifact_size_bytes", "file_count", "total_size_bytes")) and
              receipt.get("release_artifact_name") ==
-             "rc6-r251-release-" + receipt["publisher_run_id"] + "-" +
-             receipt["publisher_run_attempt"] + "-" + context.candidate_sha and
+             f"rc6-r251-release-{receipt['publisher_run_id']}-"
+             f"{receipt['publisher_run_attempt']}-{context.candidate_sha}" and
              type(receipt.get("release_artifact_digest")) is str and
              re.fullmatch(r"sha256:[0-9a-f]{64}",
                           receipt["release_artifact_digest"]) and
-             all(type(receipt.get(key)) is int and receipt[key] > 0 for key in
-                 ("release_artifact_size_bytes", "file_count", "total_size_bytes")) and
+             receipt["file_count"] == len(r163.RELEASE_PAYLOAD_FILES) and
              receipt.get("release_manifest_verified") is True and
              receipt.get("r144_release_go") is False and
              receipt.get("runtime_verified") is False and
@@ -225,11 +212,14 @@ def verify_install_owner_go(
              _HEX32.fullmatch(approval["generation"]),
              "ROOT_GO_WITNESS_OR_GENERATION_MISSING")
     release = validate_release_e_receipt(release_e_receipt_raw, context)
+    # E encodes GitHub run identifiers as integers. ROOT approval and GO encode decimal strings.
+    d_run_id = str(release["publisher_run_id"])
+    d_run_attempt = str(release["publisher_run_attempt"])
     _require(approval.get("candidate_sha") == context.candidate_sha and
              approval.get("candidate_tree") == context.candidate_tree and
              approval.get("artifact_digest") == release["release_artifact_digest"] and
-             approval.get("run_id") == release["publisher_run_id"] and
-             approval.get("run_attempt") == release["publisher_run_attempt"] and
+             approval.get("run_id") == d_run_id and
+             approval.get("run_attempt") == d_run_attempt and
              approval.get("paper_mode") == "PRODUCTION_PAPER" and
              approval.get("real_orders_allowed") is False,
              "ROOT_APPROVAL_RELEASE_E_DRIFT")
@@ -268,8 +258,8 @@ def verify_install_owner_go(
              go["release_e_artifact_digest"] == release_e_artifact_digest and
              go["release_e_receipt_sha256"] ==
              hashlib.sha256(release_e_receipt_raw).hexdigest() and
-             go["release_d_run_id"] == release["publisher_run_id"] and
-             go["release_d_run_attempt"] == release["publisher_run_attempt"] and
+             go["release_d_run_id"] == d_run_id and
+             go["release_d_run_attempt"] == d_run_attempt and
              type(go["release_d_artifact_id"]) is int and
              go["release_d_artifact_id"] == release["release_artifact_id"] and
              go["release_d_artifact_digest"] ==
@@ -806,19 +796,134 @@ def execute_root_install_files_only(
     }
 
 
+def _probe_call(host, command, *, cap=0, statuses=(0,)):
+    status, raw = host.call(command, max_output_bytes=cap)
+    _require(type(status) is int and status in statuses and type(raw) is bytes and len(raw) <= cap,
+             "FILE_PROBE_COMMAND_FAILED")
+    return status, raw
+
+
+def _probe_stat(host, path, *, directory=False, mode=None, size=None, maximum=None):
+    _probe_call(host, r309.probe_test_command('! -L', path))
+    _, raw = _probe_call(host, r309.probe_stat_command(path), cap=128)
+    _require(raw.endswith(b'\n') and raw.count(b'\n') == 1 and
+             b'\r' not in raw and b'\x00' not in raw, "FILE_PROBE_STAT_FORMAT")
+    try:
+        line = raw[:-1].decode('ascii')
+        r302._expected_stat(path, f'STAT|{path}|{line}', directory=directory,
+                            mode=mode, size=size)
+        if maximum is not None:
+            _require(0 < int(line.rsplit('|', 1)[1]) <= maximum,
+                     "FILE_PROBE_SOURCE_SIZE")
+    except (UnicodeError, ValueError, r302.R302Hold):
+        raise R321Hold("FILE_PROBE_UNSAFE_STAT") from None
+    return raw
+
+
+def _probe_hash(host, path):
+    _, raw = _probe_call(host, r309.probe_hash_command(path), cap=256)
+    match = re.fullmatch(rb'([a-f0-9]{64})  ' + re.escape(path.encode('ascii')) + rb'\n', raw)
+    _require(match, 'FILE_PROBE_HASH_FORMAT')
+    return match.group(1).decode('ascii')
+
+
+def _probe_exists(host, path):
+    # A failing sudo/test -e cannot prove absence. Both negative commands
+    # must succeed with empty output on this master and on the second pass.
+    _probe_call(host, r309.probe_test_command('! -L', path))
+    status, _ = _probe_call(host, r309.probe_test_command('-e', path), statuses=(0, 1))
+    if status == 1:
+        _probe_call(host, r309.probe_test_command('! -e', path))
+    return status == 0
+
+
+def _probe_files(host):
+    # An observation is stable only when the same protected ancestors and
+    # leaves bracket the hashes, including the parents of absent targets.
+    private_dirs = {r302.ROOT_LOCK, r309.PROBE_GENERATIONS.rsplit('/', 1)[0]}
+    parents = {path: _probe_stat(host, path, directory=True,
+                                 mode=0o700 if path in private_dirs else None)
+               for path in r302.ROOT_DIRECTORIES}
+    expected_hashes = r302._expected_hashes()
+    bootstrap_sizes = {r302.ROOT_PIN: 65, r302.ROOT_RECEIPT: len(r302._expected_receipt_bytes())}
+    bootstrap_stats = {}
+    for path, mode, _ in r302.ROOT_FILES:
+        # R295 verifies its two bootstrap sources with the same 1 MiB bound.
+        bootstrap_stats[path] = _probe_stat(host, path, mode=mode,
+                                            size=bootstrap_sizes.get(path), maximum=1024**2)
+        _require(_probe_hash(host, path) == expected_hashes[path], 'FILE_PROBE_BOOTSTRAP_HASH_DRIFT')
+
+    targets = [(role, path, mode, limit) for role, (path, mode, limit) in r280.TARGETS.items()]
+    targets.append(('generations', r309.PROBE_GENERATIONS, 0o700, None))
+    result, first = {}, {}
+    for role, path, mode, limit in targets:
+        first[role] = None
+        result[role] = {'state': 'ABSENT'}
+        if _probe_exists(host, path):
+            first[role] = _probe_stat(host, path, directory=role == 'generations',
+                                      mode=mode, maximum=limit)
+            result[role] = {'state': 'PRESENT'}
+            if role in ('helper', 'custody'):
+                result[role]['observed_sha256'] = _probe_hash(host, path)
+
+    for role, path, mode, limit in targets:
+        present = _probe_exists(host, path)
+        _require(present == (first[role] is not None), 'FILE_PROBE_TARGET_CHANGED')
+        if present:
+            second = _probe_stat(host, path, directory=role == 'generations',
+                                 mode=mode, maximum=limit)
+            _require(second == first[role], 'FILE_PROBE_TARGET_CHANGED')
+    for path, mode, _ in r302.ROOT_FILES:
+        _require(_probe_stat(host, path, mode=mode) == bootstrap_stats[path],
+                 'FILE_PROBE_BOOTSTRAP_CHANGED')
+    for path in reversed(r302.ROOT_DIRECTORIES):
+        _require(_probe_stat(host, path, directory=True) == parents[path],
+                 'FILE_PROBE_PARENT_CHANGED')
+    return result
+
+
+def probe_files_only(env):
+    validate_dispatch_context(env)
+    _require(env.get('RC6_R321_OPERATION') == r309.PROBE_OPERATION,
+             'EXPLICIT_FILE_PROBE_REQUIRED')
+    run, attempt = env.get('GITHUB_RUN_ID'), env.get('GITHUB_RUN_ATTEMPT')
+    _require(type(run) is str and _POSITIVE.fullmatch(run) and
+             type(attempt) is str and _POSITIVE.fullmatch(attempt), 'FILE_PROBE_RUN_INVALID')
+    r302.validate_environment(env)
+    with r309.R309BoundedMuxHost(env, operation=r309.PROBE_OPERATION) as host:
+        identity = []
+        for cmd in (r309.HOST_ID_COMMAND, r309.HOST_REGION_COMMAND, r309.PROBE_UID_COMMAND):
+            _, raw = _probe_call(host, cmd, cap=32)
+            identity.append(raw.removesuffix(b'\n'))
+        r302.verify_host_identity(b'\n'.join(identity) + b'\n', env)
+        observations = _probe_files(host)
+    return {'schema': 'RC6_R321_PROBE_FILES_ONLY_V1', 'trusted_main_sha': env['GITHUB_SHA'],
+            'run_id': run, 'run_attempt': attempt,
+            'observed_at_utc': datetime.now(timezone.utc).isoformat(),
+            'bootstrap_files_verified': True, 'r271': observations,
+            'host_control_verified': False, 'runtime_verified': False, 'deploy_authorized': False}
+
+
 def main(argv=None, *, env=None):
-    """This revision never starts a physical transaction, even on trusted main."""
+    """The physical CLI can observe files. Installation remains a separate HOLD."""
     options = sys.argv[1:] if argv is None else argv
     try:
+        if options == ["--probe-files-only"]:
+            report = probe_files_only(os.environ if env is None else env)
+            print(json.dumps(report, sort_keys=True, separators=(',', ':')))
+            return 0
         if options == ["--install-approved"]:
             raise R321Hold("PHYSICAL_TRANSPORT_NOT_CERTIFIED")
         if options == ["--check-offhost"]:
             validate_dispatch_context(os.environ if env is None else env)
             raise R321Hold("ROOT_GO_AND_ARTIFACT_NOT_INTEGRATED")
         raise R321Hold("OFFHOST_FIXED_VERB_ONLY")
-    except R321Hold as exc:
+    except (R321Hold, r302.R302Hold, r309.R309Hold) as exc:
         print("RC6_R321_ROOT_ACTIONS=HOLD79|reason=" + exc.reason +
               "|host_control_verified=NO_VERIFICADO|real_orders_allowed=false")
+        return 79
+    except (OSError, ValueError):
+        print('RC6_R321_ROOT_ACTIONS=HOLD79|reason=FILE_PROBE_UNVERIFIED|host_control_verified=NO_VERIFICADO')
         return 79
 
 

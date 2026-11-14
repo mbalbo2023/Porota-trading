@@ -2,18 +2,25 @@
 
 from contextlib import redirect_stdout
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
 from pathlib import Path
+import shlex
+from tempfile import TemporaryDirectory
 from types import MappingProxyType, SimpleNamespace
 import unittest
 import yaml
+import zipfile
 from unittest.mock import patch
 
 from scripts import rc6_r321_root_install_actions as r321
 from scripts import rc6_r305_root_pin_transition_guard as real_r305
+from scripts import rc6_r302_bootstrap_receipt_preflight as r302
+from scripts import rc6_r309_bounded_mux_host as r309
+from scripts import rc6_r163_artifact_byte_verifier as r163
 from scripts import rc6_host_rootowned_installer_contract as r280
 from scripts import rc6_host_rootowned_installer_cli as r280_cli
 
@@ -88,11 +95,11 @@ def install_go_fixture(*, created=NOW, expires=None):
         "repository": "mbalbo2023/Porota-trading", "candidate_sha": CANDIDATE,
         "candidate_tree_sha": TREE, "publisher_main_sha": MAIN,
         "publisher_workflow_path": ".github/workflows/rc6-r251-trusted-release-build.yml",
-        "publisher_run_id": "43301355473", "publisher_run_attempt": "1",
+        "publisher_run_id": 43301355473, "publisher_run_attempt": 1,
         "release_artifact_id": 123456,
         "release_artifact_name": "rc6-r251-release-43301355473-1-" + CANDIDATE,
         "release_artifact_digest": RELEASE_D_DIGEST,
-        "release_artifact_size_bytes": 20480, "file_count": 80,
+        "release_artifact_size_bytes": 20480, "file_count": len(r163.RELEASE_PAYLOAD_FILES),
         "total_size_bytes": 90000, "release_manifest_verified": True,
         "r144_release_go": False, "runtime_verified": False,
         "real_orders_physical_verified": False,
@@ -114,8 +121,8 @@ def install_go_fixture(*, created=NOW, expires=None):
         "release_e_artifact_id": 78910,
         "release_e_artifact_digest": RELEASE_E_DIGEST,
         "release_e_receipt_sha256": SHA256(receipt_raw),
-        "release_d_run_id": receipt["publisher_run_id"],
-        "release_d_run_attempt": receipt["publisher_run_attempt"],
+        "release_d_run_id": str(receipt["publisher_run_id"]),
+        "release_d_run_attempt": str(receipt["publisher_run_attempt"]),
         "release_d_artifact_id": receipt["release_artifact_id"],
         "release_d_artifact_digest": RELEASE_D_DIGEST,
         "generation": approval["generation"],
@@ -366,6 +373,126 @@ def simulated_install():
 
 
 class R321RootInstallActionsTest(unittest.TestCase):
+    def test_probe_cli_runs_one_real_mux_and_observes_bootstrap_and_five_targets(self):
+        env = {
+            'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GITHUB_REF': 'refs/heads/main',
+            'GITHUB_REPOSITORY': 'mbalbo2023/Porota-trading', 'GITHUB_SHA': MAIN,
+            'GITHUB_ACTOR': 'mbalbo2023', 'GITHUB_TRIGGERING_ACTOR': 'mbalbo2023',
+            'GITHUB_RUN_ID': '87654', 'GITHUB_RUN_ATTEMPT': '2',
+            'DO_USER': 'porotaadmin', 'DO_HOST': '192.0.2.14',
+            'DO_SSH_KEY': '-----BEGIN OPENSSH PRIVATE KEY-----\nprivate-fixture-only\n',
+            'DO_KNOWN_HOSTS': '192.0.2.14 ssh-ed25519 TEST-KEY',
+            'RC6_EXPECTED_DO_ID': '981177665', 'RC6_EXPECTED_DO_REGION': 'nyc1',
+            'RC6_R321_OPERATION': 'PROBE_FILES_ONLY',
+        }
+        files = {p: (m, 123) for p, m, _ in r302.ROOT_FILES}
+        files[r302.ROOT_PIN] = (0o400, 65)
+        files[r302.ROOT_RECEIPT] = (0o400, len(r302._expected_receipt_bytes()))
+        directory = '/var/lib/porota-rc6-oci-custody'
+        generations = directory + '/generations'
+        targets = {row[0]: role for role, row in r280.TARGETS.items()}
+        targets[generations] = 'generations'
+        dirs = set(r302.ROOT_DIRECTORIES)
+        paths = {path: i for i, path in enumerate(sorted(dirs | files.keys() | targets.keys()), 10)}
+
+        for scenario, expected in (('missing', 0), ('present', 0), ('denied', 79),
+                                   ('dangling', 79), ('drift', 79), ('foreign_uid', 79),
+                                   ('unsafe_parent', 79), ('target_reappears', 79),
+                                   ('target_hardlink', 79), ('bootstrap_oversize', 79),
+                                   ('bootstrap_pin_drift', 79), ('private_mode_drift', 79)):
+            with self.subTest(scenario=scenario):
+                commands = []
+                def response(argv, data, **kwargs):
+                    self.assertEqual(data, b'')
+                    cmd = argv[-1]
+                    commands.append(cmd)
+                    if cmd == real_r305.HOST_ID_COMMAND:
+                        return 0, b'981177665'
+                    if cmd == real_r305.HOST_REGION_COMMAND:
+                        return 0, b'nyc1\n'
+                    if cmd == '/usr/bin/id -u':
+                        return 0, (b'0\n' if scenario == 'foreign_uid' else b'1000\n')
+                    args = shlex.split(cmd)
+                    self.assertEqual(args[:2], ['/usr/bin/sudo', '-n'])
+                    op, path = args[2], args[-1]
+                    self.assertIn(path, paths)
+                    exists = path in dirs or path in files or scenario in (
+                        'present', 'target_hardlink', 'private_mode_drift')
+                    if scenario == 'target_reappears' and path == r280.TARGETS['helper'][0]:
+                        exists = commands.count('/usr/bin/sudo -n /usr/bin/test -e ' + path) > 1
+                    if op == '/usr/bin/test':
+                        if (path in targets and scenario == 'denied' and
+                                args[3:-1] in (['-e'], ['!', '-e'])):
+                            return 1, b''  # sudo denied both positive and negative tests
+                        if args[3:-1] == ['!', '-L']:
+                            return int(scenario == 'dangling' and path in targets), b''
+                        if args[3:-1] == ['-e']:
+                            return int(not exists), b''
+                        if args[3:-1] == ['!', '-e']:
+                            return int(exists), b''
+                        self.fail('unexpected test grammar')
+                    if op == '/usr/bin/stat':
+                        self.assertTrue(exists)
+                        directory_kind = path in dirs or path == generations
+                        mode, size = files.get(path, (0o755, 4096))
+                        if path in targets and not directory_kind:
+                            mode, size = r280.TARGETS[targets[path]][1], 100
+                        if path in (directory, r302.ROOT_LOCK, generations):
+                            mode = 0o700
+                        if scenario == 'unsafe_parent' and path == directory:
+                            mode = 0o777
+                        if scenario == 'private_mode_drift' and path == r280.TARGETS['approval'][0]:
+                            mode = 0o600
+                        if scenario == 'bootstrap_oversize' and path == r302.ROOT_CLI:
+                            size = 1024 * 1024 + 1
+                        inode = paths[path] + int(scenario == 'drift' and
+                            path == r302.ROOT_CLI and commands.count(cmd) > 1)
+                        kind = 'directory' if directory_kind else 'regular file'
+                        links = 2 if directory_kind else 1
+                        if scenario == 'target_hardlink' and path in targets:
+                            links = 2
+                        return 0, f'0|0|{mode:o}|{links}|{kind}|3|{inode}|{size}\n'.encode()
+                    if op == '/usr/bin/sha256sum':
+                        self.assertIn(path, set(files) | {r280.TARGETS['helper'][0],
+                                                          r280.TARGETS['custody'][0]})
+                        digest = r302._expected_hashes().get(path, '9' * 64)
+                        if scenario == 'bootstrap_pin_drift' and path == r302.ROOT_PIN:
+                            digest = '1' * 64
+                        return 0, (digest + '  ' + path + '\n').encode()
+                    self.fail('unexpected remote verb')
+                output = io.StringIO()
+                with patch.object(r309.subprocess, 'Popen') as master, \
+                        patch.object(r309.R309BoundedMuxHost, '_verified_master_socket', return_value=True), \
+                        patch.object(r309, 'run_bounded_ssh_command', side_effect=response), \
+                        redirect_stdout(output):
+                    master.return_value.poll.return_value = None
+                    code = r321.main(['--probe-files-only'], env=env)
+                self.assertEqual(code, expected, output.getvalue())
+                self.assertEqual(master.call_count, 1)
+                result = output.getvalue()
+                for sensitive in ('981177665', 'nyc1', 'private-fixture', '/var/lib'):
+                    self.assertNotIn(sensitive, result)
+                if expected == 79:
+                    self.assertIn('HOLD79', result)
+                    if scenario == 'foreign_uid':
+                        self.assertFalse(any('/usr/bin/sudo' in cmd for cmd in commands))
+                    if scenario == 'bootstrap_oversize':
+                        self.assertNotIn('/usr/bin/sudo -n /usr/bin/sha256sum -- ' + r302.ROOT_CLI, commands)
+                    continue
+                receipt = json.loads(result)
+                self.assertEqual((receipt['trusted_main_sha'], receipt['run_id'],
+                                  receipt['run_attempt']), (MAIN, '87654', '2'))
+                self.assertEqual(set(receipt['r271']), set(targets.values()))
+                self.assertTrue(receipt['bootstrap_files_verified'])
+                for row in receipt['r271'].values():
+                    self.assertEqual(row['state'], 'PRESENT' if scenario == 'present' else 'ABSENT')
+                self.assertFalse(receipt['host_control_verified'])
+                self.assertFalse(receipt['runtime_verified'])
+                self.assertFalse(receipt['deploy_authorized'])
+                self.assertLessEqual(len(result), 2048)
+                self.assertEqual(datetime.fromisoformat(receipt['observed_at_utc']).utcoffset(),
+                                 timedelta(0))
+
     def test_simulated_six_role_stage_pin_then_fixed_r280_install_files_only(self):
         host, _r305, context, kwargs, imports = simulated_install()
         with patch.object(r321, "import_module", side_effect=imports):
@@ -611,6 +738,58 @@ class R321RootInstallActionsTest(unittest.TestCase):
                 receipt[:256], expected_manifest_sha256="e" * 64,
                 candidate_sha=CANDIDATE)
 
+    def test_r321_accepts_the_receipt_written_by_the_release_e_producer(self):
+        from scripts import rc6_r163_trusted_postrun_byte_audit as r206
+        from tests import test_rc6_r163_artifact_byte_verifier as release_fixtures
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            rest, event, release_zip = release_fixtures._e_audit_rest(root)
+            event_path = root / "event.json"
+            event_path.write_bytes(canonical(event))
+            receipt_path = root / r163.POSTCOMPLETION_RECEIPT_NAME
+            publisher = event["workflow_run"]
+
+            def download_fixture(_client, _artifact_id, dest):
+                dest.write_bytes(release_zip.read_bytes())
+
+            with patch.object(r163, "_load_trusted_r206_module", return_value=r206), \
+                 patch.object(r206, "GitHubReadOnlyREST", return_value=rest), \
+                 patch.object(r163, "download_release_zip", side_effect=download_fixture), \
+                 redirect_stdout(io.StringIO()):
+                status = r163.main([
+                    "release-postcompletion", "--event", str(event_path),
+                    "--publisher-run-id", str(publisher["id"]),
+                    "--publisher-run-attempt", str(publisher["run_attempt"]),
+                    "--expected-publisher-sha", publisher["head_sha"],
+                    "--receipt-out", str(receipt_path),
+                ])
+            self.assertEqual(status, 0)
+            raw = receipt_path.read_bytes()
+            audit_zip = root / "audit.zip"
+            with zipfile.ZipFile(audit_zip, "w") as archive:
+                archive.write(receipt_path, arcname=r163.POSTCOMPLETION_RECEIPT_NAME)
+            verified = r163.verify_postcompletion_receipt_zip(
+                audit_zip, expected_digest=SHA256(audit_zip.read_bytes()),
+                expected_size_bytes=audit_zip.stat().st_size)
+            context = replace(install_go_fixture()[0], main_sha=publisher["head_sha"],
+                              candidate_sha=release_fixtures.SHA, candidate_tree=release_fixtures.TREE)
+            self.assertEqual(r321.validate_release_e_receipt(raw, context), verified)
+
+    def test_release_e_rejects_noninteger_identifiers_wrong_count_and_noncanonical_bytes(self):
+        context, _, _, raw, _, _, _ = install_go_fixture()
+        receipt = json.loads(raw)
+        for key, value in (("publisher_run_id", "43301355473"), ("publisher_run_id", 0),
+                           ("publisher_run_id", True), ("publisher_run_attempt", "1"),
+                           ("publisher_run_attempt", 0), ("publisher_run_attempt", True),
+                           ("file_count", 80), ("file_count", True),
+                           ("release_artifact_name", "rc6-r251-release-991-1-" + CANDIDATE)):
+            with self.subTest(key=key, value=value), self.assertRaisesRegex(
+                    r321.R321Hold, "RELEASE_E_RECEIPT_SCOPE_INVALID"):
+                r321.validate_release_e_receipt(canonical({**receipt, key: value}), context)
+        with self.assertRaisesRegex(r321.R321Hold, "RELEASE_E_RECEIPT_SCOPE_INVALID"):
+            r321.validate_release_e_receipt(raw + b"\n", context)
+
     def test_separate_install_go_binds_owner_witness_release_e_generation_and_paper(self):
         (context, manifest, sources, receipt_raw, witness,
          approval, owner_comment) = install_go_fixture()
@@ -678,6 +857,8 @@ class R321RootInstallActionsTest(unittest.TestCase):
             ("release_e_artifact_digest", "sha256:" + "0" * 64),
             ("release_d_artifact_digest", "sha256:" + "0" * 64),
             ("release_d_artifact_id", 1),
+            ("release_d_run_id", 43301355473),
+            ("release_d_run_attempt", True),
             ("witness_artifact_sha256", "0" * 64),
             ("root_manifest_sha256", "0" * 64),
             ("generation", "0" * 32),
@@ -721,7 +902,7 @@ class R321RootInstallActionsTest(unittest.TestCase):
                 except OverflowError:
                     self.fail("R321 leaked raw datetime overflow instead of HOLD79")
 
-    def test_trusted_main_action_is_only_offhost_and_never_mutates_droplet(self):
+    def test_workflow_defaults_to_offhost_and_isolates_the_manual_file_probe(self):
         root = Path(__file__).resolve().parents[1]
         workflow = yaml.load(
             (root / ".github/workflows/rc6-r321-root-install-approved.yml").read_text(),
@@ -734,7 +915,11 @@ class R321RootInstallActionsTest(unittest.TestCase):
             "contents": "read", "issues": "read",
             "actions": "read", "pull-requests": "read",
         })
-        self.assertEqual(set(workflow["jobs"]), {"root_install_offhost_preflight"})
+        selector = workflow['on']['workflow_dispatch']['inputs']['operation']
+        self.assertEqual(selector['default'], 'OFFHOST_HOLD')
+        self.assertEqual(selector['type'], 'choice')
+        self.assertEqual(set(selector['options']), {'OFFHOST_HOLD', 'PROBE_FILES_ONLY'})
+        self.assertEqual(set(workflow['jobs']), {'root_install_offhost_preflight', 'probe_files_only'})
         job = workflow["jobs"]["root_install_offhost_preflight"]
         self.assertIn("github.ref == 'refs/heads/main'", job["if"])
         self.assertIn("github.actor == 'mbalbo2023'", job["if"])
@@ -749,6 +934,20 @@ class R321RootInstallActionsTest(unittest.TestCase):
         for forbidden in ("sudo ", "ssh ", "docker ", "install-approved", "--install-approved"):
             self.assertNotIn(forbidden, commands)
         self.assertFalse(job.get("secrets"))
+        self.assertNotIn('DO_SSH_KEY', str(job))
+        self.assertIn("inputs.operation != 'PROBE_FILES_ONLY'", job['if'])
+        self.assertIn('operation_unknown', commands)
+        probe = workflow['jobs']['probe_files_only']
+        self.assertIn("inputs.operation == 'PROBE_FILES_ONLY'", probe['if'])
+        for guard in ("github.ref == 'refs/heads/main'", "github.actor == 'mbalbo2023'",
+                      "github.triggering_actor == 'mbalbo2023'"):
+            self.assertIn(guard, probe['if'])
+        self.assertEqual(probe['permissions'], {'contents': 'read'})
+        self.assertEqual(probe['steps'][0]['with']['ref'], '${{ github.sha }}')
+        self.assertIn('--probe-files-only', str(probe))
+        self.assertNotIn('--install-approved', str(probe))
+        self.assertNotIn('--verify-offhost', str(probe))
+        self.assertIn('secrets.DO_SSH_KEY', str(probe))
 
     def test_valid_root_bundle_plan_chunks_all_five_roles_and_manifest_below_8192(self):
         manifest, sources = fixture()
