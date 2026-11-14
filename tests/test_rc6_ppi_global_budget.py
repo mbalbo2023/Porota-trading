@@ -12,9 +12,11 @@ import pytest
 import requests
 
 from bd_ppi_readonly_guard import ProductionMarketReader, ReadOnlyPolicyViolation, ReadOnlyTransportGuard, retry_read
-from rc6_ppi_global_budget import (BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget, budget_policy, SCHEMA)
+from rc6_dynamic_universe.promotion import DEFAULT_POLICY, RuntimeCapacityController
+from rc6_ppi_global_budget import (BudgetBackpressure, GlobalPPIBudget, RuntimePPIBudget,
+                                  budget_policy, static_shared_capacity_state, SCHEMA)
+from tests.test_rc6_a586_ppi_missing_lease_guard import static_authority_file
 from tests.test_rc6_ppi_capacity_benchmark import Clock, wire
-from tests.test_rc6_capacity_promotion import approved, controller
 
 
 def policy(clock, *, limits=None, global_limit=None, reserves=None):
@@ -36,6 +38,23 @@ def use(budget, endpoint, **scope):
         budget.start(result["lease"])
         budget.finish(result["lease"])
     return result
+
+
+def signed_static_runtime(wire, tmp_path, monkeypatch, *, opened_count=1, shared_book=5):
+    """CI-only signed provider/Watch evidence and actual simulated PAPER book.
+
+    Both Ed25519 signers, quota numbers, ledger positions and the wire are fake;
+    this grants no authority outside the test's temporary PAPER dataset.
+    """
+    from tests.test_issue465_budget_adversarial import native_opened_store
+
+    clock, provider_calls, _ = wire
+    store, _ = native_opened_store(tmp_path, clock, monkeypatch, count=opened_count)
+    environ, _ = static_authority_file(tmp_path, monkeypatch, clock,
+                                      opened=True, shared_book=shared_book)
+    ctl = RuntimeCapacityController(store.path, environ=environ,
+                                    policy=deepcopy(DEFAULT_POLICY))
+    return RuntimePPIBudget(store.path, ctl, clock=clock.now), ctl, store, clock, provider_calls
 
 
 def test_exit_reserve_cannot_be_consumed_by_discovery(tmp_path):
@@ -143,13 +162,19 @@ def test_clock_rollback_and_expired_capacity_deny_off_wire(tmp_path):
     assert not blocked["allowed"] and "EXPIRED" in blocked["reason"]
 
 
-def test_approved_envelope_reserves_actual_opened_demand_once(wire):
-    values = approved(wire)
-    state = controller(values).state(values[-1])
+def test_signed_static_envelope_reserves_actual_opened_demand_once(wire, tmp_path, monkeypatch):
+    runtime, ctl, store, clock, provider_calls = signed_static_runtime(
+        wire, tmp_path, monkeypatch, opened_count=2, shared_book=8)
+    state = static_shared_capacity_state(store.path, ctl.environ, as_of=clock.now())
+    assert state["status"] == "APPROVED_STATIC_SHARED"
+    assert len(store.open_positions()) == 2
     config = budget_policy(state, opened_count=2, planned_reservations={"SCALPING_HOT": {"book": 3, "intraday": 3}})
-    assert config["priority_reserves"]["EXIT_CRITICAL"] == {"current": 0, "book": 12, "intraday": 0}
-    assert config["priority_reserves"]["OPENED_CRITICAL"] == {"current": 2, "book": 2, "intraday": 2}
-    assert config["global_limit"] == 45 and config["max_parallel_requests"] == 1
+    # Two open positions / five-second EXIT cadence in a 15-second window.
+    assert config["priority_reserves"]["EXIT_CRITICAL"] == {"current": 0, "book": 6, "intraday": 0}
+    assert config["priority_reserves"]["OPENED_CRITICAL"] == {"current": 2, "book": 2, "intraday": 1}
+    assert config["priority_reserves"]["SCALPING_HOT"] == {"current": 0, "book": 3, "intraday": 1}
+    assert config["global_limit"] == 11 and config["max_parallel_requests"] == 1
+    assert not runtime.path.exists() and not provider_calls
 
 
 def test_actual_adapter_and_retry_are_budgeted_once_and_denial_never_sends(wire, tmp_path):
@@ -563,53 +588,59 @@ def test_two_processes_cannot_claim_the_same_full_budget(tmp_path):
             queue.close()
 
 
-@pytest.mark.parametrize("invalid", ["expired", "approval_corrupt", "policy_corrupt", "native_env_invalid", "opened_ledger_missing"])
-def test_previously_active_budget_falls_back_and_exit_reader_remains_live(wire, tmp_path, invalid):
-    from be_paper_engine import PaperStore
-    values = approved(wire)
-    clock = wire[0]
-    store = PaperStore(str(tmp_path / "paper.sqlite"))
-    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    ctl = controller(values)
-    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+@pytest.mark.parametrize("invalid,expected_allowed", [
+    ("expired", False), ("approval_corrupt", True),
+    ("policy_corrupt", False), ("native_env_invalid", True),
+    ("opened_ledger_missing", False),
+])
+def test_signed_static_exit_sidecar_revalidates_authority_without_losing_debt(
+        wire, tmp_path, monkeypatch, invalid, expected_allowed):
+    runtime, ctl, store, clock, provider_calls = signed_static_runtime(
+        wire, tmp_path, monkeypatch)
     assert use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    assert runtime.path.is_file()
+    before = runtime.budget.metrics()["by_endpoint"]["book"]["used"]
+    assert before == 1
     if invalid == "expired":
-        clock.advance(2800)
+        clock.advance(3601)
     elif invalid == "approval_corrupt":
-        ctl.inputs["approval"]["approved"] = False
+        # The static signer remains valid; an unused dynamic approval is not authority.
+        ctl.inputs["approval"] = {"approved": False}
     elif invalid == "policy_corrupt":
         ctl.inputs["policy"] = {"mode": "BAD"}
     else:
-        ctl.inputs["approval"]["approved"] = False
         if invalid == "native_env_invalid":
             ctl.environ.update({k: "invalid" for k in ("PAPER_ACTIVE_SYMBOL_LIMIT", "PAPER_INTRADAY_BATCH_LIMIT",
                 "PAPER_OBSERVER_INTERVAL_SECONDS", "PAPER_INTRADAY_SCAN_SECONDS", "PAPER_MAX_OPEN_POSITIONS")})
         else:
             with store.connect() as c:
                 c.execute("ALTER TABLE paper_positions RENAME TO missing_opened_ledger")
-    result = use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
-    assert result["allowed"]
+    if expected_allowed:
+        assert use(runtime, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+        assert runtime.budget.metrics()["by_endpoint"]["book"]["used"] == before + 1
+    else:
+        with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_"):
+            runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+        assert runtime.budget.metrics()["by_endpoint"]["book"]["used"] == before
     assert ctl.state(clock.now())["production_limits_modified"] is False
-    assert runtime.budget.policy["version"] == "rc6-global-ppi-safe-factual-baseline-v1"
-    assert runtime.budget.policy["endpoint_limits"]["current"] == 20
-    assert runtime.budget.policy["endpoint_limits"]["intraday"] == 40
-    assert "NO_VERIFICADO" in runtime.budget.metrics()["policy_authority"]
+    assert runtime.path.is_file() and not provider_calls
+    with store.connect() as c:
+        assert tuple(c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
 
 
-def test_invalid_approval_and_restart_cannot_erase_prior_global_circuit(wire, tmp_path):
-    from be_paper_engine import PaperStore
-    values = approved(wire)
-    clock = wire[0]
-    store = PaperStore(str(tmp_path / "paper.sqlite"))
-    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    ctl = controller(values)
-    runtime = RuntimePPIBudget(store.path, ctl, clock=clock.now)
+def test_signed_static_restart_cannot_erase_prior_global_circuit(wire, tmp_path, monkeypatch):
+    runtime, ctl, store, clock, provider_calls = signed_static_runtime(
+        wire, tmp_path, monkeypatch)
     result = runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert result["allowed"] and result["lease"]
     runtime.start(result["lease"])
     runtime.finish(result["lease"], status_code=429)
-    ctl.inputs["approval"]["approved"] = False
+    ctl.inputs["approval"] = {"approved": False}  # no effect on independent signed static pin
     restored = RuntimePPIBudget(store.path, ctl, clock=clock.now)
-    assert not restored.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    blocked = restored.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+    assert not blocked["allowed"] and blocked["reason"] == "PPI_GLOBAL_CIRCUIT_OPEN"
     assert restored.budget.metrics()["circuits"]["global"]["code"] == "PPI_HTTP_429"
     clock.advance(61)
     assert use(restored, "book", consumer="EXIT_READER", priority="EXIT_CRITICAL")["allowed"]
+    assert runtime.path == restored.path and not provider_calls

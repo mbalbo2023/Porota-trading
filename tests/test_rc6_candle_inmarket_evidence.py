@@ -63,16 +63,21 @@ class CandleIntegrityScopeRegressionTests(unittest.TestCase):
             self.assertEqual(result['dirty_due_bars'],0)
             self.assertEqual(before,hashlib.sha256(db.read_bytes()).hexdigest())
 
-    def test_real_corruption_of_each_owned_btree_cannot_produce_green(self):
-        for table in ('candle_dirty','candle_worker_state'):
-            with self.subTest(table=table),tempfile.TemporaryDirectory() as directory:
-                db=Path(directory)/'corrupt.db';_scope_store(db);_corrupt_root(db,table)
-                try:
-                    value=collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00')
-                except sqlite3.DatabaseError:
-                    continue
-                result=build_summary(baseline_cursor=118740,observed_at='2026-09-17T14:30:30+00:00',**value)
-                self.assertEqual(result['status'],'RED')
+    def _assert_owned_btree_corruption_cannot_produce_green(self, table):
+        with tempfile.TemporaryDirectory() as directory:
+            db=Path(directory)/'corrupt.db';_scope_store(db);_corrupt_root(db,table)
+            try:
+                value=collect_inputs(db_path=str(db),observed_at='2026-09-17T14:30:30+00:00')
+            except sqlite3.DatabaseError:
+                return  # Actual SQLite corruption is an equally safe rejection.
+            result=build_summary(baseline_cursor=118740,observed_at='2026-09-17T14:30:30+00:00',**value)
+            self.assertEqual(result['status'],'RED')
+
+    def test_real_corruption_of_candle_dirty_cannot_produce_green(self):
+        self._assert_owned_btree_corruption_cannot_produce_green('candle_dirty')
+
+    def test_real_corruption_of_candle_worker_state_cannot_produce_green(self):
+        self._assert_owned_btree_corruption_cannot_produce_green('candle_worker_state')
 
     def test_unrelated_corruption_remains_the_full_integrity_owners_failure(self):
         from rc6_full_db_integrity import probe
@@ -84,14 +89,22 @@ class CandleIntegrityScopeRegressionTests(unittest.TestCase):
             self.assertEqual(result['sqlite_quick_check'],'DELEGATED_TO_RC6_FULL_DB_INTEGRITY')
             self.assertEqual(probe(str(db))['status'],'RED')
 
-    def test_bad_or_incomplete_partial_results_cannot_produce_green(self):
-        for values in ({},{'candle_dirty':'ok'},{'candle_dirty':'bad page','candle_worker_state':'ok'}):
-            with self.subTest(values=values):
-                result=build_summary(baseline_cursor=1,current_cursor=2,worker_state='RUNNING',
-                    heartbeat_at='2026-09-17T14:30:00+00:00',quick_check='DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
-                    dirty_due_bars=0,dirty_open_bars=0,invalid_dirty_timestamp_count=0,
-                    observed_at='2026-09-17T14:30:30+00:00',table_quick_checks=values)
-                self.assertEqual(result['status'],'RED')
+    def _assert_bad_partial_results_cannot_produce_green(self, values):
+        result=build_summary(baseline_cursor=1,current_cursor=2,worker_state='RUNNING',
+            heartbeat_at='2026-09-17T14:30:00+00:00',quick_check='DELEGATED_TO_RC6_FULL_DB_INTEGRITY',
+            dirty_due_bars=0,dirty_open_bars=0,invalid_dirty_timestamp_count=0,
+            observed_at='2026-09-17T14:30:30+00:00',table_quick_checks=values)
+        self.assertEqual(result['status'],'RED')
+
+    def test_missing_partial_results_cannot_produce_green(self):
+        self._assert_bad_partial_results_cannot_produce_green({})
+
+    def test_incomplete_partial_results_cannot_produce_green(self):
+        self._assert_bad_partial_results_cannot_produce_green({'candle_dirty':'ok'})
+
+    def test_corrupt_partial_results_cannot_produce_green(self):
+        self._assert_bad_partial_results_cannot_produce_green({
+            'candle_dirty':'bad page','candle_worker_state':'ok'})
 
     def test_real_sqlite_progress_budget_aborts_without_source_mutation(self):
         with tempfile.TemporaryDirectory() as directory:

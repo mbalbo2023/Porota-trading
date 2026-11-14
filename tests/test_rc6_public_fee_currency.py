@@ -1,6 +1,7 @@
 """PPI public spot tariff is a dated PAPER assumption, never an account quote."""
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -123,7 +124,9 @@ def test_generic_etf_fee_binding_requires_venue_and_minimum():
         contract.leg_cost(Decimal("1000"), decision_at="2026-10-27T00:13:28Z")
 
 
-def test_authenticated_get_estimate_is_not_fanned_out_to_cash_identities(tmp_path, monkeypatch):
+def test_authenticated_get_estimate_is_not_fanned_out_to_cash_identities(
+        tmp_path, monkeypatch, capsys):
+    import rc4_contract_import_job as importer
     from scripts import porota_contract_evidence_session_runner_rc4 as runner
 
     row = {"ticker": "LTEST", "instrument_id": 123,
@@ -135,30 +138,87 @@ def test_authenticated_get_estimate_is_not_fanned_out_to_cash_identities(tmp_pat
     assert "commission_rate_estimated" not in contract
     assert estimate["commission_rate_estimated"] == .002
 
-    db = tmp_path / "contracts.db"
-    with sqlite3.connect(db) as connection:
-        connection.execute("""CREATE TABLE candidate_identity_v2(
-          ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
-          settlement TEXT, status TEXT)""")
-        connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?)", [
-            ("LTEST", "LETRAS", "BYMA", currency, "A-24HS", "AVAILABLE")
-            for currency in ("ARS", "USD")])
     capture = tmp_path / "capture.json"
-    capture.write_text(json.dumps({"jobs": ["CONTRACT_EVIDENCE_DYNAMIC"],
+    capture.write_text(json.dumps({"schema": "POROTA_RC4_PPI_TRUSTED_CONTRACT_1",
+        "generated_at": (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat(),
+        "routes": [], "blocked_nonread": [], "continue_clicked": False,
+        "amount_filled": False, "price_filled": False, "real_orders_sent": 0,
+        "jobs": ["CONTRACT_EVIDENCE_DYNAMIC"],
         "auth_status": "AUTHENTICATED_TRUSTED_DEVICE",
         "endpoints": {"https://trading.portfoliopersonal.com/InstrumentosOperables": {
-            "kind": "InstrumentosOperables", "observed_job": "CONTRACT_EVIDENCE_DYNAMIC",
+            "kind": "InstrumentosOperables", "status": 200, "observed_job": "CONTRACT_EVIDENCE_DYNAMIC",
             "rows": [row]}}}), encoding="utf-8")
-    importer = runner.IMPORTER.replace(
-        'DB="/app/data/paper_v17/observer_v17.db"', f"DB={str(db)!r}")
-    monkeypatch.setattr("sys.argv", ["-", str(capture)])
-    exec(compile(importer, "embedded_contract_importer", "exec"), {"__name__": "__main__"})
-    with sqlite3.connect(db) as connection:
-        rows = connection.execute("""SELECT currency,evidence_json
-          FROM contract_evidence_v2_snapshots WHERE ticker='LTEST'""").fetchall()
-    assert {currency for currency, _ in rows} == {"ARS", "USD"}
-    assert all("commission_rate_estimated" not in body and
-               "market_fee_rate" not in body for _, body in rows)
+
+    # A615: wrapper delegates to canonical importer, never an embedded copy.
+    assert "from rc4_contract_import_job import DB, Store, import_capture" in runner.IMPORTER
+
+    def import_fixture(name, primary_rows):
+        db = tmp_path / f"{name}.db"
+        with sqlite3.connect(db) as connection:
+            # Legacy candidate table cannot authenticate PPI identity alone.
+            connection.execute("""CREATE TABLE candidate_identity_v2(
+              ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
+              settlement TEXT, status TEXT)""")
+            connection.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?)", [
+                ("LTEST", "LETRAS", "BYMA", currency, "A-24HS", "AVAILABLE")
+                for currency in ("ARS", "USD")])
+            if primary_rows is not None:
+                connection.execute("""CREATE TABLE financial_instrument_catalog(
+                  ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
+                  settlement TEXT, settlement_source TEXT, status TEXT, metadata_json TEXT, last_seen_at TEXT)""")
+                connection.executemany(
+                    "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?)",
+                    [("LTEST", "LETRAS", "BYMA", currency, "A-24HS", source,
+                      "AVAILABLE", json.dumps({"_discovery_source": "PPI_PRIMARY",
+                       "ticker": "LTEST", "type": "LETRAS", "market": "BYMA",
+                       "currency": currency, "settlement": "A-24HS"}),
+                      (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()) for currency, source in primary_rows])
+
+        # This injection MUST precede exec: never use the default live DB path.
+        monkeypatch.setattr(importer, "DB", str(db))
+        monkeypatch.setattr("sys.argv", ["-", str(capture)])
+        exit_code = 0
+        try:
+            exec(compile(runner.IMPORTER, "canonical_contract_importer", "exec"),
+                 {"__name__": "__main__"})
+        except SystemExit as exc:
+            exit_code = exc.code
+        result = json.loads(capsys.readouterr().out)
+        assert exit_code == (0 if result["state"] == "VERDE" and result["records"] > 0 else 1)
+        with sqlite3.connect(db) as connection:
+            rows = connection.execute("""SELECT currency,evidence_json
+              FROM contract_evidence_v2_snapshots WHERE ticker='LTEST'""").fetchall()
+            runs = connection.execute("""SELECT state,records FROM contract_evidence_v2_runs
+              WHERE job_key='CONTRACT_EVIDENCE_DYNAMIC'""").fetchall()
+        assert len(runs) == 1
+        assert runs[0][1] == result["records"]
+        assert runs[0][0] == result["state"]
+        assert result["real_orders_sent"] == 0
+        return result, rows
+
+    # 1. Old catalog has two cash variants but no verified PPI source: NO_GO.
+    absent, absent_rows = import_fixture("legacy_only", None)
+    assert absent_rows == [] and absent["records"] == 0
+    assert absent["conflicts"] == 1 and absent["state"] != "VERDE"
+
+    # 2. Even two genuine PPI-primary five-keys remain ambiguous to ticker XHR.
+    ambiguous, ambiguous_rows = import_fixture(
+        "two_ppi_primary", [("ARS", "PPI_FIELD"),
+                            ("USD", "REQUEST_CANDIDATE")])
+    assert ambiguous_rows == [] and ambiguous["records"] == 0
+    assert ambiguous["conflicts"] == 1 and ambiguous["state"] != "VERDE"
+
+    # 3. With one PPI ARS key + complementary IOL USD, capture exactly ARS.
+    unique, unique_rows = import_fixture(
+        "one_ppi_plus_iol", [("ARS", "PPI_FIELD"),
+                             ("USD", "IOL_COMPLEMENTARY")])
+    assert unique["records"] == 1 and unique["conflicts"] == 0
+    assert len(unique_rows) == 1 and unique_rows[0][0] == "ARS"
+    evidence = json.loads(unique_rows[0][1])
+    assert evidence["readiness_guard"] == "NO_AUTO_ACTIVATION_MISSING_FIELDS_REMAIN"
+    assert "commission_rate_estimated" not in evidence
+    assert "commission_vat_rate_estimated" not in evidence
+    assert "market_fee_rate" not in evidence
 
 
 def test_legacy_daily_report_does_not_reconcile_unlinked_account_charges(monkeypatch):

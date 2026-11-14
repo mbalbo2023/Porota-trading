@@ -1,11 +1,14 @@
 """Physical cadence adversaries; unit clocks are models, never host evidence."""
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import gzip
 
 import pytest
 
 from scripts import rc6_postdeploy_stress as h
-from tests.test_rc6_shadow_runtime_wiring import PRE
+
+# Keep physical-cadence contract tests independent from observer/PPI imports;
+# the clock is a local adversarial fixture, never production market evidence.
+PRE = datetime(2026, 10, 5, 13, 20, tzinfo=timezone.utc)
 
 
 def model(mode='fresh'):
@@ -142,17 +145,22 @@ def test_receipt_cannot_enlarge_original_measured_generation_budget():
 
 
 
-def test_exact_artifact_workflow_runs_two_standalone_twelve_cut_stages():
+def test_exact_artifact_workflow_wires_two_standalone_twelve_cut_stages_under_hold():
     from pathlib import Path
     import yaml
     workflow=yaml.safe_load((h.ROOT/'.github/workflows/porota-predeploy-v2.yml').read_text())
     job=workflow['jobs']['artifact-gate']
     assert job['timeout-minutes']*60>=35*60+2*1500+5*60
     native=next(step['run'] for step in job['steps'] if step.get('name')=='Exact image native sizing and generated catalog proof')
+    orchestration=(h.ROOT/'scripts/rc6_predeploy_native_orchestration.sh').read_text()
+    assert 'source ./scripts/rc6_predeploy_native_orchestration.sh' in native
+    assert 'rc6_native_session_cadence' in native
+    assert native.index('exit 79') < native.index('source ./scripts/rc6_predeploy_native_orchestration.sh')
+    assert 'root_same_uid_path_swap_unresolved' in native
+    assert 'rc6_name="porota-native-$rc6_label-$GITHUB_RUN_ID"' in native
     for stage in ('fresh','legacy'):
-        assert 'run_native_proof cadence-'+stage+' python scripts/rc6_postdeploy_stress.py' in native
-        assert '--cadence-stage '+stage+' --output /proof/cadence' in native
-        assert 'porota-native-cadence-'+stage+'-$GITHUB_RUN_ID' in native
+        assert 'run_native_proof cadence-'+stage+' python scripts/rc6_postdeploy_stress.py' in orchestration
+        assert '--cadence-stage '+stage+' --output /proof/cadence' in orchestration
     assert 'cadence-fresh|cadence-legacy) rc6_timeout=1500' in native
     assert 'rc6_memory=(--memory 512m --memory-swap 512m)' in native
     assert 'if test "$rc6_label" = session; then' in native

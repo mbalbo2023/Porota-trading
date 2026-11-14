@@ -7,13 +7,16 @@ import pytest
 from scripts import rc6_offline_failed_image_cleanup as cleanup
 
 
-@pytest.mark.parametrize('change', ['none', 'referenced', 'foreign_tag', 'different_id'])
+@pytest.mark.parametrize('change', ['none', 'referenced', 'foreign_tag',
+                                   'different_id', 'same_repo_digest'])
 def test_exact_failed_image_eligibility(monkeypatch, change):
     tags = list(cleanup.TAGS)
     if change == 'foreign_tag': tags.append('third-party:keep')
     identity = 'sha256:'+'f'*64 if change == 'different_id' else cleanup.IMAGE
+    digests = (['porota-trading-bot@sha256:' + 'f' * 64]
+               if change == 'same_repo_digest' else [])
     monkeypatch.setattr(cleanup, 'docker', lambda *args: json.dumps([{
-        'Id': identity, 'RepoTags': tags, 'RepoDigests': []}]))
+        'Id': identity, 'RepoTags': tags, 'RepoDigests': digests}]))
     monkeypatch.setattr(cleanup, 'references', lambda: {cleanup.IMAGE}
                         if change == 'referenced' else set())
     if change == 'none':
@@ -24,6 +27,7 @@ def test_exact_failed_image_eligibility(monkeypatch, change):
 
 
 def test_offline_cleanup_rechecks_admission_before_each_tag(tmp_path, monkeypatch):
+    monkeypatch.setattr(cleanup, 'require_exclusive_docker_namespace', lambda: None)
     root = tmp_path/'host'
     lock = root/'data/deploy/.deploy-quiescence.lock'
     lock.parent.mkdir(parents=True)
@@ -50,6 +54,7 @@ def test_offline_cleanup_rechecks_admission_before_each_tag(tmp_path, monkeypatc
 
 
 def test_offline_cleanup_preserves_image_when_admission_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(cleanup, 'require_exclusive_docker_namespace', lambda: None)
     root = tmp_path/'host'
     lock = root/'data/deploy/.deploy-quiescence.lock'
     lock.parent.mkdir(parents=True)

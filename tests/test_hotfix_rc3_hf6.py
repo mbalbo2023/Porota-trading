@@ -115,11 +115,19 @@ def test_menu_tecnico_consolidado_y_refresh_accesible():
 
 def test_dashboard_no_enmascara_el_contador_de_ordenes_reales():
     from pathlib import Path
+    import bg_paper_dashboard as dashboard
 
     source = Path("bg_paper_dashboard.py").read_text(encoding="utf-8")
     assert 'state["real_orders_sent"] = 0' not in source
     assert '_card("Órdenes reales", "0"' not in source
-    assert 'real_orders = int(state.get("real_orders_sent") or 0)' in source
+    # Local SQLite zero/NULL/text/bool never certifies physical PAPER/0.
+    for value in (None, 0, "0", False):
+        card = dashboard._real_orders_local_card(value)
+        assert "NO_VERIFICADO" in card
+        assert "NINGUNA" not in card and "card-green" not in card
+    positive = dashboard._real_orders_local_card(3)
+    assert "real_orders_sent=3" in positive
+    assert "ALERTA" in positive and "card-red" in positive
 
 
 def test_proximo_chequeo_no_presenta_una_fecha_vencida_como_futura():

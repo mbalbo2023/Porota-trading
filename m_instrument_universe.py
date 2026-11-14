@@ -51,7 +51,7 @@ AUTO_DISCOVER_INSTRUMENTS = os.getenv("AUTO_DISCOVER_INSTRUMENTS", "true").lower
 MAX_DISCOVERED_PER_TYPE = int(os.getenv("MAX_DISCOVERED_PER_TYPE", "40"))
 AUTO_DISCOVER_ALL_TYPES = os.getenv("AUTO_DISCOVER_ALL_TYPES", "true").lower() == "true"
 HISTORICAL_UNIVERSE_FALLBACK = os.getenv(
-    "HISTORICAL_UNIVERSE_FALLBACK", "true").lower() == "true"
+    "HISTORICAL_UNIVERSE_FALLBACK", "false").lower() == "true"
 
 # Las 4 clases de activo que el motor de riesgo actual sabe OPERAR (calcular
 # stop-loss, tamaño de posición, etc.) de forma segura.
@@ -416,7 +416,8 @@ def filter_by_liquidity(instruments: List[Instrument], ppi_client, days_back: in
     Ordena por liquidez y aplica el límite DESPUÉS del filtro. PPI es la
     fuente histórica primaria. Una prueba inicial evita repetir cientos de
     autenticaciones si el histórico PPI está caído; en ese caso se usa el
-    archivo local Data912 y se conserva PPI para precio, book y ejecución.
+    archivo local histórico solo si el operador habilitó expresamente ese
+    fallback; por defecto la preselección queda cerrada sin historial PPI.
     """
     import ba_data912_history as data912
 
@@ -435,9 +436,11 @@ def filter_by_liquidity(instruments: List[Instrument], ppi_client, days_back: in
                 probe_cache[(probe.ticker, probe.instrument_type)] = probe_history
                 logger.info("Histórico PPI disponible; se usa como fuente primaria.")
             else:
-                logger.warning("Histórico PPI no disponible; se usa Data912 como respaldo.")
+                logger.warning("Histórico PPI no disponible; fallback archivado %s.",
+                               "habilitado" if HISTORICAL_UNIVERSE_FALLBACK else "deshabilitado")
         except Exception as exc:
-            logger.warning("Prueba de histórico PPI falló; se usa Data912: %s", exc)
+            logger.warning("Prueba de histórico PPI falló; fallback archivado %s: %s",
+                           "habilitado" if HISTORICAL_UNIVERSE_FALLBACK else "deshabilitado", exc)
 
     for inst in instruments:
         traded_ars = None
@@ -457,10 +460,11 @@ def filter_by_liquidity(instruments: List[Instrument], ppi_client, days_back: in
             except Exception as exc:
                 logger.info("PPI no entregó histórico de %s: %s", inst.ticker, exc)
 
-        if traded_ars is None:
+        if traded_ars is None and HISTORICAL_UNIVERSE_FALLBACK:
             traded_ars = data912.archived_liquidity(
                 inst.ticker, inst.asset_class, days_back)
-        if traded_ars is None:
+        if (traded_ars is None and HISTORICAL_UNIVERSE_FALLBACK
+                and data912.DATA912_REFRESH_ENABLED):
             try:
                 if data912.ensure_symbol(inst.ticker, inst.asset_class):
                     traded_ars = data912.archived_liquidity(
@@ -469,7 +473,7 @@ def filter_by_liquidity(instruments: List[Instrument], ppi_client, days_back: in
                 logger.info("Data912 no completó %s: %s", inst.ticker, exc)
 
         if traded_ars is None:
-            logger.warning("%s queda fuera de la preselección: sin histórico PPI ni Data912.",
+            logger.warning("%s queda fuera de la preselección: sin histórico PPI acreditado ni respaldo autorizado.",
                            inst.ticker)
             continue
 

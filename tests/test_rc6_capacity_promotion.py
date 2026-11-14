@@ -1,10 +1,11 @@
-"""Reviewed OPEN capacity can be consumed without a later programming phase."""
+"""SHADOW capacity evidence cannot activate an unverified live PPI/Watch budget."""
 from copy import deepcopy
 from datetime import timedelta
 import json
 from pathlib import Path
 
 import pytest
+import rc6_dynamic_universe.promotion as promotion
 
 from rc6_dynamic_universe.common import digest, identity
 from rc6_dynamic_universe.promotion import (APPROVAL_SCHEMA, DEFAULT_POLICY, POLICY_PATH,
@@ -68,18 +69,70 @@ def test_shipped_policy_off_has_stable_fingerprint_and_no_activation(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_open_recommendation_requires_explicit_separate_review_and_exact_config(wire):
+def test_synthetic_self_consistent_review_cannot_grant_external_ppi_capacity(monkeypatch):
+    """A valid local hash chain is not independent OPEN/provider-owner proof."""
+    policy = deepcopy(DEFAULT_POLICY)
+    policy["mode"] = "APPROVED"
+    recommendation = {
+        "schema": promotion.SCHEMA,
+        "status": "SHADOW_RECOMMENDATION",
+        "created_at": OPEN.isoformat(),
+        "expires_at": (OPEN + timedelta(hours=1)).isoformat(),
+        "runtime_policy_fingerprint": runtime_policy_fingerprint(policy),
+        "engines": {"SCALPING": {"capacity": {"safe_limit": 15}}},
+        "global_budget": {"global_limit": 45},
+    }
+    recommendation["recommendation_digest"] = digest(recommendation)
+    policy["approved_recommendation_digest"] = recommendation["recommendation_digest"]
+    approval = {
+        "schema": APPROVAL_SCHEMA, "approved": True,
+        "reviewer": "synthetic-self-review", "reviewed_at": OPEN.isoformat(),
+        "recommendation_digest": recommendation["recommendation_digest"],
+        "runtime_policy_fingerprint": runtime_policy_fingerprint(policy),
+    }
+    approval["approval_digest"] = digest(approval)
+    report = {"source": "SYNTHETIC_NO_EXTERNAL_PROVENANCE"}
+    monkeypatch.setattr(promotion, "build_recommendation",
+                        lambda *_args, **_kwargs: recommendation)
+    state = resolve_capacity_policy(policy, recommendation, report, approval, as_of=OPEN)
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert state["baseline_limits"] == {"EQUITY_SPOT": 20, "SCALPING": 40}
+    assert not state["production_limits_modified"] and "global_budget" not in state
+    assert state["real_orders_sent"] == 0 and state["real_routes"] == "NOT_CALLED"
+    # Even an explicitly overridden APPROVED mode is no substitute for the
+    # missing external transport and shared-owner authority.
+    ctl = RuntimeCapacityController(environ={"POROTA_DYNAMIC_CAPACITY_MODE": "APPROVED"},
+                                    policy=policy, report=report,
+                                    recommendation=recommendation, approval=approval)
+    selected = ctl.selection("SCALPING", ["legacy"], as_of=OPEN)
+    assert selected["status"] == "BASELINE_FAIL_CLOSED"
+    assert selected["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert selected["selected"] == ["legacy"] and not selected["dynamic"]
+    assert selected["limit"] == 40 and selected["entry_identities"] == []
+    shadow = resolve_capacity_policy(dict(policy, mode="SHADOW"), as_of=OPEN)
+    assert shadow["status"] == "SHADOW_BASELINE"
+    assert not shadow["production_limits_modified"] and "global_budget" not in shadow
+
+
+def test_self_hashed_open_review_remains_descriptive_without_external_provenance(wire):
     values = approved(wire)
     policy, rec, report, approval, at = values
     original = deepcopy((report, rec, approval))
     state = resolve_capacity_policy(policy, rec, report, approval, as_of=at)
-    assert state["status"] == "APPROVED_DYNAMIC"
-    assert state["global_budget"]["endpoint_limits"] == {"current": 15, "book": 15, "intraday": 15}
-    assert state["global_budget"]["global_limit"] == 45
-    assert all(e["capacity"]["safe_limit"] == 15 for e in state["engine_profiles"].values())
+    assert rec["global_budget"]["endpoint_limits"] == {"current": 15, "book": 15, "intraday": 15}
+    assert rec["global_budget"]["global_limit"] == 45
+    assert all(e["capacity"]["safe_limit"] == 15 for e in rec["engines"].values())
     assert rec["automatic_activation"] is False and rec["production_limit_modified"] is False
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert state["production_limits_modified"] is False
+    assert state["real_orders_sent"] == 0 and state["real_routes"] == "NOT_CALLED"
+    assert state["baseline_limits"] == {"EQUITY_SPOT": 20, "SCALPING": 40}
+    assert "global_budget" not in state and state["engine_profiles"] == {}
     assert (report, rec, approval) == original
-    assert controller(values).validated_report(at) == report
+    with pytest.raises(ValueError, match="CAPACITY_APPROVED_STATE_CHANGED"):
+        controller(values).validated_report(at)
     assert controller(values).state(at + timedelta(seconds=1))["fingerprint"] == controller(values).state(at)["fingerprint"]
     assert runtime_policy_fingerprint(policy) == runtime_policy_fingerprint(DEFAULT_POLICY)
 
@@ -117,14 +170,17 @@ def test_shadow_mode_retains_baseline_even_with_approved_evidence(wire):
     assert controller(values).selection("SCALPING", [1, 2], as_of=values[-1])["selected"] == [1, 2]
 
 
-def test_approved_selector_consumes_real_planner_limit_cadence_without_entry_authority(wire):
+def test_synthetic_shadow_planner_cannot_activate_dynamic_selector(wire):
     values = approved(wire)
     shadow, assets, at = shadow_selection(values)
     ctl = controller(values, shadow=shadow)
     selected = ctl.selection("SCALPING", ["legacy"], as_of=at)
-    assert selected["dynamic"] and selected["limit"] == 15 and selected["cadence_seconds"] == 30
-    assert len(selected["selected"]) <= 15 and selected["entry_identities"]
-    assert all(k in selected["selected"] for k in selected["entry_identities"])
+    assert selected["status"] == "BASELINE_FAIL_CLOSED"
+    assert selected["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert not selected["dynamic"] and selected["limit"] == 40
+    assert selected["selected"] == ["legacy"] and selected["entry_identities"] == []
+    assert all(p["capacity"]["safe_limit"] == 15 for p in shadow["engines"].values())
+    assert all(p["selected"] for p in shadow["engines"].values())
     assert all(not r["entry_authority"] for r in shadow["engines"]["SCALPING"]["telemetry"])
     assert shadow["engines"]["SCALPING"]["catalog_ready_count"] == len(assets)
     stale = ctl.selection("SCALPING", ["legacy"], as_of=at + timedelta(seconds=31))

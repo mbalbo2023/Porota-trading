@@ -166,7 +166,7 @@ def test_capacity_config_inputs_cannot_alias_owned_shadow_outputs(tmp_path, monk
     assert primary_input.read_bytes() == b"immutable capacity input"
 
 
-def test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without_provider_calls(tmp_path, monkeypatch, wire):
+def test_canonical_worker_retains_synthetic_capacity_as_shadow_only(tmp_path, monkeypatch, wire):
     policy, recommendation, measurement, approval, at = approved(wire)
     config = {
         "POLICY": policy, "RECOMMENDATION": recommendation,
@@ -192,24 +192,31 @@ def test_canonical_worker_consumes_reviewed_open_capacity_and_falls_back_without
     assert preopen["production_limits_modified"] is False
     before = {name: path.read_bytes() for name, path in inputs.items()}
     initial = worker.tick(at)
-    assert initial["capacity_policy"]["status"] == "APPROVED_DYNAMIC"
+    assert initial["capacity_policy"]["status"] == "BASELINE_FAIL_CLOSED"
+    assert initial["capacity_policy"]["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert initial["production_limits_modified"] is False
     for index in range(20):
         cut = at + timedelta(seconds=30 * (index + 1))
         store.add_quote(quote(assets[0], cut, bid=str(100 + index), ask=str(D(100 + index) + D(".01"))))
         report = worker.tick(cut)
     for engine, plan in report["engines"].items():
         expected = recommendation["engines"][engine]["capacity"]
-        assert plan["capacity"]["safe_limit"] == expected["safe_limit"] == 15
-        assert plan["capacity"]["configuration_fingerprint"] == expected["configuration_fingerprint"]
+        # Offline measurements remain descriptive, never admission to spend.
+        assert expected["safe_limit"] == 15
+        assert plan["capacity"]["status"] == "NO_VERIFICADO"
+        assert plan["capacity"]["safe_limit"] == 0
         assert plan["preopen_digest"] == preopen["engines"][engine]["preopen_digest"]
         assert all(row["entry_authority"] is False for row in plan["telemetry"])
     baseline = [("S0", "ACCIONES", "A-24HS")]
     selected = worker.capacity_controller.selection("EQUITY_SPOT", baseline, as_of=cut)
-    assert selected["dynamic"] and selected["limit"] == 15 and selected["cadence_seconds"] == 120
-    assert all(len(identity) == 5 for identity in selected["selected"])
-    assert report["family_quota"] is False and selected["family_quota"] is False
+    assert not selected["dynamic"] and selected["limit"] == 20
+    assert selected["selected"] == baseline and selected["entry_identities"] == []
+    assert selected["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    assert report["family_quota"] is False
     assert report["provider_requests"] == report["real_orders_sent"] == 0
     assert report["real_routes"] == "NOT_CALLED" and len(wire[1]) == provider_calls
+    from cg_paper_workspace import artifact_root
+    assert not (artifact_root(store.path) / "ppi-budget/global.sqlite").exists()
     assert all(path.read_bytes() == before[name] for name, path in inputs.items())
     assert store.open_positions() == [] and store.active_future_positions() == []
     approval["approval_digest"] = "0" * 64

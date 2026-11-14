@@ -41,6 +41,10 @@ BYMA_HOURS_SOURCE_DATE = date(2026, 9, 22)
 BYMA_HOURS_COMMUNICATION = "19024"
 BYMA_CURRENT_HOURS_PAGE = "https://www.byma.com.ar/mercado/horarios"
 
+# Source-history publication floor from COM19031 (effective 02-Nov-2026).
+# This informational clock does not extend the conservative PAPER session.
+BYMA_EOD_FLOOR_EFFECTIVE_DATE = date(2026, 11, 2)
+
 # Ventana operacional RC5 del simulador spot. Intervalo half-open: 17:00 ya no
 # admite nuevas evaluaciones regulares. El warm-up 10:15 es interno de POROTA,
 # NO se presenta como subasta oficial.
@@ -142,6 +146,20 @@ def byma_paper_spot_phase(now: datetime | None = None) -> str:
 
 def byma_paper_spot_open(now: datetime | None = None) -> bool:
     return byma_paper_spot_phase(now) == "OPEN"
+
+
+def byma_eod_publication_floor(at: datetime | date) -> datetime:
+    """Minimum source EOD attempt time, never a publication/PAPER receipt."""
+    if isinstance(at, datetime):
+        if at.tzinfo is None or at.utcoffset() is None:
+            raise ValueError("BYMA_EOD_TIMEZONE_REQUIRED")
+        local_day = at.astimezone(TZ).date()
+    elif isinstance(at, date):
+        local_day = at
+    else:
+        raise ValueError("BYMA_EOD_DATE_REQUIRED")
+    clock = time(18, 15) if local_day >= BYMA_EOD_FLOOR_EFFECTIVE_DATE else time(17, 15)
+    return datetime.combine(local_day, clock, TZ)
 
 
 def byma_schedule_status() -> dict:

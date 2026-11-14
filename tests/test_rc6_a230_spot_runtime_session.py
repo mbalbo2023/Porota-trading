@@ -18,7 +18,8 @@ import rc6_paper_admission_gate as gate
 
 
 def _synthetic_broker(tmp_path, monkeypatch, stamp, *, effective_runtime=True,
-                      session_policy=None):
+                      session_policy=None, raw_settlement_attested=True,
+                      availability_marker=None):
     at = datetime.fromisoformat(stamp)
     runtime_path = tmp_path / "effective_paper.sqlite"
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(runtime_path))
@@ -31,6 +32,14 @@ def _synthetic_broker(tmp_path, monkeypatch, stamp, *, effective_runtime=True,
     source_path = Path(__file__).parent / "fixtures" / "ppi_catalog_20260827.json"
     raw = next(record for record in json.loads(source_path.read_text())['records']
                if record['ticker'] == 'ALUA' and record['type'] == 'ACCIONES')
+    raw = dict(raw)
+    # The old provider diagnostic omits settlement. Native positive scenarios
+    # explicitly synthesize literal raw provider evidence; the negative case
+    # retains REQUEST_CANDIDATE to prove fail-closed PAPER admission.
+    if raw_settlement_attested:
+        raw['settlement'] = 'A-24HS'
+    if availability_marker:
+        raw['_availability_source'] = availability_marker
     record = catalog.normalize_record(raw, "A-24HS", stamp, "A230_SYNTHETIC_ONLY")
     with store.connect() as db:
         catalog.persist(db, record)
@@ -45,7 +54,10 @@ def _synthetic_broker(tmp_path, monkeypatch, stamp, *, effective_runtime=True,
     terms = catalog.quote_terms(catalog.lookup(
         store, "ALUA", "ACCIONES", "A-24HS", market="BYMA", currency="ARS"),
         now=at)
-    assert not terms["opening_block_reason"]
+    if raw_settlement_attested:
+        assert not terms["opening_block_reason"]
+    else:
+        assert terms["opening_block_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
     quote = Quote("ALUA", "ACCIONES", "A-24HS", Decimal("100"),
                   Decimal("99.9"), Decimal("100"), Decimal("100000"),
                   Decimal("100000"), stamp, book_at=stamp, trade_at=stamp,
@@ -66,6 +78,17 @@ def _assert_no_spot_entry(store):
         assert db.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
         state = db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
         assert tuple(state) == ("PRODUCTION_PAPER", 0)
+
+
+@pytest.mark.parametrize("availability_marker", [None, "PPI_PRIMARY"])
+def test_request_candidate_or_missing_settlement_fails_closed_before_paper_entry(
+        tmp_path, monkeypatch, availability_marker):
+    store, broker, quote = _synthetic_broker(
+        tmp_path, monkeypatch, "2026-11-02T10:46:00-03:00",
+        raw_settlement_attested=False, availability_marker=availability_marker)
+    opened, reason, paper_id = broker.admit_paper_candidate(quote, Decimal("0.8"), {})
+    assert (opened, reason, paper_id) == (False, "PAPER_EXACT_CONTRACT_NOT_READY", None)
+    _assert_no_spot_entry(store)
 
 
 @pytest.mark.parametrize("stamp,expected", [

@@ -13,7 +13,8 @@ import sqlite3
 import tempfile
 import unittest
 
-from be_paper_engine import PaperStore
+from be_paper_engine import PaperBroker, PaperStore, Quote
+from bm_exit_supervisor import PositionExitSupervisor
 from bs_instrument_contracts import contract_from_metadata
 from cf_sale_settlement import conservative_unconfirmed_availability
 from rc6_fixed_income_event_ledger import apply_verified_receipt
@@ -173,6 +174,51 @@ class NativeRedemptionReviewTest(unittest.TestCase):
     def _review_count(self):
         with self.store.connect() as db:
             return db.execute("SELECT count(*) FROM paper_fi_native_redemption_reviews").fetchone()[0]
+
+    def _assert_due_sale_requires_native_evidence(self, family):
+        if family != "BONOS":
+            self._set_family(family)
+        book = Quote("AL30", family, "A-24HS", Decimal("110"),
+                     Decimal("109"), Decimal("111"), Decimal("1000"),
+                     Decimal("1000"), BOOKED, currency="ARS", market="BYMA",
+                     metadata_source="SYNTHETIC_PAPER_ONLY", book_at=BOOKED,
+                     trade_at=BOOKED, last_kind="TRADE")
+        broker = PaperBroker(self.store, clock_fn=lambda: BOOKED)
+        close_attempts = []
+        supervisor = PositionExitSupervisor(
+            broker, clock_fn=lambda: BOOKED,
+            close_fn=lambda *args, **kwargs: close_attempts.append((args, kwargs)))
+        position = self.store.open_positions()[0]
+        for _ in range(2):
+            decision = supervisor.supervise(position, book, BOOKED)
+            self.assertEqual(decision.state, "EXIT_PENDING_FI_NATIVE_EVIDENCE")
+            self.assertEqual(decision.cause, "MAX_HOLD_PAPER")
+            self.assertEqual(decision.reason, "FI_NATIVE_EVIDENCE_REQUIRED")
+        self.assertEqual(close_attempts, [])
+        with self.store.connect() as db:
+            intent = db.execute(
+                "SELECT state, cause, blocked_reason, attempts FROM paper_exit_intents "
+                "WHERE paper_id='PAPER-AL30'").fetchone()
+            self.assertEqual(tuple(intent), (
+                "EXIT_PENDING_FI_NATIVE_EVIDENCE", "MAX_HOLD_PAPER",
+                "FI_NATIVE_EVIDENCE_REQUIRED", 0))
+            self.assertEqual(db.execute(
+                "SELECT status FROM paper_positions WHERE paper_id='PAPER-AL30'")
+                .fetchone()[0], "OPEN")
+            self.assertEqual(db.execute(
+                "SELECT count(*) FROM paper_fills WHERE side='SELL_SIMULATED'")
+                .fetchone()[0], 0)
+            self.assertEqual(db.execute(
+                "SELECT real_orders_sent FROM observer_state").fetchone()[0], 0)
+
+    def test_bond_due_never_uses_generic_spot_close_without_native_evidence(self):
+        self._assert_due_sale_requires_native_evidence("BONOS")
+
+    def test_on_due_never_uses_generic_spot_close_without_native_evidence(self):
+        self._assert_due_sale_requires_native_evidence("OBLIGACIONES")
+
+    def test_on_alias_due_never_uses_generic_spot_close_without_native_evidence(self):
+        self._assert_due_sale_requires_native_evidence("ON")
 
     def test_bond_full_redemption_review_is_idempotent_and_never_pays_or_closes(self):
         self._book()

@@ -44,9 +44,23 @@ def _upper(value):
     return str(value or "").strip().upper()
 
 
+def _has_recorded_observation_clock(value):
+    """Require an aware recorded clock, not freshness or provider attestation."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return observed.tzinfo is not None and observed.utcoffset() is not None
+
+
 def underlying_family_index(rows):
-    """Map a ticker only when its current PPI underlying family is unique."""
-    families = defaultdict(set)
+    """Require one exact PPI ARS/immediate underlying, not just a family."""
+    from bu_instrument_catalog import ppi_option_full_key_evidence_reason
+
+    identities = defaultdict(set)
+    invalid = set()
     for row in rows:
         raw = _raw(row)
         family = _upper(row.get("instrument_type"))
@@ -54,14 +68,22 @@ def underlying_family_index(rows):
                 or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
                 or family not in OPTION_LOT_BY_UNDERLYING_FAMILY
                 or _upper(row.get("market")) != "BYMA"
-                or not _upper(row.get("ticker"))
-                or raw.get("_contract_conflicts")):
+                or not _upper(row.get("ticker"))):
             continue
-        families[_upper(row["ticker"])].add(family)
+        ticker = _upper(row["ticker"])
+        # Preserve conflicting primary coordinates before rejecting invalid
+        # evidence; filtering first could make a ticker appear unique.
+        identities[ticker].add((family, _upper(row.get("currency")),
+                                _upper(row.get("settlement"))))
+        if (raw.get("_contract_conflicts")
+                or ppi_option_full_key_evidence_reason({**row, "raw": raw})
+                or not _has_recorded_observation_clock(row.get("last_seen_at"))):
+            invalid.add(ticker)
     return {
-        ticker: next(iter(values))
-        for ticker, values in families.items()
-        if len(values) == 1
+        ticker: next(iter(values))[0]
+        for ticker, values in identities.items()
+        if len(values) == 1 and ticker not in invalid
+        and next(iter(values))[1:] == ("ARS", "INMEDIATA")
     }
 
 
@@ -90,8 +112,83 @@ def parse_ppi_option_description(description):
     }
 
 
+def current_option_contract_reason(record, underlying_rows, contract, *, checked_at):
+    """Validate current PAPER inputs without rederiving READY or rewriting history.
+
+    An old valid static snapshot is retained. It cannot authorize a new entry
+    when the current PPI identity/description or its underlying is unverified.
+    This checks recorded evidence, not physical provider authenticity or Book1.
+    """
+    from bs_instrument_contracts import aware_datetime
+    from bu_instrument_catalog import (ppi_option_full_key_evidence_reason,
+                                       _candidate_timestamp_is_fresh,
+                                       PAPER_PPI_IDENTITY_LKG_SECONDS, contract_for)
+    from rc6_contract_bridge import hard_blocked_bridge
+
+    def raw_of(row):
+        value = row.get("raw")
+        return value if isinstance(value, dict) else _raw(row)
+
+    def current(row):
+        raw = raw_of(row)
+        return (row.get("status") == "AVAILABLE"
+                and not ppi_option_full_key_evidence_reason({**row, "raw": raw})
+                and _has_recorded_observation_clock(row.get("last_seen_at"))
+                and _candidate_timestamp_is_fresh(
+                    row.get("last_seen_at"), checked_at, PAPER_PPI_IDENTITY_LKG_SECONDS)
+                and not raw.get("_contract_conflicts")
+                and not hard_blocked_bridge(raw.get("_contract_bridge"))
+                and not raw.get("revoked") and not raw.get("adjusted_series_unverified")
+                and not any(raw.get(key) is False for key in ("operable", "isActive", "isTradable")))
+
+    try:
+        if (record.get("instrument_type") != "OPCIONES"
+                or record.get("capability") != "READY_PAPER_OPTION_LONG" or not current(record)):
+            return "OPTION_CURRENT_IDENTITY_UNVERIFIED"
+        raw = raw_of(record)
+        terms = parse_ppi_option_description(raw.get("description"))
+        if not terms or terms != parse_ppi_option_description(record.get("description")):
+            return "OPTION_CURRENT_DESCRIPTION_UNVERIFIED"
+        # Store rows retain metadata_json; lookup's normalized record retains
+        # raw. Map the existing payload, never synthesize provider fields.
+        rows = [{**row, "metadata_json": raw_of(row)} for row in underlying_rows]
+        families = underlying_family_index(rows)
+        family = families.get(terms["underlying"])
+        if not family:
+            return "OPTION_CURRENT_UNDERLYING_UNVERIFIED"
+        selected = [row for row in rows if (
+            _upper(row.get("ticker")) == terms["underlying"]
+            and _upper(row.get("instrument_type")) == family
+            and _upper(row.get("market")) == "BYMA"
+            and _upper(row.get("currency")) == "ARS"
+            and _upper(row.get("settlement")) == "INMEDIATA"
+            and _upper(raw_of(row).get("_discovery_source")) == "PPI_PRIMARY")]
+        if (len(selected) != 1 or selected[0].get("capability") != "READY_PAPER_SPOT"
+                or not current(selected[0])):
+            return "OPTION_CURRENT_UNDERLYING_UNVERIFIED"
+        stored = contract_for(record)
+        key = tuple(record[name] for name in ("ticker", "instrument_type", "market", "currency", "settlement"))
+        for spec in (stored, contract):
+            if (spec is None or spec.key != key or spec.currency != "ARS"
+                    or spec.market != "BYMA" or spec.settlement != "INMEDIATA"
+                    or _upper(spec.underlying) != terms["underlying"]
+                    or spec.option_right != terms["option_right"]
+                    or spec.strike != Decimal(terms["strike"])
+                    or aware_datetime(spec.expires_at) != aware_datetime(terms["expires_at"])
+                    or spec.cash_multiplier != Decimal(OPTION_LOT_BY_UNDERLYING_FAMILY[family])):
+                return "OPTION_CURRENT_CONTRACT_MISMATCH"
+        if (stored.quantity_step != contract.quantity_step
+                or stored.minimum_quantity != contract.minimum_quantity):
+            return "OPTION_CURRENT_CONTRACT_MISMATCH"
+        return ""
+    except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
+        return "OPTION_CURRENT_EVIDENCE_UNVERIFIED"
+
+
 def standard_long_option_evidence(row, underlying_families):
     """Build exchange-backed terms for the long-premium PAPER path only."""
+    from bu_instrument_catalog import ppi_option_full_key_evidence_reason
+
     raw = _raw(row)
     if (row.get("status") != "AVAILABLE"
             or _upper(row.get("instrument_type")) != "OPCIONES"
@@ -100,6 +197,8 @@ def standard_long_option_evidence(row, underlying_families):
             or _upper(row.get("currency")) != "ARS"
             or _upper(row.get("settlement")) != "INMEDIATA"
             or _upper(raw.get("_discovery_source")) != "PPI_PRIMARY"
+            or ppi_option_full_key_evidence_reason({**row, "raw": raw})
+            or not _has_recorded_observation_clock(row.get("last_seen_at"))
             or raw.get("_contract_conflicts")):
         return None
     terms = parse_ppi_option_description(row.get("description"))

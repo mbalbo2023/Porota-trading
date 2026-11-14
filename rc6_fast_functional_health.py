@@ -38,7 +38,7 @@ def probe(db_path=DB, *, now=None):
         checks={
             'db_readable':row is not None,
             'mode':state.get('mode')=='PRODUCTION_PAPER',
-            'real_orders_sent':state.get('real_orders_sent') is not None and int(state['real_orders_sent'])==0,
+            'real_orders_sent':type(state.get('real_orders_sent')) is int and state['real_orders_sent']==0,
             'release_identity':MODE=='PRODUCTION_PAPER' and EXECUTION=='SIMULATED' and REAL_ORDER_CAPABILITY=='BLOCKED',
             'heartbeat_fresh':age is not None and 0<=age<=MAX_HEARTBEAT_AGE_SECONDS,
         }

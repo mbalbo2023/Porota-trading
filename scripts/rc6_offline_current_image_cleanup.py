@@ -16,6 +16,23 @@ import sqlite3
 import stat
 import subprocess
 
+# A979 streams this helper over stdin: do not require a host-side checkout
+# before the custody HOLD79 is emitted. Missing shared guards fail closed.
+def require_exclusive_docker_namespace():
+    try:
+        from scripts.rc6_deploy_host_mutex import require_exclusive_docker_namespace as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED') from None
+    guard()
+
+
+def require_readonly_docker_command(args):
+    try:
+        from scripts.rc6_deploy_host_mutex import require_readonly_docker_command as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED') from None
+    guard(args)
+
 ROOT = Path('/opt/porota-trading')
 STABLE = 'porota-trading-bot:17.0.0-rc6'
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
@@ -37,6 +54,7 @@ def command(*args):
 
 
 def docker(*args):
+    require_readonly_docker_command(args)
     return command('docker', *args)
 
 
@@ -233,6 +251,7 @@ def admission():
 
 
 def cleanup(required_free_bytes=None):
+    require_exclusive_docker_namespace()
     if (required_free_bytes is not None and
             (type(required_free_bytes) is not int or
              not 1024**3 <= required_free_bytes <= 16*1024**3)):
@@ -253,14 +272,12 @@ def cleanup(required_free_bytes=None):
         tags=stale.get('RepoTags') or []
         digests=stale.get('RepoDigests') or []
         candidate_tags=[tag for tag in tags if tag!=STABLE]
-        repos={tag.split(':',1)[0] for tag in tags}
         stale_shas={tag.rsplit(':',1)[-1].removeprefix('17.0.0-rc6-candidate-')
                     for tag in candidate_tags}
         if (STABLE not in tags or not candidate_tags or
                 any(CANDIDATE_TAG.fullmatch(tag) is None for tag in candidate_tags) or
                 len(stale_shas)!=1 or before['candidate_sha'] in stale_shas or
-                any(re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[a-f0-9]{64}',d) is None
-                    or d.split('@',1)[0] not in repos for d in digests) or
+                bool(digests) or  # Repository match does not prove exact attempt custody.
                 stale_id in references() or current not in references() or
                 image(current)['Id']!=current):
             raise ValueError('OFFLINE_CURRENT_STALE_NOT_EXCLUSIVE')
@@ -303,7 +320,41 @@ def cleanup(required_free_bytes=None):
                 'real_orders_sent':0,'ppi_watch_changed':False}
 
 
-if __name__=='__main__':
-    if len(sys.argv)!=2 or not re.fullmatch('[0-9]{10,11}',sys.argv[1]):
+class OCIImageCustodyHold(RuntimeError):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('OCI_IMAGE_REFERENCE_CUSTODY_HOLD79')
+
+
+def require_root_owned_image_reference_proof():
+    # One fixed independent helper invocation, no user-provided image/args.
+    # This file is piped via SSH stdin, so importing checkout modules as root
+    # would turn a missing-path error into generic exit1 and break isolation.
+    try:
+        subprocess.run(['sudo', '-n', '/usr/local/sbin/porota-rc6-oci-custody',
+                        'image', 'preflight-cleanup'], timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    raise OCIImageCustodyHold()
+
+
+def main(argv=None):
+    arguments = sys.argv[1:] if argv is None else argv
+    if len(arguments)!=1 or not re.fullmatch('[0-9]{10,11}',arguments[0]):
         raise ValueError('OFFLINE_CURRENT_REQUIRED_SPACE_ARGUMENT')
-    print(json.dumps(cleanup(int(sys.argv[1])),sort_keys=True))
+    try:
+        require_root_owned_image_reference_proof()
+    except OCIImageCustodyHold as exc:
+        print(json.dumps({'schema': 'RC6_OFFLINE_CURRENT_IMAGE_CLEANUP_V1',
+                          'status': 'RED', 'reason': str(exc),
+                          'cleanup_deferred': True, 'removed_tags': [],
+                          'space_recovered': 0}, sort_keys=True))
+        return exc.exit_code
+    print(json.dumps(cleanup(int(arguments[0])),sort_keys=True))
+    return 0
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

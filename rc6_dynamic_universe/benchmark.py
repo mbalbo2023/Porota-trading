@@ -169,7 +169,8 @@ def _observation(endpoint, payload, row, received, freshness_seconds, previous):
             raise BenchmarkReadError("PPI_INVALID_PAYLOAD")
         quote = normalize_quote(row["ticker"], row["instrument_type"], row["settlement"],
                                 payload if endpoint == "current" else {},
-                                payload if endpoint == "book" else {})
+                                payload if endpoint == "book" else {},
+                                identity=identity(row))
         source_at = stamp(quote.trade_at if endpoint == "current" else quote.book_at)
         if endpoint == "current":
             normalized = [source_at.isoformat(), str(quote.last)]
@@ -242,7 +243,14 @@ def run_benchmark(candidates, *, api_key="", api_secret="", batches=BATCHES,
                 [list(identity(record)) for record in records])
             deadline = start_mono + configuration["max_runtime_seconds"]
             try:
-                reader = reader_factory(api_key, api_secret)
+                # A shared budget must exist before constructing a reader or
+                # spending even one SDK login; GET leases remain owned by the
+                # existing read-only transport guard.
+                from rc6_ppi_global_budget import budget_from_environment
+                shared_budget = budget_from_environment()
+                if shared_budget is None:
+                    raise BenchmarkReadError("PPI_SHARED_BUDGET_UNAVAILABLE")
+                reader = reader_factory(api_key, api_secret, budget=shared_budget)
                 with _wire_gate(max_requests=max_requests, deadline=deadline, monotonic=monotonic) as wire:
                     try:
                         reader.login_once()

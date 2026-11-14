@@ -1,6 +1,9 @@
 """Mocked pytest replay: global collection and truly concurrent exact shards."""
 
+from contextlib import redirect_stderr
+import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,6 +12,7 @@ import unittest
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
+from rc6_audit_evidence import sqlite_scratch as scratch
 from scripts import rc6_ci_parallel_runner as runner
 from scripts import rc6_ci_pytest_identity as identity
 from scripts import rc6_ci_shard_quorum as shards
@@ -85,6 +89,79 @@ class FakePytest:
 
 
 class TestParallelProofRunner(unittest.TestCase):
+    def test_pilot_shards_use_disk_backed_basetemp_despite_ambient_tmpfs(self):
+        """Pytest tmp_path must not silently inherit the runner's /tmp mount."""
+        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+            disk_root = Path(directory)
+            output = disk_root / "combined.xml"
+            fake = FakePytest()
+            with patch.dict(os.environ, {"RUNNER_TEMP": directory, "TMPDIR": "/tmp"}), \
+                    patch.object(runner, "_invoke", fake):
+                receipt = runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                                     output_junit=output)
+            self.assertEqual(receipt["status"], "GREEN_QUORUM_OFFLINE_ONLY")
+            shard_commands = [cmd for cmd in fake.calls if "--junitxml=" in " ".join(cmd)]
+            self.assertEqual(len(shard_commands), 2)
+            for command in shard_commands:
+                basetemp = Path(next(arg.split("=", 1)[1] for arg in command
+                                     if arg.startswith("--basetemp=")))
+                self.assertTrue(basetemp.is_relative_to(disk_root))
+                self.assertNotEqual(scratch._storage_type(basetemp), "tmpfs")
+
+    def test_tmpfs_runner_temp_fails_closed_before_collecting_pytest(self):
+        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+            fake = FakePytest()
+            with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                    patch.object(scratch, "_storage_type", side_effect=scratch.SnapshotError(
+                        "SCRATCH_DISK_BACKED_REQUIRED")), \
+                    patch.object(runner, "_invoke", fake):
+                with self.assertRaises(runner.ParallelRunnerRed):
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               output_junit=Path(directory) / "combined.xml")
+            self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
+
+    def test_unsafe_runner_temp_cannot_write_into_candidate_or_follow_symlink(self):
+        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+            link = Path(directory) / "link"
+            link.symlink_to(Path(directory))
+            for unsafe in (REPO, link, Path(directory) / "missing"):
+                with self.subTest(unsafe=str(unsafe)):
+                    fake = FakePytest()
+                    with patch.dict(os.environ, {"RUNNER_TEMP": str(unsafe)}), \
+                            patch.object(runner, "_invoke", fake):
+                        with self.assertRaises(runner.ParallelRunnerRed):
+                            runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                                       output_junit=Path(directory) / "combined.xml")
+                    self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
+
+    def test_self_referential_runner_temp_symlink_emits_normalized_red(self):
+        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+            loop = Path(directory) / "loop"
+            loop.symlink_to("loop")
+            fake = FakePytest()
+            stderr = io.StringIO()
+            with patch.dict(os.environ, {"RUNNER_TEMP": str(loop)}), \
+                    patch.object(runner, "_invoke", fake), redirect_stderr(stderr):
+                result = runner.main([
+                    "--source-sha", SHA, "--source-tree-sha", TREE,
+                    "--repo", str(REPO), "--shards", "2",
+                    "--output-junit", str(Path(directory) / "combined.xml"),
+                ])
+            self.assertEqual(result, 2)
+            self.assertEqual(stderr.getvalue(),
+                             "RC6_PARALLEL_PILOT=RED|automatic_go=NO\n")
+            self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
+
+    def test_github_runner_missing_temp_root_fails_closed(self):
+        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+            fake = FakePytest()
+            with patch.dict(os.environ, {"GITHUB_ACTIONS": "true", "RUNNER_TEMP": ""}), \
+                    patch.object(runner, "_invoke", fake):
+                with self.assertRaises(runner.ParallelRunnerRed):
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               output_junit=Path(directory) / "combined.xml")
+            self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
+
     def test_automatic_global_discovery_then_exact_parallel_shards(self):
         fake = FakePytest()
         with tempfile.TemporaryDirectory() as directory:

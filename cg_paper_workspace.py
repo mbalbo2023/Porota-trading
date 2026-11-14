@@ -1,5 +1,5 @@
 """Continuidad PAPER v17 separada del libro anterior; nunca importa históricos."""
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import fcntl
@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import uuid
 from _version import IMAGE
 
@@ -25,6 +26,8 @@ CAPITAL_DEFAULTS = {
 def checked_path(value):
     """Rechaza rutas/alias del libro conocido antes de abrirlo con SQLite."""
     raw = Path(value).absolute()
+    if any(member.is_symlink() for member in (raw, *raw.parents)):
+        raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
     path = raw.resolve()
     if (raw.name == 'observer_production.db' or path.name == 'observer_production.db'
             or raw.parent.name == 'observer' or path.parent.name == 'observer'):
@@ -32,6 +35,16 @@ def checked_path(value):
     # Un alias no es una base independiente: podría escribir el mismo inodo.
     if raw.is_symlink() or (path.exists() and path.stat().st_nlink != 1):
         raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
+    for suffix in ('-wal', '-shm', '-journal'):
+        member = Path(str(path) + suffix)
+        try:
+            info = member.lstat()
+        except FileNotFoundError:
+            continue
+        if not path.exists():
+            raise ValueError('PAPER_V17_ORPHAN_SIDECAR_FORBIDDEN')
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
     return path
 
 
@@ -105,6 +118,94 @@ def read_identity(path):
         return identity_from_connection(c)
 
 
+def _ready_database_inode(path):
+    """Bounded pathname check; requires separate directory custody for race-free use."""
+    target = checked_path(path)
+    try:
+        info = target.lstat()
+    except FileNotFoundError:
+        raise ValueError('PAPER_V17_CHILD_DATABASE_REQUIRED') from None
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError('PAPER_V17_DATABASE_ALIAS_FORBIDDEN')
+    return (info.st_dev, info.st_ino)
+
+
+def assert_ready_database_inode(path, expected):
+    try:
+        current = _ready_database_inode(path)
+    except ValueError as exc:
+        if str(exc) == 'PAPER_V17_CHILD_DATABASE_REQUIRED':
+            # A vanished READY file fails exactly like sqlite mode=rw, without
+            # touching sqlite3.connect or implicitly creating a replacement.
+            raise sqlite3.OperationalError('unable to open database file') from None
+        raise
+    if current != expected:
+        raise ValueError('PAPER_V17_CHILD_DATABASE_REPLACED')
+
+
+def validate_child_ready(path):
+    """Read-only schema/identity plus pre/post inode; not a same-UID race barrier."""
+    target = checked_path(path)
+    before = _ready_database_inode(target)
+    with closing(sqlite3.connect(target.as_uri() + '?mode=ro', uri=True, timeout=5)) as c:
+        c.execute('PRAGMA query_only=ON')
+        identity = identity_from_connection(c)
+        if identity.get('initial_capital_json') != capital_profile():
+            raise ValueError('PAPER_V17_INITIAL_CAPITAL_OR_ORIGIN_MISMATCH')
+        if c.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+            raise ValueError('PAPER_SQLITE_WAL_REQUIRED')
+        sentinels = {
+            'observer_state': {'id', 'mode', 'real_orders_sent'},
+            'paper_decisions': {'id', 'decision_key', 'features_json'},
+            'paper_positions': {'paper_id', 'status', 'quantity'},
+            'paper_fills': {'paper_id', 'side', 'quantity'},
+            'paper_causal_decision_receipts': {'decision_key'},
+        }
+        for table, columns in sentinels.items():
+            actual = {row[1] for row in c.execute('PRAGMA table_info(' + table + ')')}
+            if not columns <= actual:
+                raise ValueError('PAPER_V17_CHILD_SCHEMA_REQUIRED')
+    assert_ready_database_inode(target, before)
+    return before, identity
+
+
+@contextmanager
+def _safe_initialization_lock(target):
+    """Reject lock symlinks/hardlinks before flock; not an external DB lease."""
+    path = Path(str(target) + '.initialization.lock')
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        before = None
+    if before is not None and (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1):
+        raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    except OSError as exc:
+        raise ValueError('PAPER_V17_LOCK_UNAVAILABLE') from exc
+    with os.fdopen(fd, 'r+') as lock:
+        opened = os.fstat(lock.fileno())
+        try:
+            current = path.lstat()
+        except OSError as exc:
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN') from exc
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+                or (before is not None and
+                    (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino))):
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            current = path.lstat()
+        except OSError as exc:
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN') from exc
+        if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+            raise ValueError('PAPER_V17_LOCK_ALIAS_FORBIDDEN')
+        checked_path(target)
+        yield
+
+
 def runtime_store(path=None, *, environ=None):
     """Arranque coordinado de la base nueva; sólo reinicia su propio dataset.
 
@@ -116,8 +217,7 @@ def runtime_store(path=None, *, environ=None):
     target = database_path(environ) if path is None else checked_path(path)
     profile = capital_profile(environ)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with open(str(target) + '.initialization.lock', 'a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _safe_initialization_lock(target):
         checked_path(target)
         if target.exists():
             if read_identity(target).get('initial_capital_json') != profile:

@@ -301,7 +301,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
                                       market=p["market"], currency=p["currency"])
             stage = "NORMALIZE_QUOTE"
-            q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,metadata=metadata)
+            q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
+                                metadata=metadata, identity=identity)
             if is_future:
                 from dataclasses import replace
                 # Request identity is the exact position; catalog changes cannot

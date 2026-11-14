@@ -1,0 +1,1169 @@
+# R163 HITO D: OFFHOST PROBE ONLY. No release or host mutation.
+# R144 and HOLD79 remain. POSTRUN_TRUSTED_DEFAULT_WORKFLOW is required.
+name: RC6 R163 Offhost Guard79 Proof (PROBE ONLY)
+
+on:
+  pull_request:
+    branches: [deploy/rc6-pr69-isolated-20260915]
+    # READY after D/E must not rebuild two offhost PROBE images for the same SHA.
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# New PR head updates supersede old probes; ready/reopened must not cancel
+# a running proof on the same SHA. Cancelled attempts cannot trigger R206 B.
+concurrency:
+  group: rc6-r163-offhost-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event.action == 'synchronize' }}
+
+jobs:
+  python311-lock-closure:
+    name: Python 3.11 lock and incident fixtures (offhost)
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 1087 &&
+      github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
+      - name: Exact SHA checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.lock.txt
+      - name: Locked dependency closure and import smoke
+        shell: bash
+        env:
+          RC6_EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_EXPECTED_SHA"
+          python --version
+          python -m pip install --disable-pip-version-check -r requirements.lock.txt
+          python -m pip check
+          python - <<'PY'
+          import importlib
+          import importlib.metadata
+          assert importlib.metadata.version("ppi-client") == "1.3.0"
+          for module in ("ppi_client", "yfinance", "pytest", "pandas"):
+              importlib.import_module(module)
+          print("RC6_PY311=OFFHOST_LOCK_IMPORT_ONLY")
+          PY
+      - name: SRE health PAPER-zero regression (in-memory SQLite only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # In-memory SQLite and fake adapters only: no host, provider or DB writes.
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 \
+            python -m pytest -q -p no:cacheprovider \
+              tests/test_rc6_sre_health_paper_zero.py
+          echo 'RC6_SRE_HEALTH_PAPER_ZERO=PY311_OFFHOST_FIXTURES_ONLY'
+      - name: A976 A785 R164 R203 offline regression matrix (no host)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Four complete offline files plus all 13 exact R203 nodes.
+          # No -k/deselection. Missing node causes a blocking pytest error.
+          # UID1000 collector-pack cases cannot run under Python runner UID1001.
+          # No continue-on-error: RED fails job after executing all collected cases.
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            python -m pytest -q -p no:cacheprovider \
+              tests/test_rc6_a976_sqlite_readiness.py \
+              tests/test_rc6_a785_caucion_settle_wal.py \
+              tests/test_rc6_r164_promote_required_release.py \
+              tests/test_rc6_r163_offhost_workflow.py \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_inspect_v2_exact_allowlist_and_raw_commitments \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_source_declaration_redaction_is_explicit \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_inspect_v2_forgery_is_hold79_not_host_proof \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_synthetic_native_privacy_all_thirteen_paths_are_checked \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_canary_secret_in_each_native_member_is_hold79 \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_high_signal_synthetic_credentials \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_v2_cli_writes_two_new_files_no_raw_stdout \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_public_zip_preview_protects_six_members_without_host_trust \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_zip_preview_rejects_canary_in_any_evidence_member \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_zip_preview_rejects_raw_private_docker_inspect \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_live_synthetic_canary_detector_exercises_all_paths \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_offhost_workflow_never_uploads_private_inspect_or_skips_privacy \
+              tests/test_rc6_r163_native_volume_proof.py::test_r203_privacy_rejects_decoded_escape_canary
+          echo 'RC6_R203_REGRESSION_MATRIX=A976_A785_R164_R203_PY311_OFFHOST_ONLY'
+      - name: R206 XML and JSON opaque native projection regression (offhost TDD)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Exact R206 nodes only; 71 parametrized synthetic privacy cases.
+          # Failures and opaque fixture values remain in private runner temp.
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import xml.etree.ElementTree as ET
+
+          NODES = (
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_junit_opaque_attribute_is_not_public_evidence",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_raw_json_opaque_field_is_not_public_evidence",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_collector_projects_private_fixture_to_exact_public_schema",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_public_schema_rejects_tampered_synthetic_bytes",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_junit_invalid_counts_or_negative_nodes_hold",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_json_red_or_bool_in_place_of_zero_holds",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_junit_rejects_unaccounted_or_nested_testcase",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_private_json_rejects_nonfinite_exponent_in_discarded_field",
+              "tests/test_rc6_r163_native_volume_proof.py::test_r206_stress_requires_complete_ordered_positive_junit_scenarios",
+          )
+          try:
+              with tempfile.TemporaryDirectory(prefix="rc6-r206-", dir=os.environ["RUNNER_TEMP"]) as scratch:
+                  report = Path(scratch) / "private-junit.xml"
+                  env = {
+                      "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                      "HOME": scratch, "TMPDIR": scratch,
+                      "PYTHONDONTWRITEBYTECODE": "1",
+                      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                  }
+                  args = [sys.executable, "-m", "pytest", "-q",
+                          "-p", "no:cacheprovider", *NODES,
+                          "--junitxml=" + str(report)]
+                  with tempfile.TemporaryFile() as private_log:
+                      proc = subprocess.run(
+                          args, cwd=Path.cwd(), env=env, stdout=private_log,
+                          stderr=private_log, timeout=180, check=False)
+                  with os.fdopen(os.open(report, os.O_RDONLY | os.O_NOFOLLOW), "rb") as stream:
+                      meta = os.fstat(stream.fileno())
+                      if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                              meta.st_uid != os.getuid() or
+                              not 0 < meta.st_size <= 8 * 1024 * 1024):
+                          raise ValueError("R206_XML_UNOWNED")
+                      raw = stream.read(8 * 1024 * 1024 + 1)
+                      if len(raw) != meta.st_size:
+                          raise ValueError("R206_XML_CHANGED")
+                  if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                      raise ValueError("R206_XML_METADATA")
+                  root = ET.fromstring(raw)
+                  if root.tag not in ("testsuite", "testsuites"):
+                      raise ValueError("R206_XML_ROOT")
+                  suites = ([root] if root.tag == "testsuite" else
+                            list(root.findall("testsuite")))
+                  cases = list(root.iter("testcase"))
+                  if (not suites or len(cases) != 71 or
+                          sum(len(suite.findall("testcase")) for suite in suites) != 71 or
+                          len(list(root.iter("testsuite"))) != len(suites)):
+                      raise ValueError("R206_XML_CARDINALITY")
+                  totals = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+                  for suite in suites:
+                      for key in totals:
+                          value = suite.get(key)
+                          if value is None or re.fullmatch(r"[0-9]+", value) is None:
+                              raise ValueError("R206_XML_COUNTER")
+                          totals[key] += int(value)
+                      if int(suite.get("tests")) != len(suite.findall("testcase")):
+                          raise ValueError("R206_XML_SUITE_COVERAGE")
+                  if totals["tests"] != 71 or totals["skipped"] != 0:
+                      raise ValueError("R206_XML_TESTS_OR_SKIPS")
+                  has_bad = any(next(root.iter(tag), None) is not None
+                                for tag in ("failure", "error", "skipped"))
+                  if proc.returncode != 0 or has_bad or totals["failures"] or totals["errors"]:
+                      print("RC6_R206_PRIVACY=HOLD79|tests=71|failures=" +
+                            str(min(totals["failures"], 9999)) + "|errors=" +
+                            str(min(totals["errors"], 9999)) + "|skipped=0|release_go=NO")
+                      raise SystemExit(79)
+                  print("RC6_R206_PRIVACY=PY311_71_GREEN|release_go=NO")
+          except SystemExit:
+              raise
+          except Exception:
+              print("RC6_R206_PRIVACY=HOLD79|diagnostic_unavailable|release_go=NO")
+              raise SystemExit(79)
+          PY
+      - name: R205 signals risk exit ledger exact 191 fixture diagnostic (offline)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # All 10 script-defined scenario files; no Docker, host, provider
+          # credentials or raw pytest output enters GitHub Actions logs.
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          import sys
+          import tempfile
+          import xml.etree.ElementTree as ET
+
+          PATHS = (
+              "tests/test_rc6_owned_funnel_details.py",
+              "tests/test_rc6_convergence_core_admission.py",
+              "tests/test_exit_supervision_v17.py",
+              "tests/test_exit_ledger_isolation_v17.py",
+              "tests/test_rc6_future_programming_complete.py",
+              "tests/test_rc6_performance_runtime.py",
+              "tests/test_rc6_final_programming_runtime.py",
+              "tests/test_rc6_timestamp_atomicity.py",
+              "tests/test_rc6_catalog_publication_lifecycle.py",
+              "tests/test_rc6_go_startup_readiness.py",
+          )
+          COLLECTOR_CODE = '''
+          import json
+          from pathlib import Path
+          import sys
+          import pytest
+          
+          PATHS = json.loads(sys.argv[3])
+          TARGET = int(sys.argv[2])
+          if len(PATHS) != 10 or not 0 <= TARGET < 191:
+              raise SystemExit(79)
+          
+          class Collector:
+              def pytest_collection_finish(self, session):
+                  items = session.items
+                  if len(items) != 191:
+                      return
+                  root = Path.cwd().resolve()
+                  files = [(root / name).resolve(strict=True) for name in PATHS]
+                  if len(set(files)) != 10:
+                      return
+                  ordinals = []
+                  for item in items:
+                      current = Path(item.path).resolve(strict=True)
+                      if current not in files:
+                          return
+                      ordinals.append(files.index(current))
+                  if ordinals != sorted(ordinals) or set(ordinals) != set(range(10)):
+                      return
+                  location = items[TARGET].location
+                  if not isinstance(location, (list, tuple)) or len(location) < 2:
+                      return
+                  relative, line = location[:2]
+                  if type(relative) is not str or type(line) is not int or not 0 <= line < 1000000:
+                      return
+                  if (root / relative).resolve(strict=True) != files[ordinals[TARGET]]:
+                      return
+                  receipt = {"schema": "rc6_r205_collect_v1", "index": TARGET,
+                             "module_ordinal": ordinals[TARGET], "source_line": line + 1,
+                             "collected": 191, "module_count": 10}
+                  Path(sys.argv[1]).write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+          
+          try:
+              code = pytest.main(["--collect-only", "-q", "-p", "no:cacheprovider", *PATHS],
+                                 plugins=[Collector()])
+          except BaseException:
+              raise SystemExit(79)
+          raise SystemExit(0 if int(code) == 0 and Path(sys.argv[1]).is_file() else 79)
+          '''
+          def collect_location(index, scratch, env):
+              receipt = Path(scratch) / "collection.json"
+              cmd = [sys.executable, "-c", COLLECTOR_CODE, str(receipt),
+                     str(index), json.dumps(PATHS)]
+              with tempfile.TemporaryFile() as private_log:
+                  result = subprocess.run(cmd, cwd=Path.cwd(), env=env,
+                                          stdout=private_log, stderr=private_log,
+                                          timeout=90, check=False)
+              if result.returncode != 0:
+                  raise ValueError("COLLECTOR_RED")
+              with os.fdopen(os.open(receipt, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                  meta = os.fstat(source.fileno())
+                  if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                          meta.st_uid != os.getuid() or not 0 < meta.st_size <= 4096):
+                      raise ValueError("COLLECTOR_RECEIPT_NOT_OWNED")
+                  raw = source.read(4097)
+                  if len(raw) != meta.st_size:
+                      raise ValueError("COLLECTOR_RECEIPT_CHANGED")
+              data = json.loads(raw)
+              if type(data) is not dict or set(data) != {
+                  "schema", "index", "module_ordinal", "source_line",
+                  "collected", "module_count",
+              } or data["schema"] != "rc6_r205_collect_v1":
+                  raise ValueError("COLLECTOR_RECEIPT_SCHEMA")
+              for field in ("index", "module_ordinal", "source_line",
+                            "collected", "module_count"):
+                  if type(data[field]) is not int:
+                      raise ValueError("COLLECTOR_RECEIPT_TYPE")
+              if (data["index"] != index or data["collected"] != 191 or
+                      data["module_count"] != 10 or
+                      not 0 <= data["module_ordinal"] < 10 or
+                      not 1 <= data["source_line"] <= 1000000):
+                  raise ValueError("COLLECTOR_RECEIPT_COUNTS")
+              return data["module_ordinal"], data["source_line"]
+
+          try:
+              temporary = os.environ["RUNNER_TEMP"]
+              with tempfile.TemporaryDirectory(prefix="rc6-r205-", dir=temporary) as scratch:
+                  report = Path(scratch) / "junit.xml"
+                  env = {
+                      "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+                      "HOME": scratch, "TMPDIR": scratch,
+                      "PYTHONDONTWRITEBYTECODE": "1",
+                      "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                      "PAPER_HISTORICAL_CANDLE_SHADOW": "OFF",
+                      "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
+                      "PAPER_AI_GATE_MODE": "OFF",
+                  }
+                  cmd = [sys.executable, "-m", "pytest", "-q",
+                         "-p", "no:cacheprovider", *PATHS,
+                         "--junitxml=" + str(report)]
+                  with tempfile.TemporaryFile() as private_log:
+                      run = subprocess.run(
+                          cmd, cwd=Path.cwd(), env=env, stdout=private_log,
+                          stderr=private_log, timeout=300, check=False)
+                  with os.fdopen(os.open(report, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                      meta = os.fstat(source.fileno())
+                      if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                              not 0 < meta.st_size <= 8 * 1024 * 1024):
+                          raise ValueError("NO_JUNIT")
+                      raw = source.read(8 * 1024 * 1024 + 1)
+                      if len(raw) != meta.st_size:
+                          raise ValueError("CHANGED_JUNIT")
+                  if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                      raise ValueError("XML_META")
+                  xml = ET.fromstring(raw)
+                  if xml.tag not in ("testsuite", "testsuites"):
+                      raise ValueError("XML_ROOT")
+                  suites = ([xml] if xml.tag == "testsuite" else
+                            list(xml.findall("testsuite")))
+                  cases = list(xml.iter("testcase"))
+                  direct = [case for suite in suites
+                            for case in suite.findall("testcase")]
+                  if (not suites or len(cases) != 191 or
+                          len(direct) != len(cases) or
+                          len(list(xml.iter("testsuite"))) != len(suites)):
+                      raise ValueError("CASE_COUNT_OR_ROGUE")
+                  total = 0
+                  for suite in suites:
+                      attrs = [suite.get(key) for key in
+                               ("tests", "failures", "errors", "skipped")]
+                      if (any(value is None or
+                              re.fullmatch(r"[0-9]+", value) is None
+                              for value in attrs) or
+                              int(attrs[0]) != len(suite.findall("testcase"))):
+                          raise ValueError("JUNIT_COUNTERS")
+                      total += int(attrs[0])
+                  if total != len(cases):
+                      raise ValueError("JUNIT_COVERAGE")
+                  bad = [(index, tag) for index, case in enumerate(direct)
+                         for tag in ("failure", "error", "skipped")
+                         for _node in case.iter(tag)]
+                  actual_alerts = sum(1 for tag in ("failure", "error", "skipped")
+                                      for _node in xml.iter(tag))
+                  if actual_alerts != len(bad):
+                      raise ValueError("ROGUE_ALERT")
+                  if run.returncode != 0 or bad or any(
+                          int(suite.get(key)) != 0 for suite in suites
+                          for key in ("failures", "errors", "skipped")):
+                      print("RC6_R205_SIGNALS_FAST=HOLD79|cases=" +
+                            str(len(cases)) + "|bad=" + str(min(len(bad), 9999)))
+                      for index, kind in bad[:3]:
+                          print("RC6_R205_SIGNALS_FAST_CASE=HOLD79|index=" +
+                                str(index) + "|kind=" + kind)
+                      if bad:
+                          index = bad[0][0]
+                          try:
+                              module_ordinal, source_line = collect_location(
+                                  index, scratch, env)
+                              print("RC6_R205_SIGNALS_ISOLATE=HOLD79|index=" +
+                                    str(index) + "|module_ordinal=" +
+                                    str(module_ordinal) + "|source_line=" +
+                                    str(source_line))
+                          except Exception:
+                              print("RC6_R205_SIGNALS_ISOLATE=HOLD79|collection_unavailable")
+                      raise SystemExit(79)
+                  print("RC6_R205_SIGNALS_FAST=PY311_OFFHOST_191_CASES|skipped=0|release_go=NO")
+          except SystemExit:
+              raise
+          except Exception:
+              print("RC6_R205_SIGNALS_FAST=HOLD79|diagnostic_unavailable")
+              raise SystemExit(79)
+          PY
+      - name: PPI quota and capability fake-wire regressions on Python 3.11
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Source tests assert zero real provider GET; only in-memory fake wire.
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_a586_ppi_missing_lease_guard.py \
+            tests/test_rc6_a667_static_quota_evidence_material.py \
+            tests/test_rc6_a677_ppi_watch_upper_bound_v2.py \
+            tests/test_rc6_capacity_promotion.py \
+            tests/test_rc6_final_programming_runtime.py \
+            tests/test_rc6_approved_factual_callers.py
+          echo 'RC6_PPI_FAKE_WIRE=PY311_OFFHOST_FIXTURES_ONLY'
+      - name: Replay failed host transition regression fixtures
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_deploy_quiescence.py \
+            tests/test_rc6_deploy_scheduler_suspend.py \
+            tests/test_rc6_cold2_apply_guard.py \
+            tests/test_rc6_cold2_quarantine.py \
+            tests/test_rc6_cold2_successor.py \
+            tests/test_rc6_failed_cold_fix_forward.py \
+            tests/test_rc6_cold2_complete_queue.py \
+            tests/test_rc6_deploy_generation_gate.py \
+            tests/test_rc6_native_soak.py \
+            tests/test_rc6_degraded_closed_rescue.py \
+            tests/test_rc6_a145_pending_rescue.py \
+            tests/test_rc6_a151_operator_hold_deploy.py \
+            tests/test_rc6_a166_ssh_argument_budget.py \
+            tests/test_rc6_a172_running_continuation.py \
+            tests/test_rc6_a175_running_continuation.py \
+            tests/test_rc6_a178_a175_wiring.py \
+            tests/test_rc6_deploy_failure_cleanup.py
+          echo 'FAILED_HOST_TRANSITION_REPLAY=OFFHOST_FIXTURES_ONLY'
+      - name: Verify mount identity and redacted HOLD79 diagnostics on Python 3.11
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # These tests are UID-independent. Collector pack requires UID/GID1000;
+          # never run its UID-bound cases directly on the runner UID1001.
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q \
+            tests/test_rc6_r163_native_volume_proof.py::test_docker24_neutral_mount_serialization_remains_accepted \
+            tests/test_rc6_r163_native_volume_proof.py::test_foreign_or_privileged_docker_identity_is_hold79 \
+            tests/test_rc6_r163_native_volume_proof.py::test_mount_hold79_reports_only_boolean_subchecks \
+            tests/test_rc6_r163_native_volume_proof.py::test_r186_physical_linux_docker28_mode_semantics
+          echo 'RC6_R163_MOUNT_DIAGNOSTIC=PY311_FIXTURES_ONLY'
+
+  offhost-native-proof:
+    name: Native CID and anonymous volume producer (offhost)
+    needs: [python311-lock-closure]
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 1087 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.python311-lock-closure.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+      IMAGE: rc6-r163-offhost:${{ github.event.pull_request.head.sha }}
+    outputs:
+      candidate_sha: ${{ steps.identity.outputs.candidate_sha }}
+      candidate_tree_sha: ${{ steps.identity.outputs.candidate_tree_sha }}
+      image_id: ${{ steps.native.outputs.image_id }}
+      source_cid: ${{ steps.native.outputs.source_cid }}
+      collector_cid: ${{ steps.native.outputs.collector_cid }}
+      volume_name: ${{ steps.native.outputs.volume_name }}
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
+      - name: Checkout exact candidate without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Strict candidate identity
+        id: identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 79
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 79
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          CANDIDATE_TREE_SHA="$(git rev-parse HEAD^{tree})"
+          [[ "$CANDIDATE_TREE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 79
+          RC6_ARTIFACT_NAME="rc6-r163-offhost-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$CANDIDATE_SHA"
+          printf 'CANDIDATE_TREE_SHA=%s\n' "$CANDIDATE_TREE_SHA" >> "$GITHUB_ENV"
+          printf 'RC6_ARTIFACT_NAME=%s\n' "$RC6_ARTIFACT_NAME" >> "$GITHUB_ENV"
+          printf 'candidate_sha=%s\n' "$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'candidate_tree_sha=%s\n' "$CANDIDATE_TREE_SHA" >> "$GITHUB_OUTPUT"
+          printf 'artifact_name=%s\n' "$RC6_ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+      - name: Setup isolated image builder
+        uses: docker/setup-buildx-action@v4
+      - name: Build one ephemeral PROBE image, never push
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}
+            POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}
+          labels: |
+            porota.commit=${{ env.CANDIDATE_SHA }}
+            porota.predeploy=v2
+          # PROBE cache is only an iteration accelerator. GitHub's PR-ref
+          # cache boundary plus this PR-specific scope avoids cross-PR reuse.
+          # Trusted R206 B deliberately rebuilds without cache; R251 D never
+          # consumes this cache and still seals/tests its own RELEASE image.
+          cache-from: type=gha,scope=rc6-r163-probe-${{ github.event.pull_request.number }}
+          cache-to: type=gha,scope=rc6-r163-probe-${{ github.event.pull_request.number }},mode=max,timeout=2m,ignore-error=true
+      - name: Run native stages in one UID1000 anonymous volume
+        id: native
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          source_cid=
+          collector_cid=
+          IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          [[ "$IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 79
+          proof_root="$(mktemp -d -p "$RUNNER_TEMP" "rc6-r163-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-XXXXXXXX")"
+          [[ -d "$proof_root" && ! -L "$proof_root" ]] || exit 79
+          mkdir -m 700 "$proof_root/evidence"
+          # Private Docker inspect may contain host/source paths and secrets.
+          # Only PUBLIC_INSPECT_V2 may enter the artifact evidence directory.
+          mkdir -m 700 "$proof_root/private"
+          printf 'RC6_EVIDENCE_ROOT=%s\n' "$proof_root/evidence" >> "$GITHUB_ENV"
+          owned_cid() {
+            local cid="$1" role="$2" actual expected
+            [[ "$cid" =~ ^[0-9a-f]{64}$ ]] || return 1
+            actual="$(docker inspect -f '{{.Id}}|{{.Image}}|{{.Config.User}}|{{index .Config.Labels "porota.commit"}}|{{index .Config.Labels "porota.candidate_tree"}}|{{index .Config.Labels "porota.predeploy"}}|{{index .Config.Labels "porota.native-proof"}}|{{index .Config.Labels "porota.native-role"}}|{{index .Config.Labels "porota.run_id"}}|{{index .Config.Labels "porota.run_attempt"}}' "$cid")" || return 1
+            expected="$cid|$IMAGE_ID|1000:1000|$CANDIDATE_SHA|$CANDIDATE_TREE_SHA|v2|v3|$role|$GITHUB_RUN_ID|$GITHUB_RUN_ATTEMPT"
+            [[ "$actual" == "$expected" ]]
+          }
+          cleanup_owned() {
+            local prior_rc=$? cleanup_rc=0 cid role running
+            trap - EXIT
+            for role in bundle-collector bundle; do
+              if [[ "$role" == bundle ]]; then cid="$source_cid"; else cid="$collector_cid"; fi
+              if [[ -z "$cid" ]]; then continue; fi
+              if ! owned_cid "$cid" "$role"; then
+                echo 'RC6_R163_CLEANUP=HOLD79|foreign_or_unknown_cid'
+                cleanup_rc=79
+                continue
+              fi
+              running="$(docker inspect -f '{{.State.Running}}' "$cid")" || { cleanup_rc=79; continue; }
+              if [[ "$running" == true ]]; then
+                if ! docker stop --time 10 "$cid" >/dev/null; then cleanup_rc=79; continue; fi
+              elif [[ "$running" != false ]]; then
+                cleanup_rc=79
+                continue
+              fi
+              if [[ "$(docker inspect -f '{{.State.Running}}' "$cid")" == false ]] &&
+                 owned_cid "$cid" "$role" && docker rm -v "$cid" >/dev/null; then
+                echo "RC6_R163_CLEANUP=OWNED_CID_REMOVED|$role"
+              else
+                cleanup_rc=79
+              fi
+            done
+            if (( prior_rc != 0 || cleanup_rc != 0 )); then
+              echo 'RC6_R163_NATIVE=HOLD79|fail_closed'
+              exit 79
+            fi
+            echo 'RC6_R163_NATIVE=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO'
+          }
+          trap cleanup_owned EXIT
+          trap 'exit 143' INT TERM HUP
+          labels=(
+            --label "porota.commit=$CANDIDATE_SHA"
+            --label "porota.candidate_tree=$CANDIDATE_TREE_SHA"
+            --label porota.predeploy=v2 --label porota.native-proof=v3
+            --label "porota.run_id=$GITHUB_RUN_ID"
+            --label "porota.run_attempt=$GITHUB_RUN_ATTEMPT"
+          )
+          isolation=(
+            --pull never --read-only --network none --no-healthcheck
+            --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges
+            --pids-limit 128 --memory 256m --memory-swap 256m --cpus .75
+            --workdir /app
+          )
+          new_source="$(docker create "${labels[@]}" --label porota.native-role=bundle \
+            "${isolation[@]}" --mount type=volume,target=/app/data \
+            -e PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 -e TMPDIR=/app/data/tmp \
+            -e MPLCONFIGDIR=/app/data/tmp/matplotlib \
+            -e XDG_CACHE_HOME=/app/data/tmp/cache \
+            "$IMAGE" sleep 7200)" || exit 79
+          [[ "$new_source" =~ ^[0-9a-f]{64}$ ]] || exit 79
+          source_cid="$new_source"
+          owned_cid "$source_cid" bundle || exit 79
+          # R203 full native proof remains PROBE_ONLY with public inspect V2.
+          # The producer runs nine suites first; the collector is created RO
+          # only after producer exit, preserving one frozen anonymous volume.
+          docker start "$source_cid" >/dev/null
+          [[ "$(docker inspect -f '{{.State.Running}}' "$source_cid")" == true ]] || exit 79
+          docker exec --user 1000:1000 "$source_cid" sh -ceu '
+            umask 077
+            test -w /app/data
+            mkdir -p /app/data/tmp /app/data/catalog /app/data/session /app/data/cadence
+            test -w /app/data/tmp
+          '
+          timeout 900 docker exec --user 1000:1000 "$source_cid" python -m pytest -q -p no:cacheprovider \
+            tests/test_rc6_shadow_native_bound.py tests/test_rc6_shadow_streaming_cost.py \
+            tests/test_rc6_shadow_shared_audit.py tests/test_rc6_shadow_owned_state.py \
+            tests/test_rc6_shadow_report_lifetime.py tests/test_rc6_shadow_cold_audit.py \
+            tests/test_rc6_owned_funnel_details.py tests/test_rc6_physical_cadence.py \
+            --junitxml=/app/data/native-bound.xml
+          timeout 1200 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
+            --full-catalog-check --output /app/data/catalog
+          if ! timeout 1200 docker exec --user 1000:1000 "$source_cid" \
+            python scripts/rc6_postdeploy_stress.py --output /app/data/session; then
+            # R205: the native scenario runner captures pytest logs privately.
+            # Before owned-CID cleanup, inspect ONLY the fixed session JUnit
+            # inside the still-running UID1000 source. Never publish raw XML,
+            # testcase traceback, parameters, absolute path or error message.
+            # RC6_R205_SIGNALS_DIAG_BEGIN
+            if ! docker exec -i --user 1000:1000 "$source_cid" \
+              python - /app/data/session/signals_risk_exit_ledger.xml \
+              2>/dev/null <<'PY'; then
+          import os
+          from pathlib import Path
+          import stat
+          import sys
+          import xml.etree.ElementTree as ET
+
+          try:
+              target = Path(sys.argv[1])
+              with os.fdopen(os.open(target, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+                  meta = os.fstat(source.fileno())
+                  if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or
+                          meta.st_uid != 1000 or meta.st_gid != 1000 or
+                          not 0 < meta.st_size <= 8 * 1024 * 1024):
+                      raise ValueError("NOT_OWNED")
+                  raw = source.read(8 * 1024 * 1024 + 1)
+                  if len(raw) != meta.st_size:
+                      raise ValueError("CHANGED_JUNIT")
+              if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+                  raise ValueError("XML_META")
+              xml = ET.fromstring(raw)
+              if xml.tag not in ("testsuites", "testsuite"):
+                  raise ValueError("XML_ROOT")
+              cases = list(xml.iter("testcase"))
+              if not 1 <= len(cases) <= 10000:
+                  raise ValueError("XML_COUNT")
+              bad = [(index, tag) for index, case in enumerate(cases)
+                     for tag in ("failure", "error", "skipped")
+                     for _node in case.findall(tag)]
+              if not bad:
+                  raise ValueError("NO_FAILURE_RECORD")
+              print("RC6_R205_SIGNALS_JUNIT=HOLD79|cases=" +
+                    str(len(cases)) + "|bad=" + str(min(len(bad), 9999)))
+              for index, kind in bad[:3]:
+                  print("RC6_R205_SIGNALS_CASE=HOLD79|index=" + str(index) +
+                        "|kind=" + kind)
+          except Exception:
+              print("RC6_R205_SIGNALS_JUNIT=HOLD79|diagnostic_unavailable")
+              sys.exit(79)
+          PY
+              echo 'RC6_R205_SIGNALS_JUNIT=HOLD79|docker_exec_unavailable' >&2
+            fi
+            # RC6_R205_SIGNALS_DIAG_END
+            exit 79
+          fi
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
+            --cadence-stage fresh --output /app/data/cadence
+          timeout 1800 docker exec --user 1000:1000 "$source_cid" python scripts/rc6_postdeploy_stress.py \
+            --cadence-stage legacy --output /app/data/cadence
+          # Exit 0 from pytest is insufficient: expected xfail/skip can yield
+          # a success exit without usable native evidence. Parse ALL nine JUnit
+          # XML receipts as UID1000 inside the still-running isolated producer.
+          docker exec -i --user 1000:1000 "$source_cid" python - /app/data <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          root = Path(sys.argv[1])
+          expected = (
+              "native-bound.xml",
+              "session/dashboard_auth_52.xml",
+              "session/publication_io_identity.xml",
+              "session/scalping_capacity.xml",
+              "session/scheduler_monitor_backup.xml",
+              "session/signals_risk_exit_ledger.xml",
+              "session/sources_readiness_network.xml",
+              "session/sql_shadow_wal.xml",
+              "session/treasury_caucion.xml",
+          )
+
+          def hold(reason):
+              print("RC6_R163_JUNIT=HOLD79|" + reason, file=sys.stderr)
+              raise SystemExit(79)
+
+          def bounded_count(value):
+              # Keep diagnostic output bounded even for untrusted XML counters.
+              return str(value) if value <= 999_999_999 else ">999999999"
+
+          total = 0
+          for relative in expected:
+              path = root / relative
+              if (path.is_symlink() or not path.is_file() or
+                      path.stat().st_size == 0 or path.stat().st_size > 8 * 1024 * 1024):
+                  hold("JUNIT_FILE_MISSING_OR_INVALID")
+              try:
+                  xml = ET.parse(path).getroot()
+              except (ET.ParseError, OSError):
+                  hold("JUNIT_XML_INVALID")
+              suites = [xml] if xml.tag == "testsuite" else list(xml.findall(".//testsuite"))
+              if not suites:
+                  hold("JUNIT_SUITE_MISSING")
+              for suite_index, suite in enumerate(suites):
+                  counts = {}
+                  for key in ("tests", "failures", "errors", "skipped"):
+                      raw = suite.get(key)
+                      if raw is None or re.fullmatch(r"[0-9]+", raw) is None:
+                          hold("JUNIT_COUNTER_INVALID")
+                      counts[key] = int(raw)
+                  if (counts["tests"] < 1 or
+                          counts["tests"] != len(suite.findall("testcase")) or
+                          any(counts[key] for key in ("failures", "errors", "skipped"))):
+                      # No XML payload or absolute path: only the fixed relative
+                      # allowlist member, suite index and bounded counts.
+                      direct = len(suite.findall("testcase"))
+                      descendant = len(suite.findall(".//testcase"))
+                      print(
+                          "RC6_R163_JUNIT_DETAIL=HOLD79"
+                          f"|relative_path={relative}|suite_index={suite_index}"
+                          f"|tests={bounded_count(counts['tests'])}"
+                          f"|testcases_direct={bounded_count(direct)}"
+                          f"|testcases_descendant={bounded_count(descendant)}"
+                          f"|failures={bounded_count(counts['failures'])}"
+                          f"|errors={bounded_count(counts['errors'])}"
+                          f"|skipped={bounded_count(counts['skipped'])}",
+                          file=sys.stderr,
+                      )
+                      hold("JUNIT_COUNTS_NOT_ZERO_SKIP")
+                  total += counts["tests"]
+              if any(next(xml.iter(tag), None) is not None
+                     for tag in ("failure", "error", "skipped")):
+                  # A pytest.xfail is a skipped node regardless of counters.
+                  hold("JUNIT_NEGATIVE_NODE_PRESENT")
+          if total < len(expected):
+              hold("JUNIT_NO_EXECUTED_TESTS")
+          print(f"RC6_R163_JUNIT=OFFHOST_NINE_SUITES_VERIFIED|executed={total}|skipped=0")
+          PY
+          # Freeze all stages before creating collector. No concurrent writers.
+          owned_cid "$source_cid" bundle || exit 79
+          docker stop --time 10 "$source_cid" >/dev/null
+          [[ "$(docker inspect -f '{{.State.Running}}' "$source_cid")" == false ]] || exit 79
+          new_collector="$(docker create "${labels[@]}" --label porota.native-role=bundle-collector \
+            "${isolation[@]}" --volumes-from "$source_cid:ro" \
+            "$IMAGE" sleep 7200)" || exit 79
+          [[ "$new_collector" =~ ^[0-9a-f]{64}$ ]] || exit 79
+          collector_cid="$new_collector"
+          owned_cid "$collector_cid" bundle-collector || exit 79
+          docker start "$collector_cid" >/dev/null
+          [[ "$(docker inspect -f '{{.State.Running}}' "$collector_cid")" == true ]] || exit 79
+          # Physically challenge RO on this single owned anonymous volume.
+          # Never print the private path, CID or raw exception. An unexpected
+          # writable collector fails and the existing owned-CID trap cleans up.
+          if ! docker exec -i --user 1000:1000 "$collector_cid" python - 2>/dev/null <<'PY'; then
+          import errno, os, sys
+          try:
+              fd = os.open("/app/data/.rc6_r191_readonly_canary",
+                           os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          except OSError as exc:
+              if exc.errno == errno.EROFS:
+                  print("RC6_R191_COLLECTOR_RO=PHYSICAL_EROFS")
+              else:
+                  print("RC6_R191_COLLECTOR_RO=HOLD79|unexpected_oserror", file=sys.stderr)
+                  sys.exit(79)
+          else:
+              os.close(fd)
+              print("RC6_R191_COLLECTOR_RO=HOLD79|unexpected_write", file=sys.stderr)
+              sys.exit(79)
+          PY
+            echo 'RC6_R191_COLLECTOR_RO=HOLD79|exec_unverified' >&2
+            exit 79
+          fi
+          # Treat Docker inspect as PRIVATE and unpublishable, even on error.
+          docker inspect "$source_cid" > "$proof_root/private/source-inspect.json" 2>/dev/null
+          docker inspect "$collector_cid" > "$proof_root/private/collector-inspect.json" 2>/dev/null
+          python scripts/rc6_r163_native_volume_proof.py inspect \
+            --producer-inspect "$proof_root/private/source-inspect.json" \
+            --collector-inspect "$proof_root/private/collector-inspect.json" \
+            --source-cid "$source_cid" --collector-cid "$collector_cid" \
+            --candidate-sha "$CANDIDATE_SHA" --candidate-tree-sha "$CANDIDATE_TREE_SHA" \
+            --image-id "$IMAGE_ID" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --role bundle \
+            > "$proof_root/evidence/custody.json"
+          python scripts/rc6_r163_native_volume_proof.py project \
+            --producer-inspect "$proof_root/private/source-inspect.json" \
+            --collector-inspect "$proof_root/private/collector-inspect.json" \
+            --producer-public "$proof_root/evidence/source-inspect.json" \
+            --collector-public "$proof_root/evidence/collector-inspect.json" \
+            --source-cid "$source_cid" --collector-cid "$collector_cid" \
+            --candidate-sha "$CANDIDATE_SHA" --candidate-tree-sha "$CANDIDATE_TREE_SHA" \
+            --image-id "$IMAGE_ID" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --role bundle
+          echo 'RC6_R203_PUBLIC_INSPECT=V2_PROJECTED_ONLY|raw_not_public|no_host_attestation'
+          # Exact CID stdout binary USTAR. No TTY and no host bind or filesystem copy.
+          docker exec --user 1000:1000 "$collector_cid" \
+            python scripts/rc6_r163_native_volume_proof.py pack --proof-root /app/data \
+            > "$proof_root/evidence/native.tar"
+          # Verify real TAR13 payload structure and known secret signatures.
+          # The marker is random FAKE data confined to memory, never uploaded.
+          python scripts/rc6_r163_native_volume_proof.py privacy \
+            --tar "$proof_root/evidence/native.tar"
+          python - "$proof_root/evidence" <<'PY'
+          from pathlib import Path
+          import sys
+          from scripts import rc6_r163_native_volume_proof as proof
+          root = Path(sys.argv[1])
+          proof.challenge_privacy_patterns(
+              (root / "native.tar").read_bytes(),
+              (root / "source-inspect.json").read_bytes(),
+              (root / "collector-inspect.json").read_bytes())
+          print("RC6_R203_PRIVACY=TAR13_AND_PUBLIC_V2_NEGATIVE_CANARY|not_host_proof")
+          PY
+          python scripts/rc6_r163_native_volume_proof.py attest \
+            --tar "$proof_root/evidence/native.tar" \
+            --custody "$proof_root/evidence/custody.json" \
+            > "$proof_root/evidence/native-manifest.json"
+          volume_name="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["volume_name"])' "$proof_root/evidence/custody.json")"
+          python scripts/rc6_r163_native_volume_proof.py verify \
+            --tar "$proof_root/evidence/native.tar" \
+            --manifest "$proof_root/evidence/native-manifest.json" \
+            --expected-candidate-sha "$CANDIDATE_SHA" \
+            --expected-candidate-tree-sha "$CANDIDATE_TREE_SHA" \
+            --expected-run-id "$GITHUB_RUN_ID" \
+            --expected-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --expected-source-cid "$source_cid" \
+            --expected-collector-cid "$collector_cid" \
+            --expected-volume-name "$volume_name" \
+            --expected-image-id "$IMAGE_ID" \
+            --expected-role bundle >/dev/null
+          printf 'image_id=%s\n' "$IMAGE_ID" >> "$GITHUB_OUTPUT"
+          printf 'source_cid=%s\n' "$source_cid" >> "$GITHUB_OUTPUT"
+          printf 'collector_cid=%s\n' "$collector_cid" >> "$GITHUB_OUTPUT"
+          printf 'volume_name=%s\n' "$volume_name" >> "$GITHUB_OUTPUT"
+          # Exact private raw files are unlinked after CID/volume validation and
+          # public V2 digest commitments. Only this ephemeral runner subdir.
+          python - "$proof_root/private" <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+          root = Path(sys.argv[1])
+          assert root.is_dir() and not root.is_symlink()
+          assert sorted(p.name for p in root.iterdir()) == [
+              "collector-inspect.json", "source-inspect.json"]
+          for name in ("source-inspect.json", "collector-inspect.json"):
+              item = root / name
+              assert item.is_file() and not item.is_symlink()
+              os.unlink(item)
+          root.rmdir()
+          print("RC6_R203_PRIVATE_INSPECT=UNLINKED|digest_commitments_only")
+          PY
+          echo 'RC6_NATIVE_EVIDENCE_PATHS=13_SEALED_OFFHOST'
+          echo 'RC6_R203_NATIVE=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO'
+      - name: R205 raw JUnit privacy hold before any upload (R206 required)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Nine raw JUnit XMLs still contain untrusted XML attributes inside
+          # private native.tar. R203 regex scans are not exhaustive. Until
+          # R206 projects a canonical public allowlist and trusted byte audit
+          # verifies it, no ZIP can be sealed or uploaded, even for PROBE.
+          echo 'RC6_R205_JUNIT_PRIVACY=HOLD79|raw_junit_not_projected|no_artifact' >&2
+          exit 79
+      - name: Seal all evidence before upload (artifact ID assigned later)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, io, json, os, re, secrets, zipfile
+          root = Path(os.environ["RC6_EVIDENCE_ROOT"])
+          assert root.is_dir() and not root.is_symlink()
+          names = sorted(p.name for p in root.iterdir())
+          assert names == sorted(("source-inspect.json", "collector-inspect.json",
+                                  "custody.json", "native.tar", "native-manifest.json"))
+          rows = []
+          for name in names:
+              path = root / name
+              assert path.is_file() and not path.is_symlink()
+              data = path.read_bytes()
+              assert 0 < len(data) <= 32 * 1024 * 1024
+              rows.append({"path": name, "type": "file", "size_bytes": len(data),
+                           "sha256": hashlib.sha256(data).hexdigest()})
+          assert re.fullmatch("[0-9a-f]{40}", os.environ["CANDIDATE_SHA"])
+          assert re.fullmatch("[0-9a-f]{40}", os.environ["CANDIDATE_TREE_SHA"])
+          manifest = {"schema_version": 1,
+                      "candidate_sha": os.environ["CANDIDATE_SHA"],
+                      "candidate_tree_sha": os.environ["CANDIDATE_TREE_SHA"],
+                      "run_id": int(os.environ["GITHUB_RUN_ID"]),
+                      "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
+                      "artifact_name": os.environ["RC6_ARTIFACT_NAME"],
+                      "file_count": len(rows),
+                      "total_size_bytes": sum(row["size_bytes"] for row in rows),
+                      "files": rows}
+          (root / "porota-artifact-byte-manifest-v1.json").write_text(
+              json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8")
+          # A preview assembled IN MEMORY from the exact six proposed files:
+          # this is a privacy challenge, not the GitHub-generated ZIP proof.
+          from scripts import rc6_r163_native_volume_proof as proof
+          custody = json.loads((root / "custody.json").read_bytes())
+          identity = {key: custody[key] for key in (
+              "source_cid", "collector_cid", "candidate_sha",
+              "candidate_tree_sha", "image_id", "run_id",
+              "run_attempt", "role")}
+          payloads = {p.name: p.read_bytes() for p in root.iterdir()}
+          assert sorted(payloads) == sorted((
+              "source-inspect.json", "collector-inspect.json", "custody.json",
+              "native.tar", "native-manifest.json",
+              "porota-artifact-byte-manifest-v1.json"))
+          def preview_zip(contents):
+              buffer = io.BytesIO()
+              with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as z:
+                  for relative in sorted(contents):
+                      z.writestr(relative, contents[relative])
+              return buffer.getvalue()
+          assert proof.verify_probe_zip_privacy(
+              preview_zip(payloads), **identity) == 13
+          marker = ("CANARY_SECRET_" + secrets.token_hex(16)).encode()
+          for relative in sorted(payloads):
+              challenged = dict(payloads)
+              challenged[relative] = marker + challenged[relative]
+              try:
+                  proof.verify_probe_zip_privacy(
+                      preview_zip(challenged), **identity)
+              except proof.VolumeProofHold as exc:
+                  assert exc.reason == "PRIVACY_ZIP_SECRET_SIGNATURE"
+              else:
+                  raise proof.VolumeProofHold("PRIVACY_ZIP_CANARY_BYPASS")
+          print("RC6_R203_PRIVACY=PREUPLOAD_6_ZIP_MEMBERS_CHALLENGED|not_rest_artifact")
+          print("RC6_R163_UPLOAD=OFFHOST_BYTES_ONLY|artifact_id_not_in_zip")
+          PY
+      - name: Upload sealed offhost probe evidence (never release artifact)
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RC6_ARTIFACT_NAME }}
+          path: ${{ env.RC6_EVIDENCE_ROOT }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+
+  offhost-independent-bytes:
+    name: Separate-runner preliminary raw REST bytes (NO RELEASE)
+    needs: [offhost-native-proof]
+    if: ${{ github.event_name == 'pull_request' && needs.offhost-native-proof.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RC6_EXPECTED_SHA: ${{ needs.offhost-native-proof.outputs.candidate_sha }}
+      RC6_EXPECTED_TREE: ${{ needs.offhost-native-proof.outputs.candidate_tree_sha }}
+      RC6_ARTIFACT_ID: ${{ needs.offhost-native-proof.outputs.artifact_id }}
+      RC6_ARTIFACT_DIGEST: ${{ needs.offhost-native-proof.outputs.artifact_digest }}
+      RC6_ARTIFACT_NAME: ${{ needs.offhost-native-proof.outputs.artifact_name }}
+      RC6_SOURCE_CID: ${{ needs.offhost-native-proof.outputs.source_cid }}
+      RC6_COLLECTOR_CID: ${{ needs.offhost-native-proof.outputs.collector_cid }}
+      RC6_IMAGE_ID: ${{ needs.offhost-native-proof.outputs.image_id }}
+      RC6_VOLUME_NAME: ${{ needs.offhost-native-proof.outputs.volume_name }}
+    steps:
+      - name: Reject non-GitHub-hosted runner (HOLD79)
+        shell: bash
+        env:
+          RC6_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RC6_RUNNER_ENVIRONMENT:-}" != "github-hosted" ]]; then
+            echo 'RC6_R163_RUNNER=HOLD79|untrusted_runner_environment' >&2
+            exit 79
+          fi
+          echo 'RC6_R163_RUNNER=GITHUB_HOSTED|context_verified_only'
+      - name: Checkout same exact untrusted PR source without credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.offhost-native-proof.outputs.candidate_sha }}
+          persist-credentials: false
+      - name: Fetch actual raw REST ZIP and authenticated REST receipts
+        uses: actions/github-script@v7
+        env:
+          RC6_PROBE_RUN_ID: ${{ github.run_id }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const {owner, repo} = context.repo;
+            const artifact_id = Number(process.env.RC6_ARTIFACT_ID);
+            const run_id = Number(process.env.RC6_PROBE_RUN_ID);
+            if (!Number.isSafeInteger(artifact_id) || artifact_id < 1) throw Error('ARTIFACT_ID_INVALID');
+            if (!Number.isSafeInteger(run_id) || run_id < 1) throw Error('RUN_ID_INVALID');
+            const artifact = await github.rest.actions.getArtifact({owner, repo, artifact_id});
+            const run = await github.rest.actions.getWorkflowRun({owner, repo, run_id});
+            const download = await github.rest.actions.downloadArtifact({
+              owner, repo, artifact_id, archive_format: 'zip'
+            });
+            const base = process.env.RUNNER_TEMP;
+            fs.writeFileSync(path.join(base, 'rc6-r163-rest-raw.zip'), Buffer.from(download.data));
+            fs.writeFileSync(path.join(base, 'rc6-r163-artifact-receipt.json'), JSON.stringify(artifact.data));
+            fs.writeFileSync(path.join(base, 'rc6-r163-run-receipt.json'), JSON.stringify(run.data));
+      - name: Strict preliminary ZIP member and native manifest receipts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$RC6_EXPECTED_SHA"
+          python - <<'PY'
+          import hashlib, io, json, os, re, zipfile
+          from pathlib import Path
+
+          def unique_pairs(pairs):
+              found = {}
+              for key, value in pairs:
+                  if key in found:
+                      raise ValueError("DUPLICATE_JSON_KEY")
+                  found[key] = value
+              return found
+
+          def json_bytes(value):
+              return json.loads(value, object_pairs_hook=unique_pairs,
+                                parse_constant=lambda _: (_ for _ in ()).throw(ValueError("JSON_NONFINITE")))
+
+          base = Path(os.environ["RUNNER_TEMP"])
+          archive = (base / "rc6-r163-rest-raw.zip").read_bytes()
+          assert 0 < len(archive) <= 64 * 1024 * 1024, "ZIP_SIZE_INVALID"
+          artifact = json_bytes((base / "rc6-r163-artifact-receipt.json").read_bytes())
+          run = json_bytes((base / "rc6-r163-run-receipt.json").read_bytes())
+          # RC6_R163_DIGEST_CONTRACT_BEGIN
+          raw_digest = hashlib.sha256(archive).hexdigest()
+          assert re.fullmatch(r"[0-9a-f]{64}", os.environ["RC6_ARTIFACT_DIGEST"]), "ACTION_DIGEST_FORMAT"
+          assert raw_digest == os.environ["RC6_ARTIFACT_DIGEST"], "ACTION_DIGEST_MISMATCH"
+          assert artifact.get("digest") == "sha256:" + raw_digest, "REST_DIGEST_MISMATCH"
+          # RC6_R163_DIGEST_CONTRACT_END
+          assert artifact["id"] == int(os.environ["RC6_ARTIFACT_ID"])
+          assert artifact["name"] == os.environ["RC6_ARTIFACT_NAME"]
+          assert artifact["size_in_bytes"] == len(archive) and artifact["expired"] is False
+          assert artifact["workflow_run"]["id"] == int(os.environ["GITHUB_RUN_ID"])
+          assert artifact["workflow_run"]["head_sha"] == os.environ["RC6_EXPECTED_SHA"]
+          assert run["id"] == int(os.environ["GITHUB_RUN_ID"])
+          assert run["head_sha"] == os.environ["RC6_EXPECTED_SHA"]
+          assert run["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
+          assert run["event"] == "pull_request"
+          assert run["repository"]["full_name"] == "mbalbo2023/Porota-trading"
+          workflow_path = ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
+          # GitHub may append an @ref suffix to REST path. Its exact actual
+          # syntax is NO_VERIFICADO; never use this prefix in trusted final.
+          assert run["path"] == workflow_path or run["path"].startswith(workflow_path + "@")
+          # Same-run REST is still running: NEVER use it as a completed-run
+          # release receipt. A trusted postrun consumer is a separate gate.
+          assert run["status"] != "completed", "INTRARUN_TRUST_BOUNDARY"
+          with zipfile.ZipFile(io.BytesIO(archive)) as members:
+              rows = members.infolist()
+              expected = sorted(("source-inspect.json", "collector-inspect.json",
+                                 "custody.json", "native.tar", "native-manifest.json"))
+              manifest_name = "porota-artifact-byte-manifest-v1.json"
+              assert len(rows) == 6 and sorted(r.filename for r in rows) == sorted([manifest_name, *expected])
+              assert all(not r.is_dir() and r.file_size <= 32 * 1024 * 1024
+                         and r.compress_size > 0 and r.file_size <= 200 * r.compress_size
+                         for r in rows), "ZIP_MEMBER_UNSAFE"
+              manifest = json_bytes(members.read(manifest_name))
+              assert manifest["schema_version"] == 1
+              assert manifest["candidate_sha"] == os.environ["RC6_EXPECTED_SHA"]
+              assert manifest["candidate_tree_sha"] == os.environ["RC6_EXPECTED_TREE"]
+              assert manifest["run_id"] == int(os.environ["GITHUB_RUN_ID"])
+              assert manifest["run_attempt"] == int(os.environ["GITHUB_RUN_ATTEMPT"])
+              assert manifest["artifact_name"] == os.environ["RC6_ARTIFACT_NAME"]
+              files = manifest["files"]
+              assert manifest["file_count"] == len(files) == 5
+              assert [item["path"] for item in files] == expected
+              assert manifest["total_size_bytes"] == sum(item["size_bytes"] for item in files)
+              for item in files:
+                  assert item["type"] == "file"
+                  value = members.read(item["path"])
+                  assert len(value) == item["size_bytes"]
+                  assert hashlib.sha256(value).hexdigest() == item["sha256"]
+              native = json_bytes(members.read("native-manifest.json"))
+              assert native["schema"] == "RC6_R163_NATIVE_TAR_V1"
+              assert native["tar_sha256"] == hashlib.sha256(members.read("native.tar")).hexdigest()
+              assert native["host_or_runtime_verified"] is False
+              for key, expected_value in (
+                  ("candidate_sha", os.environ["RC6_EXPECTED_SHA"]),
+                  ("candidate_tree_sha", os.environ["RC6_EXPECTED_TREE"]),
+                  ("image_id", os.environ["RC6_IMAGE_ID"]),
+                  ("source_cid", os.environ["RC6_SOURCE_CID"]),
+                  ("collector_cid", os.environ["RC6_COLLECTOR_CID"]),
+                  ("volume_name", os.environ["RC6_VOLUME_NAME"]),
+              ):
+                  assert native[key] == expected_value
+              # Public V2 projections are producer-controlled. This runner
+              # checks allowlisted claims and every TAR byte but CANNOT replay
+              # the private Docker inspect SHA256 preimages. Trusted-main is
+              # still an independent postrun byte verifier, not host proof.
+              from scripts import rc6_r163_native_volume_proof as proof
+              recomputed_custody = proof.verify_public_inspects_v2(
+                  producer_public_json=members.read("source-inspect.json"),
+                  collector_public_json=members.read("collector-inspect.json"),
+                  source_cid=os.environ["RC6_SOURCE_CID"],
+                  collector_cid=os.environ["RC6_COLLECTOR_CID"],
+                  candidate_sha=os.environ["RC6_EXPECTED_SHA"],
+                  candidate_tree_sha=os.environ["RC6_EXPECTED_TREE"],
+                  image_id=os.environ["RC6_IMAGE_ID"],
+                  run_id=os.environ["GITHUB_RUN_ID"],
+                  run_attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                  role="bundle")
+              assert recomputed_custody == json_bytes(members.read("custody.json"))
+              assert proof.verify_collector_manifest(
+                  members.read("native.tar"), members.read("native-manifest.json"),
+                  expected_candidate_sha=os.environ["RC6_EXPECTED_SHA"],
+                  expected_candidate_tree_sha=os.environ["RC6_EXPECTED_TREE"],
+                  expected_run_id=os.environ["GITHUB_RUN_ID"],
+                  expected_run_attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                  expected_source_cid=os.environ["RC6_SOURCE_CID"],
+                  expected_collector_cid=os.environ["RC6_COLLECTOR_CID"],
+                  expected_volume_name=os.environ["RC6_VOLUME_NAME"],
+                  expected_image_id=os.environ["RC6_IMAGE_ID"],
+                  expected_role="bundle") == native
+              assert proof.verify_probe_zip_privacy(
+                  archive,
+                  source_cid=os.environ["RC6_SOURCE_CID"],
+                  collector_cid=os.environ["RC6_COLLECTOR_CID"],
+                  candidate_sha=os.environ["RC6_EXPECTED_SHA"],
+                  candidate_tree_sha=os.environ["RC6_EXPECTED_TREE"],
+                  image_id=os.environ["RC6_IMAGE_ID"],
+                  run_id=os.environ["GITHUB_RUN_ID"],
+                  run_attempt=os.environ["GITHUB_RUN_ATTEMPT"],
+                  role="bundle") == 13
+          print("RC6_R163_PRELIMINARY=OFFHOST_PROBE_ONLY|release_go=NO|runtime_verified=NO")
+          print("RC6_R163_POSTRUN=NO_VERIFICADO|POSTRUN_TRUSTED_DEFAULT_WORKFLOW_REQUIRED")
+          PY
+      - name: Explicit scoped result, never release or runtime GO
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo '### R163 HITO D: OFFHOST PROBE ONLY'
+            echo '- Real native source/collector CIDs and ephemeral anonymous volume attempted.'
+            echo '- Raw REST ZIP/member hashes checked preliminarily in separate runner.'
+            echo '- Public Docker inspect V2 allowlist; PRIVATE raw never uploaded.'
+            echo '- Unpublished raw Docker SHA256 commitments cannot be replayed.'
+            echo '- Final trusted completed-run bytes verification: NO_VERIFICADO.'
+            echo '- R144/HOLD79 unchanged; release_go=NO; runtime_verified=NO.'
+            echo '- Next: POSTRUN_TRUSTED_DEFAULT_WORKFLOW pinned after review.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'RC6_R163_FINAL=PROBE_ONLY|automatic_go=false|release_go=NO'

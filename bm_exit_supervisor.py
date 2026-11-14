@@ -1,10 +1,11 @@
 """Reloj de salidas PAPER sin red ni IA; intención persistente separada del fill."""
 import json
 import os
+import sqlite3
 from dataclasses import dataclass
 from decimal import Decimal
 
-from bs_instrument_contracts import aware_datetime, decimal_value, utc_microseconds
+from bs_instrument_contracts import aware_datetime, decimal_value, family_name, utc_microseconds
 
 EXIT_SUPERVISOR_HEALTHY_RUNTIME_STATES = frozenset({"RUNNING"})
 
@@ -120,7 +121,68 @@ class PositionExitSupervisor:
             self._probe(p["paper_id"], "INTENT_COMMITTED", self.clock_fn(), cause)
         return Verdict(p['paper_id'],verdict.state,cause,verdict.reason)
 
+    def _supervise_fixed_income(self, p, at):
+        """Only an already paid/reviewed LETRA may close without a SELL."""
+        try:
+            with self.store.connect() as db:
+                root = db.execute("SELECT * FROM paper_positions WHERE paper_id=?",
+                                  (p["paper_id"],)).fetchone()
+                if root is None:
+                    raise ValueError("FI_EXIT_POSITION_MISSING")
+                features = json.loads(root["features_json"] or "{}")
+                plan = features.get("fixed_income_exit_plan")
+                if (family_name(root["asset_class"]) != "LETRAS" or not isinstance(plan, dict)
+                        or plan.get("mode") != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
+                        or plan.get("strategy_id") != "FI_LETRA_PAPER_V1"
+                        or plan.get("max_hold_minutes") is not None
+                        or plan.get("nominal_rebase_required") is not True):
+                    return self._persist(p, Verdict(p["paper_id"], "WATCH_FI_NATIVE_EXIT_UNVERIFIED",
+                        None, "No existe plan terminal LETRAS persistido"), at)
+                maturity = aware_datetime(plan["exit_at"])
+                if maturity <= aware_datetime(root["opened_at"]):
+                    raise ValueError("FI_EXIT_MATURITY_BEFORE_BUY")
+                from rc6_fixed_income_event_ledger import _seed
+                from rc6_fixed_income_portfolio_bridge import position_at
+                seed = _seed(db, p["paper_id"])
+                if decimal_value(plan["quantity_vn"], "FI VN", positive=True) != decimal_value(
+                        seed.initial_nominal, "FI seed VN", positive=True):
+                    raise ValueError("FI_EXIT_NATIVE_LOT_INVALID")
+                view = position_at(db, p["paper_id"], at)
+                review_row = db.execute("SELECT * FROM paper_fi_native_redemption_reviews WHERE paper_id=?",
+                                        (p["paper_id"],)).fetchone()
+                if aware_datetime(at) < maturity:
+                    return self._persist(p, Verdict(p["paper_id"], "OPEN", None,
+                        "FI_WAIT_REVIEWED_ISSUER_MATURITY"), at)
+                if review_row is None:
+                    return self._persist(p, Verdict(p["paper_id"], "OPEN", None,
+                        "FI_MATURITY_OFFICIAL_EVENT_RECEIPT_PENDING"), at)
+                review = json.loads(review_row["review_json"])
+                if (view is None or view.residual_nominal != 0
+                        or review.get("family") != "LETRAS"
+                        or aware_datetime(review["maturity_at"]) != maturity
+                        or review.get("issuer_sha256") != plan.get("issuer_source_sha256")
+                        or review.get("issuer_source_reference") != plan.get("issuer_source_reference")
+                        or review.get("receipt_sha256") != review_row["receipt_sha256"]
+                        or aware_datetime(review_row["reviewed_at"]) > aware_datetime(at)):
+                    raise ValueError("FI_EXIT_REDEMPTION_PLAN_REVIEW_MISMATCH")
+                approved = review_row["receipt_sha256"]
+            from rc6_fixed_income_native_exit import apply_reviewed_maturity
+            apply_reviewed_maturity(self.store, paper_id=p["paper_id"],
+                request_id="fi-maturity:" + p["paper_id"],
+                approved_review_receipt_sha256=approved, applied_at=at)
+            return Verdict(p["paper_id"], "CLOSED", "FI_NATIVE_MATURITY_REVIEWED",
+                           "FI_PAPER_NO_SELL_TERMINAL_RECEIPT_VERIFIED")
+        except (KeyError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
+            return self._persist(p, Verdict(p["paper_id"], "WATCH_FI_NATIVE_LEDGER_BLOCKED",
+                                            None, type(exc).__name__), at)
+
     def supervise(self, p, q, at):
+        try:
+            family = family_name(p.get("asset_class"))
+        except ValueError:
+            family = None
+        if family == "LETRAS":
+            return self._supervise_fixed_income(p, at)
         with self.store.connect() as c:
             previous = c.execute("SELECT * FROM paper_exit_intents WHERE paper_id=?", (p["paper_id"],)).fetchone()
         cause = previous["cause"] if previous else None
@@ -214,6 +276,10 @@ class PositionExitSupervisor:
             return verdict("OPEN", "Dentro de parámetros")
         if size * self.broker.participation <= 0:
             return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
+        # BONOS/ON must not fall into the generic spot close callback. The
+        # engine deliberately has no authorized native FI sale ledger here.
+        if family in {"BONOS", "OBLIGACIONES"}:
+            return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_EVIDENCE_REQUIRED")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
         reason = "El ejecutor no confirmó un cierre"
         try:

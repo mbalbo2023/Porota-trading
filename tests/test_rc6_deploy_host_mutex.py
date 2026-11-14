@@ -1,12 +1,14 @@
 """Adversarial, off-host tests for Deploy V2 serialization and staging."""
 import io
 import errno
+import fcntl
 import json
 from contextlib import redirect_stderr, redirect_stdout
 import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -45,11 +47,73 @@ class HostMutexTests(unittest.TestCase):
                 patch.object(mutex, 'LOCK_DIR', self.root),
                 patch.object(mutex, 'STAGING_DIR', self.root),
                 patch.object(mutex, 'open_lock', side_effect=lambda p: open_lock(p, os.getuid())),
+                patch.object(mutex, 'open_consumer_witness',
+                             side_effect=lambda fd, p: mutex._open_consumer_witness(
+                                 fd, p, trusted_uid=os.getuid())),
                 patch.object(mutex, '_read_barrier',
                              side_effect=lambda p: read_barrier(p, os.getuid())))
 
     def acquire(self):
         return mutex.open_lock(self.root, os.geteuid())
+
+    def test_real_child_cannot_unlock_private_owner_even_if_veto_later_migrates(self):
+        # A865 regression: removing FD privacy lets this real child unlock
+        # the parent's owner OFD and acquire a competing lock while it lives.
+        from contextlib import ExitStack
+        owner = self.acquire()
+        output = self.root / 'child-observation.json'
+        code = '''import fcntl,json,os,sys
+slot=int(os.environ['A865_TEST_OWNER_SLOT'])
+try:
+ fcntl.flock(slot,fcntl.LOCK_UN); usable=True
+except OSError:
+ usable=False
+probe=os.open(sys.argv[1],os.O_RDONLY)
+try:
+ try:
+  fcntl.flock(probe,fcntl.LOCK_EX|fcntl.LOCK_NB); acquired=True
+ except BlockingIOError:
+  acquired=False
+finally:
+ os.close(probe)
+with open(sys.argv[2],'w') as handle:
+ json.dump({'owner_usable':usable,'probe_acquired':acquired,
+            'legacy_fd':'RC6_DEPLOY_MUTEX_FD' in os.environ,
+            'legacy_proof':'RC6_DEPLOY_MUTEX_PROOF' in os.environ},handle)
+'''
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex, 'open_lock', return_value=owner))
+            stack.enter_context(patch.object(mutex, '_contract_writers', return_value=set()))
+            stack.enter_context(patch.dict(os.environ, {
+                'A865_TEST_OWNER_SLOT': str(owner),
+                'RC6_DEPLOY_MUTEX_FD': str(owner),
+                'RC6_DEPLOY_MUTEX_PROOF': 'untrusted ambient claim'}))
+            self.assertEqual(mutex.run(self.args('classify',
+                [sys.executable, '-B', '-c', code, str(self.lock), str(output)])), 0)
+        self.assertEqual(json.loads(output.read_text()), {
+            'owner_usable': False, 'probe_acquired': False,
+            'legacy_fd': False, 'legacy_proof': False})
+
+    def test_nonfinal_phases_pass_no_deploy_lock_descriptor_to_children(self):
+        """Only the exact finalizer phase may receive a read-only witness."""
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            for mocked in self.mock_root(): stack.enter_context(mocked)
+            stack.enter_context(patch.object(mutex, '_contract_writers', return_value=set()))
+            child = stack.enter_context(patch.object(mutex.subprocess, 'run',
+                return_value=SimpleNamespace(returncode=0, stdout='')))
+            stack.enter_context(patch.dict(os.environ, {
+                'RC6_DEPLOY_MUTEX_FD': '98765',
+                'RC6_DEPLOY_MUTEX_PROOF': 'forged-ambient-claim'}))
+            for phase in ('classify', 'preclean', 'suspend', 'drain',
+                          'transfer', 'promotion', 'cleanup_payload'):
+                with self.subTest(phase=phase):
+                    self.assertEqual(mutex.run(self.args(phase)), 0)
+                    kwargs = child.call_args.kwargs
+                    self.assertEqual(kwargs['pass_fds'], ())
+                    self.assertNotIn('RC6_DEPLOY_MUTEX_FD', kwargs['env'])
+                    self.assertNotIn('RC6_DEPLOY_MUTEX_PROOF', kwargs['env'])
 
     def test_orphan_holds_inode_after_parent_loses_fd_and_second_attempt_cannot_mutate(self):
         first = self.acquire()
@@ -599,6 +663,321 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
 
 
+class A865ContainmentTests(unittest.TestCase):
+    """New witness protocol must not delegate owner lock or host authority."""
+
+    def test_streamed_cleanup_source_loads_without_shared_checkout_on_target(self):
+        # Deploy V2 pipes each module through Python stdin. A root checkout on
+        # that host cannot be relied on at module-import time, or A979's
+        # existing HOLD79 would turn into an unstructured ImportError.
+        import builtins
+        import runpy
+        real_import = builtins.__import__
+
+        def block_checkout(name, *args, **kwargs):
+            if name in {'scripts.rc6_deploy_host_mutex', 'rc6_deploy_host_mutex'}:
+                raise ModuleNotFoundError('host checkout unavailable', name=name)
+            return real_import(name, *args, **kwargs)
+
+        for script in ('rc6_pretransfer_image_cleanup.py',
+                       'rc6_offline_current_image_cleanup.py',
+                       'rc6_offline_failed_image_cleanup.py'):
+            with self.subTest(script=script), \
+                 patch.object(builtins, '__import__', side_effect=block_checkout), \
+                 patch.object(subprocess, 'run', side_effect=AssertionError(
+                     'STREAMED_CLEANUP_LAUNCHED_HOST_COMMAND')) as process:
+                isolated = runpy.run_path(str(Path(__file__).resolve().parents[1] /
+                                              'scripts' / script), run_name='test_stream')
+                self.assertTrue(callable(isolated['cleanup']))
+                if script == 'rc6_pretransfer_image_cleanup.py':
+                    report = isolated['cleanup']()
+                    self.assertEqual(report['reason'],
+                                     'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+                    self.assertEqual(report['removed_tags'], [])
+                else:
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'):
+                        isolated['cleanup']()
+                self.assertEqual(process.call_count, 0)
+
+    def test_finalize_readonly_witness_unlock_cannot_release_owner_flock(self):
+        """Real child may release only its own OFD, not the parent's owner."""
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-finalize-') as folder:
+            root = Path(folder)
+            lock = root / mutex.LOCK_PATH.name
+            output = root / 'child.json'
+            owner = mutex.open_lock(root, os.getuid())
+            code = '''import fcntl,json,os,sys
+from pathlib import Path
+from scripts import rc6_deploy_host_mutex as m
+lock=Path(sys.argv[1]);m.LOCK_DIR=lock.parent
+owner_slot=int(os.environ['A865_TEST_OWNER_SLOT'])
+try:
+ owner_stat=os.fstat(owner_slot)
+ owner_visible=(owner_stat.st_ino,owner_stat.st_dev)==(lock.stat().st_ino,lock.stat().st_dev)
+except OSError:
+ owner_visible=False
+witness=int(os.environ['RC6_DEPLOY_MUTEX_FD'])
+m.require_migrated_consumer_protocol(trusted_uid=os.getuid())
+readonly=(fcntl.fcntl(witness,fcntl.F_GETFL)&os.O_ACCMODE)==os.O_RDONLY
+fcntl.flock(witness,fcntl.LOCK_UN)
+m.require_migrated_consumer_protocol(trusted_uid=os.getuid())
+probe=os.open(lock,os.O_RDONLY)
+try:
+ try:
+  fcntl.flock(probe,fcntl.LOCK_EX|fcntl.LOCK_NB);acquired=True
+ except BlockingIOError:
+  acquired=False
+finally:
+ os.close(probe)
+Path(sys.argv[2]).write_text(json.dumps(dict(owner_visible=owner_visible,
+ witness_readonly=readonly,probe_acquired=acquired,
+ inherited_proof='RC6_DEPLOY_MUTEX_PROOF' in os.environ)))
+'''
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                fake_user = SimpleNamespace(pw_uid=1, pw_gid=1,
+                                            pw_name='nobody', pw_dir='/tmp')
+                stack.enter_context(patch.object(mutex.os, 'geteuid', return_value=0))
+                stack.enter_context(patch.object(mutex.pwd, 'getpwnam',
+                                                 return_value=fake_user))
+                stack.enter_context(patch.object(mutex, '_enable_subreaper'))
+                stack.enter_context(patch.object(mutex, '_drain_children'))
+                stack.enter_context(patch.object(mutex, 'LOCK_DIR', root))
+                stack.enter_context(patch.object(mutex, 'STAGING_DIR', root))
+                stack.enter_context(patch.object(mutex, 'open_lock',
+                                                 return_value=owner))
+                original_read_barrier = mutex._read_barrier
+                stack.enter_context(patch.object(mutex, '_read_barrier',
+                    side_effect=lambda path: original_read_barrier(
+                        path, trusted_uid=os.getuid())))
+                stack.enter_context(patch.object(mutex, 'open_consumer_witness',
+                    side_effect=lambda fd, p: mutex._open_consumer_witness(
+                        fd, p, trusted_uid=os.getuid())))
+                stack.enter_context(patch.object(mutex, '_contract_writers',
+                                                 return_value=set()))
+                stack.enter_context(patch.dict(os.environ, {
+                    'A865_TEST_OWNER_SLOT': str(owner),
+                    'RC6_DEPLOY_MUTEX_FD': str(owner),
+                    'RC6_DEPLOY_MUTEX_PROOF': 'forged-ambient-claim'}))
+                # Stronger than current workflow's direct ``python3 -``:
+                # prove the witness also survives a normal shell -> Python
+                # exec chain without exposing the private owner FD.
+                argv = ['nobody', 'root', '--attempt', SHA, RUN, ATTEMPT,
+                        '--phase', 'finalize', 'bash', '-c',
+                        '"$1" -B -c "$2" "$3" "$4"', 'rc6-shell',
+                        sys.executable, code, str(lock), str(output)]
+                self.assertEqual(mutex.run(argv), 0)
+            self.assertEqual(json.loads(output.read_text()), {
+                'owner_visible': False, 'witness_readonly': True,
+                'probe_acquired': False, 'inherited_proof': False})
+
+    def test_consumer_requires_separate_readonly_inode_and_active_owner(self):
+        """A forged env FD, owner descriptor or expired lock cannot attest."""
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-witness-') as folder:
+            root = Path(folder)
+            owner = mutex.open_lock(root, os.getuid())
+            lock = root / mutex.LOCK_PATH.name
+            try:
+                with patch.object(mutex, 'LOCK_DIR', root):
+                    with patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': ''}):
+                        with self.assertRaisesRegex(
+                                RuntimeError, 'MUTEX_CONSUMER_WITNESS_REQUIRED'):
+                            mutex.require_migrated_consumer_protocol(
+                                trusted_uid=os.getuid())
+                    with patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': str(owner)}):
+                        with self.assertRaisesRegex(
+                                RuntimeError, 'MUTEX_CONSUMER_WITNESS_NOT_READONLY'):
+                            mutex.require_migrated_consumer_protocol(
+                                trusted_uid=os.getuid())
+                    witness = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                    try:
+                        with patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': str(witness)}):
+                            mutex.require_migrated_consumer_protocol(
+                                trusted_uid=os.getuid())
+                            os.close(owner)
+                            owner = -1
+                            with self.assertRaisesRegex(
+                                    RuntimeError, 'MUTEX_CONSUMER_OWNER_LOCK_ABSENT'):
+                                mutex.require_migrated_consumer_protocol(
+                                    trusted_uid=os.getuid())
+                    finally:
+                        os.close(witness)
+            finally:
+                if owner >= 0:
+                    os.close(owner)
+
+    def test_consumer_rejects_shared_instead_of_exclusive_owner(self):
+        """Another OFD holding LOCK_SH is not exclusive deploy ownership."""
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-shared-') as folder:
+            root = Path(folder)
+            owner = mutex.open_lock(root, os.getuid())
+            try:
+                fcntl.flock(owner, fcntl.LOCK_SH)
+                with self.assertRaisesRegex(RuntimeError, 'MUTEX_CONSUMER_OWNER_LOCK_ABSENT'):
+                    mutex._open_consumer_witness(owner, root, trusted_uid=os.getuid())
+            finally:
+                os.close(owner)
+
+    def test_parent_group_writable_nonsticky_is_rejected(self):
+        """An untrusted group writer could replace the lock after attestation."""
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-group-') as folder:
+            root = Path(folder)
+            owner = mutex.open_lock(root, os.getuid())
+            try:
+                root.chmod(0o770)
+                with self.assertRaisesRegex(RuntimeError, 'MUTEX_PARENT_UNSAFE'):
+                    mutex.open_lock(root, os.getuid())
+                with self.assertRaisesRegex(RuntimeError, 'MUTEX_CONSUMER_WITNESS_UNSAFE'):
+                    mutex._open_consumer_witness(owner, root, trusted_uid=os.getuid())
+            finally:
+                os.close(owner)
+
+    def test_consumer_rejects_replaced_or_hardlinked_witness_path(self):
+        """Path swaps and aliases cannot convert an arbitrary FD to proof."""
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-inode-') as folder:
+            root = Path(folder)
+            owner = mutex.open_lock(root, os.getuid())
+            lock = root / mutex.LOCK_PATH.name
+            witness = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                with patch.object(mutex, 'LOCK_DIR', root), \
+                     patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': str(witness)}):
+                    alias = root / 'alias'
+                    os.link(lock, alias)
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'MUTEX_CONSUMER_WITNESS_UNSAFE'):
+                        mutex.require_migrated_consumer_protocol(
+                            trusted_uid=os.getuid())
+                    alias.unlink()
+                    lock.unlink()
+                    lock.write_bytes(b'')
+                    os.chmod(lock, 0o600)
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'MUTEX_CONSUMER_WITNESS_UNSAFE'):
+                        mutex.require_migrated_consumer_protocol(
+                            trusted_uid=os.getuid())
+            finally:
+                os.close(witness)
+                os.close(owner)
+
+    def test_pretransfer_default_denies_before_inventory_or_docker(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        with patch.object(pretransfer, 'safety', side_effect=AssertionError(
+                'PRETRANSFER_UNAUTHORIZED_HOST_INSPECTION')) as inspect, \
+             patch.object(pretransfer, 'docker', side_effect=AssertionError(
+                 'PRETRANSFER_UNAUTHORIZED_DOCKER')) as docker:
+            report = pretransfer.cleanup()
+        self.assertEqual(report['status'], 'RED')
+        self.assertEqual(report['reason'], 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+        self.assertEqual(report['removed_tags'], [])
+        self.assertEqual(report['space_recovered'], 0)
+        self.assertEqual(inspect.call_count, 0)
+        self.assertEqual(docker.call_count, 0)
+
+    def test_offline_entrypoints_default_deny_before_filesystem_and_docker(self):
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        for consumer in (current, failed):
+            with self.subTest(consumer=consumer.__name__), \
+                 patch.object(consumer, 'ROOT', Path('/nonexistent-r139-a865')), \
+                 patch.object(consumer, 'docker', side_effect=AssertionError(
+                     'OFFLINE_UNAUTHORIZED_DOCKER')) as docker:
+                with self.assertRaisesRegex(
+                        RuntimeError, 'DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED'):
+                    consumer.cleanup()
+                self.assertEqual(docker.call_count, 0)
+
+    def test_docker_wrappers_reject_mutation_before_subprocess(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        commands = [('image', 'rm', 'porota-predeploy-v2:' + SHA),
+                    ('tag', 'original', 'renamed'), ('system', 'prune'),
+                    ('rm', 'foreign-container'), ('volume', 'rm', 'foreign'),
+                    ('network', 'rm', 'foreign'), ('exec', 'foreign', 'true')]
+        for consumer in (pretransfer, current, failed):
+            for args in commands:
+                with self.subTest(consumer=consumer.__name__, args=args), \
+                     patch.object(consumer.subprocess, 'run', side_effect=AssertionError(
+                         'UNAUTHORIZED_DOCKER_SUBPROCESS')) as process:
+                    with self.assertRaisesRegex(
+                            RuntimeError, 'DOCKER_MUTATION_UNAUTHORIZED'):
+                        consumer.docker(*args)
+                    self.assertEqual(process.call_count, 0)
+
+    def test_same_repository_digest_is_not_independent_attempt_provenance(self):
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        image = 'sha256:' + '1' * 64
+        with patch.object(pretransfer, 'references', return_value=set()), \
+             patch.object(pretransfer, 'inspect_image', return_value=(
+                 ['porota-predeploy-v2:' + SHA],
+                 ['porota-predeploy-v2@sha256:' + 'f' * 64])):
+            self.assertEqual(pretransfer.eligibility(image)[1],
+                             'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED')
+
+    def test_offline_cleanup_rejects_unbound_repository_digests(self):
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        record = {'Id': failed.IMAGE, 'RepoTags': list(failed.TAGS),
+                  'RepoDigests': ['porota-predeploy-v2@sha256:' + 'f' * 64],
+                  'Config': {'Labels': {'porota.predeploy': 'v2',
+                                        'porota.commit': failed.FAILED}}}
+        with patch.object(failed, 'docker', return_value=json.dumps([record])), \
+             patch.object(failed, 'references', return_value=set()):
+            with self.assertRaisesRegex(ValueError, 'ALIASED'):
+                failed.eligible_tags()
+
+    def test_finalizer_unbound_witness_rejected_before_host_actions(self):
+        from scripts import porota_apply_host_control_plane_v2 as finalizer
+        with tempfile.TemporaryDirectory(prefix='rc6-a865-unbound-') as folder:
+            with patch.object(mutex, 'LOCK_DIR', Path(folder)), \
+                 patch.dict(os.environ, {'RC6_DEPLOY_MUTEX_FD': '9'}), \
+                 patch.object(finalizer, '_run', side_effect=AssertionError(
+                     'UNBOUND_FINALIZER_ACCESSED_HOST')) as host:
+                with self.assertRaisesRegex(
+                        RuntimeError, 'MUTEX_CONSUMER_WITNESS_UNSAFE'):
+                    finalizer._require_inherited_finalizer_mutex()
+                self.assertEqual(host.call_count, 0)
+
+    def test_cleanup_main_reports_red_without_sudo_or_docker(self):
+        # In-process only: neither a real subprocess nor a host credential is
+        # allowed even during this OFFHOST test. A979's HOLD79 stays intact.
+        from contextlib import ExitStack, nullcontext
+        from scripts import rc6_pretransfer_image_cleanup as pretransfer
+        from scripts import rc6_offline_current_image_cleanup as current
+        from scripts import rc6_offline_failed_image_cleanup as failed
+        cases = ((pretransfer, None, 79), (current, ['2147483648'], 79),
+                 (failed, None, 2))
+        for consumer, args, expected_rc in cases:
+            with self.subTest(consumer=consumer.__name__), ExitStack() as stack:
+                stack.enter_context(patch.object(consumer, 'docker',
+                    side_effect=AssertionError('UNAUTHORIZED_TEST_DOCKER')))
+                process = stack.enter_context(patch.object(consumer.subprocess, 'run',
+                    side_effect=AssertionError('UNAUTHORIZED_TEST_SUBPROCESS')))
+                if consumer is pretransfer:
+                    stack.enter_context(patch.object(consumer, 'promotion_lock',
+                        return_value=nullcontext()))
+                    stack.enter_context(patch.object(consumer,
+                        'require_root_owned_image_reference_proof',
+                        side_effect=consumer.OCIImageCustodyHold()))
+                if consumer is current:
+                    stack.enter_context(patch.object(consumer,
+                        'require_root_owned_image_reference_proof',
+                        side_effect=consumer.OCIImageCustodyHold()))
+                if consumer is failed:
+                    stack.enter_context(patch.object(consumer, 'ROOT',
+                        Path('/nonexistent-r139-a865')))
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    rc = consumer.main(args) if args is not None else consumer.main()
+                self.assertEqual(rc, expected_rc)
+                receipt = json.loads(output.getvalue())
+                self.assertEqual(receipt['status'], 'RED')
+                self.assertEqual(receipt['removed_tags'], [])
+                self.assertEqual(receipt['space_recovered'], 0)
+                self.assertEqual(process.call_count, 0)
+
+
 class WorkflowIntegrationTests(unittest.TestCase):
     def test_all_mutation_boundaries_use_same_mutex_and_attempt_stage(self):
         workflow = (Path(__file__).resolve().parents[1] /
@@ -628,7 +1007,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(failure.count('RC6_MUTEX_B64'), 6)
         boundaries = [line for line in workflow.splitlines()
                       if 'RC6_MUTEX_B64' in line and 'sudo -n python3 -c' in line]
-        self.assertEqual(len(boundaries), 22)
+        self.assertEqual(len(boundaries), 21)
         self.assertTrue(all("--attempt '$CANDIDATE_SHA' '$GITHUB_RUN_ID' "
                             "'$GITHUB_RUN_ATTEMPT' --phase " in line
                             for line in boundaries))
@@ -640,9 +1019,16 @@ class WorkflowIntegrationTests(unittest.TestCase):
                         workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'))
         self.assertLess(workflow.index('name: Reconcile only exact A138 cleanly exited host barrier'),
                         workflow.index('name: Classify current flat PAPER session'))
-        self.assertIn('--phase offline_preclean python3 -', by_id['diskguard'])
+        # R271: the deprecated streamed root Python cleanup is no longer
+        # exposed through the candidate-controlled mutex; the independently
+        # installed fixed-verb helper must HOLD79 without ownership proof.
+        self.assertNotIn('--phase offline_preclean', by_id['diskguard'])
         self.assertNotIn('--phase disk_probe python3 -', by_id['diskguard'])
-        self.assertIn('rc6_offline_current_image_cleanup.py', by_id['diskguard'])
+        self.assertNotIn('< scripts/rc6_offline_current_image_cleanup.py',
+                         by_id['diskguard'])
+        fixed_cleanup = ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+                         'image preflight-cleanup')
+        self.assertIn(fixed_cleanup, by_id['diskguard'])
         self.assertIn('--apply-plan "$PLAN" --require-empty', by_id['backup_retire'])
         self.assertEqual(sum('--phase finalize ' in line for line in boundaries), 1)
         self.assertEqual(sum('--phase cleanup_final ' in line for line in boundaries), 1)

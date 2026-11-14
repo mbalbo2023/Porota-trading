@@ -10,6 +10,15 @@ def _fresh():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _synthetic_ppi_full_key(ticker, family):
+    """Literal fake provider identity, not a PPI request-only settlement."""
+    return {
+        "_discovery_source": "PPI_PRIMARY", "ticker": ticker,
+        "type": family, "market": "BYMA", "currency": "ARS",
+        "settlement": "A-24HS",
+    }
+
+
 def _store(tmp_path):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)
@@ -164,7 +173,7 @@ def test_reconcile_accepts_static_v2_policy_inside_ppi_lkg_window(tmp_path, monk
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
             "LKG1", "BONOS", "BYMA", "ARS", "A-24HS", "PPI_FIELD", "LKG1",
             observed, "PPI-RUN", "AVAILABLE", "NEEDS_NOMINAL_UNITS",
-            json.dumps({"_discovery_source": "PPI_PRIMARY"}),
+            json.dumps(_synthetic_ppi_full_key("LKG1", "BONOS")),
         ))
     comp = {
         "ticker": "LKG1", "instrument_type": "BONOS", "market": "BYMA",
@@ -382,12 +391,12 @@ def test_bounded_refresh_keeps_unchanged_ready_and_closes_removed_before_batches
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
             "KEEP", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD",
             "Test", fresh, "PPI-RUN", "AVAILABLE", "READY_PAPER_SPOT",
-            json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+            json.dumps(_synthetic_ppi_full_key("KEEP", "CEDEARS"))))
         c.execute("""INSERT INTO financial_instrument_catalog
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (
             "REMOVE", "CEDEARS", "BYMA", "ARS", "A-24HS", "PPI_FIELD",
             "Test", fresh, "PPI-RUN", "AVAILABLE", "READY_PAPER_SPOT",
-            json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+            json.dumps(_synthetic_ppi_full_key("REMOVE", "CEDEARS"))))
         catalog.sync_candidate_universe(c, fresh)
         for number in range(65):
             c.execute("""INSERT INTO financial_instrument_catalog

@@ -9,8 +9,9 @@ Safety properties:
 - persists only sanitized endpoint payloads and non-sensitive route metadata.
 """
 from __future__ import annotations
-import argparse, json, os, re, stat
+import argparse, hashlib, json, os, re, stat
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -19,6 +20,27 @@ from rc4_ppi_contract_normalizer import instrumentos_operables, option_underlyin
 TRADING='https://trading.portfoliopersonal.com'
 SAFE_METHODS={'GET','HEAD','OPTIONS'}
 TARGETS=('InstrumentosOperables','CaucionesOperables','ConfiguracionOperatoriaSimplificada','SubyacenteOpciones','DatosTecnicos')
+PASSIVE_FCI_MAX_BYTES=256_000
+PASSIVE_FCI_MAX_RESPONSES=24
+PASSIVE_FCI_MAX_IDENTITY_ROWS=32  # Cover 21 known FCI gaps plus bounded headroom.
+PASSIVE_FCI_ENDPOINT_CLASS='PPI_FCI_PASSIVE_JSON_GET'
+# An observed field name is useful for locating the real provider contract;
+# never record its value or account-level fields in this browser artifact.
+PASSIVE_FCI_FIELD_NAMES=frozenset({
+ 'clase','class','classkey','tipoclase','idclase','idfondos','idfondo',
+ 'horariolimite','horariocorte','cutoff','cutofftime','fechavigencia',
+ 'effectiveat','publishedat','nav','valorcuotaparte','cuotaparte',
+ 'montominimo','minimosuscripcion','subscriptionmin','subscriptionstep',
+ 'plazorescate','redemptionlead','comisionsuscripcion','comisionrescate',
+ 'subscriptionfee','redemptionfee','tarifa','arancel','reglamento',
+})
+PASSIVE_FCI_NESTED_KEYS=frozenset({
+ 'data','datos','items','results','resultados','rows','lista','listado',
+ 'funds','fondos','fci','fcis','classes','clases',
+})
+PPI_FIVE_KEY=('ticker','instrument_type','market','currency','settlement')
+PPI_FIVE_KEY_VALUE=re.compile(r'[A-Z0-9_./:-]{1,48}\Z')
+PASSIVE_FCI_PATH_MARKERS=('fci','fondo','cuotaparte','tarif','arancel','comision')
 ROUTES={
  'CONTRACT_EVIDENCE_DYNAMIC':['/Cotizaciones/Bonos'],
  'CONTRACT_EVIDENCE_CAUCIONES':['/Cotizaciones/Cauciones'],
@@ -64,6 +86,181 @@ def sanitize_endpoint(url,payload):
         return {'kind':'SCHEMA_ONLY','schema':shape}
     return None
 
+def _passive_fci_declared_bytes(headers):
+    """Admit only identity-coded JSON with positive, bounded ASCII length.
+
+    This gates response.body() but does NOT hard-cap Playwright's buffering if
+    a server lies about Content-Length. The actual byte count is rechecked.
+    """
+    if not isinstance(headers,dict):
+        return None
+    length=headers.get('content-length')
+    if not isinstance(length,str) or not length.isascii() or not length.isdecimal():
+        return None
+    count=int(length)
+    if not 0<count<=PASSIVE_FCI_MAX_BYTES:
+        return None
+    encoding=headers.get('content-encoding','')
+    if not isinstance(encoding,str) or encoding.strip().lower() not in {'','identity'}:
+        return None
+    return count
+
+def _passive_fci_candidate(url, method, resource_type, status, headers):
+    """Inspect *existing* same-origin GET XHR only; never start requests."""
+    try:
+        u=urlsplit(str(url))
+        if (u.scheme!='https' or u.hostname!='trading.portfoliopersonal.com'
+                or u.port not in (None,443) or u.username or u.password
+                or str(method).upper()!='GET' or resource_type not in {'xhr','fetch'}
+                or status!=200 or not any(x in u.path.lower() for x in PASSIVE_FCI_PATH_MARKERS)):
+            return False
+        ctype=str(headers.get('content-type','')).split(';',1)[0].strip().lower()
+        if ctype!='application/json' and not ctype.endswith('+json'):
+            return False
+        return _passive_fci_declared_bytes(headers) is not None
+    except (TypeError, ValueError):
+        return False
+
+def _passive_fci_rows(payload):
+    """Bound structural traversal; no arbitrary source values leave this call."""
+    rows=[]
+    def walk(value,depth):
+        if len(rows)>=128 or depth>3: return
+        if isinstance(value,dict):
+            rows.append(value)
+            for key,item in list(value.items())[:80]:
+                if str(key).lower() in PASSIVE_FCI_NESTED_KEYS:
+                    walk(item,depth+1)
+        elif isinstance(value,list):
+            for item in value[:64]:
+                walk(item,depth+1)
+    walk(payload,0)
+    return rows
+
+def _passive_fci_five_key(row):
+    """Literal provider 5-key candidate, NOT a verified PPI catalog binding."""
+    if not isinstance(row,dict) or not all(k in row for k in PPI_FIVE_KEY):
+        return None
+    fields={}
+    for key in PPI_FIVE_KEY:
+        value=row[key]
+        if (not isinstance(value,str) or value.strip().upper()=='UNKNOWN'
+                or not PPI_FIVE_KEY_VALUE.fullmatch(value.strip().upper())):
+            return None
+        fields[key]=value.strip().upper()
+    if fields['instrument_type']!='FCI':
+        return None
+    return fields
+
+def sanitize_passive_fci_xhr(url, *, method, resource_type, status, headers,
+                             body, observed_at, authenticated):
+    """Produce bounded, non-executable metadata for already-observed PPI FCI JSON.
+
+    Authenticated Chrome navigation proves neither a fund document/version nor
+    a specific account tariff. A matching PPI five-key is only a *candidate*
+    until independently reconciled with the PPI-primary catalog. The function
+    deliberately has no HTTP client, URL opener, DB writer or order route.
+    """
+    if not authenticated or not isinstance(headers,dict):
+        return None
+    if not _passive_fci_candidate(url,method,resource_type,status,headers):
+        return None
+    # Never persist truncated, inflated, or unexpectedly long bodies. This
+    # post-read check is necessary even after the pre-read header gate.
+    if not isinstance(body,bytes) or len(body)!=_passive_fci_declared_bytes(headers):
+        return None
+    try:
+        at=datetime.fromisoformat(str(observed_at).replace('Z','+00:00'))
+        if at.tzinfo is None or at.utcoffset() is None: return None
+        at=at.astimezone(timezone.utc).isoformat()
+    except (ValueError, TypeError, OverflowError):
+        return None
+    http_date=None
+    try:
+        dt=parsedate_to_datetime(str(headers.get('date','')))
+        if dt.tzinfo is not None and dt.utcoffset() is not None:
+            http_date=dt.astimezone(timezone.utc).isoformat()
+    except (ValueError, TypeError, OverflowError, IndexError):
+        pass
+    observed_fields=set(); identities=[]; shape='UNPARSEABLE_JSON'
+    identity_candidates_truncated=False
+    try:
+        payload=json.loads(body)
+        shape=type(payload).__name__.upper()
+        for row in _passive_fci_rows(payload):
+            for key in row:
+                normalized=''.join(c for c in str(key).lower() if c.isalnum())
+                if normalized in PASSIVE_FCI_FIELD_NAMES:
+                    observed_fields.add(normalized)
+            key=_passive_fci_five_key(row)
+            if key is not None and key not in identities:
+                identities.append(key)
+            if len(identities)>=PASSIVE_FCI_MAX_IDENTITY_ROWS:
+                identity_candidates_truncated=True
+                break
+    except (UnicodeDecodeError, ValueError, TypeError):
+        pass
+    return {
+        'kind':'PPI_FCI_PASSIVE_XHR_UNBOUND',
+        'state':'SOURCE_UNBOUND',
+        'source_authenticated':False,
+        'account_tariff_verified':False,
+        'auto_ready':False,
+        'read_only':True,
+        # URL paths may themselves contain account IDs or secrets. Only the
+        # fixed endpoint class survives: no host/path/query or raw headers.
+        'endpoint_class':PASSIVE_FCI_ENDPOINT_CLASS,
+        'observed_at':at,
+        'http_response_date_not_contract_published_at':http_date,
+        'response_sha256_integrity_not_authentication':hashlib.sha256(body).hexdigest(),
+        'json_shape':shape,
+        'field_names_observed_only':sorted(observed_fields),
+        'unverified_ppi_five_key_candidates':identities,
+        'identity_candidates_limit_reached':identity_candidates_truncated,
+        'reason_codes':['FCI_EXACT_CLASS_DOCUMENT_VERSION_NOT_BOUND',
+                        'FCI_PPI_ACCOUNT_TARIFF_NOT_BOUND',
+                        'FCI_PPI_CATALOG_FIVE_KEY_NOT_RECONCILED'],
+    }
+
+def append_passive_fci_receipt(out, receipt):
+    """Idempotent bounded output; don't quietly imply that a capped list is complete."""
+    if receipt is None: return False
+    rows=out['passive_fci_xhr']
+    if any(r['endpoint_class']==receipt['endpoint_class'] and
+           r['response_sha256_integrity_not_authentication']==
+           receipt['response_sha256_integrity_not_authentication'] for r in rows):
+        return False
+    if len(rows)>=PASSIVE_FCI_MAX_RESPONSES:
+        out['passive_fci_capture_truncated']=True
+        return False
+    rows.append(receipt)
+    return True
+
+def capture_passive_fci_response(response, out):
+    """Shared passive FCI observer for both RC4 and default RC5 callbacks.
+
+    Never sends a request, decodes a non-candidate body or grants readiness.
+    Caller is responsible for routing/normal contract endpoints separately.
+    """
+    if out.get('auth_status')!='AUTHENTICATED_TRUSTED_DEVICE':
+        return False
+    try:
+        request=response.request
+        if not _passive_fci_candidate(response.url,request.method,
+                request.resource_type,response.status,response.headers):
+            return False
+        if len(out['passive_fci_xhr'])>=PASSIVE_FCI_MAX_RESPONSES:
+            out['passive_fci_capture_truncated']=True
+            return False
+        receipt=sanitize_passive_fci_xhr(
+            response.url,method=request.method,resource_type=request.resource_type,
+            status=response.status,headers=response.headers,body=response.body(),
+            observed_at=datetime.now(timezone.utc).isoformat(),authenticated=True)
+        return append_passive_fci_receipt(out,receipt)
+    except (AttributeError, KeyError, TypeError, ValueError):
+        # Unexpected response/meta cannot authorize any active FCI operation.
+        return False
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--profile',required=True)
@@ -74,6 +271,8 @@ def main():
     jobs=[j for j in args.jobs.split(',') if j in ROUTES]
     out={'schema':'POROTA_RC4_PPI_TRUSTED_CONTRACT_1','generated_at':datetime.now(timezone.utc).isoformat(),
          'auth_status':'UNKNOWN','jobs':jobs,'routes':[],'endpoints':{},'blocked_nonread':[],
+         'passive_fci_xhr':[], 'passive_fci_observation_state':'SOURCE_UNBOUND',
+         'passive_fci_capture_truncated':False,
          'continue_clicked':False,'amount_filled':False,'price_filled':False,'real_orders_sent':0}
     target=Path(args.output); target.parent.mkdir(parents=True,exist_ok=True)
     if not Path(args.profile).is_dir():
@@ -96,10 +295,11 @@ def main():
             page=ctx.pages[0] if ctx.pages else ctx.new_page()
             def on_response(response):
                 try:
-                    if response.request.method.upper()!='GET' or not any(x in response.url for x in TARGETS): return
-                    if response.status>=400: return
-                    payload=response.json(); sanitized=sanitize_endpoint(response.url,payload)
-                    if sanitized is not None: out['endpoints'][clean_url(response.url)]={'status':response.status,**sanitized}
+                    capture_passive_fci_response(response,out)
+                    if response.request.method.upper()!='GET': return
+                    if any(x in response.url for x in TARGETS) and response.status<400:
+                        payload=response.json(); sanitized=sanitize_endpoint(response.url,payload)
+                        if sanitized is not None: out['endpoints'][clean_url(response.url)]={'status':response.status,**sanitized}
                 except Exception: pass
             page.on('response',on_response)
             page.goto(TRADING+'/',wait_until='domcontentloaded',timeout=45000); page.wait_for_timeout(900)

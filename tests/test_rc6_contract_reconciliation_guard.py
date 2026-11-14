@@ -33,6 +33,10 @@ def fixture(family='OPCIONES'):
         description='Synthetic offline fixture',last_seen_at=NOW,run_id='offline',status='AVAILABLE',
         capability='CONTRACT_EVIDENCE_REVIEW_REQUIRED',raw={'_discovery_source':'PPI_PRIMARY',
             '_provider_instrument_type':'ON' if family=='OBLIGACIONES' else family,
+            # A SQL/request key is not proof; the synthetic provider raw is explicit.
+            'ticker':'TESTOPT' if family=='OPCIONES' else 'TESTON',
+            'type':'ON' if family=='OBLIGACIONES' else family,
+            'market':'BYMA','currency':'ARS','settlement':'INMEDIATA',
             'isin':'ARTEST000001','cajaValoresCode':'123','nominalInPrice':100,
             '_contract_bridge':{'status':'BLOCKED','gaps':['CHANGE_REVIEW_REQUIRED']}})
     contract=dict(family=family,market='BYMA',currency='ARS',settlement='INMEDIATA',

@@ -84,7 +84,7 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     monkeypatch.setenv("DASHBOARD_OPERATION_MODE", "PRODUCTION_PAPER")
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.db"))
     import be_paper_engine
-    be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
+    store = be_paper_engine.PaperStore(str(tmp_path / "paper.db"))
     import bg_paper_dashboard
     bg_paper_dashboard = importlib.reload(bg_paper_dashboard)
     page = bg_paper_dashboard.paper_page(compact=True)
@@ -94,13 +94,21 @@ def test_dashboard_paper_no_pide_telegram(tmp_path, monkeypatch):
     assert page.count("id='porota-canonical-nav'") == 1
     assert page.count("id='porota-paper-mode'") == 1
     assert "MODO SIMULACIÓN PRODUCTIVA" in page
-    assert "órdenes reales: NINGUNA" in page
+    assert "órdenes reales: NINGUNA" not in page
+    assert "NO_VERIFICADO" in page
     assert "Esperando tu autorización" not in page
     assert "Te mandé el pedido por Telegram" not in page
     assert "Telegram" in health
     assert "Último reporte" in health
     assert "PPI Sandbox" in health
     assert "OPENBYMADATA" in health
+    with store.connect() as connection:
+        connection.execute("UPDATE observer_state SET real_orders_sent=2 WHERE id=1")
+    # A positive local counter must be an alert, never a clean PAPER receipt.
+    with_positive = bg_paper_dashboard.home_page()
+    assert "real_orders_sent=2 · ALERTA" in with_positive
+    assert "card-red" in with_positive
+    assert "órdenes reales: NINGUNA" not in with_positive
 
 
 def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
@@ -150,7 +158,10 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
         assert vivo.text.count("id='porota-canonical-nav'") == 1
         assert vivo.text.count("id='porota-paper-mode'") == 1
         assert "MODO SIMULACIÓN PRODUCTIVA" in vivo.text
-        assert "órdenes reales: NINGUNA" in vivo.text
+        # DB local zero without observer heartbeat is not a runtime receipt.
+        assert "real_orders_sent=0 (último valor almacenado)" in vivo.text
+        assert "estado actual NO_VERIFICADO" in vivo.text
+        assert "órdenes reales: NINGUNA" not in vivo.text
         assert "R" * 40 not in vivo.text
         for path in ("/observacion", "/testing"):
             respuesta = cliente.get(path)
@@ -159,7 +170,9 @@ def test_vivo_esta_enrutado_al_panel_consolidado(tmp_path, monkeypatch):
             assert respuesta.text.count("id='porota-canonical-nav'") == 1
             assert respuesta.text.count("id='porota-paper-mode'") == 1
             assert "MODO SIMULACIÓN PRODUCTIVA" in respuesta.text
-            assert "órdenes reales: NINGUNA" in respuesta.text
+            assert "real_orders_sent=0 (último valor almacenado)" in respuesta.text
+            assert "estado actual NO_VERIFICADO" in respuesta.text
+            assert "órdenes reales: NINGUNA" not in respuesta.text
             assert "R" * 40 not in respuesta.text
             assert "Esperando tu autorización" not in respuesta.text
         history = cliente.get('/api/paper/caucion-allocations')

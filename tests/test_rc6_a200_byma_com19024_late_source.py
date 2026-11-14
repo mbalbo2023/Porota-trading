@@ -42,6 +42,10 @@ def local(day, hour, minute=30, month=11):
 
 class BymaLateSourceTest(unittest.TestCase):
     def setUp(self):
+        # Stage/date tests provide a synthetic custody permit only in QA.
+        proof = patch.object(dispatch, "_paper_zero", return_value=None)
+        proof.start()
+        self.addCleanup(proof.stop)
         directory = tempfile.TemporaryDirectory(prefix="rc6-com19024-")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)

@@ -36,6 +36,66 @@ def folder(tmp_path, value):
     return target
 
 
+@pytest.mark.parametrize('field', ['status', 'containers', 'real_orders_sent'])
+def test_quiescence_receipt_rejects_duplicate_security_member(tmp_path, field):
+    """Identical duplicate claims must not be silently collapsed by JSON parsing."""
+    value = receipt()
+    target = folder(tmp_path, value) / ('quiescence-' + CANDIDATE + '.json')
+    duplicate = json.dumps({field: value[field]})[1:-1]
+    target.write_text('{' + duplicate + ', ' + json.dumps(value)[1:])
+
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_DUPLICATE_KEY'):
+        guard.receipt_for(tmp_path, CANDIDATE)
+
+
+def test_quiescence_receipt_rejects_nested_duplicate_container_identity(tmp_path):
+    value = receipt()
+    target = folder(tmp_path, value) / ('quiescence-' + CANDIDATE + '.json')
+    raw = json.dumps(value)
+    identity = json.dumps(value['containers'][NAMES[0]]['id'])
+    target.write_text(raw.replace('"id": ' + identity,
+                                  '"id": ' + identity + ', "id": ' + identity, 1))
+
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_DUPLICATE_KEY'):
+        guard.receipt_for(tmp_path, CANDIDATE)
+
+
+@pytest.mark.parametrize('token', ['NaN', 'Infinity', '-Infinity', '1e999', '-1e999'])
+def test_quiescence_receipt_rejects_nonfinite_extra_without_archiving(tmp_path, token):
+    value = receipt()
+    target = folder(tmp_path, value) / ('quiescence-' + CANDIDATE + '.json')
+    target.write_text('{"untrusted": ' + token + ', ' + json.dumps(value)[1:])
+
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_NONFINITE'):
+        guard.receipt_for(tmp_path, CANDIDATE)
+
+
+@pytest.mark.parametrize('raw', [
+    '{"status": "HOLD", "status": "HOLD"}',
+    '{"containers": {"id": "abc", "id": "abc"}}',
+    '{"real_orders_sent": 0, "real_orders_sent": 0}',
+])
+def test_bounded_json_rejects_duplicate_members_at_any_depth(tmp_path, raw):
+    target = tmp_path / 'receipt.json'
+    target.write_text(raw)
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_DUPLICATE_KEY'):
+        guard.bounded_json(target)
+
+
+@pytest.mark.parametrize('token', ['NaN', 'Infinity', '-Infinity', '1e999', '-1e999'])
+def test_bounded_json_rejects_nonfinite_number_tokens(tmp_path, token):
+    target = tmp_path / 'receipt.json'
+    target.write_text('{"measurement": ' + token + '}')
+    with pytest.raises(ValueError, match='COLD2_RECEIPT_NONFINITE'):
+        guard.bounded_json(target)
+
+
+def test_bounded_json_preserves_finite_float_values(tmp_path):
+    target = tmp_path / 'receipt.json'
+    target.write_text('{"fraction": 0.125, "bounded_large": 1e308}')
+    assert guard.bounded_json(target) == {'fraction': 0.125, 'bounded_large': 1e308}
+
+
 @pytest.mark.parametrize('change', [
     lambda r: r.update(status='FIX_FORWARD_VALIDATION_REQUIRED'),
     lambda r: r.update(inflight='NO_VERIFICADO'),

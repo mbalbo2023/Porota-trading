@@ -1732,8 +1732,37 @@ def admin_issue624_target(c):
     return p['paper_id']
 
 
+class LegacyDockerCustodyHold(RuntimeError):
+    """P0 HOLD79 until sealed exact-CID custody is installed."""
+
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('QUIESCENCE_OCI_LEGACY_MUTATION_HOLD79')
+
+
+def require_legacy_drain_custody():
+    """Reject name-based drain before any durable receipt is written."""
+    raise LegacyDockerCustodyHold()
+
+
 def command(args):
-    result = subprocess.run(args, capture_output=True, text=True, timeout=55)
+    # Legacy Docker mutators lack birth custody; inspection is read-only.
+    readonly = (bool(args) and args[0] in ('docker', '/usr/bin/docker') and
+                ((len(args) >= 3 and args[1] in ('inspect', 'logs')) or
+                 (len(args) >= 4 and list(args[1:3]) == ['image', 'inspect'])))
+    if not readonly:
+        raise LegacyDockerCustodyHold()
+    # Pin rootful Docker; never inherit Boca's rootless context/socket.
+    rootful = 'unix:///var/run/docker.sock'
+    pinned = ['/usr/bin/docker', '--host', rootful, *args[1:]]
+    safe_env = {'PATH': '/usr/bin:/bin', 'HOME': '/', 'LC_ALL': 'C',
+                'DOCKER_HOST': rootful}
+    try:
+        result = subprocess.run(pinned, capture_output=True, text=True,
+                                timeout=55, env=safe_env)
+    except OSError as error:
+        raise LegacyDockerCustodyHold() from error
     if result.returncode:
         raise RuntimeError('QUIESCENCE_COMMAND_FAILED:' + args[1])
     return result.stdout
@@ -3120,6 +3149,9 @@ def run(candidate, action, *, allow_admin_issue624=False, allow_a207_admin=False
         raise ValueError('QUIESCENCE_INTRADAY_CAUCION_MODE_INVALID')
     if not re.fullmatch('[0-9a-f]{40}', candidate):
         raise ValueError('QUIESCENCE_CANDIDATE_INVALID')
+    if action == 'drain':
+        # Prevent false DRAINING/stop_attempted receipts on HOLD79.
+        require_legacy_drain_custody()
     folder = ROOT / 'data/deploy'
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / ('quiescence-' + candidate + '.json')
@@ -3941,6 +3973,9 @@ def run(candidate, action, *, allow_admin_issue624=False, allow_a207_admin=False
                             raise ValueError('QUIESCENCE_RECOVERY_IDENTITY_CHANGED')
                         command(['docker', 'start', name])
                         if inspect(name)['State']['Status'] != 'running': raise ValueError('QUIESCENCE_RECOVERY_NOT_RUNNING')
+                    except LegacyDockerCustodyHold:
+                        # Preserve original recovery receipt; return HOLD79.
+                        raise
                     except Exception as error: failures.append(type(error).__name__)
                 receipt['status'] = ('ORIGINAL_RUNTIME_DEGRADED_RESUMED' if
                                      receipt.get('degraded_closed_rescue') is True and not failures else
@@ -4114,7 +4149,11 @@ def main(argv=None):
     if args.action == 'image-intent':
         options.update(candidate_image_id=args.candidate_image_id,
                        frozen_manifest=args.frozen_manifest)
-    receipt = run(args.candidate_sha, args.action, **options)
+    try:
+        receipt = run(args.candidate_sha, args.action, **options)
+    except LegacyDockerCustodyHold as error:
+        print(str(error), flush=True)
+        return error.exit_code
     if receipt['status']=='RECOVERY_UNVERIFIED':return 2
     if receipt['status']=='FIX_FORWARD_VALIDATION_REQUIRED' and not args.allow_validation_pending:
         if (args.action=='admin-resume' and args.a207_admin and

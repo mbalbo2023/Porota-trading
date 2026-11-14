@@ -274,8 +274,11 @@ class FailureCleanupTests(unittest.TestCase):
             cleanup.cleanup(SHA)
         self.assertTrue((self.unrelated / 'keep').exists())
 
-    def test_timeout_and_failure_still_produce_nonzero_cli_result(self):
-        with patch.object(cleanup, 'cleanup', side_effect=subprocess.TimeoutExpired(['docker'], 20)), \
+    def test_simulated_authorized_cleanup_timeout_still_reports_red(self):
+        # Historical cleanup failure path; the live entrypoint remains HOLD79
+        # until an independent root-owned image-reference helper exists.
+        with patch.object(cleanup, 'require_root_owned_image_reference_proof'), \
+             patch.object(cleanup, 'cleanup', side_effect=subprocess.TimeoutExpired(['docker'], 20)), \
              patch('builtins.print') as output:
             self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 2)
         report = json.loads(output.call_args.args[0])
@@ -296,11 +299,12 @@ class FailureCleanupTests(unittest.TestCase):
         self.assertTrue(self.staging.exists())
         self.assertEqual(self.docker.calls, [])
 
-    def test_released_promoter_lock_allows_cleanup_without_replacing_lock(self):
+    def test_simulated_authorized_cleanup_preserves_promoter_lock_inode(self):
         lock = self.root / 'porota-rc6-deploy-v2.lock'
         lock.write_text('')
         inode = lock.stat().st_ino
-        with patch('builtins.print'):
+        with patch.object(cleanup, 'require_root_owned_image_reference_proof'), \
+             patch('builtins.print'):
             self.assertEqual(cleanup.main(['--candidate-sha', SHA]), 0)
         self.assertEqual(lock.stat().st_ino, inode)
         self.assertFalse(self.staging.exists())

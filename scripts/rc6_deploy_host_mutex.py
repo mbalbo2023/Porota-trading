@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Serialize Deploy V2 operations and fail closed after an uncertain exit.
-
-The workflow sends this exact source via a base64 Python -c argument before
-installing a candidate.  It is a short-lived part of that operation, not a
-background daemon.  Nested sudo may close inherited descriptors.  A durable
-attempt barrier therefore remains INFLIGHT if this wrapper dies before it
-observes the immediate child exit, including when SSH disappears.
-"""
+"""Deploy V2 private-owner flock and fail-closed INFLIGHT barriers."""
 from __future__ import annotations
 
 import fcntl
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -48,11 +42,104 @@ FAILED_A138_SOURCE_SHA256 = 'dcb0ed996a6be9aefb0a609139285f6160248909ccde92f189a
 FAILED_A92_IMAGE_ID = 'sha256:586464c20b74ab3a7ba842df8dfafcd76f21eb4c7bed553f23f6f187924ff735'
 
 
+def _verify_readonly_witness(fd: int, directory_path: Path,
+                             trusted_uid: int) -> None:
+    """Reject owner-FD inheritance, inode aliases and nonexclusive locks."""
+    lock_path = directory_path / LOCK_PATH.name
+    try:
+        parent = os.lstat(directory_path)
+        before = os.fstat(fd)
+        path = os.lstat(lock_path)
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    except OSError as exc:
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_UNSAFE') from exc
+    if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != trusted_uid or
+            parent.st_mode & (stat.S_IWGRP | stat.S_IWOTH) and
+            not parent.st_mode & stat.S_ISVTX or
+            not stat.S_ISREG(before.st_mode) or
+            not stat.S_ISREG(path.st_mode) or
+            before.st_uid != trusted_uid or path.st_uid != trusted_uid or
+            stat.S_IMODE(before.st_mode) != 0o600 or
+            stat.S_IMODE(path.st_mode) != 0o600 or
+            before.st_nlink != 1 or path.st_nlink != 1 or
+            (before.st_dev, before.st_ino) != (path.st_dev, path.st_ino)):
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_UNSAFE')
+    if flags & os.O_ACCMODE != os.O_RDONLY:
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_NOT_READONLY')
+    # Both EX and SH must conflict; a shared owner blocks EX alone.
+    for mode in (fcntl.LOCK_EX, fcntl.LOCK_SH):
+        try:
+            fcntl.flock(fd, mode | fcntl.LOCK_NB)
+        except OSError as exc:
+            if exc.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
+                raise RuntimeError('MUTEX_CONSUMER_WITNESS_LOCK_UNVERIFIED') from exc
+        else:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            raise RuntimeError('MUTEX_CONSUMER_OWNER_LOCK_ABSENT')
+    try:
+        after = os.lstat(lock_path)
+        opened = os.fstat(fd)
+    except OSError as exc:
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_UNSAFE') from exc
+    if ((after.st_dev, after.st_ino) != (before.st_dev, before.st_ino) or
+            (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino) or
+            after.st_nlink != 1):
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_UNSAFE')
+
+
+def require_migrated_consumer_protocol(*, trusted_uid: int = 0) -> None:
+    raw = os.environ.get('RC6_DEPLOY_MUTEX_FD', '')
+    if not re.fullmatch(r'[1-9][0-9]{0,7}', raw):
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_REQUIRED')
+    _verify_readonly_witness(int(raw), LOCK_DIR, trusted_uid)
+
+
+def _open_consumer_witness(owner_fd: int, directory_path: Path,
+                           *, trusted_uid: int = 0) -> int:
+    lock_path = directory_path / LOCK_PATH.name
+    try:
+        owner = os.fstat(owner_fd)
+        path = os.lstat(lock_path)
+    except OSError as exc:
+        raise RuntimeError('MUTEX_CONSUMER_OWNER_UNSAFE') from exc
+    if (not stat.S_ISREG(owner.st_mode) or owner.st_uid != trusted_uid or
+            stat.S_IMODE(owner.st_mode) != 0o600 or owner.st_nlink != 1 or
+            (owner.st_dev, owner.st_ino) != (path.st_dev, path.st_ino)):
+        raise RuntimeError('MUTEX_CONSUMER_OWNER_UNSAFE')
+    try:
+        witness = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError as exc:
+        raise RuntimeError('MUTEX_CONSUMER_WITNESS_UNSAFE') from exc
+    try:
+        _verify_readonly_witness(witness, directory_path, trusted_uid)
+        return witness
+    except BaseException:
+        os.close(witness)
+        raise
+
+
+def open_consumer_witness(owner_fd: int, directory_path: Path) -> int:
+    return _open_consumer_witness(owner_fd, directory_path, trusted_uid=0)
+
+
+def require_exclusive_docker_namespace() -> None:
+    raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED')
+
+
+def require_readonly_docker_command(args: tuple) -> None:
+    if args and (args[0] in {'ps', 'inspect'} or
+                 args[:2] in {('image', 'inspect'), ('image', 'ls'),
+                              ('system', 'df')}):
+        return
+    raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED')
+
+
 def open_lock(directory_path: Path = LOCK_DIR, trusted_uid: int = 0) -> int:
     lock_path = directory_path / LOCK_PATH.name
     directory = os.lstat(directory_path)
     if (not stat.S_ISDIR(directory.st_mode) or directory.st_uid != trusted_uid or
-            directory.st_mode & stat.S_IWOTH and not directory.st_mode & stat.S_ISVTX):
+            directory.st_mode & (stat.S_IWGRP | stat.S_IWOTH) and
+            not directory.st_mode & stat.S_ISVTX):
         raise RuntimeError('MUTEX_PARENT_UNSAFE')
     fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
@@ -127,8 +214,6 @@ def _sync_directory(directory_path: Path) -> None:
 
 def _write_barrier(directory_path: Path, state: dict) -> None:
     path = _barrier(directory_path)
-    # The flock is held throughout; random O_EXCL temp and atomic rename
-    # make a partial write fail closed rather than admit a different attempt.
     temp = directory_path / ('.' + BARRIER_NAME + '.' + secrets.token_hex(12))
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
                  os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -180,9 +265,6 @@ def _contract_only(directory_path: Path, identity: tuple[str, str, str], phase: 
 
 
 def _enable_subreaper() -> None:
-    # An inherited flock is insufficient across nested sudo. Reparent orphaned
-    # grandchildren here while this root wrapper lives, including after their
-    # immediate shell exits; a lost wrapper leaves the INFLIGHT barrier.
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
         raise OSError(ctypes.get_errno(), 'MUTEX_SUBREAPER_UNAVAILABLE')
@@ -194,7 +276,7 @@ def _drain_children(max_seconds: float = 10) -> None:
         try:
             pid, _ = os.waitpid(-1, os.WNOHANG)
         except ChildProcessError:
-            return  # All adopted descendants have exited and been reaped.
+            return
         if pid:
             continue
         if time.monotonic() >= deadline:
@@ -217,12 +299,7 @@ def _contract_writers() -> set[str]:
 
 
 def _exact_a138_stopped_host_proof() -> str:
-    """Read-only validation before retiring exactly one cleanly exited barrier.
-
-    The old A138 files were copied to the host before its COLD2 failure. They
-    must still be byte-for-byte identical. Do not trust arbitrary host Python
-    or promote an unverified stopped observer to a healthy session.
-    """
+    """Proof for exact A138 stopped/barrier cleanup; never infer healthy."""
     root = Path('/opt/porota-trading')
     script = root / 'scripts/rc6_deploy_quiescence.py'
     if (script.is_symlink() or not script.is_file() or
@@ -271,13 +348,7 @@ def _exact_a138_stopped_host_proof() -> str:
 
 
 def _reconcile_exact_a138_idle(directory_path: Path, identity: tuple[str, str, str]) -> None:
-    """A140: close A138's *IDLE* barrier, never an uncertain INFLIGHT barrier.
-
-    All validations run under the same exclusive flock used for mutating host
-    operations. The only disk mutation is unlinking this exact prior barrier;
-    every other failure leaves it intact. A successful audit is captured by
-    this workflow's immutable GitHub Actions log before normal classification.
-    """
+    """A140: retire only an exactly proven clean A138 IDLE barrier."""
     existing = _read_barrier(directory_path)
     if existing is None:
         print('RC6_A140_BARRIER_RECONCILE=ALREADY_EMPTY', file=sys.stderr, flush=True)
@@ -292,8 +363,7 @@ def _reconcile_exact_a138_idle(directory_path: Path, identity: tuple[str, str, s
     if _contract_writers():
         raise RuntimeError('BARRIER_A138_CONTRACT_WRITER_ALIVE')
     digest = _exact_a138_stopped_host_proof()
-    # Re-check after host proof, before unlinking; the flock excludes every
-    # Deploy V2 writer but does not excuse any unexpected external mutation.
+    # Re-check the host evidence and barrier before retiring it.
     if _read_barrier(directory_path) != existing or _contract_writers():
         raise RuntimeError('BARRIER_A138_CHANGED_DURING_PROOF')
     _barrier(directory_path).unlink()
@@ -335,7 +405,11 @@ def run(argv: list[str]) -> int:
                        '--policy-b64' not in command):
         raise RuntimeError('PRESUSPEND_PROOF_COMMAND_INVALID')
     fd = open_lock(LOCK_DIR)
+    witness_fd = None
     try:
+        # Only finalizer gets a read-only witness, never the private owner FD.
+        if phase == 'finalize':
+            witness_fd = open_consumer_witness(fd, LOCK_DIR)
         _enable_subreaper()
         if reconcile:
             _reconcile_exact_a138_idle(LOCK_DIR, identity)
@@ -358,15 +432,20 @@ def run(argv: list[str]) -> int:
             if existing['status'] != 'IDLE' and not (
                     existing['status'] == 'CONTRACT_ONLY' and phase == 'cleanup_contract'):
                 raise RuntimeError('BARRIER_PRIOR_OPERATION_UNCERTAIN')
-        # A Docker child can outlive a lost SSH/sudo CLI even after its parent
-        # releases flock. Never start another mutator beside that exact writer.
+        # An orphaned Docker contract must not outlive the attempt barrier.
         if not allow_contract_lifecycle:
             if _contract_writers():
                 raise RuntimeError('CONTRACT_WRITER_ORPHAN_RUNNING')
         if not observe and not (presuspend and existing is None):
             _enter(LOCK_DIR, identity, phase)
         env = os.environ.copy()
-        env['RC6_DEPLOY_MUTEX_FD'] = str(fd)
+        # Ambient legacy FD claims cannot reach the child.
+        env.pop('RC6_DEPLOY_MUTEX_FD', None)
+        env.pop('RC6_DEPLOY_MUTEX_PROOF', None)
+        inherited = ()
+        if witness_fd is not None:
+            env['RC6_DEPLOY_MUTEX_FD'] = str(witness_fd)
+            inherited = (witness_fd,)
         if argv[1] == 'user':
             env.update(HOME=user.pw_dir, USER=user.pw_name, LOGNAME=user.pw_name)
         def drop_privileges() -> None:
@@ -374,18 +453,13 @@ def run(argv: list[str]) -> int:
                 os.initgroups(user.pw_name, user.pw_gid)
                 os.setgid(user.pw_gid)
                 os.setuid(user.pw_uid)
-        # The classification step captures stdout as one exact OPEN/CLOSED
-        # token. Operational lock evidence must not change child stdout.
         print('RC6_DEPLOY_HOST_MUTEX=HELD', file=sys.stderr, flush=True)
-        result = subprocess.run(command, check=False, env=env, pass_fds=(fd,),
+        result = subprocess.run(command, check=False, env=env, pass_fds=inherited,
                                 preexec_fn=drop_privileges)
         _drain_children()
         writers = _contract_writers()
         if writers:
-            # A known, exact Docker contract is the one writer that can be
-            # stopped safely by the existing failure-cleanup first stage.
-            # All Linux descendants have exited; retain an exclusive barrier
-            # and admit only that exact attempt's contract-stop action.
+            # Admit only the exact attempt's contract-stop cleanup.
             if phase == 'promotion' and writers == {'porota-deploy-contract-' + identity[0]}:
                 _contract_only(LOCK_DIR, identity, phase)
                 raise RuntimeError('CONTRACT_WRITER_REQUIRES_EXACT_STOP')
@@ -397,11 +471,10 @@ def run(argv: list[str]) -> int:
             print('RC6_PRE_SUSPEND_BARRIER=GREEN|exact_attempt=' +
                   ('RETIRED' if existing is not None else 'ALREADY_EMPTY') +
                   '|no_scheduler_restore=true', file=sys.stderr, flush=True)
-        # An ordinary nonzero exit with no adopted descendants and no contract
-        # writer may be recovered by this exact attempt. Timeout, uncertain
-        # children or abrupt wrapper death keep INFLIGHT and block all writers.
         return result.returncode
     finally:
+        if witness_fd is not None:
+            os.close(witness_fd)
         os.close(fd)
 
 

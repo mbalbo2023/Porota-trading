@@ -1,18 +1,20 @@
 # ============================================================================
 # requirements.txt — Porota Trading v16.2
 # ============================================================================
-# UNICA FUENTE DE VERDAD DE DEPENDENCIAS.
+# DECLARACIONES DE DEPENDENCIAS DIRECTAS; NO ES EL ARTEFACTO INSTALABLE.
+# La fuente reproducible del build es requirements.lock.txt: el Dockerfile y
+# Predeploy V2 instalan exactamente esos pins, sujetos a QA del candidato.
 #
-# El Dockerfile ya no instala nada por fuera de este archivo. Hasta la version
-# anterior habia un `pip install langgraph chromadb scikit-learn` suelto, sin
-# version, encima de un requirements.txt que declaraba la politica contraria.
+# El Dockerfile ya no agrega paquetes por fuera del lock. Hasta la version
+# anterior habia un `pip install langgraph chromadb scikit-learn` suelto.
 # Dos reconstrucciones de la imagen en semanas distintas producian sistemas
 # distintos, y para un proceso que coloca ordenes eso convierte cualquier
 # diagnostico en una conjetura: no se puede afirmar que produccion corre lo
 # mismo que se probo.
 #
-# Para actualizar: leer changelog/diff, cambiar el numero en rama aislada,
-# correr suite completa y promover recien con evidencia GREEN.
+# Para actualizar: leer changelog/diff, editar especificacion en rama aislada,
+# regenerar/verificar lock, correr suite completa y promover solo con
+# evidencia GREEN del artefacto exacto; nunca actualizar por rutina.
 # ============================================================================
 
 # --- Broker de ejecucion ----------------------------------------------------

@@ -13,6 +13,23 @@ import shutil
 import sqlite3
 import subprocess
 
+# Resolve central denial code only after admission: this module may be piped
+# via stdin without a matching host checkout. Missing guards deny mutation.
+def require_exclusive_docker_namespace():
+    try:
+        from scripts.rc6_deploy_host_mutex import require_exclusive_docker_namespace as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED') from None
+    guard()
+
+
+def require_readonly_docker_command(args):
+    try:
+        from scripts.rc6_deploy_host_mutex import require_readonly_docker_command as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED') from None
+    guard(args)
+
 ROOT = Path('/opt/porota-trading')
 FAILED = '48a981cf327a637c0c074879fcdcd17475de8111'
 IMAGE = 'sha256:d47a427f8d205f899805967ed825cf2cdd9036a79f72ae24b17116e25cc8e905'
@@ -32,6 +49,7 @@ def command(*args):
 
 
 def docker(*args):
+    require_readonly_docker_command(args)
     return command('docker', *args)
 
 
@@ -134,14 +152,14 @@ def eligible_tags():
     digests = value.get('RepoDigests') or []
     if (value.get('Id') != IMAGE or type(tags) is not list or
             not tags or any(tag not in TAGS for tag in tags) or
-            any(re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}',
-                             digest) is None for digest in digests) or
+            bool(digests) or
             IMAGE in references()):
         raise ValueError('OFFLINE_IMAGE_REFERENCED_OR_ALIASED')
     return [tag for tag in TAGS if tag in tags]
 
 
 def cleanup():
+    require_exclusive_docker_namespace()
     lock = ROOT/'data/deploy/.deploy-quiescence.lock'
     if lock.is_symlink() or not lock.is_file():
         raise ValueError('OFFLINE_LOCK_UNSAFE')
@@ -167,5 +185,18 @@ def cleanup():
                 'real_orders_sent': 0, 'ppi_watch_changed': False}
 
 
+def main():
+    try:
+        report = cleanup()
+    except (RuntimeError, ValueError, OSError, sqlite3.Error,
+            subprocess.TimeoutExpired) as exc:
+        print(json.dumps({'schema': 'RC6_OFFLINE_FAILED_IMAGE_CLEANUP_V1',
+                          'status': 'RED', 'reason': str(exc),
+                          'removed_tags': [], 'space_recovered': 0}, sort_keys=True))
+        return 2
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
 if __name__ == '__main__':
-    print(json.dumps(cleanup(), sort_keys=True))
+    raise SystemExit(main())

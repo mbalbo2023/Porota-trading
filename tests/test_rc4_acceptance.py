@@ -175,14 +175,51 @@ def test_family_readiness_never_auto_activates_even_when_complete(tmp_path):
 def test_blocked_auth_capture_is_persisted_as_run_not_contract(tmp_path):
     s=cimport.Store(str(tmp_path/'blocked.db'))
     capture=tmp_path/'capture.json'
-    capture.write_text(json.dumps({'jobs':['CONTRACT_EVIDENCE_DYNAMIC'],
-        'auth_status':'BLOCKED_AUTH_SESSION_EXPIRED','endpoints':{},'real_orders_sent':0}))
+    capture.write_text(json.dumps({
+        'schema':'POROTA_RC4_PPI_TRUSTED_CONTRACT_1',
+        'generated_at':datetime.now(timezone.utc).isoformat(),
+        'jobs':['CONTRACT_EVIDENCE_DYNAMIC'],
+        'auth_status':'BLOCKED_AUTH_SESSION_EXPIRED',
+        'endpoints':{},'routes':[],'blocked_nonread':[],
+        'continue_clicked':False,'amount_filled':False,'price_filled':False,
+        'real_orders_sent':0}))
     r=cimport.import_capture(s,capture)
     assert r['state']=='BLOCKED_AUTH' and r['records']==0 and r['real_orders_sent']==0
     with s.connect() as c:
         run=dict(c.execute('SELECT job_key,state,records FROM contract_evidence_v2_runs').fetchone())
         n=c.execute('SELECT COUNT(*) FROM contract_evidence_v2_snapshots').fetchone()[0]
-    assert run['state']=='BLOCKED_AUTH' and run['records']==0 and n==0
+    assert run=={'job_key':'CONTRACT_EVIDENCE_DYNAMIC','state':'BLOCKED_AUTH','records':0}
+    assert n==0
+
+
+def test_malformed_blocked_auth_capture_has_no_audit_or_contract_write(tmp_path):
+    store=cimport.Store(str(tmp_path/'invalid.db'))
+    capture=tmp_path/'invalid.json'
+    # A blocked-auth label cannot authorize an incomplete/unattested receipt.
+    capture.write_text(json.dumps({'jobs':['CONTRACT_EVIDENCE_DYNAMIC'],
+        'auth_status':'BLOCKED_AUTH_SESSION_EXPIRED',
+        'endpoints':{},'real_orders_sent':0}))
+    result=cimport.import_capture(store,capture)
+    assert result['state']=='BLOCKED_CAPTURE_INVALID'
+    assert result['records']==0
+    assert not (tmp_path/'invalid.db').exists()
+
+
+def test_blocked_auth_without_browser_profile_does_not_create_database(tmp_path):
+    store=cimport.Store(str(tmp_path/'missing-profile.db'))
+    capture=tmp_path/'missing-profile.json'
+    capture.write_text(json.dumps({
+        'schema':'POROTA_RC4_PPI_TRUSTED_CONTRACT_1',
+        'generated_at':datetime.now(timezone.utc).isoformat(),
+        'jobs':['CONTRACT_EVIDENCE_DYNAMIC'],
+        'auth_status':'BLOCKED_AUTH_PROFILE_MISSING',
+        'endpoints':{},'routes':[],'blocked_nonread':[],
+        'continue_clicked':False,'amount_filled':False,'price_filled':False,
+        'real_orders_sent':0}))
+    result=cimport.import_capture(store,capture)
+    assert result['state']=='BLOCKED_AUTH' and result['records']==0
+    assert result['real_orders_sent']==0
+    assert not (tmp_path/'missing-profile.db').exists()
 
 
 def test_legacy_bridge_is_metadata_only_and_never_activates(tmp_path):

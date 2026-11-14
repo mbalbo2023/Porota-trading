@@ -20,6 +20,16 @@ MAX_PACK = 512 * 1024**2
 MAX_COMPUTED = 64 * 1024**2
 
 
+def _recent_computed(shadow, *, sealed_at, failed_at):
+    """Only files created in this failed cut's bounded reporting window."""
+    for entry in shadow.iterdir():
+        if not re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', entry.name):
+            continue
+        info = entry.lstat()
+        if sealed_at <= info.st_mtime_ns / 1e9 <= failed_at + 5:
+            yield entry
+
+
 def _failed_report(shadow, archive, *, sealed_at, failed_at):
     """Bind a REPORT_VERIFY failure to its sole completed audit file.
 
@@ -28,13 +38,9 @@ def _failed_report(shadow, archive, *, sealed_at, failed_at):
     The report remains failed; it is never reclassified as a COMPLETE receipt.
     """
     reports = []
-    for entry in shadow.iterdir():
-        if not re.fullmatch(r'computed-[a-f0-9]{64}\.json\.gz', entry.name):
-            continue
-        info = entry.lstat()
-        if sealed_at <= info.st_mtime_ns / 1e9 <= failed_at + 5:
-            old.regular(entry, bound=MAX_COMPUTED)
-            reports.append(entry)
+    for entry in _recent_computed(shadow, sealed_at=sealed_at, failed_at=failed_at):
+        old.regular(entry, bound=MAX_COMPUTED)
+        reports.append(entry)
     if len(reports) != 1:
         raise ValueError('COLD2_SUCCESSOR_REPORT_VERIFY_EVIDENCE_AMBIGUOUS')
     report = reports[0]
@@ -118,6 +124,7 @@ def inspect(root, *, hash_pack=True):
                 ('SHADOW_COLD_DEADLINE_EXPIRED_OR_CLOCK_REGRESSED', 'REPORT_VERIFY'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'PACK_HASH'),
                 ('SHADOW_COLD_HOST_MEMORY_RESERVE_BREACHED', 'REPORT_VERIFY'),
+                ('SHADOW_COLD_DISK_RESERVE_BREACHED', 'REPORT_WRITE'),
             } or
             type(receipt.get('failed_at')) not in (float, int) or
             not manifest['sealed_at'] <= receipt['failed_at'] <= manifest['deadline_at']+5 or
@@ -127,6 +134,11 @@ def inspect(root, *, hash_pack=True):
     report = (_failed_report(shadow, archive, sealed_at=manifest['sealed_at'],
                              failed_at=receipt['failed_at'])
               if receipt['error_phase'] == 'REPORT_VERIFY' else None)
+    if receipt['error_phase'] == 'REPORT_WRITE' and any(_recent_computed(
+            shadow, sealed_at=manifest['sealed_at'], failed_at=receipt['failed_at'])):
+        # A write failure may leave an output that never reached verification.
+        # A matching new file has no attested provenance; refuse recovery.
+        raise ValueError('COLD2_SUCCESSOR_REPORT_WRITE_UNVERIFIED')
     if report is not None:
         allowed_archive.update((report['name'], '.write-'+report['name']+'.tmp'))
     if archived - allowed_archive:
@@ -169,7 +181,10 @@ def inspect(root, *, hash_pack=True):
             'source_names':sorted(names),'archive_names':sorted(archived),
             'archive_complete':all(n in archived for n in files+(pack_name,'quarantine.json')+
                                    ((report['name'],) if report else ())),
-            'queue_failed': 'queue.json' in names, 'failed_computed_report':report}
+            'queue_failed': 'queue.json' in names,
+            'failure_code': receipt['error_code'],
+            'failure_phase': receipt['error_phase'],
+            'failed_computed_report':report}
 
 
 def quarantine(root, *, admission, expected_owned_ids, checkpoint=lambda step: None):

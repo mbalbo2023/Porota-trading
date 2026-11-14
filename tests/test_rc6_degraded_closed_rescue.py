@@ -49,6 +49,8 @@ def write_marker(root, candidate=q.RESCUE_SOURCE_SHA, image=q.RESCUE_IMAGE_ID,
 
 @pytest.fixture
 def incident(tmp_path, monkeypatch):
+    # Historical fake-Docker transition; real drain is HOLD79 before receipt.
+    monkeypatch.setattr(q, 'require_legacy_drain_custody', lambda: None)
     monkeypatch.setattr(q, 'ROOT', tmp_path)
     monkeypatch.setattr(q, 'datetime', FrozenDateTime)
     shutil.copyfile(Path(__file__).resolve().parents[1] / 'ak_byma_calendar.py',

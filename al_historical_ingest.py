@@ -175,13 +175,16 @@ def _normalizar_fila_iol(p: dict) -> Optional[tuple]:
 
 def guardar_velas(symbol: str, asset_class: str, velas: List[tuple],
                   source: str, adjusted: bool) -> int:
-    """Legacy advisory UPSERT with atomic family/monetary collision guards.
+    """Legacy advisory UPSERT with atomic family/monetary/source guards.
 
     Comparable adjusted/raw series belong in History v2, not this legacy key.
     Existing data are retained; a different family/currency never overwrites
     the same symbol/day merely because the historical PK omitted them.
+    DATA912 is lower authority: check the persisted source in the *same*
+    write transaction, because a prior read in the caller can become stale.
     """
-    if str(source or "").strip().upper() == "IOL":
+    source_key = str(source or "").strip().upper()
+    if source_key == "IOL":
         raise ValueError("IOL_HISTORICAL_PROVENANCE_UNVERIFIED")
     if not velas:
         return 0
@@ -213,20 +216,28 @@ def guardar_velas(symbol: str, asset_class: str, velas: List[tuple],
     with _conn() as conn:
         conn.execute('BEGIN IMMEDIATE')
         try:
+            written = 0
             for row in filas:
-                prior=conn.execute('SELECT asset_class,currency,adjusted FROM market_historical_ohlcv WHERE symbol=? AND date=?',(row[0],row[2])).fetchone()
+                prior=conn.execute('SELECT asset_class,currency,adjusted,source FROM market_historical_ohlcv WHERE symbol=? AND date=?',(row[0],row[2])).fetchone()
                 if prior and str(prior[0]).upper()!=str(asset_class).upper():
                     raise ValueError('LEGACY_HISTORY_FAMILY_COLLISION')
                 if prior and prior[1]!=row[10]:
                     raise ValueError('LEGACY_HISTORY_CURRENCY_COLLISION')
                 if prior and bool(prior[2])!=bool(adjusted):
                     raise ValueError('LEGACY_HISTORY_PRICE_BASIS_COLLISION')
-                conn.execute(sql,row)
+                # BEGIN IMMEDIATE excludes another SQLite writer between this
+                # authority check and UPSERT. Data912 can insert new rows or
+                # refresh its own raw rows; every other existing provenance
+                # (including unknown, PPI/BYMA/IOL or Yahoo) is preserved.
+                if (source_key == 'DATA912' and prior and
+                        (bool(prior[2]) or str(prior[3] or '').strip().upper() != 'DATA912')):
+                    continue
+                written += conn.execute(sql,row).rowcount
             conn.commit()
         except BaseException:
             conn.rollback()
             raise
-    return len(filas)
+    return written
 
 
 def backfill_desde_iol(iol_client, simbolos: List[str], asset_class: str = "ACCIONES",

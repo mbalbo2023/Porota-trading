@@ -163,16 +163,16 @@ def test_parser_sintetico_config_familias_y_solo_tickers_devueltos(transport,cap
     assert capsys.readouterr().out==''
 
 
-def test_live_probe_without_signed_configuration_quota_is_explicitly_blocked(transport):
+def test_live_probe_without_auth_authority_is_blocked_before_fake_wire(transport):
     secret,calls,_=transport
     report=probe.live_report(secret)
     assert report['status']=='STOPPED'
-    assert report['reason']=='BudgetBackpressure'
-    assert report['stage']=='CONFIGURATION'
+    assert report['reason']=='ReadOnlyPolicyViolation'
+    assert report['stage']=='LOGIN'
     assert report['promotion_allowed'] is False and report['data_certified'] is False
-    assert [method for method,_,_ in calls]==['POST']  # no Configuration/Search/Book wire GET
-    assert report['reader_metrics']['login_calls']==1
-    assert [item['status'] for item in report['http']]==[200,None]
+    assert calls==[]  # No LoginApi/RefreshToken or Configuration/Search/Book GET.
+    assert report['reader_metrics']['login_calls']==0
+    assert report['http']==[]
 
 
 @pytest.mark.parametrize('status',[302,400,401,403,429,500])
@@ -187,11 +187,12 @@ def test_rechazo_detiene_sin_refresh_reintento_o_cuerpo_de_error(transport,statu
 
 
 @pytest.mark.parametrize('value',[None,[],{'missing':'tokens'}])
-def test_login_malformado_no_inicia_consultas(transport,value):
+def test_auth_hold_precedes_even_malformed_fake_login_response(transport,value):
     secret,calls,responses=transport
     responses['loginapi']=(200,value)
     report=probe.live_report(secret)
-    assert report['status']=='STOPPED' and len(calls)==1
+    assert report['status']=='STOPPED' and report['reason']=='ReadOnlyPolicyViolation'
+    assert report['stage']=='LOGIN' and calls==[]
 
 
 @pytest.mark.parametrize('name,value',[
@@ -295,13 +296,14 @@ def test_expiracion_total_se_reporta_y_restaura_handler(transport,monkeypatch):
 
 
 def test_timeout_http_no_expone_texto_ni_reintenta(transport,monkeypatch):
+    # AUTH HOLD occurs before an intentionally hostile fake timeout adapter.
     secret,calls,_=transport
     def timeout(*a,**k):
         calls.append('timeout')
         raise requests.Timeout(FIXTURE_SECRET)
     monkeypatch.setattr(requests.adapters.HTTPAdapter,'send',timeout)
     report=probe.live_report(secret)
-    assert report['reason']=='Timeout' and calls==['timeout']
+    assert report['reason']=='ReadOnlyPolicyViolation' and calls==[]
     assert FIXTURE_SECRET not in json.dumps(report)
 
 

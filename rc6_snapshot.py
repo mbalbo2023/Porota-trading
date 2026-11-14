@@ -12,12 +12,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
+from rc6_postclose_source_contract import (PENDING as EOD_PENDING,
+                                          postclose_eod_receipt,
+                                          verified_current_source)
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 BASE_URL = os.getenv("RC6_SNAPSHOT_DASHBOARD_URL", "http://127.0.0.1:8000")
 OUTPUT = Path(os.getenv("RC6_SNAPSHOT_OUTPUT", "data/paper_v17/snapshots/latest.json"))
 MAX_OPERATIONS = 500
 MAX_DECISIONS = 5000
+COM19031_EFFECTIVE = datetime(2026, 11, 2).date()
 
 def _request_state() -> dict:
     token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
@@ -65,17 +69,18 @@ def _operation(row: dict) -> dict:
         "counterfactual": "INSUFFICIENT_EVIDENCE",
     }
 
-def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
+def build_snapshot(phase: str, now: datetime, payload: dict,
+                   *, eod_source: dict | None = None) -> dict:
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     closed = payload.get("closed") if isinstance(payload.get("closed"), list) else []
     decisions = payload.get("decisions") if isinstance(payload.get("decisions"), list) else []
     today = now.astimezone(TZ).date().isoformat()
     operations = [_operation(row) for row in closed if isinstance(row, dict) and _local_day(row.get("closed_at")) == today][:MAX_OPERATIONS]
     mode = state.get("mode")
-    try:
-        real_orders_sent = int(state.get("real_orders_sent"))
-    except (TypeError, ValueError):
-        real_orders_sent = None
+    # A boolean, numeric-looking string or float is not a physical integer
+    # counter. Do not normalize ambiguous API data into a false PAPER-safe 0.
+    raw_real_orders = state.get("real_orders_sent")
+    real_orders_sent = raw_real_orders if type(raw_real_orders) is int else None
     closed_pnl = [item["net_pnl"] for item in operations if item.get("net_pnl") is not None]
     pnl_by_currency = {}
     for item in operations:
@@ -111,7 +116,15 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         for item in operations
     ):
         alerts.append("CLOSED_OPERATION_CURRENCY_MISSING")
-    status = "VERIFIED" if not alerts else "INSUFFICIENT_EVIDENCE"
+    # EOD source evidence and PAPER ledger safety are independent assertions.
+    # Postclose publication is provisional until exact-session PPI RAW proof;
+    # this does not halt a healthy PAPER runtime or authorize any trade.
+    eod_required = (phase == "postclose" and
+                    now.astimezone(TZ).date() >= COM19031_EFFECTIVE)
+    eod_observed = eod_source if isinstance(eod_source, dict) else {}
+    eod_ready = verified_current_source(eod_observed, now) if eod_required else True
+    status = ("INSUFFICIENT_EVIDENCE" if alerts else
+              EOD_PENDING if not eod_ready else "VERIFIED")
     return {
         "schema_version": 2,
         "status": status,
@@ -120,6 +133,9 @@ def build_snapshot(phase: str, now: datetime, payload: dict) -> dict:
         "source": "/api/observer/state",
         "mode": mode,
         "real_orders_sent": real_orders_sent,
+        "paper_safety_status": "VERIFIED" if not alerts else "INSUFFICIENT_EVIDENCE",
+        "postclose_eod_source": (eod_observed if eod_observed else {"state": EOD_PENDING})
+        if eod_required else {"state": "NOT_APPLICABLE"},
         "summary": "Snapshot RC6 de solo lectura; métricas exclusivamente PAPER/SIMULATED.",
         "metrics": metrics,
         "operations": operations,
@@ -149,10 +165,13 @@ def main() -> int:
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": "NOT_DUE", "read_only": True}, sort_keys=True))
         return 0
     try:
-        snapshot = build_snapshot(args.phase, now, _request_state())
+        eod_receipt = (postclose_eod_receipt(now) if args.phase == "postclose"
+                       and now.date() >= COM19031_EFFECTIVE else None)
+        snapshot = build_snapshot(args.phase, now, _request_state(), eod_source=eod_receipt)
         write_snapshot(snapshot)
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": snapshot["status"], "read_only": True, "real_orders_sent": snapshot["real_orders_sent"]}, sort_keys=True))
-        return 0 if snapshot["status"] == "VERIFIED" else 2
+        # Source AMBER degrades report truth, not operational PAPER health.
+        return 0 if snapshot["status"] in {"VERIFIED", EOD_PENDING} else 2
     except Exception as exc:
         print(json.dumps({"schema_version": 1, "phase": args.phase, "status": "ERROR", "read_only": True, "error": type(exc).__name__}, sort_keys=True))
         return 2

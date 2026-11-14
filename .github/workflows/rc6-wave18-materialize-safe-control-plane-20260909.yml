@@ -1,12 +1,24 @@
 name: RC6 Wave18 Materialize Safe Control Plane 2026-09-09
 on:
   push:
+    # Path-diff fallback must not admit the unified OFFHOST candidate.
+    branches-ignore:
+      - 'integration/rc6-a1115-r87-unified-paper-candidate-20261110'
+    # Preserve the pre-existing tag-push behavior of this legacy workflow.
+    tags: ['**']
     paths:
       - '.github/workflows/rc6-wave18-materialize-safe-control-plane-20260909.yml'
 permissions:
   contents: write
 jobs:
   materialize:
+    # Independent of trigger/path filtering; absent/unknown context is denied.
+    # R126 ruling: GitHub compares strings case-insensitively, so distinct
+    # case-only candidate branches are conservatively denied here as well.
+    if: >-
+      ${{ github.event_name == 'push' &&
+          (startsWith(github.ref, 'refs/heads/') || startsWith(github.ref, 'refs/tags/')) &&
+          github.ref != 'refs/heads/integration/rc6-a1115-r87-unified-paper-candidate-20261110' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
