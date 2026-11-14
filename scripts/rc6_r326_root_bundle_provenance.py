@@ -11,13 +11,17 @@ no candidate-source execution, network/host operation or wall clock read occurs.
 """
 from dataclasses import dataclass, field
 import hashlib
-from importlib import import_module
+import builtins
+from importlib.machinery import (BuiltinImporter, ExtensionFileLoader, FrozenImporter,
+                                ModuleSpec, PathFinder, SourceFileLoader)
+import os
+import sys
 from pathlib import Path
 import io
 import json
 import re
 import tarfile
-from types import MappingProxyType
+from types import MappingProxyType, ModuleType
 
 
 class ProvenanceHold(ValueError):
@@ -175,57 +179,155 @@ def extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes):
     return MappingProxyType({_SOURCE_PATHS[path]: raw for path, raw in selected.items()})
 
 
-def _trusted_freezer():
-    try:
-        return import_module("scripts.rc6_r304_root_install_manifest_freeze").freeze_root_install_manifest
-    except (ImportError, AttributeError) as exc:
-        raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R304") from exc
-
-
-# Reviewed CODE pins, not per-release D/image/profile pins. Updates to the
-# reviewed producer/consumer require code review; each release context remains
-# an input to their deterministic producer. No dependency is read from D.
+# Exact reviewed checkout source, not a release artifact or Python import cache.
 _R308_SHA256 = "f9e1b8dc4d32ebd662eebe382be5989b1f72bb36b17a0fe3f2f3072691712db9"
 _R271_SHA256 = "aa68cc1def24096d32fc91c77c2076bee44ca8290000fdbd58b945cfc820ae1d"
+_CODE_PINS = MappingProxyType({
+    "rc6_oci_host_helper": _R271_SHA256,
+    "rc6_r308_root_launch_profile_freeze": _R308_SHA256,
+    "rc6_host_rootowned_installer_contract":
+        "8ef4f5892560e496a85cae1df159e45b843d9f6047c3d87f68bc0b369f61adc9",
+    "rc6_r304_root_install_manifest_freeze":
+        "6711ad67f4de122488787b5587ff947801afed19fe0df4d551db4e65f638fea9",
+})
+_SCRIPT_EDGES = MappingProxyType({
+    "rc6_r308_root_launch_profile_freeze": "rc6_oci_host_helper",
+    "rc6_r304_root_install_manifest_freeze": "rc6_host_rootowned_installer_contract",
+})
 
 
 def _trusted_dependency_root():
     return Path(__file__).resolve().parent
 
 
-def _trusted_consumer(helper_bytes):
-    """Load only physically integrated, reviewed trusted-main R308/R271 code.
-
-    This is the sole bounded local-source read boundary, never a candidate
-    archive path. A fresh trusted-main controller must additionally enforce its
-    checkout identity and real R252/R163/Git/image receipts. This pure producer
-    does not implement or certify that controller.
-    """
-    root = _trusted_dependency_root()
-    loaded = {}
-    for name, pin in (("rc6_oci_host_helper", _R271_SHA256),
-                      ("rc6_r308_root_launch_profile_freeze", _R308_SHA256)):
-        path = root / (name + ".py")
+def _reviewed_source_pair(names, reason):
+    # Capture/check the whole pair before executing either dependency. Execute
+    # these bytes later, never reopen through an import loader or bytecode cache.
+    captured = {}
+    for name in names:
+        _require(name in _CODE_PINS, reason)
+        path = _trusted_dependency_root() / (name + ".py")
         try:
             with path.open("rb") as handle:
                 raw = handle.read(2 * 1024**2 + 1)
         except OSError as exc:
-            raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R308_CONSUMER") from exc
-        _require(len(raw) <= 2 * 1024**2 and _hash(raw) == pin,
-                 "MISSING_TRUSTED_R308_CONSUMER")
-        if name == "rc6_oci_host_helper":
-            _require(type(helper_bytes) is bytes and raw == helper_bytes,
-                     "TRUSTED_R271_D_BLOB_MISMATCH")
+            raise ProvenanceHold("RC6_R326_HOLD79:" + reason) from exc
+        _require(len(raw) <= 2 * 1024**2 and _hash(raw) == _CODE_PINS[name], reason)
+        captured[name] = (path, raw)
+    return captured
+
+
+# Direct imports of the four fixed sources and the observed secrets/datetime
+# closure on CPython 3.11/3.12. Native hash accelerators vary by interpreter.
+_STDLIB_NAMES = frozenset((
+    "dataclasses", "datetime", "_datetime", "hashlib", "_hashlib", "json",
+    "os", "pathlib", "re", "stat", "sys", "types", "importlib", "time",
+    "secrets", "base64", "binascii", "hmac", "random", "math", "bisect",
+    "_bisect", "_random", "_sha1", "_sha2", "_sha256", "_sha512", "_sha3",
+    "_blake2", "struct", "_struct", "collections", "_collections", "copyreg",
+    "enum", "functools", "_functools", "itertools", "keyword", "operator",
+    "_operator", "reprlib", "warnings", "_sre", "_collections_abc",
+))
+
+
+def _verify_standard_library():
+    """Reject shadowed standard imports without importing their target names."""
+    reason = "STDLIB_DEPENDENCY_UNVERIFIED"
+    root = Path(os.__file__).resolve().parent
+
+    def reviewed_spec(spec):
+        _require(type(spec) is ModuleSpec and type(spec.origin) is str, reason)
+        if spec.origin in ("built-in", "frozen"):
+            expected = BuiltinImporter if spec.origin == "built-in" else FrozenImporter
+            _require(spec.loader is expected, reason)
+            return
+        _require(type(spec.loader) in (SourceFileLoader, ExtensionFileLoader), reason)
+        path = Path(spec.origin).resolve()
         try:
-            module = import_module("scripts." + name)
-        except ImportError as exc:
-            raise ProvenanceHold("RC6_R326_HOLD79:MISSING_TRUSTED_R308_CONSUMER") from exc
-        _require(Path(module.__file__).resolve() == path.resolve(),
-                 "MISSING_TRUSTED_R308_CONSUMER")
-        loaded[name] = module
-    _require(loaded["rc6_r308_root_launch_profile_freeze"].host_contract is loaded["rc6_oci_host_helper"],
-             "MISSING_TRUSTED_R308_CONSUMER")
-    return loaded["rc6_r308_root_launch_profile_freeze"].freeze_root_launch_profiles
+            relative = path.relative_to(root)
+        except ValueError:
+            raise ProvenanceHold("RC6_R326_HOLD79:" + reason) from None
+        _require(not {"site-packages", "dist-packages"}.intersection(relative.parts)
+                 and type(spec.loader.path) is str and
+                 Path(spec.loader.path).resolve() == path, reason)
+
+    # Read dictionaries directly: an injected module's __getattr__ is code.
+    for name, module in tuple(sys.modules.items()):
+        if name.split(".", 1)[0] in _STDLIB_NAMES:
+            _require(type(module) is ModuleType, reason)
+            data = vars(module)
+            _require("__getattr__" not in data, reason)
+            spec = data.get("__spec__")
+            reviewed_spec(spec)
+            _require(data.get("__loader__") is spec.loader, reason)
+            if spec.origin not in ("built-in", "frozen"):
+                _require(type(data.get("__file__")) is str and
+                         Path(data["__file__"]).resolve() == Path(spec.origin).resolve(), reason)
+    for name in _STDLIB_NAMES:
+        if name in sys.modules:
+            continue
+        # All names are top-level; PathFinder never imports a package parent.
+        spec = (BuiltinImporter.find_spec(name) or FrozenImporter.find_spec(name)
+                or PathFinder.find_spec(name))
+        if spec is None and name.startswith("_"):
+            continue  # Optional native accelerator; Python retains its fallback.
+        reviewed_spec(spec)
+
+
+def _execute_reviewed(name, source, *, dependency=None):
+    """Four fixed code pins, two fixed import edges, no global module writes."""
+    path, raw = source
+    _require(name in _CODE_PINS and _hash(raw) == _CODE_PINS[name],
+             "TRUSTED_DEPENDENCY_CODE_PIN")
+    _verify_standard_library()
+    module = ModuleType("_rc6_r326_verified_" + name)
+    module.__file__ = str(path)
+    module.__package__ = ""
+    private_scripts = ModuleType("scripts")
+    edge = _SCRIPT_EDGES.get(name)
+    if edge is not None:
+        _require(type(dependency) is ModuleType, "TRUSTED_DEPENDENCY_IMPORT")
+        private_scripts.__dict__[edge] = dependency
+
+    def reviewed_import(import_name, globals=None, locals=None, fromlist=(), level=0):
+        if import_name == "scripts" or import_name.startswith("scripts."):
+            _require(level == 0 and import_name == "scripts" and edge is not None
+                     and tuple(fromlist) == (edge,), "TRUSTED_DEPENDENCY_IMPORT")
+            return private_scripts
+        _require(level == 0, "TRUSTED_DEPENDENCY_IMPORT")
+        return builtins.__import__(import_name, globals, locals, fromlist, level)
+
+    # Only this module's builtins change. Neither an existing scripts package,
+    # a cached module/__getattr__, sys.path nor sys.modules is consulted/edited
+    # for the two project edges. The pinned sources have no string dataclass
+    # annotations; dont_inherit avoids introducing them from a future caller.
+    module.__dict__["__builtins__"] = {**vars(builtins), "__import__": reviewed_import}
+    try:
+        exec(compile(raw, str(path), "exec", dont_inherit=True), module.__dict__)
+    except Exception as exc:
+        raise ProvenanceHold("RC6_R326_HOLD79:TRUSTED_DEPENDENCY_EXEC") from exc
+    return module
+
+
+def _trusted_freezer():
+    names = ("rc6_host_rootowned_installer_contract", "rc6_r304_root_install_manifest_freeze")
+    sources = _reviewed_source_pair(names, "MISSING_TRUSTED_R304")
+    r280 = _execute_reviewed(names[0], sources[names[0]])
+    r304 = _execute_reviewed(names[1], sources[names[1]], dependency=r280)
+    _require(r304.r280 is r280, "MISSING_TRUSTED_R304")
+    return r304.freeze_root_install_manifest
+
+
+def _trusted_consumer(helper_bytes):
+    """Bind D bytes to the reviewed local pair before executing any source."""
+    names = ("rc6_oci_host_helper", "rc6_r308_root_launch_profile_freeze")
+    sources = _reviewed_source_pair(names, "MISSING_TRUSTED_R308_CONSUMER")
+    _require(type(helper_bytes) is bytes and sources[names[0]][1] == helper_bytes,
+             "TRUSTED_R271_D_BLOB_MISMATCH")
+    helper = _execute_reviewed(names[0], sources[names[0]])
+    r308 = _execute_reviewed(names[1], sources[names[1]], dependency=helper)
+    _require(r308.host_contract is helper, "MISSING_TRUSTED_R308_CONSUMER")
+    return r308.freeze_root_launch_profiles
 
 
 def validate_generated_inputs(boundary, sources, profiles_raw, unit_raw, context):
@@ -323,9 +425,9 @@ def propose_root_bundle(*, boundary, bundle_bytes, outer_manifest_bytes,
     # Snapshot mutable caller inputs before any dependency boundary can run.
     context = _json(_canonical(context), 4096)
     approval_intent = _json(_canonical(approval_intent), 65536)
-    freezer = _trusted_freezer()  # fail closed on standalone unintegrated main
     extracted = extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes)
     generated_hashes = validate_generated_inputs(boundary, extracted, profiles_bytes, unit_template_bytes, context)
+    freezer = _trusted_freezer()  # D helper identity already checked before any code ran.
     _require(type(approval_intent) is dict and all(approval_intent.get(key) == value for key, value in {
         "candidate_sha": boundary.candidate_sha, "candidate_tree": boundary.candidate_tree,
         "artifact_digest": boundary.artifact_digest, "image_id": boundary.image_id,

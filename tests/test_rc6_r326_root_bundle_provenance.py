@@ -4,12 +4,10 @@ import io
 import json
 import tarfile
 import unittest
-import importlib.util
-import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -81,6 +79,36 @@ def generated_fixture(boundary):
     return context, canonical(doc), unit
 
 
+def real_bundle_arguments():
+    helper = (producer._trusted_dependency_root() / "rc6_oci_host_helper.py").read_bytes()
+    boundary, bundle, outer = fixture(helper)
+    sources = producer.extract_bound_sources(boundary, bundle, outer)
+    context, _, _ = generated_fixture(boundary)
+    proposed = producer._trusted_consumer(helper)(
+        candidate_sha=boundary.candidate_sha, candidate_tree=boundary.candidate_tree,
+        artifact_digest=boundary.artifact_digest, image_id=boundary.image_id,
+        daemon_id=context["daemon_id"], generation=context["generation"],
+        root_stage=context["root_stage"],
+        dashboard_env_sha256=context["dashboard_env_sha256"],
+        observer_env_sha256=context["observer_env_sha256"],
+        observer_source_sha256={"/app/" + name: sha(sources[name]) for name in
+                                ("cf_intraday_scalping.py", "co_market_sessions_hf6.py")},
+        critical_source_sha=boundary.candidate_sha)
+    raw = {"helper": helper, "custody": sources["custody"],
+           "profiles": proposed.profiles_bytes, "unit_template": proposed.unit_template_bytes}
+    approval = {"schema_version": 1, "phase": "GENESIS", "candidate_sha": boundary.candidate_sha,
+                "candidate_tree": boundary.candidate_tree, "artifact_digest": boundary.artifact_digest,
+                "image_id": boundary.image_id, "daemon_id": context["daemon_id"],
+                "generation": context["generation"], "run_id": "101", "run_attempt": "1",
+                "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
+                "expires_at": "2026-11-13T02:00:00Z",
+                **{role + "_sha256": sha(value) for role, value in raw.items()}}
+    return dict(boundary=boundary, bundle_bytes=bundle, outer_manifest_bytes=outer,
+                profiles_bytes=proposed.profiles_bytes, unit_template_bytes=proposed.unit_template_bytes,
+                context=context, approval_intent=approval,
+                now=datetime(2026, 11, 13, 1, tzinfo=timezone.utc))
+
+
 class ProvenanceTest(unittest.TestCase):
     def test_authenticated_tar_still_rejects_duplicate_link_and_traversal_members(self):
         from dataclasses import replace
@@ -137,7 +165,7 @@ class ProvenanceTest(unittest.TestCase):
 
     def test_release_helper_must_equal_trusted_source_before_import(self):
         helper = (producer._trusted_dependency_root() / "rc6_oci_host_helper.py").read_bytes()
-        with patch.object(producer, "import_module") as imports:
+        with patch.object(producer, "_execute_reviewed") as imports:
             with self.assertRaisesRegex(producer.ProvenanceHold,
                                         "TRUSTED_R271_D_BLOB_MISMATCH"):
                 producer._trusted_consumer(helper + b"\n# unreviewed D helper\n")
@@ -152,7 +180,7 @@ class ProvenanceTest(unittest.TestCase):
                     (root / "rc6_oci_host_helper.py").write_bytes(
                         helper + b"\n# local source drift\n")
                 with patch.object(producer, "_trusted_dependency_root", return_value=root), \
-                     patch.object(producer, "import_module") as imports:
+                     patch.object(producer, "_execute_reviewed") as imports:
                     with self.assertRaisesRegex(producer.ProvenanceHold,
                                                 "MISSING_TRUSTED_R308_CONSUMER"):
                         producer._trusted_consumer(helper)
@@ -189,54 +217,138 @@ class ProvenanceTest(unittest.TestCase):
                 producer.validate_generated_inputs(boundary, sources, profiles, unit, context)
 
     def test_real_trusted_r304_produces_six_immutable_sources_and_freshness_holds(self):
-        # Standalone main intentionally lacks R304. Its already-audited additive
-        # integration source may be supplied for this one real-boundary test.
-        path = os.environ.get("RC6_R326_TRUSTED_R304_TEST_SOURCE")
-        if path:
-            raw = Path(path).read_bytes()
-            self.assertEqual(sha(raw), "6711ad67f4de122488787b5587ff947801afed19fe0df4d551db4e65f638fea9")
-            name = "scripts.rc6_r304_root_install_manifest_freeze"
-            spec = importlib.util.spec_from_file_location(name, path)
-            dependency = importlib.util.module_from_spec(spec)
-            with patch.dict(sys.modules, {name: dependency}):
-                spec.loader.exec_module(dependency)
-        else:
-            try:
-                dependency = __import__("scripts.rc6_r304_root_install_manifest_freeze", fromlist=["freeze_root_install_manifest"])
-            except ImportError:
-                with self.assertRaisesRegex(producer.ProvenanceHold, "MISSING_TRUSTED_R304"):
-                    producer._trusted_freezer()
-                return  # meaningful fail-closed standalone CI, never a skip
-        boundary, bundle, outer = fixture()
-        context, profiles, unit = generated_fixture(boundary)
-        raw = producer.extract_bound_sources(boundary, bundle, outer)
-        source = {"helper": raw["helper"], "custody": raw["custody"], "profiles": profiles, "unit_template": unit}
-        approval = {"schema_version": 1, "phase": "GENESIS", "candidate_sha": boundary.candidate_sha,
-                    "candidate_tree": boundary.candidate_tree, "artifact_digest": boundary.artifact_digest,
-                    "image_id": boundary.image_id, "daemon_id": context["daemon_id"], "generation": context["generation"],
-                    "run_id": "101", "run_attempt": "1", "paper_mode": "PRODUCTION_PAPER", "real_orders_allowed": False,
-                    "expires_at": "2026-11-13T02:00:00Z", **{role + "_sha256": sha(value) for role, value in source.items()}}
-        arguments = dict(boundary=boundary, bundle_bytes=bundle, outer_manifest_bytes=outer,
-                         profiles_bytes=profiles, unit_template_bytes=unit, context=context,
-                         approval_intent=approval, now=datetime(2026, 11, 13, 1, tzinfo=timezone.utc))
-        expected = SimpleNamespace(profiles_bytes=profiles, unit_template_bytes=unit,
-                                   profiles_sha256=sha(profiles), unit_template_sha256=sha(unit))
-        with patch.object(producer, "_trusted_freezer", return_value=dependency.freeze_root_install_manifest), \
-             patch.object(producer, "_trusted_consumer", return_value=lambda **_: expected):
-            first = producer.propose_root_bundle(**arguments)
-            second = producer.propose_root_bundle(**arguments)
-            self.assertEqual(first.sources, second.sources)
-            self.assertEqual(first.write_order[-1], "manifest.json")
-            self.assertEqual(set(first.sources), set(first.write_order))
-            self.assertEqual(first.manifest_sha256, sha(first.sources["manifest.json"]))
-            self.assertFalse(first.host_go)
-            self.assertFalse(first.profile_consumer_contract_verified)
-            self.assertFalse(first.r309_verified or first.r305_pin_go or first.r321_install_go)
-            with self.assertRaises(TypeError):
-                first.sources["manifest.json"] = b"changed"
-            for update in ({"expires_at": "2026-11-13T00:00:00Z"}, {"artifact_digest": "sha256:" + "0" * 64}):
-                with self.assertRaises((producer.ProvenanceHold, dependency.FreezeHold)):
-                    producer.propose_root_bundle(**{**arguments, "approval_intent": {**approval, **update}})
+        arguments = real_bundle_arguments()
+        first = producer.propose_root_bundle(**arguments)
+        second = producer.propose_root_bundle(**arguments)
+        self.assertEqual(first.sources, second.sources)
+        self.assertEqual(first.write_order[-1], "manifest.json")
+        self.assertEqual(set(first.sources), set(first.write_order))
+        self.assertEqual(first.manifest_sha256, sha(first.sources["manifest.json"]))
+        self.assertFalse(first.host_go)
+        self.assertFalse(first.profile_consumer_contract_verified)
+        self.assertFalse(first.r309_verified or first.r305_pin_go or first.r321_install_go)
+        with self.assertRaises(TypeError):
+            first.sources["manifest.json"] = b"changed"
+        for update in ({"expires_at": "2026-11-13T00:00:00Z"},
+                       {"artifact_digest": "sha256:" + "0" * 64}):
+            with self.assertRaisesRegex((producer.ProvenanceHold, RuntimeError),
+                                        "ROOT_APPROVAL_R280_CONTRACT_MISMATCH|APPROVAL_D_CONTEXT_BINDING"):
+                producer.propose_root_bundle(**{**arguments, "approval_intent": {
+                    **arguments["approval_intent"], **update}})
+
+    def test_foreign_namespace_sources_never_execute_before_rejection_or_use(self):
+        import scripts
+        arguments = real_bundle_arguments()
+        names = ("rc6_oci_host_helper", "rc6_r308_root_launch_profile_freeze",
+                 "rc6_host_rootowned_installer_contract", "rc6_r304_root_install_manifest_freeze")
+        for target in names:
+            with self.subTest(target=target), TemporaryDirectory() as folder:
+                shadow = Path(folder) / "scripts"
+                shadow.mkdir()
+                marker = Path(folder) / "executed"
+                (shadow / (target + ".py")).write_text(
+                    "from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('FOREIGN')\n")
+                with patch.dict(sys.modules), patch.dict(scripts.__dict__), \
+                     patch.object(sys, "path", [folder, *sys.path]):
+                    for name in names:
+                        sys.modules.pop("scripts." + name, None)
+                        scripts.__dict__.pop(name, None)
+                    with patch.object(scripts, "__path__", [str(shadow), str(producer._trusted_dependency_root())]):
+                        try:
+                            producer.propose_root_bundle(**arguments)
+                        except (producer.ProvenanceHold, ImportError):
+                            pass
+                    self.assertFalse(marker.exists(), "foreign source executed before origin check")
+
+    def test_preloaded_modules_and_namespace_getattr_never_supply_dependencies(self):
+        arguments = real_bundle_arguments()
+        names = ("rc6_oci_host_helper", "rc6_r308_root_launch_profile_freeze",
+                 "rc6_host_rootowned_installer_contract", "rc6_r304_root_install_manifest_freeze")
+        for target in (*names, "namespace_getattr"):
+            with self.subTest(target=target), TemporaryDirectory() as folder:
+                marker = Path(folder) / "executed"
+                def trap(*_args, **_kwargs):
+                    marker.write_text("FOREIGN")
+                    raise ImportError("foreign callback")
+                package = ModuleType("scripts")
+                package.__path__ = [str(producer._trusted_dependency_root())]
+                if target == "namespace_getattr":
+                    package.__getattr__ = trap
+                else:
+                    foreign = ModuleType("scripts." + target)
+                    # Forged __file__ demonstrates why post-import path checks
+                    # cannot authenticate an already-loaded module's code.
+                    foreign.__file__ = str(producer._trusted_dependency_root() / (target + ".py"))
+                    foreign.__getattr__ = trap
+                    package.__dict__[target] = foreign
+                with patch.dict(sys.modules):
+                    for name in names:
+                        sys.modules.pop("scripts." + name, None)
+                    sys.modules["scripts"] = package
+                    if target != "namespace_getattr":
+                        sys.modules["scripts." + target] = foreign
+                    before = {key: value for key, value in sys.modules.items()
+                              if key == "scripts" or key.startswith("scripts.")}
+                    try:
+                        producer.propose_root_bundle(**arguments)
+                    except (producer.ProvenanceHold, ImportError):
+                        pass
+                    self.assertFalse(marker.exists(), "preloaded foreign dependency executed")
+                    self.assertEqual(before, {key: value for key, value in sys.modules.items()
+                                              if key == "scripts" or key.startswith("scripts.")})
+
+    def test_foreign_standard_library_resolution_holds_before_source_execution(self):
+        # secrets imports random/hmac transitively; datetime is another import
+        # not loaded by R326 itself. No target import is used for validation.
+        for target in ("secrets", "random", "hmac", "datetime"):
+            with self.subTest(target=target), TemporaryDirectory() as folder:
+                marker = Path(folder) / "executed"
+                (Path(folder) / (target + ".py")).write_text(
+                    "from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('FOREIGN')\n")
+                with patch.dict(sys.modules), patch.object(sys, "path", [folder, *sys.path]):
+                    for name in ("secrets", target):
+                        sys.modules.pop(name, None)
+                    held = None
+                    try:
+                        producer._trusted_freezer()
+                    except producer.ProvenanceHold as error:
+                        held = error
+                    except ImportError:
+                        pass
+                    self.assertFalse(marker.exists(), "foreign stdlib source executed")
+                    self.assertIsNotNone(held, "foreign standard library dependency must HOLD")
+
+    def test_preloaded_standard_library_getters_never_execute(self):
+        for target in ("secrets", "random", "hmac", "datetime"):
+            with self.subTest(target=target), TemporaryDirectory() as folder:
+                marker = Path(folder) / "executed"
+                def trap(*_args, **_kwargs):
+                    marker.write_text("FOREIGN")
+                    raise ImportError("foreign stdlib getter")
+                foreign = ModuleType(target)
+                foreign.__file__ = str(Path(folder) / (target + ".py"))
+                foreign.__getattr__ = trap
+                with patch.dict(sys.modules):
+                    sys.modules.pop("secrets", None)
+                    sys.modules[target] = foreign
+                    held = None
+                    try:
+                        producer._trusted_freezer()
+                    except producer.ProvenanceHold as error:
+                        held = error
+                    except ImportError:
+                        pass
+                    self.assertFalse(marker.exists(), "foreign stdlib getter executed")
+                    self.assertIsNotNone(held, "foreign standard library dependency must HOLD")
+
+    def test_changed_release_helper_is_rejected_before_freezer_execution(self):
+        arguments = real_bundle_arguments()
+        boundary, bundle, outer = fixture(b"#!/usr/bin/python3 -I\n# changed D helper\n")
+        arguments.update(boundary=boundary, bundle_bytes=bundle, outer_manifest_bytes=outer)
+        with patch.object(producer, "_trusted_freezer", side_effect=AssertionError("executed too early")) as freezer:
+            with self.assertRaisesRegex(producer.ProvenanceHold, "TRUSTED_R271_D_BLOB_MISMATCH"):
+                producer.propose_root_bundle(**arguments)
+        freezer.assert_not_called()
 
     def test_bound_sources_are_extracted_without_importing_candidate_code(self):
         boundary, bundle, outer = fixture()
@@ -256,7 +368,8 @@ class ProvenanceTest(unittest.TestCase):
                 producer.extract_bound_sources(*args)
 
     def test_absent_trusted_r304_never_produces_self_approved_bundle(self):
-        with patch.object(producer, "import_module", side_effect=ModuleNotFoundError):
+        with TemporaryDirectory() as folder, \
+             patch.object(producer, "_trusted_dependency_root", return_value=Path(folder)):
             with self.assertRaisesRegex(producer.ProvenanceHold, "MISSING_TRUSTED_R304"):
                 producer._trusted_freezer()
 
