@@ -7,6 +7,8 @@ they neither fetch GitHub artifacts nor authorize any host operation.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -311,4 +313,120 @@ def test_r253_exact_d_artifact_selector_never_falls_back_to_latest(mutated):
             assert output.read_text() == (
                 "PREDEPLOY_ARTIFACT_ID=111\nPREDEPLOY_RUN_ID=222\n"
                 "RC6_RELEASE_ARTIFACT_SHA256=" + "e" * 64 + "\n"
+                f"RC6_RELEASE_RUN_ID=222\nRC6_RELEASE_RUN_ATTEMPT=2\nRC6_RELEASE_ARTIFACT_DIGEST={ARTIFACT_DIGEST}\n"
             )
+
+
+def _promotion():
+    return next(step["run"] for step in _jobs()[2]["steps"] if step.get("id") == "promotion")
+
+
+@pytest.mark.parametrize("run,attempt,digest,accepted", [
+    ("222", "2", ARTIFACT_DIGEST, True),
+    ("888", "2", ARTIFACT_DIGEST, False),  # execution run substituted for D
+    ("222", "1", ARTIFACT_DIGEST, False),  # retry belongs to D
+    ("222", "2", "sha256:" + "f" * 64, False),
+    ("888", "1", "sha256:" + "f" * 64, False),
+])
+def test_r368_root_stage_intent_must_match_the_release_that_was_fetched(run, attempt, digest, accepted):
+    script = _promotion()
+    start = script.index("[[ ${#STAGE_INTENT}")
+    end = script.index("sudo -n /usr/local/sbin/porota-rc6-oci-custody critical birth", start)
+    generation = "a" * 32
+    result = _run("set -eu\n" + script[start:end], env={
+        "GITHUB_RUN_ID": "888", "GITHUB_RUN_ATTEMPT": "1",
+        "RC6_RELEASE_RUN_ID": "222", "RC6_RELEASE_RUN_ATTEMPT": "2",
+        "RC6_RELEASE_ARTIFACT_DIGEST": ARTIFACT_DIGEST,
+        "STAGE_INTENT": f"RC6_STAGE_INTENT_V1 {generation} {run} {attempt} {digest} porota_rc6_critical_g_{generation}",
+    })
+    assert (result.returncode == 0) is accepted, result
+
+
+def test_r368_ssh_carries_both_the_execution_and_verified_release_identities():
+    script = _promotion()
+    env = dict.fromkeys(("HOME", "DO_USER", "DO_HOST", "RC6_MUTEX_B64", "RC6_DISK_REQUIRED_PRETRANSFER_FREE",
+                         "RC6_QUIESCENCE_MODE", "RC6_A151_OWNER_APPROVAL_ID", "RC6_A151_CONTINUITY_PROOF_B64"), "test")
+    release = {
+        "RC6_RELEASE_RUN_ID": "222", "RC6_RELEASE_RUN_ATTEMPT": "2",
+        "RC6_RELEASE_ARTIFACT_DIGEST": ARTIFACT_DIGEST,
+        "RC6_RELEASE_IMAGE_ID": "sha256:" + "1" * 64, "RC6_RELEASE_IMAGE_TAR_SHA256": "2" * 64,
+    }
+    # Capture the command sent to ssh. The heredoc never runs.
+    result = _run("ssh() { for argument do :; done; printf '%s\\n' \"$argument\"; }\n" + script,
+                  env=env | release | {"GITHUB_RUN_ID": "888", "GITHUB_RUN_ATTEMPT": "1",
+                                        "CANDIDATE_SHA": CANDIDATE_SHA, "CANDIDATE_TREE": TREE_SHA, "DEPLOY_SHA": PRODUCT_SHA})
+    assert result.returncode == 0, result
+    assert f"--attempt '{CANDIDATE_SHA}' '888' '1' --phase promotion" in result.stdout
+    for key, value in release.items():
+        assert f"{key}='{value}'" in result.stdout
+
+
+@pytest.mark.parametrize("image_id,accepted", [("sha256:" + "1" * 64, True), ("mutable:tag", False)])
+def test_r368_runner_exports_image_identity_from_the_verified_archive(tmp_path, image_id, accepted):
+    step = next(step for step in _jobs()[2]["steps"] if step["name"] == "Download and verify frozen artifact")
+    script = step["run"][step["run"].index("python - <<'PY'"):].replace("/tmp/", str(tmp_path) + "/")
+    (tmp_path / "porota-predeploy-image.tar.gz").write_bytes(b"image")
+    (tmp_path / "porota-deploy-bundle-v2.tgz").write_bytes(b"bundle")
+    image_sha = hashlib.sha256(b"image").hexdigest()
+    (tmp_path / "porota-frozen-candidate.json").write_text(json.dumps({
+        "candidate_sha": CANDIDATE_SHA, "candidate_tree_sha": TREE_SHA, "image_id": image_id,
+        "image_tar_sha256": image_sha, "image_size_bytes": 5, "paper_mode_required": "PRODUCTION_PAPER",
+        "real_orders_sent_required": 0, "build_once": True,
+    }))
+    (tmp_path / "porota-deploy-bundle-v2-manifest.json").write_text(json.dumps({
+        "bundle_sha256": hashlib.sha256(b"bundle").hexdigest(),
+    }))
+    output = tmp_path / "github-env"
+    output.touch()
+    result = _run(script, env={"CANDIDATE_SHA": CANDIDATE_SHA, "CANDIDATE_TREE": TREE_SHA, "GITHUB_ENV": str(output)})
+    assert (result.returncode == 0) is accepted, result
+    assert output.read_text().splitlines() == (
+        [f"RC6_RELEASE_IMAGE_ID={image_id}", f"RC6_RELEASE_IMAGE_TAR_SHA256={image_sha}"] if accepted else [])
+
+
+@pytest.mark.parametrize("drift", ["none", "foreign-tag", "missing-tag", "untrusted-tar", "untrusted-image"])
+def test_r368_docker_materializes_d_tag_and_tags_only_the_verified_id(tmp_path, drift):
+    script = _promotion()
+    # Run the image assignments and Docker materialization from the remote heredoc.
+    init = script[script.index("STABLE_IMAGE="):script.index('echo "RC6_DEPLOY_V2=START')]
+    load = script[script.index("EXPECTED_IMAGE_ID="):script.index('echo "POROTA_BUILD_ONCE_MATERIALIZED=GREEN')]
+    stable = next(line for line in script.splitlines() if line.endswith(' "$STABLE_IMAGE"') and "docker tag" in line)
+    expected, foreign = "sha256:" + "1" * 64, "sha256:" + "2" * 64
+    data = gzip.compress(b"offline image")
+    digest = hashlib.sha256(data).hexdigest()
+    (tmp_path / "porota-predeploy-image.tar.gz").write_bytes(data)
+    (tmp_path / "porota-frozen-candidate.json").write_text(json.dumps({
+        "image_id": foreign if drift == "untrusted-image" else expected,
+        "image_tar_sha256": digest, "image_config_sha256": "c" * 64,
+    }))
+    calls = tmp_path / "calls"
+    calls.touch()
+    docker = '''
+sudo() {
+    [[ $1 == -n && $2 == docker ]] || return 79
+    shift 2
+    case "$1 ${2:-}" in
+        "image inspect")
+            if [[ $4 == "{{.Id}}" ]]; then
+                [[ $5 == "rc6-r251-offhost:$CANDIDATE_SHA" && -n $D_TAG_ID ]] || return 79
+                printf '%s\\n' "$D_TAG_ID"
+            else
+                printf '{}\\n'
+            fi ;;
+        "tag "*) printf '%s %s\\n' "$2" "$3" >> "$CALLS" ;;
+        "load ") cat >/dev/null; printf 'load\\n' >> "$CALLS" ;;
+        *) return 79 ;;
+    esac
+}
+'''
+    result = _run("set -euo pipefail\n" + docker + init + load + stable, env={
+        "CALLS": str(calls), "REMOTE_DIR": str(tmp_path), "CANDIDATE_SHA": CANDIDATE_SHA,
+        "D_TAG_ID": {"foreign-tag": foreign, "missing-tag": ""}.get(drift, expected),
+        "RC6_RELEASE_IMAGE_ID": expected, "RC6_RELEASE_IMAGE_TAR_SHA256": "f" * 64 if drift == "untrusted-tar" else digest,
+    })
+    assert (result.returncode == 0) is (drift == "none"), result
+    expected_calls = ["load"] if drift in ("foreign-tag", "missing-tag", "none") else []
+    if drift == "none":
+        expected_calls.extend([f"{expected} porota-trading-bot:17.0.0-rc6-candidate-{CANDIDATE_SHA}",
+                               f"{expected} porota-trading-bot:17.0.0-rc6"])
+    assert calls.read_text().splitlines() == expected_calls
