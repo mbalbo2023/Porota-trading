@@ -10,6 +10,7 @@ Only bounded reviewed trusted-main dependency source reads/imports are made;
 no candidate-source execution, network/host operation or wall clock read occurs.
 """
 from dataclasses import dataclass, field
+import gzip
 import hashlib
 import builtins
 from importlib.machinery import (BuiltinImporter, ExtensionFileLoader, FrozenImporter,
@@ -58,12 +59,13 @@ def _json(raw, maximum):
     return doc
 
 
-_SOURCE_PATHS = {
+SOURCE_PATHS = MappingProxyType({
     "scripts/rc6_oci_host_helper.py": "helper",
     "scripts/rc6_runtime_oci_custody.py": "custody",
     "cf_intraday_scalping.py": "cf_intraday_scalping.py",
     "co_market_sessions_hf6.py": "co_market_sessions_hf6.py",
-}
+})
+_SOURCE_PATHS = SOURCE_PATHS
 _BUNDLE = "porota-deploy-bundle-v2.tgz"
 _OUTER = "porota-deploy-bundle-v2-manifest.json"
 _INNER = "POROTA_DEPLOY_BUNDLE_MANIFEST.json"
@@ -122,6 +124,15 @@ def _path(name):
             all(part not in {"", ".", ".."} for part in name.split("/")))
 
 
+class _RegularBundleMember(tarfile.TarInfo):
+    def _proc_member(self, archive):
+        # tarfile processes PAX, GNU long-name and sparse records before
+        # yielding a member. Reject them at the physical header boundary.
+        _require(self.type in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.CONTTYPE),
+                 "TAR_MEMBER_SCOPE")
+        return super()._proc_member(archive)
+
+
 def extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes):
     """Extract only four source members; never extract to disk or verify ZIP.
 
@@ -141,10 +152,12 @@ def extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes):
     seen = set()
     total = 0
     try:
-        with tarfile.open(fileobj=io.BytesIO(bundle_bytes), mode="r|gz") as archive:
+        # GzipFile bounds each inflate request from the uncompressed TAR
+        # stream. tarfile's r|gz can expand a whole member to read one header.
+        with gzip.GzipFile(fileobj=io.BytesIO(bundle_bytes), mode="rb") as plain, \
+             tarfile.open(fileobj=plain, mode="r|", tarinfo=_RegularBundleMember) as archive:
             for entry in archive:
-                _require(len(seen) < 20000 and _path(entry.name) and entry.name not in seen
-                         and entry.isfile() and not entry.pax_headers,
+                _require(len(seen) < 20000 and _path(entry.name) and entry.name not in seen,
                          "TAR_MEMBER_SCOPE")
                 seen.add(entry.name)
                 total += entry.size

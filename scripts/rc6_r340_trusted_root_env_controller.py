@@ -11,6 +11,7 @@ No shell, SSH, sudo, secrets, Docker or runtime mutation is exposed here.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -44,9 +45,93 @@ def _require(condition: bool, reason: str) -> None:
         raise ControlHold(reason)
 
 
+def _source_blobs(rest: Callable, tree_sha: str) -> tuple:
+    """Resolve only two immutable Git trees; never derive authority from D."""
+    from scripts import rc6_r326_root_bundle_provenance as r326
+    def tree(sha: str) -> dict[str, Mapping]:
+        record = rest(_ROOT + "/git/trees/" + sha)
+        _require(record.get("sha") == sha and record.get("truncated") is False and
+                 type(record.get("tree")) is list, "GIT_SOURCE_TREE_INVALID")
+        entries = {}
+        for row in record["tree"]:
+            _require(isinstance(row, Mapping) and type(row.get("path")) is str and
+                     row["path"] not in entries, "GIT_SOURCE_TREE_INVALID")
+            entries[row["path"]] = row
+        return entries
+
+    def selected(entries: Mapping, name: str, kind: str) -> str:
+        row = entries.get(name)
+        _require(isinstance(row, Mapping) and row.get("type") == kind and
+                 row.get("mode") in (("040000",) if kind == "tree" else ("100644", "100755")) and
+                 type(row.get("sha")) is str and _SHA40.fullmatch(row["sha"]) is not None,
+                 "GIT_SOURCE_BLOB_INVALID")
+        return row["sha"]
+
+    root = tree(tree_sha)
+    scripts = tree(selected(root, "scripts", "tree"))
+    return tuple((path, selected(scripts if path.startswith("scripts/") else root,
+                               path.removeprefix("scripts/"), "blob"))
+                 for path in r326.SOURCE_PATHS)
+
+
+def _material_projection(proof: Mapping, blobs: tuple) -> dict[str, Any]:
+    """Consume private verified bytes only after all live source rereads pass."""
+    from scripts import rc6_r326_root_bundle_provenance as r326
+    material = proof.get("release_material")
+    _require(isinstance(material, Mapping) and set(material) == {
+        "bundle_bytes", "outer_manifest_bytes", "image_id", "member_sha256",
+        "postcompletion_receipt_bytes", "postcompletion_artifact_id",
+        "postcompletion_artifact_digest"}, "RELEASE_MATERIAL_INVALID")
+    _require(type(material["postcompletion_artifact_id"]) is int and
+             material["postcompletion_artifact_id"] > 0 and
+             type(material["postcompletion_artifact_digest"]) is str and
+             _DIGEST.fullmatch(material["postcompletion_artifact_digest"]) is not None,
+             "RELEASE_MATERIAL_INVALID")
+    raw_e = material["postcompletion_receipt_bytes"]
+    _require(type(raw_e) is bytes and 0 < len(raw_e) <= 32768,
+             "RELEASE_E_MATERIAL_FORMAT")
+    # Preserve E's authenticated original bytes. A digest of a reserialized
+    # document would not identify the receipt consumed by R321.
+    try:
+        canonical_e = (json.dumps(json.loads(raw_e), sort_keys=True, ensure_ascii=True,
+                                  allow_nan=False, separators=(",", ":")) + "\n").encode("ascii")
+    except (ValueError, UnicodeError, TypeError, RecursionError):
+        raise ControlHold("RELEASE_E_MATERIAL_FORMAT") from None
+    _require(raw_e == canonical_e, "RELEASE_E_MATERIAL_FORMAT")
+    boundary = r326.ExternalReleaseBoundary(
+        candidate_sha=proof["candidate_sha"], candidate_tree=proof["candidate_tree_sha"],
+        artifact_digest=proof["release_artifact_digest"], image_id=material["image_id"],
+        release_run_id=proof["release_run_id"], release_run_attempt=proof["release_run_attempt"],
+        release_artifact_id=proof["release_artifact_id"],
+        r252_status=proof["status"], r163_status="BYTES_MATCH_EXPECTED",
+        member_sha256=material["member_sha256"], git_blobs=blobs)
+    try:
+        sources = r326.extract_bound_sources(boundary, material["bundle_bytes"],
+                                             material["outer_manifest_bytes"])
+    except (ValueError, OSError, EOFError, TypeError, KeyError):
+        raise ControlHold("RELEASE_SOURCE_BYTES_NOT_BOUND") from None
+    git_blobs = dict(blobs)
+    return {
+        "status": "FOUR_SOURCES_BOUND_OFFHOST", "image_id": boundary.image_id,
+        "postcompletion_receipt_sha256": hashlib.sha256(raw_e).hexdigest(),
+        "release": {"run_id": proof["release_run_id"],
+                    "run_attempt": proof["release_run_attempt"],
+                    "artifact_id": proof["release_artifact_id"],
+                    "artifact_digest": proof["release_artifact_digest"]},
+        "postcompletion": {"run_id": proof["trusted_main_audit_run_id"],
+                           "run_attempt": proof["trusted_main_audit_run_attempt"],
+                           "artifact_id": material["postcompletion_artifact_id"],
+                           "artifact_digest": material["postcompletion_artifact_digest"]},
+        "sources": {path: {"sha256": hashlib.sha256(sources[role]).hexdigest(),
+                            "bytes": len(sources[role]), "git_blob_sha": git_blobs[path]}
+                    for path, role in r326.SOURCE_PATHS.items()},
+    }
+
+
 def verify_authenticated_release(
     event: Mapping[str, str], *, checkout_sha: str, github: Any,
     trusted_release: Callable[..., Mapping[str, Any]],
+    include_material: bool = False,
 ) -> dict[str, Any]:
     """Bind actual trusted-main dispatch, live PR and R252 byte-checked D/E.
 
@@ -54,8 +139,11 @@ def verify_authenticated_release(
     constructs the authenticated R163 GitHub REST client and imports R252 from
     its exact trusted-main checkout; it never takes a release selector or a GO
     payload from workflow_dispatch inputs or its environment.
+    The normal CLI requests bounded material and emits only a four-source
+    hash projection after the final recheck, without creating a ROOT authority.
     """
-    _require(isinstance(event, Mapping) and type(checkout_sha) is str and
+    _require(type(include_material) is bool and
+             isinstance(event, Mapping) and type(checkout_sha) is str and
              _SHA40.fullmatch(checkout_sha) is not None and
              event.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and
              event.get("GITHUB_REPOSITORY") == REPO and
@@ -132,7 +220,8 @@ def verify_authenticated_release(
         "RC6_BRIDGE_PRODUCT_REF": "",
     }
     try:
-        proof = trusted_release(selectors, github=github)
+        proof = trusted_release(selectors, github=github,
+                                **({"include_material": True} if include_material else {}))
     except (ValueError, OSError, RuntimeError, TimeoutError, TypeError, KeyError):
         raise ControlHold("CURRENT_UNIQUE_D_E_BYTES_NOT_VERIFIED") from None
     expected = {
@@ -147,7 +236,7 @@ def verify_authenticated_release(
         "automatic_go": False,
     }
     _require(isinstance(proof, Mapping) and
-             set(proof) == set(expected) | {
+             set(proof) == set(expected) | ({"release_material"} if include_material else set()) | {
                  "release_run_id", "release_run_attempt", "release_artifact_id",
                  "release_artifact_digest", "trusted_main_audit_run_id",
                  "trusted_main_audit_run_attempt",
@@ -160,6 +249,8 @@ def verify_authenticated_release(
              type(proof["release_artifact_digest"]) is str and
              _DIGEST.fullmatch(proof["release_artifact_digest"]) is not None,
              "RELEASE_PROOF_FIELDS_NOT_EXACT")
+
+    blobs = _source_blobs(rest, candidate_tree) if include_material else None
 
     # Reopen every source after R252's artifact download (TOCTOU guard).
     # GitHub can alter mergeability, timestamps and other REST presentation
@@ -217,6 +308,7 @@ def verify_authenticated_release(
         "deploy_authorized": False,
         "real_orders_allowed": False,
         "runtime_verified": False,
+        **({"source_material": _material_projection(proof, blobs)} if include_material else {}),
     }
 
 
@@ -246,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         receipt = verify_authenticated_release(
             os.environ, checkout_sha=_checkout_head(), github=github,
             trusted_release=r252.verify_trusted_release,
+            include_material=True,
         )
     except (ControlHold, ValueError, OSError, RuntimeError, TimeoutError,
             ImportError, AttributeError, TypeError, KeyError) as exc:

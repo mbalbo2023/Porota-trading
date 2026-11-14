@@ -493,6 +493,110 @@ def test_r252_real_d_and_e_zip_gate_rejects_resealed_missing_same_image_native(t
         bridge_with_real_bytes()
 
 
+def real_material_fixture(tmp_path, *, canonical_e=False, e_padding=0):
+    """Valid D/E bytes, including the TAR consumed by the actual R326 reader."""
+    from test_rc6_r163_artifact_byte_verifier import RELEASE_FILES
+    from test_rc6_r326_root_bundle_provenance import fixture
+    boundary, bundle, outer = fixture()
+    payload = dict(RELEASE_FILES)
+    payload["porota-deploy-bundle-v2.tgz"] = bundle
+    payload["porota-deploy-bundle-v2-manifest.json"] = outer
+    image = json.loads(payload["porota-image-build-receipt.json"])
+    image["bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
+    image["native_proof"].update(run_id=D_ID, run_attempt=D_ATTEMPT)
+    payload["porota-image-build-receipt.json"] = json.dumps(image).encode()
+    stage = tmp_path / "material-d"
+    stage.mkdir(mode=0o700)
+    for name, raw in payload.items():
+        (stage / name).write_bytes(raw)
+    real_r251_bytes.seal_release_directory(
+        stage, candidate_sha=S, candidate_tree_sha=T, publisher_main_sha=M,
+        run_id=D_ID, run_attempt=D_ATTEMPT)
+    d_zip, e_zip = tmp_path / "material-d.zip", tmp_path / "material-e.zip"
+    with zipfile.ZipFile(d_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+        for path in sorted(stage.iterdir()):
+            zf.write(path, path.name)
+    post = receipt()
+    post.update(release_artifact_digest="sha256:" + hashlib.sha256(d_zip.read_bytes()).hexdigest(),
+                release_artifact_size_bytes=d_zip.stat().st_size,
+                total_size_bytes=sum(len(raw) for raw in payload.values()))
+    # Deliberately noncanonical: the digest must describe these exact bytes.
+    raw_e = ((json.dumps(post, sort_keys=True, separators=(",", ":")) + "\n")
+             if canonical_e else (json.dumps(post, indent=3) + "\n\n")).encode() + b" " * e_padding
+    with zipfile.ZipFile(e_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr(real_r251_bytes.POSTCOMPLETION_RECEIPT_NAME, raw_e)
+    records = github_records()
+    for ident, run_id, archive in ((D_ART, D_ID, d_zip), (E_ART, E_ID, e_zip)):
+        values = {"digest": "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
+                  "size_in_bytes": archive.stat().st_size}
+        records[f"{API}/actions/artifacts/{ident}"].update(values)
+        records[f"{API}/actions/runs/{run_id}/artifacts?per_page=100"]["artifacts"][0].update(values)
+    reader = FakeGitHub(records)
+    reader.get_json = reader.get
+    reader.downloads = []
+    def download(ident):
+        reader.downloads.append(ident)
+        return {D_ART: d_zip, E_ART: e_zip}[ident]
+    reader.download_artifact = download
+    return reader, payload, raw_e, boundary, d_zip, e_zip
+
+
+def test_material_opt_in_preserves_summary_and_exact_verified_d_e_bytes(tmp_path):
+    reader, payload, raw_e, _, _, _ = real_material_fixture(tmp_path)
+    legacy = guard.verify_trusted_release(inputs(), github=reader, byte_verifier=real_r251_bytes)
+    assert "release_material" not in legacy
+    reader.downloads.clear()
+    try:
+        proof = guard.verify_trusted_release(inputs(), github=reader,
+                    byte_verifier=real_r251_bytes, include_material=True)
+    except TypeError as exc:
+        pytest.fail("verified release material is unavailable: " + str(exc))
+    material = proof.pop("release_material")
+    assert proof == legacy
+    assert material["bundle_bytes"] == payload["porota-deploy-bundle-v2.tgz"]
+    assert material["outer_manifest_bytes"] == payload["porota-deploy-bundle-v2-manifest.json"]
+    assert material["postcompletion_receipt_bytes"] == raw_e
+    assert material["image_id"] == json.loads(payload["porota-frozen-candidate.json"])["image_id"]
+    assert dict(material["member_sha256"]) == {
+        name: hashlib.sha256(payload[name]).hexdigest() for name in
+        ("porota-deploy-bundle-v2.tgz", "porota-deploy-bundle-v2-manifest.json")}
+    assert set(material) == {"bundle_bytes", "outer_manifest_bytes", "image_id",
+                            "member_sha256", "postcompletion_receipt_bytes",
+                            "postcompletion_artifact_id", "postcompletion_artifact_digest"}
+    assert material["postcompletion_artifact_id"] == E_ART
+    assert material["postcompletion_artifact_digest"] == reader.records[f"{API}/actions/artifacts/{E_ART}"]["digest"]
+    assert reader.downloads == [E_ART, D_ART]
+
+
+def test_material_uses_verified_snapshot_even_if_download_path_is_replaced(tmp_path):
+    reader, payload, _, _, d_zip, _ = real_material_fixture(tmp_path)
+    original = real_r251_bytes._verify_zip
+    def replace_after_parse(*args, **kwargs):
+        verified = original(*args, **kwargs)
+        d_zip.write_bytes(b"a different unverified ZIP")
+        return verified
+    with patch.object(real_r251_bytes, "_verify_zip", side_effect=replace_after_parse):
+        try:
+            proof = guard.verify_trusted_release(inputs(), github=reader,
+                        byte_verifier=real_r251_bytes, include_material=True)
+        except TypeError as exc:
+            pytest.fail("verified snapshot material is unavailable: " + str(exc))
+    assert proof["release_material"]["bundle_bytes"] == payload["porota-deploy-bundle-v2.tgz"]
+
+
+def test_retained_bundle_budget_is_opt_in_and_checked_before_member_read(tmp_path, monkeypatch):
+    reader, _, _, _, _, _ = real_material_fixture(tmp_path)
+    monkeypatch.setattr(real_r251_bytes, "MAX_RETAINED_BUNDLE_BYTES", 1, raising=False)
+    assert guard.verify_trusted_release(inputs(), github=reader,
+                    byte_verifier=real_r251_bytes)["status"] == "TRUSTED_RELEASE_BYTES_BOUND"
+    try:
+        with pytest.raises(guard.RequiredReleaseEvidenceRed):
+            guard.verify_trusted_release(inputs(), github=reader,
+                        byte_verifier=real_r251_bytes, include_material=True)
+    except TypeError as exc:
+        pytest.fail("bounded material opt-in is unavailable: " + str(exc))
+
+
 @pytest.mark.parametrize("bad", [
     {"RC6_BRIDGE_REPOSITORY": "someone/else"},
     {"RC6_BRIDGE_CANDIDATE_SHA": "z" * 40},

@@ -316,13 +316,17 @@ def _load_trusted_module(filename: str) -> Any:
 
 def verify_trusted_release(
     data: Mapping[str, str], *, github: Any, byte_verifier: Any = None,
+    include_material: bool = False,
 ) -> dict[str, Any]:
     """Authenticate completed R251 E/D receipts and the exact candidate/merge.
 
     Tests may replace the separately tested R251 byte-verifier boundary.
     The CLI never accepts an override, and missing reviewed R251 code is RED.
+    Material opt-in propagates only R163's verified bytes after the final
+    REST recheck; existing callers retain the exact summary shape.
     """
-    if (not isinstance(data, Mapping) or set(data) != BRIDGE_FIELDS or
+    if (type(include_material) is not bool or
+            not isinstance(data, Mapping) or set(data) != BRIDGE_FIELDS or
             any(type(value) is not str for value in data.values()) or
             data["RC6_BRIDGE_REPOSITORY"] != REPO or
             data["RC6_BRIDGE_MODE"] not in BRIDGE_MODES):
@@ -431,7 +435,8 @@ def verify_trusted_release(
         try:
             e_receipt = byte_verifier.verify_postcompletion_receipt_zip(
                 downloaded(e_artifact_id), expected_digest=e_art.get("digest"),
-                expected_size_bytes=e_art.get("size_in_bytes"))
+                expected_size_bytes=e_art.get("size_in_bytes"),
+                **({"include_material": True} if include_material else {}))
         except (ValueError, OSError, RuntimeError, TimeoutError):
             _red()
         if not isinstance(e_receipt, Mapping):
@@ -488,7 +493,8 @@ def verify_trusted_release(
                 expected_tree_sha=tree, expected_run_id=d_id,
                 expected_run_attempt=d_attempt, expected_artifact_id=d_artifact_id,
                 expected_digest=d_digest, expected_workflow_path=D_PATH,
-                expected_publisher_sha=publisher)
+                expected_publisher_sha=publisher,
+                **({"include_material": True} if include_material else {}))
         except (ValueError, OSError, RuntimeError, TimeoutError):
             _red()
     if (not isinstance(d_proof, Mapping) or
@@ -506,6 +512,12 @@ def verify_trusted_release(
             d_proof.get("runtime_verified") is not False):
         _red()
     _reopen_stable(github, first)
+    if include_material:
+        material = d_proof.get("release_material")
+        raw_e = e_receipt.get("postcompletion_receipt_bytes")
+        if (not isinstance(material, Mapping) or type(raw_e) is not bytes or
+                not 0 < len(raw_e) <= byte_verifier.MAX_MANIFEST_BYTES):
+            _red()
     return {
         "status": "TRUSTED_RELEASE_BYTES_BOUND",
         "mode": mode, "candidate_sha": candidate, "candidate_tree_sha": tree,
@@ -516,6 +528,12 @@ def verify_trusted_release(
         "artifact_contents_verified_by_this_guard": True,
         "owner_go_verified": False, "runtime_verified": False,
         "automatic_go": False,
+        **({"release_material": {
+            **material, "postcompletion_receipt_bytes": raw_e,
+            "postcompletion_artifact_id": e_artifact_id,
+            "postcompletion_artifact_digest": e_art["digest"],
+        }}
+           if include_material else {}),
     }
 
 
