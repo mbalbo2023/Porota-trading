@@ -188,18 +188,37 @@ def _flat(rows: list[dict]) -> bool | None:
     return None
 
 
-def _book(path: Path) -> dict:
-    result = {"state": "NO_VERIFICADO", "observer": {
+def _book_files(path: Path) -> dict[Path, tuple[int, int]]:
+    """Sample names without opening another file descriptor on SQLite's files."""
+    _safe_parent(path)
+    files = {}
+    for member in (path, Path(str(path) + "-wal"), Path(str(path) + "-shm")):
+        try:
+            info = member.lstat()
+        except FileNotFoundError:
+            if member == path:
+                raise
+            continue
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+                not os.statvfs(member).f_flag & os.ST_RDONLY):
+            raise Hold("BOOK_FILE_UNSAFE")
+        files[member] = (info.st_dev, info.st_ino)
+    return files
+
+
+def _unknown_book() -> dict:
+    return {"state": "NO_VERIFICADO", "observer": {
         "state": "QUERY_UNAVAILABLE", "mode_paper": None, "orders_zero": None,
         "process": None, "session": None},
         "ledgers": {key: {"state": "QUERY_UNAVAILABLE", "count": None}
                     for key in TABLES},
         "three_ledgers_flat": None, "four_ledgers_flat": None,
         "quiescence_verified": False}
+
+
+def _book(path: Path) -> dict:
     try:
-        _safe_parent(path)
-        if not path.is_file() or path.is_symlink() or not os.statvfs(path).f_flag & os.ST_RDONLY:
-            raise Hold("DB_NOT_READONLY")
+        before = _book_files(path)
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
                                      timeout=.2)) as db:
             db.execute("PRAGMA query_only=ON")
@@ -207,6 +226,7 @@ def _book(path: Path) -> dict:
             deadline = time.monotonic() + 4
             db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
             db.execute("BEGIN")
+            result = _unknown_book()
             result["state"] = "READ_ONLY_OPENED"
             try:
                 row = db.execute("SELECT mode,real_orders_sent,process_state,session_state "
@@ -230,9 +250,13 @@ def _book(path: Path) -> dict:
             result["three_ledgers_flat"] = _flat([values[k] for k in
                                                    ("spot", "futures", "caucion")])
             result["four_ledgers_flat"] = _flat(list(values.values()))
+        # Growth in the same WAL is normal. These endpoint observations do
+        # not establish continuous ownership or exclude intervening writers.
+        if _book_files(path) != before:
+            raise Hold("BOOK_FILE_IDENTITY_CHANGED")
+        return result
     except (sqlite3.Error, OSError, Hold, ValueError, TypeError):
-        pass
-    return result
+        return _unknown_book()
 
 
 def _pack_hash(pack: Path, manifest: dict, owner_uid: int,
