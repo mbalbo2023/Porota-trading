@@ -1,4 +1,4 @@
-"""R309 bounded trusted-main SSH transport for R305; no runnable host entrypoint.
+"""R309 bounded trusted-main SSH transport with separate file observation.
 
 This adapter does not fetch or grant ROOT authority. R305 owns its command
 grammar, its independent witness and each transaction's fresh owner GO.
@@ -17,7 +17,11 @@ import subprocess
 import tempfile
 import time
 
-from scripts.rc6_r295_host_bootstrap_guard import run_bounded_ssh_command
+from scripts import rc6_host_rootowned_installer_contract as r280
+from scripts import rc6_r302_bootstrap_receipt_preflight as r302
+from scripts.rc6_r295_host_bootstrap_guard import (
+    HOST_ID_COMMAND, HOST_REGION_COMMAND, run_bounded_ssh_command,
+)
 
 
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -35,7 +39,40 @@ _INSTALL_APPROVED_COMMAND = (
 _MAX_STDIN = 8192
 _MAX_CALL_SECONDS = 15
 _TOTAL_SECONDS = 540
+_FILE_PROBE_SECONDS = 180
 _R305_MODULE = "scripts.rc6_r305_root_pin_transition_guard"
+PROBE_OPERATION = "PROBE_FILES_ONLY"
+PROBE_UID_COMMAND = "/usr/bin/id -u"
+PROBE_GENERATIONS = "/var/lib/porota-rc6-oci-custody/generations"
+_SUDO = "/usr/bin/sudo -n /usr/bin/"
+
+
+def probe_stat_command(path):
+    return f"{_SUDO}stat -c '%u|%g|%a|%h|%F|%d|%i|%s' -- {path}"
+
+
+def probe_test_command(test, path):
+    return f"{_SUDO}test {test} {path}"
+
+
+def probe_hash_command(path):
+    return f"{_SUDO}sha256sum -- {path}"
+
+
+def _file_probe_commands():
+    """Only exact R302 bootstrap and R280 target paths. No R305 write verbs."""
+    bootstrap = tuple(path for path, _, _ in r302.ROOT_FILES)
+    targets = tuple(row[0] for row in r280.TARGETS.values()) + (PROBE_GENERATIONS,)
+    paths = (*r302.ROOT_DIRECTORIES, *bootstrap, *targets)
+    hashes = (*bootstrap, r280.TARGETS['helper'][0], r280.TARGETS['custody'][0])
+    return frozenset((
+        HOST_ID_COMMAND, HOST_REGION_COMMAND, PROBE_UID_COMMAND,
+        *(probe_stat_command(path) for path in paths),
+        *(probe_test_command('! -L', path) for path in paths),
+        *(probe_test_command('! -e', path) for path in targets),
+        *(probe_test_command('-e', path) for path in targets),
+        *(probe_hash_command(path) for path in hashes),
+    ))
 
 
 class R309Hold(RuntimeError):
@@ -117,9 +154,11 @@ def _write_secret(path, data):
 class R309BoundedMuxHost:
     """One strict SSH master, R305's literal allowlist, bounded child calls."""
 
-    def __init__(self, env):
+    def __init__(self, env, *, operation="R305"):
+        _require(operation in ("R305", PROBE_OPERATION), "SSH_OPERATION_UNKNOWN")
         self.host, self.user, self.key_bytes, self.known_bytes = _validated_secrets(env)
-        self.commands = _trusted_r305_commands()
+        self._file_probe = operation == PROBE_OPERATION
+        self.commands = _file_probe_commands() if self._file_probe else _trusted_r305_commands()
         self.temp = None
         self.control_socket = None
         self.ssh_args = None
@@ -143,7 +182,8 @@ class R309BoundedMuxHost:
     def __enter__(self):
         _require(self.temp is None and self.master is None, "SSH_CONTEXT_REENTRY")
         try:
-            self.transaction_deadline = time.monotonic() + _TOTAL_SECONDS
+            budget = _FILE_PROBE_SECONDS if self._file_probe else _TOTAL_SECONDS
+            self.transaction_deadline = time.monotonic() + budget
             self.temp = tempfile.TemporaryDirectory(prefix="rc6-r309-ssh-")
             folder = Path(self.temp.name)
             self.key_path = folder / "id_ed25519"
@@ -191,6 +231,7 @@ class R309BoundedMuxHost:
         _require(not self.poisoned, "SSH_TRANSPORT_POISONED")
         _require(type(command) is str and command in self.commands,
                  "SSH_COMMAND_NOT_REVIEWED")
+        _require(not self._file_probe or stdin is None, "SSH_FILE_PROBE_STDIN_FORBIDDEN")
         _require(stdin is None or type(stdin) is bytes and
                  0 < len(stdin) <= _MAX_STDIN,
                  "SSH_STDIN_INVALID")
