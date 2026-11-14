@@ -1,6 +1,7 @@
 """R309 trusted Actions transport: fake subprocess only, never real SSH."""
 
 from contextlib import contextmanager, redirect_stdout
+import hashlib
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +12,7 @@ import os
 import json
 import subprocess
 import sys
+import time
 import traceback
 import yaml
 
@@ -110,6 +112,108 @@ def _host_session(*, env=None, master=None, r305_module=None, **mode):
 
 
 class R309BoundedMuxHostTests(TestCase):
+    def test_r367_checks_physical_identity_and_executable_before_fixed_verb(self):
+        from scripts import rc6_r309_bounded_mux_host as transport
+        from scripts import rc6_genesis_launcher_authority as authority
+
+        target = '/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian'
+        package_sha = hashlib.sha256(b'reviewed zipapp').hexdigest()
+        env = _env() | {'RC6_EXPECTED_DO_ID': '12345678', 'RC6_EXPECTED_DO_REGION': 'nyc1'}
+        env['DO_KNOWN_HOSTS'] = ('192.0.2.19 ssh-ed25519 '
+            'AAAAC3NzaC1lZDI1NTE5AAAAIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8g')
+        commitment = authority.host_identity_sha256(env)
+        request = b'{"nonce":"0123456789abcdef0123456789abcdef"}\n'
+        for operation, verb in (('PREPARE_ENV', 'prepare-env'), ('APPLY_GENESIS', 'apply')):
+            command = '/usr/bin/sudo -n ' + target + ' ' + verb
+            # POST_D_E carries four base64 public package sources plus signed claims.
+            post_de = b'{"step":"POST_D_E","sources":"' + b'M' * (180 * 1024) + b'"}\n'
+            receipt = b'{"state":"VERIFIED"}\n'
+            for drift in ('none', 'DO', 'uid', 'parent-mode', 'parent-inode', 'symlink',
+                          'owner', 'mode', 'hardlink', 'inode', 'digest', 'revoked', 'false-authority',
+                          'remote-hold', 'remote-array'):
+                with self.subTest(operation=operation, drift=drift):
+                    calls = []
+                    dirs = ('/', '/usr', '/usr/local', '/usr/local/libexec',
+                            '/usr/local/libexec/porota-rc6-custody')
+                    def run(argv, data, **limits):
+                        cmd = argv[-1]
+                        calls.append(cmd)
+                        if cmd == command:
+                            self.assertEqual(data, request if calls.count(cmd) == 1 else post_de)
+                            self.assertEqual(limits['output_cap'], 4096)
+                            self.assertEqual(calls[-2], 'authority')
+                            if drift == 'remote-hold':
+                                return 79, b'private source value'
+                            if drift == 'remote-array':
+                                return 0, b'["private source value"]'
+                            return 0, receipt
+                        self.assertEqual(data, b'')
+                        if cmd in (HOST_ID_CMD, HOST_REGION_CMD, '/usr/bin/id -u'):
+                            return 0, {HOST_ID_CMD: b'87654321' if drift == 'DO' else b'12345678',
+                                       HOST_REGION_CMD: b'nyc1\n', '/usr/bin/id -u': b'0\n' if drift == 'uid' else b'1000\n'}[cmd]
+                        path = cmd.rsplit(' ', 1)[1]
+                        self.assertIn(path, (*dirs, target))
+                        if cmd.startswith('/usr/bin/sudo -n /usr/bin/test ! -L '):
+                            return int(drift == 'symlink' and path == target), b''
+                        if cmd.startswith('/usr/bin/sudo -n /usr/bin/stat '):
+                            directory = path in dirs
+                            mode = '755' if directory else '555'
+                            if (directory and drift == 'parent-mode') or (not directory and drift == 'mode'):
+                                mode = '775'
+                            uid = int(not directory and drift == 'owner')
+                            links = 2 if directory or drift == 'hardlink' else 1
+                            inode = 20 + (dirs.index(path) if directory else len(dirs))
+                            if calls.count(cmd) > 1 and drift == ('parent-inode' if directory else 'inode'):
+                                inode += 1
+                            return 0, f'{uid}|0|{mode}|{links}|{"directory" if directory else "regular file"}|3|{inode}|4096\n'.encode()
+                        self.assertEqual(cmd, '/usr/bin/sudo -n /usr/bin/sha256sum -- ' + target)
+                        value = 'f' * 64 if drift == 'digest' else package_sha
+                        return 0, (value + '  ' + target + '\n').encode()
+
+                    def check():
+                        calls.append('authority')
+                        if drift == 'revoked':
+                            raise ValueError('private revocation')
+                        return drift != 'false-authority'
+
+                    with mock.patch.object(transport.subprocess, 'Popen', return_value=_FakeMaster()), \
+                            mock.patch.object(R309BoundedMuxHost, '_verified_master_socket', return_value=True), \
+                            mock.patch.object(transport, 'run_bounded_ssh_command', side_effect=run):
+                        self.assertTrue(hasattr(transport, 'R367CustodianTransport'))
+                        with transport.R367CustodianTransport(env, operation=operation,
+                                custodian_sha256=package_sha, host_identity_sha256=commitment) as session:
+                            if drift == 'none':
+                                self.assertEqual(session.invoke(request, recheck_authority=check), receipt)
+                                self.assertEqual(calls.count(command), 1)
+                                self.assertGreaterEqual(calls.count('/usr/bin/sudo -n /usr/bin/sha256sum -- ' + target), 1)
+                                self.assertEqual(session.invoke(post_de, recheck_authority=check), receipt)
+                                self.assertEqual(calls.count(command), 2)
+                                # PREPARE/POST_D_E and the three APPLY stages share one runner job.
+                                # The old 180s file-probe window cannot bound a multi-stage transport.
+                                with mock.patch.object(transport.time, 'monotonic',
+                                                       return_value=time.monotonic() + 181):
+                                    self.assertEqual(session.invoke(post_de, recheck_authority=check), receipt)
+                                for oversize in (b'{"v":"' + b'X' * 1024**2 + b'"}',
+                                                 b'{"x":1,"x":2}', b'/bin/sh -s', b'{}', b'[]'):
+                                    issued = len(calls)
+                                    with self.assertRaises(R309Hold):
+                                        session.invoke(oversize, recheck_authority=check)
+                                    self.assertEqual(len(calls), issued)
+                                with self.assertRaises(R309Hold):
+                                    session.call(command, stdin=b'{}')
+                                self.assertEqual(calls.count(command), 3)
+                            else:
+                                with self.assertRaises(R309Hold) as error:
+                                    session.invoke(request, recheck_authority=check)
+                                self.assertNotIn('private', ''.join(traceback.format_exception(error.exception)))
+                                remote_ran = drift in ('remote-hold', 'remote-array')
+                                self.assertEqual(calls.count(command), int(remote_ran))
+                                if remote_ran:
+                                    count = len(calls)
+                                    with self.assertRaises(R309Hold):
+                                        session.invoke(request, recheck_authority=check)
+                                    self.assertEqual(len(calls), count)
+
     def test_probe_times_out_before_the_workflow_cuts_off_the_receipt(self):
         with mock.patch('scripts.rc6_r309_bounded_mux_host.time.monotonic', return_value=100), \
                 _host_session(operation='PROBE_FILES_ONLY') as (host, _, _):

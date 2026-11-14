@@ -4,8 +4,11 @@ import gzip
 import hashlib
 import io
 import json
+import subprocess
 import tarfile
 import unittest
+import warnings
+import zipfile
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -123,6 +126,117 @@ def real_bundle_arguments():
 
 
 class ProvenanceTest(unittest.TestCase):
+    def test_zipapp_runs_both_reviewed_lockstep_producers_in_an_isolated_interpreter(self):
+        module_dir = Path(producer.__file__).parent
+        # This uses the same loader/stdlib guard as the checkout. Environments
+        # which the checkout rejects must return that same HOLD from the zipapp.
+        common = '''from scripts import rc6_r326_root_bundle_provenance as r
+try:
+    raw = r._reviewed_source_pair(("rc6_oci_host_helper",), "HELPER")["rc6_oci_host_helper"][1]
+    assert r._trusted_consumer(raw).__name__ == "freeze_root_launch_profiles"
+    assert r._trusted_freezer().__name__ == "freeze_root_install_manifest"
+except r.ProvenanceHold as error:
+    if str(error) != "RC6_R326_HOLD79:STDLIB_DEPENDENCY_UNVERIFIED":
+        raise
+    raise SystemExit(79)
+'''
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            app = folder / 'custodian-provenance'
+            with zipfile.ZipFile(app, 'w') as archive:
+                archive.writestr('__main__.py', common)
+                archive.writestr('scripts/__init__.py', '')
+                for source in ('rc6_r326_root_bundle_provenance', *producer._CODE_PINS):
+                    archive.writestr('scripts/' + source + '.py', (module_dir / (source + '.py')).read_bytes())
+            direct = 'import sys\nsys.path.insert(0, ' + repr(str(module_dir.parent)) + ')\n' + common
+            original = subprocess.run([sys.executable, '-IB', '-c', direct], cwd=folder,
+                                      capture_output=True, timeout=15)
+            packaged = subprocess.run([sys.executable, '-IB', str(app)], cwd=folder,
+                                      capture_output=True, timeout=15)
+            self.assertIn(original.returncode, (0, 79), original.stderr)
+            self.assertEqual(packaged.returncode, original.returncode, packaged.stderr)
+            self.assertEqual(packaged.stdout, b'')
+
+    def test_four_source_handoff_matches_the_authenticated_bundle_without_reopening_the_tar(self):
+        arguments = real_bundle_arguments()
+        expected = producer.propose_root_bundle(**arguments)
+        boundary = arguments.pop('boundary')
+        bundle = arguments.pop('bundle_bytes')
+        outer = arguments.pop('outer_manifest_bytes')
+        sources = dict(producer.extract_bound_sources(boundary, bundle, outer))
+        pins = tuple((row['path'], row['sha256']) for row in json.loads(outer)['files'])
+        pinned = replace(boundary, source_sha256=pins)
+        with patch.object(producer, 'extract_bound_sources', side_effect=AssertionError('tar reread')):
+            actual = producer.propose_root_bundle_from_bound_sources(
+                boundary=pinned, sources=sources, **arguments)
+        self.assertEqual(actual, expected)
+        self.assertFalse(actual.host_go)
+        for name, raw in sources.items():
+            with self.subTest(source=name), self.assertRaises(producer.ProvenanceHold):
+                producer.propose_root_bundle_from_bound_sources(
+                    boundary=pinned, sources={**sources, name: raw + b'\n'}, **arguments)
+        for changed in (replace(pinned, source_sha256=()),
+                        replace(pinned, source_sha256=(pins[0],) * len(pins)),
+                        replace(pinned, source_sha256=((pins[0][0], 'a' * 64), *pins[1:])),
+                        replace(pinned, git_blobs=((pins[0][0], 'a' * 40), *pinned.git_blobs[1:]))):
+            with self.subTest(boundary=changed), self.assertRaises(producer.ProvenanceHold):
+                producer.propose_root_bundle_from_bound_sources(
+                    boundary=changed, sources=sources, **arguments)
+        for wrong in ({key: value for key, value in sources.items() if key != 'helper'},
+                      {**sources, '../injected': b'x'}, {**sources, 'custody': bytearray(b'x')}):
+            with self.assertRaises(producer.ProvenanceHold):
+                producer.propose_root_bundle_from_bound_sources(
+                    boundary=pinned, sources=wrong, **arguments)
+        with self.assertRaises(producer.ProvenanceHold):
+            producer.propose_root_bundle(
+                boundary=replace(pinned, source_sha256=((pins[0][0], 'e' * 64), *pins[1:])),
+                bundle_bytes=bundle, outer_manifest_bytes=outer, **arguments)
+
+    def test_zipapp_reads_only_the_unique_bounded_stored_pinned_sources(self):
+        scripts = Path(producer.__file__).parent
+        r326 = Path(producer.__file__).name
+        consumer = 'rc6_oci_host_helper'
+        profiles = 'rc6_r308_root_launch_profile_freeze'
+        program = f'''from scripts import rc6_r326_root_bundle_provenance as r326
+try:
+    pair = r326._reviewed_source_pair(({consumer!r}, {profiles!r}), "ZIP_SOURCES")
+except r326.ProvenanceHold:
+    raise SystemExit(79)
+assert all(r326._hash(pair[n][1]) == r326._CODE_PINS[n] for n in pair)
+'''
+        with TemporaryDirectory() as temp:
+            for scenario, expected in (('pinned', 0), ('changed', 79), ('missing', 79),
+                                       ('compressed', 79), ('duplicate', 79), ('oversize_archive', 79),
+                                       ('shadowed_stdlib', 79), ('traversal', 79)):
+                with self.subTest(scenario=scenario):
+                    app = Path(temp) / (scenario + '.pyz')
+                    with zipfile.ZipFile(app, 'w') as archive:
+                        archive.writestr('__main__.py', program)
+                        archive.writestr('scripts/__init__.py', '')
+                        archive.writestr('scripts/' + r326, (scripts / r326).read_bytes())
+                        archive.writestr('scripts/' + profiles + '.py',
+                                         (scripts / (profiles + '.py')).read_bytes())
+                        raw = (scripts / (consumer + '.py')).read_bytes()
+                        if scenario != 'missing':
+                            archive.writestr('scripts/' + consumer + '.py',
+                                             raw + b'\n' if scenario == 'changed' else raw,
+                                             compress_type=(zipfile.ZIP_DEFLATED if scenario == 'compressed'
+                                                            else zipfile.ZIP_STORED))
+                        if scenario == 'oversize_archive':
+                            archive.writestr('padding', b'x' * (1024 * 1024))
+                        if scenario == 'duplicate':
+                            with warnings.catch_warnings():
+                                warnings.simplefilter('ignore', UserWarning)
+                                archive.writestr('scripts/' + consumer + '.py', raw)
+                        if scenario == 'shadowed_stdlib':
+                            archive.writestr('secrets.py', 'raise RuntimeError("unreviewed module")')
+                        if scenario == 'traversal':
+                            archive.writestr('../unreviewed.py', 'raise RuntimeError("unreviewed module")')
+                    run = subprocess.run([sys.executable, '-I', str(app)], cwd=temp,
+                                         capture_output=True, timeout=10)
+                    self.assertEqual(run.returncode, expected, run.stderr)
+                    self.assertEqual(run.stdout, b'')
+
     def test_authenticated_tar_still_rejects_duplicate_link_and_traversal_members(self):
         boundary, bundle, outer = fixture()
         for name, kind in (("scripts/rc6_oci_host_helper.py", "duplicate"),

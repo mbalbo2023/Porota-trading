@@ -9,7 +9,7 @@ R309 review, R305 PIN GO and R321 INSTALL GO remain separate, absent authorities
 Only bounded reviewed trusted-main dependency source reads/imports are made;
 no candidate-source execution, network/host operation or wall clock read occurs.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import gzip
 import hashlib
 import builtins
@@ -21,8 +21,11 @@ from pathlib import Path
 import io
 import json
 import re
+import stat
 import tarfile
 from types import MappingProxyType, ModuleType
+from zipfile import BadZipFile, ZIP_STORED, ZipFile
+from zipimport import zipimporter
 
 
 class ProvenanceHold(ValueError):
@@ -91,6 +94,7 @@ class ExternalReleaseBoundary:
     r163_status: str
     member_sha256: tuple
     git_blobs: tuple
+    source_sha256: tuple = ()  # Four D-authenticated source paths for a tar-free handoff.
 
 
 def _pairs(value, names, width):
@@ -140,7 +144,7 @@ def extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes):
     This bounded reader verifies inner/outer manifest equality, selected member
     SHA/size and candidate Git blob identity, not a second full tar validator.
     """
-    members, blobs = _boundary(boundary)
+    members, _ = _boundary(boundary)
     _require(type(bundle_bytes) is bytes and 0 < len(bundle_bytes) <= 128 * 1024**2,
              "BUNDLE_BUDGET")
     _require(_hash(bundle_bytes) == members[_BUNDLE] and
@@ -184,12 +188,29 @@ def extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes):
                  "MANIFEST_ENTRY")
         rows[row["path"]] = row
     _require(set(rows) == seen - {_INNER}, "MANIFEST_MEMBER_SET")
-    for path, raw in selected.items():
-        row = rows[path]
+    records = tuple((path, rows[path]["sha256"]) for path in _SOURCE_PATHS)
+    if boundary.source_sha256 != ():
+        _require(_pairs(boundary.source_sha256, _SOURCE_PATHS, 64) == dict(records),
+                 "SOURCE_HASH_SIZE_OR_GIT_BLOB")
+    _require(all(len(raw) == rows[path]["bytes"] for path, raw in selected.items()),
+             "SOURCE_HASH_SIZE_OR_GIT_BLOB")
+    return _verify_bound_sources(replace(boundary, source_sha256=records),
+                                 {_SOURCE_PATHS[path]: raw for path, raw in selected.items()})
+
+
+def _verify_bound_sources(boundary, sources):
+    _, blobs = _boundary(boundary)
+    digests = _pairs(boundary.source_sha256, _SOURCE_PATHS, 64)
+    _require(type(sources) in (dict, MappingProxyType) and len(sources) == len(_SOURCE_PATHS),
+             "REQUIRED_SOURCE_MISSING")
+    captured = dict(sources)
+    _require(set(captured) == set(_SOURCE_PATHS.values()), "REQUIRED_SOURCE_MISSING")
+    for path, role in _SOURCE_PATHS.items():
+        raw = captured[role]
+        _require(type(raw) is bytes and len(raw) <= 16 * 1024**2, "SOURCE_BUDGET")
         blob = hashlib.sha1(b"blob " + str(len(raw)).encode("ascii") + b"\0" + raw).hexdigest()
-        _require(len(raw) == row["bytes"] and _hash(raw) == row["sha256"]
-                 and blob == blobs[path], "SOURCE_HASH_SIZE_OR_GIT_BLOB")
-    return MappingProxyType({_SOURCE_PATHS[path]: raw for path, raw in selected.items()})
+        _require(_hash(raw) == digests[path] and blob == blobs[path], "SOURCE_HASH_SIZE_OR_GIT_BLOB")
+    return MappingProxyType(captured)
 
 
 # Exact reviewed checkout source, not a release artifact or Python import cache.
@@ -213,20 +234,59 @@ def _trusted_dependency_root():
     return Path(__file__).resolve().parent
 
 
+def _zip_source_pair(loader, names, reason):
+    # The installed custodian is a finite, stored zipapp. Capture one bounded
+    # snapshot before reading either source. No extraction or import by name.
+    archive_path = Path(loader.archive)
+    _require(loader is __spec__.loader and loader.prefix == 'scripts/' and
+             Path(__file__) == archive_path / 'scripts' / 'rc6_r326_root_bundle_provenance.py', reason)
+    limit = 1024 * 1024
+    members = {'scripts/' + name + '.py': name for name in names}
+    try:
+        fd = os.open(archive_path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            _require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= limit, reason)
+            snapshot = stream.read(limit + 1)
+            _require(len(snapshot) == info.st_size, reason)
+        with ZipFile(io.BytesIO(snapshot)) as archive:
+            contents = archive.infolist()
+            names_in_archive = {item.filename for item in contents}
+            _require(len(contents) == len(names_in_archive) <= 32 and
+                     all(name in ('__main__.py', 'scripts/__init__.py') or
+                         re.fullmatch(r'scripts/rc6_[a-z0-9_]+\.py', name)
+                         for name in names_in_archive) and members.keys() <= names_in_archive, reason)
+            captured = {}
+            for item in contents:
+                if item.filename not in members:
+                    continue
+                _require(item.compress_type == ZIP_STORED and not item.flag_bits and
+                         0 < item.file_size == item.compress_size <= limit, reason)
+                name = members[item.filename]
+                captured[name] = (archive_path / item.filename, archive.read(item))
+            return captured
+    except (OSError, BadZipFile, RuntimeError, ValueError) as exc:
+        raise ProvenanceHold('RC6_R326_HOLD79:' + reason) from exc
+
+
 def _reviewed_source_pair(names, reason):
     # Capture/check the whole pair before executing either dependency. Execute
     # these bytes later, never reopen through an import loader or bytecode cache.
-    captured = {}
-    for name in names:
-        _require(name in _CODE_PINS, reason)
-        path = _trusted_dependency_root() / (name + ".py")
-        try:
-            with path.open("rb") as handle:
-                raw = handle.read(2 * 1024**2 + 1)
-        except OSError as exc:
-            raise ProvenanceHold("RC6_R326_HOLD79:" + reason) from exc
+    _require(all(name in _CODE_PINS for name in names), reason)
+    if type(__loader__) is zipimporter:
+        captured = _zip_source_pair(__loader__, names, reason)
+    else:
+        captured = {}
+        for name in names:
+            path = _trusted_dependency_root() / (name + ".py")
+            try:
+                with path.open("rb") as handle:
+                    raw = handle.read(2 * 1024**2 + 1)
+            except OSError as exc:
+                raise ProvenanceHold("RC6_R326_HOLD79:" + reason) from exc
+            captured[name] = (path, raw)
+    for name, (_, raw) in captured.items():
         _require(len(raw) <= 2 * 1024**2 and _hash(raw) == _CODE_PINS[name], reason)
-        captured[name] = (path, raw)
     return captured
 
 
@@ -435,10 +495,24 @@ def propose_root_bundle(*, boundary, bundle_bytes, outer_manifest_bytes,
     Approval intent is independently supplied, fresh and checked by trusted R304.
     Neither a previous D digest nor an old approval is rewritten/recycled.
     """
-    # Snapshot mutable caller inputs before any dependency boundary can run.
+    # Keep caller-owned mappings frozen across the potentially long tar read.
     context = _json(_canonical(context), 4096)
     approval_intent = _json(_canonical(approval_intent), 65536)
     extracted = extract_bound_sources(boundary, bundle_bytes, outer_manifest_bytes)
+    # Each extracted digest was checked against the authenticated outer and inner manifests.
+    digests = tuple((path, _hash(extracted[role])) for path, role in _SOURCE_PATHS.items())
+    return propose_root_bundle_from_bound_sources(
+        boundary=replace(boundary, source_sha256=digests), sources=extracted,
+        profiles_bytes=profiles_bytes, unit_template_bytes=unit_template_bytes,
+        context=context, approval_intent=approval_intent, now=now)
+
+
+def propose_root_bundle_from_bound_sources(*, boundary, sources, profiles_bytes,
+                                           unit_template_bytes, context, approval_intent, now):
+    """Consume four original D bytes bound to both D SHA-256 and candidate Git blobs."""
+    extracted = _verify_bound_sources(boundary, sources)
+    context = _json(_canonical(context), 4096)
+    approval_intent = _json(_canonical(approval_intent), 65536)
     generated_hashes = validate_generated_inputs(boundary, extracted, profiles_bytes, unit_template_bytes, context)
     freezer = _trusted_freezer()  # D helper identity already checked before any code ran.
     _require(type(approval_intent) is dict and all(approval_intent.get(key) == value for key, value in {
@@ -451,8 +525,8 @@ def propose_root_bundle(*, boundary, bundle_bytes, outer_manifest_bytes,
     # Raw hashes are taken from the separately D-bound INNER manifest, not
     # newly self-asserted caller source hashes. Generated hashes come from the
     # reviewed deterministic R308 producer after exact-byte equivalence.
-    manifest = _json(outer_manifest_bytes, 4 * 1024**2)
-    source_hashes = {role: next(row["sha256"] for row in manifest["files"] if row["path"] == path)
+    digests = dict(boundary.source_sha256)
+    source_hashes = {role: digests[path]
                      for path, role in _SOURCE_PATHS.items() if role in {"helper", "custody"}}
     source_hashes.update(generated_hashes)
     frozen = freezer(candidate_sha=boundary.candidate_sha, candidate_tree=boundary.candidate_tree,

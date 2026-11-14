@@ -167,6 +167,40 @@ def test_material_projection_requires_original_canonical_bounded_e(tmp_path, can
                     github=reader, trusted_release=release, include_material=True)
 
 
+def test_install_consumer_gets_authenticated_buffers_once(tmp_path):
+    reader, event, release, payload, original_e, _, _ = authenticated_material_fixture(tmp_path)
+    delivered = []
+    proof = verify_authenticated_release(
+        event, checkout_sha=event["GITHUB_SHA"], github=reader, trusted_release=release,
+        include_material=True, consume_material=delivered.append)
+    material, = delivered
+    assert material.postcompletion_receipt_bytes == original_e
+    assert material.boundary.candidate_sha == proof["candidate_sha"]
+    assert material.boundary.image_id == json.loads(payload["porota-frozen-candidate.json"])["image_id"]
+    assert set(material.source_bytes) == set(provenance.SOURCE_PATHS.values())
+    for path, role in provenance.SOURCE_PATHS.items():
+        source = material.source_bytes[role]
+        assert hashlib.sha256(source).hexdigest() == proof["source_material"]["sources"][path]["sha256"]
+        assert dict(material.boundary.source_sha256)[path] == hashlib.sha256(source).hexdigest()
+    with pytest.raises(TypeError):
+        material.source_bytes["helper"] = b"replaced"
+    assert "bundle_bytes" not in json.dumps(proof)
+    assert "source_bytes" not in json.dumps(proof)
+    assert "postcompletion_receipt_bytes" not in json.dumps(proof)
+
+
+def test_unverified_material_never_reaches_install_consumer(tmp_path):
+    reader, event, release, _, _, _, _ = authenticated_material_fixture(tmp_path)
+    path = PREFIX + "/git/ref/heads/main"
+    reader.after_reads[path] = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": "0" * 40}}
+    delivered = []
+    with pytest.raises(ControlHold, match="GITHUB_HEAD_CHANGED_DURING_AUTH"):
+        verify_authenticated_release(
+            event, checkout_sha=event["GITHUB_SHA"], github=reader, trusted_release=release,
+            include_material=True, consume_material=delivered.append)
+    assert not delivered
+
+
 class StubREST:
     def __init__(self):
         self.records = {
