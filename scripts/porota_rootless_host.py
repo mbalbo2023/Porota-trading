@@ -37,6 +37,9 @@ ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
+# Frozen PAPER settings enable both optional workers in this release contract.
+CONTROLLER_CHILDREN = ("scanner", "performance", "dynamic_shadow", "exit_reader", "notifications",
+                       "candles", "intraday_scalping", "caucion_cash_sweep")
 
 
 class Hold(RuntimeError):
@@ -484,6 +487,76 @@ def classify_runtime(row, *, now, started):
     raise Hold("RUNTIME_UNCLASSIFIED_DEGRADED")
 
 
+def read_controller_health(path):
+    """Observe bounded controller evidence and live child PIDs inside its container."""
+    try:
+        health = decode(read_regular(path))
+    except (OSError, Hold):
+        return None
+    if not isinstance(health, dict) or not isinstance(health.get("children"), dict):
+        return None
+    result = {key: health.get(key) for key in (
+        "schema", "source_sha", "candidate_tree_sha", "recorded_at")}
+    result["roles_match"] = set(health["children"]) == set(CONTROLLER_CHILDREN)
+    result["children"] = {}
+    for name in CONTROLLER_CHILDREN:
+        child = health["children"].get(name)
+        if not isinstance(child, dict):
+            continue
+        pid = child.get("pid")
+        alive = False
+        if type(pid) is int and pid > 0:
+            try:
+                with open(f"/proc/{pid}/stat", encoding="ascii") as process:
+                    state = process.read(4096).rsplit(") ", 1)[1].split()[0]
+                alive = state in {"R", "S", "D", "I"}
+            except (OSError, UnicodeError, IndexError):
+                pass
+        result["children"][name] = {key: child.get(key) for key in ("state", "pid", "started_at")}
+        result["children"][name]["alive"] = alive
+    return result
+
+
+def classify_controller(health, *, source_sha, source_tree, now, started):
+    """Startup may retain an older file; only fresh current live children pass."""
+    def pending(reason, **details):
+        return {"status": "PENDING", "reason": reason, **details}
+    def current_stamp(value):
+        try:
+            stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return stamp if stamp.tzinfo is not None and started <= stamp <= now else None
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(health, dict) or health.get("schema") != "rc6.runtime-child-health.v1":
+        return pending("CONTROLLER_HEALTH_UNAVAILABLE")
+    if health.get("source_sha") != source_sha or health.get("candidate_tree_sha") != source_tree:
+        return pending("CONTROLLER_SOURCE_MISMATCH")
+    stamp = current_stamp(health.get("recorded_at"))
+    if stamp is None or (now - stamp).total_seconds() > 120:
+        return pending("CONTROLLER_HEALTH_STALE")
+    children = health.get("children")
+    if health.get("roles_match") is not True or not isinstance(children, dict) or set(children) != set(CONTROLLER_CHILDREN):
+        return pending("CONTROLLER_CHILD_ROLES_MISMATCH")
+    waiting = []
+    pids = set()
+    for name in CONTROLLER_CHILDREN:
+        child = children[name]
+        if not isinstance(child, dict):
+            waiting.append(name)
+            continue
+        pid = child.get("pid")
+        child_started = current_stamp(child.get("started_at"))
+        if (child.get("state") != "RUNNING" or type(pid) is not int or pid <= 0 or pid in pids or
+                child.get("alive") is not True or child_started is None or child_started > stamp):
+            waiting.append(name)
+        if type(pid) is int:
+            pids.add(pid)
+    if waiting:
+        return pending("CONTROLLER_CHILDREN_NOT_RUNNING", children=sorted(waiting))
+    return {"status": "READY", "entrypoint": "bv_paper_runtime.py", "recorded_at": stamp.isoformat(),
+            "source_sha": source_sha, "source_tree": source_tree, "children": sorted(children)}
+
+
 def validate_container(item, *, role, image_id, source_sha, source_tree, attempt, root, operator=None):
     require(role in ROLES and isinstance(item, dict), "CONTAINER_SCOPE")
     config = item.get("Config") or {}
@@ -496,7 +569,7 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
             "RUNTIME_IMAGE_MISMATCH")
     require(config.get("User") == "0:0" and not config.get("Entrypoint") and
             config.get("WorkingDir") == "/app" and
-            config.get("Cmd") == ["python", "o_dashboard.py" if role == "dashboard" else "bf_production_paper_observer.py"],
+            config.get("Cmd") == ["python", "o_dashboard.py" if role == "dashboard" else "bv_paper_runtime.py"],
             "RUNTIME_COMMAND_MISMATCH")
     env = parse_env("\n".join(config.get("Env", [])))
     require(env.get("POROTA_BUILD_SHA") == source_sha and env.get("POROTA_CANDIDATE_TREE_SHA") == source_tree,
@@ -549,6 +622,7 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
 
 RUNTIME_PROBE = '''import json,sqlite3
 from bd_ppi_readonly_guard import ReadOnlyTransportGuard,ReadOnlyPolicyViolation
+from scripts.porota_rootless_host import read_controller_health
 guard=ReadOnlyTransportGuard()
 for path in ('/api/1.0/orders/confirm','/api/1.0/orders/create','/api/1.0/orders/cancel'):
     try: guard.check('POST','https://clientapi.portfoliopersonal.com'+path)
@@ -559,7 +633,9 @@ c.row_factory=sqlite3.Row
 c.execute('PRAGMA query_only=ON')
 rows=c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at,detail FROM observer_state WHERE id=1').fetchall()
 assert len(rows)==1
-print(json.dumps(dict(rows[0])))
+result=dict(rows[0])
+result['controller']=read_controller_health('/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+print(json.dumps(result))
 c.close()
 '''
 
@@ -757,9 +833,13 @@ class Host:
             require(all(item["State"].get("Running") is True for item in (dashboard, observer)), "RUNTIME_PROCESS_STOPPED")
             row = self.docker.json("container", "exec", document["roles"]["observer"],
                                    "python", "-c", RUNTIME_PROBE)
-            status = classify_runtime(row, now=datetime.now(timezone.utc), started=started)
+            now = datetime.now(timezone.utc)
+            status = classify_runtime(row, now=now, started=started)
+            controller = classify_controller(row.get("controller"), source_sha=document["source_sha"],
+                source_tree=document["source_tree"], now=now, started=started)
+            self.receipt["controller"] = controller
             health = dashboard["State"].get("Health", {}).get("Status")
-            if health == "healthy" and status["status"] == "READY":
+            if health == "healthy" and status["status"] == "READY" and controller["status"] == "READY":
                 return {"dashboard": "healthy", "observer": "running", "orders_guard": "BLOCKED",
                         "source_alert": status["source_alert"], "paper_readiness": "FAIL_CLOSED_PER_INSTRUMENT"}
             sleep(5)

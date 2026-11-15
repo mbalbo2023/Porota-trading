@@ -94,7 +94,7 @@ def runtime(tmp_path, monkeypatch):
             "Id": cid, "Name": "/porota-rc6-" + role + "-migration1", "Image": IMAGE,
             "RestartCount": 0,
             "Config": {"Image": IMAGE, "User": "0:0", "WorkingDir": "/app", "Entrypoint": None,
-                "Cmd": ["python", "o_dashboard.py" if role == "dashboard" else "bf_production_paper_observer.py"],
+                "Cmd": ["python", "o_dashboard.py" if role == "dashboard" else "bv_paper_runtime.py"],
                 "Labels": {"io.porota.project": "rc6", "io.porota.role": role, "io.porota.attempt": "migration1"},
                 "Env": ["POROTA_BUILD_SHA=" + SHA, "POROTA_CANDIDATE_TREE_SHA=" + TREE,
                     "DASHBOARD_OPERATION_MODE=PRODUCTION_PAPER", "EXECUTION_MODE=SIMULATION",

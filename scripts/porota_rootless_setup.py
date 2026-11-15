@@ -231,6 +231,21 @@ def _properties(value, allowed):
             if separator and key in allowed}
 
 
+def legacy_command_identity(item):
+    """Classify exact launcher pairs; never publish unknown command arguments."""
+    config = item.get("Config") or {}
+    command = {"entrypoint": config.get("Entrypoint"), "cmd": config.get("Cmd")}
+    result = {"profile": "UNRECOGNIZED", "sha256": hashlib.sha256(
+        json.dumps(command, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+    # The legacy manager used: docker run --entrypoint python IMAGE SCRIPT.
+    expected = {LEGACY_NAMES[0]: ("BV_PAPER_RUNTIME", "bv_paper_runtime.py"),
+                LEGACY_NAMES[1]: ("DASHBOARD", "o_dashboard.py")}
+    profile, script = expected.get(item.get("Name", "").lstrip("/"), (None, None))
+    if profile and command == {"entrypoint": ["python"], "cmd": [script]}:
+        result.update(profile=profile, entrypoint=["python"], cmd=[script])
+    return result
+
+
 def inspect_host(root: Path, *, run=subprocess.run):
     """Observe fixed RC6 coordinates, not all host containers or applications."""
     uid = os.getuid()
@@ -251,6 +266,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
                     row.update({"status": item.get("State", {}).get("Status", "NO_VERIFICADO"),
                                 "running": item.get("State", {}).get("Running"),
                                 "cid": item.get("Id"), "image_id": item.get("Image"),
+                                "command_identity": legacy_command_identity(item),
                                 "data_mount_matches": any(
                                     m.get("Destination") == "/app/data" and
                                     m.get("Source") == str(root / "data")
@@ -880,7 +896,8 @@ class LegacyTransition:
         self.root, self.source, self.run = root, source, run
         self.guard = guard
         self.receipt = {"schema": "porota.rootless.legacy-quiescence.v1", "state": "NO_VERIFICADO",
-                        "containers": [], "units": [], "functional_successors": "NO_VERIFICADO"}
+                        "containers": [], "observed_containers": [], "units": [],
+                        "functional_successors": "NO_VERIFICADO"}
         self.daemon_id = decode(self.docker("info", "--format", "{{json .}}"))["ID"]
         # The exact-name filters expose no unrelated applications.
         ids = self.docker("container", "ls", "--all", "--quiet", "--no-trunc", "--filter",
@@ -888,8 +905,10 @@ class LegacyTransition:
         self.containers = []
         for cid in ids:
             item = self.inspect(cid)
-            self.validate(item)
+            command = self.validate(item)
             self.containers.append(item)
+            self.receipt["observed_containers"].append({"cid": cid, "name": item["Name"].lstrip("/"),
+                "image_id": item["Image"], "command_identity": command})
         require(len({item["Name"] for item in self.containers}) == len(self.containers), "LEGACY_CONTAINER_AMBIGUOUS")
         inventory = unit_inventory(source, run=run)
         require(inventory["status"] == "OBSERVED", "LEGACY_UNIT_INVENTORY_UNVERIFIED")
@@ -911,18 +930,20 @@ class LegacyTransition:
         return rows[0]
 
     def validate(self, item):
-        from scripts.porota_rootless_host import require, IMAGE_ID
+        from scripts.porota_rootless_host import require, IMAGE_ID, Hold
         name = item.get("Name", "").lstrip("/")
-        config = item.get("Config") or {}
         require(name in LEGACY_NAMES and IMAGE_ID.fullmatch(str(item.get("Image", ""))), "LEGACY_CONTAINER_IDENTITY")
         require(any(m.get("Type") == "bind" and m.get("Destination") == "/app/data" and
                     m.get("Source") == str(self.root / "data") for m in item.get("Mounts", [])), "LEGACY_DATA_IDENTITY")
-        expected = {LEGACY_NAMES[0]: ["python", "bf_production_paper_observer.py"],
-                    LEGACY_NAMES[1]: ["python", "o_dashboard.py"]}
+        command = legacy_command_identity(item)
         if name == LEGACY_NAMES[2]:
             require(item.get("State", {}).get("Running") is False, "LEGACY_MONOLITH_NEEDS_REVIEW")
-        else:
-            require(config.get("Cmd") == expected[name] and not config.get("Entrypoint"), "LEGACY_COMMAND_IDENTITY")
+        elif command["profile"] == "UNRECOGNIZED":
+            failure = Hold("LEGACY_COMMAND_IDENTITY")
+            failure.public_details = {"legacy_command_identity": {
+                "name": name, "cid": item["Id"], "command_identity": command}}
+            raise failure
+        return command
 
     def unit_digest(self, path):
         from scripts.porota_rootless_host import require
@@ -945,10 +966,11 @@ class LegacyTransition:
             if self.inspect(item["Id"])["State"].get("Running"):
                 self.docker("container", "stop", "--time", "30", item["Id"])
             final = self.inspect(item["Id"])
-            self.validate(final)
+            command = self.validate(final)
             require(final["State"].get("Running") is False and
                     final.get("HostConfig", {}).get("RestartPolicy", {}).get("Name") == "no", "LEGACY_STOP_UNVERIFIED")
-            self.receipt["containers"].append({"cid": item["Id"], "image_id": item["Image"], "state": "STOPPED_RETAINED"})
+            self.receipt["containers"].append({"cid": item["Id"], "image_id": item["Image"],
+                "state": "STOPPED_RETAINED", "command_identity": command})
         require(decode(self.docker("info", "--format", "{{json .}}"))["ID"] == self.daemon_id, "LEGACY_DAEMON_CHANGED")
         require(database_snapshot(self.root / DB_RELATIVE) == before, "DATABASE_CHANGED_IDENTITY")
         after = unit_inventory(self.source, run=self.run)
