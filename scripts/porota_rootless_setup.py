@@ -415,6 +415,11 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "conventional_user_socket": _metadata(Path(f"/run/user/{uid}/docker.sock")),
             "rootful_socket": _metadata(Path("/var/run/docker.sock")),
             "target_data_root": str(home / ".local/share/porota-rc6/docker"),
+            "directory_metadata": {name: _metadata(home / relative) for name, relative in (
+                ("state", ".local/state/porota-rc6"),
+                ("daemon_config", ".config/porota-rc6"),
+                ("daemon_store", ".local/share/porota-rc6/docker"),
+                ("client_config", ".config/porota-rc6/client"))},
             "binaries": {name: shutil.which(name) is not None for name in (
                 "docker", "dockerd-rootless.sh", "rootlesskit", "newuidmap", "newgidmap",
                 "slirp4netns", "systemctl", "sudo")},

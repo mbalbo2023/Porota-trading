@@ -131,6 +131,38 @@ class InspectTests(unittest.TestCase):
         self.assertFalse(result["target_exists"])
         self.assertFalse(missing.parent.exists())
 
+    def test_private_directory_metadata_is_bounded_and_never_repairs_permissions(self):
+        home = self.root / "home"
+        directories = {"state": (home / ".local/state/porota-rc6", 0o700),
+                       "daemon_config": (home / ".config/porota-rc6", 0o700),
+                       "daemon_store": (home / ".local/share/porota-rc6/docker", 0o710)}
+        for directory, mode in directories.values():
+            directory.mkdir(parents=True)
+            directory.chmod(mode)
+            (directory / "private-value").write_text("never-publish-directory-contents")
+        client = home / ".config/porota-rc6/client"
+        account = SimpleNamespace(pw_dir=str(home), pw_name="porota-test",
+                                  pw_uid=os.getuid(), pw_gid=os.getgid())
+        with patch.object(setup.pwd, "getpwuid", return_value=account), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("inspection cannot create")), \
+             patch.object(Path, "chmod", side_effect=AssertionError("inspection cannot repair")), \
+             patch.object(Path, "iterdir", side_effect=AssertionError("inspection cannot enumerate")):
+            result = setup.inspect_host(self.root, run=self.fake_run)
+        metadata = result["directory_metadata"]
+        self.assertEqual(set(metadata), {*directories, "client_config"})
+        for label, (directory, mode) in directories.items():
+            self.assertTrue(metadata[label]["present"])
+            self.assertEqual(metadata[label]["mode"], oct(mode))
+            self.assertEqual(metadata[label]["uid"], os.getuid())
+            self.assertFalse(metadata[label]["symlink"])
+            self.assertEqual(directory.stat().st_mode & 0o777, mode)
+        self.assertEqual(metadata["client_config"], {"present": False})
+        self.assertFalse(client.exists())
+        self.assertEqual(result["host_mutations"], 0)
+        self.assertNotIn("never-publish-directory-contents", json.dumps(result))
+        self.assertFalse(any(set(c) & {"stop", "start", "restart", "rm", "prune", "enable", "disable"}
+                             for c in self.commands))
+
 
 class PrivateImageInspectTests(unittest.TestCase):
     def setUp(self):
