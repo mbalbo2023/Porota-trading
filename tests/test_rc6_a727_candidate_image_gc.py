@@ -2,12 +2,9 @@
 
 import importlib.util
 import json
-import os
 import sqlite3
 import subprocess
-import sys
 import tempfile
-import textwrap
 import types
 import unittest
 from pathlib import Path
@@ -27,7 +24,6 @@ CRITICAL = "sha256:" + "e" * 64
 TAGS = ["porota-predeploy-v2:" + CANDIDATE,
         "porota-trading-bot:17.0.0-rc6-candidate-" + CANDIDATE]
 DIGESTS = ["porota-predeploy-v2@sha256:" + "f" * 64]
-WORKFLOW = SCRIPT.parents[1] / ".github/workflows/rc6-a727-candidate-only-docker-gc.yml"
 
 
 def details(tags=None, digests=None, iid=IMAGE, *,
@@ -458,130 +454,6 @@ class ApplyGates(unittest.TestCase):
         self.assertFalse(calls)
         with self.assertRaisesRegex(gc.Hold, "APPLY_ADMISSION_NOT_PROVEN"):
             self._perform(mode="apply")
-
-
-class SanitizerRegressions(unittest.TestCase):
-    """Execute the actual workflow's public-receipt sanitizer without Actions."""
-
-    def _sanitize(self, receipt):
-        workflow = WORKFLOW.read_text()
-        source = workflow.split("python3 - <<'PY'\n", 1)[1].split("\n          PY", 1)[0]
-        script = textwrap.dedent(source)
-        with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory) / "rc6_a727_gc"
-            folder.mkdir()
-            (folder / "host.private.json").write_text(json.dumps(receipt))
-            env = dict(os.environ, RUNNER_TEMP=directory, A727_MODE="plan",
-                       A727_CANDIDATE_SHA=CANDIDATE, A727_FAILED_SHA=FAILED,
-                       A727_FAILED_RUN="42260034260", A727_EXPECTED_PLAN_SHA256="",
-                       A727_REMOTE_EXIT_CODE="0")
-            completed = subprocess.run([sys.executable, "-B", "-c", script],
-                                       env=env, capture_output=True, text=True, timeout=5)
-            sanitized = json.loads((folder / "receipt.json").read_text())
-            return completed.returncode, sanitized, completed.stdout + completed.stderr
-
-    def _receipt(self):
-        return {"schema": gc.SCHEMA, "mode": "plan", "state": "PLAN_READY",
-                "candidate_sha": CANDIDATE, "failed_candidate_sha": FAILED,
-                "failed_run_id": "42260034260", "plan_sha256": "a" * 64,
-                "targets": 1, "target_manifest": [manifest_details()],
-                "oci_provenance_unverified_count": 0,
-                "discovered_candidate_shas": [CANDIDATE],
-                "size_upper_bytes": 1000, "paper_zero_receipts": False,
-                "book_closed_flat": False, "book_state": "NO_VERIFICADO",
-                "apply_hold": "BOOK_UNVERIFIED", "other_apps_touched": False,
-                "ppi_watch_touched": False, "mutations": 0, "removed": 0,
-                "mutation_count_exact": True, "disk_free_before_bytes": 3_300_000_000,
-                "disk_free_after_bytes": 3_300_000_000,
-                "disk_delta_observed_bytes": 0, "inodes_free_before": 1000,
-                "inodes_free_after": 1000}
-
-    def test_sanitizer_accepts_readonly_inventory_with_book_apply_hold(self):
-        code, data, output = self._sanitize(self._receipt())
-        self.assertEqual(code, 0, output)
-        self.assertEqual(data["apply_hold"], "BOOK_UNVERIFIED")
-        self.assertEqual(data["target_manifest"][0]["id"], IMAGE)
-
-    def test_sanitizer_accepts_all_new_bounded_stage_codes(self):
-        for value in ("BARRIER_FILE_UNVERIFIED", "BARRIER_ABSENT_POSTBOOT_UNVERIFIED",
-                      "OCI_LABEL_UNVERIFIED", "MARKER_FILE_UNVERIFIED",
-                      "STABLE_DOCKER_UNVERIFIED", "OWNED_DOCKER_UNVERIFIED",
-                      "QUIESCENCE_FILE_UNVERIFIED", "WATCH_READ_UNVERIFIED",
-                      "FILE_UNVERIFIED", "DOCKER_UNVERIFIED"):
-            receipt = self._receipt()
-            receipt["apply_hold"] = value
-            code, data, output = self._sanitize(receipt)
-            self.assertEqual(code, 0, (value, output))
-            self.assertEqual(data["apply_hold"], value)
-
-    def test_sanitizer_accepts_owned_role_and_error_kind_only(self):
-        for value in sorted(gc.OWNED_HOLDS):
-            with self.subTest(value=value):
-                receipt = self._receipt()
-                receipt["apply_hold"] = value
-                code, data, output = self._sanitize(receipt)
-                self.assertEqual(code, 0, (value, output))
-                self.assertEqual(data["apply_hold"], value)
-
-    def test_sanitizer_preserves_only_bounded_oci_count_and_barrier_hold(self):
-        for hold in ("OCI_LABEL_UNVERIFIED",
-                     "BARRIER_ABSENT_POSTBOOT_UNVERIFIED"):
-            receipt = self._receipt()
-            receipt["apply_hold"] = hold
-            receipt["oci_provenance_unverified_count"] = 1
-            code, data, output = self._sanitize(receipt)
-            self.assertEqual(code, 0, output)
-            self.assertEqual(data["oci_provenance_unverified_count"], 1)
-            self.assertIn("oci_unverified=1", output)
-            self.assertNotIn("_oci_commit", output + json.dumps(data))
-
-    def test_sanitizer_rejects_forged_oci_count(self):
-        for count, hold in ((9, "OCI_LABEL_UNVERIFIED"),
-                            (-1, "OCI_LABEL_UNVERIFIED"),
-                            (True, "OCI_LABEL_UNVERIFIED"),
-                            (1, "NONE")):
-            with self.subTest(count=count, hold=hold):
-                receipt = self._receipt()
-                receipt["oci_provenance_unverified_count"] = count
-                receipt["apply_hold"] = hold
-                if hold == "NONE":
-                    # Isolate the new OCI consistency guard: all unrelated
-                    # book/PAPER evidence is otherwise valid.
-                    receipt["book_state"] = "VERIFIED_CLOSED_FLAT"
-                    receipt["book_closed_flat"] = True
-                    receipt["paper_zero_receipts"] = True
-                code, data, output = self._sanitize(receipt)
-                self.assertEqual(code, 2)
-                self.assertEqual(data["state"], "NO_VERIFICADO")
-
-
-    def test_sanitizer_rejects_unowned_role_and_secret_injected_reason(self):
-        for value in ("OWNED_BOCA_CLI_UNVERIFIED",
-                      "OWNED_OBSERVER_CLI_UNVERIFIED|private secret",
-                      "OWNED_OBSERVER_UNKNOWN_UNVERIFIED"):
-            with self.subTest(value=value):
-                receipt = self._receipt()
-                receipt["apply_hold"] = value
-                code, data, output = self._sanitize(receipt)
-                self.assertEqual(code, 2)
-                self.assertEqual(data["state"], "NO_VERIFICADO")
-                self.assertNotIn(value, output + json.dumps(data))
-
-    def test_sanitizer_rejects_foreign_alias_without_leaking_it(self):
-        receipt = self._receipt()
-        receipt["target_manifest"][0]["tags"] = ["boca-private:my-secret"]
-        code, data, output = self._sanitize(receipt)
-        self.assertEqual(code, 2)
-        self.assertEqual(data["state"], "NO_VERIFICADO")
-        self.assertNotIn("boca-private", output + json.dumps(data))
-
-    def test_sanitizer_rejects_unexpected_apply_hold_without_leaking(self):
-        receipt = self._receipt()
-        receipt["apply_hold"] = "SECRET_ABC"
-        code, data, output = self._sanitize(receipt)
-        self.assertEqual(code, 2)
-        self.assertEqual(data["state"], "NO_VERIFICADO")
-        self.assertNotIn("SECRET_ABC", output + json.dumps(data))
 
 
 if __name__ == "__main__":

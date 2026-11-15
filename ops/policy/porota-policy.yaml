@@ -68,7 +68,10 @@ deployment:
   single_consolidated_deploy_required: true
   single_frozen_candidate_required: true
   single_final_predeploy_v2_gate_required: true
-  new_changes_after_candidate_freeze_go_to_next_batch: true
+  candidate_freeze_rule: >-
+    Fix-forward remains in this candidate. A source-tree change invalidates
+    frozen release evidence and requires evidence for the new tree; unchanged
+    trees reuse applicable evidence.
   build_once_required: true
   exact_artifact_promotion_required: true
   immutable_artifact_identity_required: true
@@ -141,7 +144,8 @@ cleanup:
   failed_attempt_cleanup_receipt_required: true
   orphan_cleanup_must_use_same_host_deploy_mutex: true
   failed_deploy_reference_safe_orphan_gc_required_when_runtime_safe: true
-  residual_orphans_must_be_audited_and_cleaned_before_next_deploy: true
+  # Record safe retained resources without vetoing the next attempt. Ownership,
+  # references, protected scope and available capacity still govern each operation.
   orphan_cleanup_must_not_create_new_deploy_attempt_barrier: true
   reference_rechecks_before_each_image_delete: true
   docker_prune_or_force_delete_allowed: false

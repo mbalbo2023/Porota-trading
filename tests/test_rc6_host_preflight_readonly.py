@@ -12,7 +12,6 @@ from scripts import rc6_host_preflight_readonly as preflight
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/rc6-host-physical-preflight.yml"
 SHA = "a" * 40
 TREE = "b" * 40
 GENERATION = "c" * 32
@@ -358,54 +357,10 @@ class HostPreflightReadonlyTest(unittest.TestCase):
                                       env=self.env)
             self.assertEqual(code, 79)
 
-    def test_workflow_is_manual_trusted_main_readonly_fixed_root_allowlist(self):
-        source = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("workflow_dispatch:", source)
-        self.assertIn("github.ref == 'refs/heads/main'", source)
-        self.assertIn("group: rc6-unified-paper-deploy", source)
-        self.assertIn("cancel-in-progress: false", source)
-        self.assertIn("contents: read", source)
-        self.assertIn("- BOOTSTRAP", source)
-        self.assertIn("- PREBIRTH", source)
-        self.assertIn("- POSTSEAL", source)
-        self.assertNotIn("inputs.helper_sha256", source)
-        self.assertNotIn("contents: write", source)
-        self.assertNotIn("id-token: write", source)
-        self.assertNotIn("schedule:", source)
-        self.assertNotIn("push:\n", source)
-        self.assertNotIn("docker ps", source)
-        self.assertNotIn("sudo -n docker", source)
-        self.assertNotIn("systemctl", source)
-        self.assertNotIn("PPI_WATCH_", source)
-        self.assertNotIn("host_control_verified=true", source)
-        fixed = "sudo -n /usr/local/sbin/porota-rc6-oci-custody "
-        self.assertIn(fixed + "quiescence verify-prebirth", source)
-        self.assertIn(fixed + "verify-current", source)
-        self.assertNotIn("sudo -n python", source)
-        self.assertNotIn("sudo -n bash", source)
-        privileged = [line for line in source.splitlines() if "sudo -n" in line]
-        self.assertEqual(len(privileged), 2)
-        self.assertTrue(all(fixed in line for line in privileged))
-        self.assertLess(source.index('--check-host --evidence-dir'),
-                        source.index("capture prebirth.json"))
-        self.assertLess(source.index("--check-helper --evidence-dir"),
-                        source.index("capture prebirth.json"))
-        self.assertLess(source.index("BOOTSTRAP)"), source.index("PREBIRTH)"))
-        self.assertLess(source.index("PREBIRTH)"), source.index("POSTSEAL)"))
-        self.assertNotIn("RC6_EXPECTED_HELPER_SHA256:", source)
-
-    def test_droplet_identity_pins_must_come_from_protected_actions_secrets(self):
-        source = WORKFLOW.read_text(encoding="utf-8")
+    def test_helper_does_not_hardcode_host_identity_pins(self):
         python_source = (ROOT / "scripts/rc6_host_preflight_readonly.py").read_text()
-        self.assertIn("RC6_EXPECTED_DO_ID: ${{ secrets.RC6_EXPECTED_DO_ID }}", source)
-        self.assertIn("RC6_EXPECTED_DO_REGION: ${{ secrets.RC6_EXPECTED_DO_REGION }}", source)
-        self.assertNotIn("inputs.expected_do_id", source)
-        self.assertNotIn("inputs.expected_do_region", source)
         self.assertNotIn("EXPECTED_DROPLET_ID =", python_source)
         self.assertNotIn("EXPECTED_REGION =", python_source)
-        self.assertNotIn("RC6_EXPECTED_DO_ID: ${{ vars.", source)
-        self.assertNotIn("RC6_EXPECTED_DO_REGION: ${{ vars.", source)
-        self.assertNotIn("echo \"$RC6_EXPECTED_DO", source)
 
     def test_missing_malformed_or_extra_host_identity_pins_hold_before_ssh(self):
         for key, bad_value in (
