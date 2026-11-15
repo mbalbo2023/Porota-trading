@@ -31,8 +31,11 @@ class InspectTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, "", "")
         if "inspect" in command:
             name = command[-1]
+            script = {setup.LEGACY_NAMES[0]: "bv_paper_runtime.py",
+                      setup.LEGACY_NAMES[1]: "o_dashboard.py"}.get(name)
             raw = [{"Id": "a" * 64, "Name": "/" + name,
-                    "Config": {"Env": ["SECRET=must-never-leak"]},
+                    "Config": {"Env": ["SECRET=must-never-leak"], "Entrypoint": ["python"],
+                               "Cmd": [script] if script else ["private-unknown-argument"]},
                     "State": {"Status": "running", "Running": True},
                     "Image": "sha256:" + "b" * 64,
                     "Mounts": [{"Destination": "/app/data", "Source": str(self.root / "data")}]}]
@@ -49,6 +52,20 @@ class InspectTests(unittest.TestCase):
         self.assertTrue(all(row["data_mount_matches"] for row in result["legacy_rc6"]))
         self.assertFalse(any(set(c) & {"stop", "start", "restart", "rm", "prune", "enable", "disable"}
                              for c in self.commands))
+
+    def test_inspection_exposes_only_recognized_command_literals(self):
+        result = setup.inspect_host(self.root, run=self.fake_run)
+        observer, dashboard, monolith = result["legacy_rc6"]
+        self.assertEqual(observer["command_identity"]["profile"], "BV_PAPER_RUNTIME")
+        self.assertEqual(observer["command_identity"]["entrypoint"], ["python"])
+        self.assertEqual(observer["command_identity"]["cmd"], ["bv_paper_runtime.py"])
+        self.assertEqual(dashboard["command_identity"]["profile"], "DASHBOARD")
+        self.assertEqual(monolith["command_identity"]["profile"], "UNRECOGNIZED")
+        self.assertNotIn("cmd", monolith["command_identity"])
+        self.assertNotIn("entrypoint", monolith["command_identity"])
+        self.assertNotIn("private-unknown-argument", json.dumps(result))
+        self.assertTrue(all(len(row["command_identity"]["sha256"]) == 64
+                            for row in result["legacy_rc6"]))
 
     def test_only_fixed_rc6_names_are_inspected_on_explicit_rootful_endpoint(self):
         setup.inspect_host(self.root, run=self.fake_run)
@@ -305,10 +322,10 @@ class LegacyTransitionTests(unittest.TestCase):
                        "ActiveState": "active", "UnitFileState": "enabled", "DropInPaths": "",
                        "FragmentPath": "/etc/systemd/system/" + self.name}]
         self.containers = {}
-        for name, cid, command in ((setup.LEGACY_NAMES[0], "1" * 64, "bf_production_paper_observer.py"),
+        for name, cid, command in ((setup.LEGACY_NAMES[0], "1" * 64, "bv_paper_runtime.py"),
                                    (setup.LEGACY_NAMES[1], "2" * 64, "o_dashboard.py")):
             self.containers[cid] = {"Id": cid, "Name": "/" + name, "Image": "sha256:" + "a" * 64,
-                "Config": {"Cmd": ["python", command], "Entrypoint": None},
+                "Config": {"Cmd": [command], "Entrypoint": ["python"]},
                 "Mounts": [{"Type": "bind", "Source": str(self.root / "data"), "Destination": "/app/data"}],
                 "State": {"Running": True}, "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}}}
         self.commands = []
@@ -357,11 +374,53 @@ class LegacyTransitionTests(unittest.TestCase):
             result = transition.quiesce()
         self.assertEqual(result["state"], "QUIESCENT")
         self.assertEqual({x["cid"] for x in result["containers"]}, set(self.containers))
+        self.assertEqual({x["command_identity"]["profile"] for x in result["containers"]},
+                         {"BV_PAPER_RUNTIME", "DASHBOARD"})
+        self.assertEqual({x["cid"] for x in result["observed_containers"]}, set(self.containers))
         self.assertTrue(all(not x["State"]["Running"] for x in self.containers.values()))
         stopped = [c[-1] for c in self.commands if "stop" in c]
         self.assertEqual(set(stopped), set(self.containers))
         self.assertFalse(result["rootful_daemon_stopped"])
         self.assertFalse(any("rm" in c or "prune" in c or "docker.service" in c for c in self.commands))
+
+    def test_wrong_role_scanner_shell_or_extra_arguments_block_before_any_mutation(self):
+        invalid_commands = (
+            (["python"], ["bf_production_paper_observer.py"]),
+            (["python"], ["o_dashboard.py"]),
+            (["python"], ["bv_paper_runtime.py", "--exit-reader"]),
+            (["python", "-c"], ["private-unknown-argument"]),
+            (["sh", "-c"], ["python bv_paper_runtime.py; private-unknown-argument"]),
+            (None, ["python", "bv_paper_runtime.py"]),
+            ([], ["python", "bf_production_paper_observer.py"]),
+        )
+        for entrypoint, command in invalid_commands:
+            with self.subTest(entrypoint=entrypoint, command=command):
+                self.commands.clear()
+                self.containers["1" * 64]["Config"].update(Entrypoint=entrypoint, Cmd=command)
+                with self.assertRaisesRegex(host.Hold, "LEGACY_COMMAND_IDENTITY") as caught:
+                    setup.LegacyTransition(self.root, self.source, identity=self.identity, run=self.fake)
+                evidence = caught.exception.public_details["legacy_command_identity"]
+                self.assertEqual(evidence["cid"], "1" * 64)
+                self.assertEqual(evidence["name"], setup.LEGACY_NAMES[0])
+                self.assertEqual(evidence["command_identity"]["profile"], "UNRECOGNIZED")
+                self.assertNotIn("cmd", evidence["command_identity"])
+                self.assertNotIn("private-unknown-argument", json.dumps(evidence))
+                self.assertFalse(any("stop" in c or "disable" in c or "update" in c for c in self.commands))
+
+    def test_dashboard_cannot_use_observer_command(self):
+        self.containers["2" * 64]["Config"]["Cmd"] = ["bv_paper_runtime.py"]
+        with self.assertRaisesRegex(host.Hold, "LEGACY_COMMAND_IDENTITY"):
+            setup.LegacyTransition(self.root, self.source, identity=self.identity, run=self.fake)
+        self.assertFalse(any("stop" in c or "disable" in c or "update" in c for c in self.commands))
+
+    def test_command_change_after_inspection_blocks_before_quiescence(self):
+        inventory, digest = self.patches()
+        with inventory, digest, patch.object(host, "database_snapshot", return_value={"inode": 4, "real_orders_sent": 0}):
+            transition = setup.LegacyTransition(self.root, self.source, identity=self.identity, run=self.fake)
+            self.containers["1" * 64]["Config"]["Cmd"] = ["bv_paper_runtime.py", "--exit-reader"]
+            with self.assertRaisesRegex(host.Hold, "LEGACY_COMMAND_IDENTITY"):
+                transition.quiesce()
+        self.assertFalse(any("stop" in c or "disable" in c or "update" in c for c in self.commands))
 
     def test_named_container_with_foreign_storage_is_refused(self):
         self.containers["1" * 64]["Mounts"][0]["Source"] = "/opt/boca/data"

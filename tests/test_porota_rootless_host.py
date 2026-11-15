@@ -33,7 +33,7 @@ def container_fixture(root, operator, role, *, attempt="next", image=IMAGE, cid=
     return {"Id": cid or ("1" if role == "observer" else "2") * 64,
             "Name": f"/porota-rc6-{role}-{attempt}", "Image": image,
             "Config": {"Image": image, "User": "0:0", "WorkingDir": "/app", "Entrypoint": None,
-                "Cmd": ["python", "o_dashboard.py" if role == "dashboard" else "bf_production_paper_observer.py"],
+                "Cmd": ["python", "o_dashboard.py" if role == "dashboard" else "bv_paper_runtime.py"],
                 "Labels": {host.PROJECT: "rc6", "io.porota.role": role, "io.porota.attempt": attempt},
                 "Env": [f"POROTA_BUILD_SHA={SHA}", f"POROTA_CANDIDATE_TREE_SHA={TREE}",
                     "DASHBOARD_OPERATION_MODE=PRODUCTION_PAPER", "EXECUTION_MODE=SIMULATION",
@@ -284,6 +284,16 @@ class RootlessContracts(unittest.TestCase):
             with self.subTest(field=dotted), self.assertRaises(host.Hold):
                 check(bad)
 
+    def test_observer_requires_the_controller_instead_of_the_scanner_alone(self):
+        value = container_fixture(self.base, self.base / "operator", "observer")
+        kwargs = dict(role="observer", image_id=IMAGE, source_sha=SHA, source_tree=TREE,
+                      attempt="next", root=self.base, operator=self.base / "operator")
+        value["Config"]["Cmd"] = ["python", "bv_paper_runtime.py"]
+        self.assertEqual(host.validate_container(value, **kwargs), "1" * 64)
+        value["Config"]["Cmd"] = ["python", "bf_production_paper_observer.py"]
+        with self.assertRaisesRegex(host.Hold, "RUNTIME_COMMAND_MISMATCH"):
+            host.validate_container(value, **kwargs)
+
     def test_postflight_starting_is_bounded_and_timeout_never_becomes_validated(self):
         identity = host.Identity(os.getuid(), os.getgid(), "test", self.base)
         manager = host.Host(self.base, identity)
@@ -291,7 +301,7 @@ class RootlessContracts(unittest.TestCase):
         row = {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "OK",
                "process_state": "STARTING", "heartbeat_at": started.isoformat()}
         times = iter((0, 0, 5, 10))
-        document = {"roles": {"observer": "1" * 64}}
+        document = {"source_sha": SHA, "source_tree": TREE, "roles": {"observer": "1" * 64}}
         with patch.object(manager, "check_role", return_value={"State": {"Running": True, "Health": {"Status": "healthy"}}}), \
              patch.object(manager.docker, "json", return_value=row):
             with self.assertRaisesRegex(host.Hold, "RUNTIME_STARTUP_TIMEOUT"):

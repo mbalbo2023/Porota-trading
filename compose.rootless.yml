@@ -22,7 +22,7 @@ services:
   observer:
     <<: *runtime
     container_name: porota-rc6-observer-${POROTA_ATTEMPT:?attempt_required}
-    command: [python, bf_production_paper_observer.py]
+    command: [python, bv_paper_runtime.py]
     env_file:
       - path: ${POROTA_ENV_DIR:?private_env_required}/observer.env
         format: raw
