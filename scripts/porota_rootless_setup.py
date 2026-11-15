@@ -260,6 +260,88 @@ def private_release_reference(home, source_sha, source_tree):
         return None
 
 
+def private_release_custody(home, source_sha, *, include_attempts=True):
+    """Read fixed release/journal metadata without authorizing cleanup."""
+    if not isinstance(source_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        return None
+    state = home / ".local/state/porota-rc6"
+    directories = {"state": state, "releases": state / "releases",
+                   "release": state / "releases" / source_sha, "attempts": state / "attempts"}
+    def metadata(path):
+        if any(parent.is_symlink() for parent in reversed(path.parents)):
+            return {"present": None, "status": "PARENT_ALIAS"}
+        return _metadata(path)
+    def directory_safe(path, private=False):
+        try:
+            observed = metadata(path)
+            item = path.lstat() if observed.get("present") is True else None
+            return bool(item and stat.S_ISDIR(item.st_mode) and item.st_uid == os.getuid() and
+                        not item.st_mode & (0o077 if private else 0o022))
+        except OSError:
+            return False
+    def record(path, parents_safe):
+        result = {"metadata": metadata(path), "status": "NO_VERIFICADO"}
+        if not parents_safe or result["metadata"].get("symlink") is not False:
+            return result
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as stream:
+                item = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(item.st_mode) or item.st_uid != os.getuid() or item.st_nlink != 1 or
+                        item.st_mode & 0o077 or item.st_size > 2 * 1024**2):
+                    return result
+                raw = stream.read(2 * 1024**2 + 1)
+            if len(raw) != item.st_size or len(raw) > 2 * 1024**2:
+                return result
+            result["sha256"] = hashlib.sha256(raw).hexdigest()
+            value = json.loads(raw)
+            if not isinstance(value, dict):
+                return result
+            fields = {}
+            for key, pattern in (("source_sha", r"[0-9a-f]{40}"), ("source_tree", r"[0-9a-f]{40}"),
+                    ("image_id", r"sha256:[0-9a-f]{64}"), ("release_manifest_sha256", r"[0-9a-f]{64}")):
+                if key in value:
+                    fields[key] = value[key] if isinstance(value[key], str) and re.fullmatch(pattern, value[key]) else None
+            for key, allowed in (("schema", {"porota.release.v1", "porota.rootless.deploy.v1"}),
+                    ("state", {"NO_VERIFICADO", "VALIDADO_RUNTIME", "BLOQUEADO", "DESPLEGADO"})):
+                if key in value:
+                    fields[key] = value[key] if isinstance(value[key], str) and value[key] in allowed else None
+            if "transition_started" in value:
+                fields["transition_started"] = value["transition_started"] if type(value["transition_started"]) is bool else None
+            if "roles" in value:
+                fields["roles_empty"] = value["roles"] == {} if isinstance(value["roles"], dict) else None
+            result.update(status="OBSERVED", fields=fields)
+        except (OSError, ValueError, TypeError):
+            pass
+        return result
+    result = {"directories": {key: metadata(path) for key, path in directories.items()},
+              "attempts": [], "attempts_status": "NO_VERIFICADO"}
+    result["release"] = record(directories["release"] / "release.json",
+        all(directory_safe(directories[key]) for key in ("state", "releases", "release")))
+    if not include_attempts:
+        return result
+    if not directory_safe(state) or not directory_safe(directories["attempts"]):
+        return result
+    try:
+        with os.scandir(directories["attempts"]) as entries:
+            bounded = []
+            for entry in entries:
+                bounded.append(entry.name)
+                if len(bounded) > 32:
+                    return dict(result, attempts_status="LIMIT_EXCEEDED")
+        result["attempts_status"] = "OBSERVED"
+        for name in sorted(bounded):
+            if not re.fullmatch(r"[1-9][0-9]{0,19}-[1-9][0-9]{0,9}", name):
+                result["attempts_status"] = "UNKNOWN_ENTRY"
+                continue
+            path = directories["attempts"] / name
+            result["attempts"].append({"attempt": name, "directory": metadata(path),
+                "receipt": record(path / "receipt.json", directory_safe(path, private=True))})
+    except OSError:
+        pass
+    return result
+
+
 def private_image_inventory(home, socket, info, *, run=subprocess.run):
     """Bounded local metadata; listed IDs and inspected descriptors are not aliases."""
     uid = os.getuid()
@@ -333,6 +415,7 @@ def private_image_inventory(home, socket, info, *, run=subprocess.run):
             item = items[0]
             config = item.get("Config") if isinstance(item.get("Config"), dict) else {}
             environment = config.get("Env") if isinstance(config.get("Env"), list) else []
+            labels = config.get("Labels") if isinstance(config.get("Labels"), dict) else {}
             def source(key):
                 values = [entry.partition("=")[2] for entry in environment
                           if isinstance(entry, str) and entry.startswith(key + "=")]
@@ -340,12 +423,21 @@ def private_image_inventory(home, socket, info, *, run=subprocess.run):
             row.update(status="OBSERVED", Id=digest(item.get("Id")), Descriptor=descriptor(item.get("Descriptor")),
                 platform=platform({"os": item.get("Os"), "architecture": item.get("Architecture"), "variant": item.get("Variant")}),
                 source_sha=source("POROTA_BUILD_SHA"), source_tree=source("POROTA_CANDIDATE_TREE_SHA"))
+            row["labels"] = {key: labels[key] for key, pattern in (
+                ("porota.commit", r"[0-9a-f]{40}"), ("porota.predeploy", r"v2"))
+                if isinstance(labels.get(key), str) and re.fullmatch(pattern, labels[key])}
         except (ValueError, TypeError):
             pass
         return row
     for image_id in ids[:8]:
         row = dict(inspect_image(image_id))
         result["images"].append(row)
+        custody = private_release_custody(home, row.get("source_sha"), include_attempts="journal_custody" not in result)
+        if custody is not None:
+            journals, status = custody.pop("attempts"), custody.pop("attempts_status")
+            row["release_custody"] = custody
+            if "journal_custody" not in result:
+                result["journal_custody"] = {"status": status, "attempts": journals}
         release = private_release_reference(home, row.get("source_sha"), row.get("source_tree"))
         if release:
             row["release"] = release
