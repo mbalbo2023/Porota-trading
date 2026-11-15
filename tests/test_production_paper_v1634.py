@@ -1665,15 +1665,15 @@ def test_historicos_usan_universo_completo_no_lote_activo(tmp_path, monkeypatch)
 
 def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch):
     """Every child connection must validate WAL without requesting journal mutation."""
-    db = tmp_path / "shared.db"
-    store = PaperStore(str(db))
-    # PaperStore creation uses the candidate connection policy itself, so a
-    # fresh unit-test DB is intentionally rejected until the runtime-parent
-    # initialization contract has established WAL. Model that parent step with
-    # raw sqlite before tracing child connections.
     import sqlite3 as _sqlite3
-    with _sqlite3.connect(db) as connection:
-        assert connection.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+    import cg_paper_workspace as workspace
+
+    db = tmp_path / "shared.db"
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    # The real parent initializes schema, WAL and the capital-bound identity
+    # before READY. A standalone PaperStore deliberately lacks that identity.
+    store = workspace.runtime_store(db)
+    identity = workspace.read_identity(db)
     real_connect = _sqlite3.connect
     statements = []
 
@@ -1692,6 +1692,8 @@ def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch)
     monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
     connection = store.connect()
     try:
+        assert workspace.identity_from_connection(connection) == identity
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert "pragma busy_timeout=20000" in statements
         assert "pragma journal_mode" in statements
         assert "pragma journal_mode=wal" not in statements
@@ -1700,16 +1702,28 @@ def test_paper_store_connect_no_reissues_wal_write_pragma(tmp_path, monkeypatch)
 
 
 def test_paper_store_connect_fails_closed_when_database_is_not_wal(tmp_path, monkeypatch):
+    from contextlib import closing
+    import gc
     import sqlite3 as _sqlite3
+    import cg_paper_workspace as workspace
+
     db = tmp_path / "not_wal.db"
-    with _sqlite3.connect(db) as connection:
-        connection.execute("CREATE TABLE fixture(id INTEGER)")
-        connection.execute("PRAGMA journal_mode=DELETE")
-    store = object.__new__(PaperStore)
-    store.path = str(db)
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    workspace.runtime_store(db)
+    identity = workspace.read_identity(db)
+    # Parent SQLite handles may await GC; this fixture owns all of them.
+    gc.collect()
     monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "1")
-    with pytest.raises(RuntimeError, match="PAPER_SQLITE_WAL_REQUIRED"):
+    store = PaperStore(str(db))
+    # Change only the journal after genuine child validation, retaining the
+    # same inode and dataset. connect() must reject it without repairing it.
+    with closing(_sqlite3.connect(db)) as connection:
+        assert connection.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+    with pytest.raises(RuntimeError, match="^PAPER_SQLITE_WAL_REQUIRED$"):
         store.connect()
+    with closing(_sqlite3.connect(db)) as connection:
+        assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        assert workspace.identity_from_connection(connection) == identity
 
 def test_observer_faulthandler_is_startup_only():
     source = Path("bf_production_paper_observer.py").read_text(encoding="utf-8")

@@ -170,8 +170,8 @@ jobs:
           set -e
           docker cp "$code:/tmp/code-tests.json" "$STAGE/release/code-tests.json"
           cat "$STAGE/release/code-tests.json"
-          test "$code_result" -eq 0
-          test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$code")" = '0|false'
+          # Capture the independent functional receipt even if code tests fail.
+          # Both results still gate export of this exact image below.
           functional="$(docker create "${common[@]}" --read-only \
             --tmpfs /tmp:rw,nosuid,nodev,size=256m --entrypoint python "$IMAGE_ID" \
             -B scripts/porota_ci_functional.py --output /tmp/functional.json \
@@ -194,6 +194,8 @@ jobs:
           PY
           # Preserve only summaries. Never upload raw logs, datasets or JUnit.
           cat "$STAGE/release/functional.json"
+          test "$code_result" -eq 0
+          test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$code")" = '0|false'
           test "$functional_result" -eq 0
           test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$functional")" = '0|false'
 

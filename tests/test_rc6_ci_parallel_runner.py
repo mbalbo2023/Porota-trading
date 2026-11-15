@@ -89,9 +89,23 @@ class FakePytest:
 
 
 class TestParallelProofRunner(unittest.TestCase):
+    def setUp(self):
+        # The immutable image is readable by botuser, but its parent is '/'.
+        # Every replay owns writable scratch and exercises Actions' explicit
+        # RUNNER_TEMP branch instead of relying on the checkout's permissions.
+        temporary = tempfile.TemporaryDirectory(
+            prefix="rc6-runner-test-", dir=os.environ.get("RUNNER_TEMP") or None)
+        self.addCleanup(temporary.cleanup)
+        self.temporary_root = Path(temporary.name)
+        environment = patch.dict(os.environ, {
+            "GITHUB_ACTIONS": "true", "RUNNER_TEMP": temporary.name,
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_pilot_shards_use_disk_backed_basetemp_despite_ambient_tmpfs(self):
         """Pytest tmp_path must not silently inherit the runner's /tmp mount."""
-        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             disk_root = Path(directory)
             output = disk_root / "combined.xml"
             fake = FakePytest()
@@ -109,7 +123,7 @@ class TestParallelProofRunner(unittest.TestCase):
                 self.assertNotEqual(scratch._storage_type(basetemp), "tmpfs")
 
     def test_tmpfs_runner_temp_fails_closed_before_collecting_pytest(self):
-        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             fake = FakePytest()
             with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
                     patch.object(scratch, "_storage_type", side_effect=scratch.SnapshotError(
@@ -121,7 +135,7 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
 
     def test_unsafe_runner_temp_cannot_write_into_candidate_or_follow_symlink(self):
-        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             link = Path(directory) / "link"
             link.symlink_to(Path(directory))
             for unsafe in (REPO, link, Path(directory) / "missing"):
@@ -135,7 +149,7 @@ class TestParallelProofRunner(unittest.TestCase):
                     self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
 
     def test_self_referential_runner_temp_symlink_emits_normalized_red(self):
-        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             loop = Path(directory) / "loop"
             loop.symlink_to("loop")
             fake = FakePytest()
@@ -153,7 +167,7 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertFalse(any("pytest" in " ".join(cmd) for cmd in fake.calls))
 
     def test_github_runner_missing_temp_root_fails_closed(self):
-        with tempfile.TemporaryDirectory(dir=REPO.parent) as directory:
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             fake = FakePytest()
             with patch.dict(os.environ, {"GITHUB_ACTIONS": "true", "RUNNER_TEMP": ""}), \
                     patch.object(runner, "_invoke", fake):

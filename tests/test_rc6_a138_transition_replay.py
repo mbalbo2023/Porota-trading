@@ -42,7 +42,7 @@ def _historic(path: str, digest: str) -> bytes:
     return result.stdout
 
 
-def _historic_cold2_apply():
+def _historic_cold2_apply(*, ppi_units):
     """Load the exact old COLD2 gate without executing its CLI/host actions."""
     code = _historic("scripts/rc6_cold2_apply_guard.py", HISTORICAL_COLD2_SHA256)
     scope = {
@@ -50,6 +50,9 @@ def _historic_cold2_apply():
         "__file__": str(REPO / "scripts/rc6_cold2_apply_guard.py"),
     }
     exec(compile(code, f"git:{A138}:rc6_cold2_apply_guard.py", "exec"), scope)
+    # exec creates a separate module namespace. Patching current_cold2 alone
+    # does not replace the historical function's real systemctl observer.
+    scope["ppi_units"] = ppi_units
     return scope["apply"]
 
 
@@ -194,13 +197,16 @@ def test_a138_historic_cold2_red_then_current_a139_rescue_green_offhost(
         tmp_path, monkeypatch):
     with _synthetic_wal_and_receipt(tmp_path) as (writer, receipt):
         root, witnessed = _offline_cold2(monkeypatch, receipt, writer)
+        def forbid_host_command(*_args, **_kwargs):
+            pytest.fail("OFFHOST_REPLAY_MUST_NOT_CALL_HOST_COMMANDS")
+        monkeypatch.setattr(subprocess, "check_output", forbid_host_command)
         # Historic Git source lacks the A139 degraded rescue branch and
         # wrongly imposes generic CLOSED on STOPPED/BOOT_CALENDAR.
         with pytest.raises(ValueError, match="QUIESCENCE_CLOSED_REQUIRED"):
-            _historic_cold2_apply()(root, A138)
+            _historic_cold2_apply(ppi_units=current_cold2.ppi_units)(root, A138)
         assert not witnessed  # old guard never reached archive
         if os.environ.get("RC6_A138_MUTATE_CURRENT_TO_HISTORIC") == "1":
-            apply = _historic_cold2_apply()
+            apply = _historic_cold2_apply(ppi_units=current_cold2.ppi_units)
         else:
             apply = current_cold2.apply
         outcome = apply(root, A138)
