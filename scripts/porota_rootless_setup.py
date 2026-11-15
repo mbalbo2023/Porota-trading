@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -158,6 +159,27 @@ def filesystem_metadata(path):
         return {"status": "NO_VERIFICADO"}
 
 
+def _scheduler_execution_evidence(properties, unit):
+    """Only fixed systemd result fields; never export arbitrary unit output."""
+    def stamp(key):
+        value = properties.get(key)
+        return value if isinstance(value, str) and len(value) <= 96 and re.fullmatch(
+            r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) 20[0-9]{2}-[0-9]{2}-[0-9]{2} "
+            r"[0-2][0-9]:[0-5][0-9]:[0-5][0-9] "
+            r"(?:UTC|[+-][0-9]{2,4}|[A-Za-z][A-Za-z_+/\-]{1,30})", value) else None
+    if unit.endswith(".timer"):
+        return {key: stamp(key) for key in ("LastTriggerUSec", "NextElapseUSecRealtime")}
+    def status(key):
+        value = properties.get(key)
+        return int(value) if isinstance(value, str) and re.fullmatch(r"[0-9]{1,5}", value) and int(value) <= 65535 else None
+    result = properties.get("Result")
+    return {"Result": result if isinstance(result, str) and
+            re.fullmatch(r"[a-z][a-z0-9-]{0,39}", result) else None,
+            "ExecMainCode": status("ExecMainCode"), "ExecMainStatus": status("ExecMainStatus"),
+            "ExecMainStartTimestamp": stamp("ExecMainStartTimestamp"),
+            "ExecMainExitTimestamp": stamp("ExecMainExitTimestamp")}
+
+
 def unit_inventory(source=REPO, *, run=subprocess.run):
     """Read the actual states of the versioned RC6 unit allowlist."""
     policy_available = True
@@ -183,10 +205,14 @@ def unit_inventory(source=REPO, *, run=subprocess.run):
         item = definitions.get(name, {"role": "UNKNOWN"})
         if not name.startswith("porota-") or "rc6" not in name or "watch" in name and "ppi" in name:
             return {"status": "NO_VERIFICADO", "units": []}
+        base = {"Id", "LoadState", "ActiveState", "SubState", "UnitFileState", "FragmentPath", "DropInPaths"}
+        evidence = ({"LastTriggerUSec", "NextElapseUSecRealtime"} if name.endswith(".timer") else
+                    {"Result", "ExecMainCode", "ExecMainStatus", "ExecMainStartTimestamp", "ExecMainExitTimestamp"})
         properties = _properties(_call((SYSTEMCTL, "show", name,
-            "--property=Id,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,DropInPaths"), run=run),
-            {"Id", "LoadState", "ActiveState", "SubState", "UnitFileState", "FragmentPath", "DropInPaths"})
-        rows.append({"name": name, "policy_role": item["role"], **properties})
+            "--property=" + ",".join(sorted(base | evidence))), run=run), base | evidence)
+        rows.append({"name": name, "policy_role": item["role"],
+                     **{key: value for key, value in properties.items() if key in base},
+                     **_scheduler_execution_evidence(properties, name)})
     # Template instances require independent review before migration.
     return {"status": "OBSERVED" if policy_available else "OBSERVED_POLICY_UNAVAILABLE",
             "units": rows, "unmapped_units": sorted(discovered - set(definitions))}
@@ -445,6 +471,185 @@ def private_image_inventory(home, socket, info, *, run=subprocess.run):
     return result
 
 
+def private_runtime_inventory(home, socket, info, *, run=subprocess.run):
+    """Observe only current.json's exact two private CIDs; no exec or logs."""
+    uid = os.getuid()
+    socket_meta = _metadata(socket)
+    result = {"status": "NO_VERIFICADO", "reason": "CURRENT_RUNTIME_UNAVAILABLE"}
+    if (uid <= 0 or socket != Path(f"/run/user/{uid}/porota-rc6-docker.sock") or
+            socket_meta.get("uid") != uid or socket_meta.get("socket") is not True or
+            socket_meta.get("symlink") is not False or not isinstance(info, dict) or
+            "name=rootless" not in info.get("SecurityOptions", []) or
+            info.get("DockerRootDir") != str(home / ".local/share/porota-rc6/docker") or
+            not isinstance(info.get("ID"), str)):
+        return dict(result, reason="PRIVATE_DAEMON_UNVERIFIED")
+    state = home / ".local/state/porota-rc6"
+    current = state / "current.json"
+    try:
+        if any(path.is_symlink() for path in (current, *current.parents)):
+            return dict(result, reason="CURRENT_PATH_ALIAS")
+        directory = state.lstat()
+        if (not stat.S_ISDIR(directory.st_mode) or directory.st_uid != uid or
+                directory.st_mode & 0o077):
+            return dict(result, reason="CURRENT_STATE_CUSTODY")
+    except OSError:
+        return result
+
+    def read_current():
+        fd = os.open(current, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            meta = os.fstat(fd)
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_nlink != 1 or
+                    meta.st_mode & 0o077 or meta.st_size > 131072):
+                return None
+            raw = os.read(fd, 131073)
+            return raw if len(raw) == meta.st_size else None
+        finally:
+            os.close(fd)
+
+    try:
+        original = read_current()
+        document = json.loads(original) if original else None
+    except (OSError, ValueError, TypeError):
+        return result
+    if not isinstance(document, dict):
+        return result
+    roles = document.get("roles")
+    sha = document.get("source_sha")
+    tree = document.get("source_tree")
+    image = document.get("image_id")
+    attempt = document.get("attempt")
+    if (document.get("schema") != "porota.rootless.deploy.v1" or
+            document.get("state") != "VALIDADO_RUNTIME" or document.get("phase") != "COMPLETE" or
+            document.get("daemon_id") != info["ID"] or
+            not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha) or
+            not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree) or
+            not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image) or
+            not isinstance(attempt, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", attempt) or
+            not isinstance(roles, dict) or set(roles) != {"observer", "dashboard"} or
+            any(not isinstance(cid, str) or not re.fullmatch(r"[0-9a-f]{64}", cid)
+                for cid in roles.values()) or len(set(roles.values())) != 2):
+        return dict(result, reason="CURRENT_IDENTITY_UNVERIFIED")
+
+    observed = {}
+    for role in ("observer", "dashboard"):
+        cid = roles[role]
+        response = _call((DOCKER, "--host", f"unix://{socket}",
+                          "container", "inspect", cid), run=run, timeout=8)
+        if response is None or response.returncode:
+            return dict(result, reason="PRIVATE_CONTAINER_INSPECT_UNAVAILABLE")
+        try:
+            entries = json.loads(response.stdout)
+            if not isinstance(entries, list) or len(entries) != 1 or not isinstance(entries[0], dict):
+                return dict(result, reason="PRIVATE_CONTAINER_IDENTITY_UNVERIFIED")
+            item = entries[0]
+            config = item.get("Config")
+            config = config if isinstance(config, dict) else {}
+            labels = config.get("Labels")
+            labels = labels if isinstance(labels, dict) else {}
+            environment = config.get("Env")
+            def source_value(key):
+                if not isinstance(environment, list) or len(environment) > 1024:
+                    return None
+                values = [value.partition("=")[2] for value in environment
+                          if isinstance(value, str) and value.startswith(key + "=")]
+                return values[0] if len(values) == 1 else None
+            runtime = item.get("State")
+            runtime = runtime if isinstance(runtime, dict) else {}
+            status = runtime.get("Status")
+            health = runtime.get("Health")
+            health_status = (health.get("Status") if isinstance(health, dict) else None)
+            started = runtime.get("StartedAt")
+            if (item.get("Id") != cid or item.get("Name") != f"/porota-rc6-{role}-{attempt}" or
+                    item.get("Image") != image or labels.get("io.porota.project") != "rc6" or
+                    labels.get("io.porota.role") != role or labels.get("io.porota.attempt") != attempt or
+                    source_value("POROTA_BUILD_SHA") != sha or
+                    source_value("POROTA_CANDIDATE_TREE_SHA") != tree or
+                    status not in {"created", "running", "paused", "restarting", "removing", "exited", "dead"} or
+                    type(runtime.get("Running")) is not bool or type(runtime.get("OOMKilled")) is not bool or
+                    type(runtime.get("Pid")) is not int or runtime["Pid"] < 0 or
+                    type(runtime.get("ExitCode")) is not int or
+                    type(item.get("RestartCount")) is not int or item["RestartCount"] < 0 or
+                    health_status not in {None, "starting", "healthy", "unhealthy"}):
+                return dict(result, reason="PRIVATE_CONTAINER_IDENTITY_UNVERIFIED")
+            observed[role] = {"cid": cid, "Status": status, "Running": runtime["Running"],
+                              "OOMKilled": runtime["OOMKilled"], "Pid": runtime["Pid"],
+                              "ExitCode": runtime["ExitCode"], "RestartCount": item["RestartCount"],
+                              "Health": health_status,
+                              "StartedAt": started if isinstance(started, str) and re.fullmatch(
+                                  r"(?:20[0-9]{2}|0001)-[0-9]{2}-[0-9]{2}T[0-9:.]+(?:Z|[+-][0-9:]+)",
+                                  started) and len(started) <= 64 else None}
+        except (ValueError, TypeError):
+            return dict(result, reason="PRIVATE_CONTAINER_INSPECT_INVALID")
+    try:
+        if read_current() != original:
+            return dict(result, reason="CURRENT_CHANGED_DURING_INSPECT")
+    except OSError:
+        return dict(result, reason="CURRENT_CHANGED_DURING_INSPECT")
+    return {"status": "OBSERVED", "read_only": True, "runtime_certified": False,
+            "source_sha": sha, "source_tree": tree, "image_id": image,
+            "attempt": attempt, "roles": observed}
+
+
+def private_controller_health(root, source_sha, source_tree, *, now=None):
+    """Read one bounded controller heartbeat, never child-process/secret payloads."""
+    result = {"status": "NO_VERIFICADO", "reason": "CONTROLLER_HEALTH_UNAVAILABLE"}
+    path = root / "data/paper_v17/artifacts/observer_v17.db/runtime-health.json"
+    try:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            return dict(result, reason="CONTROLLER_PATH_ALIAS")
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            meta = os.fstat(fd)
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or
+                    meta.st_nlink != 1 or meta.st_mode & 0o022 or meta.st_size > 65536):
+                return dict(result, reason="CONTROLLER_FILE_CUSTODY")
+            raw = os.read(fd, 65537)
+            if len(raw) != meta.st_size:
+                return result
+        finally:
+            os.close(fd)
+        document = json.loads(raw)
+    except (OSError, ValueError, TypeError):
+        return result
+    if (not isinstance(document, dict) or document.get("schema") != "rc6.runtime-child-health.v1" or
+            document.get("source_sha") != source_sha or
+            document.get("candidate_tree_sha") != source_tree):
+        return dict(result, reason="CONTROLLER_SOURCE_MISMATCH")
+
+    def instant(raw):
+        try:
+            value = datetime.fromisoformat(raw.replace("Z", "+00:00")) if isinstance(raw, str) else None
+            return value if value is not None and value.tzinfo is not None else None
+        except ValueError:
+            return None
+
+    observed_at = instant(document.get("recorded_at"))
+    reference = now or datetime.now(timezone.utc)
+    if observed_at is None or reference.tzinfo is None or not 0 <= (reference - observed_at).total_seconds() <= 120:
+        return dict(result, reason="CONTROLLER_HEALTH_STALE")
+    roles = ("scanner", "performance", "dynamic_shadow", "exit_reader",
+             "notifications", "candles", "intraday_scalping", "caucion_cash_sweep")
+    children = document.get("children")
+    if not isinstance(children, dict) or set(children) != set(roles):
+        return dict(result, reason="CONTROLLER_CHILD_ROLES_MISMATCH")
+    observed, pids = {}, set()
+    for role in roles:
+        row = children[role]
+        if not isinstance(row, dict):
+            return dict(result, reason="CONTROLLER_CHILD_IDENTITY_UNVERIFIED")
+        pid = row.get("pid")
+        started_at = instant(row.get("started_at"))
+        if (row.get("state") != "RUNNING" or type(pid) is not int or pid <= 0 or pid in pids or
+                started_at is None or started_at > observed_at):
+            return dict(result, reason="CONTROLLER_CHILD_IDENTITY_UNVERIFIED")
+        pids.add(pid)
+        observed[role] = {"state": "RUNNING", "pid": pid, "started_at": started_at.isoformat()}
+    return {"status": "OBSERVED", "recorded_at": observed_at.isoformat(),
+            "source_sha": source_sha, "source_tree": source_tree, "children": observed,
+            "freshness_seconds": 120, "process_liveness": "NO_VERIFICADO"}
+
+
 def inspect_host(root: Path, *, run=subprocess.run):
     """Observe fixed RC6 coordinates, not all host containers or applications."""
     uid = os.getuid()
@@ -483,6 +688,10 @@ def inspect_host(root: Path, *, run=subprocess.run):
                 own_info = {k: raw.get(k) for k in (
                     "ID", "SecurityOptions", "CgroupVersion", "CgroupDriver", "DockerRootDir")}
                 own_info.update(private_image_inventory(home, socket, raw, run=run))
+                own_info["runtime"] = private_runtime_inventory(home, socket, raw, run=run)
+                if own_info["runtime"].get("status") == "OBSERVED":
+                    own_info["runtime"]["controller"] = private_controller_health(
+                        root, own_info["runtime"]["source_sha"], own_info["runtime"]["source_tree"])
             except (ValueError, TypeError):
                 pass
     user_service = _call((SYSTEMCTL, "--user", "show", SERVICE,

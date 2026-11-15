@@ -9,9 +9,11 @@ import zipfile
 from contextlib import closing
 from datetime import date, datetime, timezone, timedelta
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import sqlite3
 import stat
@@ -19,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import SimpleNamespace
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
@@ -27,8 +30,9 @@ ART = ZoneInfo("America/Argentina/Buenos_Aires")
 ROOT = Path("/opt/porota-trading")
 DB_REL = Path("data/paper_v17/observer_v17.db")
 SEVERITY = {"GREEN": 0, "P2": 1, "P1": 2, "P0": 3}
-CONTAINERS = ("porota_production_observer", "porota_production_dashboard",
-              "porota_critical_approval_rc6")
+# Product runtime is exactly the two roles in the private rootless release.
+# The separately owned legacy critical-approval broker is not a third role.
+CONTAINERS = ("observer", "dashboard")
 TRACKED = ("paper_decisions", "trade_gate_evaluations", "paper_fills",
            "paper_events", "market_snapshots", "scalping_candidates")
 MAX_JSON_BYTES = 1024 * 1024
@@ -354,27 +358,116 @@ def add_schedule_health(current, repo, *, get=None):
     return current
 
 
-def _docker_inspect():
-    command = ["docker", "inspect", "--format",
-               "{{.Name}}|{{.State.Status}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.Image}}",
-               *CONTAINERS]
+def _load_rootless_module(path):
+    """Load only the active, owner-custodied release helper, never main's copy."""
+    spec = importlib.util.spec_from_file_location("_porota_monitor_active_rootless", path)
+    if spec is None or spec.loader is None:
+        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _rootless_context(*, loader=None):
+    """Resolve one exact verified RC6 pair in the dedicated nonroot daemon.
+
+    The product's current release reader validates the private manifest; its
+    Host checks daemon identity, all container labels/CIDs, commands and PAPER
+    config. No branch in this reader probes or falls back to rootful Docker.
+    """
+    uid = os.getuid()
+    account = pwd.getpwuid(uid)
+    if (uid != 1000 or os.geteuid() != uid or account.pw_uid != uid or
+            account.pw_name != "porotaadmin"):
+        raise ValueError("ROOTLESS_SSH_IDENTITY_REQUIRED")
+    home = Path(account.pw_dir)
+    state = home / ".local/state/porota-rc6"
+    if not home.is_absolute() or ".." in home.parts:
+        raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
+    for directory in (home, home / ".local", home / ".local/state", state):
+        meta = directory.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY")
+    current_path = state / "current.json"
     try:
-        result = subprocess.run(command, text=True, capture_output=True,
-                                check=False, timeout=5)
-        if result.returncode != 0 or len(result.stdout) > 4096:
-            return None
+        fd = os.open(current_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("ROOTLESS_CURRENT_CUSTODY") from None
+    try:
+        meta = os.fstat(fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
+                meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) & 0o077 or
+                meta.st_size > 131072):
+            raise ValueError("ROOTLESS_CURRENT_CUSTODY")
+        raw = os.read(fd, 131073)
+        if len(raw) > 131072:
+            raise ValueError("ROOTLESS_CURRENT_OVERSIZE")
+        preliminary = json.loads(raw)
+    finally:
+        os.close(fd)
+    sha = preliminary.get("source_sha") if isinstance(preliminary, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("ROOTLESS_SOURCE_SHA_UNVERIFIED")
+    release_dir = state / "releases" / sha
+    source = release_dir / "source"
+    script_dir = source / "scripts"
+    for directory in (state / "releases", release_dir, source, script_dir):
+        meta = directory.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                stat.S_IMODE(meta.st_mode) & 0o022):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY")
+    helper = script_dir / "porota_rootless_host.py"
+    meta = helper.lstat()
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
+            meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) & 0o022):
+        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
+    module = (loader or _load_rootless_module)(helper)
+    identity = module.Identity.current()
+    if (identity.uid != uid or Path(identity.home) != home or
+            Path(identity.state) != state or
+            Path(identity.socket) != Path(f"/run/user/{uid}/porota-rc6-docker.sock")):
+        raise ValueError("ROOTLESS_IDENTITY_DRIFT")
+    current, _release = module.read_release_state(identity)
+    roles = current.get("roles") if isinstance(current, dict) else None
+    if (current != preliminary or current.get("state") != "VALIDADO_RUNTIME" or
+            current.get("operating_mode") != "PRODUCTION_PAPER" or
+            current.get("execution_mode") != "SIMULATION" or
+            type(current.get("real_orders_sent")) is not int or current["real_orders_sent"] != 0 or
+            not isinstance(roles, dict) or set(roles) != set(CONTAINERS) or
+            any(not isinstance(cid, str) or not re.fullmatch(r"[0-9a-f]{64}", cid)
+                for cid in roles.values()) or len(set(roles.values())) != len(CONTAINERS)):
+        raise ValueError("ROOTLESS_CURRENT_RELEASE_UNVERIFIED")
+    host = module.Host(ROOT, identity)
+    if not current.get("daemon_id") or host.boundary() != current["daemon_id"]:
+        raise ValueError("ROOTLESS_DAEMON_CHANGED")
+    items = {role: host.check_role(current, role) for role in CONTAINERS}
+    if any(item.get("Id") != roles[role] for role, item in items.items()):
+        raise ValueError("ROOTLESS_ROLE_IDENTITY_CHANGED")
+    return SimpleNamespace(host=host, current=current, roles=roles, items=items)
+
+
+def _docker_inspect():
+    try:
+        context = _rootless_context()
         parsed = {}
-        for line in result.stdout.splitlines():
-            parts = line.strip().split("|")
-            if len(parts) != 5:
+        for role in CONTAINERS:
+            item = context.items[role]
+            if item.get("Id") != context.roles[role]:
                 return None
-            name, state, restarts, oom, image = parts
-            parsed[name.lstrip("/")] = {
-                "state": state, "restarts": int(restarts),
-                "oom": oom.lower() == "true", "image": image,
+            state = item.get("State") or {}
+            parsed[role] = {
+                "cid": context.roles[role], "state": state.get("Status"),
+                "restarts": item.get("RestartCount", 0),
+                "oom": state.get("OOMKilled") is True,
+                "image": item.get("Image"),
+                "source_sha": context.current.get("source_sha"),
+                "source_tree": context.current.get("source_tree"),
             }
         return parsed if set(parsed) == set(CONTAINERS) else None
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError,
+            subprocess.TimeoutExpired):
         return None
 
 
@@ -416,13 +509,12 @@ def _host_control_state():
     except (OSError, subprocess.TimeoutExpired):
         data['schedule_silence_service'] = {'Result':'UNKNOWN'}
     try:
-        state = subprocess.run(["docker", "inspect", "--format", "{{json .State}}",
-                                "porota_production_observer"], capture_output=True, text=True,
-                               timeout=.8, check=False)
-        info = json.loads(state.stdout) if state.returncode == 0 else {}
+        context = _rootless_context()
+        info = context.items["observer"].get("State") or {}
         data["observer_container"] = {name: info.get(name) for name in
                                       ("Status", "StartedAt", "FinishedAt", "ExitCode", "OOMKilled")}
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        data["observer_container"]["cid"] = context.roles["observer"]
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
         data["observer_container"] = {"Status": "UNKNOWN"}
     return data
 
@@ -627,7 +719,7 @@ def performance_evidence_capacity_stat(root, *, default_limit=128*1024*1024):
             "provider_requests": 0, "real_order_routes_called": 0}
 
 
-def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
+def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=None):
     root = Path(root)
     live_clock = at is None
     started_at = at or now_utc()
@@ -708,9 +800,37 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
 
     provenance = load_bounded(root / "data/deploy/CURRENT_STATE_V2.json", 32768)
     result["provenance"] = {k: provenance.get(k) for k in (
-        "deploy_sha", "candidate_sha", "image_id", "validation_status", "mode",
+        "deploy_sha", "candidate_sha", "candidate_tree_sha", "deployment_backend",
+        "image_id", "validation_status", "mode",
         "real_orders_sent", "real_order_routes")} if provenance else {}
-    if (not provenance or provenance.get("deploy_sha") != expected_sha or
+    result["expected_product_tree"] = expected_tree_sha
+    containers = _docker_inspect() if inspect is None else inspect
+    rootless = bool(provenance and provenance.get("deployment_backend") == "ROOTLESS_SPLIT")
+    result["observed_candidate_sha"] = provenance.get("candidate_sha") if rootless else None
+    if rootless:
+        # Product's HEAD and the immutable source commit can differ while
+        # sharing the same Git tree. GitHub verifies HEAD -> tree; private
+        # current.json independently verifies source commit/tree + CID pair.
+        marker_sha = provenance.get("candidate_sha")
+        tree = provenance.get("candidate_tree_sha")
+        if not isinstance(expected_tree_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", expected_tree_sha):
+            provenance_identity = "PRODUCT_TREE_NOT_PROVIDED"
+        elif not isinstance(tree, str) or tree != expected_tree_sha:
+            provenance_identity = "PRODUCT_TREE_MISMATCH"
+        elif (not isinstance(marker_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", marker_sha)
+              or not isinstance(containers, dict)
+              or any(not isinstance(containers.get(role), dict) or
+                     containers[role].get("source_sha") != marker_sha or
+                     containers[role].get("source_tree") != tree for role in CONTAINERS)):
+            provenance_identity = "PRIVATE_RELEASE_SOURCE_MISMATCH"
+        else:
+            provenance_identity = "ROOTLESS_PRODUCT_TREE_MATCHED"
+        source_match = provenance_identity == "ROOTLESS_PRODUCT_TREE_MATCHED"
+    else:
+        source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
+        provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
+    result["provenance_identity"] = provenance_identity
+    if (not provenance or not source_match or
             provenance.get("mode") != "PRODUCTION_PAPER" or
             provenance.get("validation_status") != "VALIDATED_RUNTIME" or
             type(provenance.get("real_orders_sent")) is not int or
@@ -718,7 +838,6 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
             provenance.get("real_order_routes") != "NOT_CALLED"):
         add("DEPLOY_PROVENANCE_INVALID", "P0")
 
-    containers = _docker_inspect() if inspect is None else inspect
     result["containers"] = containers or {}
     result["host_control_state"] = _host_control_state()
     receipt = load_bounded(root / 'data/paper_v17/market_watch_silence.json',4096)
@@ -740,19 +859,12 @@ def probe(*, root=ROOT, expected_sha, at=None, inspect=None):
             if state.get("state") != "running":
                 add("CONTAINER_NOT_HEALTHY:" + name, "P0")
             elif state.get('oom') is True:
-                if name=='porota_production_observer' and historical_observer_oom(state,result,at):
+                if name == 'observer' and historical_observer_oom(state,result,at):
                     add('OOM_HISTORICAL:'+name,'P2')
                 else:
                     add('CONTAINER_NOT_HEALTHY:'+name,'P0')
-            # The critical approval broker is a separately owned issues-only
-            # container. Deploy V2 promotes the observer/dashboard image, not
-            # this broker. Require its own verifiable Docker image identity;
-            # only the two promoted containers must equal deploy provenance.
             image = state.get("image")
-            if name == "porota_critical_approval_rc6":
-                if not isinstance(image, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
-                    add("CONTAINER_IMAGE_UNVERIFIED:" + name, "P0")
-            elif image != provenance.get("image_id"):
+            if image != provenance.get("image_id"):
                 add("CONTAINER_IMAGE_MISMATCH:" + name, "P0")
             if state.get("restarts", 0) > 0:
                 add("CONTAINER_RESTART_COUNT:" + name, "P2", state["restarts"])
@@ -1028,9 +1140,10 @@ try:
 except Exception as exc: result["setup_error_class"]=type(exc).__name__
 print(json.dumps(result,separators=(",",":")))'''
     try:
-        completed = subprocess.run(
-            ["docker", "exec", "porota_production_observer", "python", "-B", "-c", child],
-            capture_output=True, text=True, timeout=9, check=False)
+        context = _rootless_context()
+        completed = context.host.docker.command_result(
+            "container", "exec", context.roles["observer"], "python", "-B", "-c", child,
+            timeout=9)
         if completed.returncode == 0:
             data = json.loads(completed.stdout)
             if (data.get("schema") == "rc6.shadow-readonly-diagnostic.v1"
@@ -1039,7 +1152,7 @@ print(json.dumps(result,separators=(",",":")))'''
         status = "CONTAINER_PROBE_FAILED"
     except subprocess.TimeoutExpired:
         status = "CONTAINER_PROBE_TIMEOUT"
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RuntimeError):
         status = "CONTAINER_PROBE_UNAVAILABLE"
     return {"schema": "rc6.shadow-readonly-diagnostic.v1",
             "status": status, "read_only": True}
@@ -1061,31 +1174,57 @@ try:
   "latest_head_branch":latest.get("head_branch"),"latest_created_at":latest.get("created_at")},separators=(",",":")))
 except Exception as exc: print(json.dumps({"status":"API_UNAVAILABLE","error_class":type(exc).__name__}))'''
     try:
-        completed = subprocess.run(["docker", "exec", "porota_production_observer",
-                                    "python", "-B", "-c", child], capture_output=True,
-                                   text=True, timeout=7, check=False)
+        context = _rootless_context()
+        completed = context.host.docker.command_result(
+            "container", "exec", context.roles["observer"], "python", "-B", "-c", child,
+            timeout=7)
         data = json.loads(completed.stdout) if completed.returncode == 0 else {}
         if data.get("status") in {"API_OK", "API_UNAVAILABLE"}:
             return {"schema": "rc6.market-schedule-api.v1", "read_only": True,
                     **{key: data.get(key) for key in (
                         "status", "total_count", "latest_event", "latest_path",
                         "latest_head_branch", "latest_created_at", "error_class") if key in data}}
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
         pass
     return {"schema": "rc6.market-schedule-api.v1", "read_only": True,
             "status": "CONTAINER_PROBE_UNAVAILABLE"}
 
 
+def _rootless_logs(context, *args, timeout):
+    """Capture both Docker log streams, but never export their raw contents.
+
+    The release's generic command_result discards stderr, where Docker emits
+    container stderr logs. These explicitly pinned private-socket reads are
+    bounded and parsed only by the two sanitizing callers below.
+    """
+    if (not args or args[-1] not in context.roles.values() or
+            timeout not in (5, 6)):
+        raise ValueError("ROOTLESS_LOG_SCOPE_UNVERIFIED")
+    socket = Path(context.host.identity.socket)
+    if socket != Path("/run/user/1000/porota-rc6-docker.sock"):
+        raise ValueError("ROOTLESS_SOCKET_UNVERIFIED")
+    outcome = subprocess.run(
+        ["/usr/bin/docker", "--host", "unix://" + str(socket), "logs", *args],
+        capture_output=True, text=True, timeout=timeout, check=False,
+        env=context.host.identity.environment())
+    if (outcome.returncode != 0 or
+            not isinstance(outcome.stdout, str) or
+            not isinstance(outcome.stderr, str) or
+            len(outcome.stdout) + len(outcome.stderr) > 262144):
+        raise ValueError("ROOTLESS_LOG_PROBE_UNAVAILABLE")
+    return outcome.stdout + "\n" + outcome.stderr
+
+
 def observer_lifecycle_host():
     """Manual-only Docker metadata and proximate exception classes, no raw logs."""
     until = now_utc().isoformat()
-    command = ["docker", "events", "--since", "90m", "--until", until,
-               "--filter", "type=container",
-               "--filter", "container=porota_production_observer",
-               "--format", "{{json .}}"]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True,
-                                   timeout=6, check=False)
+        context = _rootless_context()
+        cid = context.roles["observer"]
+        completed = context.host.docker.command_result(
+            "events", "--since", "90m", "--until", until,
+            "--filter", "type=container", "--filter", "container=" + cid,
+            "--format", "{{json .}}", timeout=6)
         if completed.returncode or len(completed.stdout) > 65536:
             raise ValueError("EVENTS_UNAVAILABLE")
         events = []
@@ -1115,17 +1254,13 @@ def observer_lifecycle_host():
             since = datetime.fromtimestamp(exit_at - 90, timezone.utc).isoformat()
             through = datetime.fromtimestamp(exit_at + 10, timezone.utc).isoformat()
             try:
-                logs = subprocess.run(
-                    ["docker", "logs", "--since", since, "--until", through,
-                     "--tail", "300", "porota_production_observer"],
-                    capture_output=True, text=True, timeout=5, check=False)
-                if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
-                    raise ValueError("LOG_PROBE_UNAVAILABLE")
+                content = _rootless_logs(
+                    context, "--since", since, "--until", through,
+                    "--tail", "300", cid, timeout=5)
                 classes = []
                 sqlite_hints = []
                 tracebacks = []
                 last_app_frame = None
-                content = logs.stdout + "\n" + logs.stderr
                 for line in content.splitlines():
                     if line.strip() == "Traceback (most recent call last):":
                         last_app_frame = None
@@ -1160,13 +1295,13 @@ def observer_lifecycle_host():
                              "tracebacks": tracebacks[-12:],
                              "traceback_count": content.count(
                                  "Traceback (most recent call last):")}
-            except (OSError, ValueError, subprocess.TimeoutExpired):
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
                 proximate = {"status": "UNAVAILABLE",
                              "exit_epoch_seconds": exit_at}
         return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
                 "status": "OK", "events": events[-32:],
                 "event_count": len(events), "proximate_log": proximate}
-    except (OSError, ValueError, TypeError, json.JSONDecodeError,
+    except (OSError, ValueError, TypeError, RuntimeError, json.JSONDecodeError,
             subprocess.TimeoutExpired):
         return {"schema": "rc6.observer-lifecycle.v1", "read_only": True,
                 "status": "UNAVAILABLE", "events": []}
@@ -1208,15 +1343,15 @@ def recent_critical_host():
     result = {"schema": "rc6.recent-critical-readonly.v1", "read_only": True,
               "window": "30m", "containers": {}}
     collected_at = now_utc()
-    for name in CONTAINERS[:2]:
+    try:
+        context = _rootless_context()
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
+        return dict(result, containers={role: {"status": "UNAVAILABLE"} for role in CONTAINERS})
+    for name in CONTAINERS:
         try:
-            logs = subprocess.run(
-                ["docker", "logs", "--timestamps", "--since", "30m",
-                 "--tail", "1000", name],
-                capture_output=True, text=True, timeout=6, check=False)
-            if logs.returncode or len(logs.stdout) + len(logs.stderr) > 262144:
-                raise ValueError("LOG_PROBE_UNAVAILABLE")
-            content = logs.stdout + "\n" + logs.stderr
+            content = _rootless_logs(
+                context, "--timestamps", "--since", "30m", "--tail", "1000",
+                context.roles[name], timeout=6)
             performance_log_codes = _performance_log_signatures(content, at=collected_at)
             tracebacks = []
             last_frame = None
@@ -1271,7 +1406,7 @@ def recent_critical_host():
                 "performance_log_codes": performance_log_codes,
                 "capability_signature_count": capability_count,
                 "nonzero_order_signature_count": order_count}
-        except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
             result["containers"][name] = {"status": "UNAVAILABLE"}
     return result
 
@@ -1354,10 +1489,14 @@ try:
 except DeliveryError as exc: print(json.dumps({"status":"FAILED","error_code":exc.code}))
 except Exception as exc: print(json.dumps({"status":"FAILED","error_class":type(exc).__name__}))'''
     def send(body):
-        result = subprocess.run(["docker", "exec", "porota_production_observer",
-            "python", "-B", "-c", child, body], capture_output=True, text=True,
-            timeout=19, check=False)
-        data = json.loads(result.stdout) if result.returncode == 0 else {}
+        try:
+            context = _rootless_context()
+            result = context.host.docker.command_result(
+                "container", "exec", context.roles["observer"],
+                "python", "-B", "-c", child, body, timeout=19)
+            data = json.loads(result.stdout) if result.returncode == 0 else {}
+        except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
+            return {"status": "FAILED"}
         if data.get("status") == "SENT" and str(data.get("message_id", "")).isdigit():
             return {"status": "SENT", "message_id": str(data["message_id"])}
         if data.get("status") == "NOT_CONFIGURED":
@@ -1461,6 +1600,7 @@ def main(argv=None):
     actions = parser.add_subparsers(dest="action", required=True)
     remote = actions.add_parser("probe")
     remote.add_argument("--expected-sha", required=True)
+    remote.add_argument("--expected-tree-sha")
     remote.add_argument("--root", type=Path, default=ROOT)
     actions.add_parser("transport-error")
     transport=actions.add_parser('transport-diagnostic')
@@ -1495,7 +1635,10 @@ def main(argv=None):
         if not (len(args.expected_sha) == 40 and
                 all(x in "0123456789abcdef" for x in args.expected_sha)):
             raise SystemExit("INVALID_EXPECTED_SHA")
-        data = probe(root=args.root, expected_sha=args.expected_sha)
+        if args.expected_tree_sha and not re.fullmatch(r"[0-9a-f]{40}", args.expected_tree_sha):
+            raise SystemExit("INVALID_EXPECTED_TREE_SHA")
+        data = probe(root=args.root, expected_sha=args.expected_sha,
+                     expected_tree_sha=args.expected_tree_sha)
     elif args.action == 'schedule-health':
         data=add_schedule_health(load_bounded(Path(args.current)),args.repo)
         Path(args.current).write_text(json.dumps(data,sort_keys=True,separators=(',',':'))+'\n')

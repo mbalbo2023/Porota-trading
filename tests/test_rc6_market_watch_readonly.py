@@ -12,7 +12,8 @@ import types
 import unittest
 import zipfile
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 SOURCE = Path(__file__).resolve().parents[1] / "scripts/rc6_market_watch_readonly.py"
 spec = importlib.util.spec_from_file_location("rc6_market_watch_readonly", SOURCE)
@@ -83,13 +84,23 @@ class MonitorContracts(unittest.TestCase):
         self.shadow_path.write_text(json.dumps({
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
 
-    def capture(self, at=NOW, host_state=None):
+    def capture(self, at=NOW, host_state=None, expected_tree_sha=None):
         with patch.object(monitor, "independent_session", return_value={"state":"OPEN" if monitor.active_hours(at) else "CLOSED"}), patch.object(monitor, "_resources", return_value=self.resources), patch.object(
                 monitor, "_host_control_state", return_value=host_state if host_state is not None else {
                     "legacy_health_timer": "inactive", "fast_health_timer": "active",
                     "observer_container": {"Status": "running"}}):
             return monitor.probe(root=self.root, at=at, expected_sha=SHA,
+                                 expected_tree_sha=expected_tree_sha,
                                  inspect=self.inspect)
+
+    def rootless_context(self, command_result=None):
+        identity = SimpleNamespace(
+            socket="/run/user/1000/porota-rc6-docker.sock",
+            environment=lambda: {"PATH": "/usr/bin:/bin"})
+        return SimpleNamespace(
+            roles={"observer": "1" * 64, "dashboard": "2" * 64},
+            host=SimpleNamespace(identity=identity, docker=SimpleNamespace(
+                command_result=command_result)))
 
     def codes(self, record, severity=None):
         return {f["code"] for f in record["findings"]
@@ -106,18 +117,214 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
-    def test_independent_critical_image_does_not_mask_promoted_image_mismatch(self):
-        self.inspect["porota_critical_approval_rc6"]["image"] = "sha256:" + "c" * 64
+    def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
+        current = json.loads(self.provenance_path.read_text())
+        current.pop("deploy_sha")
+        current["candidate_sha"] = "c" * 40
+        current["candidate_tree_sha"] = "e" * 40
+        current["deployment_backend"] = "ROOTLESS_SPLIT"
+        self.provenance_path.write_text(json.dumps(current))
+        for role in monitor.CONTAINERS:
+            self.inspect[role].update(source_sha="c" * 40, source_tree="e" * 40)
+        observation = self.capture(expected_tree_sha="e" * 40)
+        self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(observation))
+        self.assertNotIn("CONTAINER_OR_IMAGE_UNVERIFIED", self.codes(observation))
+        self.assertIn("c" * 40, json.dumps(observation["provenance"]))
+        self.assertNotEqual(current["candidate_sha"], SHA)
+        self.assertEqual(observation["expected_deploy_sha"], SHA)
+        self.assertEqual(observation["expected_product_tree"], "e" * 40)
+        self.assertEqual(observation["observed_candidate_sha"], "c" * 40)
+        self.assertEqual(observation["provenance_identity"], "ROOTLESS_PRODUCT_TREE_MATCHED")
+
+        absent = self.capture()
+        self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(absent))
+        self.assertEqual(absent["provenance_identity"], "PRODUCT_TREE_NOT_PROVIDED")
+        mismatch = self.capture(expected_tree_sha="f" * 40)
+        self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(mismatch))
+        self.assertEqual(mismatch["provenance_identity"], "PRODUCT_TREE_MISMATCH")
+        self.inspect["dashboard"]["source_sha"] = "d" * 40
+        drift = self.capture(expected_tree_sha="e" * 40)
+        self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(drift))
+        self.assertEqual(drift["provenance_identity"], "PRIVATE_RELEASE_SOURCE_MISMATCH")
+
+    def test_private_rootless_inspection_carries_exact_source_provenance(self):
+        cid = "1" * 64
+        info = {"Id": cid, "Image": IMAGE, "State": {"Status": "running"}}
+        context = self.rootless_context()
+        context.current = {"source_sha": "c" * 40, "source_tree": "e" * 40}
+        context.items = {"observer": info,
+                         "dashboard": dict(info, Id="2" * 64)}
+        with patch.object(monitor, "_rootless_context", return_value=context):
+            rows = monitor._docker_inspect()
+        self.assertEqual(rows["observer"]["source_sha"], "c" * 40)
+        self.assertEqual(rows["dashboard"]["source_tree"], "e" * 40)
+
+    def test_docker_inspection_uses_exact_private_release_pair_and_no_legacy_names(self):
+        observer_cid = "1" * 64
+        dashboard_cid = "2" * 64
+        def item(role, cid):
+            return {"Id": cid, "Image": IMAGE,
+                    "State": {"Status": "running", "RestartCount": 0,
+                              "OOMKilled": False},
+                    "Name": "/porota-rc6-" + role + "-attempt-a"}
+        context = SimpleNamespace(
+            current={"image_id": IMAGE, "source_sha": SHA},
+            roles={"observer": observer_cid, "dashboard": dashboard_cid},
+            items={"observer": item("observer", observer_cid),
+                   "dashboard": item("dashboard", dashboard_cid)})
+        with patch.object(monitor, "_rootless_context", return_value=context, create=True), patch.object(
+                monitor.subprocess, "run", side_effect=AssertionError("must not use default Docker")):
+            containers = monitor._docker_inspect()
+        self.assertEqual(set(containers), {"observer", "dashboard"})
+        self.assertEqual(containers["observer"]["cid"], observer_cid)
+        self.assertEqual(containers["dashboard"]["cid"], dashboard_cid)
+
+    def test_rootless_resolver_requires_private_current_and_two_pinned_cids(self):
+        home = self.root / "porotaadmin"
+        state = home / ".local/state/porota-rc6"
+        source = state / "releases" / SHA / "source"
+        (source / "scripts").mkdir(parents=True)
+        for directory in (home, state, state / "releases", state / "releases" / SHA,
+                          source, source / "scripts"):
+            directory.chmod(0o700)
+        helper = source / "scripts/porota_rootless_host.py"
+        helper.write_text("# pinned runtime helper\n")
+        helper.chmod(0o600)
+        cids = {"observer": "1" * 64, "dashboard": "2" * 64}
+        current = {"schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
+                   "source_sha": SHA, "source_tree": "e" * 40,
+                   "image_id": IMAGE, "attempt": "attempt-a", "roles": cids,
+                   "daemon_id": "dedicated-private-daemon", "real_orders_sent": 0,
+                   "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION"}
+        marker = state / "current.json"
+        marker.write_text(json.dumps(current))
+        marker.chmod(0o600)
+        account = SimpleNamespace(pw_uid=1000, pw_gid=1000, pw_name="porotaadmin", pw_dir=str(home))
+        class PrivateHost:
+            def __init__(self, *args):
+                pass
+            def boundary(self):
+                return "dedicated-private-daemon"
+            def check_role(self, _current, role):
+                return {"Id": cids[role], "Image": IMAGE,
+                        "State": {"Status": "running", "OOMKilled": False}}
+        fake_identity = SimpleNamespace(uid=1000, home=home, state=state,
+             socket=Path("/run/user/1000/porota-rc6-docker.sock"))
+        fake_module = SimpleNamespace(Identity=SimpleNamespace(current=lambda: fake_identity),
+              read_release_state=lambda _: (current, {"schema": "porota.release.v1"}),
+              Host=PrivateHost)
+        loaded = []
+        def loader(path):
+            loaded.append(path)
+            return fake_module
+        with patch.object(monitor, "pwd", SimpleNamespace(getpwuid=lambda _: account), create=True):
+            context = monitor._rootless_context(loader=loader)
+            self.assertEqual(context.roles, cids)
+            self.assertEqual(context.current["source_sha"], SHA)
+            self.assertEqual(loaded, [helper])
+            marker.unlink()
+            marker.symlink_to(self.provenance_path)
+            with self.assertRaises(ValueError):
+                monitor._rootless_context(loader=loader)
+        self.assertEqual(len(loaded), 1, "Symlink must fail before loading helper")
+
+    def test_shadow_probe_executes_only_validated_private_observer_cid(self):
+        calls = []
+        payload = {"schema": "rc6.shadow-readonly-diagnostic.v1", "read_only": True,
+                   "stages": [{"stage": "RUNTIME_INPUT", "status": "NOT_RUN_STAGE_ONLY"}]}
+        def command(*args, **kwargs):
+            calls.append((args, kwargs))
+            return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+        context = SimpleNamespace(roles={"observer": "1" * 64, "dashboard": "2" * 64},
+            host=SimpleNamespace(docker=SimpleNamespace(command_result=command)))
+        with patch.object(monitor, "_rootless_context", return_value=context), patch.object(
+                monitor.subprocess, "run", side_effect=AssertionError("rootful Docker forbidden")):
+            result = monitor.shadow_diagnostic_host()
+        self.assertEqual(result["stages"], payload["stages"])
+        self.assertEqual(calls[0][0][:3], ("container", "exec", "1" * 64))
+        self.assertEqual(calls[0][1]["timeout"], 9)
+
+    def test_all_optional_readers_use_private_cids_and_never_default_docker(self):
+        observer_cid, dashboard_cid = "1" * 64, "2" * 64
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            if args[:2] == ("container", "exec"):
+                return SimpleNamespace(returncode=0, stdout=json.dumps({
+                    "status": "API_OK", "total_count": 0, "latest_event": None}))
+            return SimpleNamespace(returncode=0, stdout="")
+        context = SimpleNamespace(roles={"observer": observer_cid, "dashboard": dashboard_cid},
+            items={"observer": {"State": {"Status": "running", "OOMKilled": False}}},
+            host=SimpleNamespace(identity=SimpleNamespace(
+                    socket="/run/user/1000/porota-rc6-docker.sock",
+                    environment=lambda: {"PATH": "/usr/bin:/bin"}),
+                docker=SimpleNamespace(command_result=command)))
+        log_calls = []
+        def host_run(argv, **kwargs):
+            if argv[:4] == ["/usr/bin/docker", "--host",
+                            "unix:///run/user/1000/porota-rc6-docker.sock", "logs"]:
+                log_calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+            if argv[0] != "systemctl":
+                raise AssertionError("default Docker was accessed")
+            return SimpleNamespace(returncode=0, stdout="active\n")
+        with patch.object(monitor, "_rootless_context", return_value=context), patch.object(
+                monitor.subprocess, "run", side_effect=host_run):
+            state = monitor._host_control_state()
+            schedule = monitor.schedule_api_host()
+            lifecycle = monitor.observer_lifecycle_host()
+            recent = monitor.recent_critical_host()
+        self.assertEqual(state["observer_container"]["Status"], "running")
+        self.assertEqual(schedule["status"], "API_OK")
+        self.assertEqual(lifecycle["status"], "OK")
+        self.assertEqual(set(recent["containers"]), {"observer", "dashboard"})
+        self.assertTrue(any(args[:2] == ("events", "--since") and
+                            "container=" + observer_cid in args for args in calls))
+        self.assertEqual({args[-1] for args in log_calls if "--timestamps" in args},
+                         {observer_cid, dashboard_cid})
+        self.assertTrue(all("porota_production_" not in str(args) for args in calls + log_calls))
+
+    def test_normal_alert_delivery_uses_private_observer_cid_with_ack_only(self):
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+            return SimpleNamespace(returncode=0,
+                                   stdout=json.dumps({"status": "SENT", "message_id": 317}))
+        context = SimpleNamespace(roles={"observer": "1" * 64},
+            host=SimpleNamespace(docker=SimpleNamespace(command_result=command)))
+        request = {"transition_id": "a" * 64,
+                   "body": "POROTA RC6 | ALERT\nRUNTIME_INVALID\nPAPER/SHADOW ONLY"}
+        encoded = monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
+        with patch.object(monitor, "_rootless_context", return_value=context), patch.object(
+                monitor.subprocess, "run", side_effect=AssertionError("rootful Docker forbidden")), patch.object(
+                monitor, "deliver_transition_once", side_effect=lambda _p, _id, body, send: send(body)):
+            receipt = monitor.alert_host(encoded)
+        self.assertEqual(receipt["status"], "SENT")
+        self.assertEqual(receipt["message_id"], "317")
+        self.assertEqual(calls[0][:3], ("container", "exec", "1" * 64))
+
+    def test_actions_monitor_drops_sudo_and_push_is_non_delivering(self):
+        workflow = (SOURCE.parents[1] / ".github/workflows/rc6-market-watch-readonly.yml").read_text()
+        self.assertNotIn("sudo -n timeout", workflow)
+        self.assertEqual(workflow.count('"timeout '), 7)
+        self.assertIn("github.event_name == 'schedule' && 'normal'", workflow)
+        self.assertIn("inputs.notification_mode || 'read_only'", workflow)
+        self.assertIn("for name in ('observer','dashboard')", workflow)
+        self.assertIn("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("tree_sha=", workflow)
+        self.assertIn("--expected-tree-sha '$EXPECTED_TREE_SHA'", workflow)
+        for header in ("Product branch HEAD", "Candidate source SHA",
+                       "Expected product tree", "Provenance identity"):
+            self.assertIn(header, workflow)
+
+    def test_only_rootless_pair_matters_without_legacy_broker_dependency(self):
         current = self.capture()
-        self.assertNotIn("CONTAINER_IMAGE_MISMATCH:porota_critical_approval_rc6", self.codes(current))
-        self.assertNotIn("CONTAINER_IMAGE_UNVERIFIED:porota_critical_approval_rc6", self.codes(current))
-        self.inspect["porota_production_dashboard"]["image"] = "sha256:" + "d" * 64
-        self.assertIn("CONTAINER_IMAGE_MISMATCH:porota_production_dashboard",
+        self.assertEqual(set(current["containers"]), {"observer", "dashboard"})
+        self.inspect["dashboard"]["image"] = "sha256:" + "d" * 64
+        self.assertIn("CONTAINER_IMAGE_MISMATCH:dashboard",
                       self.codes(self.capture(), "P0"))
-        self.inspect["porota_production_dashboard"]["image"] = IMAGE
-        self.inspect["porota_critical_approval_rc6"]["image"] = "unverified"
-        self.assertIn("CONTAINER_IMAGE_UNVERIFIED:porota_critical_approval_rc6",
-                      self.codes(self.capture(), "P0"))
+        self.inspect["dashboard"]["image"] = IMAGE
+        self.assertNotIn("CONTAINER_IMAGE_MISMATCH:dashboard", self.codes(self.capture()))
 
     def test_live_probe_uses_completed_db_read_clock_without_future_or_stale_bypass(self):
         future=(NOW+timedelta(milliseconds=200)).isoformat()
@@ -353,24 +560,24 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn("MEMORY_PRESSURE", self.codes(self.capture(), "P1"))
 
     def test_docker_oom_is_critical(self):
-        self.inspect["porota_production_observer"]["oom"] = True
-        self.assertIn("CONTAINER_NOT_HEALTHY:porota_production_observer",
+        self.inspect["observer"]["oom"] = True
+        self.assertIn("CONTAINER_NOT_HEALTHY:observer",
                       self.codes(self.capture(), "P0"))
 
     def test_prior_oom_keeps_history_without_false_current_p0(self):
-        self.inspect['porota_production_observer']['oom']=True
+        self.inspect['observer']['oom']=True
         detail={'observer_container':{'Status':'running','ExitCode':0,
             'StartedAt':(NOW-timedelta(hours=2)).isoformat(),
             'FinishedAt':(NOW-timedelta(hours=3)).isoformat()}}
         value=self.capture(host_state=detail)
-        self.assertIn('OOM_HISTORICAL:porota_production_observer',self.codes(value,'P2'))
-        self.assertNotIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(value,'P0'))
+        self.assertIn('OOM_HISTORICAL:observer',self.codes(value,'P2'))
+        self.assertNotIn('CONTAINER_NOT_HEALTHY:observer',self.codes(value,'P0'))
         detail['observer_container']['FinishedAt']=NOW.isoformat()
-        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
+        self.assertIn('CONTAINER_NOT_HEALTHY:observer',self.codes(self.capture(host_state=detail),'P0'))
         detail['observer_container']['FinishedAt']=(NOW-timedelta(hours=3)).isoformat()
         with sqlite3.connect(self.db) as connection:
             connection.execute('UPDATE observer_state SET heartbeat_at=?',((NOW-timedelta(minutes=4)).isoformat(),))
-        self.assertIn('CONTAINER_NOT_HEALTHY:porota_production_observer',self.codes(self.capture(host_state=detail),'P0'))
+        self.assertIn('CONTAINER_NOT_HEALTHY:observer',self.codes(self.capture(host_state=detail),'P0'))
 
     def test_p0_immediate_but_p1_needs_two_samples(self):
         first = self.capture()
@@ -514,20 +721,24 @@ class MonitorContracts(unittest.TestCase):
         body = "POROTA RC6 | ALERT\nOBSERVER_HEARTBEAT_INVALID"
         request={'body':body,'transition_id':'c'*64}
         encoded = monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
-        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret")) as run, patch.object(monitor,'ROOT',self.root):
+        send = Mock(return_value=subprocess.CompletedProcess(
+            [], 0, stdout='{"status":"SENT","message_id":"34"}', stderr="token=secret"))
+        context = self.rootless_context(send)
+        with patch.object(monitor, "_rootless_context", return_value=context), patch.object(
+                monitor,'ROOT',self.root):
             receipt=monitor.alert_host(encoded)
             self.assertEqual(receipt['status'],'SENT')
             self.assertEqual(receipt['message_id'],'34')
             self.assertFalse(receipt['deduplicated'])
             self.assertTrue(monitor.alert_host(encoded)['deduplicated'])
-            self.assertEqual(run.call_count,1)
-        args, options = run.call_args
-        self.assertEqual(args[0][:3], ["docker", "exec", "porota_production_observer"])
+            self.assertEqual(send.call_count,1)
+        args, options = send.call_args
+        self.assertEqual(args[:3], ("container", "exec", "1" * 64))
         self.assertEqual(options["timeout"], 19)
-        compile(args[0][-2], "<telegram-child>", "exec")
-        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout='{"status":"SENT"}', stderr="token=secret")),patch.object(monitor,'ROOT',self.root):
+        compile(args[-2], "<telegram-child>", "exec")
+        unsent = Mock(return_value=subprocess.CompletedProcess(
+            [], 0, stdout='{"status":"SENT"}', stderr="token=secret"))
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(unsent)),patch.object(monitor,'ROOT',self.root):
             request['transition_id']='d'*64
             encoded=monitor.base64.urlsafe_b64encode(json.dumps(request).encode()).decode()
             self.assertEqual(monitor.alert_host(encoded)["status"], "UNVERIFIED")
@@ -649,28 +860,25 @@ class MonitorContracts(unittest.TestCase):
                    "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}],
                    "shadow_worker_process_count": 1,
                    "shadow_worker_processes": [{"state": "S", "wchan": "futex_wait_queue"}]}
-        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(payload), stderr="secret")) as run:
+        run = Mock(return_value=subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps(payload), stderr="secret"))
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(run)):
             result = monitor.shadow_diagnostic_host()
             self.assertEqual(result["stages"], payload["stages"])
             self.assertEqual(result["shadow_worker_processes"], payload["shadow_worker_processes"])
-        args, options = run.call_args_list[0]
-        self.assertEqual(args[0][:4], ["docker", "exec", "porota_production_observer", "python"])
+        args, options = run.call_args
+        self.assertEqual(args[:4], ("container", "exec", "1" * 64, "python"))
         self.assertEqual(options["timeout"], 9)
-        self.assertTrue(options["capture_output"])
-        compile(args[0][-1], "<container-diagnostic>", "exec")
-        self.assertIn("EXPLAIN QUERY PLAN", args[0][-1])
-        self.assertIn("NOT INDEXED", args[0][-1])
-        self.assertIn('result["query_stages"]', args[0][-1])
-        self.assertIn('observation_limit=3001', args[0][-1])
-        self.assertIn('result["observation_source_limit_with_sentinel"]', args[0][-1])
-        self.assertIn('b"--dynamic-shadow-worker" not in argv', args[0][-1])
-        self.assertIn('result["shadow_worker_process_count"]', args[0][-1])
-        self.assertIn('c.set_progress_handler(expired,1000)', args[0][-1])
-        self.assertNotIn('read_runtime(db,as_of=at', args[0][-1])
-        self.assertIn('NOT_RUN_STAGE_ONLY', args[0][-1])
-        with patch.object(monitor.subprocess, "run", side_effect=subprocess.TimeoutExpired(
-                cmd="docker", timeout=9, stderr="secret")):
+        compile(args[-1], "<container-diagnostic>", "exec")
+        for snippet in ("EXPLAIN QUERY PLAN", "NOT INDEXED", 'result["query_stages"]',
+                        'observation_limit=3001', 'result["observation_source_limit_with_sentinel"]',
+                        'b"--dynamic-shadow-worker" not in argv',
+                        'result["shadow_worker_process_count"]',
+                        'c.set_progress_handler(expired,1000)', 'NOT_RUN_STAGE_ONLY'):
+            self.assertIn(snippet, args[-1])
+        self.assertNotIn('read_runtime(db,as_of=at', args[-1])
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(
+                Mock(side_effect=subprocess.TimeoutExpired(cmd="docker", timeout=9, stderr="secret")))):
             failure = monitor.shadow_diagnostic_host()
         self.assertEqual(failure["status"], "CONTAINER_PROBE_TIMEOUT")
         self.assertNotIn("secret", json.dumps(failure))
@@ -685,7 +893,12 @@ class MonitorContracts(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
                 "Status": "running", "StartedAt": "2026-10-14T15:30:00Z",
                 "ExitCode": 0, "OOMKilled": False, "Env": "secret"}), stderr="secret")
-        with patch.object(monitor.subprocess, "run", side_effect=read):
+        context = self.rootless_context()
+        context.items = {"observer": {"State": {
+            "Status": "running", "StartedAt": "2026-10-14T15:30:00Z",
+            "ExitCode": 0, "OOMKilled": False, "Env": "secret"}}}
+        with patch.object(monitor.subprocess, "run", side_effect=read), patch.object(
+                monitor, "_rootless_context", return_value=context):
             result = monitor._host_control_state()
         self.assertEqual(result["legacy_health_timer"], "inactive")
         self.assertEqual(result["fast_health_timer"], "active")
@@ -697,14 +910,15 @@ class MonitorContracts(unittest.TestCase):
     def test_manual_public_schedule_api_probe_is_bounded_and_redacted(self):
         payload = {"status": "API_OK", "total_count": 0,
                    "latest_event": None, "latest_path": None}
-        with patch.object(monitor.subprocess, "run", return_value=subprocess.CompletedProcess(
-                [], 0, stdout=json.dumps(payload), stderr="secret")) as call:
+        call = Mock(return_value=subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps(payload), stderr="secret"))
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(call)):
             result = monitor.schedule_api_host()
         self.assertEqual(result["total_count"], 0)
         self.assertTrue(result["read_only"])
         self.assertNotIn("secret", json.dumps(result))
         self.assertEqual(call.call_args.kwargs["timeout"], 7)
-        self.assertIn("event=schedule", call.call_args.args[0][-1])
+        self.assertIn("event=schedule", call.call_args.args[-1])
 
     def test_manual_lifecycle_events_report_only_action_clock_and_exit(self):
         rows = [
@@ -715,9 +929,10 @@ class MonitorContracts(unittest.TestCase):
             {"Action": "start", "time": 1791990002},
         ]
         output = "\n".join(map(json.dumps, rows))
-        with patch.object(monitor.subprocess, "run", side_effect=[
-                subprocess.CompletedProcess([], 0, stdout=output, stderr="secret"),
-                subprocess.CompletedProcess([], 0, stdout="Traceback (most recent call last):\nValueError: secret", stderr="")]) as call:
+        events = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=output, stderr="secret"))
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(events)), patch.object(
+                monitor.subprocess, "run", return_value=subprocess.CompletedProcess([], 0,
+                    stdout="Traceback (most recent call last):\n", stderr="ValueError: secret")) as call:
             result = monitor.observer_lifecycle_host()
         self.assertEqual(result["status"], "OK")
         self.assertEqual(result["events"], [
@@ -727,10 +942,13 @@ class MonitorContracts(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(result))
         self.assertEqual(result["proximate_log"]["exception_classes"], ["ValueError"])
         self.assertEqual(result["proximate_log"]["traceback_count"], 1)
-        self.assertEqual(call.call_args_list[0].kwargs["timeout"], 6)
-        self.assertEqual(call.call_args_list[0].args[0][0:2], ["docker", "events"])
-        self.assertEqual(call.call_args_list[1].kwargs["timeout"], 5)
-        self.assertEqual(call.call_args_list[1].args[0][0:2], ["docker", "logs"])
+        self.assertEqual(events.call_args.kwargs["timeout"], 6)
+        self.assertEqual(events.call_args.args[:2], ("events", "--since"))
+        self.assertIn("container=" + "1" * 64, events.call_args.args)
+        self.assertEqual(call.call_args.kwargs["timeout"], 5)
+        self.assertEqual(call.call_args.args[0][:4], ["/usr/bin/docker", "--host",
+            "unix:///run/user/1000/porota-rc6-docker.sock", "logs"])
+        self.assertEqual(call.call_args.args[0][-1], "1" * 64)
 
     def test_sqlite_exit_reason_is_categorical_and_redacted(self):
         event = json.dumps({"Action": "die", "time": 1791998273,
@@ -738,9 +956,9 @@ class MonitorContracts(unittest.TestCase):
         secret = ('Traceback (most recent call last):\n'
                   '  File "/app/bf_production_paper_observer.py", line 1859, in run\n'
                   'sqlite3.OperationalError: database is locked; credential=secret')
-        with patch.object(monitor.subprocess, "run", side_effect=[
-                subprocess.CompletedProcess([], 0, stdout=event, stderr=""),
-                subprocess.CompletedProcess([], 0, stdout=secret, stderr="")]):
+        events = Mock(return_value=subprocess.CompletedProcess([], 0, stdout=event, stderr=""))
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context(events)), patch.object(
+                monitor.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=secret)):
             result = monitor.observer_lifecycle_host()
         self.assertEqual(result["proximate_log"]["sqlite_hints"],
                          ["SQLITE_BUSY_LOCKED"])
@@ -755,24 +973,26 @@ class MonitorContracts(unittest.TestCase):
                '  File "/app/rc6_shadow_runtime/worker.py", line 91, in run\n'
                'sqlite3.OperationalError: database is locked; token=secret\n'
                'REAL_ORDER_CAPABILITY=ENABLED token=secret\n')
-        responses = [subprocess.CompletedProcess([], 0, stdout=log, stderr=""),
+        responses = [subprocess.CompletedProcess([], 0, stdout="", stderr=log),
                      subprocess.CompletedProcess([], 0, stdout="healthy", stderr="")]
-        with patch.object(monitor.subprocess, "run", side_effect=responses) as call:
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context()), patch.object(
+                monitor.subprocess, "run", side_effect=responses) as call:
             result = monitor.recent_critical_host()
-        observer = result["containers"]["porota_production_observer"]
+        observer = result["containers"]["observer"]
         self.assertEqual(observer["traceback_count"], 1)
         self.assertEqual(observer["tracebacks"], [{
             "exception_class": "sqlite3.OperationalError",
             "last_app_frame": {"module": "worker.py", "line": 91, "function": "run"},
             "sqlite_hint": "SQLITE_BUSY_LOCKED", "observed_utc": None}])
         self.assertEqual(observer["capability_signature_count"], 1)
-        self.assertEqual(result["containers"]["porota_production_dashboard"]["traceback_count"], 0)
+        self.assertEqual(result["containers"]["dashboard"]["traceback_count"], 0)
         self.assertNotIn("secret", json.dumps(result))
         self.assertEqual(call.call_count, 2)
         for entry in call.call_args_list:
             self.assertEqual(entry.kwargs["timeout"], 6)
-            self.assertEqual(entry.args[0][:5],
-                             ["docker", "logs", "--timestamps", "--since", "30m"])
+            self.assertEqual(entry.args[0][:7],
+                             ["/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock",
+                              "logs", "--timestamps", "--since", "30m"])
 
     def test_recent_critical_timing_identifies_current_errors(self):
         log = ('2026-10-14T18:20:02.123456789Z Traceback (most recent call last):\n'
@@ -780,18 +1000,20 @@ class MonitorContracts(unittest.TestCase):
                '2026-10-14T18:10:02.123456789Z ValueError: secret\n')
         with patch.object(monitor, "now_utc", return_value=datetime(
                 2026, 10, 14, 18, 22, tzinfo=timezone.utc)), patch.object(
+                monitor, "_rootless_context", return_value=self.rootless_context()), patch.object(
                 monitor.subprocess, "run", side_effect=[
-                    subprocess.CompletedProcess([], 0, stdout=log, stderr=""),
+                    subprocess.CompletedProcess([], 0, stdout="", stderr=log),
                     subprocess.CompletedProcess([], 0, stdout="", stderr="")]):
             result = monitor.recent_critical_host()
-        current = result["containers"]["porota_production_observer"]
+        current = result["containers"]["observer"]
         self.assertEqual(current["exception_lines_last_5m"], 1)
         self.assertEqual(current["tracebacks"][0]["observed_utc"],
                          "2026-10-14T18:20:02Z")
         self.assertNotIn("secret", json.dumps(result))
 
     def test_recent_critical_unavailable_does_not_export_stderr(self):
-        with patch.object(monitor.subprocess, "run", side_effect=[
+        with patch.object(monitor, "_rootless_context", return_value=self.rootless_context()), patch.object(
+                monitor.subprocess, "run", side_effect=[
                 subprocess.TimeoutExpired(["docker"], 6, stderr="secret"),
                 subprocess.CompletedProcess([], 1, stdout="", stderr="secret")]):
             result = monitor.recent_critical_host()

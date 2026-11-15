@@ -41,8 +41,11 @@ class CronReRegistration(unittest.TestCase):
 
     def test_no_loosening_of_host_safety_or_notification(self):
         for term in ["group: rc6-market-watch-readonly-", "cancel-in-progress: false",
-                     "github.event_name != 'pull_request'", "GitHub", "EXPECTED_SHA"]:
+                     "if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'",
+                     "GitHub", "EXPECTED_SHA", "EXPECTED_TREE_SHA"]:
             self.assertIn(term, self.source)
+        self.assertIn("github.event_name == 'schedule' && 'normal'", self.source)
+        self.assertIn("inputs.notification_mode || 'read_only'", self.source)
         self.assertIn("steps.window.outputs.active == '1'", self.source)
         self.assertIn("Gate market-hours schedule", self.source)
 

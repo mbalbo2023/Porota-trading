@@ -2,11 +2,32 @@
 import json
 from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 from scripts.rc6_operator_dashboard_readonly import CHILD, POSTCLOSE_ROUTES, ROUTES, SCHEMA, audit_host
+from scripts import rc6_operator_dashboard_readonly as operator
 
 
 class OperatorAuditTests(TestCase):
+ def test_dashboard_probe_uses_exact_private_cid_without_rootful_docker(self):
+    cid = "2" * 64
+    context = SimpleNamespace(roles={"observer": "1" * 64, "dashboard": cid},
+        identity=SimpleNamespace(socket="/run/user/1000/porota-rc6-docker.sock",
+            environment=lambda: {"PATH": "/usr/bin:/bin"}))
+    payload = {"schema": SCHEMA, "read_only": True, "audit_scope": "MARKET_CRITICAL",
+               "source_status": "BOUNDED", "sources": [{"component": "PPI_MARKETDATA", "state": "NO_VERIFICADO"}],
+               "routes": [{"path": path, "http": 200, "nav": True, "content": True}
+                          for path in ROUTES]}
+    def runner(argv, **kwargs):
+        self.assertEqual(argv[:6], ["/usr/bin/docker", "--host",
+            "unix:///run/user/1000/porota-rc6-docker.sock", "container", "exec", cid])
+        self.assertEqual(argv[6:9], ["python", "-B", "-c"])
+        self.assertEqual(kwargs["timeout"], 150)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+    with patch.object(operator, "_rootless_context", return_value=context, create=True):
+        result = audit_host(runner=runner)
+    self.assertEqual(result["status"], "ROUTES_VERIFIED")
+
  def test_embedded_probe_compiles(self):
     compile(CHILD, "<dashboard-probe>", "exec")
     self.assertEqual(len(POSTCLOSE_ROUTES), 52)
@@ -15,6 +36,10 @@ class OperatorAuditTests(TestCase):
     self.assertIn("/analitica/contrafactuales", POSTCLOSE_ROUTES)
 
  def test_sanitized_audit_receipt_has_exact_routes_and_no_page_content(self):
+    context = SimpleNamespace(roles={"observer": "1" * 64,
+                                     "dashboard": "2" * 64},
+        identity=SimpleNamespace(socket="/run/user/1000/porota-rc6-docker.sock",
+            environment=lambda: {"PATH": "/usr/bin:/bin"}))
     payload = {"schema": SCHEMA, "read_only": True, "audit_scope": "MARKET_CRITICAL", "source_status": "BOUNDED",
                "routes": [{"path": path, "http": 200, "nav": True, "content": True,
                            "secret": "must never leave host"} for path in ROUTES],
@@ -40,15 +65,19 @@ class OperatorAuditTests(TestCase):
                                    "worker_latest_today": True, "worker_latest_result": "HOLD",
                                    "secret": "must never leave host"}}
     def runner(argv, **kwargs):
-        assert argv[:4] == ["docker", "exec", "porota_production_dashboard", "python"]
+        assert argv[:7] == ["/usr/bin/docker", "--host",
+                           "unix:///run/user/1000/porota-rc6-docker.sock",
+                           "container", "exec", "2" * 64, "python"]
         assert kwargs["timeout"] == 150
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
-    result = audit_host(runner=runner)
+    with patch.object(operator, "_rootless_context", return_value=context):
+      result = audit_host(runner=runner)
     self.assertEqual(result["status"], "ROUTES_VERIFIED")
     self.assertEqual(len(result["routes"]), len(ROUTES))
     payload['routes'][0]['visible_status_counts']={'STALE':2,'NO_VERIFICADO':3,
         'secret-value':42,'ERROR':-1,'FRESH':True,'RUNNING':1001}
-    self.assertEqual(audit_host(runner=runner)['routes'][0]['visible_status_counts'],
+    with patch.object(operator, "_rootless_context", return_value=context):
+      self.assertEqual(audit_host(runner=runner)['routes'][0]['visible_status_counts'],
                      {'STALE':2,'NO_VERIFICADO':3})
     self.assertEqual(result["source_sync"][0]["last_attempt_age_seconds"], 100)
     self.assertEqual(result["history_cutoff_repair"], "INCOMPLETE")
@@ -65,33 +94,38 @@ class OperatorAuditTests(TestCase):
                            "read_queries": 4, "state": "READ_OK", "sql": "must never leave host"}]
     payload["balance_queries"] = [{"stage": "LATEST_EQUITY", "elapsed_ms": 2800,
                                     "state": "READ_OK", "sql": "must never leave host"}]
-    self.assertEqual(audit_host(runner=runner)["profile"][0]["elapsed_ms"], 2832)
-    self.assertEqual(audit_host(runner=runner)["balance_queries"][0]["stage"], "LATEST_EQUITY")
-    self.assertNotIn("must never leave host", json.dumps(audit_host(runner=runner)))
+    with patch.object(operator, "_rootless_context", return_value=context):
+      self.assertEqual(audit_host(runner=runner)["profile"][0]["elapsed_ms"], 2832)
+      self.assertEqual(audit_host(runner=runner)["balance_queries"][0]["stage"], "LATEST_EQUITY")
+      self.assertNotIn("must never leave host", json.dumps(audit_host(runner=runner)))
 
     payload["routes"][0]["elapsed_ms"] = 3100
     payload["routes"][0]["slow_2s"] = True
     payload["routes"][0]["unverified_mentions"] = 3
-    self.assertEqual(audit_host(runner=runner)["status"], "ROUTES_DEGRADED")
-    self.assertEqual(audit_host(runner=runner)["routes"][0]["unverified_mentions"], 3)
+    with patch.object(operator, "_rootless_context", return_value=context):
+      self.assertEqual(audit_host(runner=runner)["status"], "ROUTES_DEGRADED")
+      self.assertEqual(audit_host(runner=runner)["routes"][0]["unverified_mentions"], 3)
     payload["audit_scope"] = "POSTCLOSE_ALL"
     payload["routes"] = [{"path": path, "http": 200, "nav": True, "content": True}
                          for path in POSTCLOSE_ROUTES]
-    self.assertEqual(audit_host(runner=runner)["audit_scope"], "POSTCLOSE_ALL")
-    self.assertEqual(len(audit_host(runner=runner)["routes"]), 52)
+    with patch.object(operator, "_rootless_context", return_value=context):
+      self.assertEqual(audit_host(runner=runner)["audit_scope"], "POSTCLOSE_ALL")
+      self.assertEqual(len(audit_host(runner=runner)["routes"]), 52)
     payload['identity_clocks']={'status':'BOUNDED','rows':[{
         'symbol':'GGAL','family':'ACCIONES','market':'BYMA','currency':'ARS','settlement':'A-24HS',
         'book_freshness':'STALE','trade_freshness':'STALE','receipt_freshness':'FRESH',
         'book_at':'2026-10-16T13:00:00+00:00','received_at':'api_token=private',
         'paper_id':'private-ledger-key','pnl':'private-amount'}]*11}
-    clocks=audit_host(runner=runner)['identity_clocks']
+    with patch.object(operator, "_rootless_context", return_value=context):
+      clocks=audit_host(runner=runner)['identity_clocks']
     self.assertEqual(len(clocks['rows']),10)
     self.assertEqual(clocks['rows'][0]['book_freshness'],'STALE')
     self.assertIsNone(clocks['rows'][0]['received_at'])
     self.assertNotIn('private',json.dumps(clocks))
     payload["history_cutoff_repair"] = "COMPLETE; secret"
     payload["source_sync"][0]["last_success_age_seconds"] = -1
-    redacted = audit_host(runner=runner)
+    with patch.object(operator, "_rootless_context", return_value=context):
+      redacted = audit_host(runner=runner)
     self.assertEqual(redacted["history_cutoff_repair"], "NO_VERIFICADO")
     self.assertIsNone(redacted["source_sync"][0]["last_success_age_seconds"])
 
