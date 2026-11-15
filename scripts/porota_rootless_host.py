@@ -151,6 +151,39 @@ def private_dir(path):
     return path
 
 
+def private_attempts_dir(identity):
+    """Converge only the journal parent inside the already private state."""
+    state = no_alias(identity.state)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        parent = os.open(state, flags)
+        try:
+            meta = os.fstat(parent)
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == identity.uid == os.getuid() and
+                    not meta.st_mode & 0o077, "ATTEMPTS_STATE_CUSTODY")
+            try:
+                os.mkdir("attempts", mode=0o700, dir_fd=parent)
+            except FileExistsError:
+                pass
+            directory = os.open("attempts", flags, dir_fd=parent)
+            try:
+                meta = os.fstat(directory)
+                require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == identity.uid,
+                        "ATTEMPTS_DIRECTORY_CUSTODY")
+                if stat.S_IMODE(meta.st_mode) != 0o700:
+                    os.fchmod(directory, 0o700)
+                final = os.fstat(directory)
+                require(stat.S_ISDIR(final.st_mode) and final.st_uid == identity.uid and
+                        stat.S_IMODE(final.st_mode) == 0o700, "ATTEMPTS_DIRECTORY_CUSTODY")
+            finally:
+                os.close(directory)
+        finally:
+            os.close(parent)
+    except OSError as exc:
+        raise Hold("ATTEMPTS_DIRECTORY_CUSTODY") from exc
+    return state / "attempts"
+
+
 def atomic_write(path, raw, *, private=True):
     path = no_alias(path)
     if private:
@@ -925,7 +958,7 @@ class Host:
                 self.receipt["migration_pending"] = True
             if current:
                 self.resume_cleanup(current, current_path)
-            directory = self.identity.state / "attempts" / attempt
+            directory = private_attempts_dir(self.identity) / attempt
             require(not directory.exists(), "ATTEMPT_EXISTS_READ_ONLY_RCA_REQUIRED")
             private_dir(directory)
             before = database_snapshot(self.root / DB_RELATIVE)

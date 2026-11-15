@@ -246,8 +246,8 @@ class PrepareTests(unittest.TestCase):
         host.private_dir(self.identity.state)
         host.private_dir(self.identity.state / "releases")
         host.private_dir(self.identity.state / "attempts")
-        # Host.deploy's mkdir(parents=True) keeps this intermediate directory
-        # owned and non-writable by others; only the attempt leaf is private.
+        # Legacy parents inherited the process umask; this fixture models 022.
+        # A separate regression reproduces the host's actual umask 002 / 0775.
         (self.identity.state / "attempts").chmod(0o755)
         directory = self.identity.state / "releases" / source
         directory.mkdir(parents=True, mode=0o700)
@@ -357,6 +357,21 @@ class PrepareTests(unittest.TestCase):
         self.assertFalse(self.images)
         self.assertFalse(any("prune" in c or "--force" in c or "docker.service" in c for c in self.commands))
 
+    def test_upgrade_converges_only_attempts_parent_and_preserves_its_journal(self):
+        self.prior_setup()
+        target, _ = self.own_image()
+        attempts = self.identity.state / "attempts"
+        attempts.chmod(0o775)
+        journal = attempts / "123-1/receipt.json"
+        before = (journal.stat().st_ino, journal.stat().st_mode, journal.read_bytes())
+        with self.preparation():
+            result = setup.prepare(self.identity, run=self.commands_ok)
+        self.assertEqual(attempts.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((journal.stat().st_ino, journal.stat().st_mode, journal.read_bytes()), before)
+        self.assertEqual(result["storage_transition"]["state"], "COMPLETE")
+        self.assertNotIn(target, self.images)
+        self.assertEqual(self.identity.store.stat().st_mode & 0o777, 0o710)
+
     def test_failed_restart_leaving_daemon_stopped_resumes_with_idempotent_start(self):
         self.prior_setup()
         self.own_image()
@@ -435,6 +450,10 @@ class PrepareTests(unittest.TestCase):
                         release_path.write_bytes(release_path.read_bytes() + b" ")
                 with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_IMAGE_PROVENANCE"):
                     setup.prepare(self.identity, run=self.commands_ok)
+                phase = {"labels": "IMAGE_LABELS", "tree": "RELEASE_IDENTITY",
+                         "public": "RELEASE_CUSTODY", "changed": "JOURNAL_MATCH"}[damage]
+                receipt = json.loads((self.identity.state / "prepare.json").read_bytes())
+                self.assertEqual(receipt["storage_transition"]["provenance_stage"], phase)
                 self.assertTrue(self.images)
                 self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
 
@@ -453,6 +472,8 @@ class PrepareTests(unittest.TestCase):
                 host.write_json(journal, value)
                 with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_IMAGE_PROVENANCE"):
                     setup.prepare(self.identity, run=self.commands_ok)
+                receipt = json.loads((self.identity.state / "prepare.json").read_bytes())
+                self.assertEqual(receipt["storage_transition"]["provenance_stage"], "JOURNAL_MATCH")
                 self.assertTrue(self.images)
                 self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
 

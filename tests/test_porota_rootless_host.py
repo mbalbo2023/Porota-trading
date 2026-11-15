@@ -465,6 +465,103 @@ class RootlessContracts(unittest.TestCase):
             host.persist_release(identity, stage, release, manifest)
 
 
+class AttemptsDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.identity = host.Identity(os.getuid(), os.getgid(), "test", self.home)
+        host.private_dir(self.identity.state)
+        self.attempts = self.identity.state / "attempts"
+
+    def test_creation_is_private_under_umask_002_and_reentry_is_noop(self):
+        previous = os.umask(0o002)
+        try:
+            self.assertEqual(host.private_attempts_dir(self.identity), self.attempts)
+        finally:
+            os.umask(previous)
+        self.assertEqual(self.attempts.stat().st_mode & 0o777, 0o700)
+        before = self.attempts.stat()
+        with patch.object(host.os, "fchmod", side_effect=AssertionError("already private")):
+            host.private_attempts_dir(self.identity)
+        after = self.attempts.stat()
+        self.assertEqual((after.st_ino, after.st_ctime_ns), (before.st_ino, before.st_ctime_ns))
+
+    def test_only_the_owned_parent_descriptor_is_tightened_and_generic_guard_stays_strict(self):
+        self.attempts.mkdir()
+        self.attempts.chmod(0o775)
+        journal = self.attempts / "1-1/receipt.json"
+        journal.parent.mkdir(mode=0o700)
+        journal.write_bytes(b"preserved journal bytes")
+        journal.chmod(0o600)
+        before_stat = journal.stat()
+        before = (before_stat.st_ino, before_stat.st_mode, before_stat.st_mtime_ns, journal.read_bytes())
+        with self.assertRaisesRegex(host.Hold, "PRIVATE_DIRECTORY_REQUIRED"):
+            host.private_dir(self.attempts)
+        original = os.fchmod
+        observed = []
+        def chmod_parent(fd, mode):
+            self.assertEqual(os.fstat(fd).st_ino, self.attempts.stat().st_ino)
+            observed.append(mode)
+            return original(fd, mode)
+        with patch.object(host.os, "fchmod", side_effect=chmod_parent), \
+             patch.object(Path, "chmod", side_effect=AssertionError("descriptor required")), \
+             patch.object(Path, "iterdir", side_effect=AssertionError("no journal traversal")):
+            host.private_attempts_dir(self.identity)
+        self.assertEqual(observed, [0o700])
+        after = journal.stat()
+        self.assertEqual((after.st_ino, after.st_mode, after.st_mtime_ns, journal.read_bytes()), before)
+        self.assertEqual(self.attempts.stat().st_mode & 0o777, 0o700)
+
+    def test_unsafe_state_is_rejected_before_creating_or_changing_attempts(self):
+        self.identity.state.chmod(0o750)
+        with patch.object(host.os, "fchmod", side_effect=AssertionError("unsafe state")), \
+             self.assertRaisesRegex(host.Hold, "ATTEMPTS_STATE_CUSTODY"):
+            host.private_attempts_dir(self.identity)
+        self.assertFalse(self.attempts.exists())
+        self.assertEqual(self.identity.state.stat().st_mode & 0o777, 0o750)
+
+    def test_foreign_parent_or_state_owner_is_never_repaired(self):
+        self.attempts.mkdir()
+        self.attempts.chmod(0o775)
+        original = os.fstat
+        for target in (self.identity.state, self.attempts):
+            with self.subTest(target=target.name):
+                inode = target.stat().st_ino
+                def foreign(fd):
+                    value = original(fd)
+                    return types.SimpleNamespace(st_mode=value.st_mode,
+                        st_uid=value.st_uid + 1 if value.st_ino == inode else value.st_uid)
+                with patch.object(host.os, "fstat", side_effect=foreign), \
+                     patch.object(host.os, "fchmod", side_effect=AssertionError("foreign owner")), \
+                     self.assertRaisesRegex(host.Hold, "ATTEMPTS_(STATE|DIRECTORY)_CUSTODY"):
+                    host.private_attempts_dir(self.identity)
+                self.assertEqual(self.attempts.stat().st_mode & 0o777, 0o775)
+
+    def test_alias_or_regular_file_cannot_be_adopted_as_attempts_directory(self):
+        target = self.home / "other"
+        target.mkdir(mode=0o700)
+        self.attempts.symlink_to(target, target_is_directory=True)
+        with self.assertRaisesRegex(host.Hold, "ATTEMPTS_DIRECTORY_CUSTODY"):
+            host.private_attempts_dir(self.identity)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(list(target.iterdir()), [])
+        self.attempts.unlink()
+        self.attempts.write_bytes(b"preserve")
+        with self.assertRaisesRegex(host.Hold, "ATTEMPTS_DIRECTORY_CUSTODY"):
+            host.private_attempts_dir(self.identity)
+        self.assertEqual(self.attempts.read_bytes(), b"preserve")
+
+    def test_alias_in_state_path_is_rejected_without_changing_target(self):
+        target = self.home / "other"
+        self.identity.state.rename(target)
+        self.identity.state.symlink_to(target, target_is_directory=True)
+        with self.assertRaisesRegex(host.Hold, "PATH_ALIAS"):
+            host.private_attempts_dir(self.identity)
+        self.assertFalse((target / "attempts").exists())
+        self.assertEqual(target.stat().st_mode & 0o777, 0o700)
+
+
 class DeploymentFailureTests(unittest.TestCase):
     """Explicit fake Docker commands exercise host journaling, not real runtime."""
     def setUp(self):
@@ -584,6 +681,19 @@ class DeploymentFailureTests(unittest.TestCase):
         self.assertEqual(manager.docker.containers, {})
         self.assertEqual(manager.receipt["cleanup"]["state"], "COMPLETE")
         self.assertFalse((self.identity.state / "current.json").exists())
+
+    def test_deploy_creates_private_attempts_parent_under_group_writable_umask(self):
+        manager = self.manager(failure="partial_create")
+        previous = os.umask(0o002)
+        try:
+            with self.assertRaisesRegex(host.Hold, "FAKE_PARTIAL_CREATE"):
+                manager.deploy(self.root, SHA, TREE, "next", transition=lambda: None)
+        finally:
+            os.umask(previous)
+        directory = self.identity.state / "attempts"
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((directory / "next").stat().st_mode & 0o777, 0o700)
+        self.assertTrue((directory / "next/receipt.json").is_file())
 
     def test_load_inspect_and_mapping_failures_keep_distinct_phases_and_public_details(self):
         failed_docker = host.Docker(self.identity, run=lambda args, **kwargs:
