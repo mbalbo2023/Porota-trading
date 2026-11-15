@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 import sys
+from datetime import datetime, timezone
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,6 +79,59 @@ class InspectTests(unittest.TestCase):
         self.assertEqual(result["units"][0]["name"], "porota-preopen-rc6.timer")
         self.assertEqual(result["units"][0]["policy_role"], "UNKNOWN")
         self.assertEqual(result["unmapped_units"], ["porota-preopen-rc6.timer"])
+
+    def test_systemd_inventory_reports_bounded_timer_and_last_service_failure_causality(self):
+        service = "porota-preopen-rc6.service"
+        timer = "porota-preopen-rc6.timer"
+        def commands(command, **kwargs):
+            if "list-units" in command or "list-unit-files" in command:
+                return subprocess.CompletedProcess(command, 0,
+                    f"{service} enabled\n{timer} enabled\n", "")
+            if "show" in command:
+                unit = command[2]
+                if unit == service:
+                    payload = (f"Id={service}\nLoadState=loaded\nActiveState=failed\n"
+                        "Result=exit-code\nExecMainCode=1\nExecMainStatus=79\n"
+                        "ExecMainStartTimestamp=Fri 2026-11-13 17:20:00 UTC\n"
+                        "ExecMainExitTimestamp=Fri 2026-11-13 17:20:01 UTC\n"
+                        "Environment=SECRET=must-never-leak\n")
+                else:
+                    payload = (f"Id={timer}\nLoadState=loaded\nActiveState=active\n"
+                        "LastTriggerUSec=Fri 2026-11-13 17:20:00 UTC\n"
+                        "NextElapseUSecRealtime=Mon 2026-11-16 13:20:00 UTC\n")
+                return subprocess.CompletedProcess(command, 0, payload, "")
+            raise AssertionError(command)
+        result = setup.unit_inventory(self.root, run=commands)
+        by_name = {row["name"]: row for row in result["units"]}
+        self.assertEqual({key: by_name[service].get(key) for key in (
+            "Result", "ExecMainCode", "ExecMainStatus", "ExecMainStartTimestamp", "ExecMainExitTimestamp")},
+            {"Result": "exit-code", "ExecMainCode": 1, "ExecMainStatus": 79,
+             "ExecMainStartTimestamp": "Fri 2026-11-13 17:20:00 UTC",
+             "ExecMainExitTimestamp": "Fri 2026-11-13 17:20:01 UTC"})
+        self.assertEqual(by_name[timer].get("LastTriggerUSec"), "Fri 2026-11-13 17:20:00 UTC")
+        self.assertEqual(by_name[timer].get("NextElapseUSecRealtime"), "Mon 2026-11-16 13:20:00 UTC")
+        self.assertNotIn("must-never-leak", json.dumps(result))
+
+    def test_scheduler_evidence_rejects_untrusted_result_and_timestamp_values(self):
+        service, timer = "porota-preopen-rc6.service", "porota-preopen-rc6.timer"
+        def commands(command, **kwargs):
+            if "list-units" in command or "list-unit-files" in command:
+                return subprocess.CompletedProcess(command, 0,
+                    f"{service} enabled\n{timer} enabled\n", "")
+            if "show" in command:
+                payload = ("Result=exit-code private-value\nExecMainCode=-1\n"
+                           "ExecMainStatus=79 private-value\n"
+                           "ExecMainExitTimestamp=private-value\n") if command[2] == service else (
+                           "LastTriggerUSec=private-value\nNextElapseUSecRealtime=Mon 2026-11-16 13:20:00 UTC\n")
+                return subprocess.CompletedProcess(command, 0, payload, "")
+            raise AssertionError(command)
+        result = setup.unit_inventory(self.root, run=commands)
+        by_name = {row["name"]: row for row in result["units"]}
+        self.assertEqual([by_name[service][key] for key in (
+            "Result", "ExecMainCode", "ExecMainStatus", "ExecMainExitTimestamp")], [None] * 4)
+        self.assertIsNone(by_name[timer]["LastTriggerUSec"])
+        self.assertEqual(by_name[timer]["NextElapseUSecRealtime"], "Mon 2026-11-16 13:20:00 UTC")
+        self.assertNotIn("private-value", json.dumps(result))
 
     def test_unit_details_keep_paths_and_digests_without_environment_or_shell_secrets(self):
         unit = "porota-snapshot-preopen-rc6.service"
@@ -340,6 +394,168 @@ class PrivateImageInspectTests(unittest.TestCase):
         with patch.object(setup.os, "fstat", side_effect=self.owned_stat):
             self.inspect()
         self.assertFalse(any(command[-1] == self.config_id for command in self.calls))
+
+
+class PrivateRuntimeObservationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.socket = Path(f"/run/user/{os.getuid()}/porota-rc6-docker.sock")
+        self.cids = {"observer": "1" * 64, "dashboard": "2" * 64}
+        self.source_sha, self.source_tree = "a" * 40, "b" * 40
+        self.image_id = "sha256:" + "c" * 64
+        self.attempt = "43758003307-1"
+        self.info = {"ID": "dedicated-daemon", "SecurityOptions": ["name=rootless"],
+            "DockerRootDir": str(self.home / ".local/share/porota-rc6/docker")}
+        self.current = self.home / ".local/state/porota-rc6/current.json"
+        self.current.parent.mkdir(parents=True)
+        self.current.parent.chmod(0o700)
+        self.document = {"schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
+            "phase": "COMPLETE", "source_sha": self.source_sha,
+            "source_tree": self.source_tree, "image_id": self.image_id,
+            "daemon_id": self.info["ID"], "attempt": self.attempt,
+            "roles": self.cids, "secret": "never-print-current-secret"}
+        self.write_current()
+        self.calls = []
+        metadata = setup._metadata
+        def socket_metadata(path):
+            if Path(path) == self.socket:
+                return {"present": True, "uid": os.getuid(), "socket": True, "symlink": False}
+            return metadata(path)
+        patcher = patch.object(setup, "_metadata", side_effect=socket_metadata)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write_current(self):
+        self.current.write_text(json.dumps(self.document))
+        self.current.chmod(0o600)
+
+    def run_command(self, command, **kwargs):
+        self.calls.append(tuple(command))
+        self.assertEqual(command[:5], (setup.DOCKER, "--host", f"unix://{self.socket}",
+                                       "container", "inspect"))
+        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        self.assertEqual(kwargs["timeout"], 8)
+        cid = command[5]
+        role = next(role for role, value in self.cids.items() if cid == value)
+        row = {"Id": cid, "Name": f"/porota-rc6-{role}-{self.attempt}",
+            "Image": self.image_id, "RestartCount": 2 if role == "observer" else 0,
+            "Config": {"Labels": {"io.porota.project": "rc6", "io.porota.role": role,
+                       "io.porota.attempt": self.attempt, "private": "must-never-leak"},
+                       "Env": ["POROTA_BUILD_SHA=" + self.source_sha,
+                               "POROTA_CANDIDATE_TREE_SHA=" + self.source_tree,
+                               "PRIVATE=must-never-leak"]},
+            "State": {"Status": "running", "Running": True, "OOMKilled": False,
+                      "Pid": 4321 if role == "observer" else 4567, "ExitCode": 0,
+                      "StartedAt": "2026-11-15T20:32:00Z",
+                      "Health": {"Status": "healthy"} if role == "dashboard" else None}}
+        return subprocess.CompletedProcess(command, 0, json.dumps([row]), "must-never-leak")
+
+    def observe(self):
+        inspector = getattr(setup, "private_runtime_inventory", None)
+        self.assertTrue(callable(inspector), "Bounded rootless runtime observation is missing")
+        return inspector(self.home, self.socket, self.info, run=self.run_command)
+
+    def test_only_pinned_current_rootless_pair_is_inspected_and_health_is_sanitized(self):
+        result = self.observe()
+        self.assertEqual(result.get("status"), "OBSERVED")
+        self.assertEqual(result.get("source_sha"), self.source_sha)
+        self.assertEqual(result.get("source_tree"), self.source_tree)
+        self.assertEqual(result.get("image_id"), self.image_id)
+        self.assertEqual(result["roles"]["observer"]["Pid"], 4321)
+        self.assertEqual(result["roles"]["observer"]["RestartCount"], 2)
+        self.assertEqual(result["roles"]["dashboard"]["Health"], "healthy")
+        self.assertEqual(set(command[-1] for command in self.calls), set(self.cids.values()))
+        self.assertNotIn("must-never-leak", json.dumps(result))
+        self.assertNotIn("never-print-current-secret", json.dumps(result))
+        self.assertTrue(all(command[3:5] == ("container", "inspect") for command in self.calls))
+
+    def test_duplicate_or_foreign_current_cids_fail_closed_before_docker(self):
+        for change in ({"roles": {"observer": self.cids["observer"],
+                         "dashboard": self.cids["observer"]}},
+                       {"daemon_id": "not-the-private-daemon"}):
+            with self.subTest(change=change):
+                self.document["roles"] = self.cids
+                self.document.update(change)
+                self.write_current()
+                result = self.observe()
+                self.assertEqual(result.get("status"), "NO_VERIFICADO")
+                self.assertEqual(self.calls, [])
+                self.assertNotIn("never-print-current-secret", json.dumps(result))
+
+    def test_existing_host_inspect_exposes_runtime_without_new_workflow(self):
+        exists = Path.exists
+        def transport(command, **kwargs):
+            if command[:3] == (setup.DOCKER, "--host", f"unix://{self.socket}"):
+                if command[3:] == ("info", "--format", "{{json .}}"):
+                    return subprocess.CompletedProcess(command, 0, json.dumps(self.info), "")
+                return self.run_command(command, **kwargs)
+            return subprocess.CompletedProcess(command, 1, "", "private-no-leak")
+        with patch.object(Path, "exists", lambda path: path == self.socket or exists(path)), \
+             patch.object(setup, "private_image_inventory", return_value={"status": "OBSERVED", "images": []}), \
+             patch.object(setup.pwd, "getpwuid", return_value=SimpleNamespace(
+                 pw_dir=str(self.home), pw_name="porotaadmin", pw_uid=os.getuid())):
+            result = setup.inspect_host(self.home, run=transport)
+        self.assertEqual(result["own_daemon"].get("runtime", {}).get("status"), "OBSERVED")
+        self.assertEqual(result["host_mutations"], 0)
+        self.assertNotIn("must-never-leak", json.dumps(result))
+
+
+class PrivateControllerHealthTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "data/paper_v17/artifacts/observer_v17.db/runtime-health.json"
+        self.path.parent.mkdir(parents=True)
+        self.source_sha, self.source_tree = "a" * 40, "b" * 40
+        self.roles = ("scanner", "performance", "dynamic_shadow", "exit_reader",
+                      "notifications", "candles", "intraday_scalping", "caucion_cash_sweep")
+        self.health = {"schema": "rc6.runtime-child-health.v1", "source_sha": self.source_sha,
+            "candidate_tree_sha": self.source_tree, "recorded_at": "2026-11-15T20:31:00+00:00",
+            "children": {role: {"state": "RUNNING", "pid": index + 101,
+                                "started_at": "2026-11-15T20:30:00+00:00"}
+                         for index, role in enumerate(self.roles)},
+            "ppi_budget": {"secret": "never-print-budget"}}
+        self.write_health()
+
+    def write_health(self):
+        self.path.write_text(json.dumps(self.health))
+        self.path.chmod(0o600)
+
+    def observe(self):
+        reader = getattr(setup, "private_controller_health", None)
+        self.assertTrue(callable(reader), "Bounded controller health reader is missing")
+        return reader(self.root, self.source_sha, self.source_tree,
+                      now=datetime(2026, 11, 15, 20, 32, 0, tzinfo=timezone.utc))
+
+    def test_fresh_eight_role_file_is_attributed_without_claiming_pid_liveness(self):
+        before = self.path.stat()
+        result = self.observe()
+        after = self.path.stat()
+        self.assertEqual(result["status"], "OBSERVED")
+        self.assertEqual(set(result["children"]), set(self.roles))
+        self.assertEqual(len({row["pid"] for row in result["children"].values()}), 8)
+        self.assertEqual(result["process_liveness"], "NO_VERIFICADO")
+        self.assertEqual((before.st_ino, before.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
+        self.assertNotIn("never-print-budget", json.dumps(result))
+        self.assertNotIn("ppi_budget", json.dumps(result))
+
+    def test_stale_wrong_source_or_duplicate_pids_fail_closed(self):
+        original = json.loads(json.dumps(self.health))
+        for mutation in ({"recorded_at": "2026-11-15T20:29:00+00:00"},
+                         {"source_sha": "f" * 40},
+                         {"children": {**self.health["children"],
+                                       "scanner": {"state": "RUNNING", "pid": 102,
+                                                   "started_at": "2026-11-15T20:30:00+00:00"}}}):
+            with self.subTest(mutation=list(mutation)):
+                self.health = json.loads(json.dumps(original))
+                self.health.update(mutation)
+                self.write_health()
+                result = self.observe()
+                self.assertEqual(result["status"], "NO_VERIFICADO")
+                self.assertNotIn("children", result)
 
 
 class PrivateReleaseCustodyTests(unittest.TestCase):

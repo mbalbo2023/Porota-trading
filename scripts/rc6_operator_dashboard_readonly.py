@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import os
+from pathlib import Path
+import pwd
 import re
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 SCHEMA = "rc6.operator-dashboard-readonly.v1"
 ROUTES = (
@@ -304,10 +310,96 @@ print(json.dumps(result,sort_keys=True,separators=(",",":")))
 '''
 
 
+def _rootless_context():
+    """Read the current private release and validate its exact dashboard CID.
+
+    This standalone stdin probe cannot import the monitor checkout from the
+    remote host. It uses the same pinned product helper as Market Watch, never
+    a stale main copy or implicit/rootful Docker context.
+    """
+    uid = os.getuid()
+    account = pwd.getpwuid(uid)
+    if (uid != 1000 or os.geteuid() != uid or account.pw_uid != uid or
+            account.pw_name != "porotaadmin"):
+        raise ValueError("ROOTLESS_SSH_IDENTITY_REQUIRED")
+    home = Path(account.pw_dir)
+    state = home / ".local/state/porota-rc6"
+    if not home.is_absolute() or ".." in home.parts:
+        raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
+    for directory in (home, home / ".local", home / ".local/state", state):
+        meta = directory.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY")
+    path = state / "current.json"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except OSError:
+        raise ValueError("ROOTLESS_CURRENT_CUSTODY") from None
+    try:
+        meta = os.fstat(fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
+                meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) & 0o077 or
+                meta.st_size > 131072):
+            raise ValueError("ROOTLESS_CURRENT_CUSTODY")
+        raw = os.read(fd, 131073)
+        if len(raw) > 131072:
+            raise ValueError("ROOTLESS_CURRENT_OVERSIZE")
+        preliminary = json.loads(raw)
+    finally:
+        os.close(fd)
+    sha = preliminary.get("source_sha") if isinstance(preliminary, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("ROOTLESS_SOURCE_SHA_UNVERIFIED")
+    release = state / "releases" / sha
+    source = release / "source"
+    scripts = source / "scripts"
+    for directory in (state / "releases", release, source, scripts):
+        meta = directory.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                stat.S_IMODE(meta.st_mode) & 0o022):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY")
+    helper = scripts / "porota_rootless_host.py"
+    meta = helper.lstat()
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
+            meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) & 0o022):
+        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
+    spec = importlib.util.spec_from_file_location("_porota_dashboard_active_rootless", helper)
+    if spec is None or spec.loader is None:
+        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    identity = module.Identity.current()
+    if (identity.uid != uid or Path(identity.home) != home or Path(identity.state) != state or
+            Path(identity.socket) != Path(f"/run/user/{uid}/porota-rc6-docker.sock")):
+        raise ValueError("ROOTLESS_IDENTITY_DRIFT")
+    current, _release = module.read_release_state(identity)
+    roles = current.get("roles") if isinstance(current, dict) else None
+    if (current != preliminary or current.get("state") != "VALIDADO_RUNTIME" or
+            current.get("operating_mode") != "PRODUCTION_PAPER" or
+            current.get("execution_mode") != "SIMULATION" or
+            type(current.get("real_orders_sent")) is not int or current["real_orders_sent"] != 0 or
+            not isinstance(roles, dict) or set(roles) != {"observer", "dashboard"} or
+            any(not isinstance(cid, str) or not re.fullmatch(r"[0-9a-f]{64}", cid)
+                for cid in roles.values()) or len(set(roles.values())) != 2):
+        raise ValueError("ROOTLESS_CURRENT_RELEASE_UNVERIFIED")
+    host = module.Host(Path("/opt/porota-trading"), identity)
+    if not current.get("daemon_id") or host.boundary() != current["daemon_id"]:
+        raise ValueError("ROOTLESS_DAEMON_CHANGED")
+    for role in ("observer", "dashboard"):
+        if host.check_role(current, role).get("Id") != roles[role]:
+            raise ValueError("ROOTLESS_ROLE_IDENTITY_CHANGED")
+    return SimpleNamespace(identity=identity, current=current, roles=roles)
+
+
 def audit_host(*, runner=subprocess.run):
     try:
-        proc = runner(["docker", "exec", "porota_production_dashboard", "python", "-B", "-c", CHILD],
-                      capture_output=True, text=True, timeout=150, check=False)
+        context = _rootless_context()
+        proc = runner(["/usr/bin/docker", "--host", f"unix://{context.identity.socket}",
+                       "container", "exec", context.roles["dashboard"], "python", "-B", "-c", CHILD],
+                      capture_output=True, text=True, timeout=150, check=False,
+                      env=context.identity.environment(), cwd="/")
         data = json.loads(proc.stdout) if proc.returncode == 0 and len(proc.stdout) < 32768 else {}
         if data.get("schema") != SCHEMA or data.get("read_only") is not True:
             raise ValueError("INVALID_AUDIT_RECEIPT")
@@ -459,7 +551,7 @@ def audit_host(*, runner=subprocess.run):
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
-    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
         return {"schema": SCHEMA, "read_only": True, "status": "NO_VERIFICADO",
                 "routes": [], "sources": [], "source_status": "NO_VERIFICADO",
                 "source_sync": [], "source_sync_status": "NO_VERIFICADO",

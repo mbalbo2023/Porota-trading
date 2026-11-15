@@ -61,7 +61,7 @@ jobs:
 
   watch:
     needs: contracts
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
@@ -91,7 +91,7 @@ jobs:
               out.write('active=' + ('1' if active else '0') + '\n')
           print('MARKET_WATCH_TIME_GATE=' + ('ACTIVE' if active else 'SKIP_OFF_HOURS'))
           PY
-      - name: Resolve productive SHA directly from GitHub
+      - name: Resolve productive commit and tree directly from GitHub
         id: productive
         if: steps.window.outputs.active == '1'
         shell: bash
@@ -109,9 +109,21 @@ jobs:
               info = json.load(response)
           sha = info['commit']['sha']
           assert len(sha) == 40 and all(c in '0123456789abcdef' for c in sha)
+          # The immutable release source commit may differ from this branch
+          # HEAD while resolving to exactly the same Git tree.
+          commit_url = f'https://api.github.com/repos/{repo}/git/commits/{sha}'
+          commit_request = urllib.request.Request(commit_url, headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(commit_request, timeout=20) as response:
+              git_commit = json.load(response)
+          tree_sha = git_commit['tree']['sha']
+          assert len(tree_sha) == 40 and all(c in '0123456789abcdef' for c in tree_sha)
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
               out.write('sha=' + sha + '\n')
+              out.write('tree_sha=' + tree_sha + '\n')
           print('RC6_PRODUCTIVE_SHA=' + sha)
+          print('RC6_PRODUCTIVE_TREE=' + tree_sha)
           PY
       - name: Prepare strict SSH
         if: steps.window.outputs.active == '1'
@@ -130,6 +142,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_SHA: ${{ steps.productive.outputs.sha }}
+          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
         run: |
           set -Eeuo pipefail
           set +e
@@ -138,7 +151,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA'" \
+            "timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA' --expected-tree-sha '$EXPECTED_TREE_SHA'" \
             < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2> evidence/.transport.stderr
           rc=$?
           set -e
@@ -161,7 +174,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 18 python3 - recent-critical-host" \
+            "timeout 18 python3 - recent-critical-host" \
             < scripts/rc6_market_watch_readonly.py > evidence/recent_critical.json 2>/dev/null
           rc=$?
           set -e
@@ -179,7 +192,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 12 python3 - shadow-diagnostic-host" \
+            "timeout 12 python3 - shadow-diagnostic-host" \
             < scripts/rc6_market_watch_readonly.py > evidence/shadow_diagnostic.json 2>/dev/null
           rc=$?
           set -e
@@ -197,7 +210,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 10 python3 - schedule-api-host" \
+            "timeout 10 python3 - schedule-api-host" \
             < scripts/rc6_market_watch_readonly.py > evidence/schedule_api.json 2>/dev/null
           rc=$?
           set -e
@@ -215,7 +228,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 9 python3 - observer-lifecycle-host" \
+            "timeout 9 python3 - observer-lifecycle-host" \
             < scripts/rc6_market_watch_readonly.py > evidence/observer_lifecycle.json 2>/dev/null
           rc=$?
           set -e
@@ -233,7 +246,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "sudo -n timeout 160 python3 - dashboard-host" \
+            "timeout 160 python3 - dashboard-host" \
             < scripts/rc6_operator_dashboard_readonly.py > evidence/dashboard_audit.json 2>/dev/null
           rc=$?
           set -e
@@ -285,11 +298,21 @@ jobs:
             --previous evidence/previous/snapshot.json \
             --previous-decision evidence/previous/decision.json > evidence/decision.json
           python3 - <<'PY'
-          import json, os
+          import json, os, re
           snap=json.load(open('evidence/snapshot.json',encoding='utf-8'))
           decision=json.load(open('evidence/decision.json',encoding='utf-8'))
+          def sha(field):
+              value=snap.get(field)
+              return value if type(value) is str and re.fullmatch('[0-9a-f]{40}',value) else 'NO_VERIFICADO'
+          identity=snap.get('provenance_identity')
+          allowed={'ROOTLESS_PRODUCT_TREE_MATCHED','PRODUCT_TREE_NOT_PROVIDED',
+                   'PRODUCT_TREE_MISMATCH','PRIVATE_RELEASE_SOURCE_MISMATCH',
+                   'LEGACY_DEPLOY_SHA_MATCHED','LEGACY_DEPLOY_SHA_MISMATCH'}
           text=['## POROTA RC6 | Market Watch READ_ONLY',
-                '- Product SHA: '+str(snap.get('expected_deploy_sha','NO_VERIFICADO')),
+                '- Product branch HEAD: '+sha('expected_deploy_sha'),
+                '- Candidate source SHA: '+sha('observed_candidate_sha'),
+                '- Expected product tree: '+sha('expected_product_tree'),
+                '- Provenance identity: '+(identity if type(identity) is str and identity in allowed else 'NO_VERIFICADO'),
                 '- Severity: '+str(snap.get('severity','NO_VERIFICADO')),
                 '- Alerts: '+', '.join(decision['new_alerts'] or ['none']),
                 '- Recovery: '+', '.join(decision['recovered'] or ['none']),
@@ -306,7 +329,7 @@ jobs:
         if: steps.window.outputs.active == '1'
         shell: bash
         env:
-          NOTIFICATION_MODE: ${{ inputs.notification_mode || 'normal' }}
+          NOTIFICATION_MODE: ${{ github.event_name == 'schedule' && 'normal' || (github.event_name == 'workflow_dispatch' && inputs.notification_mode || 'read_only') }}
         run: |
           set -Eeuo pipefail
           request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
@@ -322,7 +345,7 @@ jobs:
               -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
               -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
               "$DO_USER@$DO_HOST" \
-              "sudo -n timeout 25 python3 - alert-host '$request'" \
+              "timeout 25 python3 - alert-host '$request'" \
               < scripts/rc6_market_watch_readonly.py > evidence/delivery.json 2>/dev/null
             rc=$?
             set -e
@@ -417,7 +440,7 @@ jobs:
           containers=recent.get('containers') if isinstance(recent,dict) else {}
           containers=containers if isinstance(containers,dict) else {}
           traces=[]
-          for name in ('porota_production_observer','porota_production_dashboard'):
+          for name in ('observer','dashboard'):
               item=containers.get(name)
               rows=item.get('tracebacks') if isinstance(item,dict) else []
               for row in (rows[-12:] if isinstance(rows,list) else []):
