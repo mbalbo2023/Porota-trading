@@ -1,0 +1,72 @@
+name: RC6 PAPER operator intent
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Persist the owner's PAPER pause or resume instruction
+        type: choice
+        options: [pause, resume]
+        default: pause
+        required: true
+      operator_comment_id:
+        description: Unedited owner authorization comment in issue 624
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  intent:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/deploy/rc6-pr69-isolated-20260915' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      OPERATION: ${{ inputs.operation }}
+      OPERATOR_COMMENT_ID: ${{ inputs.operator_comment_id }}
+    steps:
+      - name: Checkout exact product source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Authenticate owner intent before host credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -B -m scripts.porota_actions_intent authorize
+          --operation "$OPERATION" --comment-id "$OPERATOR_COMMENT_ID"
+          --receipt "$RUNNER_TEMP/porota-intent/authorization.json"
+
+      - name: Persist verified intent in private rootless configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: >-
+          python3 -B -m scripts.porota_actions_intent apply
+          --operation "$OPERATION" --comment-id "$OPERATOR_COMMENT_ID"
+          --receipt "$RUNNER_TEMP/porota-intent/result.json"
+
+      - name: Preserve authorization and observed intent result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-paper-intent-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/porota-intent/*.json
+          if-no-files-found: warn
+          retention-days: 30
