@@ -92,7 +92,12 @@ checks out a branch and never triggers the producer.
 
 ## Operational boundary
 
-Installing/enabling the dedicated service and timer requires the normal
-reconciled Deploy V2 process. Merely merging this code does not prove that a
-current runtime bundle exists. Runtime/DB/systemd/Docker and PPI Watch must be
-checked again after the eventual consolidated deployment.
+Installing or changing the dedicated service and timer is host/bootstrap work
+through GitHub Actions within the authorized scope, separate from normal
+Deploy V2 promotion. Promotion uses the prepared environment and does not
+implicitly install or enable this channel.
+
+Merely merging this code does not prove that a current runtime bundle exists.
+After a change to the producer or publisher, verify the affected behavior and
+its pinned evidence. Unrelated releases do not require reinstalling this
+channel or repeating its historical checks. PPI Watch remains untouched.
