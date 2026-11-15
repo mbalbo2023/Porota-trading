@@ -217,7 +217,22 @@ class MonitorContracts(unittest.TestCase):
         def loader(path):
             loaded.append(path)
             return fake_module
-        with patch.object(monitor, "pwd", SimpleNamespace(getpwuid=lambda _: account), create=True):
+        # GitHub runners use a different UID from the productive UID 1000.
+        # Virtualize only filesystem ownership metadata in this fixture;
+        # the production resolver must still require the exact real identity.
+        real_lstat = Path.lstat
+        real_fstat = monitor.os.fstat
+        def owned_by_1000(meta):
+            values = list(meta)
+            values[4] = 1000
+            return monitor.os.stat_result(values)
+        def virtual_lstat(path):
+            return owned_by_1000(real_lstat(path))
+        with patch.object(monitor, "pwd", SimpleNamespace(getpwuid=lambda _: account), create=True), \
+                patch.object(monitor.os, "getuid", return_value=1000), \
+                patch.object(monitor.os, "geteuid", return_value=1000), \
+                patch.object(Path, "lstat", virtual_lstat), \
+                patch.object(monitor.os, "fstat", side_effect=lambda fd: owned_by_1000(real_fstat(fd))):
             context = monitor._rootless_context(loader=loader)
             self.assertEqual(context.roles, cids)
             self.assertEqual(context.current["source_sha"], SHA)
