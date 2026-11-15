@@ -1,6 +1,7 @@
 """R367 runner ingress, authenticated dispatch and public receipt boundary."""
 
 from contextlib import ExitStack, redirect_stdout
+from copy import deepcopy
 import base64
 from datetime import datetime, timezone
 import hashlib
@@ -55,6 +56,14 @@ def host_receipt(step, raw, binding=BINDING):
 
 
 class GenesisControl(unittest.TestCase):
+    def test_legacy_receipt_cannot_be_renamed_to_admission_or_unknown_step(self):
+        raw = b'fixed request bytes'
+        authority = {**INITIAL, 'proposal_id': PROPOSAL, 'commitment': COMMITMENT}
+        for step in ('PROMOTION_ADMISSION', 'UNKNOWN', '../INSTALL'):
+            with self.subTest(step=step), self.assertRaises(actions.ControlHold):
+                actions.checked_receipt(canonical(host_receipt(step, raw)), step=step,
+                                        request=raw, authority=authority)
+
     def test_g8_accepts_only_live_pr_run_and_unique_r252_job_receipt_of_this_de(self):
         from copy import deepcopy
         from scripts import rc6_ci_release_required_guard as r252
@@ -391,3 +400,206 @@ class GenesisControl(unittest.TestCase):
         self.assertNotIn(PRIVATE, requests[0].full_url)
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(requests[0].full_url).query),
                          {'api-version': ['2.0'], 'audience': [aud]})
+
+
+class PromotionAdmissionContract(unittest.TestCase):
+    """Synthetic contract evidence only: no host origin, live GO or replay proof."""
+
+    def setUp(self):
+        self.request = b'fixed R321 request from an independently authenticated exchange'
+        self.now = datetime(2026, 11, 14, 10, 6, tzinfo=timezone.utc)
+        self.expected = {
+            'request_sha256': sha(self.request),
+            'source': {'repository': 'mbalbo2023/Porota-trading',
+                       'trusted_main_sha': '1' * 40, 'candidate_sha': '2' * 40, 'candidate_tree': '3' * 40},
+            'producer': {'workflow': '.github/workflows/rc6-r321-root-install-approved.yml',
+                         'ref': 'refs/heads/main', 'event': 'workflow_dispatch',
+                         'run_id': '60', 'run_attempt': '3'},
+            'release': {'d': {'run_id': 44, 'run_attempt': 2, 'artifact_id': 50,
+                              'artifact_digest': 'sha256:' + 'b' * 64},
+                        'e': {'run_id': 51, 'run_attempt': 1, 'artifact_id': 52,
+                              'artifact_digest': 'sha256:' + 'c' * 64},
+                        'image_id': 'sha256:' + 'd' * 64, 'e_receipt_sha256': 'e' * 64},
+            'host': {'host_identity_sha256': BINDING['host_identity_sha256'],
+                     'custodian_sha256': 'f' * 64, 'root_manifest_sha256': sha(manifest()),
+                     'daemon_id_sha256': 'a' * 64, 'dashboard_env_sha256': 'b' * 64,
+                     'observer_env_sha256': 'c' * 64,
+                     'files': {'helper': '1' * 64, 'custody': '1' * 64, 'profiles': '1' * 64,
+                               'approval': '1' * 64, 'unit_template': '1' * 64}},
+            'authority': {'purpose': 'PROMOTION_ADMISSION', 'lease_id': 4, 'admission_go_id': 9,
+                          'nonce': 'a' * 32, 'proposal_id': PROPOSAL, 'commitment': COMMITMENT,
+                          'generation_commitment': 'd' * 64, 'issued_at': '2026-11-14T10:00:00Z',
+                          'expires_at': '2026-11-14T10:30:00Z',
+                          'approval_expires_at': '2026-11-14T10:20:00Z'},
+        }
+        self.doc = dict(deepcopy(self.expected), schema='RC6_PROMOTION_ADMISSION_V1',
+                        step='PROMOTION_ADMISSION', observed_at='2026-11-14T10:05:00Z',
+                        expires_at='2026-11-14T10:15:00Z',
+                        checks={name: {'result': True, 'evidence_sha256': digit * 64}
+                                for name, digit in (('protected_files', '1'), ('approval', '2'),
+                                                    ('env_generation', '3'), ('daemon', '4'),
+                                                    ('control_prerequisites', '5'))},
+                        host_control_verified=False, deploy_authorized=False,
+                        runtime_verified=False, real_orders_allowed=False)
+
+    def verify(self, doc=None, *, expected=None, request=None, now=None):
+        return actions.checked_promotion_admission(
+            canonical(self.doc if doc is None else doc),
+            request=self.request if request is None else request,
+            expected=self.expected if expected is None else expected,
+            now=self.now if now is None else now)
+
+    def reject(self, doc, **kwargs):
+        with self.assertRaises(actions.ControlHold) as raised:
+            self.verify(doc, **kwargs)
+        self.assertNotIn(PRIVATE, str(raised.exception))
+
+    @staticmethod
+    def change(doc, path, value):
+        target = doc
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+
+    def test_valid_contract_returns_bound_identity_without_operational_authority(self):
+        got = self.verify()
+        self.assertEqual(got['release']['d']['run_id'], 44)
+        self.assertEqual(got['producer']['run_id'], '60')
+        self.assertEqual(got['source']['candidate_sha'], '2' * 40)
+        self.assertEqual(got['request_sha256'], sha(self.request))
+        for flag in ('host_control_verified', 'deploy_authorized', 'runtime_verified', 'real_orders_allowed'):
+            self.assertIs(got[flag], False)
+
+    def test_old_protocol_and_wrong_declared_origin_cannot_supply_admission(self):
+        for step in ('INSTALL', 'POST_D_E', 'PROMOTION_ADMISSION'):
+            with self.subTest(step=step):
+                self.reject(host_receipt(step, self.request))
+        for field, value in (('workflow', '.github/workflows/porota-deploy-v2-promote.yml'),
+                             ('ref', 'refs/heads/candidate'), ('event', 'pull_request'),
+                             ('run_id', '44'), ('run_attempt', '2')):
+            doc = deepcopy(self.doc)
+            doc['producer'][field] = value
+            with self.subTest(field=field):
+                self.reject(doc)
+
+    def test_exact_request_and_each_external_identity_are_required(self):
+        self.reject(self.doc, request=self.request + b'changed')
+        coordinated = deepcopy(self.doc)
+        coordinated['request_sha256'] = sha(self.request + b'changed')
+        self.reject(coordinated, request=self.request + b'changed')
+        cases = [
+            (('source', 'repository'), 'foreign/repo'),
+            *((('source', key), '0' * 40) for key in ('trusted_main_sha', 'candidate_sha', 'candidate_tree')),
+            *((('release', role, key), 99) for role in ('d', 'e')
+              for key in ('run_id', 'run_attempt', 'artifact_id')),
+            *((('release', role, 'artifact_digest'), 'sha256:' + '0' * 64) for role in ('d', 'e')),
+            (('release', 'image_id'), 'sha256:' + '0' * 64),
+            (('release', 'e_receipt_sha256'), '0' * 64),
+            *((('host', key), '0' * 64) for key in self.expected['host'] if key != 'files'),
+            *((('host', 'files', key), '0' * 64) for key in self.expected['host']['files']),
+            (('authority', 'purpose'), 'INSTALL'), (('authority', 'lease_id'), 99),
+            (('authority', 'admission_go_id'), 99), (('authority', 'nonce'), '0' * 32),
+            (('authority', 'proposal_id'), '0' * 32), (('authority', 'commitment'), '0' * 64),
+            (('authority', 'generation_commitment'), '0' * 64),
+        ]
+        for path, value in cases:
+            doc = deepcopy(self.doc)
+            self.change(doc, path, value)
+            with self.subTest(path=path):
+                self.reject(doc)
+
+    def test_schema_is_closed_at_every_level_and_errors_do_not_echo_private_inputs(self):
+        for path in ((), ('source',), ('producer',), ('release',), ('release', 'd'),
+                     ('release', 'e'), ('host',), ('host', 'files'), ('authority',),
+                     ('checks',), ('checks', 'protected_files')):
+            doc = deepcopy(self.doc)
+            self.change(doc, (*path, 'origin_authenticated'), PRIVATE)
+            with self.subTest(path=path):
+                self.reject(doc)
+        for key in self.doc:
+            doc = deepcopy(self.doc)
+            del doc[key]
+            with self.subTest(missing=key):
+                self.reject(doc)
+        for raw in (canonical(self.doc) + b'\n',
+                    canonical(self.doc).replace(b'"step":', b'"step":"INSTALL","step":'),
+                    b'{"private":NaN}', b'\xff', b' ' * 4097):
+            with self.subTest(wire=raw[:20]), self.assertRaises(actions.ControlHold) as raised:
+                actions.checked_promotion_admission(raw, request=self.request,
+                                                    expected=self.expected, now=self.now)
+            self.assertNotIn(PRIVATE, str(raised.exception))
+
+    def test_matching_malformed_expectations_cannot_turn_bad_types_into_valid_identity(self):
+        for path, value in (
+                (('source', 'repository'), 'foreign/repo'),
+                (('source', 'candidate_sha'), 'not-a-sha'),
+                (('producer', 'workflow'), '.github/workflows/porota-deploy-v2-promote.yml'),
+                (('producer', 'run_id'), True),
+                (('release', 'd', 'run_id'), True), (('release', 'e', 'run_attempt'), 1.0),
+                (('release', 'd', 'artifact_id'), 0), (('release', 'image_id'), 'd' * 64),
+                (('authority', 'lease_id'), True), (('authority', 'admission_go_id'), -1),
+                (('authority', 'nonce'), 'bad'), (('authority', 'purpose'), 'INSTALL'),
+                (('host', 'daemon_id_sha256'), 'bad'), (('host', 'files', 'helper'), 'bad')):
+            doc, expected = deepcopy(self.doc), deepcopy(self.expected)
+            self.change(doc, path, value)
+            self.change(expected, path, value)
+            with self.subTest(path=path):
+                self.reject(doc, expected=expected)
+        expected = dict(self.expected, origin_authenticated=True)
+        self.reject(self.doc, expected=expected)
+
+    def test_manifest_digest_must_describe_the_bound_files_even_if_both_inputs_agree(self):
+        doc, expected = deepcopy(self.doc), deepcopy(self.expected)
+        doc['host']['files']['helper'] = expected['host']['files']['helper'] = '4' * 64
+        self.reject(doc, expected=expected)
+
+    def test_expiry_boundaries_and_external_aware_clock(self):
+        self.assertEqual(self.verify(now=datetime(2026, 11, 14, 10, 14, 59, tzinfo=timezone.utc))['step'],
+                         'PROMOTION_ADMISSION')
+        for now in (datetime(2026, 11, 14, 10, 15, tzinfo=timezone.utc),
+                    datetime(2026, 11, 14, 10, 16, tzinfo=timezone.utc),
+                    datetime(2026, 11, 14, 10, 6), '2026-11-14T10:06:00Z'):
+            with self.subTest(now=now):
+                self.reject(self.doc, now=now)
+        for field, value in (('observed_at', '2026-11-14T10:07:00Z'),
+                             ('observed_at', '2026-11-14T09:59:59Z'),
+                             ('observed_at', '2026-02-30T10:05:00Z'),
+                             ('expires_at', '2026-11-14T10:04:00Z'),
+                             ('expires_at', '2026-11-14T10:20:01Z'),
+                             ('expires_at', '2026-11-14T10:31:00Z')):
+            doc = dict(self.doc, **{field: value})
+            with self.subTest(field=field, value=value):
+                self.reject(doc)
+        doc, expected = deepcopy(self.doc), deepcopy(self.expected)
+        doc['authority']['expires_at'] = expected['authority']['expires_at'] = '2026-11-14T10:10:00Z'
+        self.reject(doc, expected=expected)
+
+    def test_every_prerequisite_and_all_safety_flags_are_explicit(self):
+        for key in self.doc['checks']:
+            for value in (False, 'true', 1):
+                doc = deepcopy(self.doc)
+                doc['checks'][key]['result'] = value
+                with self.subTest(check=key, value=value):
+                    self.reject(doc)
+            doc = deepcopy(self.doc)
+            del doc['checks'][key]
+            self.reject(doc)
+            doc = deepcopy(self.doc)
+            doc['checks'][key]['evidence_sha256'] = ''
+            self.reject(doc)
+        for flag in ('host_control_verified', 'deploy_authorized', 'runtime_verified', 'real_orders_allowed'):
+            for value in (True, 'false', 0):
+                with self.subTest(flag=flag, value=value):
+                    self.reject(dict(self.doc, **{flag: value}))
+
+    def test_repeated_contract_validation_never_claims_live_authority_or_consumption(self):
+        expected_before = deepcopy(self.expected)
+        for unused in range(2):
+            got = self.verify()
+            self.assertIs(got['deploy_authorized'], False)
+            self.assertIs(got['host_control_verified'], False)
+            self.assertNotIn('nonce_consumed', got)
+        self.assertEqual(self.expected, expected_before)
+        changed_authority = deepcopy(self.expected)
+        changed_authority['authority']['admission_go_id'] = 10
+        self.reject(self.doc, expected=changed_authority)

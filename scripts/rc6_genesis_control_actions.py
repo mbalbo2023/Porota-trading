@@ -2,6 +2,7 @@
 
 import base64
 from dataclasses import asdict
+from datetime import datetime, timezone
 import hashlib
 import json
 import re
@@ -198,6 +199,7 @@ def _signed_request(env, operation, step, snapshot, package_sha, release):
 def checked_receipt(raw, *, step, request, authority):
     """Project only the correlated, canonical, public host receipt."""
     try:
+        _require(type(step) is str and step in ('INITIAL', 'POST_D_E', 'SEAL_ENV', 'PIN', 'INSTALL'))
         doc = r295._strict_json(raw, limit=4096)
         keys = {'schema', 'step', 'request_sha256', 'proposal_id', 'commitment'}
         if step in ('POST_D_E', 'SEAL_ENV'):
@@ -223,6 +225,97 @@ def checked_receipt(raw, *, step, request, authority):
                          doc['generation_commitment'] == authority['generation_commitment'])
     except (KeyError, ValueError, TypeError, r295.BootstrapHold, r305.PinHold):
         raise ControlHold('GENESIS_HOST_RECEIPT_UNVERIFIED') from None
+    return doc
+
+
+def checked_promotion_admission(raw, *, request, expected, now):
+    """Validate a proposed admission contract; do not authenticate or authorize it.
+
+    The caller must supply independently verified expectations, including the
+    request digest, live admission-purpose authority and R340 D/E material.
+    Matching a dict is not proof of its provenance. R321 artifact authentication,
+    live revocation checks, physical measurements and protected nonce consumption
+    remain outside this pure function. Repeated validation grants no authority.
+    This function is deliberately not wired into dispatch or Promote.
+    """
+    from scripts.rc6_genesis_control_authority import R321_PATH
+
+    try:
+        bound = {'request_sha256', 'source', 'producer', 'release', 'host', 'authority'}
+        flags = {'host_control_verified', 'deploy_authorized', 'runtime_verified', 'real_orders_allowed'}
+        _require(type(expected) is dict and set(expected) == bound and
+                 type(request) is bytes and 0 < len(request) <= 1024**2)
+        doc = r295._strict_json(raw, limit=4096)
+        _require(type(doc) is dict and set(doc) == bound | flags | {
+            'schema', 'step', 'observed_at', 'expires_at', 'checks'} and _canonical(doc) == raw)
+        _require(doc['schema'] == 'RC6_PROMOTION_ADMISSION_V1' and
+                 doc['step'] == 'PROMOTION_ADMISSION' and all(doc[key] is False for key in flags))
+        # Canonical comparison preserves scalar types: true must not equal 1.
+        _require(all(_canonical(doc[key]) == _canonical(expected[key]) for key in bound) and
+                 type(doc['request_sha256']) is str and doc['request_sha256'] == _sha(request))
+
+        source, producer, release, host, authority = (doc[key] for key in
+                                                       ('source', 'producer', 'release', 'host', 'authority'))
+        _require(type(source) is dict and set(source) == {
+            'repository', 'trusted_main_sha', 'candidate_sha', 'candidate_tree'} and
+            source['repository'] == r252.REPO and all(type(source[key]) is str and
+                r295._HEX40.fullmatch(source[key]) for key in ('trusted_main_sha', 'candidate_sha', 'candidate_tree')))
+        _require(type(producer) is dict and set(producer) == {
+            'workflow', 'ref', 'event', 'run_id', 'run_attempt'} and producer['workflow'] == R321_PATH and
+            producer['ref'] == 'refs/heads/main' and producer['event'] == 'workflow_dispatch' and
+            all(type(producer[key]) is str and _ID.fullmatch(producer[key]) for key in ('run_id', 'run_attempt')))
+
+        _require(type(release) is dict and set(release) == {'d', 'e', 'image_id', 'e_receipt_sha256'})
+        for role in ('d', 'e'):
+            record = release[role]
+            _require(type(record) is dict and set(record) == {
+                'run_id', 'run_attempt', 'artifact_id', 'artifact_digest'} and
+                all(type(record[key]) is int and 0 < record[key] < 10**20
+                    for key in ('run_id', 'run_attempt', 'artifact_id')) and
+                type(record['artifact_digest']) is str and
+                re.fullmatch(r'sha256:[0-9a-f]{64}', record['artifact_digest']))
+        _require(type(release['image_id']) is str and re.fullmatch(r'sha256:[0-9a-f]{64}', release['image_id']) and
+                 type(release['e_receipt_sha256']) is str and _HEX64.fullmatch(release['e_receipt_sha256']))
+
+        host_hashes = {'host_identity_sha256', 'custodian_sha256', 'root_manifest_sha256',
+                       'daemon_id_sha256', 'dashboard_env_sha256', 'observer_env_sha256'}
+        _require(type(host) is dict and set(host) == host_hashes | {'files'} and
+                 all(type(host[key]) is str and _HEX64.fullmatch(host[key]) for key in host_hashes))
+        # Reuse the existing manifest semantics and exact bytes/digest check.
+        # This verifies consistency with a pinned manifest, not files on a host.
+        r305.validate_root_manifest(_canonical({
+            'schema': 'RC6_ROOT_INSTALL_MANIFEST_V1', 'candidate_sha': source['candidate_sha'],
+            'candidate_tree': source['candidate_tree'], 'paper_mode': 'PRODUCTION_PAPER',
+            'real_orders_allowed': False, 'files': host['files']}),
+            expected_digest=host['root_manifest_sha256'])
+
+        _require(type(authority) is dict and set(authority) == {
+            'purpose', 'lease_id', 'admission_go_id', 'nonce', 'proposal_id', 'commitment',
+            'generation_commitment', 'issued_at', 'expires_at', 'approval_expires_at'} and
+            authority['purpose'] == 'PROMOTION_ADMISSION' and
+            all(type(authority[key]) is int and 0 < authority[key] < 10**20
+                for key in ('lease_id', 'admission_go_id')) and
+            all(type(authority[key]) is str and _HEX32.fullmatch(authority[key])
+                for key in ('nonce', 'proposal_id')) and
+            all(type(authority[key]) is str and _HEX64.fullmatch(authority[key])
+                for key in ('commitment', 'generation_commitment')))
+        _require(type(now) is datetime and now.tzinfo is not None and now.utcoffset() is not None)
+        issued, observed, expiry, authority_expiry, approval_expiry = (
+            r295._utc_timestamp(value) for value in (authority['issued_at'], doc['observed_at'],
+                doc['expires_at'], authority['expires_at'], authority['approval_expires_at']))
+        _require(issued <= observed <= now.astimezone(timezone.utc) < expiry <=
+                 min(authority_expiry, approval_expiry))
+
+        checks = doc['checks']
+        _require(type(checks) is dict and set(checks) == {
+            'protected_files', 'approval', 'env_generation', 'daemon', 'control_prerequisites'})
+        for result in checks.values():
+            _require(type(result) is dict and set(result) == {'result', 'evidence_sha256'} and
+                     result['result'] is True and type(result['evidence_sha256']) is str and
+                     _HEX64.fullmatch(result['evidence_sha256']))
+    except (ControlHold, KeyError, TypeError, ValueError, OverflowError, RecursionError,
+            r295.BootstrapHold, r305.PinHold):
+        raise ControlHold('PROMOTION_ADMISSION_CONTRACT_UNVERIFIED') from None
     return doc
 
 
