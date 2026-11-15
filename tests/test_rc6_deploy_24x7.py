@@ -166,10 +166,22 @@ class TestRootlessTechnicalAdmissionOffline(unittest.TestCase):
             self.assertEqual(database, 'file:/app/data/paper_v17/observer_v17.db?mode=ro')
             self.assertIs(kwargs.get('uri'), True)
             return connect(self.db.as_uri()+'?mode=ro', **kwargs)
+        def controller_health(path):
+            self.assertEqual(path, '/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+            # This calendar test supplies the synthetic container's observation.
+            # The real file/PID reader is exercised in test_porota_runtime_controller.
+            return {'schema':'rc6.runtime-child-health.v1','source_sha':'a'*40,
+                    'candidate_tree_sha':'b'*40,'recorded_at':when.isoformat(),
+                    'roles_match':True,'children':{
+                        name:{'state':'RUNNING','pid':100+index,
+                              'started_at':when.isoformat(),'alive':True}
+                        for index,name in enumerate(host.CONTROLLER_CHILDREN)}}
         def docker_json(*args):
             self.assertEqual(args, ('container','exec','1'*64,'python','-c',host.RUNTIME_PROBE))
             out = io.StringIO()
-            with patch.object(sqlite3,'connect',side_effect=runtime_connect), contextlib.redirect_stdout(out):
+            with patch.object(sqlite3,'connect',side_effect=runtime_connect), \
+                 patch.object(host,'read_controller_health',side_effect=controller_health), \
+                 contextlib.redirect_stdout(out):
                 # Execute the same read-only SQL and real-order route guard used
                 # inside the deployed image; only Docker/filesystem I/O is local.
                 exec(compile(host.RUNTIME_PROBE,'rootless-runtime-probe','exec'), {})
@@ -180,7 +192,8 @@ class TestRootlessTechnicalAdmissionOffline(unittest.TestCase):
              patch.object(manager,'check_role',return_value={
                  'State':{'Running':True,'Health':{'Status':'healthy'}}}), \
              patch.object(host,'datetime',IncidentClock):
-            return manager.postflight({'roles':{'observer':'1'*64}},
+            return manager.postflight({'source_sha':'a'*40,'source_tree':'b'*40,
+                                       'roles':{'observer':'1'*64}},
                 when-timedelta(seconds=1),budget=10,
                 sleep=lambda seconds:self.fail('A fresh closed-session runtime must be ready'))
 
