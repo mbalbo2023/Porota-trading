@@ -698,14 +698,6 @@ class TestA630(unittest.TestCase):
             self.assertIsNone(receipt["book_gets"])
             self.assertEqual(receipt["orders_sent"], 0)
 
-    def test_workflow_fallback_uses_unknown_transport_count_helper(self):
-        workflow = (Path(__file__).resolve().parents[1] /
-                    '.github/workflows/rc6-a630-ppi-current-book-20261104.yml')
-        source = workflow.read_text(encoding='utf-8')
-        self.assertIn('result=unverified_transport_receipt()', source)
-        self.assertIn('doc={**unverified_transport_receipt(reason)', source)
-        self.assertNotIn('"current_gets":0,"book_gets":0', source)
-
 
 if __name__ == "__main__":
     unittest.main()

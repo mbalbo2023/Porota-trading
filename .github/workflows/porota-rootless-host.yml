@@ -25,10 +25,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Checkout the exact control revision
+      - name: Resolve the reviewed source for this operation
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source_revision="$GITHUB_SHA"
+          if [[ "$OPERATION" == prepare ]]; then
+            source_revision="$(gh api repos/mbalbo2023/Porota-trading/git/ref/heads/deploy/rc6-pr69-isolated-20260915 --jq '.object.sha')"
+          fi
+          [[ "$source_revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "source_sha=$source_revision" >> "$GITHUB_OUTPUT"
+          echo "Operation: $OPERATION; source: $source_revision" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout the exact operation source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.source.outputs.source_sha }}
           persist-credentials: false
 
       - name: Execute the versioned host operation

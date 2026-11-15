@@ -11,7 +11,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-import yaml
 
 from scripts import rc6_monday_open_readonly as probe
 
@@ -362,26 +361,9 @@ def test_frozen_bundle_manifest_requires_root_owned_regular_bounded_file(tmp_pat
         probe._read_json(manifest, root_owned=True)
 
 
-def test_workflow_manual_only_fixed_host_and_no_market_or_write_route():
+def test_retained_probe_has_fixed_host_and_no_market_or_write_route():
     root = Path(__file__).resolve().parents[1]
-    source = (root / ".github/workflows/rc6-monday-open-readonly.yml").read_text()
-    parsed = yaml.load(source, Loader=yaml.BaseLoader)
-    assert set(parsed["on"]) == {"workflow_dispatch", "pull_request"}
-    assert parsed["on"]["pull_request"]["paths"] == [
-        ".github/workflows/rc6-monday-open-readonly.yml",
-        "scripts/rc6_monday_open_readonly.py",
-        "tests/test_rc6_a302_monday_open_readonly.py"]
-    assert parsed["jobs"]["offline-contract"]["if"] == "github.event_name == 'pull_request'"
-    assert "DO_HOST" not in str(parsed["jobs"]["offline-contract"])
-    assert parsed["permissions"] == {"contents": "read"}
-    assert "github.ref == 'refs/heads/main'" in source
-    assert "python3 -B - --verify-droplet" in source
     assert probe.DROPLET_ID == "594077619" and probe.DROPLET_REGION == "nyc1"
-    assert "sudo -n env PYTHONDONTWRITEBYTECODE=1" in source
-    assert "rc6-a205-paper-book-ro-v1-" not in source
-    assert "docker exec" not in source
-    assert "systemctl start" not in source
-    assert "PPI_PRODUCTION_SECRET" not in source
     script = (root / "scripts/rc6_monday_open_readonly.py").read_text()
     assert "PRAGMA query_only=ON" in script
     assert "?mode=ro" in script

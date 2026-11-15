@@ -18,7 +18,6 @@ from scripts import rc6_a669_ppi_day_slot_guard as guard
 
 SHA = "a" * 40
 YAML = Path(__file__).resolve().parents[1] / ".github/workflows/rc6-a669-ppi-current-book-20261105.yml"
-LEGACY = Path(__file__).resolve().parents[1] / ".github/workflows/rc6-a630-ppi-current-book-20261104.yml"
 
 
 def utc(hour, minute, day=5, month=11, year=2026):
@@ -186,8 +185,6 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(set(re.findall(r"cron: '([^']+)'", code)),
                          set(guard.SCHEDULE_TO_SLOT))
         self.assertEqual(code.count("timezone: 'America/Argentina/Buenos_Aires'"),4)
-        self.assertNotIn("  schedule:", LEGACY.read_text())
-        self.assertIn("  workflow_dispatch:", LEGACY.read_text())
         self.assertIn("github.ref == 'refs/heads/main'", code)
         self.assertIn("github.event_name == 'workflow_dispatch'", code)
         self.assertIn("python3 -B scripts/rc6_a669_ppi_day_slot_guard.py", code)

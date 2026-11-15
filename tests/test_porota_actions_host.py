@@ -97,6 +97,28 @@ class HostTransportTests(unittest.TestCase):
                     host.execute('prepare', repo)
         self.assertFalse(any(host.STAGE_REMOVE in command for command in calls))
 
+    def test_preparation_failure_preserves_its_physical_reason(self):
+        observed = {'state': 'BLOQUEADO', 'failure_signature': 'ROOTLESS_PACKAGES_REQUIRED'}
+        def remote(_connection, command, **_kwargs):
+            if host.STAGE_CREATE in command:
+                return subprocess.CompletedProcess(command, 0,
+                    b'/home/porotaadmin/.local/state/porota-rc6/stage.A12bc\n', b'')
+            if host.STAGE_REMOVE in command:
+                return subprocess.CompletedProcess(command, 0, b'', b'')
+            return subprocess.CompletedProcess(command, 79, json.dumps(observed).encode(), b'')
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            (repo/'scripts').mkdir()
+            for name in ('porota_rootless_setup.py', 'porota_rootless_host.py'):
+                (repo/'scripts'/name).write_text('# fixture\n')
+            with patch.object(host, 'connection', return_value=nullcontext((['ssh'], ['scp'], 'user@host'))), \
+                 patch.object(host, 'ssh_run', side_effect=remote), \
+                 patch.object(host.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, b'', b'')):
+                with self.assertRaises(host.HostFailure) as caught:
+                    host.execute('prepare', repo)
+        self.assertEqual(caught.exception.receipt['failure_signature'], 'ROOTLESS_PACKAGES_REQUIRED')
+        self.assertEqual(caught.exception.receipt['transfer_cleanup'], 'COMPLETE')
+
 
 if __name__ == '__main__':
     unittest.main()
