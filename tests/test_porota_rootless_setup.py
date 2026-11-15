@@ -8,6 +8,7 @@ import unittest
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from scripts import porota_rootless_host as host
 
@@ -129,6 +130,163 @@ class InspectTests(unittest.TestCase):
         self.assertEqual(result["status"], "OBSERVED")
         self.assertFalse(result["target_exists"])
         self.assertFalse(missing.parent.exists())
+
+
+class PrivateImageInspectTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.socket = Path("/run/user/1000/porota-rc6-docker.sock")
+        self.config_id, self.manifest_id = "sha256:" + "c" * 64, "sha256:" + "d" * 64
+        self.info = {"ID": "private-daemon", "SecurityOptions": ["name=rootless"],
+            "DockerRootDir": str(self.home / ".local/share/porota-rc6/docker"),
+            "ServerVersion": "29.1.0", "KernelVersion": "6.8.0-90-generic", "Driver": "overlayfs",
+            "DriverStatus": [["driver-type", "io.containerd.snapshotter.v1"],
+                             ["Backing Filesystem", "extfs"], ["secret", "must-not-leak"]]}
+        self.calls = []
+        self.listed = self.manifest_id
+        self.real_fstat = os.fstat
+        self.image = {"Id": self.config_id, "Os": "linux", "Architecture": "amd64",
+            "Descriptor": {"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": self.manifest_id, "size": 3141,
+                "platform": {"os": "linux", "architecture": "amd64", "private": "must-not-leak"},
+                "annotations": {"secret": "must-not-leak"}},
+            "Config": {"Env": ["POROTA_BUILD_SHA=" + "a" * 40,
+                "POROTA_CANDIDATE_TREE_SHA=" + "b" * 40, "SECRET=must-not-leak"]}}
+        for obj, name, value in ((setup.os, "getuid", lambda: 1000),
+                (setup.pwd, "getpwuid", lambda _: SimpleNamespace(pw_dir=str(self.home), pw_name="fixture", pw_uid=1000)),
+                (setup, "_metadata", lambda _: {"present": True, "uid": 1000, "socket": True, "symlink": False})):
+            mocked = patch.object(obj, name, value)
+            mocked.start()
+            self.addCleanup(mocked.stop)
+
+    def run_command(self, command, **kwargs):
+        self.calls.append(command)
+        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        if command[0] == "/usr/bin/stat":
+            self.assertEqual(command, ("/usr/bin/stat", "--file-system", "--format=%T",
+                                      str(self.home / ".local/share/porota-rc6/docker")))
+            return subprocess.CompletedProcess(command, 0, "ext2/ext3\n", "must-not-leak")
+        self.assertEqual(command[:3], (setup.DOCKER, "--host", "unix://" + str(self.socket)))
+        args = command[3:]
+        if args == ("image", "ls", "--all", "--quiet", "--no-trunc"):
+            return subprocess.CompletedProcess(command, 0, self.listed, "must-not-leak")
+        if args == ("container", "ls", "--all", "--quiet", "--no-trunc"):
+            return subprocess.CompletedProcess(command, 0, "1" * 64, "must-not-leak")
+        if len(args) == 3 and args[:2] == ("image", "inspect"):
+            self.assertRegex(args[-1], r"^sha256:[0-9a-f]{64}$")
+            if args[-1] == self.config_id:
+                return subprocess.CompletedProcess(command, 1, "", "must-not-leak")
+            return subprocess.CompletedProcess(command, 0, json.dumps([self.image]), "must-not-leak")
+        self.fail("Unexpected or mutating Docker operation: " + repr(args))
+
+    def inspect(self, info=None):
+        inspector = getattr(setup, "private_image_inventory", None)
+        self.assertTrue(callable(inspector), "Private image diagnostics are missing")
+        return inspector(self.home, self.socket, self.info if info is None else info, run=self.run_command)
+
+    def test_image_ids_descriptor_and_build_identity_remain_distinct_without_secrets(self):
+        result = self.inspect()
+        self.assertEqual(result["status"], "OBSERVED")
+        self.assertEqual(result["ServerVersion"], "29.1.0")
+        self.assertEqual(result["KernelVersion"], "6.8.0-90-generic")
+        self.assertEqual(result["Driver"], "overlayfs")
+        self.assertEqual(result.get("backing_filesystem"), "ext2/ext3")
+        self.assertEqual(result["DriverStatus"], self.info["DriverStatus"][:2])
+        image = result["images"][0]
+        self.assertEqual(image["requested_id"], self.manifest_id)
+        self.assertEqual(image["Id"], self.config_id)
+        self.assertEqual(image["Descriptor"]["digest"], self.manifest_id)
+        self.assertEqual(image["platform"], {"os": "linux", "architecture": "amd64"})
+        self.assertEqual(image["source_sha"], "a" * 40)
+        self.assertEqual(image["source_tree"], "b" * 40)
+        self.assertEqual(result["containers"], {"status": "OBSERVED", "count": 1, "ids": ["1" * 64], "truncated": False})
+        self.assertNotIn("must-not-leak", json.dumps(result))
+        self.assertNotIn("Env", json.dumps(result))
+
+    def test_foreign_or_rootful_daemon_cannot_trigger_image_or_container_queries(self):
+        for change in ({"SecurityOptions": []}, {"DockerRootDir": "/var/lib/docker"}):
+            with self.subTest(change=change):
+                self.assertEqual(self.inspect(dict(self.info, **change))["status"], "NO_VERIFICADO")
+        self.assertEqual(self.calls, [])
+
+    def test_existing_inspect_operation_includes_the_private_inventory(self):
+        exists = Path.exists
+        def transport(command, **kwargs):
+            if command[:3] == (setup.DOCKER, "--host", "unix://" + str(self.socket)):
+                if command[3:] == ("info", "--format", "{{json .}}"):
+                    return subprocess.CompletedProcess(command, 0, json.dumps(self.info), "")
+                return self.run_command(command, **kwargs)
+            if command[0] == "/usr/bin/stat":
+                return self.run_command(command, **kwargs)
+            return subprocess.CompletedProcess(command, 1, "", "must-not-leak")
+        with patch.object(Path, "exists", lambda path: path == self.socket or exists(path)):
+            result = setup.inspect_host(self.home, run=transport)
+        self.assertEqual(result["own_daemon"]["images"][0]["requested_id"], self.manifest_id)
+        self.assertEqual(result["host_mutations"], 0)
+        self.assertIn("current_metadata", result)
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_inventory_is_bounded_and_invalid_ids_are_never_used_as_arguments(self):
+        self.listed = "\n".join("sha256:" + format(index, "064x") for index in range(12))
+        result = self.inspect()
+        self.assertEqual(result["image_count"], 12)
+        self.assertTrue(result["images_truncated"])
+        self.assertEqual(len(result["images"]), 8)
+        self.assertEqual(sum(command[3:5] == ("image", "inspect") for command in self.calls), 8)
+        self.calls.clear()
+        self.listed = "--arbitrary-command"
+        self.assertEqual(self.inspect()["status"], "NO_VERIFICADO")
+        self.assertFalse(any(command[3:5] == ("image", "inspect") for command in self.calls))
+
+    def test_invalid_or_duplicate_build_fields_are_not_reported_as_identity(self):
+        self.image["Config"]["Env"] = ["POROTA_BUILD_SHA=" + "a" * 40,
+            "POROTA_BUILD_SHA=" + "b" * 40, "POROTA_CANDIDATE_TREE_SHA=must-not-leak"]
+        image = self.inspect()["images"][0]
+        self.assertIsNone(image["source_sha"])
+        self.assertIsNone(image["source_tree"])
+        self.assertNotIn("must-not-leak", json.dumps(image))
+
+    def release_file(self):
+        path = self.home / ".local/state/porota-rc6/releases" / ("a" * 40) / "release.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"schema": "porota.release.v1", "source_sha": "a" * 40,
+            "source_tree": "b" * 40, "image_id": self.config_id, "private": "must-not-leak"}))
+        path.chmod(0o600)
+        return path
+
+    def owned_stat(self, fd):
+        value = self.real_fstat(fd)
+        return SimpleNamespace(st_mode=value.st_mode, st_uid=1000, st_nlink=value.st_nlink, st_size=value.st_size)
+
+    def test_persisted_release_supplies_exact_config_lookup_without_hardcoded_ids(self):
+        self.release_file()
+        with patch.object(setup.os, "fstat", side_effect=self.owned_stat):
+            result = self.inspect()
+        image = result["images"][0]
+        self.assertEqual(image.get("release", {}).get("image_id"), self.config_id)
+        self.assertEqual(image["release"]["source_tree"], "b" * 40)
+        self.assertEqual(image["release_image_lookup"], {
+            "requested_id": self.config_id, "status": "NO_VERIFICADO", "returncode": 1})
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_release_alias_or_source_mismatch_cannot_supply_an_image_query(self):
+        path = self.release_file()
+        original = path.read_bytes()
+        path.write_text(json.dumps({"schema": "porota.release.v1", "source_sha": "f" * 40,
+            "source_tree": "b" * 40, "image_id": self.config_id}))
+        with patch.object(setup.os, "fstat", side_effect=self.owned_stat):
+            self.inspect()
+        self.assertFalse(any(command[-1] == self.config_id for command in self.calls))
+        path.unlink()
+        target = self.home / "private.json"
+        target.write_bytes(original)
+        path.symlink_to(target)
+        self.calls.clear()
+        with patch.object(setup.os, "fstat", side_effect=self.owned_stat):
+            self.inspect()
+        self.assertFalse(any(command[-1] == self.config_id for command in self.calls))
 
 
 class PrepareTests(unittest.TestCase):
