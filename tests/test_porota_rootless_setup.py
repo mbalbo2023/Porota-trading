@@ -6,7 +6,8 @@ import subprocess
 import tempfile
 import unittest
 import sys
-from contextlib import redirect_stdout
+import types
+from contextlib import redirect_stdout, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 from scripts import porota_rootless_host as host
@@ -155,6 +156,14 @@ class PrepareTests(unittest.TestCase):
         self.home = Path(self.temp.name)
         self.identity = host.Identity(os.getuid(), os.getgid(), "porotaadmin", self.home)
         self.commands = []
+        self.info = {"ID": "dedicated-daemon", "SecurityOptions": ["name=rootless"], "CgroupVersion": "2",
+                     "CgroupDriver": "systemd", "DockerRootDir": str(self.identity.store),
+                     "Driver": "overlay2", "DriverStatus": [["Backing Filesystem", "extfs"]]}
+        self.images, self.containers = {}, []
+        self.config_path = self.home / ".config/porota-rc6/daemon.json"
+        self.unit_path = self.home / ".config/systemd/user" / setup.SERVICE
+        self.restart_failure = False
+        self.daemon_active = True
 
     def commands_ok(self, command, **kwargs):
         self.commands.append(command)
@@ -163,7 +172,206 @@ class PrepareTests(unittest.TestCase):
             stdout = "yes"
         if "compose" in command and "version" in command:
             stdout = "2.35.1"
+        if command[0] == setup.DOCKER and command[3:4] == ("info",):
+            stdout = json.dumps(self.info)
+        if command[0] == setup.DOCKER and command[3:5] == ("container", "ls"):
+            stdout = "\n".join(self.containers)
+        if command[0] == setup.DOCKER and command[3:5] == ("image", "ls"):
+            stdout = "\n".join(self.images)
+        if command[0] == setup.DOCKER and command[3:5] == ("image", "inspect"):
+            stdout = json.dumps([self.images[command[-1]]])
+        if command[0] == setup.DOCKER and command[3:5] == ("image", "rm"):
+            del self.images[command[-1]]
+        if command[:3] == (setup.SYSTEMCTL, "--user", "show"):
+            stdout = f"FragmentPath={self.unit_path}\nDropInPaths=\n"
+        if command[:3] == (setup.SYSTEMCTL, "--user", "restart"):
+            if self.restart_failure:
+                self.daemon_active = False
+                return subprocess.CompletedProcess(command, 1, "", "private failure")
+            self.daemon_active = True
+            self.info.update(Driver="overlay2", DriverStatus=[["Backing Filesystem", "extfs"]])
+        if command[:4] == (setup.SYSTEMCTL, "--user", "enable", "--now") and not self.daemon_active:
+            self.daemon_active = True
+            self.info.update(Driver="overlay2", DriverStatus=[["Backing Filesystem", "extfs"]])
         return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    @contextmanager
+    def preparation(self):
+        original_read = host.read_regular
+        def read(path, *args):
+            if str(path).endswith("cgroup.controllers"):
+                return b"cpu memory pids"
+            return original_read(path, *args)
+        def boundary(_manager, **kwargs):
+            if not self.daemon_active:
+                raise host.Hold("ROOTLESS_SOCKET_REQUIRED")
+            return host.validate_daemon(self.info, self.identity, **kwargs)
+        with patch.object(setup.shutil, "which", side_effect=lambda name, **kwargs: "/usr/bin/" + name), \
+             patch.object(setup, "subids_available", return_value=True), \
+             patch.object(host, "read_regular", side_effect=read), \
+             patch.object(host.Host, "boundary", new=boundary), \
+             patch.object(setup.shutil, "disk_usage", side_effect=lambda path:
+                          types.SimpleNamespace(free=1000 if self.images else 5000)):
+            yield
+
+    def prior_setup(self, *, new_config=False):
+        runtime = f"/run/user/{self.identity.uid}/porota-rc6"
+        config = {"hosts": [f"unix://{self.identity.socket}"], "data-root": str(self.identity.store),
+                  "exec-root": runtime + "/exec", "pidfile": runtime + "/dockerd.pid",
+                  "exec-opts": ["native.cgroupdriver=systemd"], "live-restore": False}
+        if new_config:
+            config.update(features={"containerd-snapshotter": False}, **{"storage-driver": "overlay2"})
+        self.config_path.parent.mkdir(parents=True, mode=0o700)
+        self.config_path.write_text(json.dumps(config, sort_keys=True) + "\n")
+        self.config_path.chmod(0o600)
+        self.unit_path.parent.mkdir(parents=True, mode=0o700)
+        self.unit_path.write_bytes(setup.daemon_configuration(self.identity, "/usr/bin/dockerd-rootless.sh")[2])
+        self.info.update(Driver="overlayfs", DriverStatus=[["driver-type", "io.containerd.snapshotter.v1"]])
+
+    def own_image(self):
+        source, tree, config_id, target = "a" * 40, "b" * 40, "sha256:" + "c" * 64, "sha256:" + "d" * 64
+        self.images[target] = {"Id": target, "Config": {
+            "Env": [f"POROTA_BUILD_SHA={source}", f"POROTA_CANDIDATE_TREE_SHA={tree}", "PRIVATE_VALUE=never-publish"],
+            "Labels": {"porota.commit": source, "porota.predeploy": "v2"}}}
+        release = {"schema": "porota.release.v1", "source_sha": source, "source_tree": tree, "image_id": config_id,
+                   "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION",
+                   "real_order_capability": "BLOCKED", "real_orders_sent_required": 0}
+        host.private_dir(self.identity.state)
+        host.private_dir(self.identity.state / "releases")
+        host.private_dir(self.identity.state / "attempts")
+        # Host.deploy's mkdir(parents=True) keeps this intermediate directory
+        # owned and non-writable by others; only the attempt leaf is private.
+        (self.identity.state / "attempts").chmod(0o755)
+        directory = self.identity.state / "releases" / source
+        directory.mkdir(parents=True, mode=0o700)
+        raw = (json.dumps(release, sort_keys=True) + "\n").encode()
+        host.atomic_write(directory / "release.json", raw)
+        journal = self.identity.state / "attempts" / "123-1" / "receipt.json"
+        journal.parent.mkdir(parents=True, mode=0o700)
+        host.write_json(journal, {"schema": "porota.rootless.deploy.v1", "state": "NO_VERIFICADO",
+            "phase": "LOAD", "source_sha": source, "source_tree": tree, "image_id": config_id,
+            "roles": {}, "transition_started": False, "release_manifest_sha256": hashlib.sha256(raw).hexdigest()})
+        return target, directory / "release.json"
+
+    def test_upgrade_removes_only_verified_image_before_restart_and_is_idempotent(self):
+        self.prior_setup()
+        target, _ = self.own_image()
+        with self.preparation():
+            result = setup.prepare(self.identity, run=self.commands_ok)
+            setup.prepare(self.identity, run=self.commands_ok)
+        config = json.loads(self.config_path.read_bytes())
+        self.assertEqual(config["features"], {"containerd-snapshotter": False})
+        self.assertEqual(config["storage-driver"], "overlay2")
+        restarts = [c for c in self.commands if "restart" in c]
+        self.assertEqual(restarts, [(setup.SYSTEMCTL, "--user", "restart", setup.SERVICE)])
+        removal = next(c for c in self.commands if c[3:5] == ("image", "rm"))
+        self.assertEqual(removal[-1], target)
+        self.assertLess(self.commands.index(removal), self.commands.index(restarts[0]))
+        self.assertEqual(result["storage_transition"]["reclaimed_bytes"], 4000)
+        self.assertEqual(result["storage_transition"]["state"], "COMPLETE")
+        self.assertEqual(result["image_store"], {"driver": "overlay2", "containerd_snapshotter": False})
+        self.assertNotIn("never-publish", json.dumps(result))
+        self.assertFalse(self.images)
+        self.assertFalse(any("prune" in c or "--force" in c or "docker.service" in c for c in self.commands))
+
+    def test_failed_restart_leaving_daemon_stopped_resumes_with_idempotent_start(self):
+        self.prior_setup()
+        self.own_image()
+        self.restart_failure = True
+        with self.preparation():
+            with self.assertRaises(host.Hold):
+                setup.prepare(self.identity, run=self.commands_ok)
+            self.assertEqual(json.loads(self.config_path.read_bytes())["storage-driver"], "overlay2")
+            self.restart_failure = False
+            result = setup.prepare(self.identity, run=self.commands_ok)
+        self.assertEqual(result["state"], "PREPARADO")
+        self.assertEqual(len([c for c in self.commands if c[3:5] == ("image", "rm")]), 1)
+        self.assertEqual(len([c for c in self.commands if "restart" in c]), 1)
+
+    def test_new_config_with_old_daemon_converges_after_interrupted_config_write(self):
+        self.prior_setup(new_config=True)
+        with self.preparation():
+            result = setup.prepare(self.identity, run=self.commands_ok)
+        self.assertEqual(result["state"], "PREPARADO")
+        self.assertEqual(len([c for c in self.commands if "restart" in c]), 1)
+
+    def test_unknown_config_or_unit_is_not_overwritten_or_cleaned(self):
+        self.prior_setup()
+        self.own_image()
+        self.config_path.write_text(self.config_path.read_text() + " ")
+        before = self.config_path.read_bytes()
+        with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_SETUP_DRIFT"):
+            setup.prepare(self.identity, run=self.commands_ok)
+        self.assertEqual(self.config_path.read_bytes(), before)
+        self.assertTrue(self.images)
+        self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
+
+    def test_unknown_unit_or_missing_existing_config_is_not_repaired(self):
+        self.prior_setup()
+        self.own_image()
+        original = self.unit_path.read_bytes()
+        for damage in ("unit", "missing_config"):
+            with self.subTest(damage=damage):
+                if damage == "unit":
+                    self.unit_path.write_bytes(original + b"# unknown change\n")
+                else:
+                    self.unit_path.write_bytes(original)
+                    self.config_path.unlink()
+                with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_SETUP_DRIFT"):
+                    setup.prepare(self.identity, run=self.commands_ok)
+                self.assertTrue(self.images)
+                self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
+
+    def test_existing_current_or_any_container_forbids_backend_transition(self):
+        self.prior_setup()
+        self.own_image()
+        for existing_current in (False, True):
+            with self.subTest(existing_current=existing_current):
+                self.commands.clear()
+                self.containers = [] if existing_current else ["f" * 64]
+                if existing_current:
+                    host.write_json(self.identity.state / "current.json", {"state": "VALIDADO_RUNTIME"})
+                with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_TRANSITION_NOT_EMPTY"):
+                    setup.prepare(self.identity, run=self.commands_ok)
+                self.assertTrue(self.images)
+                self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
+
+    def test_image_with_wrong_tree_or_release_custody_is_never_removed(self):
+        self.prior_setup()
+        target, release_path = self.own_image()
+        for damage in ("labels", "tree", "public", "changed"):
+            with self.subTest(damage=damage):
+                self.commands.clear()
+                self.images[target]["Config"]["Labels"]["porota.predeploy"] = "other" if damage == "labels" else "v2"
+                if damage == "tree":
+                    self.images[target]["Config"]["Env"][1] = "POROTA_CANDIDATE_TREE_SHA=" + "e" * 40
+                else:
+                    self.images[target]["Config"]["Env"][1] = "POROTA_CANDIDATE_TREE_SHA=" + "b" * 40
+                    release_path.chmod(0o644 if damage == "public" else 0o600)
+                    if damage == "changed":
+                        release_path.write_bytes(release_path.read_bytes() + b" ")
+                with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_IMAGE_PROVENANCE"):
+                    setup.prepare(self.identity, run=self.commands_ok)
+                self.assertTrue(self.images)
+                self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
+
+    def test_journal_must_explicitly_prove_transition_did_not_start(self):
+        self.prior_setup()
+        self.own_image()
+        journal = self.identity.state / "attempts/123-1/receipt.json"
+        original = json.loads(journal.read_bytes())
+        for state in ("missing", True):
+            with self.subTest(state=state):
+                value = dict(original)
+                if state == "missing":
+                    value.pop("transition_started")
+                else:
+                    value["transition_started"] = state
+                host.write_json(journal, value)
+                with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_IMAGE_PROVENANCE"):
+                    setup.prepare(self.identity, run=self.commands_ok)
+                self.assertTrue(self.images)
+                self.assertFalse(any("restart" in c or "rm" in c for c in self.commands))
 
     def test_prepare_never_installs_packages_when_toolchain_is_missing(self):
         with patch.object(setup.shutil, "which", return_value=None):
