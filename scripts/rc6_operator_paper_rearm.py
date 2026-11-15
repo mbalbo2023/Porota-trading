@@ -3,9 +3,10 @@
 Operator ACTIVE/PAUSED intent belongs to the operator, not to a release or a
 timer. The intent persists until an explicit, owner-authenticated change;
 each admission still independently requires the *currently installed* exact
-validated PAPER/0 release and its fresh T-10 gate. The root-owned receipt is
-outside writable /app/data and read-only inside the observer. This module
-never places an order or enables a real-order route.
+validated PAPER/0 release and its fresh T-10 gate. Host authority stays outside
+writable DATA, under legacy root custody or the private SSH account in rootless
+mode. The observer receives a read-only mount. This module never places an
+order or enables a real-order route.
 """
 from __future__ import annotations
 
@@ -125,6 +126,38 @@ def _root_owned_receipt(directory, *, with_raw=False):
         os.close(fd)
 
 
+def rootless_host_operator_directory(directory=None):
+    """Resolve only the actual SSH account's private host authority, read-only."""
+    if os.environ.get("POROTA_RUNTIME_BACKEND") != "ROOTLESS":
+        return None
+    from scripts.porota_rootless_host import Identity, Hold, no_alias
+    from scripts.porota_operator_intent import private_directory
+    try:
+        identity = Identity.current()
+        expected = identity.operator
+        if directory is not None and Path(directory) != expected:
+            raise ValueError("OPERATOR_ROOTLESS_CANONICAL_PATH_REQUIRED")
+        for path in (identity.home, identity.home / ".config", expected.parent):
+            meta = no_alias(path).stat()
+            if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != identity.uid
+                    or meta.st_mode & 0o022):
+                raise ValueError("OPERATOR_ROOTLESS_PARENT_UNTRUSTED")
+        return private_directory(expected, create=False)
+    except Hold as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _operator_receipt(directory, context, *, with_raw=False, legacy_reader=_root_owned_receipt):
+    private = rootless_host_operator_directory(directory) if context == "host" else None
+    if private is not None:
+        from scripts.porota_operator_intent import private_read
+        raw = private_read(private / RECEIPT_NAME)
+        receipt = _strict_object(raw)
+        return (receipt, raw) if with_raw else receipt
+    directory = directory or (OPERATOR_DIR_HOST if context == "host" else OPERATOR_DIR_RUNTIME)
+    return legacy_reader(directory, with_raw=True) if with_raw else legacy_reader(directory)
+
+
 def _timestamp(value):
     if type(value) is not str or len(value) > 40:
         raise ValueError("OPERATOR_REARM_TIMESTAMP_INVALID")
@@ -185,16 +218,14 @@ def _validated_intent(receipt, at):
 def trusted_operator_pause(*, now, context="host", directory=None):
     """Public, fail-closed provenance of an explicit V2 owner PAUSE.
 
-    Uses the SAME root-owned, no-follow read for JSON and its exact byte hash;
+    Uses the SAME trusted, no-follow read for JSON and its exact byte hash;
     never trusts an old A176 pause as proof of a new operator action. Safe for
     preopen reporting even when current release and marker are degraded.
     """
     if context not in {"host", "runtime"} or not isinstance(now, datetime) or now.tzinfo is None:
         return None
-    if directory is None:
-        directory = OPERATOR_DIR_HOST if context == "host" else OPERATOR_DIR_RUNTIME
     try:
-        receipt, raw = _root_owned_receipt(directory, with_raw=True)
+        receipt, raw = _operator_receipt(directory, context, with_raw=True)
         if _validated_intent(receipt, now.astimezone(TZ)) != PAUSE_STATUS:
             return None
         return {
@@ -213,6 +244,16 @@ def trusted_operator_pause(*, now, context="host", directory=None):
 def _validated_paper_release(*, marker_path, frozen_path, context,
                              candidate_sha=None, candidate_tree_sha=None):
     """Current release proof, independently re-checked for every PAPER use."""
+    if context == "host" and os.environ.get("POROTA_RUNTIME_BACKEND") == "ROOTLESS":
+        from scripts.porota_rootless_host import Identity, Hold, read_release_state
+        try:
+            current, _ = read_release_state(Identity.current())
+        except Hold as exc:
+            raise ValueError(str(exc)) from exc
+        if (candidate_sha not in {None, current["source_sha"]} or
+                candidate_tree_sha not in {None, current["source_tree"]}):
+            raise ValueError("OPERATOR_REARM_HOST_CANDIDATE_MISMATCH")
+        return current["source_sha"], current["source_tree"], current["image_id"]
     marker = _strict_object(_read_regular(marker_path, 65536))
     frozen = _strict_object(_read_regular(frozen_path, 16384))
     source_sha = frozen.get("candidate_sha")
@@ -248,8 +289,9 @@ def evaluate_rearm(*, now, context="runtime", directory=None, marker_path=None,
     """Verify persistent operator intent AND current validated PAPER release.
 
     No fallback from observer's environment identity to mutable DATA is allowed.
-    Host preopen uses the frozen candidate tree and deployed validated marker;
-    the observer also independently pins the image's SHA/tree via Docker ENV.
+    Rootless host preopen uses the private release manifest; legacy host and
+    runtime keep the frozen tree and validated marker. The observer also pins
+    the image's SHA/tree independently through Docker ENV.
     Returns (authorized, reason, summary), never an execution capability.
     """
     if context not in {"host", "runtime"}:
@@ -259,8 +301,6 @@ def evaluate_rearm(*, now, context="runtime", directory=None, marker_path=None,
     at = now.astimezone(TZ)
     if at.date().isoformat() < "2026-10-29":
         return False, "OPERATOR_REARM_HISTORICAL_DAY", None
-    if directory is None:
-        directory = OPERATOR_DIR_HOST if context == "host" else OPERATOR_DIR_RUNTIME
     if marker_path is None:
         marker_path = MARKER_HOST if context == "host" else MARKER_RUNTIME
     if frozen_path is None:
@@ -272,15 +312,15 @@ def evaluate_rearm(*, now, context="runtime", directory=None, marker_path=None,
         candidate_tree_sha = (candidate_tree_sha if candidate_tree_sha is not None
                               else os.getenv("POROTA_CANDIDATE_TREE_SHA"))
     try:
-        receipt = read_receipt(directory)
+        receipt = _operator_receipt(directory, context, legacy_reader=read_receipt)
         if _validated_intent(receipt, at) == PAUSE_STATUS:
             # Keep the historical downstream PAPER hold reason unchanged;
-            # PAUSE provenance is explicit in the root-owned receipt status.
+            # PAUSE provenance is explicit in the trusted receipt status.
             return False, "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM", None
         source_sha, tree_sha, image_id = _validated_paper_release(
             marker_path=marker_path, frozen_path=frozen_path, context=context,
             candidate_sha=candidate_sha, candidate_tree_sha=candidate_tree_sha)
-        # The root-owned operator decision is durable across releases. Its
+        # The authenticated operator decision is durable across releases. Its
         # original V1/V2 SHA/image identify the *approval provenance*, never
         # the currently installed code. The release check above is exact.
         return True, "OPERATOR_REARM_AUTHORIZED", {

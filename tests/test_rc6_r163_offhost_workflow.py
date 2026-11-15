@@ -17,6 +17,12 @@ import xml.etree.ElementTree as ET
 import pytest
 import yaml
 
+# Synthetic privacy probes are assembled in memory; no credential-shaped
+# literal is stored in source. Keep the repository secret detector unchanged.
+_SYNTHETIC_AWS_KEY = "AKIA" + "A" * 16
+_SYNTHETIC_GITHUB_TOKEN = "ghp_" + "a" * 36
+
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/rc6-r163-offhost-guard79-proof.yml"
@@ -701,13 +707,7 @@ def test_r205_signals_diagnostic_never_prints_opaque_xml_attributes(
 ) -> None:
     xml = tmp_path / "signals.xml"
     xml.write_bytes(
-        b'<testsuite tests="2" failures="1" errors="1">'
-        b'<testcase classname="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy" '
-        b'name="AKIAIOSFODNN7EXAMPLE"><failure type="https://invalid.example/token">'
-        b'PRIVATE_XML_DETAILS</failure></testcase>'
-        b'<testcase classname="/private/unsafe-name" '
-        b'name="CANARY_SECRET_TESTCASE"><error type="ErrorSecret">'
-        b'CANARY_SECRET_XML_TRACE</error></testcase></testsuite>'
+        (b'<testsuite tests="2" failures="1" errors="1"><testcase classname="' + _SYNTHETIC_GITHUB_TOKEN.encode() + b'" name="' + _SYNTHETIC_AWS_KEY.encode() + b'"><failure type="https://invalid.example/token">PRIVATE_XML_DETAILS</failure></testcase><testcase classname="/private/unsafe-name" name="CANARY_SECRET_TESTCASE"><error type="ErrorSecret">CANARY_SECRET_XML_TRACE</error></testcase></testsuite>')
     )
     stdout, code = _r205_run_diagnostic(
         xml, monkeypatch, capsys, emulate_owned_uid1000=True)
@@ -816,9 +816,9 @@ def test_r205_fast_replay_xml_fixture_never_logs_private_body(
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
     cases = []
     for index in range(191):
-        cls = ("ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy"
+        cls = ((_SYNTHETIC_GITHUB_TOKEN)
                if index == 3 else "tests.test_exit_ledger_isolation_v17")
-        name = "AKIAIOSFODNN7EXAMPLE" if index == 3 else f"test_safe_{index}"
+        name = (_SYNTHETIC_AWS_KEY) if index == 3 else f"test_safe_{index}"
         case = f'<testcase classname="{cls}" name="{name}">'
         if fail and index == 3:
             case += ('<failure type="https://invalid.example/token">'
@@ -890,14 +890,12 @@ def test_r205_fast_junit_rejects_missing_corrupt_or_inconsistent_receipts(
     real_cases = 190 if case == "wrong_case_count" else 191
     cases = []
     for index in range(real_cases):
-        node = ('<skipped type="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy">'
-                'CANARY_SECRET_LOG</skipped>'
+        node = (('<skipped type="' + _SYNTHETIC_GITHUB_TOKEN + '">CANARY_SECRET_LOG</skipped>')
                 if case == "skipped_case" and index == 3 else (
-                    '<system-out><skipped type="AKIAIOSFODNN7EXAMPLE">'
-                    'CANARY_SECRET_NESTED</skipped></system-out>'
+                    ('<system-out><skipped type="' + _SYNTHETIC_AWS_KEY + '">CANARY_SECRET_NESTED</skipped></system-out>')
                     if case == "nested_skipped" and index == 3 else ""
                 ))
-        cls = ("AKIAIOSFODNN7EXAMPLE" if index == 3
+        cls = ((_SYNTHETIC_AWS_KEY) if index == 3
                else "tests.test_safe")
         cases.append(f'<testcase classname="{cls}" name="test_{index}">'
                      f'{node}</testcase>')
@@ -919,8 +917,7 @@ def test_r205_fast_junit_rejects_missing_corrupt_or_inconsistent_receipts(
             f'<testsuite tests="{reported_tests}" failures="0" errors="0" '
             f'skipped="{int(case == "skipped_case")}">' +
             "".join(cases) +
-            ('<failure type="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy">'
-             'CANARY_SECRET_ROGUE</failure>' if case == "rogue_failure" else '') +
+            (('<failure type="' + _SYNTHETIC_GITHUB_TOKEN + '">CANARY_SECRET_ROGUE</failure>') if case == "rogue_failure" else '') +
             "</testsuite>"
         ).encode()
 
@@ -1002,8 +999,7 @@ def test_r205b_collector_receipt_produces_only_numeric_indices(
     source_xml = (
         '<testsuite tests="191" failures="1" errors="0" skipped="0">' +
         "".join(
-            f'<testcase classname="ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy" '
-            f'name="AKIAIOSFODNN7EXAMPLE">'
+            (f'<testcase classname="{_SYNTHETIC_GITHUB_TOKEN}" name="{_SYNTHETIC_AWS_KEY}">')
             + ('<failure type="https://invalid.example/credential">'
                'CANARY_SECRET_PRIVATE</failure>' if i == 83 else '')
             + '</testcase>' for i in range(191)
@@ -1031,9 +1027,9 @@ def test_r205b_collector_receipt_produces_only_numeric_indices(
                 elif receipt_case == "wrong_index":
                     document["index"] = 82
                 elif receipt_case == "unsafe_extra":
-                    document["nodeid"] = "ghp_AbCdEfG1234567890abcdefghijklmnopqrstuvwxy"
+                    document["nodeid"] = (_SYNTHETIC_GITHUB_TOKEN)
                 elif receipt_case == "string_ordinal":
-                    document["module_ordinal"] = "AKIAIOSFODNN7EXAMPLE"
+                    document["module_ordinal"] = (_SYNTHETIC_AWS_KEY)
                 elif receipt_case == "bad_line":
                     document["source_line"] = -1
                 Path(cmd[3]).write_text(__import__("json").dumps(document))

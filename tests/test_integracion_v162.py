@@ -615,9 +615,15 @@ class TestPipeline:
         return (RAIZ / ".github" / "workflows" / nombre).read_text(encoding="utf-8")
 
     def test_el_ci_ejecuta_la_suite(self):
-        assert "pytest" in self._wf("ci.yml"), (
-            "Nada impide promover a producción una versión con los tests en "
-            "rojo si el CI no los corre.")
+        # Application tests moved into the immutable Predeploy image. The
+        # main control-plane workflow does not rebuild or retest that image.
+        import yaml
+        workflow = yaml.safe_load(self._wf("porota-predeploy-v2.yml"))
+        steps = workflow['jobs']['artifact-gate']['steps']
+        assert any('scripts/porota_ci.py' in step.get('run', '') for step in steps)
+        policy = yaml.safe_load((RAIZ / 'ops/policy/test-policy.yaml').read_text())
+        assert policy['test_governance']['automatic_discovery_required'] is True
+        assert policy['productive_scope']['roots'] == ['.']
 
     def test_el_despliegue_no_se_dispara_con_un_push(self):
         deploy = _sin_comentarios(".github/workflows/porota-deploy-v2-promote.yml")
@@ -676,8 +682,18 @@ class TestPipeline:
         with pytest.raises(AssertionError):
             _assert_candidate_only_image_tags(baseline + injected + '\n')
 
-    def test_el_barrido_de_secretos_cubre_todo_el_arbol(self):
-        ci = self._wf("ci.yml")
-        assert "grep -rEIn" in ci, (
-            "El barrido anterior solo miraba py/yml/json y nunca abría el "
-            "archivo que tenía los secretos.")
+    def test_el_barrido_de_secretos_cubre_todo_el_arbol(self, tmp_path):
+        import subprocess
+        from scripts.porota_secret_scan import scan_repository
+
+        assert 'scripts/porota_secret_scan.py' in self._wf('porota-predeploy-v2.yml')
+        subprocess.run(['git', 'init', '-q', str(tmp_path)], check=True)
+        secret = 'private-' + 'synthetic-fixture-value'
+        filename = tmp_path / 'unexpected.custom-extension'
+        filename.write_text('PPI_API_' + 'SECRET=' + secret + '\n')
+        subprocess.run(['git', '-C', str(tmp_path), 'add', '.'], check=True)
+        result = scan_repository(tmp_path)
+        assert result['status'] == 'FAILED'
+        assert result['scanned_text_files'] == 1
+        assert result['findings'][0]['path'] == filename.name
+        assert secret not in repr(result)

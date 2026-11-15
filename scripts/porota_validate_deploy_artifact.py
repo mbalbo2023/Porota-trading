@@ -43,6 +43,7 @@ RUNTIME_EXACT = {
     ".dockerignore",
     "Dockerfile",
     "docker-compose.yml",
+    "compose.rootless.yml",
     "requirements.txt",
     "requirements.lock.txt",
     "n_instrument_watchlist.json",

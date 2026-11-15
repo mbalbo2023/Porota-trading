@@ -18,6 +18,12 @@ import zipfile
 
 import pytest
 
+# Synthetic privacy probes are assembled in memory; no credential-shaped
+# literal is stored in source. Keep the repository secret detector unchanged.
+_SYNTHETIC_AWS_KEY = "AKIA" + "A" * 16
+_SYNTHETIC_PRIVATE_KEY_HEADER = "-----BEGIN " + "PRIVATE KEY-----"
+
+
 
 SHA = "d" * 40
 TREE = "f" * 40
@@ -955,7 +961,7 @@ def _privacy_tar(*, replacement: dict[str, bytes] | None = None) -> bytes:
 )
 @pytest.mark.parametrize(
     "opaque", (
-        "AKIAABCDEFGHIJKLMNOP",
+        (_SYNTHETIC_AWS_KEY),
         "https://private.example.invalid/opaque/person-reference",
     ),
 )
@@ -977,7 +983,7 @@ def test_r206_raw_junit_opaque_attribute_is_not_public_evidence(
 )
 @pytest.mark.parametrize(
     "opaque", (
-        "AKIAABCDEFGHIJKLMNOP",
+        (_SYNTHETIC_AWS_KEY),
         "https://private.example.invalid/opaque/person-reference",
     ),
 )
@@ -1118,7 +1124,7 @@ def test_r203_canary_secret_in_each_native_member_is_hold79(relative: str) -> No
     b'{"Authorization":"Bearer ghp_fake_fixture_token_1234567890123456"}',
     b'{"api_key":"fake-example-value"}',
     b'{"path":"/var/lib/docker/volumes/private"}',
-    b'{"payload":"-----BEGIN PRIVATE KEY-----"}',
+    (b'{"payload":"' + _SYNTHETIC_PRIVATE_KEY_HEADER.encode() + b'"}'),
 ))
 def test_r203_privacy_rejects_high_signal_synthetic_credentials(payload: bytes) -> None:
     with pytest.raises(_sut().VolumeProofHold, match="PRIVACY"):

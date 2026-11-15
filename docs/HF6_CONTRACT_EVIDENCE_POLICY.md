@@ -1,4 +1,8 @@
-# HF6 contract evidence policy
+# Contrato de evidencia por instrumento
+
+Referencia técnica de identidad y procedencia. Las instrucciones de trabajo
+están en [AGENTS.md](../AGENTS.md); este documento no acredita readiness ni
+establece pasos de despliegue adicionales.
 
 Every financial field used to make a PAPER instrument operable must retain provider, field, and timestamp provenance. Search results or ticker parsing do not constitute a financial contract. Unsupported or undocumented fields remain fail-closed.
 

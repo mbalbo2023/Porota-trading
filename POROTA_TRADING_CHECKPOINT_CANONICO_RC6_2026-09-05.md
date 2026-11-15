@@ -1,3 +1,10 @@
+> **HISTÓRICO — sólo compatibilidad con herramientas heredadas.**
+> Este checkpoint describe septiembre de 2026; no es estado actual, permiso ni
+> requisito de arranque. Se conserva en esta ruta porque scripts históricos de
+> SHADOW todavía lo leen. Las instrucciones vigentes están en [AGENTS.md](AGENTS.md)
+> y el resto de los antecedentes se consulta desde [Historia](docs/history/README.md).
+> El contenido original comienza debajo y no debe ejecutarse como procedimiento.
+
 # POROTA TRADING — CHECKPOINT CANÓNICO RC6
 
 Fecha de corte: 2026-09-05 (America/Argentina/Buenos_Aires)

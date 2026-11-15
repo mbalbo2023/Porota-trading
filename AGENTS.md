@@ -1,43 +1,97 @@
-# POROTA TRADING — AGENT BOOTSTRAP
+# Porota Trading RC6 — instrucciones para agentes
 
-This file is a bootstrap, not the source of truth for runtime state.
+Este es el único punto de entrada de trabajo. El procedimiento está en
+[docs/RUNBOOK.md](docs/RUNBOOK.md); los documentos retirados se consultan desde
+[el índice histórico](docs/history/README.md). La documentación describe reglas;
+el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 
-## Mandatory first reads
-Before changing Porota, every agent/chat MUST:
-1. Read `ops/policy/porota-policy.yaml`.
-2. Read the current machine-generated runtime state when available.
-3. Identify the exact Git SHA and branch being changed.
-4. Reconcile claims with GitHub Actions and runtime evidence. Never continue from chat memory alone.
+## Alcance y autonomía
 
-## Non-negotiable operating rules
-- Porota is PAPER/SHADOW only. Real orders are forbidden.
-- FIX-FORWARD ONLY. Rollback is forbidden.
-- GitHub MCP + GitHub Actions are the primary control plane.
-- Interactive SSH/user terminal is BREAK-GLASS only. The user must not be required to copy commands for normal operation.
-- Never use Codespaces.
-- Never modify PPI Watch.
-- Never write directly to the protected deploy branch or main for development work. Use an isolated branch and explicit promotion.
-- Parallel development is the default when workstreams are independent and safe; shared runtime writers remain serialized.
-- Parallel workstreams must converge into ONE frozen candidate, ONE final Predeploy V2 gate, ONE immutable artifact/digest and ONE consolidated production deploy.
-- A candidate must pass pre-deploy integrity, dependency, import, runtime-smoke and PAPER-safety gates before it may modify the droplet.
-- Test the exact artifact that will be deployed.
-- No hand-maintained partial runtime file list is an acceptable source of artifact completeness.
-- Every deploy attempt, success or failure, must perform safe Docker/cache/temp cleanup and report reclaimed space.
-- External **market-data/provider** outages or stale quotes (PPI, IOL, BYMA, A3, ROFEX, etc.) are AMBER alerts, not Deploy V2 vetoes. The per-instrument PAPER/SHADOW admission stays fail-closed. Corrupted contracts, identity, SQLite, real-order safety, artifact provenance and the GitHub/Droplet control plane are still hard RED.
-- After any failed Deploy V2, invoke the bounded candidate-owned cleanup and, when recovered runtime safety permits, reference-safe orphan-image cleanup. Publish before/after disk and Docker receipts; a deferred cleanup must be explicitly carried as unfinished, never called GREEN.
-- Before the *next* Deploy V2, verify/reclaim residual unreferenced candidate-only images under the same global Actions mutex and root-owned host lock, never by broad prune, force, or deletion of container-referenced images. A passed disk threshold is not evidence that cleanup was done.
-- Never delete or prune active containers, volumes, databases, bind-mounted data, PPI Watch assets, or referenced runtime images.
-- Every new deployment failure class must produce a permanent regression guard or an explicit documented reason why no automated guard is possible.
-- A PAPER operator activation remains in effect until the operator explicitly pauses it: never invent a 14-day or other arbitrary expiry, or revoke operator intent only because a safe code SHA changes. Revalidate the actual release, zero-real-order invariants, current session and each instrument independently.
-- A fixed demonstration/watchlist (such as eight Scalping symbols) must not be promoted into a global entry veto for unrelated PAPER families. Missing provider evidence blocks the affected instrument and raises a scoped alarm, not all technical tests or deployments.
-- Do not invent business restrictions or silently elevate diagnostic checks into operator policy. When a user decision is genuinely needed, present precise alternatives and a recommended choice. Honor an already-granted autonomous scope without repeatedly demanding generic permission; preserve exact deployment control gates defined by the canonical workflow.
-- A GitHub Action marked FAILED must not leave an ambiguous partially promoted runtime. Promotion must have an explicit state and evidence.
+- Ejecutar la tarea autorizada hasta su resultado verificable. La instrucción
+  actual del usuario prevalece sobre planes y procedimientos anteriores.
+- No pedir de nuevo autorización dentro de ese alcance, ni imponer micropasos,
+  rondas de personajes, unanimidad ficticia o porcentajes de una misión antigua.
+- Revisar HEAD, componentes afectados, ownership y evidencia pertinente. Reusar
+  trabajo y pruebas válidas. Consultar antecedentes cuando resuelvan una duda
+  concreta; no releer todo el historial ni reabrir trabajos cerrados por rutina.
+- Una limitación real de acceso, una escritura solapada o una ampliación del
+  alcance se informa con su causa y el siguiente paso concreto. No inventar
+  permisos, controles satisfechos ni restricciones comerciales.
+- Paralelizar tareas independientes y revisar cambios según su riesgo. La
+  revisión real no se sustituye por un checklist o un número de agentes.
 
-## Change discipline
-- Prefer small, isolated, reversible-in-code changes, but never runtime rollback.
-- Governance/CI work must not alter the trading engine, broker integrations, market data, strategies, dashboard behavior, or runtime unless explicitly in scope.
-- Do not create a new one-off workflow when an existing parameterized control-plane workflow can safely perform the operation.
-- Keep evidence concise and machine-readable: SHA, image digest, mode, real_orders_sent, health, cleanup result, and failure signature.
+## Seguridad permanente
 
-## Accessibility invariant
-If a normal recurring operation requires the user to open a terminal, copy/paste shell commands, or manage GitHub manually, treat that as an automation defect to be fixed.
+- PAPER/SHADOW ONLY; modo esperado `PRODUCTION_PAPER / SIMULATION`.
+- Órdenes reales bloqueadas. `real_orders_sent=0` es un requisito; sólo declararlo
+  medido con evidencia del runtime correspondiente.
+- PPI Watch y servicios ajenos quedan fuera del alcance, salvo autorización
+  explícita del usuario para un cambio concreto.
+- FIX-FORWARD ONLY: no rollback de runtime.
+- GitHub y GitHub Actions son el control normal. SSH/manual es break-glass;
+  Codespaces no es el entorno operativo. Evitar tareas manuales rutinarias para
+  el usuario, que opera por voz; cualquier entrega copiable debe ser breve.
+- No publicar secretos, datos de cuentas, bases productivas ni logs privados.
+
+## Concurrencia e integración
+
+- `READ_ONLY` no bloquea otros trabajos.
+- `WRITE_OWNER` declara responsable, rama aislada, SHA base y rutas/componentes.
+  Revisar solapamientos vigentes antes de escribir o integrar; no recuperar
+  leases históricos como si siguieran activos.
+- `DEPLOY_OWNER` es exclusivo global para cambios de runtime. Mientras esté
+  activo, otro trabajo no despliega, reinicia, modifica systemd/DB ni limpia Docker.
+- No escribir desarrollo directamente en `main` ni en la rama productiva.
+  Usar branches y PRs, reconciliados contra HEAD real.
+- Integrar en el candidato vigente; conservar historia y heads con evidencia
+  única. No abrir PRs de almacenamiento ni cerrar, fusionar o borrar por edad.
+- Mantener `group: rc6-unified-paper-deploy` y `cancel-in-progress: false`.
+  Los frentes convergen en un candidato y una promoción final coherente.
+
+## Pruebas y despliegue
+
+- Elegir pruebas por comportamiento cambiado, consumidores y riesgo. Agregar una
+  regresión cuando detecte un defecto real. Ampliar la suite sólo por una
+  dependencia concreta o un contrato vigente; explicar la selección.
+- Reusar evidencia aplicable. Un cambio sólo documental no invalida pruebas de
+  código inalterado; no construir ni desplegar documentación.
+- Predeploy y Promote son los dos workflows de release. El bootstrap rootless
+  es una preparación separada; nunca instalar permisos ni migrar datos como
+  efecto implícito de una promoción.
+- Construir una sola imagen del SHA final. Probar código y comportamiento
+  funcional en esa misma imagen, identificarla con manifest/digest y promoverla
+  sin reconstruir en el Droplet.
+- El preflight comprueba precondiciones que pueden existir antes de instalar.
+  La validación posterior comprueba el resultado real. No exigir que el futuro
+  contenedor ya esté corriendo como precondición de su creación.
+- Antes de modificar runtime: verificar artefacto, destino rootless, aislamiento,
+  capacidad, datos necesarios y seguridad PAPER. Después: identidad de procesos,
+  salud, rutas reales bloqueadas y evidencia de cero órdenes reales.
+- Una caída de proveedor o mercado cerrado no veta por sí sola el deploy
+  técnico; bloquea la admisión del instrumento afectado. Corrupción de identidad,
+  datos, artefacto o seguridad PAPER sí bloquea la operación correspondiente.
+- Limpiar sólo recursos de Porota identificados y no referenciados, con medida
+  antes/después. No hacer prune global, borrar DB/volúmenes o tocar imágenes
+  referenciadas. Registrar lo retenido y su motivo sin inventar una nueva barrera.
+
+## Datos y resultados
+
+- PPI es autoridad primaria de identidad; IOL/BYMA/A3/ROFEX complementan con
+  evidencia. No sobrescribir identidad PPI ni escoger identidades ambiguas.
+- Readiness es por instrumento y fail-closed. `ALL_CONTRACT_FAMILIES` no significa
+  todos READY; CI verde, más operaciones o un replay rentable no prueban edge.
+- Cambios de estrategia conservan baseline, causalidad temporal y costos;
+  evaluar en SHADOW antes de cambiar decisiones. Preservar linaje y datos.
+
+## Evidencia y cierre
+
+Usar `PROPUESTO`, `DESARROLLADO`, `COMMITTEADO`, `EN_GITHUB`,
+`ARTEFACTO_VALIDADO`, `DESPLEGADO`, `VALIDADO_RUNTIME`, `NO_VERIFICADO`, `BLOQUEADO`.
+GitHub/SHA prueba código; Actions prueba pipeline; manifest/digest prueba paquete;
+runtime prueba instalación; DB/logs/APIs prueban comportamiento. El chat no es
+fuente de verdad operacional. Workflow SUCCESS no equivale a runtime correcto.
+
+Cerrar incidentes significativos con `ERROR → RCA → FIX → GUARD → TEST → EVIDENCIA`;
+dejar defensa permanente cuando sea técnicamente posible y explicar cualquier
+límite. Registrar sólo el delta útil: cambio, SHA/PR, pruebas, recibo o
+`NO_VERIFICADO`, pendiente y siguiente acción. Liberar ownership al terminar.

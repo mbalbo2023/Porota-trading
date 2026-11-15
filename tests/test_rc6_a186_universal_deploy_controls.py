@@ -144,9 +144,9 @@ def test_external_source_and_failed_attempt_cleanup_are_durable_repo_policies():
     assert deploy['paper_instrument_readiness_on_source_failure'] == 'FAIL_CLOSED'
     cleanup = policy['cleanup']
     assert cleanup['failed_deploy_reference_safe_orphan_gc_required_when_runtime_safe'] is True
-    assert cleanup['residual_orphans_must_be_audited_and_cleaned_before_next_deploy'] is True
+    assert cleanup['orphan_cleanup_must_not_create_new_deploy_attempt_barrier'] is True
+    assert cleanup['retained_resources_require_reason'] is True
     assert cleanup['docker_prune_or_force_delete_allowed'] is False
-    agents = (root / 'AGENTS.md').read_text()
-    assert 'External **market-data/provider** outages' in agents
-    assert 'Before the *next* Deploy V2' in agents
+    assert deploy['host_access_artifact_integrity_and_paper_safety_still_blocking'] is True
+    assert cleanup['reference_rechecks_before_each_image_delete'] is True
 

@@ -408,11 +408,6 @@ def test_postinstall_replaced_ids_fail_cleanup_without_rearming(incident, monkey
         states[name]['Image'] = 'sha256:' + 'e' * 64
     with pytest.raises(ValueError, match='RUNTIME_IDENTITY_CHANGED'):
         scheduler.require_rescue_degraded_hold(SHA)
-    workflow = (Path(__file__).resolve().parents[1] /
-                '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    assert 'SCHEDULER_ACTION=recover-degraded-closed' in workflow
-    assert "[ '${{ steps.suspend.outcome }}' = success ]" in workflow
-    assert 'RC6_PAPER_SESSION=RESCUE_ADMITTED|runtime=UNHEALTHY_A92|health=RED' in workflow
 
 
 def test_candidate_image_intent_and_exact_exited_replacement_hold(incident):

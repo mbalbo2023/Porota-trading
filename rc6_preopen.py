@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
 from rc6_paper_admission_gate import focus_contracts, operator_pause_reason, publish_preopen
+from scripts import porota_rootless_host as rootless
 from scripts.rc6_operator_paper_rearm import evaluate_rearm, trusted_operator_pause
 
 TZ = ZoneInfo('America/Argentina/Buenos_Aires')
@@ -201,7 +202,74 @@ def _candidate_image_provenance(candidate, image_id, deploy_scheduler_candidate)
         raise ValueError('PREOPEN_DEPLOY_CANDIDATE_MISMATCH')
 
 
+def _rootless_identity():
+    """A recorded migration cannot fall back to the legacy Docker namespace."""
+    backend = os.environ.get('POROTA_RUNTIME_BACKEND', '')
+    rootless.require(backend in {'', 'ROOTLESS'}, 'PREOPEN_RUNTIME_BACKEND_INVALID')
+    try:
+        identity = rootless.Identity.current()
+    except rootless.Hold:
+        if backend == 'ROOTLESS':
+            raise
+        identity = None  # Legacy system services may still run as root.
+    if backend == 'ROOTLESS':
+        return identity
+    if identity is not None:
+        try:
+            (identity.state / 'current.json').lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            return identity  # Includes malformed files and dangling links.
+    try:
+        marker = _deploy_json('CURRENT_STATE_V2.json', 65536)
+    except FileNotFoundError:
+        return None
+    if marker.get('deployment_backend') == 'ROOTLESS_SPLIT':
+        return identity or rootless.Identity.current()
+    return None
+
+
+def _rootless_container(identity, name, deploy_scheduler_candidate):
+    current, _release = rootless.read_release_state(identity)
+    roles = current.get('roles')
+    rootless.require(isinstance(roles, dict) and set(roles) == {'observer', 'dashboard'} and
+                     all(isinstance(cid, str) and rootless.CID.fullmatch(cid) for cid in roles.values()) and
+                     len(set(roles.values())) == 2, 'PREOPEN_ROOTLESS_PAIR_INVALID')
+    role = {'porota_production_observer': 'observer',
+            'porota_production_dashboard': 'dashboard'}.get(name)
+    rootless.require(role is not None, 'PREOPEN_ROOTLESS_ROLE_INVALID')
+    mapping = current.get('uid_mapping') or {}
+    rootless.require(all(type(mapping.get(key)) is int and mapping[key] == expected
+                         for key, expected in (('container_uid', 0), ('host_uid', identity.uid),
+                                               ('host_gid', identity.gid))) and
+                     mapping.get('effective_cgroup_limits') == 'VERIFIED',
+                     'PREOPEN_ROOTLESS_UID_MAPPING_INVALID')
+    host = rootless.Host(ROOT, identity)
+    rootless.require(host.boundary() == current.get('daemon_id'), 'PREOPEN_ROOTLESS_DAEMON_CHANGED')
+    rootless.require(deploy_scheduler_candidate in (None, current['source_sha']),
+                     'PREOPEN_DEPLOY_CANDIDATE_MISMATCH')
+    item = host.check_role(current, role)
+    state = item.get('State') or {}
+    rootless.require(state.get('Running') is True and state.get('OOMKilled') is False and
+                     type(item.get('RestartCount')) is int and item['RestartCount'] == 0,
+                     'PREOPEN_ROOTLESS_CONTAINER_UNHEALTHY')
+    if role == 'dashboard':
+        rootless.require((state.get('Health') or {}).get('Status') == 'healthy',
+                         'PREOPEN_ROOTLESS_DASHBOARD_UNHEALTHY')
+    return {'state': 'GREEN', 'backend': 'ROOTLESS', 'raw': '', 'error': '', 'reason': None,
+            'container_id': item['Id'], 'image_id': current['image_id'],
+            'source_sha': current['source_sha'], 'source_tree': current['source_tree']}
+
+
 def container(name, require_readonly=False, deploy_scheduler_candidate=None):
+    try:
+        identity = _rootless_identity()
+        if identity is not None:
+            return _rootless_container(identity, name, deploy_scheduler_candidate)
+    except (rootless.Hold, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        return {'state': 'RED', 'raw': '', 'error': '',
+                'reason': str(exc) if isinstance(exc, rootless.Hold) else type(exc).__name__}
     rc, out, err = cmd(['docker','inspect','-f',
         '{{.State.Running}}|{{.Config.Image}}|{{.Image}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.HostConfig.ReadonlyRootfs}}', name])
     parts = out.split('|') if rc == 0 else []
@@ -737,7 +805,12 @@ def byma_morning_watch(today, *, allow_latest_safe=False):
         critical=(changed & {'HOURS','CALENDAR'} if state == 'CHANGED_REVIEW_REQUIRED' else set()) | (set(pending) & {'HOURS','CALENDAR'})
         if critical and state != 'DEGRADED':
             try:
-                review=json.loads(BYMA_AUTHORITY_REVIEW.read_text(encoding='utf-8'))
+                review_path = BYMA_AUTHORITY_REVIEW
+                if _rootless_identity() is not None:
+                    # The dispatcher verifies this release source before execution;
+                    # policy travels with it while market data remains under ROOT.
+                    review_path = Path(__file__).resolve().parent / 'ops/policy/rc6-byma-reviewed-authority-v1.json'
+                review=json.loads(review_path.read_text(encoding='utf-8'))
                 assert review.get('schema') == 'porota-byma-authority-review-v1'
                 assert review.get('decision_effect') == 'OBSERVE_ONLY'
                 assert review.get('real_money_authorized') is False

@@ -409,14 +409,8 @@ def test_existing_http_guard_real_routes_blocked_before_adapter(wire, route):
 
 def test_workflow_manual_bounded_no_production_runtime_or_orders():
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/rc6-ppi-capacity-shadow.yml").read_text()
-    assert "workflow_dispatch:" in workflow and "schedule:" not in workflow
-    assert "timeout-minutes: 35" in workflow
-    assert "--max-requests 2701 --max-runtime-seconds 1800" in workflow
-    assert "PPI_CAPACITY_READONLY_API_KEY" in workflow
-    assert "candidate_sha:" in workflow and "inputs.candidate_sha" in workflow
-    for forbidden in ("ssh ", "scp ", "DEPLOY_OWNER", "secrets.POROTA", "BYMA_API", "Order/Confirm"):
-        assert forbidden not in workflow
+    # Historical dispatch removed; the benchmark itself and its request,
+    # circuit-breaker and read-only behavioral tests remain automatically run.
     script = (root / "scripts/rc6_ppi_capacity_benchmark.py").read_text()
     assert "--as-of" not in script and "/opt/" not in script and "PPI_PRODUCTION_SECRET_FILE" not in script
 

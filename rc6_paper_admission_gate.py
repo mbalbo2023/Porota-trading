@@ -17,14 +17,15 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from scripts.rc6_operator_paper_rearm import (
     OPERATOR_DIR_HOST, OPERATOR_DIR_RUNTIME, evaluate_rearm,
+    rootless_host_operator_directory, _validated_paper_release,
 )
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 HOST_ROOT = Path("/opt/porota-trading")
 HOST_RECEIPT = HOST_ROOT / "data/deploy/paper_scalping_preopen_gate_v1.json"
 RUNTIME_RECEIPT = Path("/app/data/deploy/paper_scalping_preopen_gate_v1.json")
-# The v2 preopen authority is also in a root-owned readonly mount. A botuser
-# container may write DATA, so placing a new GO file in DATA would be forgeable.
+# The v2 authority stays outside DATA and is read-only in the container, where
+# its owner is namespace UID zero. Host rootless publication uses the SSH UID.
 HOST_V2_RECEIPT = OPERATOR_DIR_HOST / "paper-preopen-v2.json"
 RUNTIME_V2_RECEIPT = OPERATOR_DIR_RUNTIME / "paper-preopen-v2.json"
 # An operational sampling preference is never an admission whitelist. Keep
@@ -116,21 +117,34 @@ def focus_contracts(db_path):
 def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     """Atomically publish a closed receipt, opening it only for a full T-10 GO."""
     now = (now or datetime.now(TZ)).astimezone(TZ)
-    state_path = Path(state_path or HOST_ROOT / "data/deploy/CURRENT_STATE_V2.json")
+    canonical_state = HOST_ROOT / "data/deploy/CURRENT_STATE_V2.json"
+    private = rootless_host_operator_directory()
+    if private is not None:
+        expected = private / "paper-preopen-v2.json"
+        if ((receipt_path is not None and Path(receipt_path) != expected) or
+                (state_path is not None and Path(state_path) != canonical_state)):
+            raise ValueError("PAPER_ROOTLESS_CANONICAL_PATH_REQUIRED")
+        receipt_path = expected
+    state_path = Path(state_path or canonical_state)
     receipt_path = Path(receipt_path or (HOST_V2_RECEIPT if
                         now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
                         else HOST_RECEIPT))
     candidate = ""
     try:
-        if state_path.is_symlink() or state_path.stat().st_size > 65536:
-            raise ValueError("UNSAFE_RELEASE_STATE")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-        candidate = state.get("candidate_sha", "")
-        valid_release = (isinstance(candidate, str) and SHA.fullmatch(candidate)
-                         and state.get("validation_status") == "VALIDATED_RUNTIME"
-                         and state.get("mode") == "PRODUCTION_PAPER"
-                         and type(state.get("real_orders_sent")) is int
-                         and state["real_orders_sent"] == 0)
+        if private is not None:
+            candidate, _, _ = _validated_paper_release(
+                marker_path=state_path, frozen_path=None, context="host")
+            valid_release = True
+        else:
+            if state_path.is_symlink() or state_path.stat().st_size > 65536:
+                raise ValueError("UNSAFE_RELEASE_STATE")
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            candidate = state.get("candidate_sha", "")
+            valid_release = (isinstance(candidate, str) and SHA.fullmatch(candidate)
+                             and state.get("validation_status") == "VALIDATED_RUNTIME"
+                             and state.get("mode") == "PRODUCTION_PAPER"
+                             and type(state.get("real_orders_sent")) is int
+                             and state["real_orders_sent"] == 0)
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         valid_release = False
     pause_reason = operator_pause_reason(now, context="host")
@@ -154,7 +168,11 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
         raise ValueError("HISTORICAL_A125_LIVE_GATE_IMMUTABLE")
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir() or receipt_path.is_symlink():
         raise ValueError("UNSAFE_GATE_PATH")
-    if receipt_path == HOST_V2_RECEIPT:
+    if private is not None:
+        from scripts.porota_operator_intent import private_read
+        if os.path.lexists(receipt_path):
+            private_read(receipt_path)
+    elif receipt_path == HOST_V2_RECEIPT:
         observed = os.lstat(receipt_path.parent)
         if (os.geteuid() != 0 or observed.st_uid != 0 or
                 observed.st_mode & 0o022):
@@ -162,7 +180,7 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     fd, temporary = tempfile.mkstemp(prefix=".paper-gate-", dir=receipt_path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o644)
+            os.fchmod(handle.fileno(), 0o600 if private is not None else 0o644)
             json.dump(receipt, handle, sort_keys=True)
             handle.write("\n")
             handle.flush()

@@ -209,20 +209,8 @@ def test_a151_held_open_rejects_outside_exact_window(a151,monkeypatch,utc_clock)
 
 
 def test_a151_intraday_literal_is_exact_and_required_before_suspend():
-    from pathlib import Path
-    workflow=(Path(__file__).parents[1]/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    assert workflow.index('Require exact intraday owner authorization for OPEN suspension') < \
-           workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
-    assert workflow.index('Require exact A207 PAPER administrative preparation owner approval') < \
-           workflow.index('Suspend versioned RC6 schedulers for guarded promotion')
-    assert "if: ${{ env.RC6_QUIESCENCE_MODE == 'A151_HELD_OPEN' || env.RC6_QUIESCENCE_MODE == 'A151_HELD_STOPPED' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A171_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A174_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'CLOSED_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN_A175_PENDING_FIX_FORWARD' || env.RC6_QUIESCENCE_MODE == 'OPEN' || env.RC6_QUIESCENCE_MODE == 'OPEN_ADMIN_A207' }}" in workflow
-    assert "decision='RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY'" in workflow
-    assert 'RC6_A151_OWNER_INTRADAY_ID=$COMMENT' in workflow
-    assert '--owner-intraday-comment-id "$RC6_A151_OWNER_INTRADAY_ID"' in workflow
-    assert "A151_HELD_OPEN) FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
-    assert "A151_HELD_OPEN) QUIESCENCE_FLAG='--adopt-a143-running-pending --a151-held-open'" in workflow
-    assert "CLOSED_A171_PENDING_FIX_FORWARD) FLAG='--adopt-a171-running-pending'" in workflow
-    assert "CLOSED_A171_PENDING_FIX_FORWARD) QUIESCENCE_FLAG='--adopt-a171-running-pending'" in workflow
+    # Preserve the actual authorization verifier regression. Date-bound A151
+    # placement in the removed rootful workflow is not a new release gate.
     candidate,tree='a'*40,'b'*40
     correct=f'RC6_624_APPROVE_INTRADAY_SUSPEND_DEPLOY candidate={candidate} tree={tree}'
     def page(rows):

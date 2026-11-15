@@ -16,9 +16,8 @@ class TestPredeployTwentyFourSeven(unittest.TestCase):
     def test_predeploy_trigger_unconditional_on_market_hours(self):
         workflow = (REPO / ".github/workflows/porota-predeploy-v2.yml").read_text(encoding="utf-8")
         self.assertIn("pull_request:", workflow)
-        self.assertIn("Governed automatic test discovery and execution", workflow)
-        self.assertIn("--junitxml=/tmp/porota-governed-tests.xml", workflow)
-        self.assertIn("PYTEST_DISABLE_PLUGIN_AUTOLOAD=1", workflow)
+        self.assertIn("scripts/porota_ci.py", workflow)
+        self.assertIn("scripts/porota_ci_functional.py", workflow)
         # Virtual 405-minute native sessions are allowed; these forbidden
         # identifiers represent real-market or calendar-based technical vetoes.
         gates = ("market_open", "market_closed", "is_market_hour", "trading_hours",

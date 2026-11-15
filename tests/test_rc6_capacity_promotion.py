@@ -226,8 +226,7 @@ def test_scalping_hot_precedes_equity_hot_while_opened_remains_first():
 def test_benchmark_workflow_emits_review_artifact_without_activation():
     root = Path(__file__).resolve().parents[1]
     script = (root / "scripts/rc6_ppi_capacity_benchmark.py").read_text()
-    workflow = (root / ".github/workflows/rc6-ppi-capacity-shadow.yml").read_text()
+    # The manual diagnostic workflow is retired; retain the executable CLI's
+    # review-only contract and the behavioral capacity tests in this module.
     assert "--recommendation-output" in script and "--validate-report" in script
-    assert "ppi-capacity-recommendation.json" in workflow
     assert "automatic_activation" in script
-    assert "approved_recommendation_digest" not in workflow

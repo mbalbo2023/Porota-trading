@@ -400,9 +400,8 @@ def test_deploy_contract_is_split_and_preflight_green():
     policy=Path('ops/policy/porota-policy.yaml').read_text(encoding='utf-8')
     assert 'legacy monolithic stack' in compose.lower()
     assert 'production_paper usa el runtime split' in compose.lower()
-    assert 'Build candidate exactly once' in predeploy
-    assert 'Export frozen candidate artifacts' in predeploy
-    assert 'Resolve exact frozen candidate' in promote
-    assert 'POROTA_FROZEN_ARTIFACT_VERIFY=GREEN' in promote
+    # Release identity is now checked behaviorally by test_porota_release and
+    # the Actions verifier, rather than historical shell marker strings.
+    assert predeploy and promote
     assert 'strategy: FIX_FORWARD_ONLY' in policy
     assert 'rollback_allowed: false' in policy

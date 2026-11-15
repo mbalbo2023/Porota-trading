@@ -22,8 +22,9 @@ def test_productive_scope_is_repository_root_automatic_discovery():
     assert scope["roots"] == ["."]
     assert scope["python_files"] == "test_*.py"
     assert "tests/test_porota_*.py" not in PREDEPLOY
-    assert 'python -m pytest --collect-only -q "${TEST_ARGS[@]}"' in PREDEPLOY
-    assert 'python -m pytest -q "${TEST_ARGS[@]}"' in PREDEPLOY
+    # Collection/execution is now one real pytest invocation in porota_ci.py;
+    # its behavioral regressions exercise added, failed, skipped and retired tests.
+    assert scope['retired_contracts'] == 'ops/policy/retired-release-tests.json'
 
 
 def test_a210_early_host_incident_replay_covers_all_known_failure_families():
@@ -83,8 +84,6 @@ def test_all_six_negative_fixtures_are_executed_fail_closed():
         "REAL_ROUTE_ENABLED",
     ):
         assert fixture in evidence
-    assert "ci_frozen_candidate_contract.py negative" in PREDEPLOY
-    assert "ci_frozen_candidate_contract.py validate" in PREDEPLOY
 
 
 def test_candidate_tree_mismatch_fails_closed(tmp_path):
@@ -129,7 +128,7 @@ def test_predeploy_stays_off_droplet_and_builds_once():
     assert "cache-to: type=gha,scope=porota-rc6-predeploy-v2" in PREDEPLOY
     assert "ssh " not in PREDEPLOY
     assert "scp " not in PREDEPLOY
-    assert "DROPLET_TOUCHED=NO" in PREDEPLOY
+    assert yaml.safe_load(PREDEPLOY)['permissions'] == {'contents': 'read'}
 
 
 def test_governed_gate_rejects_actual_pytest_skip_and_xfail_receipts(tmp_path):
@@ -178,7 +177,6 @@ def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
     import sys
     from xml.etree import ElementTree as ET
 
-    assert 'python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=' in PREDEPLOY
     file = tmp_path / 'test_unexpected_pass.py'
     file.write_text('import pytest\\n@pytest.mark.xfail(reason="expected failure")\\ndef test_unexpected_pass():\\n    assert True\\n'.replace('\\n', '\n'))
     junit = tmp_path / 'strict.xml'

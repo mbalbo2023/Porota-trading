@@ -1,66 +1,36 @@
-# Porota Trading v16.2
+# Porota Trading RC6
 
-Sistema autónomo de trading algorítmico para el mercado argentino (BYMA), con
-ejecución a través de PPI y motor de decisión sobre Google Gemini.
+Sistema de análisis y simulación para el mercado argentino.
+**PAPER/SHADOW ONLY**: modo esperado `PRODUCTION_PAPER / SIMULATION`, rutas de
+órdenes reales bloqueadas y requisito `real_orders_sent=0`.
 
-## Control desde Telegram
+## Documentación vigente
 
-| Comando | Qué hace |
+| Fuente | Uso |
 |---|---|
-| `ESTADO` | Qué hay abierto y en qué estado está el bot |
-| `PARADA` | Parada de emergencia: ordenada, liquidar todo, o corte seco |
-| `REARRANCAR` | Volver a operar |
-| `AYUDA` | La lista completa |
+| [AGENTS.md](AGENTS.md) | Alcance, seguridad, autonomía, concurrencia y evidencia |
+| [Runbook](docs/RUNBOOK.md) | Desarrollo, pruebas, Predeploy, Promote y cierre |
+| [Política](ops/policy/porota-policy.yaml) | Contrato estructurado de seguridad y release |
+| [Política de pruebas](ops/policy/test-policy.yaml) | Selección y clasificación de pruebas |
+| [Seguridad](SECURITY.md) | Reporte privado de vulnerabilidades |
+| [Evidencia contractual](docs/HF6_CONTRACT_EVIDENCE_POLICY.md) | Identidad y procedencia por instrumento |
+| [Canal de evidencia](docs/RUNTIME_EVIDENCE_CHANNEL_RC6.md) | Referencia del productor de evidencia |
+| [Historia](docs/history/README.md) | Versiones exactas de documentos retirados |
 
-## Lo primero que hay que saber
+## Trabajo y operación
 
-**El bot no arranca a operar solo.** Al levantar, manda un mensaje a Telegram y
-espera que autorices cómo arrancar: simulación contra el sandbox de PPI, real, o
-quedarse levantado sin operar. Hasta que no respondas, no toca el mercado.
+GitHub y GitHub Actions son el plano de control. Trabajar en ramas aisladas,
+revisar el cambio y reunir los frentes en un candidato. Predeploy construye una
+imagen y prueba ese mismo paquete; Promote la instala sin reconstruirla.
+El bootstrap del entorno rootless es independiente del release.
 
-## Puesta en marcha en Docker
+El repositorio contiene código y evidencia de distintas fechas. Confirmar los
+SHA de `main`, producto y candidato antes de una acción; el HEAD de una rama no
+certifica qué está instalado. Las ejecuciones y recibos actuales determinan el
+estado: [Actions](https://github.com/mbalbo2023/Porota-trading/actions),
+[PRs abiertos](https://github.com/mbalbo2023/Porota-trading/pulls),
+[continuidad](https://github.com/mbalbo2023/Porota-trading/issues/1093) y
+[ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).
 
-```bash
-cp .env.example .env            # 0. crear configuracion local sin credenciales
-docker compose build            # 1. construir el entorno reproducible
-docker compose run --rm bot pytest -q  # 2. ejecutar la suite
-docker compose up -d            # 3. arrancar; requiere credenciales en .env
-docker compose exec bot python ap_api_verifier.py  # 4. verificar APIs
-```
-
-Responder **🧪 Simulación** y mirar el panel en `/testing`.
-
-## Documentación
-
-| Archivo | Qué contiene |
-|---|---|
-| `PLAN_DE_TESTING.md` | Plan completo para QA: por dónde empezar, herramientas gratuitas, guía paso a paso para generar tests con IA, guion de aceptación |
-| `.env.example` | Plantilla sin secretos para crear el `.env` local |
-
-**El Documento Maestro y la Bitácora se entregan por separado**, fuera de este
-paquete, porque el Anexo A del Documento Maestro contiene credenciales en claro
-y un PDF con claves subido a un repositorio queda en el historial de Git de
-forma permanente.
-
-## Panel de control
-
-| Ruta | Para qué |
-|---|---|
-| `/` | Resumen de los últimos días |
-| `/vivo` | Qué está haciendo el bot ahora mismo |
-| `/testing` | Estado del arranque y traza paso a paso |
-| `/salud` | Semáforos de todas las APIs y módulos |
-| `/sre` | Propuestas de mejora e historial de cambios |
-| `/historicos` | Qué hay archivado y de qué fuentes |
-| `/aprendizaje` | Descarga del blog de aprendizaje |
-| `/config` | Editor de variables de entorno |
-
-## Credenciales
-
-Para el **entorno de pruebas**, crear `.env` desde `.env.example` y cargar las
-credenciales fuera de Git. Nunca versionar `.env`, `.env.testing` ni respaldos
-del archivo de entorno.
-
-Para **producción** hay que generar credenciales nuevas y moverlas a Secrets.
-Las de prueba quedan en el historial del repositorio de forma permanente, así
-que rotarlas antes del pase no es opcional.
+PPI Watch queda fuera del alcance. Los cambios son fix-forward; la documentación
+por sí sola no instala servicios ni autoriza operaciones reales.
