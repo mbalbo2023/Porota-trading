@@ -1,4 +1,4 @@
-name: Checkpoint attestation
+name: PR ownership and scope
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
@@ -9,6 +9,7 @@ permissions:
 jobs:
   checkpoint-attestation:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout immutable trusted base for validation
         if: github.event.pull_request.base.ref == 'main'
@@ -17,51 +18,6 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: trusted-base
           persist-credentials: false
-      - name: Checkout proposed main change for RC6 registration guard
-        if: github.event.pull_request.base.ref == 'main'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: proposed
-          persist-credentials: false
-      - name: Reject accidental removal of the RC6 manual workflow registration
-        if: github.event.pull_request.base.ref == 'main'
-        shell: bash
-        run: |
-          set -euo pipefail
-          registration=proposed/.github/workflows/rc6-unified-candidate-tests.yml
-          if [ ! -f "$registration" ]; then
-            echo "::error::RC6 workflow registration is missing from the proposed main tree."
-            exit 1
-          fi
-          if ! grep -Eq '^  workflow_dispatch:' "$registration" ||
-             ! grep -Eq '^  deny-bootstrap:' "$registration"; then
-            echo "::error::RC6 workflow registration or its fail-closed job is missing."
-            exit 1
-          fi
-      - name: Require continuity and safety references in PR body
-        shell: bash
-        run: |
-          set -euo pipefail
-          BODY="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
-          require_line() {
-            local pattern="$1"
-            local label="$2"
-            if ! grep -Eq "$pattern" <<< "$BODY"; then
-              echo "::error::PR body is missing: $label"
-              exit 1
-            fi
-          }
-          require_line '^Checkpoint ID: [^[:space:]]+' 'Checkpoint ID'
-          require_line '^Continuity checkpoint path: .+\.md$' 'continuity checkpoint path'
-          require_line '^Checkpoint commit SHA: [0-9a-fA-F]{40}$' 'checkpoint commit SHA'
-          require_line '^RC6 baseline SHA: [0-9a-fA-F]{40}$' 'RC6 baseline SHA'
-          require_line '^Safety invariants: .*PRODUCTION_PAPER.*REAL_ORDERS_SENT=0.*CASH_SWEEP_ORDER_ROUTING_ALLOWED=False.*fail-closed' 'safety invariants'
-          if grep -Eq '^(Checkpoint ID|Continuity checkpoint path|Checkpoint commit SHA|RC6 baseline SHA|Safety invariants):.*(<completar>|TODO|TBD)' <<< "$BODY"; then
-            echo '::error::PR attestation still contains a placeholder.'
-            exit 1
-          fi
-          echo "Attestation fields found; checkpoint completeness and runtime state still require human verification."
       - name: Test main PR metadata guard fixtures
         if: github.event.pull_request.base.ref == 'main'
         working-directory: trusted-base

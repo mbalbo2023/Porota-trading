@@ -150,12 +150,27 @@ class MainPrGovernanceTest(unittest.TestCase):
     def test_template_matches_guard_and_has_no_autofilled_evidence(self):
         template = TEMPLATE.read_text(encoding="utf-8")
         for name in ("Workstream ID", "Owner declaration URL", "Work branch",
-                     "Base SHA", "Scope paths", "Checkpoint ID",
-                     "Continuity checkpoint path", "Checkpoint commit SHA",
-                     "RC6 baseline SHA", "Safety invariants"):
+                     "Base SHA", "Scope paths"):
             self.assertIn(name + ": ", template)
-        self.assertNotIn("2026-09-12/1", template)
+        for name in ("Checkpoint ID", "Continuity checkpoint path",
+                     "Checkpoint commit SHA", "RC6 baseline SHA"):
+            self.assertNotIn(name + ":", template)
         self.assertNotIn("Safety invariants: PRODUCTION_PAPER", template)
+
+    def test_ownership_guard_uses_trusted_base_without_retired_ceremony(self):
+        import yaml
+        source = WORKFLOW.read_text(encoding="utf-8")
+        workflow = yaml.load(source, Loader=yaml.BaseLoader)
+        steps = workflow["jobs"]["checkpoint-attestation"]["steps"]
+        checkouts = [step["with"] for step in steps if "actions/checkout@" in step.get("uses", "")]
+        self.assertEqual(checkouts, [{
+            "ref": "${{ github.event.pull_request.base.sha }}",
+            "path": "trusted-base", "persist-credentials": "false",
+        }])
+        self.assertIn('Path("trusted-base/.github/workflows/checkpoint-attestation.yml")', source)
+        self.assertNotIn("deny-bootstrap", source)
+        self.assertNotIn("require_line", source)
+        self.assertNotIn("Checkpoint ID", source)
 
     def test_valid_pr_owner_and_scope(self):
         self.assertEqual(guard()["validate"](event(), receipt(), FILES),

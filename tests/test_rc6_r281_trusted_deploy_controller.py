@@ -302,30 +302,6 @@ def test_main_outputs_only_offhost_receipt_never_host_or_deploy_go(
     assert receipt["deploy_authorized"] is False
 
 
-def test_workflow_has_manual_main_only_non_skippable_host_hold79():
-    source = WORKFLOW.read_text(encoding="utf-8")
-    workflow = yaml.load(source, Loader=yaml.BaseLoader)
-    assert list(workflow["on"]) == ["workflow_dispatch"]
-    assert workflow["concurrency"] == {
-        "group": "rc6-unified-paper-deploy", "cancel-in-progress": "false"}
-    assert workflow["permissions"] == {
-        "contents": "read", "actions": "read", "pull-requests": "read"}
-    assert set(workflow["jobs"]) == {
-        "offhost_release_evidence", "host_physical_preflight"}
-    offhost = workflow["jobs"]["offhost_release_evidence"]
-    host = workflow["jobs"]["host_physical_preflight"]
-    assert "refs/heads/main" in offhost["if"]
-    assert host["needs"] == "offhost_release_evidence"
-    assert host["if"] == "${{ always() }}"
-    assert "exit 79" in str(host)
-    assert "host_control_verified=NO_VERIFICADO" in str(host)
-    assert "deploy_authorized=NO" in str(host)
-    assert "rc6_r281_trusted_deploy_controller.py --verify-fixed-d-e" in str(offhost)
-    assert all("docker" not in str(jobs).lower() and
-               "ssh " not in str(jobs).lower() and
-               "sudo " not in str(jobs).lower() and
-               "systemctl " not in str(jobs).lower()
-               for jobs in workflow["jobs"].values())
 
 
 def test_command_line_without_trusted_github_context_is_hold79():

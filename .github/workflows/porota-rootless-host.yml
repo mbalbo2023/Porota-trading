@@ -4,77 +4,65 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect Porota's rootless prerequisites without changing the host
+        description: Inspect prerequisites or prepare the isolated rootless daemon once
         type: choice
-        required: true
+        options: [inspect, prepare]
         default: inspect
-        options: [inspect]
+        required: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ inputs.operation == 'inspect' && format('porota-inspect-{0}', github.run_id) || 'rc6-unified-paper-deploy' }}
+  cancel-in-progress: false
+
 jobs:
-  inspect:
+  host:
     if: >-
-      ${{ github.repository == 'mbalbo2023/Porota-trading' &&
-          github.ref == 'refs/heads/main' && github.actor == 'mbalbo2023' &&
-          inputs.operation == 'inspect' }}
+      github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkout the exact control revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Observe fixed RC6 resources through the existing Actions identity
+
+      - name: Execute the versioned host operation
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          OPERATION: ${{ inputs.operation }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -B - <<'PY'
-          import json, os, re, subprocess, tempfile
-          from pathlib import Path
-          host, user = os.environ['DO_HOST'], os.environ['DO_USER']
-          if (not re.fullmatch(r'[a-zA-Z0-9.:-]+', host) or host.startswith('-')
-                  or not re.fullmatch(r'[a-z_][a-z0-9_-]*', user)
-                  or not os.environ['DO_SSH_KEY'].strip()
-                  or not os.environ['DO_KNOWN_HOSTS'].strip()):
-              raise SystemExit('HOST_CONNECTION_CONFIGURATION_INVALID')
-          with tempfile.TemporaryDirectory(prefix='porota-ssh-') as directory:
-              key, known = Path(directory)/'key', Path(directory)/'known_hosts'
-              key.write_text(os.environ['DO_SSH_KEY'].rstrip()+'\n'); key.chmod(0o600)
-              known.write_text(os.environ['DO_KNOWN_HOSTS'].rstrip()+'\n'); known.chmod(0o600)
-              command = ['ssh', '-i', str(key), '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
-                         '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile='+str(known),
-                         '-o', 'ConnectTimeout=10', user+'@'+host,
-                         'python3 -B - inspect --root /opt/porota-trading']
-              try:
-                  result = subprocess.run(command, input=Path('scripts/porota_rootless_setup.py').read_bytes(),
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
-                  receipt = json.loads(result.stdout) if result.returncode == 0 else None
-              except (OSError, subprocess.TimeoutExpired, ValueError):
-                  raise SystemExit('HOST_INSPECTION_TRANSPORT_OR_RECEIPT_FAILED') from None
-              if result.returncode:
-                  raise SystemExit('HOST_INSPECTION_FAILED_EXIT_'+str(result.returncode))
-              if not isinstance(receipt, dict) or receipt.get('schema') != 'porota.rootless.inspect.v1' or receipt.get('host_mutations') != 0:
-                  raise SystemExit('HOST_INSPECTION_RECEIPT_INVALID')
-              receipt['control_sha'] = os.environ['GITHUB_SHA']
-              receipt['run_id'] = int(os.environ['GITHUB_RUN_ID'])
-              output = Path(os.environ['RUNNER_TEMP'])/'rootless-inspect.json'
-              output.write_text(json.dumps(receipt, indent=2, sort_keys=True)+'\n')
-              print(json.dumps(receipt, sort_keys=True))
-              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-                  summary.write('### Porota rootless inspection\n\n')
-                  summary.write('Read only; host mutations: 0. Runtime validation: NO_VERIFICADO.\n\n')
-                  summary.write('```json\n'+json.dumps(receipt, indent=2, sort_keys=True)+'\n```\n')
-          PY
-      - uses: actions/upload-artifact@v4
+          [[ "$OPERATION" == inspect || "$OPERATION" == prepare ]]
+          python3 -B -m scripts.porota_actions_host "$OPERATION" \
+            --receipt "$RUNNER_TEMP/rootless-host.json"
+
+      - name: Preserve the observed host result
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: porota-rootless-inspect-${{ github.run_id }}
-          path: ${{ runner.temp }}/rootless-inspect.json
-          if-no-files-found: error
+          name: porota-rootless-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rootless-host.json
           retention-days: 30
+          if-no-files-found: warn
+
+      - name: Report evidence without certifying a deployment
+        if: always()
+        shell: bash
+        run: |
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'rootless-host.json'
+          receipt = json.loads(path.read_text()) if path.is_file() else {'state': 'NO_VERIFICADO'}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('## Rootless host prerequisites\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
+          PY

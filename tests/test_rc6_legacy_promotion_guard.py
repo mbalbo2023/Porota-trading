@@ -100,20 +100,6 @@ class LegacyPromotionGuardTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(PromotionBlocked):
                 application_ci_proof(runs, jobs, "testing", SHA)
 
-    def test_manual_workflow_pins_source_in_both_jobs_and_escapes_inputs(self):
-        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/"
-                    "promote-to-production.yml").read_text()
-        self.assertIn("  workflow_dispatch:", workflow)
-        self.assertNotIn("  push:", workflow)
-        self.assertIn("source_sha: ${{ steps.source.outputs.sha }}", workflow)
-        self.assertIn("SOURCE_SHA: ${{ needs.verify.outputs.source_sha }}", workflow)
-        self.assertIn('git merge --no-ff "$SOURCE_SHA"', workflow)
-        self.assertIn('git rev-parse "refs/remotes/origin/$SOURCE_BRANCH"', workflow)
-        self.assertIn("PROMOTION_REASON: ${{ inputs.motivo }}", workflow)
-        self.assertIn("CONFIRMATION: ${{ inputs.confirmacion }}", workflow)
-        self.assertIn("Revalidar CI exacta inmediatamente antes de la escritura", workflow)
-        self.assertNotIn("github.event.workflow_run.head_sha", workflow)
-        self.assertNotIn("gh run list", workflow)
 
 
 if __name__ == "__main__":

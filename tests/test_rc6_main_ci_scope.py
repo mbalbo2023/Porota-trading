@@ -87,16 +87,20 @@ class MainCiScopeTests(unittest.TestCase):
                    "   with self.subTest(i=i): self.assertTrue(True)\n")
         self.assertGreater(run_control_tests(self.root), 1)
 
-    def test_workflow_requires_control_tests_and_app_only_steps_are_explicit(self):
-        workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml").read_text()
-        self.assertIn("python -m scripts.rc6_main_ci_scope test-control", workflow)
-        self.assertIn("python -m scripts.rc6_main_ci_scope validate-control-deps", workflow)
-        self.assertIn("cache-dependency-path: .github/requirements-control-ci.txt", workflow)
-        self.assertIn("python -m pip install --disable-pip-version-check -r .github/requirements-control-ci.txt", workflow)
-        self.assertIn("if: steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'", workflow)
-        self.assertIn("APPLICATION_CHECKS=NOT_APPLICABLE|reason=CONTROL_PLANE_ONLY", workflow)
-        self.assertIn("if: steps.detect.outputs.scope == 'APPLICATION'", workflow)
-        self.assertNotIn("Application package not installed yet", workflow)
+    def test_workflow_compiles_and_tests_control_code_without_building_application(self):
+        workflow = yaml.load((Path(__file__).resolve().parents[1] /
+                             '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        steps = workflow['jobs']['application']['steps']
+        commands = [step['run'] for step in steps if 'run' in step]
+        self.assertIn('python -m compileall -q scripts', commands)
+        self.assertIn('python -m scripts.rc6_main_ci_scope test-control', commands)
+        for step in steps:
+            if 'run' in step:
+                self.assertNotIn('if', step)
+        source = '\n'.join(commands)
+        self.assertNotIn('docker build', source)
+        self.assertNotIn('docker compose', source)
+        self.assertIn('application_build=NOT_APPLICABLE|runtime=NO_VERIFICADO', source)
 
     def test_only_first_pr_attempts_share_a_cancellable_ci_group(self):
         workflow_path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
@@ -112,6 +116,57 @@ class MainCiScopeTests(unittest.TestCase):
         self.assertEqual(policy["group"],
                          "${{ github.workflow }}-${{ github.repository }}-${{ " + first_pr +
                          " && format('pr-{0}', github.event.number) || format('run-{0}', github.run_id) }}")
+
+    def test_established_required_check_names_remain_available(self):
+        workflows = Path(__file__).resolve().parents[1] / '.github/workflows'
+        ci = yaml.load((workflows / 'ci.yml').read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual({job['name'] for job in ci['jobs'].values()}, {
+            'Infrastructure preflight',
+            'Repository tests / application when present',
+        })
+        ownership = yaml.load((workflows / 'checkpoint-attestation.yml').read_text(),
+                              Loader=yaml.BaseLoader)
+        self.assertEqual({job.get('name', key) for key, job in ownership['jobs'].items()},
+                         {'checkpoint-attestation'})
+
+    def test_security_scan_rejects_tracked_secrets_without_printing_their_values(self):
+        workflow = yaml.load((Path(__file__).resolve().parents[1] /
+                             '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+        steps = workflow['jobs']['infrastructure']['steps']
+        command = next(step['run'] for step in steps
+                       if step['name'] == 'Validate repository safety')
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        source = self.root / 'fixture.py'
+        source.write_text('paper_mode = "SIMULATION"\n')
+        subprocess.run(['git', 'add', 'fixture.py'], cwd=self.root, check=True)
+
+        def scan():
+            return subprocess.run(['bash', '-c', command], cwd=self.root,
+                                  text=True, capture_output=True, check=False)
+
+        self.assertEqual(scan().returncode, 0)
+        example = self.root / '.env.example'
+        example.write_text('PAPER_MODE=SIMULATION\n')
+        subprocess.run(['git', 'add', '.env.example'], cwd=self.root, check=True)
+        self.assertEqual(scan().returncode, 0)
+        synthetic = 'AIza' + 'A' * 25
+        source.write_text('synthetic_key = ' + repr(synthetic) + '\n')
+        rejected = scan()
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn('Credential-like material detected', rejected.stdout)
+        self.assertNotIn(synthetic, rejected.stdout + rejected.stderr)
+        source.write_text('paper_mode = "SIMULATION"\n')
+        example.write_text('SYNTHETIC_KEY=' + synthetic + '\n')
+        rejected = scan()
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn('Credential-like material detected', rejected.stdout)
+        self.assertNotIn(synthetic, rejected.stdout + rejected.stderr)
+        example.write_text('PAPER_MODE=SIMULATION\n')
+        (self.root / 'credentials.json').write_text('{}\n')
+        subprocess.run(['git', 'add', 'credentials.json'], cwd=self.root, check=True)
+        rejected = scan()
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn('Potential secret-bearing file is tracked', rejected.stdout)
 
     def test_control_dependency_guard_requires_all_three_exact_pins(self):
         dependency_file = self.root / ".github/requirements-control-ci.txt"
@@ -143,27 +198,26 @@ class MainCiScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ScopeError, "CI_CONTROL_DEPS_MISMATCH"):
             scope.validate_control_deps(self.root)
 
-    def test_control_cache_is_exact_pip_lock_and_never_skips_mandatory_tests(self):
+    def test_control_cache_is_exact_pip_lock_and_never_skips_discovered_tests(self):
         project_root = Path(__file__).resolve().parents[1]
-        lockfile = project_root / ".github/requirements-control-ci.txt"
-        self.assertEqual(lockfile.read_text(encoding="utf-8").splitlines(), [
-            "pytest==9.1.1", "PyYAML==6.0.3", "cryptography==50.0.2",
+        lockfile = project_root / '.github/requirements-control-ci.txt'
+        self.assertEqual(lockfile.read_text(encoding='utf-8').splitlines(), [
+            'pytest==9.1.1', 'PyYAML==6.0.3', 'cryptography==50.0.2',
         ])
-        workflow = yaml.load((project_root / ".github/workflows/ci.yml").read_text(),
+        workflow = yaml.load((project_root / '.github/workflows/ci.yml').read_text(),
                              Loader=yaml.BaseLoader)
-        control_steps = workflow["jobs"]["application"]["steps"]
-        by_name = {step["name"]: step for step in control_steps}
-        setup = by_name["Setup control-plane Python 3.11"]
-        self.assertEqual(setup["with"]["cache"], "pip")
-        self.assertEqual(setup["with"]["cache-dependency-path"],
-                         ".github/requirements-control-ci.txt")
-        self.assertEqual(by_name["Install pinned control-plane test dependencies"]["run"],
-                         "python -m pip install --disable-pip-version-check -r .github/requirements-control-ci.txt")
-        for name in ("Validate pinned control-plane dependencies",
-                     "Install pinned control-plane test dependencies",
-                     "Run mandatory control-plane tests"):
-            self.assertEqual(by_name[name]["if"],
-                             "steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'")
+        steps = workflow['jobs']['application']['steps']
+        by_name = {step['name']: step for step in steps}
+        setup = by_name['Setup control-plane Python 3.11']
+        self.assertEqual(setup['with']['cache'], 'pip')
+        self.assertEqual(setup['with']['cache-dependency-path'],
+                         '.github/requirements-control-ci.txt')
+        self.assertEqual(by_name['Install pinned control-plane test dependencies']['run'],
+                         'python -m pip install --disable-pip-version-check -r .github/requirements-control-ci.txt')
+        for name in ('Validate pinned control-plane dependencies',
+                     'Install pinned control-plane test dependencies',
+                     'Run discovered control-plane tests'):
+            self.assertNotIn('if', by_name[name])
 
 
 class DiffAwareScopeTests(unittest.TestCase):
@@ -391,46 +445,23 @@ class DiffAwareScopeTests(unittest.TestCase):
             with mock.patch.object(Path, "cwd", return_value=self.repo):
                 self.assertEqual(call_cli(), "FULL_REQUIRED")
 
-    def test_workflow_keeps_security_and_tests_with_doc_only_image_optimization(self):
-        workflow = (Path(__file__).resolve().parents[1] /
-                    ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        self.assertIn("fetch-depth: 2", workflow)
-        self.assertIn('git show "$trusted_base:scripts/rc6_main_ci_scope.py"', workflow)
-        self.assertIn('plan="FULL_REQUIRED"', workflow)
-        self.assertIn("GITHUB_EVENT_PATH: ${{ github.event_path }}", workflow)
-        self.assertIn("GITHUB_REPOSITORY: ${{ github.repository }}", workflow)
-        self.assertIn("GITHUB_SHA: ${{ github.sha }}", workflow)
-        self.assertIn("CI_PLAN=$plan", workflow)
-        self.assertIn("python -m scripts.rc6_main_ci_scope test-control", workflow)
-        self.assertIn("run: pytest -q", workflow)
-        self.assertIn("echo 'APPLICATION_IMAGE_CHECKS=NOT_APPLICABLE|reason=AUTHENTICATED_DOCS_ONLY'", workflow)
-        self.assertIn("steps.delta.outputs.plan != 'DOCS_ONLY'", workflow)
-        # Security scan, Compose syntax, and control-plane test must not be
-        # conditional on the reduced diff plan.
-        self.assertIn("- name: Validate repository safety", workflow)
-        self.assertIn("- name: Validate Docker Compose syntax", workflow)
-        parsed = yaml.load(workflow, Loader=yaml.BaseLoader)
-        infra = {step["name"]: step for step in
-                 parsed["jobs"]["infrastructure"]["steps"]}
-        application = {step["name"]: step for step in
-                       parsed["jobs"]["application"]["steps"]}
-        for name in ("Validate repository safety", "Validate Docker Compose syntax"):
-            self.assertNotIn("if", infra[name])
-        self.assertEqual(application["Run mandatory control-plane tests"]["if"],
-                         "steps.detect.outputs.scope == 'CONTROL_PLANE_ONLY'")
-        self.assertEqual(application["Run application tests"]["if"],
-                         "steps.detect.outputs.scope == 'APPLICATION'")
-        for name in ("Build application image", "Start application stack",
-                     "Wait for application health", "Verify no restart loop",
-                     "Verify SQLite WAL when database module is available"):
-            self.assertIn("steps.delta.outputs.plan != 'DOCS_ONLY'",
-                          application[name]["if"])
-        for step in application.values():
-            if step.get("shell") == "bash":
-                parsed_bash = subprocess.run(
-                    ["bash", "-n", "-c", step["run"]],
-                    capture_output=True, text=True, check=False)
-                self.assertEqual(parsed_bash.returncode, 0, step["name"])
+    def test_control_ci_keeps_security_and_real_tests_in_readonly_required_contexts(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        workflow = yaml.load(source, Loader=yaml.BaseLoader)
+        self.assertEqual(workflow['permissions'], {'contents': 'read'})
+        self.assertEqual(set(workflow['jobs']), {'infrastructure', 'application'})
+        self.assertEqual(workflow['jobs']['application']['needs'], 'infrastructure')
+        steps = workflow['jobs']['infrastructure']['steps'] + workflow['jobs']['application']['steps']
+        security = next(step for step in steps if step['name'] == 'Validate repository safety')
+        self.assertNotIn('if', security)
+        self.assertIn('git ls-files', security['run'])
+        self.assertIn('Credential-like material detected', security['run'])
+        for step in steps:
+            if 'run' in step:
+                parsed_bash = subprocess.run(['bash', '-n', '-c', step['run']],
+                                            capture_output=True, text=True, check=False)
+                self.assertEqual(parsed_bash.returncode, 0, step['name'])
 
 
 if __name__ == "__main__":

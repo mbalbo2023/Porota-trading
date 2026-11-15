@@ -1,8 +1,12 @@
 import json
+import hashlib
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from scripts import porota_rootless_host as host
 
 try:
     from scripts import porota_rootless_setup as setup
@@ -57,6 +61,176 @@ class InspectTests(unittest.TestCase):
         self.assertFalse(result["sudo_noninteractive_true"])
         self.assertTrue(all(x["status"] == "NO_VERIFICADO" for x in result["legacy_rc6"]))
         self.assertEqual(result["state"], "NO_VERIFICADO")
+
+    def test_streamed_inspection_can_report_real_units_without_local_checkout(self):
+        def commands(command, **kwargs):
+            if "list-units" in command or "list-unit-files" in command:
+                return subprocess.CompletedProcess(command, 0, "porota-preopen-rc6.timer enabled\n", "")
+            if "show" in command:
+                return subprocess.CompletedProcess(command, 0, "Id=porota-preopen-rc6.timer\nLoadState=loaded\nActiveState=active\nUnitFileState=enabled\n", "")
+            raise AssertionError(command)
+        result = setup.unit_inventory(self.root, run=commands)
+        self.assertEqual(result["status"], "OBSERVED_POLICY_UNAVAILABLE")
+        self.assertEqual(result["units"][0]["name"], "porota-preopen-rc6.timer")
+        self.assertEqual(result["units"][0]["policy_role"], "UNKNOWN")
+        self.assertEqual(result["unmapped_units"], ["porota-preopen-rc6.timer"])
+
+
+class PrepareTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.identity = host.Identity(os.getuid(), os.getgid(), "porotaadmin", self.home)
+        self.commands = []
+
+    def commands_ok(self, command, **kwargs):
+        self.commands.append(command)
+        stdout = ""
+        if "loginctl" in command[0] and "show-user" in command:
+            stdout = "yes"
+        if "compose" in command and "version" in command:
+            stdout = "2.35.1"
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    def test_prepare_never_installs_packages_when_toolchain_is_missing(self):
+        with patch.object(setup.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(host.Hold, "ROOTLESS_PACKAGES_REQUIRED"):
+                setup.prepare(self.identity, run=self.commands_ok)
+        self.assertEqual(self.commands, [])
+        receipt = json.loads((self.identity.state / "prepare.json").read_text())
+        self.assertIn("newuidmap", receipt["missing_prerequisites"])
+        self.assertEqual(receipt["state"], "NO_VERIFICADO")
+
+    def test_prepare_creates_only_dedicated_user_unit_and_pins_socket_store(self):
+        original_read = host.read_regular
+        def read(path, *args):
+            if str(path).endswith("cgroup.controllers"):
+                return b"cpu memory pids"
+            return original_read(path, *args)
+        with patch.object(setup.shutil, "which", side_effect=lambda name, **kwargs: "/usr/bin/" + name), \
+             patch.object(setup, "subids_available", return_value=True), \
+             patch.object(host, "read_regular", side_effect=read), \
+             patch.object(host.Host, "boundary", return_value="dedicated-daemon"):
+            result = setup.prepare(self.identity, run=self.commands_ok)
+            # Identical re-entry checks the same files; no global Docker lifecycle exists.
+            setup.prepare(self.identity, run=self.commands_ok)
+        config = json.loads((self.home / ".config/porota-rc6/daemon.json").read_text())
+        self.assertEqual(config["hosts"], [f"unix://{self.identity.socket}"])
+        self.assertEqual(config["data-root"], str(self.identity.store))
+        self.assertEqual(result["runtime_validation"], "NO_VERIFICADO")
+        system = [x for x in self.commands if x[0] == setup.SYSTEMCTL]
+        self.assertTrue(system)
+        self.assertTrue(all("--user" in x for x in system))
+        self.assertFalse(any(x[0] == setup.SUDO for x in self.commands))
+        self.assertFalse((self.home / ".config/systemd/user/docker.service").exists())
+
+    def test_bootstrap_rejects_unsupported_systemd_path(self):
+        unsafe = host.Identity(1000, 1000, "porotaadmin", Path("/home/user%h"))
+        with self.assertRaisesRegex(host.Hold, "BOOTSTRAP_PATH_UNSUPPORTED"):
+            setup.daemon_configuration(unsafe, "/usr/bin/dockerd-rootless.sh")
+
+    def test_access_repairs_are_bounded_and_do_not_read_secret_contents(self):
+        compile(setup.PREPARE_ACCESS, "bootstrap-access", "exec")
+        captures = []
+        def command(args, **kwargs):
+            captures.append(args)
+            return subprocess.CompletedProcess(args, 0, '{"scope":"EXPLICIT_REQUIRED_RC6_PATHS","changed_paths":[],"recursive":false}', "")
+        receipt = setup.prepare_access(self.identity, run=command)
+        self.assertFalse(receipt["recursive"])
+        self.assertEqual(captures[0][:5], (setup.SUDO, "-n", "--", "/usr/bin/python3", "-c"))
+        self.assertNotIn("os.walk", setup.PREPARE_ACCESS)
+        self.assertNotIn(".read(", setup.PREPARE_ACCESS)
+
+
+class LegacyTransitionTests(unittest.TestCase):
+    """Fake rootful commands model only reviewed RC6 objects; no host access."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.source = Path(self.temp.name)
+        self.root = Path("/opt/porota-trading")
+        self.name = "porota-functional-health-rc6.timer"
+        unit = self.source / "systemd" / self.name
+        unit.parent.mkdir()
+        unit.write_bytes(b"[Timer]\nOnBootSec=1min\n")
+        policy = self.source / "ops/policy/host-control-plane-reconciliation-v2.json"
+        policy.parent.mkdir(parents=True)
+        policy.write_text(json.dumps({"units": {"systemd/" + self.name: {"role": "RETIRED_TIMER"}}}))
+        self.digest = hashlib.sha256(unit.read_bytes()).hexdigest()
+        self.units = [{"name": self.name, "policy_role": "RETIRED_TIMER", "LoadState": "loaded",
+                       "ActiveState": "active", "UnitFileState": "enabled", "DropInPaths": "",
+                       "FragmentPath": "/etc/systemd/system/" + self.name}]
+        self.containers = {}
+        for name, cid, command in ((setup.LEGACY_NAMES[0], "1" * 64, "bf_production_paper_observer.py"),
+                                   (setup.LEGACY_NAMES[1], "2" * 64, "o_dashboard.py")):
+            self.containers[cid] = {"Id": cid, "Name": "/" + name, "Image": "sha256:" + "a" * 64,
+                "Config": {"Cmd": ["python", command], "Entrypoint": None},
+                "Mounts": [{"Type": "bind", "Source": str(self.root / "data"), "Destination": "/app/data"}],
+                "State": {"Running": True}, "HostConfig": {"RestartPolicy": {"Name": "unless-stopped"}}}
+        self.commands = []
+
+    def fake(self, command, **kwargs):
+        self.commands.append(command)
+        out = ""
+        if setup.DOCKER in command:
+            start = command.index("unix:///var/run/docker.sock") + 1
+            args = command[start:]
+            if args[0] == "info":
+                out = json.dumps({"ID": "legacy-daemon"})
+            elif args[:2] == ("container", "ls"):
+                out = "\n".join(self.containers)
+            elif args[:2] == ("container", "inspect"):
+                out = json.dumps([self.containers[args[-1]]])
+            elif args[:2] == ("container", "stop"):
+                self.containers[args[-1]]["State"]["Running"] = False
+            elif args[:2] == ("container", "update"):
+                self.containers[args[-1]]["HostConfig"]["RestartPolicy"]["Name"] = "no"
+            else:
+                raise AssertionError(command)
+        elif setup.SYSTEMCTL in command and "disable" in command:
+            self.units[0].update(ActiveState="inactive", UnitFileState="disabled")
+        else:
+            raise AssertionError(command)
+        return subprocess.CompletedProcess(command, 0, out, "")
+
+    def patches(self):
+        return (patch.object(setup, "unit_inventory", side_effect=lambda *args, **kwargs:
+                    {"status": "OBSERVED", "units": self.units, "unmapped_units": []}),
+                patch.object(setup.LegacyTransition, "unit_digest", return_value=self.digest))
+
+    def test_functional_enabled_service_blocks_before_any_quiescence(self):
+        self.units[0]["policy_role"] = "ACTIVE_TIMER"
+        inventory, digest = self.patches()
+        with inventory, digest, self.assertRaisesRegex(host.Hold, "LEGACY_FUNCTIONAL_UNIT_NEEDS_ROOTLESS_SUCCESSOR") as caught:
+            setup.LegacyTransition(self.root, self.source, run=self.fake)
+        self.assertEqual(caught.exception.public_details["functional_units_needing_successor"], [self.name])
+        self.assertFalse(any("stop" in c or "disable" in c or "update" in c for c in self.commands))
+
+    def test_quiescence_receipt_is_produced_by_exact_stops_and_zero_database_check(self):
+        inventory, digest = self.patches()
+        with inventory, digest, patch.object(host, "database_snapshot", return_value={"inode": 4, "real_orders_sent": 0}):
+            transition = setup.LegacyTransition(self.root, self.source, run=self.fake)
+            result = transition.quiesce()
+        self.assertEqual(result["state"], "QUIESCENT")
+        self.assertEqual({x["cid"] for x in result["containers"]}, set(self.containers))
+        self.assertTrue(all(not x["State"]["Running"] for x in self.containers.values()))
+        stopped = [c[-1] for c in self.commands if "stop" in c]
+        self.assertEqual(set(stopped), set(self.containers))
+        self.assertFalse(result["rootful_daemon_stopped"])
+        self.assertFalse(any("rm" in c or "prune" in c or "docker.service" in c for c in self.commands))
+
+    def test_named_container_with_foreign_storage_is_refused(self):
+        self.containers["1" * 64]["Mounts"][0]["Source"] = "/opt/boca/data"
+        with self.assertRaisesRegex(host.Hold, "LEGACY_DATA_IDENTITY"):
+            setup.LegacyTransition(self.root, self.source, run=self.fake)
+        self.assertFalse(any("stop" in c or "disable" in c or "update" in c for c in self.commands))
+
+    def test_missing_rootful_permission_is_not_treated_as_empty_legacy(self):
+        def denied(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, "", "private denied details")
+        with self.assertRaisesRegex(host.Hold, "BOOTSTRAP_COMMAND_UNAVAILABLE"):
+            setup.LegacyTransition(self.root, self.source, run=denied)
 
 
 if __name__ == "__main__":
