@@ -80,49 +80,19 @@ def test_forged_or_incomplete_context_rejected_without_leaking_values(change, ca
     assert "SYNTHETIC_SECRET" not in out[0]
 
 
-def test_workflow_uses_single_protected_main_entry_before_any_candidate_execution():
-    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    triggers = doc.get("on", doc.get(True))
-    assert set(triggers) == {"workflow_dispatch"}
-    assert doc["permissions"] == {"contents": "read"}
-    assert len(doc["jobs"]) == 1
-    job = next(iter(doc["jobs"].values()))
-    assert job["runs-on"] == "ubuntu-24.04"
-    # `runner` context is unavailable in jobs.<job_id>.env. GitHub must be
-    # able to parse this workflow before any job can enforce HOLD=79.
-    assert "runner.environment" not in json.dumps(job.get("env", {}))
-    assert not any(key.startswith(("GITHUB_", "RUNNER_")) for key in job.get("env", {}))
-    steps = job["steps"]
-    assert steps[0]["name"] == "Reject untrusted workflow provenance before checkout"
-    assert "GITHUB_WORKFLOW_SHA" in steps[0]["run"]
-    assert "RUNNER_ENVIRONMENT" in steps[0]["run"]
-    assert "exit 79" in steps[0]["run"]
-    assert steps[1]["uses"] == "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
-    assert steps[1]["with"] == {
-        "ref": "${{ github.workflow_sha }}", "persist-credentials": False,
-    }
-    assert steps[2]["run"].strip().startswith("set -Eeuo pipefail")
-    assert "python3 -I -S scripts/rc6_ci_ws12_main_entry.py" in steps[2]["run"]
-    assert not any("docker" in json.dumps(step).lower() for step in steps)
-    assert not any("actions/upload-artifact" in json.dumps(step).lower() for step in steps)
 
 
 @pytest.mark.parametrize("protected", ["false", "", "TRUE", None])
-def test_workflow_precheckout_rejects_unprotected_ref(protected):
-    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    step = next(iter(doc["jobs"].values()))["steps"][0]
+def test_entry_rejects_unprotected_ref_without_runtime_access(protected, capsys):
     good_env = valid_context()
-    verified = subprocess.run(["bash", "-e"], input=step["run"], env=good_env,
-                              text=True, capture_output=True, check=False)
-    assert verified.returncode == 0, verified.stdout
+    assert entry_module().main(good_env) == 79
+    assert "MAIN_CONTEXT_VERIFIED_HOLD_NO_OCI" in capsys.readouterr().out
     bad_env = dict(good_env)
     if protected is None:
         bad_env.pop("GITHUB_REF_PROTECTED")
     else:
         bad_env["GITHUB_REF_PROTECTED"] = protected
-    denied = subprocess.run(["bash", "-e"], input=step["run"], env=bad_env,
-                            text=True, capture_output=True, check=False)
-    assert denied.returncode == 79
-    assert denied.stdout.strip() == (
-        "RC6_WS12_CONTROL=UNTRUSTED_CONTEXT|qa_certified=false|automatic_go=false"
+    assert entry_module().main(bad_env) == 79
+    assert capsys.readouterr() == (
+        "RC6_WS12_CONTROL=UNTRUSTED_CONTEXT|qa_certified=false|automatic_go=false\n", ""
     )

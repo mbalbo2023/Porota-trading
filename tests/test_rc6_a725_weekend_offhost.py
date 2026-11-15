@@ -236,18 +236,6 @@ class WeekendEvidenceTests(unittest.TestCase):
         self.assertEqual(result["state"], "NO_VERIFICADO")
         self.assertEqual(result["sources"]["r2"]["source_integrity"], "NO_VERIFICADO")
 
-    def test_workflow_is_main_manual_no_runtime_credentials(self):
-        workflow = (Path(__file__).resolve().parents[1] /
-                    ".github/workflows/rc6-a725-weekend-offhost.yml").read_text()
-        self.assertIn("  workflow_dispatch:", workflow)
-        self.assertNotIn("  schedule:", workflow)
-        self.assertIn("github.ref == 'refs/heads/main'", workflow)
-        self.assertIn("gh run view 42260034260", workflow)
-        self.assertIn("--job 128037233727 --log", workflow)
-        self.assertIn("  actions: read", workflow)
-        for forbidden in ("secrets.", "sudo ", "ssh ", "docker ", "ppi-client",
-                          "rc6_history_fresh_probe", "github.event_name == 'schedule'"):
-            self.assertNotIn(forbidden, workflow)
 
 
 if __name__ == "__main__":

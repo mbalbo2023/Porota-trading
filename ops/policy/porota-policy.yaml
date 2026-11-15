@@ -1,0 +1,172 @@
+schema_version: 2
+project: POROTA_TRADING
+
+# Stable contract. Deployment state belongs in timestamped receipts, not here.
+repository:
+  public_repository_intentional: true
+  source_code_may_be_public: true
+  secrets_in_repository: false
+  runtime_data_in_repository: false
+  broker_account_data_in_repository: false
+  production_databases_in_repository: false
+
+operating_mode:
+  required_mode: PRODUCTION_PAPER
+  execution_mode: SIMULATION
+  shadow_allowed: true
+  real_trading_allowed: false
+  real_orders_sent_required: 0
+
+paper_admission_governance:
+  operator_paper_intent_persists_until_explicit_pause: true
+  operator_paper_intent_arbitrary_ttl_allowed: false
+  operator_paper_intent_invalidated_by_new_code_sha: false
+  exact_release_safety_reverification_required: true
+  exact_market_and_instrument_admission_required: true
+  hardcoded_ticker_watchlist_as_global_admission_veto_allowed: false
+  unrelated_family_source_failure_as_global_admission_veto_allowed: false
+  live_paper_entry_requires_genuine_session_and_fresh_data: true
+  offline_historical_and_synthetic_tests_24x7_allowed: true
+  real_order_routes_must_remain_blocked: true
+
+operator_collaboration:
+  current_user_scope_is_authoritative: true
+  arbitrary_new_business_controls_allowed: false
+  decisions_require_reason_and_evidence: true
+  consultations_must_offer_options_and_recommendation: true
+  do_not_repeat_generic_approval_when_autonomous_scope_is_granted: true
+  mandatory_micropass_permission: false
+  fictional_unanimity_required: false
+  exact_release_deploy_authorization_controls_still_apply: true
+
+accessibility:
+  primary_control_plane: [GITHUB_MCP, GITHUB_ACTIONS]
+  interactive_ssh: BREAK_GLASS_ONLY
+  user_terminal_required: false
+  user_copy_paste_commands_required: false
+  codespaces_allowed: false
+
+development:
+  direct_main_changes_allowed: false
+  direct_deploy_branch_development_allowed: false
+  isolated_branch_required: true
+  parallel_development_default: true
+  shared_runtime_writers_serialized: true
+  ppi_watch_must_not_be_modified: true
+  chat_memory_is_runtime_source_of_truth: false
+  runtime_evidence_required: true
+  read_only_nonblocking: true
+  write_ownership_scope_required: true
+  deploy_owner_globally_exclusive: true
+
+deployment:
+  strategy: FIX_FORWARD_ONLY
+  rollback_allowed: false
+  technical_predeploy_and_deploy_24x7_required: true
+  offhours_weekends_holidays_are_deploy_veto: false
+  market_calendar_only_gates_paper_entry_and_live_market_proof: true
+  single_consolidated_deploy_required: true
+  single_frozen_candidate_required: true
+  single_final_predeploy_v2_gate_required: true
+  new_changes_after_candidate_freeze_go_to_next_batch: true
+  build_once_required: true
+  exact_artifact_promotion_required: true
+  immutable_artifact_identity_required: true
+  exact_sha_required: true
+  artifact_manifest_required: true
+  artifact_hashes_required: true
+  manual_partial_runtime_file_lists_allowed: false
+  canonical_predeploy_workflow: .github/workflows/porota-predeploy-v2.yml
+  canonical_deploy_workflow: .github/workflows/porota-deploy-v2-promote.yml
+  concurrency_group: rc6-unified-paper-deploy
+  cancel_in_progress: false
+  rootless_runtime_required: true
+  bootstrap_separate_from_release: true
+  implicit_host_privilege_changes_allowed: false
+  implicit_data_migration_allowed: false
+  droplet_disk_pretransfer_gate_required: true
+  droplet_disk_guard_must_run_before_transfer: true
+  droplet_disk_pretransfer_min_free_bytes: dynamic
+  droplet_disk_pretransfer_formula: image_tar_bytes + 2 * image_unpacked_bytes + 2 * bundle_bytes + fixed_headroom_bytes
+  external_market_source_connectivity_veto_allowed: false
+  external_market_source_freshness_veto_allowed: false
+  external_market_source_unavailability_effect: AMBER_ALERT_ONLY
+  external_market_sources: [PPI, IOL, BYMA, A3, ROFEX, OTHER_COMPLEMENTARY_PROVIDERS]
+  external_source_contract_corruption_remains_red: true
+  paper_instrument_readiness_on_source_failure: FAIL_CLOSED
+  host_access_artifact_integrity_and_paper_safety_still_blocking: true
+
+predeploy_gates:
+  selection: CHANGE_IMPACT_AND_CURRENT_CONTRACT
+  docs_only_build_allowed: false
+  docs_only_deploy_allowed: false
+  reuse_applicable_evidence: true
+  full_suite_required_for_every_change: false
+  code_and_functional_tests_same_image: true
+  required_for_release:
+    - POLICY
+    - ARTIFACT_INTEGRITY
+    - DEPENDENCY_AND_IMPORT_CLOSURE
+    - AFFECTED_CODE_TESTS
+    - FUNCTIONAL_SMOKE
+    - PAPER_SAFETY
+    - SECRET_SCAN
+  incident_replay: AFFECTED_TRANSITION_ONLY
+  rule: >-
+    Check the affected behavior and its consumers before changing runtime.
+    Replay a historical incident when the changed transition or current contract
+    makes it applicable. A historical checklist is not a universal deploy gate.
+
+promotion:
+  healthy_runtime_must_remain_untouched_until_candidate_green: true
+  observer_and_dashboard_same_artifact_required: true
+  post_start_health_required: true
+  success_requires_state_manifest: true
+  partial_promotion_success_allowed: false
+  current_runtime_paper_zero_evidence_required: true
+  future_container_required_in_preflight: false
+
+failure_learning:
+  failure_signature_required: true
+  root_cause_required: true
+  incident_fixture_provenance_required: true
+  permanent_regression_guard_required_when_feasible: true
+  fix_forward_required: true
+  automated_guard_limit_must_be_documented: true
+
+cleanup:
+  scope: VERIFIED_POROTA_ROOTLESS_RESOURCES_ONLY
+  required_after_success: true
+  required_after_failure_when_safe: true
+  failed_attempt_cleanup_receipt_required: true
+  orphan_cleanup_must_use_same_host_deploy_mutex: true
+  failed_deploy_reference_safe_orphan_gc_required_when_runtime_safe: true
+  residual_orphans_must_be_audited_and_cleaned_before_next_deploy: true
+  orphan_cleanup_must_not_create_new_deploy_attempt_barrier: true
+  reference_rechecks_before_each_image_delete: true
+  docker_prune_or_force_delete_allowed: false
+  report_before_after: true
+  retained_resources_require_reason: true
+  backups_suspended_by_operator: true
+  paper_backup_keep_newest: 0
+  history_backup_keep_newest: 0
+  general_backup_keep_newest: 0
+  allowed_targets:
+    - unreferenced_porota_candidate_images
+    - unreferenced_porota_build_cache
+    - owned_deploy_staging_and_tarballs
+    - unreferenced_stopped_porota_deploy_containers
+  forbidden_targets:
+    - active_or_referenced_containers_and_images
+    - volumes_and_sqlite_databases
+    - bind_mounted_data
+    - ppi_watch
+    - shared_host_or_other_service_resources
+
+workflow_governance:
+  canonical_release_workflows: 2
+  bootstrap_is_not_a_release_workflow: true
+  prefer_parameterized_control_plane: true
+  one_off_workflows_discouraged: true
+  workflow_creation_requires_reason: true
+  legacy_retirement_requires_consumer_review: true

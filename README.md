@@ -1,35 +1,42 @@
-# Porota Trading
+# Porota Trading RC6
 
-La referencia operativa vigente es RC6.
+Sistema de análisis y simulación para el mercado argentino.
+**PAPER/SHADOW ONLY**: modo esperado `PRODUCTION_PAPER / SIMULATION`, rutas de
+órdenes reales bloqueadas y requisito `real_orders_sent=0`.
 
-## Continuidad obligatoria entre chats
+## Documentación vigente
 
-Antes de cualquier estatus o acción, lee completos [AGENTS.md](AGENTS.md), [el protocolo de continuidad](POROTA_TRADING_CONTINUIDAD_OBLIGATORIA.md), [el inicio de chat](POROTA_TRADING_CHAT_START_HERE.md) y [el checkpoint cross-chat](POROTA_TRADING_CHECKPOINT_CONTINUIDAD_CROSSCHAT_2026-09-14.md). Verifica también en GitHub los cambios posteriores al checkpoint. La memoria del chat, un mensaje anterior o una captura parcial no bastan. Actualiza y verifica el checkpoint por commit después de cada hito material.
+| Fuente | Uso |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Alcance, seguridad, autonomía, concurrencia y evidencia |
+| [Runbook](docs/RUNBOOK.md) | Desarrollo, pruebas, Predeploy, Promote y cierre |
+| [Política](ops/policy/porota-policy.yaml) | Contrato estructurado de seguridad y release |
+| [Política de pruebas del candidato](https://github.com/mbalbo2023/Porota-trading/blob/integration/rc6-a1115-r87-unified-paper-candidate-20261110/ops/policy/test-policy.yaml) | Selección y clasificación de pruebas |
+| [Seguridad](SECURITY.md) | Reporte privado de vulnerabilidades |
+| [Evidencia contractual](docs/HF6_CONTRACT_EVIDENCE_POLICY.md) | Identidad y procedencia por instrumento |
+| [Canal de evidencia](docs/RUNTIME_EVIDENCE_CHANNEL_RC6.md) | Referencia del productor de evidencia |
+| [Historia](docs/history/README.md) | Versiones exactas de documentos retirados |
 
-## Baseline operativo
+## Alcance de main
 
-- Versión: `17.0.0-rc6`
-- SHA de origen certificado: `f8adec8a02b2f9f0ef2dffbee75458c958bf711e`
-- Modo validado: `PRODUCTION_PAPER`, ejecución simulada y órdenes reales bloqueadas.
+Esta rama contiene el plano de control. Su CI compila los scripts y descubre
+sus pruebas; no construye la aplicación ni acredita runtime. La política de
+pruebas de release y Predeploy/Promote viven en el candidato de aplicación.
 
-Usar siempre el SHA exacto aprobado para identificar una versión. El nombre de una rama de desarrollo no identifica por sí solo el código operativo.
+## Trabajo y operación
 
-## Flujo de cambios
+GitHub y GitHub Actions son el plano de control. Trabajar en ramas aisladas,
+revisar el cambio y reunir los frentes en un candidato. Predeploy construye una
+imagen y prueba ese mismo paquete; Promote la instala sin reconstruirla.
+El bootstrap del entorno rootless es independiente del release.
 
-1. Crear una rama de trabajo única para un objetivo acotado.
-2. Ejecutar `bash scripts/release-guard.sh` y el CI aplicable al mismo commit.
-3. Abrir un pull request hacia `main` con base, alcance, responsable, validaciones e impacto.
-4. Un único responsable de integración revisa el diff y coordina la fusión.
-5. No integrar cambios directamente a `main` desde una rama de desarrollo.
+El repositorio contiene código y evidencia de distintas fechas. Confirmar los
+SHA de `main`, producto y candidato antes de una acción; el HEAD de una rama no
+certifica qué está instalado. Las ejecuciones y recibos actuales determinan el
+estado: [Actions](https://github.com/mbalbo2023/Porota-trading/actions),
+[PRs abiertos](https://github.com/mbalbo2023/Porota-trading/pulls),
+[continuidad](https://github.com/mbalbo2023/Porota-trading/issues/1093) y
+[ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).
 
-## Flujo de producción
-
-Un despliegue requiere autorización explícita, CI verde del SHA exacto aprobado y una referencia inmutable que resuelva a ese mismo SHA. Registrar el SHA y la evidencia de validación/postdespliegue en el checkpoint correspondiente.
-
-Los workflows manuales de promoción y despliegue del repositorio siguen bajo revisión para alinearlos con estas reglas. Este README no autoriza a ejecutarlos.
-
-## Seguridad operativa
-
-No se versionan `.env`, credenciales, tokens ni datos runtime. Los secretos de producción deben existir únicamente en el servidor y/o GitHub Actions Secrets.
-
-La autorización operativa del bot sigue siendo responsabilidad de la aplicación; la infraestructura nunca la reemplaza.
+PPI Watch queda fuera del alcance. Los cambios son fix-forward; la documentación
+por sí sola no instala servicios ni autoriza operaciones reales.

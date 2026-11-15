@@ -1,0 +1,68 @@
+name: Porota rootless host
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Inspect prerequisites or prepare the isolated rootless daemon once
+        type: choice
+        options: [inspect, prepare]
+        default: inspect
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ inputs.operation == 'inspect' && format('porota-inspect-{0}', github.run_id) || 'rc6-unified-paper-deploy' }}
+  cancel-in-progress: false
+
+jobs:
+  host:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the exact control revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Execute the versioned host operation
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+          OPERATION: ${{ inputs.operation }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$OPERATION" == inspect || "$OPERATION" == prepare ]]
+          python3 -B -m scripts.porota_actions_host "$OPERATION" \
+            --receipt "$RUNNER_TEMP/rootless-host.json"
+
+      - name: Preserve the observed host result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-rootless-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rootless-host.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Report evidence without certifying a deployment
+        if: always()
+        shell: bash
+        run: |
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'rootless-host.json'
+          receipt = json.loads(path.read_text()) if path.is_file() else {'state': 'NO_VERIFICADO'}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('## Rootless host prerequisites\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
+          PY
