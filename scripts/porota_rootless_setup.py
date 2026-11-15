@@ -790,6 +790,7 @@ def clear_unstarted_images(identity, docker, receipt):
     from scripts.porota_rootless_host import (require, read_regular, no_alias, decode,
         SHA, IMAGE_ID, ATTEMPT, parse_env, remove_unreferenced_image, write_json)
     change = receipt["storage_transition"]
+    change["provenance_stage"] = "LIST"
     require(not os.path.lexists(identity.state / "current.json") and
             not docker.call("container", "ls", "--all", "--quiet", "--no-trunc"),
             "ROOTLESS_STORE_TRANSITION_NOT_EMPTY")
@@ -797,14 +798,17 @@ def clear_unstarted_images(identity, docker, receipt):
     require(all(IMAGE_ID.fullmatch(value) for value in ids), "ROOTLESS_STORE_IMAGE_PROVENANCE")
     planned = []
     for image_id in sorted(ids):
+        change["provenance_stage"] = "IMAGE_ID"
         rows = docker.json("image", "inspect", image_id)
         require(len(rows) == 1 and rows[0].get("Id") == image_id, "ROOTLESS_STORE_IMAGE_PROVENANCE")
         config = rows[0].get("Config") or {}
+        change["provenance_stage"] = "IMAGE_LABELS"
         env, labels = parse_env("\n".join(config.get("Env", []))), config.get("Labels") or {}
         sha, tree = env.get("POROTA_BUILD_SHA", ""), env.get("POROTA_CANDIDATE_TREE_SHA", "")
         require(SHA.fullmatch(sha) and SHA.fullmatch(tree) and labels.get("porota.commit") == sha and
                 labels.get("porota.predeploy") == "v2", "ROOTLESS_STORE_IMAGE_PROVENANCE")
         path = identity.state / "releases" / sha / "release.json"
+        change["provenance_stage"] = "RELEASE_CUSTODY"
         for directory in (identity.state, path.parent.parent, path.parent):
             meta = no_alias(directory).stat()
             require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == identity.uid and not meta.st_mode & 0o022,
@@ -812,6 +816,7 @@ def clear_unstarted_images(identity, docker, receipt):
         raw = read_regular(path, 2 * 1024**2)
         require(path.stat().st_uid == identity.uid and not path.stat().st_mode & 0o077,
                 "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        change["provenance_stage"] = "RELEASE_IDENTITY"
         release = decode(raw)
         require(release.get("schema") == "porota.release.v1" and release.get("source_sha") == sha and
                 release.get("source_tree") == tree and IMAGE_ID.fullmatch(str(release.get("image_id", ""))) and
@@ -821,14 +826,18 @@ def clear_unstarted_images(identity, docker, receipt):
                 "ROOTLESS_STORE_IMAGE_PROVENANCE")
         release_hash = hashlib.sha256(raw).hexdigest()
         proven = False
+        change["provenance_stage"] = "JOURNAL_CUSTODY"
         for journal in (identity.state / "attempts").glob("*/receipt.json"):
             if not ATTEMPT.fullmatch(journal.parent.name):
                 continue
+            change["provenance_stage"] = "JOURNAL_CUSTODY"
             for entry, mask in ((journal.parent.parent, 0o022), (journal.parent, 0o077), (journal, 0o077)):
                 meta = no_alias(entry).stat()
                 require(meta.st_uid == identity.uid and not meta.st_mode & mask,
                         "ROOTLESS_STORE_IMAGE_PROVENANCE")
-            attempt = decode(read_regular(journal, 2 * 1024**2))
+            journal_raw = read_regular(journal, 2 * 1024**2)
+            change["provenance_stage"] = "JOURNAL_MATCH"
+            attempt = decode(journal_raw)
             if (attempt.get("schema") == "porota.rootless.deploy.v1" and
                 attempt.get("state") == "NO_VERIFICADO" and attempt.get("roles") == {} and
                 attempt.get("transition_started") is False and
@@ -836,6 +845,7 @@ def clear_unstarted_images(identity, docker, receipt):
                 attempt.get("release_manifest_sha256") == release_hash):
                 proven = True
                 break
+        change["provenance_stage"] = "JOURNAL_MATCH"
         require(proven, "ROOTLESS_STORE_IMAGE_PROVENANCE")
         planned.append({"image_id": image_id, "source_sha": sha, "source_tree": tree,
                         "config_image_id": release["image_id"], "release_manifest_sha256": release_hash})
@@ -857,7 +867,7 @@ def clear_unstarted_images(identity, docker, receipt):
 
 def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=time.sleep):
     from scripts.porota_rootless_host import (Identity, Host, Docker, require, Hold,
-        no_alias, private_dir, read_regular, atomic_write, user_lock, write_json)
+        no_alias, private_dir, private_attempts_dir, read_regular, atomic_write, user_lock, write_json)
     identity = identity or Identity.current()
     private_dir(identity.state)
     receipt = {"schema": "porota.rootless.prepare.v1", "state": "NO_VERIFICADO",
@@ -938,6 +948,8 @@ def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=ti
                         "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED")
                 change = receipt["storage_transition"] = {"state": "NO_VERIFICADO", "daemon_id": daemon_id,
                     "driver_before": info.get("Driver"), "driver_after": "NO_VERIFICADO", "restart_requested": False}
+                change["provenance_stage"] = "JOURNAL_CUSTODY"
+                private_attempts_dir(identity)
                 clear_unstarted_images(identity, manager.docker, receipt)
                 require(manager.boundary(classic_store=False) == daemon_id, "ROOTLESS_DAEMON_CHANGED")
                 restart = True
