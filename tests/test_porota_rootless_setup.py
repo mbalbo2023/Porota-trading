@@ -123,12 +123,23 @@ class PrepareTests(unittest.TestCase):
         self.assertTrue(system)
         self.assertTrue(all("--user" in x for x in system))
         self.assertFalse(any(x[0] == setup.SUDO for x in self.commands))
+        compose = [x for x in self.commands if "compose" in x]
+        self.assertTrue(compose and all(f"unix://{self.identity.socket}" in x for x in compose))
         self.assertFalse((self.home / ".config/systemd/user/docker.service").exists())
 
     def test_bootstrap_rejects_unsupported_systemd_path(self):
         unsafe = host.Identity(1000, 1000, "porotaadmin", Path("/home/user%h"))
         with self.assertRaisesRegex(host.Hold, "BOOTSTRAP_PATH_UNSUPPORTED"):
             setup.daemon_configuration(unsafe, "/usr/bin/dockerd-rootless.sh")
+
+    def test_subids_do_not_overlap_another_daemon_or_real_host_account(self):
+        path = self.home / "subuid"
+        for contents, expected in (("porotaadmin:231072:65536\n", True),
+                ("porotaadmin:10000:65536\n", False),
+                ("porotaadmin:231072:65536\nboca:240000:65536\n", False),
+                ("porotaadmin:231072:65536\nporotaadmin:250000:65536\n", False)):
+            path.write_text(contents)
+            self.assertEqual(setup.subids_available(path, self.identity), expected)
 
     def test_access_repairs_are_bounded_and_do_not_read_secret_contents(self):
         compile(setup.PREPARE_ACCESS, "bootstrap-access", "exec")

@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import fcntl
+import grp
 import hashlib
 import json
 import os
@@ -31,7 +32,7 @@ if str(REPO) not in sys.path:
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 CID = re.compile(r"[0-9a-f]{64}\Z")
-ATTEMPT = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\Z")
+ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
@@ -148,20 +149,32 @@ def write_json(path, value):
     atomic_write(path, (json.dumps(value, sort_keys=True) + "\n").encode())
 
 
-def publish_release_marker(root, release, *, validated):
+def publish_release_marker(root, release, *, validated, manifest=None):
     """Keep the existing operator rearm reader compatible and fail closed."""
     directory = no_alias(root / "data/deploy")
     directory.mkdir(mode=0o755, exist_ok=True)
     frozen = {"candidate_sha": release["source_sha"], "candidate_tree_sha": release["source_tree"],
               "image_id": release["image_id"], "real_order_capability_required": "BLOCKED",
-              "paper_mode_required": "PRODUCTION_PAPER", "build_once": True}
+              "paper_mode_required": "PRODUCTION_PAPER", "real_orders_sent_required": 0,
+              "image_tar_sha256": release["members"]["porota-predeploy-image.tar.gz"]["sha256"],
+              "build_once": True}
     marker = {"candidate_sha": release["source_sha"], "candidate_tree_sha": release["source_tree"],
               "image_id": release["image_id"], "validation_status": "VALIDATED_RUNTIME" if validated else "NO_VERIFICADO",
               "mode": "PRODUCTION_PAPER", "real_orders_sent": 0 if validated else None,
               "real_order_routes": "NOT_CALLED", "ppi_watch_untouched": True,
-              "deployment_backend": "ROOTLESS_SPLIT"}
+              "real_order_capability": "BLOCKED", "deployment_backend": "ROOTLESS_SPLIT",
+              "recorded_at": datetime.now(timezone.utc).isoformat()}
+    if manifest is not None:
+        require(hashlib.sha256(manifest).hexdigest() ==
+                release["members"]["porota-deploy-bundle-v2-manifest.json"]["sha256"], "MANIFEST_CHANGED")
+        atomic_write(directory / "porota-deploy-bundle-v2-manifest.json", manifest, private=False)
     for name, value in (("porota-frozen-candidate.json", frozen), ("CURRENT_STATE_V2.json", marker)):
         atomic_write(directory / name, (json.dumps(value, sort_keys=True) + "\n").encode(), private=False)
+    mode = {"schema_version": 1, "mode": "PRODUCTION_PAPER" if validated else "PENDING_RUNTIME_VALIDATION",
+            "engine": "PYTHON", "execution": "SIMULATED",
+            "apis": {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "PPI_ORDERS": "BLOCKED"},
+            "changed_at": marker["recorded_at"], "telegram_notification": "NOT_SENT"}
+    atomic_write(root / "data/operation_mode.json", (json.dumps(mode, sort_keys=True) + "\n").encode(), private=False)
 
 
 @contextmanager
@@ -223,7 +236,7 @@ def validate_daemon(info, identity):
     return info["ID"]
 
 
-def validate_zero_mapping(raw, expected):
+def validate_zero_mapping(raw, expected, *, forbidden_ids=()):
     require(expected > 0 and isinstance(raw, str) and 0 < len(raw) <= 2048, "UID_MAPPING_INVALID")
     rows = []
     try:
@@ -235,6 +248,10 @@ def validate_zero_mapping(raw, expected):
     except (ValueError, TypeError) as exc:
         raise Hold("UID_MAPPING_INVALID") from exc
     require((0, expected, 1) in rows and len(rows) >= 2, "UID_MAPPING_INVALID")
+    require(all(row == (0, expected, 1) or
+                row[0] >= 1 and row[1] >= 65536 and all(
+                    not row[1] <= identity < row[1] + row[2] for identity in forbidden_ids)
+                for row in rows), "UID_MAPPING_HOST_IDENTITY_COLLISION")
     for index, row in enumerate(rows):
         for other in rows[index + 1:]:
             for offset in (0, 1):
@@ -538,8 +555,11 @@ class Host:
             try:
                 poll = select.poll()
                 poll.register(descriptor, select.POLLIN)
-                for kind, expected in (("uid_map", self.identity.uid), ("gid_map", self.identity.gid)):
-                    validate_zero_mapping(read_regular(Path(f"/proc/{pid}/{kind}"), 2048).decode(), expected)
+                for kind, expected, protected in (
+                        ("uid_map", self.identity.uid, [item.pw_uid for item in pwd.getpwall()]),
+                        ("gid_map", self.identity.gid, [item.gr_gid for item in grp.getgrall()])):
+                    validate_zero_mapping(read_regular(Path(f"/proc/{pid}/{kind}"), 2048).decode(), expected,
+                                          forbidden_ids=protected)
                 require(os.stat(f"/proc/{pid}/ns/user").st_ino != os.stat("/proc/self/ns/user").st_ino,
                         "USER_NAMESPACE_REQUIRED")
                 proof = self.docker.json("container", "exec", cid, "python", "-c",
@@ -585,7 +605,7 @@ class Host:
         atomic_write(directory / "compose.env", ("\n".join(f"{k}={v}" for k, v in values.items()) + "\n").encode())
 
     def compose(self, release_dir, directory, *args):
-        source = release_dir / "source/compose.rootless.yml"
+        source = release_dir.parent / "source/compose.rootless.yml"
         require(source.is_file() and not source.is_symlink(), "COMPOSE_SOURCE_REQUIRED")
         return self.docker.call("compose", "--project-name", "porota-rc6-" + self.receipt["attempt"].lower(),
             "--file", source, "--env-file", directory / "compose.env", *args, timeout=180)
@@ -654,6 +674,9 @@ class Host:
                 "RELEASE_COORDINATES_INVALID")
         release_dir = no_alias(release_dir)
         release = verify_release(release_dir, expected_sha=source_sha, expected_tree=source_tree)
+        manifest = read_regular(release_dir / "porota-deploy-bundle-v2-manifest.json", 2 * 1024**2)
+        require(hashlib.sha256(manifest).hexdigest() ==
+                release["members"]["porota-deploy-bundle-v2-manifest.json"]["sha256"], "MANIFEST_CHANGED")
         require(IMAGE_ID.fullmatch(release["image_id"]), "IMAGE_ID_INVALID")
         self.receipt.update({key: release[key] for key in ("source_sha", "source_tree", "image_id")})
         self.receipt["attempt"] = attempt
@@ -679,9 +702,14 @@ class Host:
             self.receipt["database"] = before
             self.prepare_environment(directory, release)
             disk_before = shutil.disk_usage(self.identity.store).free
+            data_free = shutil.disk_usage(self.root / "data").free
             required = required_free_bytes(release)
-            self.receipt["storage"] = {"free_before": disk_before, "required_before_load": required}
+            self.receipt["storage"] = {"free_before": disk_before, "required_before_load": required,
+                "data_free_before": data_free, "data_required_reserve": 2147483648,
+                "docker_device": self.identity.store.stat().st_dev,
+                "data_device": (self.root / "data").stat().st_dev}
             require(disk_before >= required, "ROOTLESS_DISK_CAPACITY")
+            require(data_free >= 2147483648, "DATA_DISK_CAPACITY")
             journal = directory / "receipt.json"
             write_json(journal, self.receipt)
             image_was_present = image_present(self.docker, release["image_id"])
@@ -696,6 +724,7 @@ class Host:
                 require(env.get("POROTA_BUILD_SHA") == source_sha and env.get("POROTA_CANDIDATE_TREE_SHA") == source_tree,
                         "LOADED_IMAGE_SOURCE_MISMATCH")
                 require(shutil.disk_usage(self.identity.store).free >= 2147483648, "ROOTLESS_POSTLOAD_RESERVE")
+                require(shutil.disk_usage(self.root / "data").free >= 2147483648, "DATA_POSTLOAD_RESERVE")
                 self.receipt["uid_mapping"] = self.effective_mapping_probe(release["image_id"], attempt)
                 self.receipt["phase"] = "CREATE"
                 self.compose(release_dir, directory, "create", "--no-build", "--pull", "never")
@@ -709,7 +738,7 @@ class Host:
                 self.receipt["phase"] = "QUIESCE"
                 transitioned = True  # A partially failed transition is still a mutation attempt.
                 write_json(journal, self.receipt)
-                publish_release_marker(self.root, release, validated=False)
+                publish_release_marker(self.root, release, validated=False, manifest=manifest)
                 if transition:
                     # Producer and consumer share this process, user lock and
                     # the bootstrap's root-owned global lock. No supplied flag.
@@ -730,14 +759,18 @@ class Host:
                 if current:
                     self.receipt["cleanup_pending"] = {key: current[key] for key in
                         ("source_sha", "source_tree", "image_id", "attempt", "roles")}
-                publish_release_marker(self.root, release, validated=True)
+                publish_release_marker(self.root, release, validated=True, manifest=manifest)
                 write_json(current_path, self.receipt)
                 committed = True
                 self.receipt["phase"] = "CLEANUP"
+                cleanup_before = shutil.disk_usage(self.identity.store).free
                 if current:
                     self.resume_cleanup(self.receipt, current_path)
+                cleanup_after = shutil.disk_usage(self.identity.store).free
                 self.receipt["cleanup"] = {"state": "COMPLETE",
-                    "reclaimed_bytes": max(0, shutil.disk_usage(self.identity.store).free - disk_before)}
+                    "free_bytes_before": cleanup_before, "free_bytes_after": cleanup_after,
+                    "reclaimed_bytes": max(0, cleanup_after - cleanup_before)}
+                self.receipt["storage"]["data_free_after"] = shutil.disk_usage(self.root / "data").free
                 self.receipt["phase"] = "COMPLETE"
                 write_json(current_path, self.receipt)
                 write_json(journal, self.receipt)
@@ -751,6 +784,7 @@ class Host:
                     write_json(current_path, self.receipt)
                 else:
                     try:
+                        cleanup_before = shutil.disk_usage(self.identity.store).free
                         born = self.discover_attempt(self.receipt)
                         self.retire(born)
                         self.cleanup_pair(born)
@@ -758,12 +792,13 @@ class Host:
                         if not image_was_present and image_present(self.docker, release["image_id"]):
                             removal = remove_unreferenced_image(self.docker, release["image_id"])
                             require(removal != "RETAINED_REFERENCED", "ATTEMPT_IMAGE_STILL_REFERENCED")
-                        self.receipt["cleanup"] = {"state": "COMPLETE",
-                            "reclaimed_bytes": max(0, shutil.disk_usage(self.identity.store).free - disk_before)}
+                        cleanup_after = shutil.disk_usage(self.identity.store).free
+                        self.receipt["cleanup"] = {"state": "COMPLETE", "free_bytes_before": cleanup_before,
+                            "free_bytes_after": cleanup_after, "reclaimed_bytes": max(0, cleanup_after - cleanup_before)}
                     except Exception:
                         pass
                     if transitioned:
-                        publish_release_marker(self.root, release, validated=False)
+                        publish_release_marker(self.root, release, validated=False, manifest=manifest)
                         failed = dict(current or self.receipt)
                         if not current:
                             failed["roles"] = {}

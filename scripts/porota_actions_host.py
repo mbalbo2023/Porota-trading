@@ -195,6 +195,8 @@ def execute(operation, repository, release_dir=None, *, env=None):
                 host_started = True
                 try:
                     proc = ssh_run(ssh, command, timeout=1800)
+                    if proc.returncode == 255:
+                        raise ValueError('SSH_TRANSPORT_FAILED')
                 except ValueError as exc:
                     result = {'state': 'NO_VERIFICADO', 'phase': 'TRANSPORT',
                               'staging_name': Path(stage).name,

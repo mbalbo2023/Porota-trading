@@ -183,12 +183,20 @@ def checked(command, *, run=subprocess.run, timeout=30):
 
 def subids_available(path, identity):
     from scripts.porota_rootless_host import read_regular
+    import grp
+    records = []
     for line in read_regular(path, 1048576).decode("ascii").splitlines():
         parts = line.split(":")
-        if len(parts) == 3 and parts[0] in (identity.name, str(identity.uid)):
-            if parts[1].isdigit() and parts[2].isdigit() and int(parts[1]) > 0 and int(parts[2]) >= 65536:
-                return True
-    return False
+        if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+            records.append((parts[0], int(parts[1]), int(parts[2])))
+    selected = [row for row in records if row[0] in (identity.name, str(identity.uid))]
+    protected = ([item.pw_uid for item in pwd.getpwall()] if path.name == "subuid" else
+                 [item.gr_gid for item in grp.getgrall()])
+    return bool(selected) and all(start >= 65536 and count >= 65536 and start + count <= 2**32 and
+        all(not start <= account < start + count for account in protected) and
+        all(other is row or start + count <= other[1] or other[1] + other[2] <= start
+            for other in records)
+        for row in selected for _, start, count in [row])
 
 
 def daemon_configuration(identity, launcher):
@@ -253,7 +261,7 @@ def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=ti
         require({"cpu", "memory", "pids"} <= set(read_regular(controllers).decode().split()),
                 "ROOTLESS_CGROUP_DELEGATION_REQUIRED")
         checked((SYSTEMCTL, "--user", "show-environment"), run=run)
-        version = checked((DOCKER, "compose", "version", "--short"), run=run)
+        version = Docker(identity, run=run).call("compose", "version", "--short")
         match = re.fullmatch(r"v?(\d+)\.(\d+)\.\d+(?:[-+].*)?", version)
         require(match is not None and tuple(map(int, match.groups())) >= (2, 30),
                 "COMPOSE_RAW_ENV_SUPPORT_REQUIRED")
@@ -507,7 +515,7 @@ def migrate(root, release_dir, sha, tree, attempt, *, identity=None, run=subproc
     transition = None
     try:
         with legacy_lock(identity):
-            transition = LegacyTransition(root, release_dir / "source", run=run)
+            transition = LegacyTransition(root, release_dir.parent / "source", run=run)
             access_receipt = prepare_access(identity, run=run)
             operator_receipt = migrate_intent(identity.home)
             result = manager.deploy(release_dir, sha, tree, attempt, transition=transition.quiesce)
