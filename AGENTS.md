@@ -1,8 +1,8 @@
 # POROTA TRADING — CODEX / AGENT ENTRYPOINT
 
-Version: `2026-11-13/R335`
+Version: `2026-11-15/PROGRESS-G0-G12`
 
-**Autonomous night-shift / Deploy V2 operations (R349):** [RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md](docs/governance/RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md) is the detailed step-by-step entrypoint for blocker triage, owner-controlled implementation, CI/CD simplification, source/PR hygiene and immutable release to physical droplet. It includes a dated snapshot **not** a live authority. Before acting, recheck the latest #1093, #980, HEADs, Actions, artifact manifests and host receipts. No repeated ordinary authorization requests; technical exact-identity GO and host/security guards still apply. Safety remains PAPER/SHADOW ONLY, PPI Watch untouched, no rollback, Actions first and one deploy owner.
+**Autonomous night-shift / Deploy V2 operations (R349):** [RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md](docs/governance/RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md) is the detailed step-by-step entrypoint for blocker triage, owner-controlled implementation, CI/CD simplification, source/PR hygiene and immutable release to physical droplet. It includes a dated snapshot **not** a live authority. Before acting, recheck the latest #1093, #980, HEADs, Actions, artifact manifests and host receipts. Follow the latest user-authorized execution mode in #1093: the current micropass mode in Section 14 takes precedence over autonomous night-shift instructions. Do not ask again inside an already authorized micropass; technical exact-identity GO and host/security guards still apply. Safety remains PAPER/SHADOW ONLY, PPI Watch untouched, no rollback, Actions first and one deploy owner.
 
 This file is the repository entrypoint for agents that start from the default branch. **`main` is NOT the operational truth for RC6.** Do not derive the current production baseline, runtime state, active workstreams, READY universe, or deploy status from `main`.
 
@@ -23,13 +23,13 @@ For any RC6 analysis, development, audit, CI, deploy, dashboard, broker, market-
 7. Branch from the verified current product SHA for RC6 work unless a newer canonical integration base is explicitly proven.
 8. Never continue from chat memory, an old checkpoint, or this file alone.
 
-Before any new code **or tests**, complete a historical applicability checklist:
+Before proposing or creating new code, tests **or operational procedures**, complete a historical applicability checklist:
 search current code, commits, open/closed PRs, issues, tests and Actions for an
 equivalent implementation; record exact queries/links, SHA and findings. Classify
 each requested item as implemented, partial, missing, superseded or not applicable,
 using the evidence states below separately. Reuse verified work rather than
 reimplementing it. Record why each proposed test applies to current behavior and
-what real regression it detects. Absence from chat memory proves nothing.
+what real regression it detects. Verify actual entrypoints, interfaces, workflow inputs and host capabilities before proposing commands or procedures. Record a real gap before adding a new implementation; never invent existing capabilities, files, results or evidence. Reuse prior complete readings of immutable sources and valid tests; refresh only volatile state and relevant deltas. Absence from chat memory proves nothing.
 
 Obtain and re-read fresh scope-specific WRITE_OWNER approval in
 [#980 ownership ledger](https://github.com/mbalbo2023/Porota-trading/issues/980)
@@ -246,3 +246,16 @@ permanent lease lock: later #980 comments do not rerun the PR check. A human mus
 recheck ownership and overlapping scopes immediately before merge. Automatic
 merge-time enforcement remains NO_VERIFICADO. Narrative policy and template
 remain review duties.
+
+## 14. Authorized micropasses, measured progress and living documentation
+
+Source: [operator instruction and baseline](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6886380173), 2026-11-15 UTC / 2026-11-14 America/Argentina/Buenos_Aires. This governs the current continuation until the operator explicitly changes mode; it does not revoke authorization already granted for a specific task.
+
+1. **One authorized micropass at a time.** State the next task, short objective and execution method; obtain the operator's authorization for that micropass; execute its bounded scope; show the result and stop before a different task. Independent work within the same authorized scope may run in parallel under exclusive ownership. An explicit instruction to perform a task is authorization for that task; do not repeatedly ask inside it.
+2. **One reproducible 0–100 metric.** Use the existing thirteen gates G0–G12 in the [canonical runbook](docs/governance/RC6_NIGHT_AUTONOMOUS_EXECUTION_20261113.md). `progress = 100 * accepted_gates / 13`; a gate contributes one only when its complete acceptance criterion has applicable evidence. Show one decimal plus the fraction. This measures gate closure, not code volume, elapsed/remaining time, effort or instrument readiness.
+3. **No subjective credit.** Proposals, consensus, comments, ownership, test counts or workflow SUCCESS alone do not close a gate. Preserve partial work and its evidence separately. Each result reports previous percentage → current percentage, delta, accepted gates/13, evidence, blocker and next task; a useful partial result may correctly report +0.0 percentage points. Do not invent weights or fractional gate completion. Any necessary change to the denominator requires a separately authorized, documented baseline revision.
+4. **Keep valid prior work.** Do not reset already accepted gates, repeat valid tests or recreate code because the chat changes. Reopen only the criterion invalidated by a relevant source/contract/runtime change and record the counterevidence and percentage correction. A documentation-only SHA change does not invalidate unrelated unchanged source evidence; exact-SHA A/B/C, D/E and host-GO contracts still apply.
+5. **100% is physical acceptance and closure.** Require 13/13, including G11 `VALIDADO_RUNTIME` for the same release: CID/process identity, systemd, DB inode/WAL/SHM, Dashboard, order routes, egress and measured `real_orders_sent=0`; also require G12 measured Porota-only cleanup or justified retention, documented residuals and released owners. PAPER/SHADOW, PPI Watch untouched and FIX-FORWARD remain mandatory. The percentage never authorizes an operation or replaces a gate.
+6. **GitHub is the durable operational record.** At each completed micropass, advancement, failure or blockage, update #1093 (or its verified successor) with UTC and explicit Buenos Aires time, the before/after percentage, exact acceptance/evidence, SHA/run/artifact/receipt as applicable, partial work, RCA, lesson, blocker and next action. Reflect the same result in chat. Keep ownership decisions in #980. Do not leave unique work or decisions only in chat or local files.
+7. **Maintain active instructions, preserve history.** Update the existing runbook/AGENTS through a scoped documentation branch and PR when a procedure or rule changes. Correct superseded active instructions, retain dated historical records and link their corrections; do not create duplicate runbooks. Each significant incident follows `ERROR → RCA → FIX → GUARD → TEST/CI/PREFLIGHT → EVIDENCE → DOC UPDATE`. Name the permanent defense and distinguish proposed, implemented and actually tested enforcement using the canonical evidence states.
+8. **Preserve frozen release identities.** After G5, record live progress/RCA/lessons in #1093 without moving frozen control/candidate trees for status notes. Stage durable procedure changes in a separate documentation branch for the next permitted integration, or explicitly reopen freeze if a necessary technical change invalidates it. Never deploy a documentation-only change. These are reporting rules, not new operational gates or proof of automatic CI enforcement.
