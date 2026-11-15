@@ -1,8 +1,8 @@
 """Barrera HTTP fail-closed para observacion de mercado PPI Produccion.
 
-Este modulo no conoce ordenes ni cuentas. Solo permite autenticacion y datos
-de mercado contra el host productivo exacto. Cualquier ruta no enumerada se
-rechaza antes de que requests entregue el paquete al adaptador de red.
+Este modulo no conoce ordenes ni cuentas. Solo permite datos de mercado
+autorizados contra el host productivo exacto. La autenticacion requiere una
+autoridad externa aun no demostrada y permanece bloqueada localmente.
 """
 
 from __future__ import annotations
@@ -87,6 +87,16 @@ def caucion_discovery_days(raw: str | None = None) -> tuple[int, ...]:
 
 class ReadOnlyPolicyViolation(RuntimeError):
     """La solicitud fue bloqueada localmente; no salio a la red."""
+
+
+def require_ppi_authentication_authority() -> None:
+    """AUTH/refresh HOLD until externally shared quota and custody are proven.
+
+    GET marketdata budgets and local cooldowns are not AUTH authority. In
+    particular, no environment variable, caller-supplied signed document, or
+    replaceable local SQLite counter can activate login/refresh in production.
+    """
+    raise ReadOnlyPolicyViolation("PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED")
 
 
 class ProductionAuthResponseError(RuntimeError):
@@ -209,6 +219,11 @@ def _normal_path(value: str) -> str:
 class ReadOnlyTransportGuard:
     """Intercepta Session.request y HTTPAdapter.send con lista blanca cerrada."""
 
+    # requests hooks are process-global; concurrent readers must not stack
+    # closures that restore each other's unguarded original methods.
+    _registry_lock = threading.RLock()
+    _active_guard = None
+
     audit: Optional[Callable[[str, str, str], None]] = None
     connect_timeout: int = 10
     read_timeout: int = 30
@@ -221,6 +236,9 @@ class ReadOnlyTransportGuard:
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _original_request: object = None
     _original_send: object = None
+    _owned_request: object = None
+    _owned_send: object = None
+    _inflight: int = 0
     _last_login_at: Optional[float] = None
     budget: object = None
     consumer: str = "UNSCOPED"
@@ -269,6 +287,9 @@ class ReadOnlyTransportGuard:
                 f"Ruta bloqueada por politica de solo lectura: {method} {path}"
             )
 
+        if method == "POST" and path in _POST_PATHS:
+            require_ppi_authentication_authority()
+
         with self._lock:
             if count_login and path == "/api/1.0/account/loginapi":
                 now = self.clock()
@@ -282,8 +303,45 @@ class ReadOnlyTransportGuard:
         return method, path
 
     def install(self) -> "ReadOnlyTransportGuard":
-        if self._installed:
-            return self
+        with ReadOnlyTransportGuard._registry_lock:
+            active = ReadOnlyTransportGuard._active_guard
+            if active is not None and active is not self:
+                raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_ALREADY_OWNED")
+            if self._installed:
+                self._require_owned_hooks()
+                return self
+            ReadOnlyTransportGuard._active_guard = self
+            try:
+                return self._install_owned()
+            except BaseException:
+                ReadOnlyTransportGuard._active_guard = None
+                raise
+
+    def _require_owned_hooks(self) -> None:
+        if (ReadOnlyTransportGuard._active_guard is not self
+                or not self._installed
+                or requests.sessions.Session.request is not self._owned_request
+                or requests.adapters.HTTPAdapter.send is not self._owned_send):
+            raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_CUSTODY_UNVERIFIED")
+
+    def _owned_invocation(self, call):
+        def invoke(*args, **kwargs):
+            with ReadOnlyTransportGuard._registry_lock:
+                # A captured wrapper must not outlive its installation or
+                # borrow custody when this same guard is installed anew.
+                if (not self._installed or
+                        (self._owned_request is not invoke and self._owned_send is not invoke)):
+                    raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_INSTALLATION_EXPIRED")
+                self._require_owned_hooks()
+                self._inflight += 1
+            try:
+                return call(*args, **kwargs)
+            finally:
+                with ReadOnlyTransportGuard._registry_lock:
+                    self._inflight -= 1
+        return invoke
+
+    def _install_owned(self) -> "ReadOnlyTransportGuard":
 
         guard = self
         self._original_request = requests.sessions.Session.request
@@ -316,7 +374,14 @@ class ReadOnlyTransportGuard:
 
         def guarded_send(adapter, request, **kwargs):
             try:
-                checked_method, checked_path = guard.check(request.method, request.url)
+                # Snapshot the already-prepared request BEFORE any audit or
+                # budget callback can mutate the caller-owned object. Wire
+                # only the private copy after checking drift at the boundary.
+                wire_request = request.copy()
+                if (wire_request is request or
+                        wire_request.headers is request.headers):
+                    raise ReadOnlyPolicyViolation("PPI_HTTP_PREPARED_REQUEST_COPY_UNSAFE")
+                checked_method, checked_path = guard.check(wire_request.method, wire_request.url)
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
@@ -334,6 +399,16 @@ class ReadOnlyTransportGuard:
                     guard.calls_blocked += 1
                 guard._record(checked_method, checked_path, "BACKPRESSURE")
                 raise BudgetBackpressure(reason)
+            if checked_method == "POST" and checked_path in _POST_PATHS:
+                try:
+                    # Defense in depth for direct prepared sends; this HOLD
+                    # never consumes/reconciles any fabricated AUTH quota.
+                    require_ppi_authentication_authority()
+                except ReadOnlyPolicyViolation:
+                    with guard._lock:
+                        guard.calls_blocked += 1
+                    guard._record(checked_method, checked_path, "BLOCKED")
+                    raise
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
@@ -373,9 +448,21 @@ class ReadOnlyTransportGuard:
                 try:
                     if budget is not None:
                         budget.start(lease)
+                    # acquire(), wire_scope() and start() are mutable calls.
+                    # Their prior GET approval must never authorize a later
+                    # POST LoginApi/RefreshToken, changed host/query, or
+                    # newly injected credential header on the same object.
+                    if (request.method != wire_request.method
+                            or request.url != wire_request.url
+                            or request.headers != wire_request.headers):
+                        with guard._lock:
+                            guard.calls_blocked += 1
+                        guard._record(checked_method, checked_path, "BLOCKED")
+                        raise ReadOnlyPolicyViolation("PPI_HTTP_PREPARED_REQUEST_DRIFT")
+                    guard.check(wire_request.method, wire_request.url)
                     with guard._lock:
                         guard.calls_allowed += 1
-                    response = original_send(adapter, request, **kwargs)
+                    response = original_send(adapter, wire_request, **kwargs)
                     if response.status_code >= 400:
                         guard._read_error(f"PPI_HTTP_{response.status_code}")
                     body = response.content
@@ -384,6 +471,9 @@ class ReadOnlyTransportGuard:
                 except Exception as error:
                     status = response.status_code if response is not None else None
                     code = (f"PPI_HTTP_{status}" if status and status >= 400 else
+                        "PPI_HTTP_PREPARED_REQUEST_DRIFT" if (
+                            type(error) is ReadOnlyPolicyViolation and
+                            str(error) == "PPI_HTTP_PREPARED_REQUEST_DRIFT") else
                         str(error) if type(error).__name__ == "BudgetBackpressure" else classify_read_error(error))
                     guard._read_error(code)
                     try:
@@ -397,17 +487,24 @@ class ReadOnlyTransportGuard:
                     budget.finish(lease, status_code=response.status_code)
                 return response
 
-        requests.sessions.Session.request = guarded_request
-        requests.adapters.HTTPAdapter.send = guarded_send
+        self._owned_request = self._owned_invocation(guarded_request)
+        self._owned_send = self._owned_invocation(guarded_send)
+        requests.sessions.Session.request = self._owned_request
+        requests.adapters.HTTPAdapter.send = self._owned_send
         self._installed = True
         return self
 
     def restore(self) -> None:
-        if not self._installed:
-            return
-        requests.sessions.Session.request = self._original_request
-        requests.adapters.HTTPAdapter.send = self._original_send
-        self._installed = False
+        with ReadOnlyTransportGuard._registry_lock:
+            if not self._installed:
+                return
+            self._require_owned_hooks()
+            if self._inflight:
+                raise ReadOnlyPolicyViolation("PPI_HTTP_GUARD_INFLIGHT")
+            requests.sessions.Session.request = self._original_request
+            requests.adapters.HTTPAdapter.send = self._original_send
+            self._installed = False
+            ReadOnlyTransportGuard._active_guard = None
 
 
 class ProductionMarketReader:
@@ -462,6 +559,7 @@ class ProductionMarketReader:
     def login_once(self) -> None:
         if self.__authenticated:
             return
+        require_ppi_authentication_authority()
         from ppi_client.ppi import PPI
 
         client = PPI(sandbox=False)

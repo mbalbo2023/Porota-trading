@@ -22,6 +22,8 @@ POLICY = Path(__file__).resolve().parents[1] / 'ops/policy/host-control-plane-re
 
 @pytest.fixture
 def a175_held(tmp_path,monkeypatch):
+    # Historical fake-Docker transition; real drain is HOLD79 before receipt.
+    monkeypatch.setattr(q, 'require_legacy_drain_custody', lambda: None)
     home=tmp_path/'porota'
     folder=home/'data/deploy'
     folder.mkdir(parents=True)

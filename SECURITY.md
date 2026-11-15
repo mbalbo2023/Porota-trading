@@ -2,7 +2,7 @@
 
 ## Supported version
 
-Only POROTA Trading RC6 running in `PRODUCTION_PAPER` / `SIMULATED` mode is supported. Real-order capability remains blocked.
+Only POROTA Trading RC6 in PAPER/SHADOW mode is supported. The required operating contract is `PRODUCTION_PAPER / SIMULATION`; real-order capability remains blocked. This policy is not evidence of the current runtime.
 
 ## Reporting a vulnerability
 

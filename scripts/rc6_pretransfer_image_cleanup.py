@@ -14,6 +14,23 @@ import stat
 import subprocess
 import time
 
+# This source is streamed to the host over stdin. Resolve shared guards only
+# if cleanup is actually admitted; A979 HOLD79 must work without any checkout.
+def require_exclusive_docker_namespace():
+    try:
+        from scripts.rc6_deploy_host_mutex import require_exclusive_docker_namespace as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_NAMESPACE_EXCLUSIVITY_UNVERIFIED') from None
+    guard()
+
+
+def require_readonly_docker_command(args):
+    try:
+        from scripts.rc6_deploy_host_mutex import require_readonly_docker_command as guard
+    except ImportError:
+        raise RuntimeError('DOCKER_MUTATION_UNAUTHORIZED') from None
+    guard(args)
+
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}')
 CONTAINER = re.compile(r'[0-9a-f]{12,64}')
 CANDIDATE = re.compile(r'(?:porota-predeploy-v2:|porota-trading-bot:17\.0\.0-rc6-candidate-)[0-9a-f]{40}')
@@ -26,7 +43,28 @@ class Rejected(RuntimeError):
     pass
 
 
+class OCIImageCustodyHold(Rejected):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('OCI_IMAGE_REFERENCE_CUSTODY_HOLD79')
+
+
+def require_root_owned_image_reference_proof():
+    # The Deploy V2 passes this file by stdin; do not import a candidate
+    # module as root. Only the fixed host-installed helper is an authority.
+    try:
+        subprocess.run(['sudo', '-n', '/usr/local/sbin/porota-rc6-oci-custody',
+                        'image', 'preflight-cleanup'], timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    # No direct Docker image rm/tag even if a spoofed helper prints GREEN.
+    raise OCIImageCustodyHold()
+
+
 def docker(*args):
+    require_readonly_docker_command(args)
     result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise Rejected('DOCKER_' + args[0].upper() + '_FAILED')
@@ -108,20 +146,22 @@ def eligibility(image):
         return tags, 'CONTAINER_REFERENCED'
     if not tags or any(CANDIDATE.fullmatch(tag) is None for tag in tags):
         return tags, 'PROTECTED_OR_NONCANDIDATE_ALIAS'
-    # Docker load on the target engine retains a canonical RepoDigest alongside
-    # its candidate tag. That immutable spelling is the same repository owner,
-    # not an external alias. Unknown or unpaired repositories remain protected.
-    repositories = {tag.split(':', 1)[0] for tag in tags}
-    for digest in digests:
-        match = re.fullmatch(r'(porota-predeploy-v2|porota-trading-bot)@sha256:[0-9a-f]{64}', digest)
-        if match is None or match.group(1) not in repositories:
-            return tags, 'PROTECTED_OR_UNPAIRED_DIGEST'
+    # RepoDigests identify content, not the provenance of a unique deployment
+    # attempt. Even a same-repository digest cannot prove exclusive custody.
+    if digests:
+        return tags, 'DIGEST_ATTEMPT_PROVENANCE_UNVERIFIED'
     return tags, 'UNREFERENCED_CANDIDATE_ONLY'
 
 
 def cleanup(report=None):
     report = report if report is not None else {}
-    report.update(schema='RC6_PRETRANSFER_IMAGE_CLEANUP_V1', status='RED', removed_tags=[])
+    report.update(schema='RC6_PRETRANSFER_IMAGE_CLEANUP_V1', status='RED',
+                  removed_tags=[], space_recovered=0)
+    try:
+        require_exclusive_docker_namespace()
+    except RuntimeError as exc:
+        report['reason'] = str(exc)
+        return report
     before = safety()
     free_before = shutil.disk_usage('/').free
     report['disk_before'] = free_before
@@ -157,18 +197,26 @@ def cleanup(report=None):
     return report
 
 
-def main():
-    report = {'schema': 'RC6_PRETRANSFER_IMAGE_CLEANUP_V1', 'status': 'RED'}
+def main(argv=None):
+    if argv:
+        raise Rejected('CLEANUP_ARGUMENTS_INVALID')
+    report = {'schema': 'RC6_PRETRANSFER_IMAGE_CLEANUP_V1', 'status': 'RED',
+              'removed_tags': [], 'space_recovered': 0}
+    hold = False
     try:
         with promotion_lock():
+            require_root_owned_image_reference_proof()
             cleanup(report)
+    except OCIImageCustodyHold as exc:
+        hold = True
+        report.update(status='RED', reason=str(exc), cleanup_deferred=True)
     except (Rejected, subprocess.TimeoutExpired, OSError, ValueError, TypeError, sqlite3.Error) as exc:
         report.update(status='RED', reason=str(exc) if isinstance(exc, Rejected) else type(exc).__name__)
         if 'disk_before' in report:
             report['disk_after'] = shutil.disk_usage('/').free
             report['space_recovered'] = report['disk_after'] - report['disk_before']
     print(json.dumps(report, sort_keys=True))
-    return 0 if report['status'] == 'GREEN' else 2
+    return 79 if hold else (0 if report['status'] == 'GREEN' else 2)
 
 
 if __name__ == '__main__':

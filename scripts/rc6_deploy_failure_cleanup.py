@@ -31,6 +31,26 @@ class CleanupRejected(RuntimeError):
     pass
 
 
+class OCIImageCustodyHold(CleanupRejected):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('OCI_IMAGE_REFERENCE_CUSTODY_HOLD79')
+
+
+def require_root_owned_image_reference_proof():
+    # This script arrives over SSH stdin, not as an importable repository
+    # package. Probe only the fixed independent root-owned helper; even its
+    # claimed GREEN cannot authorize the old global Docker inventory/delete.
+    try:
+        subprocess.run(['sudo', '-n', '/usr/local/sbin/porota-rc6-oci-custody',
+                        'image', 'preflight-cleanup'], timeout=10, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    raise OCIImageCustodyHold()
+
+
 @contextmanager
 def promotion_lock():
     # The promoter creates the shared lock as the SSH owner. Do not create a
@@ -272,9 +292,18 @@ def main(argv=None):
     parser.add_argument('--attempt')
     args = parser.parse_args(argv)
     host_disk_before = shutil.disk_usage('/').free
+    hold = False
     try:
         with promotion_lock():
+            # A global Docker inventory is not independent evidence of
+            # exclusive image ownership on the shared Porota/Boca host.
+            require_root_owned_image_reference_proof()
             report = cleanup(args.candidate_sha, args.run_id, args.attempt)
+    except OCIImageCustodyHold as exc:
+        hold = True
+        report = {'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1', 'status': 'RED',
+                  'candidate_sha': args.candidate_sha, 'reason': str(exc),
+                  'cleanup_deferred': True, 'errors': [str(exc)]}
     except (CleanupRejected, subprocess.TimeoutExpired, OSError) as exc:
         report = {'schema': 'POROTA_DEPLOY_FAILURE_CLEANUP_V1', 'status': 'RED',
                   'candidate_sha': args.candidate_sha,
@@ -283,7 +312,7 @@ def main(argv=None):
     report['host_disk_after'] = shutil.disk_usage('/').free
     report['host_space_recovered'] = report['host_disk_after'] - host_disk_before
     print(json.dumps(report, sort_keys=True))
-    return 0 if report['status'] == 'GREEN' else 2
+    return 79 if hold else (0 if report['status'] == 'GREEN' else 2)
 
 
 if __name__ == '__main__':

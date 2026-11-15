@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -15,14 +16,16 @@ from test_production_paper_v1634 import partial_spot
 from test_rc6_paper_admin_cancel import _pending
 
 
-@pytest.fixture(autouse=True)
-def _external_private_destination(monkeypatch):
-    # This test environment marks /tmp itself as a git workspace. Production
-    # forbids publishing private evidence below any .git ancestor. Emulate an
-    # external private temporary destination without weakening the real guard.
-    exists = Path.exists
-    monkeypatch.setattr(Path, 'exists',
-                        lambda path: False if str(path) == '/tmp/.git' else exists(path))
+@pytest.fixture
+def tmp_path():
+    # A207 private evidence must never be published inside a Git repository,
+    # even when the runner's default pytest temporary path is under a worktree.
+    # Do not monkeypatch Path.exists: test the real production ancestor guard.
+    with TemporaryDirectory(prefix='rc6-a207-private-', dir='/tmp') as name:
+        private_root = Path(name).resolve()
+        assert not any((parent / '.git').exists()
+                       for parent in (private_root, *private_root.parents))
+        yield private_root
 
 
 def _sessions(end_at):

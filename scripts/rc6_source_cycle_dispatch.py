@@ -120,6 +120,12 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
 
 
 def _paper_zero(db: Path) -> None:
+    """Read negative PAPER evidence; do not certify DB/WAL ownership from a row.
+
+    An independent identity/seal must attest the actual SQLite handle and
+    its WAL before any successful source cycle. Existing path checks and a
+    PRODUCTION_PAPER/zero value are necessary, never sufficient.
+    """
     if not db.is_absolute() or not db.is_file() or db.is_symlink():
         raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
     try:
@@ -132,6 +138,9 @@ def _paper_zero(db: Path) -> None:
         raise SourceCycleBlocked("PAPER_DATABASE_UNVERIFIED") from exc
     if row != ("PRODUCTION_PAPER", 0):
         raise SourceCycleBlocked("PAPER_ZERO_REQUIRED")
+    # A866 fail-closed until separately reviewed physical SQLite identity
+    # authority exists; no env switch or local row may discharge this hold.
+    raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
 
 
 def _state_read(path: Path, now: datetime) -> dict:

@@ -110,6 +110,67 @@ def test_no_placing_bid_never_fabricates_rate_or_depth(tmp_path,monkeypatch):
         row=c.execute("select state,tna_fraction,available_principal from paper_caucion_live_book").fetchone()
     assert tuple(row)==("NO_PLACED_BID",None,None)
 
+
+@pytest.mark.parametrize("native_identity", [
+    {"ticker": "PESOS1"},
+    {"type": "BONOS"},
+    {"market": "A3"},
+    {"currency": "USD"},
+    {"settlement_used": "A-24HS"},
+    {"identity": {"ticker": "PESOS1"}},
+    {"instrument": {"currency": "USD"}},
+])
+def test_caucion_live_book_rejects_native_identity_conflicts(
+        tmp_path, monkeypatch, native_identity):
+    """A valid Book depth does not certify a different PPI instrument."""
+    store = _store(tmp_path)
+
+    class Reader:
+        def book(self, ticker, kind, settlement):
+            assert (ticker, kind, settlement) == ("PESOS7", "CAUCIONES", "INMEDIATA")
+            return {
+                "date": NOW.isoformat(),
+                "bids": [{"price": "19.1", "quantity": "30000000"}],
+                "offers": [],
+                **native_identity,
+            }
+
+    monkeypatch.setattr(live, "collection_window", lambda at: True)
+    result = live.refresh(Reader(), store, now=NOW, clock_fn=lambda: NOW)
+    assert result["ready"] == 0
+    assert result["states"] == {"PESOS7": "READ_ERROR:ValueError"}
+    assert result["real_routes"] == []
+    with store.connect() as conn:
+        assert tuple(conn.execute(
+            "SELECT state,tna_fraction,available_principal "
+            "FROM paper_caucion_live_book WHERE ticker='PESOS7'"
+        ).fetchone()) == ("READ_ERROR:ValueError", None, None)
+    offers, _errors = offers_from_store(store, now=NOW)
+    assert offers == []
+
+
+def test_caucion_live_book_accepts_matching_native_identity(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+
+    class Reader:
+        def book(self, *_):
+            return {
+                "date": NOW.isoformat(),
+                "identity": {
+                    "ticker": "PESOS7", "type": "CAUCIONES",
+                    "market": "BYMA", "currency": "ARS",
+                    "settlement_used": "INMEDIATA",
+                },
+                "bids": [{"price": "19.1", "quantity": "30000000"}],
+                "offers": [],
+            }
+
+    monkeypatch.setattr(live, "collection_window", lambda at: True)
+    result = live.refresh(Reader(), store, now=NOW, clock_fn=lambda: NOW)
+    assert result["ready"] == 1
+    assert result["states"] == {"PESOS7": "BOOK_READY"}
+    assert result["real_routes"] == []
+
 def test_live_collector_has_no_client_constructor_or_order_route():
     from pathlib import Path
     source=Path("dj_caucion_live_ppi_rc6.py").read_text(encoding="utf-8")

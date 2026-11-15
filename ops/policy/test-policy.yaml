@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 test_governance:
   automatic_discovery_required: true
   manual_test_file_allowlist_as_primary_ci: false
@@ -18,7 +18,8 @@ test_governance:
     known_failure_requires_triage: true
     product_defect_must_be_distinguished_from_test_contract_drift: true
   incident_replay:
-    host_transition_required: true
+    applicable_transition_replay_required: true
+    retired_orchestration_replay_required: false
     observed_state_provenance_required: true
     cross_module_guard_fixture_consistency_required: true
     zero_failures_errors_skips_required: true
@@ -31,9 +32,11 @@ productive_scope:
   roots:
     - .
   python_files: test_*.py
+  # Exact tests of removed workflow contracts remain in Git history/source.
+  # Application neighbors are still discovered; no module-wide retirement.
+  retired_contracts: ops/policy/retired-release-tests.json
   report:
-    junit_xml: /tmp/porota-governed-tests.xml
-    evidence_json: /tmp/porota-governed-tests.json
+    evidence_json: /tmp/code-tests.json
   exclusions:
     - path: test_a3_primary_readonly_hf6.py
       classification: SUPERSEDED_DUPLICATE_MODULE

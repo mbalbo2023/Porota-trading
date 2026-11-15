@@ -14,6 +14,7 @@ import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal, ROUND_DOWN
+from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -25,6 +26,7 @@ from bt_caucion_paper import (CaucionBook, init_schema as init_financial_schema,
                               pending_proceeds, record_sale)
 import cc_spot_liquidity as spot_liquidity
 import cd_spot_ledger as spot_ledger
+from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_performance.lineage import trace_spot_signal, mark as mark_lineage, native_clock
 
 # PAPER/SHADOW scope covers every known family. Specialized families
@@ -101,6 +103,9 @@ class Quote:
     book_at: Optional[str] = None
     trade_at: Optional[str] = None
     last_kind: str = "UNKNOWN"
+    # Optional diagnostic SHA from a freshly CAPTURED native PPI Book1 event.
+    # Not a PPI signature or an admission authority.
+    ppi_book1_event_sha256: Optional[str] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -323,27 +328,62 @@ def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, 
 class PaperStore:
     def __init__(self, path: str):
         self.path = path
+        # Stable pathname for READY even if a worker changes cwd later.
+        self._ready_main_path = str(Path(path).absolute())
+        self._ready_main_inode = None
+        self._ready_main_identity = None
+        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        if runtime_schema_ready:
+            # READY children validate before any mkdir, DDL or first SQLite write.
+            from cg_paper_workspace import validate_child_ready
+            self._ready_main_inode, self._ready_main_identity = validate_child_ready(
+                self._ready_main_path
+            )
+            return
         new_file = not os.path.exists(path)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        # El runtime padre migra una única vez antes de crear hijos. Repetir
-        # DDL/índices grandes desde scanner, velas y salida puede bloquear SQLite.
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
-        if new_file or not runtime_schema_ready:
-            self.init_db()
+        # Only the parent initializes or migrates schema before spawning workers.
+        self.init_db()
         if new_file:
             from cg_paper_workspace import mark_new_database
             with self.connect() as c:
                 mark_new_database(c)
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=20)
+        runtime_schema_ready = (
+            self._ready_main_inode is not None
+            or os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
+        )
+        if runtime_schema_ready:
+            from cg_paper_workspace import (
+                assert_ready_database_inode,
+                identity_from_connection,
+                validate_child_ready,
+            )
+            if self._ready_main_inode is None:
+                # The parent creates while READY=0, then raises READY after schema.
+                self._ready_main_inode, self._ready_main_identity = validate_child_ready(
+                    self._ready_main_path
+                )
+            # Sequential swaps to another DB or a symlink are denied before open.
+            assert_ready_database_inode(self._ready_main_path, self._ready_main_inode)
+            uri = Path(self._ready_main_path).as_uri() + "?mode=rw"
+            conn = sqlite3.connect(uri, timeout=20, uri=True)
+            try:
+                assert_ready_database_inode(self._ready_main_path, self._ready_main_inode)
+                if identity_from_connection(conn) != self._ready_main_identity:
+                    raise ValueError("PAPER_V17_CHILD_DATABASE_REPLACED")
+            except Exception:
+                conn.close()
+                raise
+        else:
+            conn = sqlite3.connect(self.path, timeout=20)
         conn.row_factory = sqlite3.Row
         from rc6_signal_contracts import register_exact_time
         register_exact_time(conn)
         # Runtime RC6 has several PAPER child processes sharing this DB. Keep
         # lock waiting bounded and explicit at SQLite level.
         conn.execute("PRAGMA busy_timeout=20000")
-        runtime_schema_ready = os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() == "1"
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
         if str(mode).lower() != "wal":
             if runtime_schema_ready:
@@ -469,6 +509,10 @@ class PaperStore:
         # economic ledger; no hot-path DDL or issuer-data ingestion is allowed.
         from rc6_fixed_income_event_ledger import init_schema as init_fi_event_schema
         init_fi_event_schema(self)
+        from rc6_fixed_income_native_redemption import init_schema as init_fi_review_schema
+        from rc6_fixed_income_native_exit import init_schema as init_fi_terminal_schema
+        init_fi_review_schema(self)
+        init_fi_terminal_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -477,6 +521,9 @@ class PaperStore:
         init_risk_schema(self)
         from bl_candle_engine import init_schema as init_candle_schema
         init_candle_schema(self)
+        # A620 parent-owned migration: immutable PAPER causal freeze only.
+        from rc6_paper_causal_decision_receipt import init_schema as init_causal_schema
+        init_causal_schema(self)
 
     def audit_http(self, method, path, result):
         with self.connect() as c:
@@ -495,9 +542,30 @@ class PaperStore:
         updates = {k: v for k, v in updates.items() if k in allowed}
         if not updates:
             return
+        has_counter = "real_orders_sent" in updates
+        if has_counter:
+            counter = updates["real_orders_sent"]
+            if type(counter) is not int or counter < 0:
+                raise ValueError("PAPER_REAL_ORDERS_COUNTER_INVALID")
         sql = ",".join(f"{k}=?" for k in updates)
+        params = tuple(updates.values())
+        # The heartbeat is one atomic SQLite statement. In particular, a
+        # recorded positive count cannot be overwritten by another process's
+        # routine `real_orders_sent=0` progress report. This protects the local
+        # warning, but is not physical DB/WAL provenance or external-order proof.
+        if has_counter:
+            predicate = ("id=1 AND typeof(real_orders_sent)='integer' "
+                         "AND real_orders_sent>=0 AND real_orders_sent<=?")
+            params += (counter,)
+        else:
+            predicate = "id=1"
         with self.connect() as c:
-            c.execute(f"UPDATE observer_state SET {sql} WHERE id=1", tuple(updates.values()))
+            updated = c.execute(
+                f"UPDATE observer_state SET {sql} WHERE {predicate}", params)
+            if has_counter and updated.rowcount != 1:
+                # No silent success when the current row was positive, corrupt,
+                # absent or changed concurrently; the heartbeat rolls back.
+                raise RuntimeError("PAPER_REAL_ORDERS_COUNTER_REGRESSION")
 
     def add_quote(self, q: Quote):
         # Invalid latest evidence remains a tombstone for its requested identity.
@@ -648,11 +716,38 @@ class PaperStore:
 
     def record_decision(self, key: str, q: Quote, action: str, score: Decimal,
                         reason: str, features: dict) -> bool:
+        # Bind Book1 witness before the atomic PAPER decision insert. A
+        # conflicting strategy feature never overrides the observed Quote.
+        native_book1_sha = q.ppi_book1_event_sha256
+        if native_book1_sha is not None:
+            previous_claim = features.get("ppi_book1_event_sha256")
+            if (not isinstance(native_book1_sha, str) or len(native_book1_sha) != 64
+                    or any(char not in "0123456789abcdef" for char in native_book1_sha)
+                    or previous_claim not in (None, native_book1_sha)):
+                features.pop("ppi_book1_event_sha256", None)
+                features["ppi_book1_provenance_state"] = "CLAIM_CONFLICT_HOLD"
+            else:
+                features["ppi_book1_event_sha256"] = native_book1_sha
+        elif "ppi_book1_event_sha256" in features:
+            # Strategy-supplied SHA with no freshly bound native Book is
+            # untrusted; preserve decision, strip the fabricated provenance.
+            features.pop("ppi_book1_event_sha256", None)
+            features["ppi_book1_provenance_state"] = "CLAIM_UNBOUND_HOLD"
         try:
             with self.connect() as c:
+                features_json = json.dumps(features, ensure_ascii=False)
                 c.execute("""INSERT INTO paper_decisions VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
                           (SOURCE, STRATEGY_VERSION, key, q.observed_at, q.symbol,
-                           action, str(score), reason, json.dumps(features, ensure_ascii=False)))
+                           action, str(score), reason, features_json))
+                # The signer is independent and necessarily post-COMMIT. The
+                # local immutable freeze does not authorize real money or PPI.
+                if str(action or "").upper() in {"BUY", "SELL"}:
+                    from rc6_paper_causal_decision_receipt import freeze_in_decision_transaction
+                    freeze_in_decision_transaction(
+                        c, decision_key=key, quote=q, action=str(action).upper(),
+                        score=str(score), reason=reason, features=features,
+                        features_json=features_json, source=SOURCE,
+                        strategy_version=STRATEGY_VERSION)
                 # Entry candidates receive their fuller snapshot in record_gates
                 # after their final gates are known. Every other decision is
                 # captured here with the current IOL cache as a SHADOW input.
@@ -981,11 +1076,15 @@ class PaperBroker:
                 LIMIT 1""", (currency, at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
-        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed if p['currency']==currency), ZERO)
+        realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed
+                        if p['currency']==currency and
+                        p.get('close_reason') != 'FI_NATIVE_MATURITY_REVIEWED'), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
-                         for p in opened if p['currency']==currency), ZERO)
+                         for p in opened + [p for p in closed if
+                             p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED']
+                         if p['currency']==currency), ZERO)
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
@@ -1339,6 +1438,12 @@ class PaperBroker:
             family = family_name(q.asset_class)
         except ValueError as exc:
             return "HOLD", ZERO, str(exc), {"samples": 0}
+        # Operator HOLD is independent of scope and READY. Keep observation/EXIT.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return "HOLD", ZERO, operator_hold, {
+                "samples": 0, "family": family,
+                "entry_authority": False, "operator_hold": True}
         if family == "FUTUROS":
             return "HOLD", ZERO, "FUTURES_SPECIALIZED_SIGNAL_REQUIRED", {"samples": 0, "family": family}
         if family not in PAPER_SIGNAL_FAMILIES:
@@ -2062,16 +2167,27 @@ class PaperBroker:
         try:
             if reason in {"EOD_PAPER", "EXPIRY", "OVERNIGHT_CARRY_EXIT"}:
                 mark_id = f"{position['lifecycle_id']}:PAPER_CUT:{q.book_at}"
-                self.family_paper.mark_future(
-                    contract, lifecycle_id=position["lifecycle_id"],
+                settlement_mark_args = dict(
+                    lifecycle_id=position["lifecycle_id"],
                     event_id=mark_id,
-                    mark_price=q.bid, book_at=q.book_at, occurred_at=at,
+                    mark_price=q.bid, book_at=q.book_at,
                     settlement=True, max_mark_age_seconds=self.quote_max_age_seconds,
                     detail={"source": "PPI_BOOK_PAPER_EOD_VARIATION",
                             "broker_settlement": "NO_VERIFICADO", "reason": reason},
                     _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
                     commit_evidence=self._future_quote_callback(
                         q, position["lifecycle_id"], mark_id, "MARK", at))
+                try:
+                    self.family_paper.mark_future(contract, occurred_at=at,
+                                                  **settlement_mark_args)
+                except ValueError as mark_error:
+                    if str(mark_error) != "FUTURES_MARK_EVENT_COLLISION":
+                        raise
+                    # A previous variation may have committed before a CLOSE
+                    # failure. Reuse only the ledger's identical economic
+                    # request, after checking the Book is fresh *now* above.
+                    self.family_paper.mark_future(contract, occurred_at=None,
+                                                  **settlement_mark_args)
             result = self.family_paper.close_future(
                 contract, lifecycle_id=position["lifecycle_id"], event_id=event_id,
                 exit_price=exit_price, exit_cost=exit_cost,
@@ -2172,15 +2288,25 @@ class PaperBroker:
                 return
             mark_id = f"{position['lifecycle_id']}:MARK:{q.book_at or q.observed_at}"
             try:
-                self.family_paper.mark_future(
-                    q.contract, lifecycle_id=position["lifecycle_id"],
+                mark_args = dict(
+                    lifecycle_id=position["lifecycle_id"],
                     event_id=mark_id, mark_price=q.bid,
-                    book_at=q.book_at or q.observed_at, occurred_at=at,
+                    book_at=q.book_at or q.observed_at,
                     detail={"source": "PPI_BOOK"},
                     max_mark_age_seconds=self.quote_max_age_seconds,
                     _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
                     commit_evidence=self._future_quote_callback(
                         q, position["lifecycle_id"], mark_id, "MARK", at))
+                try:
+                    self.family_paper.mark_future(q.contract, occurred_at=at, **mark_args)
+                except ValueError as mark_error:
+                    if str(mark_error) != "FUTURES_MARK_EVENT_COLLISION":
+                        raise
+                    # An identical, already-recorded economic Book is not a new
+                    # mark.  The ledger compares the stored request and price;
+                    # only its idempotent replay may resume exit supervision.
+                    # Quote freshness at the *current* clock was checked above.
+                    self.family_paper.mark_future(q.contract, occurred_at=None, **mark_args)
                 position = self.family_paper.active_future(q.symbol) or position
             except ValueError:
                 self._future_exit_state(position,at,"WATCH_INVALID_MARK","Canonical mark rejected",cause=time_cause or None)
@@ -2338,6 +2464,10 @@ class PaperBroker:
             currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
+        # Direct PAPER callers (including scalping) cannot bypass operator veto.
+        operator_hold = paper_entry_hold_reason(family)
+        if operator_hold:
+            return False, operator_hold, None
         # Contract completeness is an identity prerequisite. Check it before
         # session admission so a missing option contract cannot masquerade as
         # an expiry/session problem.
@@ -2756,17 +2886,13 @@ class PaperBroker:
             root = dict(root)
             if any(root[k]!=p[k] for k in ('symbol','asset_class','settlement','currency','market','features_json')):
                 return False
+            # BONOS/LETRAS/OBLIGACIONES require a separately certified atomic
+            # native FI sale ledger. The generic spot writer is not an FI
+            # executor even when a native maturity/exit flag exists: otherwise
+            # it can credit principal or market cash twice.
+            if family_name(root['asset_class']) in {'BONOS', 'LETRAS', 'OBLIGACIONES'}:
+                return False
             current, prior = spot_ledger.partition(c,root)
-            # A redeemed FI lot cannot be sold through the generic equity
-            # close path: that would credit principal a second time and label
-            # an issuer redemption as an exchange fill. Native FI sale and
-            # maturity-close ledgers need their own separately certified owner.
-            fi_view = self._fi_position_at(c, root, at)
-            if fi_view is not None:
-                from rc6_fixed_income_portfolio_bridge import native_exit_authorized
-                allowed, _ = native_exit_authorized(c, root['paper_id'], at)
-                if not allowed:
-                    return False
             # Snapshot viejo: no consumir otra porción con un reintento ciego.
             if not current or any(current[k]!=p[k] for k in ('quantity','entry_cost','entry_price')):
                 return False
@@ -2922,8 +3048,12 @@ class PaperBroker:
                     qty = D(p["quantity"]) * self._position_multiplier(p)
                     exposure += mark * qty
                     unrealized += (mark - D(p["entry_price"])) * qty - D(p["entry_cost"])
+            terminal_fx_unknown = [p for p in closed if p["currency"] == currency
+                and p.get("close_reason") == "FI_NATIVE_MATURITY_REVIEWED"
+                and p.get("net_pnl") is None]
+            stale += len(terminal_fx_unknown)
             realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
-                                          if p["currency"] == currency), ZERO))
+                if p["currency"] == currency and p not in terminal_fx_unknown), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]

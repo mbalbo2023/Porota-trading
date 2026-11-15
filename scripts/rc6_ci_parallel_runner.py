@@ -21,6 +21,7 @@ import time
 
 import yaml
 
+from rc6_audit_evidence import sqlite_scratch as scratch
 from scripts import rc6_ci_shard_quorum as shards
 from scripts.rc6_ci_junit_quorum import JunitQuorumRed, verify_parallel
 
@@ -93,6 +94,26 @@ def _test_args(repo: Path) -> list[str]:
         _red()
 
 
+def _disk_backed_temp_parent(repo: Path) -> Path:
+    """Put pytest basetemp outside the checkout, never on an unverified tmpfs."""
+    runner_temp = os.environ.get("RUNNER_TEMP", "")
+    if not runner_temp and os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        _red()
+    parent = Path(runner_temp) if runner_temp else repo.parent
+    if (not parent.is_absolute() or parent == Path("/") or parent == repo
+            or repo in parent.parents):
+        _red()
+    try:
+        if (parent.resolve(strict=True) != parent or not parent.is_dir()
+                or not os.access(parent, os.W_OK | os.X_OK)):
+            _red()
+        # Reuse the SQLite capture's mount policy; do not weaken its guard.
+        scratch._storage_type(parent)
+    except (OSError, ValueError, RuntimeError):
+        _red()
+    return parent
+
+
 def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         shard_count: int, output_junit: Path) -> dict:
     """Discover globally, execute exact IDs concurrently, attest actual XML."""
@@ -110,7 +131,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
     python = sys.executable
     plugin = ["-p", "scripts.rc6_ci_pytest_identity"]
     start = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-") as temp:
+    disk_parent = _disk_backed_temp_parent(repo)
+    with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir=disk_parent) as temp:
         temp_dir = Path(temp)
         collected = temp_dir / "collected.json"
         collect_env = {**env_base, "RC6_CI_MANIFEST_PATH": str(collected)}

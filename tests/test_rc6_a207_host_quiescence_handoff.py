@@ -18,6 +18,8 @@ from test_production_paper_v1634 import partial_spot
 
 
 def _host_book(partial_spot, tmp_path, monkeypatch):
+    # Host handoff simulation only; live legacy drain cannot write a receipt.
+    monkeypatch.setattr(q, 'require_legacy_drain_custody', lambda: None)
     broker, targets, _ = _make_book(partial_spot, tmp_path)
     root = tmp_path / 'host'
     db = root / 'data/paper_v17/observer_v17.db'

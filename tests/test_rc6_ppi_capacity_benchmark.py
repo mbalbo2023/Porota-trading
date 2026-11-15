@@ -13,6 +13,7 @@ from rc6_dynamic_universe.benchmark import run_benchmark
 from rc6_dynamic_universe.capacity import safe_capacity
 from rc6_dynamic_universe.common import digest
 from ppi_synthetic_budget_fixtures import SyntheticWireLease
+from ppi_synthetic_auth_fixtures import allow_fake_auth_only
 
 
 class Clock:
@@ -85,6 +86,7 @@ def wire(monkeypatch):
         return response
 
     monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    allow_fake_auth_only(monkeypatch)
     # A legacy capacity experiment uses a fake HTTP adapter, not real PPI.
     # Opt into an isolated synthetic lease rather than weakening production's
     # shared-budget fail-closed guard for unauthorised provider reads.
@@ -161,6 +163,41 @@ def test_credentials_absent_has_no_network(wire):
     report = measure(wire, api_key="", api_secret="")
     assert report["stop_reason"] == "PPI_CREDENTIALS_UNAVAILABLE" and calls == []
     assert capacity(report, clock)["safe_limit"] == 0
+
+
+def test_missing_shared_budget_stops_before_reader_login_or_get(wire, monkeypatch):
+    clock, calls, _ = wire
+    events = []
+    monkeypatch.setattr("rc6_ppi_global_budget.budget_from_environment",
+                        lambda *args, **kwargs: None)
+
+    class FakeReader:
+        metrics = {}
+
+        def login_once(self):
+            events.append("login")
+            requests.post("https://synthetic.invalid/loginapi")
+
+        def current(self, *_args):
+            events.append("get")
+            requests.get("https://synthetic.invalid/current")
+            return {"date": clock.now().isoformat(), "price": 100}
+
+        def close(self):
+            events.append("close")
+
+    def factory(*_args, **_kwargs):
+        events.append("construct")
+        return FakeReader()
+
+    report = measure(wire, reader_factory=factory, endpoints=("current",), max_requests=2)
+    assert report["stop_reason"] == "PPI_SHARED_BUDGET_UNAVAILABLE"
+    assert report["status"] == "NO_VERIFICADO"
+    assert report["observations"] == []
+    assert report["real_orders_sent"] == 0 and report["real_routes"] == "NOT_CALLED"
+    assert report["runtime_modified"] is False
+    assert capacity(report, clock)["safe_limit"] == 0
+    assert events == [] and calls == []
 
 
 def test_three_endpoints_real_sdk_normalization_global_and_identity_counters(wire):
@@ -372,14 +409,8 @@ def test_existing_http_guard_real_routes_blocked_before_adapter(wire, route):
 
 def test_workflow_manual_bounded_no_production_runtime_or_orders():
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/rc6-ppi-capacity-shadow.yml").read_text()
-    assert "workflow_dispatch:" in workflow and "schedule:" not in workflow
-    assert "timeout-minutes: 35" in workflow
-    assert "--max-requests 2701 --max-runtime-seconds 1800" in workflow
-    assert "PPI_CAPACITY_READONLY_API_KEY" in workflow
-    assert "candidate_sha:" in workflow and "inputs.candidate_sha" in workflow
-    for forbidden in ("ssh ", "scp ", "DEPLOY_OWNER", "secrets.POROTA", "BYMA_API", "Order/Confirm"):
-        assert forbidden not in workflow
+    # Historical dispatch removed; the benchmark itself and its request,
+    # circuit-breaker and read-only behavioral tests remain automatically run.
     script = (root / "scripts/rc6_ppi_capacity_benchmark.py").read_text()
     assert "--as-of" not in script and "/opt/" not in script and "PPI_PRODUCTION_SECRET_FILE" not in script
 

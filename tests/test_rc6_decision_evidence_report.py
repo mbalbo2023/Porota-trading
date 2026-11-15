@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
+from cg_paper_workspace import artifact_root, mark_new_database
 import rc6_decision_evidence_report as report
 from rc6_counterfactual_learning import read_bounded
 
@@ -27,18 +28,23 @@ def _payload():
     }
 
 
-def _db(path, payload, digest):
+def _db(path, payload, digest, monkeypatch):
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(path))
+    scratch = artifact_root(path) / "sqlite-read-scratch"
+    scratch.mkdir(parents=True, mode=0o700)
+    scratch.chmod(0o700)
     with sqlite3.connect(path) as c:
+        mark_new_database(c)
         c.execute("CREATE TABLE decision_evidence_snapshots(decision_key TEXT PRIMARY KEY,captured_at TEXT,schema_version TEXT,payload_sha256 TEXT,payload_json TEXT)")
         c.execute("CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,status TEXT,net_pnl TEXT,closed_at TEXT)")
         c.execute("INSERT INTO decision_evidence_snapshots VALUES(?,?,?,?,?)", ("d-1", "2026-09-19T14:00:00+00:00", "v1", digest, json.dumps(payload)))
         c.execute("INSERT INTO paper_positions VALUES(?,?,?,?)", ("PAPER-1", "CLOSED", "12.5", "2026-09-19T16:00:00+00:00"))
 
 
-def test_report_verifies_hash_and_writes_bounded_projection(tmp_path):
+def test_report_verifies_hash_and_writes_bounded_projection(tmp_path, monkeypatch):
     payload = _payload()
     database = tmp_path / "paper.db"
-    _db(database, payload, report._canonical_hash(payload))
+    _db(database, payload, report._canonical_hash(payload), monkeypatch)
     result = report.build(db_path=database)
     assert result["read_only"] is True
     assert result["decisions"][0]["state"] == "VERIFIED"
@@ -50,19 +56,19 @@ def test_report_verifies_hash_and_writes_bounded_projection(tmp_path):
     assert json.loads(target.read_text(encoding="utf-8"))["decisions"][0]["decision_key"] == "d-1"
 
 
-def test_bad_hash_is_insufficient_evidence(tmp_path):
+def test_bad_hash_is_insufficient_evidence(tmp_path, monkeypatch):
     payload = _payload()
     database = tmp_path / "paper.db"
-    _db(database, payload, "bad")
+    _db(database, payload, "bad", monkeypatch)
     result = report.build(db_path=database)
     assert result["decisions"][0]["state"] == "INSUFFICIENT_EVIDENCE"
     assert result["decisions"][0]["profiles"] == []
 
 
-def test_compact_verified_publication_survives_oversized_full_report(tmp_path):
+def test_compact_verified_publication_survives_oversized_full_report(tmp_path, monkeypatch):
     payload = _payload()
     database = tmp_path / "paper.db"
-    _db(database, payload, report._canonical_hash(payload))
+    _db(database, payload, report._canonical_hash(payload), monkeypatch)
     result = report.build(db_path=database)
     result["generated_at"] = "2026-09-19T20:00:00+00:00"
     result["decisions"][0]["sources"] = {"irrelevant_to_profile": "x" * (1024 * 1024)}
@@ -76,10 +82,10 @@ def test_compact_verified_publication_survives_oversized_full_report(tmp_path):
     assert all(row["entry_authority"] is False for row in view["rows"])
 
 
-def test_compact_does_not_promote_bad_hash_or_future_publication(tmp_path):
+def test_compact_does_not_promote_bad_hash_or_future_publication(tmp_path, monkeypatch):
     payload = _payload()
     database = tmp_path / "paper.db"
-    _db(database, payload, "bad")
+    _db(database, payload, "bad", monkeypatch)
     result = report.build(db_path=database)
     result["generated_at"] = "2026-09-21T20:00:00+00:00"
     report.write_counterfactual(result, root=tmp_path)

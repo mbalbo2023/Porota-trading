@@ -233,12 +233,14 @@ def test_repair_never_unions_currency_or_price_basis(tmp_path):
 
 def test_history_stale_gap_holiday_future_and_unknown_calendar():
     import ak_byma_calendar as cal
-    q=SimpleNamespace(market='BYMA',asset_class='CEDEARS')
+    q=SimpleNamespace(market='BYMA',asset_class='CEDEARS',settlement='CI')
+    missing_settlement=SimpleNamespace(market='BYMA',asset_class='CEDEARS')
     at=datetime.fromisoformat('2026-10-16T15:00:00+00:00')
     day=at.date()-timedelta(days=1); days=[]
     while len(days)<20:
         if cal.es_dia_habil_operativo(day): days.append(day.isoformat())
         day-=timedelta(days=1)
+    assert features.history_session_quality(days,missing_settlement,at)['state']=='HISTORY_CALENDAR_UNVERIFIED'
     assert features.history_session_quality(days,q,at)['state']=='READY'
     assert '2026-10-12' not in days
     assert features.history_session_quality(days[1:],q,at)['state']=='HISTORY_STALE'

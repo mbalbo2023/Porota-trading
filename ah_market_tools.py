@@ -57,7 +57,9 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("market_tools")
 
-YAHOO_FALLBACK_ENABLED = os.getenv("YAHOO_FALLBACK_ENABLED", "true").lower() == "true"
+# Yahoo is deprecated for operational quoting. An IOL outage must not
+# silently re-enable delayed Yahoo egress; allow only explicit legacy opt-in.
+YAHOO_FALLBACK_ENABLED = os.getenv("YAHOO_FALLBACK_ENABLED", "false").lower() == "true"
 # Diferencia porcentual a partir de la cual un precio de PPI se considera
 # sospechoso al contrastarlo con Yahoo. Se toma amplio a propósito: Yahoo
 # viene demorado, así que un umbral chico produciría alarmas todo el tiempo.

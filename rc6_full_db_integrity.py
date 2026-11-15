@@ -25,13 +25,15 @@ def probe(db_path=DB, *, defer_when_market_open=False):
         c=sqlite3.connect(f'file:{db_path}?mode=ro',uri=True,timeout=30)
         c.execute('PRAGMA query_only=ON')
         state=c.execute(
-            'SELECT real_orders_sent,session_state FROM observer_state WHERE id=1'
+            'SELECT mode,real_orders_sent,session_state FROM observer_state WHERE id=1'
         ).fetchone()
-        real_orders=int(state[0] if state else -1)
-        session_state=str(state[1] if state and state[1] is not None else 'UNKNOWN')
-        result.update(real_orders_sent=real_orders,session_state=session_state)
+        observer_mode=state[0] if state else None
+        real_orders=state[1] if state else None
+        session_state=str(state[2] if state and state[2] is not None else 'UNKNOWN')
+        result.update(observer_mode=observer_mode,real_orders_sent=real_orders,
+                      session_state=session_state)
 
-        if real_orders != 0:
+        if observer_mode != 'PRODUCTION_PAPER' or type(real_orders) is not int or real_orders != 0:
             result.update(
                 quick_check='NOT_RUN_SAFETY',
                 state='SAFETY_BLOCK',

@@ -185,14 +185,26 @@ def test_mep_catalog_funding_isolated_from_labor_day_policy(tmp_path, monkeypatc
 
     records = json.loads((ROOT / "tests/fixtures/ppi_catalog_20260827.json").read_text())["records"]
     raw = next(r for r in records if r["ticker"] == "AAPLD")
-    metadata = catalog.normalize_record(raw, "INMEDIATA", datetime.now(timezone.utc).isoformat(), "fresh-synthetic-identity")
     fresh_at = datetime.now(timezone.utc).isoformat()
-    q = observer.normalize_quote(
-        "AAPLD", "CEDEARS", "INMEDIATA",
-        {"price": 100, "date": fresh_at},
-        {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000, "date": fresh_at},
-        metadata=metadata,
-    )
+
+    def paper_quote(metadata):
+        return observer.normalize_quote(
+            "AAPLD", "CEDEARS", "INMEDIATA",
+            {"price": 100, "date": fresh_at},
+            {"bid": 99, "ask": 100, "bidsize": 10000, "asksize": 10000,
+             "date": fresh_at},
+            metadata=metadata,
+        )
+
+    # Request-only legacy fixture is NOT provider settlement attestation.
+    unbound = catalog.normalize_record(raw, "INMEDIATA", fresh_at, "fixture-unbound")
+    assert paper_quote(unbound).opening_block_reason == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+
+    # Positive USD_MEP fixture explicitly synthesizes the native five-key.
+    attested = catalog.normalize_record({**raw, "settlement": "INMEDIATA"},
+                                        "INMEDIATA", fresh_at, "fixture-raw-five-key")
+    assert attested["settlement_source"] == "PPI_FIELD"
+    q = paper_quote(attested)
     assert q.currency == "USD_MEP" and q.contract.currency == "USD_MEP"
     assert not q.opening_block_reason
     funded = PaperBroker(

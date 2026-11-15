@@ -274,17 +274,9 @@ def test_a205_cli_dispatch_requires_exact_receipt_and_is_plan_only_by_default(
 
 def test_a205_readonly_action_cannot_become_a_stealth_deploy():
     root = Path(__file__).resolve().parents[1]
-    ro = (root / '.github/workflows/rc6-a205-paper-book-readonly.yml').read_text()
-    deploy = (root / '.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    assert "rc6-a205-paper-book-ro-v1-*" in ro
-    assert 'github.actor == \'mbalbo2023\'' in ro
-    assert 'PYTHONDONTWRITEBYTECODE=1' in ro and 'python3 -B' in ro
-    assert '--host-barrier' in ro and 'mode=ro' in (
+    # A205's dispatch and rootful routing are retired. Preserve the reusable
+    # inspector's read-only and open-book guards, tested behaviorally above.
+    assert 'mode=ro' in (
         root / 'scripts/rc6_paper_deploy_preflight.py').read_text()
-    assert 'BLOCKED_RECONCILIATION' in ro
-    assert 'RC6_A205_PROMOTION_READY=NO' in ro
-    assert 'rc6-unified-paper-deploy' in deploy
-    assert 'RC6_A205_BOOK_OPEN_COUNTS=SPOT:' in deploy
-    assert "if str(exc) != 'QUIESCENCE_OPEN_POSITION'" in deploy
     assert 'QUIESCENCE_OPEN_POSITION' in (
         root / 'scripts/rc6_deploy_quiescence.py').read_text()

@@ -86,12 +86,22 @@ class A222GuardedScalpingTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
 
     def _seed_synthetic_ready_catalog(self):
-        # The fixture is a TEST projection of a historical PPI catalog, not
-        # proof that any account/instrument is currently eligible to trade.
+        # The archived PPI SearchInstrument example has no literal settlement;
+        # requesting A-24HS does NOT attest it. For this positive *synthetic*
+        # scalping lifecycle only, model a distinct hypothetical five-key PPI
+        # response. It is never an authentic provider receipt or live authority.
+        # Leave the historical fixture unchanged and test its HOLD below.
         catalog_fixture = Path(__file__).parent / "fixtures/ppi_catalog_20260827.json"
         raw = next(item for item in json.loads(catalog_fixture.read_text())['records']
                    if item['ticker'] == 'ALUA' and item['type'] == 'ACCIONES')
-        ready = catalog.normalize_record(raw, "A-24HS", AT.isoformat(), "A222_SYNTHETIC_FIXTURE")
+        self.assertNotIn("settlement", raw)
+        synthetic_five_key = dict(raw, settlement="A-24HS",
+                                  _fixture_synthetic_full_key=True)
+        ready = catalog.normalize_record(
+            synthetic_five_key, "A-24HS", AT.isoformat(),
+            "A222_OFFHOST_SYNTHETIC_FIVE_KEY_NOT_PROVIDER_RECEIPT")
+        self.assertEqual(ready["settlement_source"], "PPI_FIELD")
+        self.assertTrue(ready["raw"]["_fixture_synthetic_full_key"])
         with self.store.connect() as connection:
             catalog.persist(connection, ready)
             connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
@@ -106,6 +116,20 @@ class A222GuardedScalpingTests(unittest.TestCase):
         terms = catalog.quote_terms(selected, now=AT)
         self.assertEqual(terms["opening_block_reason"], "")
         return terms
+
+    def test_historical_four_key_ppi_request_cannot_authorize_scalping_paper(self):
+        # Regression opposite to the positive synthetic lifecycle: a real
+        # SearchInstrument-shaped fixture without settlement always fails.
+        catalog_fixture = Path(__file__).parent / "fixtures/ppi_catalog_20260827.json"
+        raw = next(item for item in json.loads(catalog_fixture.read_text())['records']
+                   if item['ticker'] == 'ALUA' and item['type'] == 'ACCIONES')
+        self.assertNotIn("settlement", raw)
+        requested = catalog.normalize_record(
+            raw, "A-24HS", AT.isoformat(), "A222_HISTORICAL_REQUEST_ONLY")
+        self.assertEqual(requested["capability"], "READY_PAPER_SPOT")
+        self.assertEqual(requested["settlement_source"], "REQUEST_CANDIDATE")
+        self.assertEqual(catalog.quote_terms(requested, now=AT)["opening_block_reason"],
+                         "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED")
 
     def _scalping_buy_candidate(self):
         record = _record()

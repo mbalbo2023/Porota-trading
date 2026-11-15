@@ -39,9 +39,10 @@ RUN pip install --no-cache-dir --no-compile -r requirements.lock.txt \
 
 FROM python:3.11-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
 
-# Native COLD ABI regression runs inside the frozen image and calls readelf.
-# Keep that inspection tool, without installing the compiler in runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends binutils \
+# Code and artifact provenance tests run in this exact image; Git is required
+# by their real checkout fixtures. Native ABI checks also require readelf.
+# Neither a compiler nor a second test-only image is needed at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends binutils git \
     && rm -rf /var/lib/apt/lists/*
 
 # Identity travels inside the frozen image to every runtime child. Labels

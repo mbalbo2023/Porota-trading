@@ -265,6 +265,18 @@ def partition(c, p, at=None):
     at = aware_datetime(at) if at is not None else None
     if p['status'] == 'CANCELLED_ADMIN':
         return _admin_cancel_partition(c, p, at)
+    if p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED':
+        # No SELL/receivable is fabricated for already booked issuer cash.
+        from rc6_fixed_income_native_exit import terminal_at
+        receipt = terminal_at(c, p['paper_id'])
+        if receipt is None or sales(c, p['paper_id']):
+            raise ValueError('FI_TERMINAL_RECEIPT_REQUIRED')
+        if at is not None and at < aware_datetime(p['opened_at']):
+            return None, []
+        if at is not None and at < aware_datetime(receipt['closed_at']):
+            return dict(p, status='OPEN', closed_at=None, exit_price=None,
+                        exit_cost=None, gross_pnl=None, net_pnl=None, close_reason=None), []
+        return None, [p]
     start = aware_datetime(p['opened_at'])
     end = aware_datetime(p['closed_at']) if p['closed_at'] else None
     if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)
@@ -358,12 +370,19 @@ def pending(c, at, currency):
     amount = ZERO
     for row in c.execute('SELECT * FROM paper_positions WHERE currency=?',(currency,)):
         partition(c,row,at)  # valida también la concordancia del ledger
+        fields = set(row.keys())
+        contract = {
+            'family': row['asset_class'] if 'asset_class' in fields else None,
+            'market': row['market'] if 'market' in fields else None,
+            'currency': row['currency'] if 'currency' in fields else None,
+        }
         for sale in sales(c,row['paper_id']):
             if aware_datetime(sale['filled_at']) > at:
                 continue
             value = decimal_value(sale['net_proceeds'],'producido de venta')
             available = validated_sale_settlement(row['settlement'],sale['filled_at'],
-                                                 sale['available_at'],sale['basis'])
+                                                 sale['available_at'],sale['basis'],
+                                                 **contract)
             if value > 0 and (available is None or available > at):
                 amount += value
     return amount

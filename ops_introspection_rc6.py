@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import sqlite3
 import tempfile
+from decimal import Decimal, DecimalException
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,6 +23,7 @@ import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import byma_paper_spot_phase
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
+from rc6_trader_dashboard.projection import decimal_amount
 from _version import VERSION
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -88,6 +91,73 @@ def one(c, sql, params=(), default=0):
 
 def rows(c, sql, params=()):
     return [dict(r) for r in c.execute(sql, params)]
+
+
+def _strict_pnl_sum(values):
+    """Never manufacture a zero from corrupt or non-representable PAPER PnL."""
+    total = Decimal(0)
+    try:
+        for value in values:
+            amount = decimal_amount(value)
+            if amount is None:
+                return None
+            as_float = float(amount)
+            if not math.isfinite(as_float) or (as_float == 0 and amount != 0):
+                return None
+            total += amount
+        projected = float(total)
+        if not math.isfinite(projected) or (projected == 0 and total != 0):
+            return None
+        return projected
+    except (DecimalException, OverflowError, ValueError):
+        return None
+
+
+def _closed_pnl_today(c, day):
+    values = []
+    currencies = set()
+    for row in c.execute("""SELECT currency,net_pnl FROM paper_positions
+      WHERE status='CLOSED' AND julianday(closed_at)>=julianday(?)""", (day,)):
+        currency = row["currency"]
+        if not isinstance(currency, str) or not currency.strip():
+            return None, ["closed_pnl_unverified"]
+        currencies.add(currency.strip().upper())
+        values.append(row["net_pnl"])
+    value = _strict_pnl_sum(values)
+    if value is None:
+        return None, ["closed_pnl_unverified"]
+    if len(currencies) > 1:
+        return None, ["closed_pnl_mixed_currency_unverified"]
+    return value, []
+
+
+def _currencies_today(c, day):
+    grouped = {}
+    for row in c.execute("""SELECT currency,status,net_pnl FROM paper_positions
+      WHERE julianday(opened_at)>=julianday(?)""", (day,)):
+        key = (row["currency"], row["status"])
+        group = grouped.setdefault(key, {"values": [], "count": 0, "invalid": False})
+        group["count"] += 1
+        if not isinstance(row["currency"], str) or not row["currency"].strip():
+            group["invalid"] = True
+        if row["status"] not in {"OPEN", "CLOSED", "CANCELLED_ADMIN"}:
+            group["invalid"] = True
+        if row["status"] in {"OPEN", "CANCELLED_ADMIN"}:
+            if row["net_pnl"] is not None:
+                group["invalid"] = True
+            group["values"].append("0")
+        else:
+            group["values"].append(row["net_pnl"])
+    result = []
+    invalid = False
+    for (currency, status), group in sorted(
+        grouped.items(), key=lambda item: (str(item[0][0] or ""), str(item[0][1] or ""))
+    ):
+        amount = None if group["invalid"] else _strict_pnl_sum(group["values"])
+        invalid |= amount is None
+        result.append({"currency": currency, "status": status,
+                       "count": group["count"], "net_pnl": amount})
+    return result, (["currency_pnl_unverified"] if invalid else [])
 
 
 def pending_closed_eod_over_hold(c, now, observer):
@@ -163,6 +233,10 @@ def collect():
         except (OSError,ValueError,TypeError): result["manifest"]={}
         if result["manifest"].get("mode") != result["observer"].get("mode"):
             result["anomalies"].append("manifest_observer_mode_mismatch")
+        if result["observer"].get("mode") != "PRODUCTION_PAPER":
+            result["anomalies"].append("paper_mode_unverified")
+        pnl_today, pnl_findings = _closed_pnl_today(c, day)
+        result["anomalies"].extend(pnl_findings)
         result["trading"] = {
             "decisions_1h": one(c, "SELECT COUNT(*) FROM paper_decisions WHERE julianday(decided_at)>=julianday(?)", (hour,)),
             # _open registra PAPER_FILLED_BUY para toda apertura, incluida la
@@ -172,7 +246,7 @@ def collect():
             "sells_1h": one(c, "SELECT COUNT(*) FROM paper_events WHERE event_type='PAPER_FILLED_SELL' AND julianday(event_at)>=julianday(?)", (hour,)),
             "open": one(c, "SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'"),
             "closed_today": one(c, "SELECT COUNT(*) FROM paper_positions WHERE status='CLOSED' AND julianday(closed_at)>=julianday(?)", (day,)),
-            "net_pnl_today": one(c, "SELECT COALESCE(SUM(CAST(net_pnl AS REAL)),0) FROM paper_positions WHERE status='CLOSED' AND julianday(closed_at)>=julianday(?)", (day,), 0.0),
+            "net_pnl_today": pnl_today,
         }
         result["reasons_1h"] = rows(c, """SELECT reason,COUNT(*) count FROM paper_decisions
           WHERE julianday(decided_at)>=julianday(?) GROUP BY reason ORDER BY count DESC LIMIT 8""", (hour,))
@@ -240,16 +314,19 @@ def collect():
           AND (technical_gate<>'APPROVE' OR patrimonial_gate<>'APPROVE')""",(hour,))
         if result["gate_contradictions_1h"]:
             result["anomalies"].append("gate_contradiction_opened_simulated")
-        result["currencies_today"] = rows(c, """SELECT currency,status,COUNT(*) count,
-          COALESCE(SUM(CAST(net_pnl AS REAL)),0) net_pnl FROM paper_positions
-          WHERE julianday(opened_at)>=julianday(?) GROUP BY currency,status ORDER BY currency,status""",(day,))
+        result["currencies_today"], currency_findings = _currencies_today(c, day)
+        result["anomalies"].extend(currency_findings)
         closed_sample = rows(c, """WITH ranked AS (
           SELECT status,currency,net_pnl,
             ROW_NUMBER() OVER (PARTITION BY currency ORDER BY julianday(closed_at) DESC,paper_id DESC) sample_rank
           FROM paper_positions WHERE status='CLOSED'
         ) SELECT status,currency,net_pnl FROM ranked WHERE sample_rank<=100
           ORDER BY currency,sample_rank""")
-        result["learning_expectancy"] = empirical_expectancy(closed_sample, minimum_sample=30)
+        try:
+            result["learning_expectancy"] = empirical_expectancy(closed_sample, minimum_sample=30)
+        except (ValueError, TypeError, DecimalException, OverflowError):
+            result["learning_expectancy"] = []
+            result["anomalies"].append("learning_expectancy_unverified")
         result["scalping"] = {
             "evaluated_1h": one(c,"SELECT COUNT(*) FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?)",(hour,)) if table(c,"scalping_candidates") else 0,
             "rejected_1h": one(c,"SELECT COUNT(*) FROM scalping_candidates WHERE julianday(evaluated_at)>=julianday(?) AND action<>'BUY_CANDIDATE'",(hour,)) if table(c,"scalping_candidates") else 0,
@@ -373,7 +450,10 @@ def collect():
                 "branch": "runtime-observability", "day": None,
                 "detail": None, "retention_days": 90,
             }
-    if int(result["observer"].get("real_orders_sent") or 0) != 0:
+    counter = result["observer"].get("real_orders_sent")
+    if type(counter) is not int:
+        result["anomalies"].append("real_orders_sent_unverified")
+    elif counter != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
     market_open = str(result["observer"].get("session_state") or "").upper() == "MARKET_OPEN"
     if market_open and result["trading"]["decisions_1h"] == 0:
@@ -448,7 +528,7 @@ def render(result):
              f"- Decisiones última hora: {t['decisions_1h']}",
              f"- Compras / ventas última hora: {t['buys_1h']} / {t['sells_1h']}",
              f"- Posiciones abiertas / cerradas hoy: {t['open']} / {t['closed_today']}",
-             f"- PnL neto hoy: {t['net_pnl_today']}",
+             f"- PnL neto hoy: {t['net_pnl_today'] if t['net_pnl_today'] is not None else 'NO_VERIFICADO'}",
              f"- Histórico: {i['instruments']} instrumentos / {i['rows']} filas",
              f"- Último dato bursátil: {i['last_market_date']}",
              f"- Última descarga: {i['last_download']}", "",

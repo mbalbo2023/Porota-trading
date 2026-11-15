@@ -57,9 +57,6 @@ def test_new_guardian_cadence_is_frozen_and_installed_before_preopen(
     assert not any(call[:2] in {('systemctl','start'),('systemctl','restart')} or
                    '--now' in call for call in calls)
     assert not any('ppi' in ' '.join(call).lower() for call in calls)
-    workflow=(ROOT/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
-    assert workflow.index('scripts/porota_apply_host_control_plane_v2.py') < \
-           workflow.index('python3 "$REPO/rc6_preopen.py"')
 
 
 def test_iol_oauth_guardian_runs_offhours_and_premarket_without_market_polling() -> None:

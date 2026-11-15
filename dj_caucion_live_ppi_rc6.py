@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
 from bs_instrument_contracts import aware_datetime
 from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
+from rc6_ppi_global_budget import assert_native_ppi_response_identity
 
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
 # A244: a review threshold, NOT a purge limit. History rows are evidence
@@ -74,6 +75,11 @@ def _book_row(reader,item,observed_at,now,clock_fn):
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
     try:
         book=retry_read(lambda: reader.book(item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+        # Reconcile the native Book with the exact PPI catalog identity before
+        # its depth can be projected as PAPER participation authority.
+        assert_native_ppi_response_identity(
+            book, (item["ticker"], "CAUCIONES", item["market"],
+                   item["currency"], item["settlement"]))
         # Each sequential request can return a quote created after the batch
         # started. Timestamp actual receipt; the batch clock cannot decide
         # whether a provider quote is in the future or has already expired.

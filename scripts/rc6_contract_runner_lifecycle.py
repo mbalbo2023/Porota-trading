@@ -20,6 +20,22 @@ CURRENT = ROOT/'data/deploy/CURRENT_STATE_V2.json'
 OWNED = ('porota_production_observer', 'porota_production_dashboard')
 
 
+class ContractWriterCustodyHold(RuntimeError):
+    exit_code = 79
+
+    def __init__(self):
+        super().__init__('CONTRACT_WRITER_EXACT_BIRTH_HOLD79')
+
+
+def require_contract_writer_birth_attestation():
+    """No orphan writer stop until the root helper seals its distinct birth.
+
+    Inspecting the legacy candidate-derived NAME, even when STOP uses the
+    resulting full CID, is not proof that the container belongs to Porota.
+    """
+    raise ContractWriterCustodyHold()
+
+
 def docker(*args, allow_missing=False):
     result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=18)
     if result.returncode:
@@ -83,6 +99,11 @@ def safety(candidate):
 
 
 def stop(candidate):
+    if re.fullmatch(r'[0-9a-f]{40}', candidate) is None:
+        raise RuntimeError('CONTRACT_CANDIDATE_INVALID')
+    # This must hold before ANY legacy inventory/inspection or stop. The
+    # exact-CID helper's writer birth attestation is not installed yet.
+    require_contract_writer_birth_attestation()
     image, owned = safety(candidate)
     name = 'porota-deploy-contract-' + candidate
     target = inspect(name, allow_missing=True)
@@ -115,7 +136,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate-sha', required=True)
     args = parser.parse_args()
-    print(json.dumps(stop(args.candidate_sha), sort_keys=True))
+    try:
+        result = stop(args.candidate_sha)
+    except ContractWriterCustodyHold as error:
+        print(str(error), flush=True)
+        return error.exit_code
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

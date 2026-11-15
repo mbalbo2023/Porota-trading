@@ -4,6 +4,7 @@ from scripts.porota_build_deploy_bundle_v2 import select_bundle_paths
 def test_bundle_selection_is_derived_not_manual():
     tracked = [
         "Dockerfile",
+        "compose.rootless.yml",
         "requirements.txt",
         "requirements.lock.txt",
         "n_instrument_watchlist.json",
@@ -19,6 +20,7 @@ def test_bundle_selection_is_derived_not_manual():
     ]
     selected = select_bundle_paths(tracked)
     assert "Dockerfile" in selected
+    assert "compose.rootless.yml" in selected
     assert "requirements.lock.txt" in selected
     assert "n_instrument_watchlist.json" in selected
     assert "POROTA_SECTOR_MAP_V1.csv" in selected

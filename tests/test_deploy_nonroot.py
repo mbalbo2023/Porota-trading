@@ -46,3 +46,15 @@ def test_deploy_prueba_sin_copia_de_persistencia_antes_de_recrear():
     assert not re.search(r"(?m)^\s*(?:sudo -n )?docker build(?:\s|$)", workflow)
     assert "rollback" not in workflow.lower()
     assert "FIX-FORWARD ONLY" in workflow
+
+
+def test_docker_compartido_no_ejecuta_scripts_del_checkout_como_root():
+    workflow = _workflow()
+    assert 'SOURCE_SHA="$CANDIDATE_SHA" REMOTE_STAGE="$STAGE"' not in workflow
+    assert 'bash "$STAGE/ops/rc6_deploy_critical_control_plane.sh"' not in workflow
+    assert 'critical stage-approved-protector' in workflow
+    assert 'sudo -n env SOURCE_SHA=' not in workflow
+    assert 'sudo -n bash "$STAGE/' not in workflow
+    assert 'sudo -n /usr/local/sbin/porota-rc6-oci-custody quiescence verify-prebirth' in workflow
+    assert 'RC6_PREBIRTH_ATTESTOR=HOLD79|missing_or_unverified|host_mutations=0' in workflow
+    assert 'sudo -n /usr/local/sbin/porota-rc6-oci-custody seal' in workflow

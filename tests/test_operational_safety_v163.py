@@ -1,4 +1,8 @@
 import time
+import os
+from pathlib import Path
+import subprocess
+import sys
 import pytest
 
 
@@ -90,6 +94,25 @@ def test_scalping_no_usa_yahoo_en_modo_operativo(monkeypatch):
     result = technical.evaluate_technical_scalping("AAPL")
     assert result.data_ok is False
     assert "bloqueado" in result.reason.lower()
+
+
+def test_legacy_yahoo_fallback_disabled_by_default_without_network():
+    # Check the actual import-time default in a fresh process with dotenv
+    # disabled. A test-local monkeypatch of the flag would not prove the
+    # fallback is fail-closed on a clean production boot.
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ, PYTHON_DOTENV_DISABLED="1")
+    env.pop("YAHOO_FALLBACK_ENABLED", None)
+    code = (
+        "import sys, ah_market_tools as market\n"
+        "assert market.YAHOO_FALLBACK_ENABLED is False\n"
+        "result = market.obtener_datos_yahoo('ALUA.BA')\n"
+        "assert result['error'] == 'Fallback a Yahoo desactivado por configuración'\n"
+        "assert 'yfinance' not in sys.modules\n"
+    )
+    result = subprocess.run([sys.executable, '-B', '-c', code], cwd=root,
+                            env=env, text=True, capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 def test_websocket_no_arranca_sin_autenticacion(monkeypatch):

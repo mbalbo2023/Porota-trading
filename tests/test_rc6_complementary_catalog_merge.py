@@ -72,8 +72,8 @@ def test_candidate_universe_is_rebuilt_from_catalog_readiness():
         PRIMARY KEY(ticker,instrument_type,market));
     """)
     rows=[
-      ("GGAL","ACCIONES","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","AVAILABLE","READY_PAPER_SPOT",'{"_discovery_source":"PPI_PRIMARY"}'),
-      ("GD30","BONOS","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","STALE","NEEDS_NOMINAL_UNITS",'{"_discovery_source":"PPI_PRIMARY"}'),
+      ("GGAL","ACCIONES","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","AVAILABLE","READY_PAPER_SPOT",'{"_discovery_source":"PPI_PRIMARY","ticker":"GGAL","type":"ACCIONES","market":"BYMA","currency":"ARS","settlement":"A-24HS"}'),
+      ("GD30","BONOS","BYMA","ARS","A-24HS","PPI_FIELD","","2026-09-25T20:00:00+00:00","r","STALE","NEEDS_NOMINAL_UNITS",'{"_discovery_source":"PPI_PRIMARY","ticker":"GD30","type":"BONOS","market":"BYMA","currency":"ARS","settlement":"A-24HS"}'),
     ]
     c.executemany("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",rows)
     c.executemany("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", [
@@ -112,7 +112,9 @@ def _catalog_identity(ticker="GGAL", family="ACCIONES", currency="ARS",
                       settlement="A-24HS", settlement_source="PPI_FIELD",
                       last_seen="2026-09-25T20:30:00+00:00", status="AVAILABLE",
                       capability="READY_PAPER_SPOT", metadata=None):
-    metadata = metadata or {"_discovery_source":"PPI_PRIMARY"}
+    metadata = metadata or {"_discovery_source":"PPI_PRIMARY", "ticker":ticker,
+                            "type":family, "market":"BYMA", "currency":currency,
+                            "settlement":settlement}
     return (ticker,family,"BYMA",currency,settlement,settlement_source,"",last_seen,
             "run",status,capability,json.dumps(metadata))
 

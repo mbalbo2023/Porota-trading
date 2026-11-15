@@ -4,19 +4,21 @@ Uses unittest so the authoritative weekend/holiday and forged-proof checks
 remain runnable even on an isolated runner without third-party pytest.
 """
 import contextlib
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone
 import io
 import json
 from pathlib import Path
 import shutil
+import hashlib
+import os
 import sqlite3
-import sys
 import tempfile
-import types
 import unittest
 from unittest.mock import patch
 
 from scripts import rc6_deploy_quiescence as q
+from scripts import porota_rootless_host as host
+from scripts import porota_operator_intent as intent
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -117,96 +119,116 @@ class TestTechnicalRescueProof(unittest.TestCase):
             q.exact_rescue_receipt(self.rescue_receipt(proof))
 
 
-class TestWorkflowA92RealClassifierOffline(unittest.TestCase):
-    """Execute the production inline A92 classifier with mocked host I/O."""
+class TestRootlessTechnicalAdmissionOffline(unittest.TestCase):
+    """Exercise the current probe/postflight, not the retired YAML A92 rescue.
 
-    @staticmethod
-    def a92_code():
-        source=(REPO/'.github/workflows/porota-deploy-v2-promote.yml').read_text()
-        start="elif statuses=={'running'} and state in (\n                  ('DEGRADED','BOOT_CALENDAR'), ('STOPPED','CLOSED')):"
-        block=source.split(start,1)[1].split(
-            "\n          elif (statuses=={'exited'}",1)[0]
-        return 'if True:\n'+block
+    A92 required an already-paused timer and a flat book for that one rescue.
+    Rootless quiesces its owned writers itself and preserves the existing DB;
+    an OPEN PAPER position is not a generic technical-deployment veto. Operator
+    admission remains separate and never follows from a healthy postflight.
+    """
 
-    def run_classifier(self, when, *, paused=True, source_sha=None, flat=True):
-        with tempfile.TemporaryDirectory(prefix='rc6-a229-classifier-') as tmp:
-            root=Path(tmp)
-            shutil.copyfile(REPO/'ak_byma_calendar.py',root/'ak_byma_calendar.py')
-            db=root/'data/paper_v17/observer_v17.db'
-            db.parent.mkdir(parents=True)
-            marker=root/'data/deploy/CURRENT_STATE_V2.json'
-            marker.parent.mkdir(parents=True)
-            health=root/'data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
-            health.parent.mkdir(parents=True)
-            IncidentClock.current=when
-            marker.write_text(json.dumps({
-                'recorded_at':(when-timedelta(seconds=5)).isoformat(),
-                'schema_version':2,'candidate_sha':source_sha or q.RESCUE_SOURCE_SHA,
-                'image_id':q.RESCUE_IMAGE_ID,'validation_status':'VALIDATED_RUNTIME',
-                'mode':'PRODUCTION_PAPER','real_orders_sent':0,
-                'real_order_routes':'NOT_CALLED'}))
-            health.write_text(json.dumps({
-                'recorded_at':(when-timedelta(seconds=5)).isoformat(),
-                'schema':'rc6.runtime-child-health.v1',
-                'source_sha':q.RESCUE_SOURCE_SHA,'mode':'PRODUCTION_PAPER',
-                'real_orders_sent':0,'real_routes':'NOT_CALLED'}))
-            with sqlite3.connect(db) as conn:
-                conn.execute('CREATE TABLE observer_state '
-                             '(id INTEGER,mode TEXT,real_orders_sent INTEGER,'
-                             'heartbeat_at TEXT,process_state TEXT,session_state TEXT)')
-                conn.execute('INSERT INTO observer_state VALUES (1,?,?,?,?,?)',
-                             ('PRODUCTION_PAPER',0,
-                              (when-timedelta(seconds=5)).isoformat(),
-                              'DEGRADED','BOOT_CALENDAR'))
-                for table in ('paper_positions','paper_cauciones','paper_future_positions'):
-                    conn.execute(f'CREATE TABLE {table} (status TEXT)')
-                if not flat:
-                    conn.execute("INSERT INTO paper_positions VALUES ('OPEN')")
-            originals={name:{'Id':'a'*64,'Image':q.RESCUE_IMAGE_ID,
-                             'State':{'Status':'running'}} for name in q.OWNED}
-            # Staged operator code stands in for exact SHA-checked candidate
-            # bytes. Its denial and disabled-timer modes are exercised below.
-            staged_operator=(
-                'def exact_operator_preopen_pause(*,historical_hold_only=False, '
-                'require_original_marker=False):\n'
-                '    if not historical_hold_only: raise ValueError("HISTORICAL_REQUIRED")\n'
-                '    return "e"*64\n'
-                f'def operator_preopen_timer_disabled(): return {paused!r}\n'
-            ).encode()
-            env={'ROOT':root,'OWNED':q.OWNED,'state':('DEGRADED','BOOT_CALENDAR'),
-                 'statuses':{'running'},'originals':originals,'path':db,
-                 'inspect':lambda name:originals[name],
-                 'staged_operator_source':lambda:staged_operator,
-                 'types':types,'sys':sys,'sqlite3':sqlite3}
-            fake_date=types.ModuleType('datetime')
-            fake_date.datetime=IncidentClock
-            fake_date.date=date
-            fake_date.timezone=timezone
-            with patch.dict(sys.modules,{'datetime':fake_date}),patch.object(
-                    q,'critical_admission',return_value={'capability':'issues_only'}) as critical:
-                out=io.StringIO()
-                with contextlib.redirect_stdout(out):
-                    try:
-                        exec(compile(self.a92_code(),'deploy-inline-a92','exec'),env)
-                    except SystemExit as exc:
-                        return str(exc),critical.call_count
-                return out.getvalue().strip(),critical.call_count
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='rc6-24x7-')
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.home = self.root/'home'
+        self.home.mkdir(mode=0o700)
+        self.identity = host.Identity(os.getuid(), os.getgid(), 'fixture', self.home)
+        self.db = self.root/host.DB_RELATIVE
+        self.db.parent.mkdir(parents=True)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute('CREATE TABLE observer_state '
+                         '(id INTEGER,mode TEXT,real_orders_sent INTEGER,ppi_auth TEXT,'
+                         'process_state TEXT,session_state TEXT,last_market_data_at TEXT,'
+                         'heartbeat_at TEXT,detail TEXT)')
+            conn.execute('INSERT INTO observer_state VALUES (1,?,?,?,?,?,?,?,?)',
+                         ('PRODUCTION_PAPER',0,'OK','WAITING_MARKET','MARKET_CLOSED',
+                          None,SUNDAY.isoformat(),''))
+            conn.execute('CREATE TABLE paper_workspace (id INTEGER,dataset_id TEXT)')
+            conn.execute("INSERT INTO paper_workspace VALUES (1,'preserved-paper-data')")
+            for table in ('paper_positions','paper_cauciones','paper_future_positions'):
+                conn.execute(f'CREATE TABLE {table} (status TEXT)')
+                conn.execute(f"INSERT INTO {table} VALUES ('OPEN')")
+        self.paused = {'schema':'RC6_OPERATOR_PAPER_INTENT_V2',
+                       'status':'PAPER_PAUSED_BY_OPERATOR','candidate_sha':'a'*40,
+                       'candidate_tree_sha':'b'*40,'operator_comment_id':123,
+                       'operator_github_login':'mbalbo2023','rearm_run_id':456,
+                       'issued_at_ar':'2026-10-30T10:00:00-03:00'}
+        self.operator_path = intent.private_directory(intent.directory(self.home)) / 'paper-rearm-v1.json'
+        intent.atomic_write(self.operator_path, json.dumps(self.paused).encode())
 
-    def test_sunday_and_byma_holiday_execute_inline_classifier(self):
+    def postflight(self, when):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute('UPDATE observer_state SET heartbeat_at=?', (when.isoformat(),))
+        connect = sqlite3.connect
+        def runtime_connect(database, **kwargs):
+            self.assertEqual(database, 'file:/app/data/paper_v17/observer_v17.db?mode=ro')
+            self.assertIs(kwargs.get('uri'), True)
+            return connect(self.db.as_uri()+'?mode=ro', **kwargs)
+        def docker_json(*args):
+            self.assertEqual(args, ('container','exec','1'*64,'python','-c',host.RUNTIME_PROBE))
+            out = io.StringIO()
+            with patch.object(sqlite3,'connect',side_effect=runtime_connect), contextlib.redirect_stdout(out):
+                # Execute the same read-only SQL and real-order route guard used
+                # inside the deployed image; only Docker/filesystem I/O is local.
+                exec(compile(host.RUNTIME_PROBE,'rootless-runtime-probe','exec'), {})
+            return json.loads(out.getvalue())
+        manager = host.Host(self.root, self.identity)
+        IncidentClock.current = when
+        with patch.object(manager.docker,'json',side_effect=docker_json), \
+             patch.object(manager,'check_role',return_value={
+                 'State':{'Running':True,'Health':{'Status':'healthy'}}}), \
+             patch.object(host,'datetime',IncidentClock):
+            return manager.postflight({'roles':{'observer':'1'*64}},
+                when-timedelta(seconds=1),budget=10,
+                sleep=lambda seconds:self.fail('A fresh closed-session runtime must be ready'))
+
+    def test_sunday_and_byma_holiday_verify_runtime_without_rearming_or_resetting_book(self):
         for when in (SUNDAY,HOLIDAY):
             with self.subTest(when=when.isoformat()):
-                label,critical=self.run_classifier(when)
-                self.assertEqual(label,q.RESCUE_MODE)
-                self.assertEqual(critical,1)
+                before = host.database_snapshot(self.db)
+                operator_bytes = self.operator_path.read_bytes()
+                result = self.postflight(when)
+                self.assertEqual(result['observer'],'running')
+                self.assertEqual(result['orders_guard'],'BLOCKED')
+                self.assertEqual(result['paper_readiness'],'FAIL_CLOSED_PER_INSTRUMENT')
+                self.assertEqual(host.database_snapshot(self.db),before)
+                self.assertEqual(self.operator_path.read_bytes(),operator_bytes)
+                self.assertEqual(intent.read_intent(self.home,now=when),self.paused)
+                with sqlite3.connect(self.db) as conn:
+                    for table in ('paper_positions','paper_cauciones','paper_future_positions'):
+                        self.assertEqual(conn.execute(f'SELECT status FROM {table}').fetchall(),[('OPEN',)])
 
-    def test_inline_classifier_denies_rearm_forged_marker_and_open_book(self):
-        for kwargs,error in (({'paused':False},'RC6_RESCUE_24X7_NO_GO_RED'),
-                             ({'source_sha':'f'*40},'RC6_RESCUE_CURRENT_SOURCE_RED'),
-                             ({'flat':False},'RC6_RESCUE_BOOK_NOT_FLAT')):
-            with self.subTest(error=error):
-                label,critical=self.run_classifier(SUNDAY,**kwargs)
-                self.assertEqual(label,error)
-                self.assertEqual(critical,0)
+    def test_off_hours_do_not_bypass_private_provenance_or_real_order_safety(self):
+        release = {'schema':'porota.release.v1','source_sha':'a'*40,'source_tree':'b'*40,
+                   'image_id':'sha256:'+'c'*64,'operating_mode':'PRODUCTION_PAPER',
+                   'execution_mode':'SIMULATION','real_order_capability':'BLOCKED',
+                   'real_orders_sent_required':0}
+        host.private_dir(self.identity.state)
+        host.private_dir(self.identity.state/'releases')
+        directory = host.private_dir(self.identity.state/'releases'/release['source_sha'])
+        raw = json.dumps(release).encode()
+        host.atomic_write(directory/'release.json',raw)
+        current = {**release,'schema':'porota.rootless.deploy.v1','state':'VALIDADO_RUNTIME',
+                   'real_orders_sent':0,'release_manifest_sha256':hashlib.sha256(raw).hexdigest()}
+        host.write_json(self.identity.state/'current.json',current)
+        self.assertEqual(host.read_release_state(self.identity)[1],release)
+        for when in (SUNDAY,HOLIDAY):
+            with self.subTest(when=when.isoformat()):
+                host.write_json(self.identity.state/'current.json',dict(current,source_tree='f'*40))
+                with self.assertRaisesRegex(host.Hold,'PRIVATE_RELEASE_IDENTITY_MISMATCH'):
+                    host.read_release_state(self.identity)
+                intent.atomic_write(self.operator_path,json.dumps(dict(
+                    self.paused,operator_github_login='untrusted')).encode())
+                with self.assertRaisesRegex(ValueError,'OPERATOR_INTENT_PROVENANCE_INVALID'):
+                    intent.read_intent(self.home,now=when)
+                with sqlite3.connect(self.db) as conn:
+                    conn.execute('UPDATE observer_state SET real_orders_sent=1')
+                with self.assertRaisesRegex(host.Hold,'PAPER_DATABASE_SAFETY'):
+                    host.database_snapshot(self.db)
+                with self.assertRaisesRegex(host.Hold,'PAPER_RUNTIME_SAFETY'):
+                    self.postflight(when)
 
 
 if __name__=='__main__':

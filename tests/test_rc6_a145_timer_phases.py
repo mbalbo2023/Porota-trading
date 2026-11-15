@@ -51,7 +51,9 @@ def _cycle(tmp_path, runner, now):
         market_root=tmp_path / "market", lock=tmp_path / "source.lock", runner=runner)
 
 
-def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_path):
+def test_cycle_iol_public_minute_shadow_parity_evidence_5m_persistent_ttl(tmp_path, monkeypatch):
+    # Isolate downstream TTL logic: test-only independent custody receipt.
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda _db: None)
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()
@@ -91,7 +93,7 @@ def test_nontrading_holiday_closed_2027_never_launch_provider(tmp_path):
     assert runner.calls == []
 
 
-def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
+def test_paper_zero_and_symlink_state_fail_closed(tmp_path, monkeypatch):
     _paper_db(tmp_path / "paper.db", orders=1)
     market = tmp_path / "market"
     market.mkdir()
@@ -101,6 +103,8 @@ def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
     assert runner.calls == []
     with sqlite3.connect(tmp_path / "paper.db") as db:
         db.execute("UPDATE observer_state SET real_orders_sent=0")
+    # Only the following state-file test has a synthetic custody approval.
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda _db: None)
     target = tmp_path / "foreign.json"
     target.write_text("{}")
     (market / "rc6_source_cycle_dispatch_state.json").symlink_to(target)
@@ -109,7 +113,8 @@ def test_paper_zero_and_symlink_state_fail_closed(tmp_path):
     assert runner.calls == []
 
 
-def test_source_lock_is_global_and_nonblocking(tmp_path):
+def test_source_lock_is_global_and_nonblocking(tmp_path, monkeypatch):
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda _db: None)  # fixture only
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()
@@ -122,7 +127,8 @@ def test_source_lock_is_global_and_nonblocking(tmp_path):
     assert runner.calls == []
 
 
-def test_legacy_collector_zero_exit_not_promoted_to_success(tmp_path):
+def test_legacy_collector_zero_exit_not_promoted_to_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(dispatch, "_paper_zero", lambda _db: None)  # fixture only
     _paper_db(tmp_path / "paper.db")
     market = tmp_path / "market"
     market.mkdir()

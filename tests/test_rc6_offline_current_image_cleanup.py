@@ -28,6 +28,7 @@ class Docker:
         self.refs = {CURRENT}
         self.calls = []
         self.before_remove = None
+        self.digests = {}
 
     def __call__(self, *args):
         self.calls.append(args)
@@ -41,8 +42,7 @@ class Docker:
                              if args[2] == ident or args[2] in tags), None)
             if identity is None: raise ValueError('IMAGE_ABSENT')
             return json.dumps([{'Id':identity,'RepoTags':self.images[identity],
-                                'RepoDigests':['porota-trading-bot@sha256:'+'f'*64]
-                                if identity == STALE else []}])
+                                'RepoDigests':self.digests.get(identity, [])}])
         if args[0] == 'tag':
             assert args == ('tag', CURRENT, clean.STABLE)
             self.images[STALE].remove(clean.STABLE)
@@ -62,6 +62,8 @@ class Docker:
 @pytest.fixture
 def host(tmp_path, monkeypatch):
     backend = Docker()
+    # This fixture is a fake engine. No production namespace proof exists.
+    monkeypatch.setattr(clean, 'require_exclusive_docker_namespace', lambda: None)
     root = tmp_path/'porota'
     (root/'data/deploy').mkdir(parents=True)
     (root/'data/deploy/.deploy-quiescence.lock').touch()
@@ -80,6 +82,14 @@ def test_retags_current_and_deletes_only_unreferenced_old_aliases(host):
     assert STALE not in host.images
     assert clean.STABLE in host.images[CURRENT]
     assert clean.cleanup()['stable'] == 'ALREADY_CURRENT'
+
+
+def test_stale_same_repo_digest_without_receipt_must_block_retag(host):
+    host.digests[STALE] = ['porota-trading-bot@sha256:' + 'f' * 64]
+    with pytest.raises(ValueError, match='STALE_NOT_EXCLUSIVE'):
+        clean.cleanup()
+    assert not any(args[0] == 'tag' for args in host.calls)
+    assert clean.STABLE in host.images[STALE]
 
 
 def test_shortfall_releases_only_exact_unreferenced_historical_predeploy(host,monkeypatch):
@@ -148,13 +158,16 @@ def test_lock_contention_and_symlink_reject_before_docker(host, tmp_path, monkey
     assert not host.calls
 
 
-def test_workflow_wires_current_identity_helper():
+def test_workflow_retires_stdin_cleanup_and_requires_fixed_root_custody():
     import subprocess
     import yaml
     workflow = Path(__file__).resolve().parents[1]/'.github/workflows/porota-deploy-v2-promote.yml'
     step = next(s['run'] for s in yaml.safe_load(workflow.read_text())['jobs']['promote']['steps']
                 if s.get('id') == 'diskguard')
-    assert '< scripts/rc6_offline_current_image_cleanup.py' in step
+    assert '< scripts/rc6_offline_current_image_cleanup.py' not in step
+    assert ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+            'image preflight-cleanup') in step
+    assert '--phase offline_preclean' not in step
     assert '< scripts/rc6_offline_failed_image_cleanup.py' not in step
     assert subprocess.run(['bash','-n'], input=step, text=True, capture_output=True).returncode == 0
 

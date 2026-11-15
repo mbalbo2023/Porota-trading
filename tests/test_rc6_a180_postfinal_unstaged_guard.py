@@ -23,6 +23,9 @@ CANDIDATE = 'a' * 40
 DEPLOY = 'b' * 40
 TREE = 'c' * 40
 IMAGE = 'sha256:' + 'd' * 64
+ARTIFACT = 'sha256:' + 'e' * 64
+CIDS = {'dashboard': '1' * 64, 'observer': '2' * 64, 'critical': '3' * 64}
+GENERATION = 'fixed-test-generation'
 
 
 def workflow_steps():
@@ -58,7 +61,7 @@ def marker_guard():
 def finalizer_classifier():
     _, by_name = workflow_steps()
     source = by_name['Failure-safe host cleanup']['run']
-    start = '"sudo -n python3 - \'$CANDIDATE_SHA\' \'$DEPLOY_SHA\' \'$GITHUB_RUN_ID\' \'$GITHUB_RUN_ATTEMPT\'" <<\'PY\'\n'
+    start = '"sudo -n python3 - \'$CANDIDATE_SHA\' \'$CANDIDATE_TREE\' \'$DEPLOY_SHA\' \'$GITHUB_RUN_ID\' \'$GITHUB_RUN_ATTEMPT\'" <<\'PY\'\n'
     return embedded_python(start, '\nPY\n', source)
 
 
@@ -96,10 +99,12 @@ def host_fixture(root, *, marker='VALIDATED_RUNTIME', orders=0,
     deploy = root / 'data/deploy'
     deploy.mkdir(parents=True)
     state = {
-        'candidate_sha': CANDIDATE, 'deploy_sha': DEPLOY,
+        'candidate_sha': CANDIDATE, 'candidate_tree': TREE, 'deploy_sha': DEPLOY,
         'validation_status': marker, 'mode': 'PRODUCTION_PAPER',
         'real_orders_sent': orders, 'real_order_routes': 'NOT_CALLED',
         'ppi_watch_untouched': True, 'image_id': IMAGE,
+        'oci_cids': CIDS, 'oci_generation': GENERATION,
+        'artifact_digest': ARTIFACT,
     }
     (deploy / 'CURRENT_STATE_V2.json').write_text(json.dumps(state), encoding='utf-8')
     (deploy / 'porota-frozen-candidate.json').write_text(json.dumps({
@@ -115,13 +120,52 @@ def host_fixture(root, *, marker='VALIDATED_RUNTIME', orders=0,
     fake_docker = fake_bin / 'docker'
     fake_docker.write_text(
         '#!' + sys.executable + '\n'
-        'import json,sys\n'
+        'import json,os,sys\n'
         'assert sys.argv[1] == "inspect"\n'
-        'print(json.dumps([{"Image":' + repr(IMAGE) + ',"State":{"Status":"running",'
-        '"Health":{"Status":"healthy"}}}]))\n',
+        'cid = sys.argv[2]\n'
+        'cids = json.loads(os.environ["RC6_TEST_CIDS"])\n'
+        'assert cid in cids.values()\n'
+        'health = "unhealthy" if os.environ.get("RC6_TEST_UNHEALTHY") == "1" and cid == cids["critical"] else "healthy"\n'
+        'print(json.dumps([{"Id":cid,"Image":' + repr(IMAGE) + ',"State":{"Status":"running",'
+        '"Health":{"Status":health}}}]))\n',
         encoding='utf-8')
     fake_docker.chmod(0o755)
-    env = dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ.get('PATH', ''))
+    # The real host custody binary is root-owned and intentionally absent from
+    # offhost QA. Mock only its read-only CLI in this temporary child process;
+    # no global executable or production source is changed. Keep the expected
+    # receipt independent from the mutable state being tested.
+    (fake_bin / 'sitecustomize.py').write_text(textwrap.dedent('''\
+        import json
+        import os
+        import subprocess
+
+        _original_check_output = subprocess.check_output
+
+        def _mock_host_attestor(argv, *args, **kwargs):
+            if isinstance(argv, (list, tuple)) and argv and argv[0] == '/usr/local/sbin/porota-rc6-oci-custody':
+                assert argv[1] == 'verify-current'
+                receipt = {
+                    'schema': 'RC6_POSTSEAL_CUSTODY_V1', 'status': 'OK',
+                    'candidate_sha': 'a' * 40, 'candidate_tree': 'c' * 40,
+                    'generation': 'fixed-test-generation',
+                    'artifact_digest': 'sha256:' + 'e' * 64,
+                    'image_id': 'sha256:' + 'd' * 64,
+                    'declared_paper_mode': 'PRODUCTION_PAPER',
+                    'roles': {role: {'cid': cid} for role, cid in
+                              {'dashboard': '1' * 64, 'observer': '2' * 64,
+                               'critical': '3' * 64}.items()},
+                }
+                if os.environ.get('RC6_TEST_TAMPER_ATTESTOR') == '1':
+                    receipt['roles']['observer']['cid'] = 'f' * 64
+                return json.dumps(receipt).encode('utf-8')
+            return _original_check_output(argv, *args, **kwargs)
+
+        subprocess.check_output = _mock_host_attestor
+        '''), encoding='utf-8')
+    env = dict(os.environ,
+               PATH=str(fake_bin) + os.pathsep + os.environ.get('PATH', ''),
+               PYTHONPATH=str(fake_bin) + os.pathsep + os.environ.get('PYTHONPATH', ''),
+               RC6_TEST_CIDS=json.dumps(CIDS))
     return env, state
 
 
@@ -188,7 +232,8 @@ class DeployV2A180PostfinalTests(unittest.TestCase):
                 self.assertNotIn('RC6_POSTFINAL_UNSTAGED=GREEN', result.stdout)
 
     def test_host_marker_identity_paper_zero_and_runtime(self):
-        for scenario in ('good', 'pending', 'wrong_tree', 'nonzero_marker', 'nonzero_db'):
+        for scenario in ('good', 'pending', 'wrong_tree', 'nonzero_marker',
+                         'nonzero_db', 'tampered_attestor', 'unhealthy_critical'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 env, _ = host_fixture(
@@ -199,6 +244,10 @@ class DeployV2A180PostfinalTests(unittest.TestCase):
                     db_orders=1 if scenario == 'nonzero_db' else 0,
                     frozen_tree='f' * 40 if scenario == 'wrong_tree' else TREE,
                 )
+                if scenario == 'tampered_attestor':
+                    env['RC6_TEST_TAMPER_ATTESTOR'] = '1'
+                if scenario == 'unhealthy_critical':
+                    env['RC6_TEST_UNHEALTHY'] = '1'
                 result = subprocess.run(
                     [sys.executable, '-B', '-c', marker_guard(), str(root),
                      CANDIDATE, DEPLOY, TREE], env=env, capture_output=True,

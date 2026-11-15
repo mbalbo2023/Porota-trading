@@ -10,6 +10,7 @@ import sqlite3
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from scripts import rc6_source_cycle_dispatch as dispatch
@@ -52,9 +53,12 @@ class SourceCyclePublicationTest(unittest.TestCase):
             connection.execute("INSERT INTO observer_state VALUES(1, 'PRODUCTION_PAPER', 0)")
 
     def cycle(self, publisher, minute=30):
-        return dispatch.run_cycle(now=datetime(2026, 10, 28, 10, minute, tzinfo=ART),
-                                  db=self.db, market_root=self.market,
-                                  lock=self.root / "source.lock", runner=publisher)
+        # This class tests publication invariants AFTER a hypothetical
+        # independent PAPER DB custody receipt, not the physical identity.
+        with patch.object(dispatch, "_paper_zero", return_value=None):
+            return dispatch.run_cycle(now=datetime(2026, 10, 28, 10, minute, tzinfo=ART),
+                                      db=self.db, market_root=self.market,
+                                      lock=self.root / "source.lock", runner=publisher)
 
     def old_outputs(self):
         for output in OUTPUTS.values():

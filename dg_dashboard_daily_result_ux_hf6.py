@@ -86,12 +86,39 @@ def daily_results_html(days: list[dict], *, max_symbols: int = 6) -> str:
             f"<div class='daily-results-grid'>{''.join(cards)}</div></section>")
 
 
+LEGACY_REPORT_PROVENANCE_MISSING = "LEGACY_CONTENIDO_SIN_PROVENIENCIA"
+
+
+def report_has_content_provenance(row: dict) -> bool:
+    """A877 quality receipts distinguish new honest reports from legacy rows.
+
+    This is a read-side version marker, not proof of runtime or physical file
+    immutability. No positive GREEN receipt has been certified for this path;
+    even a textual CONTENIDO_ACREDITADO marker cannot grant it yet.
+    Legacy bytes and registry rows must remain untouched.
+    """
+    state = str(row.get("state") or "").upper()
+    detail = str(row.get("detail") or "")
+    return state == "AMARILLO" and "; CONTENIDO_NO_VERIFICADO:" in detail
+
+
+def public_report_row(row: dict) -> dict:
+    """Hide download authority and false GREEN for unversioned history."""
+    result = dict(row)
+    if not report_has_content_provenance(result):
+        state = "ROJO" if str(result.get("state") or "").upper() == "ROJO" else "NO_VERIFICADO"
+        result.update(state=state, detail=LEGACY_REPORT_PROVENANCE_MISSING,
+                      pdf_path=None, ai_path=None, download=None)
+    return result
+
+
 def report_cards_html(rows: list[dict], *, report_link_builder=None) -> str:
     """Render report registry vertically so tablets never require horizontal scroll."""
     if not rows:
         return "<div class='paper-card'>Todavía no hay reportes disponibles.</div>"
     cards=[]
-    for row in rows:
+    for raw_row in rows:
+        row = public_report_row(raw_row)
         report_id=row.get("id")
         links=[]
         if row.get("pdf_path"):

@@ -1,4 +1,5 @@
 from pathlib import Path
+import unittest
 
 import yaml
 
@@ -21,8 +22,9 @@ def test_productive_scope_is_repository_root_automatic_discovery():
     assert scope["roots"] == ["."]
     assert scope["python_files"] == "test_*.py"
     assert "tests/test_porota_*.py" not in PREDEPLOY
-    assert 'python -m pytest --collect-only -q "${TEST_ARGS[@]}"' in PREDEPLOY
-    assert 'python -m pytest -q "${TEST_ARGS[@]}"' in PREDEPLOY
+    # Collection/execution is now one real pytest invocation in porota_ci.py;
+    # its behavioral regressions exercise added, failed, skipped and retired tests.
+    assert scope['retired_contracts'] == 'ops/policy/retired-release-tests.json'
 
 
 def test_a210_early_host_incident_replay_covers_all_known_failure_families():
@@ -82,8 +84,6 @@ def test_all_six_negative_fixtures_are_executed_fail_closed():
         "REAL_ROUTE_ENABLED",
     ):
         assert fixture in evidence
-    assert "ci_frozen_candidate_contract.py negative" in PREDEPLOY
-    assert "ci_frozen_candidate_contract.py validate" in PREDEPLOY
 
 
 def test_candidate_tree_mismatch_fails_closed(tmp_path):
@@ -128,7 +128,7 @@ def test_predeploy_stays_off_droplet_and_builds_once():
     assert "cache-to: type=gha,scope=porota-rc6-predeploy-v2" in PREDEPLOY
     assert "ssh " not in PREDEPLOY
     assert "scp " not in PREDEPLOY
-    assert "DROPLET_TOUCHED=NO" in PREDEPLOY
+    assert yaml.safe_load(PREDEPLOY)['permissions'] == {'contents': 'read'}
 
 
 def test_governed_gate_rejects_actual_pytest_skip_and_xfail_receipts(tmp_path):
@@ -177,7 +177,6 @@ def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
     import sys
     from xml.etree import ElementTree as ET
 
-    assert 'python -m pytest -q "${TEST_ARGS[@]}" -o xfail_strict=true --junitxml=' in PREDEPLOY
     file = tmp_path / 'test_unexpected_pass.py'
     file.write_text('import pytest\\n@pytest.mark.xfail(reason="expected failure")\\ndef test_unexpected_pass():\\n    assert True\\n'.replace('\\n', '\n'))
     junit = tmp_path / 'strict.xml'
@@ -191,3 +190,59 @@ def test_predeploy_forces_unexpected_xpass_to_fail(tmp_path):
     assert result.returncode != 0, result.stdout + result.stderr
     assert len(list(root.iter('testcase'))) == 1
     assert len(list(root.iter('failure'))) == 1
+
+
+class TestFrozenArtifactTypedReceipt(unittest.TestCase):
+    """Reject JSON scalar types that merely compare equal to contract integers."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        from hashlib import sha256
+
+        self._json = json
+        self._temporary = tempfile.TemporaryDirectory(prefix='rc6-frozen-type-')
+        self.addCleanup(self._temporary.cleanup)
+        root = Path(self._temporary.name)
+        self.image = root / 'image.tar.gz'
+        self.manifest = root / 'manifest.json'
+        self.frozen = root / 'frozen.json'
+        self.image.write_bytes(b'isolated immutable image fixture')
+        self.manifest.write_text('{"schema_version":1}', encoding='utf-8')
+        self.payload = {
+            'candidate_sha': 'a' * 40,
+            'candidate_tree_sha': 'b' * 40,
+            'image_tar_sha256': sha256(self.image.read_bytes()).hexdigest(),
+            'image_size_bytes': 31,
+            'paper_mode_required': 'PRODUCTION_PAPER',
+            'real_orders_sent_required': 0,
+            'real_order_capability_required': 'BLOCKED',
+            'build_once': True,
+        }
+
+    def _validate(self):
+        self.frozen.write_text(self._json.dumps(self.payload), encoding='utf-8')
+        return validate_frozen_candidate(
+            frozen_path=self.frozen,
+            image_path=self.image,
+            manifest_path=self.manifest,
+            candidate_sha='a' * 40,
+            tree_sha='b' * 40,
+        )
+
+    def test_integer_baseline_remains_valid(self):
+        self.assertEqual(self._validate()['image_size_bytes'], 31)
+
+    def test_noninteger_image_sizes_are_rejected(self):
+        for invalid in (True, False, 0.0, 1.5, '3', None):
+            with self.subTest(value=repr(invalid)):
+                self.payload['image_size_bytes'] = invalid
+                with self.assertRaisesRegex(FrozenContractError, 'IMAGE_SIZE_INVALID'):
+                    self._validate()
+
+    def test_noninteger_real_orders_receipts_are_rejected(self):
+        for invalid in (False, 0.0, '0', True, 1, None):
+            with self.subTest(value=repr(invalid)):
+                self.payload['real_orders_sent_required'] = invalid
+                with self.assertRaisesRegex(FrozenContractError, 'REAL_ORDERS_NONZERO'):
+                    self._validate()

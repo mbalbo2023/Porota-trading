@@ -13,6 +13,15 @@ from scripts import rc6_deploy_quiescence as q
 SHA = 'a' * 40
 
 
+@pytest.fixture(autouse=True)
+def historical_simulated_drain_without_live_docker(monkeypatch):
+    # These inherited fixtures test pure quiescence bookkeeping/branch logic
+    # against simulated containers. Runtime CLI must unconditionally HOLD79
+    # before receipt creation until sealed exact-CID ownership is installed;
+    # live refusal is asserted independently in test_rc6_p0_quiescence_mutation_hold.
+    monkeypatch.setattr(q, 'require_legacy_drain_custody', lambda: None)
+
+
 @pytest.fixture
 def installation(tmp_path, monkeypatch):
     monkeypatch.setattr(q, 'ROOT', tmp_path)
@@ -1118,7 +1127,10 @@ def test_workflow_drains_before_transfer_and_marks_before_bundle_install():
     assert source.index('RC6_STAGED_BUNDLE_HASHES=GREEN') < source.index('--action admin-begin')
     assert source.index('--action admin-begin') < source.index('--apply') < source.index('--action admin-commit') < source.index('--action install')
     assert '--action recover' in source
-    assert source.index('< scripts/rc6_offline_current_image_cleanup.py') < source.index("<<'PRECLEAN_REMOTE'")
+    fixed_cleanup = ('sudo -n /usr/local/sbin/porota-rc6-oci-custody '
+                     'image preflight-cleanup')
+    assert source.index(fixed_cleanup) < source.index("<<'PRECLEAN_REMOTE'")
+    assert '< scripts/rc6_offline_current_image_cleanup.py' not in source
     assert '< scripts/rc6_offline_failed_image_cleanup.py' not in source
     assert source.index('RC6_DISK_OFFLINE_PRECLEAN_INSUFFICIENT=RED') < source.index('id: drain')
 

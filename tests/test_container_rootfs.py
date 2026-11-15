@@ -82,18 +82,16 @@ def test_dockerfile_no_escribe_bytecode_y_dirige_la_cache_al_volumen():
 
 
 def test_chroma_usa_rootfs_de_solo_lectura_con_escrituras_aisladas():
-    # El runtime productivo vigente es el split de porota_mode_manager; no el
-    # servicio Chroma del compose legacy. El observer y los verificadores
-    # efimeros deben conservar rootfs read-only y escrituras acotadas a tmpfs.
-    manager = (RAIZ / "porota_mode_manager.py").read_text(encoding="utf-8")
-    deploy = (RAIZ / ".github/workflows/porota-deploy-v2-promote.yml").read_text(
-        encoding="utf-8"
-    )
+    # El manager histórico no debe volver a abrir su ruta Docker directa.
+    # La configuración rootless nueva tiene sus propios tests de comportamiento.
+    from unittest.mock import patch
+    import porota_mode_manager as manager
 
-    observer = manager[manager.index('created = run("docker", "run"'):]
-    assert '"--user", "botuser", "--read-only", "--cap-drop", "ALL"' in observer
-    assert '"--security-opt", "no-new-privileges:true"' in observer
-    assert '"--tmpfs", "/tmp:rw,noexec,nosuid,size=32m"' in observer
-    assert "docker compose" not in deploy
-    assert "--user botuser --read-only --cap-drop ALL" in deploy
-    assert "--security-opt no-new-privileges:true" in deploy
+    with patch("subprocess.run") as subprocess_docker:
+        try:
+            manager.run("docker", "run", "-d", "--name", "porota_production_observer")
+        except SystemExit as exc:
+            assert exc.code == 79
+        else:
+            raise AssertionError("manager Docker direct debe HOLD79")
+        subprocess_docker.assert_not_called()

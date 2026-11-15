@@ -201,6 +201,9 @@ def test_runtime_child_without_parent_bootstrap_fails_closed_and_creates_no_sche
 
 
 def test_paper_store_bootstrap_precedes_broker_daily_risk_and_child_restart(tmp_path, monkeypatch):
+    # Parent seals the fresh dataset identity before any READY child validates it.
+    from cg_paper_workspace import runtime_store
+    runtime_store(tmp_path / "paper.sqlite")
     clock = [OPEN_AT]
     b = broker(tmp_path, clock)
     assert b.daily_risk.evaluate(OPEN_AT)["ARS"]["state"] == "READY"

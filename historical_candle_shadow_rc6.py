@@ -62,20 +62,39 @@ def _trend(closes, span):
 
 def history_session_quality(days, q, at):
     """Only audited quote-market sessions; CEDEAR quotes use BYMA, not US."""
+    # Never let astimezone() interpret an unaudited wall clock in host TZ.
+    if not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None:
+        return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     import ak_byma_calendar as calendar
-    from co_market_sessions_hf6 import session_for, TZ
+    from ak_byma_t1_source_clock import (
+        estado_negociacion_fuente_byma, BYMA_T1_EXACT_SETTLEMENTS)
+    from co_market_sessions_hf6 import session_for, TZ, byma_eod_publication_floor
+    # Keep the PAPER two-argument compatibility API. It checks supported
+    # families here; daily history uses the separate conservative EOD floor.
     session = session_for(q.market, q.asset_class)
     local = at.astimezone(TZ)
     if q.market != "BYMA" or session is None or local.year not in calendar.ANIOS_AUDITADOS:
         return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
+    # A complete list of ordinary dates cannot establish which exceptional
+    # source sessions were required when settlement itself is unverified.
+    settlement = getattr(q, "settlement", None)
+    if (not isinstance(settlement, str) or settlement.strip().upper() not in
+            BYMA_T1_EXACT_SETTLEMENTS | {"CI", "INMEDIATA", "T0", "A-48HS", "A-72HS"}):
+        return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
     expected = local.date()
-    if local.time().replace(tzinfo=None) < session.regular_close:
+    # Even the final tradable minute is not proof of a published daily row.
+    if local < byma_eod_publication_floor(local):
         expected -= timedelta(days=1)
     required = []
     for _ in range(90):
         if expected.year not in calendar.ANIOS_AUDITADOS:
             return {"state": "HISTORY_CALENDAR_UNVERIFIED"}
-        if calendar.es_dia_habil_operativo(expected):
+        # 06-Nov traded exact T+1 contracts without settlement; omitting that
+        # source day would incorrectly certify complete historical coverage.
+        source_day = estado_negociacion_fuente_byma(
+            expected, market=q.market, family=q.asset_class,
+            settlement=getattr(q, "settlement", None))
+        if source_day in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}:
             required.append(expected.isoformat())
             if len(required) == 20:
                 break

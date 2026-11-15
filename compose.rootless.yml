@@ -1,0 +1,76 @@
+# The verified release is loaded once into the dedicated rootless daemon.
+# UID 0 here must be proven to map to the nonroot SSH UID before creation.
+name: porota-rc6
+x-runtime: &runtime
+  image: ${POROTA_IMAGE_ID:?verified_image_id_required}
+  user: "0:0"
+  working_dir: /app
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m
+    - /home/botuser/.cache:rw,noexec,nosuid,size=64m
+    - /home/botuser/.config:rw,noexec,nosuid,size=16m
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  observer:
+    <<: *runtime
+    container_name: porota-rc6-observer-${POROTA_ATTEMPT:?attempt_required}
+    command: [python, bf_production_paper_observer.py]
+    env_file:
+      - path: ${POROTA_ENV_DIR:?private_env_required}/observer.env
+        format: raw
+    labels:
+      io.porota.project: rc6
+      io.porota.role: observer
+      io.porota.attempt: ${POROTA_ATTEMPT}
+    cpus: 1.0
+    mem_limit: 1g
+    pids_limit: 256
+    healthcheck: {disable: true}
+    volumes:
+      - type: bind
+        source: ${POROTA_ROOT:?existing_root_required}/data
+        target: /app/data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${POROTA_ROOT}/.secrets/ppi_production.json
+        target: /run/secrets/ppi_production.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${POROTA_OPERATOR_DIR:?operator_custody_required}
+        target: /app/operator
+        read_only: true
+        bind: {create_host_path: false}
+  dashboard:
+    <<: *runtime
+    container_name: porota-rc6-dashboard-${POROTA_ATTEMPT:?attempt_required}
+    command: [python, o_dashboard.py]
+    env_file:
+      - path: ${POROTA_ENV_DIR:?private_env_required}/dashboard.env
+        format: raw
+    labels:
+      io.porota.project: rc6
+      io.porota.role: dashboard
+      io.porota.attempt: ${POROTA_ATTEMPT}
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - type: bind
+        source: ${POROTA_ROOT:?existing_root_required}/data
+        target: /app/data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${POROTA_OPERATOR_DIR:?operator_custody_required}
+        target: /app/operator
+        read_only: true
+        bind: {create_host_path: false}

@@ -1361,17 +1361,20 @@ def test_exact_native_exit_caller_survives_all_five_opened_book_denials(wire, tm
     assert sum("/Book?" in url for _, url in calls) == 5
 
 
-def test_approved_dynamic_rejects_insufficient_capacity_for_real_durable_positions(wire, tmp_path, monkeypatch):
+def test_synthetic_approval_cannot_bootstrap_budget_with_real_durable_paper_positions(wire, tmp_path, monkeypatch):
     values = approved(wire)
-    clock = wire[0]
+    clock, provider_calls, _ = wire
+    assert len(provider_calls) == 181  # completed fake benchmark, never a broker GET
     store, _ = native_opened_store(tmp_path, clock, monkeypatch)
-    runtime = RuntimePPIBudget(store.path, controller(values), clock=clock.now)
-    with pytest.raises(BudgetBackpressure, match="PPI_EXIT_CAPACITY_INSUFFICIENT"):
-        runtime._current()
-    assert runtime.activation_contract["open_positions_count"] == 5
-    assert runtime.activation_contract["exit_demand"]["book"] == 30
-    assert runtime.activation_contract["status"] == "ACTIVATION_BLOCKED_EXIT_CAPACITY"
+    authority = controller(values, database=store.path)
+    assert authority.state(clock.now())["reason_codes"] == ["CAPACITY_PROVENANCE_UNVERIFIED"]
+    runtime = RuntimePPIBudget(store.path, authority, clock=clock.now)
+    provider_calls.clear()  # disregard strictly in-memory capacity benchmark
+    refused = {"allowed": False, "reason": "PPI_BUDGET_LEASE_UNVERIFIED", "lease": None}
+    assert runtime.acquire("book", consumer="SCANNER", priority="DISCOVERY") == refused
+    assert runtime.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL") == refused
     assert runtime.budget is None and not runtime.path.exists()
+    assert provider_calls == []
     with store.connect() as connection:
         assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == ("PRODUCTION_PAPER", 0)
         assert connection.execute("SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'").fetchone()[0] == 5

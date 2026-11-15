@@ -1,8 +1,10 @@
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import call, patch
 from zoneinfo import ZoneInfo
 
 import co_market_sessions_hf6 as sessions
+import porota_mode_manager as mode_manager
 import rc4_contract_schedule as ce_schedule
 from bq_exit_policy import PaperSessionPolicy
 
@@ -62,17 +64,31 @@ def test_contract_evidence_dynamic_window_starts_with_regular_session():
         "CONTRACT_EVIDENCE_DYNAMIC", at("2026-09-05T12:00:00-03:00"))
 
 
-def test_runtime_launch_no_longer_hardcodes_1100():
-    mode = Path("porota_mode_manager.py").read_text(encoding="utf-8")
-    observer = Path("bf_production_paper_observer.py").read_text(encoding="utf-8")
-    assert '"MARKET_OPEN_HOUR=11"' not in mode
-    assert '"MARKET_OPEN_MINUTE=0"' not in mode
-    assert 'os.getenv("MARKET_OPEN_HOUR", "11")' not in observer
-    assert 'os.getenv("MARKET_OPEN_MINUTE", "0")' not in observer
-    assert '"MARKET_OPEN_HOUR=10"' in mode
-    assert '"MARKET_OPEN_MINUTE=30"' in mode
-    assert 'os.getenv("MARKET_OPEN_HOUR", "10")' in observer
-    assert 'os.getenv("MARKET_OPEN_MINUTE", "30")' in observer
+def test_runtime_launch_delegates_schedule_to_trusted_host_profile():
+    # The observed PAPER spot session is 10:30, not the obsolete 11:00.
+    # The manager no longer constructs `docker run -e MARKET_OPEN_*`; a typed
+    # host helper validates the pinned observer profile and its 10:30 settings
+    # in A1092 tests. This test verifies the manager boundary, not source text.
+    assert sessions.byma_schedule_status()["paper_spot_regular_open"] == "10:30"
+    attempt = "d" * 32
+
+    def trusted_helper(*args, attempt=None):
+        if args == ("manager", "begin"):
+            return "RC6_CUSTODY=GENESIS\nRC6_CUSTODY_ATTEMPT=" + "d" * 32
+        assert attempt == "d" * 32
+        return "RC6_CUSTODY=OK"
+
+    with patch.object(mode_manager, "_helper_call", side_effect=trusted_helper) as helper, \
+         patch.object(mode_manager, "run") as raw_docker:
+        session = mode_manager._begin_custody()
+        session.birth("observer")
+
+    assert helper.call_args_list == [
+        call("manager", "begin"),
+        call("manager", "birth", "observer", attempt=attempt),
+        call("manager", "verify-newborn", "observer", attempt=attempt),
+    ]
+    raw_docker.assert_not_called()
 
 
 def test_intraday_scanner_uses_central_session_source():

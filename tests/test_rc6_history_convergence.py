@@ -568,6 +568,9 @@ def test_AUD20_Data912_reports_exact_rejections_before_shared_sink(changes,reaso
 
 
 def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches(tmp_path,monkeypatch):
+    # This test intentionally exercises the legacy historical opt-in path.
+    # Production defaults must remain fail-closed without Data912 refresh.
+    monkeypatch.setattr(data912,'DATA912_REFRESH_ENABLED',True)
     s=Store(tmp_path/'history.sqlite');calls=[]
     monkeypatch.setattr(data912,'_session',lambda:object())
     monkeypatch.setattr(sink.time,'sleep',lambda *_:None)
@@ -585,6 +588,8 @@ def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_
 
 
 def test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch(tmp_path,monkeypatch):
+    # Test synthetic provider collision only when explicitly opted in.
+    monkeypatch.setattr(data912,'DATA912_REFRESH_ENABLED',True)
     monkeypatch.setattr(data912,'_session',lambda:object())
     def forbidden(*_):raise AssertionError('AMBIGUOUS_REQUEST_MUST_NOT_FETCH')
     monkeypatch.setattr(data912,'_get_json',forbidden)
