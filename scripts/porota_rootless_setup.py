@@ -230,6 +230,129 @@ def _properties(value, allowed):
             if separator and key in allowed}
 
 
+def private_release_reference(home, source_sha, source_tree):
+    """Use only the matching private release, never a caller-supplied image reference."""
+    if not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)
+               for value in (source_sha, source_tree)):
+        return None
+    path = home / ".local/state/porota-rc6/releases" / source_sha / "release.json"
+    try:
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            return None
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        try:
+            meta = os.fstat(fd)
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid() or
+                    meta.st_nlink != 1 or meta.st_size > 2 * 1024**2):
+                return None
+            raw = os.read(fd, 2 * 1024**2 + 1)
+        finally:
+            os.close(fd)
+        if len(raw) > 2 * 1024**2:
+            return None
+        release = json.loads(raw)
+        if (not isinstance(release, dict) or release.get("schema") != "porota.release.v1" or
+                release.get("source_sha") != source_sha or release.get("source_tree") != source_tree or
+                not re.fullmatch(r"sha256:[0-9a-f]{64}", str(release.get("image_id", "")))):
+            return None
+        return {key: release[key] for key in ("source_sha", "source_tree", "image_id")}
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def private_image_inventory(home, socket, info, *, run=subprocess.run):
+    """Bounded local metadata; listed IDs and inspected descriptors are not aliases."""
+    uid = os.getuid()
+    meta = _metadata(socket)
+    if (uid <= 0 or socket != Path(f"/run/user/{uid}/porota-rc6-docker.sock") or
+            meta.get("uid") != uid or meta.get("socket") is not True or meta.get("symlink") is not False or
+            not isinstance(info, dict) or "name=rootless" not in info.get("SecurityOptions", []) or
+            info.get("DockerRootDir") != str(home / ".local/share/porota-rc6/docker") or not info.get("ID")):
+        return {"status": "NO_VERIFICADO", "reason": "PRIVATE_DAEMON_UNVERIFIED"}
+    def text(value):
+        return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:+-]{1,128}", value) else None
+    def digest(value):
+        return value if isinstance(value, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", value) else None
+    def platform(value):
+        return {key: text(value[key]) for key in ("os", "architecture", "variant", "os.version")
+                if isinstance(value, dict) and text(value.get(key)) is not None}
+    def descriptor(value):
+        if not isinstance(value, dict):
+            return None
+        result = {"digest": digest(value.get("digest")), "platform": platform(value.get("platform"))}
+        media = value.get("mediaType")
+        if isinstance(media, str) and re.fullmatch(r"application/[A-Za-z0-9_.+-]{1,128}", media):
+            result["mediaType"] = media
+        if type(value.get("size")) is int and value["size"] >= 0:
+            result["size"] = value["size"]
+        return result
+    def query(*args):
+        return _call((DOCKER, "--host", f"unix://{socket}", *args), run=run, timeout=8)
+    result = {"status": "NO_VERIFICADO", "ServerVersion": text(info.get("ServerVersion")),
+              "KernelVersion": text(info.get("KernelVersion")), "Driver": text(info.get("Driver")),
+              "DriverStatus": [], "backing_filesystem": None,
+              "images": [], "containers": {"status": "NO_VERIFICADO"}}
+    filesystem = _call(("/usr/bin/stat", "--file-system", "--format=%T",
+                        str(home / ".local/share/porota-rc6/docker")), run=run, timeout=8)
+    if filesystem is not None and filesystem.returncode == 0:
+        value = filesystem.stdout.strip()
+        if re.fullmatch(r"[A-Za-z0-9_/-]{1,64}", value):
+            result["backing_filesystem"] = value
+    allowed_driver_fields = {"driver-type", "Backing Filesystem", "Supports d_type", "Using metacopy",
+                             "Native Overlay Diff", "userxattr"}
+    for row in (info.get("DriverStatus") or [])[:16]:
+        if isinstance(row, list) and len(row) == 2 and row[0] in allowed_driver_fields and text(row[1]) is not None:
+            result["DriverStatus"].append(row)
+    listing = query("image", "ls", "--all", "--quiet", "--no-trunc")
+    if listing is None or listing.returncode:
+        return dict(result, reason="PRIVATE_IMAGE_INVENTORY_UNAVAILABLE")
+    ids = list(dict.fromkeys(listing.stdout.splitlines()))
+    if not all(digest(value) for value in ids):
+        return dict(result, reason="PRIVATE_IMAGE_INVENTORY_INVALID")
+    result.update(status="OBSERVED", image_count=len(ids), images_truncated=len(ids) > 8)
+    containers = query("container", "ls", "--all", "--quiet", "--no-trunc")
+    if containers is not None and containers.returncode == 0:
+        cids = list(dict.fromkeys(containers.stdout.splitlines()))
+        if all(re.fullmatch(r"[0-9a-f]{64}", cid) for cid in cids):
+            result["containers"] = {"status": "OBSERVED", "count": len(cids), "ids": cids[:32], "truncated": len(cids) > 32}
+    observations = {}
+    def inspect_image(image_id):
+        if image_id in observations:
+            return observations[image_id]
+        row = {"requested_id": image_id, "status": "NO_VERIFICADO", "returncode": None}
+        observations[image_id] = row
+        inspected = query("image", "inspect", image_id)
+        if inspected is not None:
+            row["returncode"] = inspected.returncode
+        if inspected is None or inspected.returncode:
+            return row
+        try:
+            items = json.loads(inspected.stdout)
+            if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+                return row
+            item = items[0]
+            config = item.get("Config") if isinstance(item.get("Config"), dict) else {}
+            environment = config.get("Env") if isinstance(config.get("Env"), list) else []
+            def source(key):
+                values = [entry.partition("=")[2] for entry in environment
+                          if isinstance(entry, str) and entry.startswith(key + "=")]
+                return values[0] if len(values) == 1 and re.fullmatch(r"[0-9a-f]{40}", values[0]) else None
+            row.update(status="OBSERVED", Id=digest(item.get("Id")), Descriptor=descriptor(item.get("Descriptor")),
+                platform=platform({"os": item.get("Os"), "architecture": item.get("Architecture"), "variant": item.get("Variant")}),
+                source_sha=source("POROTA_BUILD_SHA"), source_tree=source("POROTA_CANDIDATE_TREE_SHA"))
+        except (ValueError, TypeError):
+            pass
+        return row
+    for image_id in ids[:8]:
+        row = dict(inspect_image(image_id))
+        result["images"].append(row)
+        release = private_release_reference(home, row.get("source_sha"), row.get("source_tree"))
+        if release:
+            row["release"] = release
+            row["release_image_lookup"] = dict(inspect_image(release["image_id"]))
+    return result
+
+
 def inspect_host(root: Path, *, run=subprocess.run):
     """Observe fixed RC6 coordinates, not all host containers or applications."""
     uid = os.getuid()
@@ -263,8 +386,11 @@ def inspect_host(root: Path, *, run=subprocess.run):
         if info is not None and info.returncode == 0:
             try:
                 raw = json.loads(info.stdout)
+                if not isinstance(raw, dict):
+                    raise ValueError()
                 own_info = {k: raw.get(k) for k in (
                     "ID", "SecurityOptions", "CgroupVersion", "CgroupDriver", "DockerRootDir")}
+                own_info.update(private_image_inventory(home, socket, raw, run=run))
             except (ValueError, TypeError):
                 pass
     user_service = _call((SYSTEMCTL, "--user", "show", SERVICE,
@@ -285,6 +411,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "operation": "inspect", "host_mutations": 0,
             "uid": uid, "gid": os.getgid(), "account": account.pw_name,
             "rootless_socket": str(socket), "socket_metadata": _metadata(socket),
+            "current_metadata": _metadata(home / ".local/state/porota-rc6/current.json"),
             "conventional_user_socket": _metadata(Path(f"/run/user/{uid}/docker.sock")),
             "rootful_socket": _metadata(Path("/var/run/docker.sock")),
             "target_data_root": str(home / ".local/share/porota-rc6/docker"),
