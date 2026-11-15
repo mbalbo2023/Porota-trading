@@ -280,6 +280,27 @@ class PrivateImageInspectTests(unittest.TestCase):
         self.assertIsNone(image["source_tree"])
         self.assertNotIn("must-not-leak", json.dumps(image))
 
+    def test_only_validated_release_labels_are_reported(self):
+        self.image["Config"]["Labels"] = {"porota.commit": "a" * 40, "porota.predeploy": "v2",
+                                          "private": "must-not-leak"}
+        image = self.inspect()["images"][0]
+        self.assertEqual(image["labels"], {"porota.commit": "a" * 40, "porota.predeploy": "v2"})
+        self.assertIn("release_custody", image)
+        self.image["Config"]["Labels"] = {"porota.commit": "must-not-leak", "porota.predeploy": "must-not-leak"}
+        result = self.inspect()
+        self.assertEqual(result["images"][0]["labels"], {})
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_journals_have_one_bounded_inventory_across_multiple_images(self):
+        self.listed = "\n".join("sha256:" + format(index, "064x") for index in range(3))
+        original = setup.private_release_custody
+        with patch.object(setup, "private_release_custody", wraps=original) as custody:
+            result = self.inspect()
+        self.assertEqual(len(result["images"]), 3)
+        self.assertEqual(sum(call.kwargs["include_attempts"] for call in custody.call_args_list), 1)
+        self.assertIn("journal_custody", result)
+        self.assertTrue(all("attempts" not in row["release_custody"] for row in result["images"]))
+
     def release_file(self):
         path = self.home / ".local/state/porota-rc6/releases" / ("a" * 40) / "release.json"
         path.parent.mkdir(parents=True)
@@ -319,6 +340,138 @@ class PrivateImageInspectTests(unittest.TestCase):
         with patch.object(setup.os, "fstat", side_effect=self.owned_stat):
             self.inspect()
         self.assertFalse(any(command[-1] == self.config_id for command in self.calls))
+
+
+class PrivateReleaseCustodyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name)
+        self.state = self.home / ".local/state/porota-rc6"
+        self.release = self.state / "releases" / ("a" * 40) / "release.json"
+        self.attempts = self.state / "attempts"
+        self.release.parent.mkdir(parents=True)
+        self.attempts.mkdir()
+        self.release.write_text(json.dumps({"schema": "porota.release.v1", "source_sha": "a" * 40,
+            "source_tree": "b" * 40, "image_id": "sha256:" + "c" * 64, "secret": "must-not-leak"}))
+        self.release.chmod(0o600)
+
+    def journal(self, name="43746889398-1", **changes):
+        path = self.attempts / name / "receipt.json"
+        path.parent.mkdir(mode=0o700)
+        value = {"schema": "porota.rootless.deploy.v1", "state": "NO_VERIFICADO",
+            "source_sha": "a" * 40, "source_tree": "b" * 40, "image_id": "sha256:" + "c" * 64,
+            "release_manifest_sha256": hashlib.sha256(self.release.read_bytes()).hexdigest(),
+            "transition_started": False, "roles": {}, "secret": "must-not-leak"}
+        value.update(changes)
+        path.write_text(json.dumps(value))
+        path.chmod(0o600)
+        return path
+
+    def inspect(self):
+        return setup.private_release_custody(self.home, "a" * 40)
+
+    def test_owned_journal_identity_and_metadata_are_read_without_mutation_or_secrets(self):
+        journal = self.journal()
+        opened, scanned = [], []
+        real_open, real_scandir = os.open, os.scandir
+        def open_readonly(path, flags, *args, **kwargs):
+            self.assertFalse(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
+            self.assertTrue(flags & os.O_NOFOLLOW)
+            opened.append(Path(path))
+            return real_open(path, flags, *args, **kwargs)
+        def bounded_scan(path):
+            scanned.append(Path(path))
+            return real_scandir(path)
+        with patch.object(setup.os, "open", side_effect=open_readonly), \
+             patch.object(setup.os, "scandir", side_effect=bounded_scan), \
+             patch.object(Path, "mkdir", side_effect=AssertionError("no mkdir")), \
+             patch.object(Path, "chmod", side_effect=AssertionError("no chmod")):
+            result = self.inspect()
+        self.assertEqual(opened, [self.release, journal])
+        self.assertEqual(scanned, [self.attempts])
+        self.assertEqual(result["attempts_status"], "OBSERVED")
+        self.assertEqual(result["directories"]["attempts"]["mode"], "0o755")
+        self.assertEqual(result["release"]["sha256"], hashlib.sha256(self.release.read_bytes()).hexdigest())
+        row = result["attempts"][0]
+        self.assertEqual(row["attempt"], "43746889398-1")
+        self.assertEqual(row["directory"]["mode"], "0o700")
+        self.assertEqual(row["receipt"]["metadata"]["mode"], "0o600")
+        self.assertEqual(row["receipt"]["fields"], {
+            "schema": "porota.rootless.deploy.v1", "state": "NO_VERIFICADO", "source_sha": "a" * 40,
+            "source_tree": "b" * 40, "image_id": "sha256:" + "c" * 64,
+            "release_manifest_sha256": result["release"]["sha256"], "transition_started": False,
+            "roles_empty": True})
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_journal_fields_reject_arbitrary_values_without_serializing_roles(self):
+        self.journal(schema="must-not-leak", state="must-not-leak", source_sha="must-not-leak",
+            source_tree="must-not-leak", image_id="must-not-leak", release_manifest_sha256="must-not-leak",
+            transition_started="must-not-leak", roles={"private": "must-not-leak"})
+        result = self.inspect()
+        fields = result["attempts"][0]["receipt"]["fields"]
+        self.assertFalse(fields.pop("roles_empty"))
+        self.assertTrue(all(value is None for value in fields.values()))
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_absent_transition_is_distinct_from_false(self):
+        journal = self.journal()
+        value = json.loads(journal.read_text())
+        value.pop("transition_started")
+        journal.write_text(json.dumps(value))
+        self.assertNotIn("transition_started", self.inspect()["attempts"][0]["receipt"]["fields"])
+
+    def test_nonprivate_or_oversize_or_hardlinked_receipts_are_not_read(self):
+        journal = self.journal()
+        for change in ("nonprivate", "oversize", "hardlink"):
+            with self.subTest(change=change):
+                journal.chmod(0o640 if change == "nonprivate" else 0o600)
+                journal.write_bytes(b"x" * (2 * 1024**2 + 1) if change == "oversize" else b"{}")
+                if change == "hardlink":
+                    os.link(journal, self.home / "duplicate")
+                result = self.inspect()["attempts"][0]["receipt"]
+                self.assertEqual(result["status"], "NO_VERIFICADO")
+                self.assertNotIn("fields", result)
+                self.assertNotIn("sha256", result)
+
+    def test_receipt_symlink_and_parent_alias_are_not_opened(self):
+        journal = self.journal()
+        journal.unlink()
+        journal.symlink_to(self.release)
+        result = self.inspect()["attempts"][0]["receipt"]
+        self.assertTrue(result["metadata"]["symlink"])
+        self.assertNotIn("fields", result)
+        journal.unlink()
+        journal.parent.rmdir()
+        journal.parent.symlink_to(self.release.parent, target_is_directory=True)
+        result = self.inspect()["attempts"][0]
+        self.assertTrue(result["directory"]["symlink"])
+        self.assertEqual(result["receipt"]["metadata"]["status"], "PARENT_ALIAS")
+        self.assertNotIn("fields", result["receipt"])
+
+    def test_at_most_32_attempts_are_inspected_and_unknown_names_are_not_reported(self):
+        for index in range(1, 34):
+            (self.attempts / f"{index}-1").mkdir(mode=0o700)
+        result = self.inspect()
+        self.assertEqual(result["attempts_status"], "LIMIT_EXCEEDED")
+        self.assertEqual(result["attempts"], [])
+        (self.attempts / "33-1").rmdir()
+        self.assertEqual(len(self.inspect()["attempts"]), 32)
+        (self.attempts / "32-1").rmdir()
+        (self.attempts / "must-not-leak").mkdir()
+        result = self.inspect()
+        self.assertEqual(result["attempts_status"], "UNKNOWN_ENTRY")
+        self.assertEqual(len(result["attempts"]), 31)
+        self.assertNotIn("must-not-leak", json.dumps(result))
+
+    def test_unsafe_parent_and_invalid_source_do_not_open_private_files(self):
+        self.journal()
+        self.state.chmod(0o777)
+        with patch.object(setup.os, "open", side_effect=AssertionError("unsafe parent")):
+            result = self.inspect()
+            self.assertIsNone(setup.private_release_custody(self.home, "../../private"))
+        self.assertEqual(result["release"]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["attempts"], [])
 
 
 class PrepareTests(unittest.TestCase):
