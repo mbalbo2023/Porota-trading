@@ -889,7 +889,13 @@ def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=ti
                 "USER_LINGER_REQUIRED")
         config_path, config, unit = daemon_configuration(identity, binaries["dockerd-rootless.sh"], network)
         private_dir(config_path.parent)
-        private_dir(identity.store)
+        store = no_alias(identity.store)
+        store.mkdir(parents=True, exist_ok=True, mode=0o700)
+        meta = store.stat()
+        # Moby setupDaemonRoot sets its data-root to 0710 after bootstrap.
+        # Validate that contract without chmod or relaxing private state/config.
+        require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == identity.uid and
+                stat.S_IMODE(meta.st_mode) in (0o700, 0o710), "ROOTLESS_STORE_DIRECTORY_REQUIRED")
         unit_path = no_alias(identity.home / ".config/systemd/user" / SERVICE)
         unit_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         require(unit_path.parent.stat().st_uid == identity.uid and not unit_path.parent.stat().st_mode & 0o022,

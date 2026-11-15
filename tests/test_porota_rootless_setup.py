@@ -2,6 +2,7 @@ import json
 import hashlib
 import io
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -163,7 +164,7 @@ class PrepareTests(unittest.TestCase):
         self.config_path = self.home / ".config/porota-rc6/daemon.json"
         self.unit_path = self.home / ".config/systemd/user" / setup.SERVICE
         self.restart_failure = False
-        self.daemon_active = True
+        self.daemon_active = False
 
     def commands_ok(self, command, **kwargs):
         self.commands.append(command)
@@ -190,9 +191,12 @@ class PrepareTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 1, "", "private failure")
             self.daemon_active = True
             self.info.update(Driver="overlay2", DriverStatus=[["Backing Filesystem", "extfs"]])
+            self.identity.store.chmod(0o710)
         if command[:4] == (setup.SYSTEMCTL, "--user", "enable", "--now") and not self.daemon_active:
             self.daemon_active = True
             self.info.update(Driver="overlay2", DriverStatus=[["Backing Filesystem", "extfs"]])
+            # Moby setupDaemonRoot changes its data-root to 0710 at startup.
+            self.identity.store.chmod(0o710)
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
     @contextmanager
@@ -226,6 +230,9 @@ class PrepareTests(unittest.TestCase):
         self.config_path.chmod(0o600)
         self.unit_path.parent.mkdir(parents=True, mode=0o700)
         self.unit_path.write_bytes(setup.daemon_configuration(self.identity, "/usr/bin/dockerd-rootless.sh")[2])
+        self.identity.store.mkdir(parents=True, mode=0o710)
+        self.identity.store.chmod(0o710)
+        self.daemon_active = True
         self.info.update(Driver="overlayfs", DriverStatus=[["driver-type", "io.containerd.snapshotter.v1"]])
 
     def own_image(self):
@@ -252,6 +259,82 @@ class PrepareTests(unittest.TestCase):
             "phase": "LOAD", "source_sha": source, "source_tree": tree, "image_id": config_id,
             "roles": {}, "transition_started": False, "release_manifest_sha256": hashlib.sha256(raw).hexdigest()})
         return target, directory / "release.json"
+
+    def test_prepare_accepts_docker_store_mode_on_reentry_without_restart_or_chmod(self):
+        with self.preparation():
+            first = setup.prepare(self.identity, run=self.commands_ok)
+            before = self.identity.store.stat()
+            self.assertEqual(first["state"], "PREPARADO")
+            self.assertEqual(stat.S_IMODE(before.st_mode), 0o710)
+            self.commands.clear()
+            second = setup.prepare(self.identity, run=self.commands_ok)
+        after = self.identity.store.stat()
+        self.assertEqual(second["state"], "PREPARADO")
+        self.assertEqual((after.st_mode, after.st_uid, after.st_gid, after.st_ctime_ns),
+                         (before.st_mode, before.st_uid, before.st_gid, before.st_ctime_ns))
+        self.assertFalse(any("restart" in command for command in self.commands))
+
+    def test_store_rejects_unrecognized_modes_without_repair_or_daemon_mutation(self):
+        self.identity.store.mkdir(parents=True, mode=0o700)
+        for mode in (0o711, 0o750, 0o755, 0o770, 0o777, 0o1710):
+            with self.subTest(mode=oct(mode)):
+                self.commands.clear()
+                self.identity.store.chmod(mode)
+                before = self.identity.store.stat()
+                with self.preparation(), self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_DIRECTORY_REQUIRED"):
+                    setup.prepare(self.identity, run=self.commands_ok)
+                after = self.identity.store.stat()
+                self.assertEqual((after.st_mode, after.st_uid, after.st_gid, after.st_ctime_ns),
+                                 (before.st_mode, before.st_uid, before.st_gid, before.st_ctime_ns))
+                self.assertFalse(self.config_path.exists())
+                self.assertFalse(self.unit_path.exists())
+                self.assertFalse(any(set(command) & {"restart", "enable", "rm"} for command in self.commands))
+
+    def test_store_rejects_foreign_owner_before_daemon_mutation(self):
+        self.identity.store.mkdir(parents=True, mode=0o700)
+        original_stat = Path.stat
+        def foreign_owner(path, *args, **kwargs):
+            observed = original_stat(path, *args, **kwargs)
+            if path == self.identity.store and kwargs.get("follow_symlinks", True):
+                fields = list(observed)
+                fields[4] = self.identity.uid + 1
+                return os.stat_result(fields)
+            return observed
+        with self.preparation(), patch.object(Path, "stat", new=foreign_owner), \
+                self.assertRaisesRegex(host.Hold, "ROOTLESS_STORE_DIRECTORY_REQUIRED"):
+            setup.prepare(self.identity, run=self.commands_ok)
+        self.assertFalse(self.config_path.exists())
+        self.assertFalse(self.unit_path.exists())
+        self.assertFalse(any(set(command) & {"restart", "enable", "rm"} for command in self.commands))
+
+    def test_store_rejects_alias_without_touching_target(self):
+        target = self.home / "foreign-store"
+        target.mkdir(mode=0o700)
+        self.identity.store.parent.mkdir(parents=True)
+        self.identity.store.symlink_to(target, target_is_directory=True)
+        before = target.stat()
+        with self.preparation(), self.assertRaisesRegex(host.Hold, "PATH_ALIAS"):
+            setup.prepare(self.identity, run=self.commands_ok)
+        after = target.stat()
+        self.assertEqual((after.st_mode, after.st_uid, after.st_gid, after.st_ctime_ns),
+                         (before.st_mode, before.st_uid, before.st_gid, before.st_ctime_ns))
+        self.assertFalse(self.config_path.exists())
+        self.assertFalse(self.unit_path.exists())
+        self.assertFalse(any(set(command) & {"restart", "enable", "rm"} for command in self.commands))
+
+    def test_config_and_state_still_require_private_directories(self):
+        for directory in (self.config_path.parent, self.identity.state):
+            with self.subTest(directory=directory.name):
+                self.commands.clear()
+                directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                directory.chmod(0o710)
+                try:
+                    with self.preparation(), self.assertRaisesRegex(host.Hold, "PRIVATE_DIRECTORY_REQUIRED"):
+                        setup.prepare(self.identity, run=self.commands_ok)
+                    self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o710)
+                    self.assertFalse(any(set(command) & {"restart", "enable", "rm"} for command in self.commands))
+                finally:
+                    directory.chmod(0o700)
 
     def test_upgrade_removes_only_verified_image_before_restart_and_is_idempotent(self):
         self.prior_setup()
