@@ -32,6 +32,130 @@ SERVICE = "porota-rc6-docker.service"
 DOCKER = "/usr/bin/docker"
 SUDO = "/usr/bin/sudo"
 SYSTEMCTL = "/usr/bin/systemctl"
+INSPECT_UNITS = (
+    "porota-snapshot-preopen-rc6.service", "porota-snapshot-postclose-rc6.service",
+    "porota-runtime-evidence-rc6.service", "porota-critical-approval-rc6.service",
+    "porota-critical-github-proxy-rc6.service",
+)
+
+
+# This program performs only bounded reads of the five observed RC6 unit
+# definitions. Environment values and opaque shell arguments never leave it.
+UNIT_DETAILS = r'''import hashlib,json,os,re,shlex,stat,sys
+names=set(json.loads(sys.argv[1])); paths=json.loads(sys.argv[2]); results=[]
+simple={'User','Group','WorkingDirectory','ProtectSystem','ProtectHome','ProtectKernelTunables','ProtectKernelModules','ProtectControlGroups','PrivateTmp','PrivateDevices','NoNewPrivileges','ReadWritePaths','ReadOnlyPaths','InaccessiblePaths','EnvironmentFile','ConditionPathExists','RuntimeDirectory','StateDirectory','SupplementaryGroups','After','Wants','Requires','Type','TimeoutStartSec','TimeoutStopSec','DynamicUser','BindPaths','BindReadOnlyPaths','RootDirectory'}
+commands={'ExecStart','ExecStartPre','ExecStartPost','ExecStop','ExecStopPost','ExecCondition','ExecReload'}
+def command(value,depth=0):
+    result={'sha256':hashlib.sha256(value.encode()).hexdigest(),'tokens':[]}
+    try: tokens=shlex.split(value)
+    except ValueError: return dict(result,parse='UNVERIFIED')
+    for token in tokens[:80]:
+        if re.fullmatch(r'[-+!@:]?/[A-Za-z0-9_./@%+:-]+',token) and '..' not in token.split('/'):
+            result['tokens'].append({'path':token})
+        elif re.fullmatch(r'--?[A-Za-z][A-Za-z0-9_-]*',token):
+            result['tokens'].append({'flag':token})
+        elif token in {'python','python3','docker','exec','sh','bash','porota_production_observer','porota_production_dashboard'}:
+            result['tokens'].append({'literal':token})
+        else:
+            opaque={'opaque_sha256':hashlib.sha256(token.encode()).hexdigest(),'bytes':len(token.encode())}
+            if depth==0 and any(c.isspace() for c in token): opaque['nested']=command(token,1)
+            result['tokens'].append(opaque)
+    return result
+for path in paths:
+    item={'path':path,'status':'NO_VERIFICADO'}; results.append(item)
+    try:
+        allowed=any(path in ('/etc/systemd/system/'+name,'/usr/lib/systemd/system/'+name,'/lib/systemd/system/'+name) or re.fullmatch('/etc/systemd/system/'+re.escape(name)+r'\.d/[A-Za-z0-9_.-]+\.conf',path) for name in names)
+        if not allowed: continue
+        meta=os.lstat(path); item.update(uid=meta.st_uid,gid=meta.st_gid,mode=oct(stat.S_IMODE(meta.st_mode)),bytes=meta.st_size,symlink=stat.S_ISLNK(meta.st_mode))
+        if not stat.S_ISREG(meta.st_mode) or meta.st_uid!=0 or meta.st_nlink!=1 or meta.st_mode&0o022 or meta.st_size>65536: continue
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+        try: raw=os.read(fd,65537)
+        finally: os.close(fd)
+        if len(raw)!=meta.st_size: continue
+        item.update(status='OBSERVED',sha256=hashlib.sha256(raw).hexdigest(),directives=[],environment_names=[])
+        joined=raw.decode().replace('\\\n',' ')
+        for line in joined.splitlines():
+            if not line or line.lstrip().startswith(('#',';','[')): continue
+            key,sep,value=line.partition('='); key=key.strip(); value=value.strip()
+            if not sep: continue
+            if key=='Environment':
+                try: entries=shlex.split(value)
+                except ValueError: entries=[]
+                item['environment_names']+=sorted({v.split('=',1)[0] for v in entries if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',v.split('=',1)[0])})
+            elif key in commands: item['directives'].append({'name':key,**command(value)})
+            elif key in simple:
+                if re.fullmatch(r'[A-Za-z0-9_./@%:+!~* -]{0,2048}',value) and '://' not in value:
+                    item['directives'].append({'name':key,'value':value})
+                else: item['directives'].append({'name':key,'opaque_sha256':hashlib.sha256(value.encode()).hexdigest()})
+    except (OSError,ValueError,UnicodeError): pass
+print(json.dumps(results,sort_keys=True))
+'''
+
+
+def detailed_units(inventory, *, run=subprocess.run):
+    selected = [row for row in inventory.get("units", []) if row.get("name") in INSPECT_UNITS]
+    paths = set()
+    for row in selected:
+        if row.get("FragmentPath"):
+            paths.add(row["FragmentPath"])
+        paths.update(row.get("DropInPaths", "").split())
+    result = _call((SUDO, "-n", "--", "/usr/bin/python3", "-c", UNIT_DETAILS,
+                    json.dumps(INSPECT_UNITS), json.dumps(sorted(paths))), run=run)
+    if result is None or result.returncode:
+        return {"status": "NO_VERIFICADO", "files": []}
+    try:
+        rows = json.loads(result.stdout)
+        if not isinstance(rows, list) or len(rows) > 30:
+            raise ValueError()
+    except ValueError:
+        return {"status": "NO_VERIFICADO", "files": []}
+    return {"status": "OBSERVED", "files": rows}
+
+
+def toolchain_metadata(*, run=subprocess.run):
+    result = {}
+    for name in ("docker", "dockerd", "dockerd-rootless.sh", "rootlesskit", "slirp4netns", "pasta", "vpnkit", "gvproxy"):
+        path = shutil.which(name, path="/usr/bin:/bin:/usr/sbin:/sbin")
+        row = {"available": bool(path), "path": path, "version": "NO_VERIFICADO"}
+        result[name] = row
+        if path and name != "dockerd-rootless.sh":
+            version = _call((path, "--version"), run=run, timeout=8)
+            match = re.search(r"\b(\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9.-]+)?)\b",
+                              version.stdout[:4096] if version is not None and version.returncode == 0 else "")
+            if match:
+                row["version"] = match.group(1)
+    return result
+
+
+def subid_metadata(identity):
+    result = {}
+    for name in ("subuid", "subgid"):
+        rows = []
+        try:
+            raw = Path("/etc/" + name).read_bytes()
+            if len(raw) > 1048576:
+                raise ValueError()
+            for line in raw.decode("ascii").splitlines():
+                parts = line.split(":")
+                if len(parts) == 3 and parts[0] in {identity.pw_name, str(identity.pw_uid)} and all(
+                        part.isdigit() for part in parts[1:]):
+                    rows.append({"start": int(parts[1]), "count": int(parts[2])})
+            result[name] = {"status": "OBSERVED", "ranges": rows}
+        except (OSError, ValueError):
+            result[name] = {"status": "NO_VERIFICADO", "ranges": []}
+    return result
+
+
+def filesystem_metadata(path):
+    """Observe the nearest existing ancestor without creating a store."""
+    try:
+        target = path
+        while not target.exists() and target != target.parent:
+            target = target.parent
+        return {"status": "OBSERVED", "observed_path": str(target), "target_exists": path.exists(),
+                "device": target.stat().st_dev, "free_bytes": shutil.disk_usage(target).free}
+    except OSError:
+        return {"status": "NO_VERIFICADO"}
 
 
 def unit_inventory(source=REPO, *, run=subprocess.run):
@@ -156,6 +280,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
         "data", "data/paper_v17/observer_v17.db", "data/paper_v17/observer_v17.db-wal",
         "data/paper_v17/observer_v17.db-shm", ".env", ".secrets/ppi_production.json",
         "data/diagnosticos/dashboard_preview_v1633.env")}
+    units = unit_inventory(root, run=run)
     return {"schema": "porota.rootless.inspect.v1", "state": "NO_VERIFICADO",
             "operation": "inspect", "host_mutations": 0,
             "uid": uid, "gid": os.getgid(), "account": account.pw_name,
@@ -170,7 +295,11 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "user_service": _properties(user_service, {"LoadState", "ActiveState", "SubState", "FragmentPath"}),
             "linger": _properties(linger, {"Linger"}), "cgroup_controllers": controllers,
             "own_daemon": own_info, "legacy_rc6": legacy, "files": files,
-            "legacy_units": unit_inventory(root, run=run)}
+            "legacy_units": units, "unit_details": detailed_units(units, run=run),
+            "toolchain": toolchain_metadata(run=run), "subordinate_ids": subid_metadata(account),
+            "filesystems": {"data": filesystem_metadata(root / "data"),
+                "docker": filesystem_metadata(home / ".local/share/porota-rc6/docker"),
+                "staging": filesystem_metadata(home / ".local/state/porota-rc6")}}
 
 
 def checked(command, *, run=subprocess.run, timeout=30):

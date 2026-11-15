@@ -210,7 +210,8 @@ def execute(operation, repository, release_dir=None, *, env=None):
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
                 else:
-                    require(proc.returncode == 0, 'ROOTLESS_PREPARATION_FAILED')
+                    if proc.returncode != 0:
+                        raise HostFailure('ROOTLESS_PREPARATION_FAILED', result)
                 return result
             finally:
                 # Disconnecting SSH does not prove the remote writer stopped.

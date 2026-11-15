@@ -1,9 +1,12 @@
 import json
 import hashlib
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 from scripts import porota_rootless_host as host
@@ -74,6 +77,58 @@ class InspectTests(unittest.TestCase):
         self.assertEqual(result["units"][0]["name"], "porota-preopen-rc6.timer")
         self.assertEqual(result["units"][0]["policy_role"], "UNKNOWN")
         self.assertEqual(result["unmapped_units"], ["porota-preopen-rc6.timer"])
+
+    def test_unit_details_keep_paths_and_digests_without_environment_or_shell_secrets(self):
+        unit = "porota-snapshot-preopen-rc6.service"
+        virtual = "/etc/systemd/system/" + unit
+        actual = self.root / "unit"
+        actual.write_text("[Service]\nUser=porotaadmin\nEnvironment=TOKEN=private-env-value MODE=PAPER\n"
+            "EnvironmentFile=/etc/porota/secrets.env\n"
+            "ExecStart=/bin/bash -c '/usr/bin/python3 /opt/porota-trading/job.py --token private-argument https://secret.invalid/token'\n")
+        raw = actual.read_bytes()
+        original_open, original_stat = os.open, os.lstat
+        def opened(path, flags, *args, **kwargs):
+            self.assertFalse(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT))
+            return original_open(actual if path == virtual else path, flags, *args, **kwargs)
+        def metadata(path, *args, **kwargs):
+            value = original_stat(actual if path == virtual else path, *args, **kwargs)
+            if path == virtual:
+                fields = list(value)
+                fields[4] = 0
+                return os.stat_result(fields)
+            return value
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["inspect", json.dumps([unit]), json.dumps([virtual])]), \
+             patch.object(os, "open", side_effect=opened), patch.object(os, "lstat", side_effect=metadata), \
+             redirect_stdout(out):
+            exec(compile(setup.UNIT_DETAILS, "unit-details-readonly", "exec"), {})
+        result = json.loads(out.getvalue())
+        serialized = json.dumps(result)
+        for secret in ("private-env-value", "private-argument", "secret.invalid"):
+            self.assertNotIn(secret, serialized)
+        self.assertIn("/opt/porota-trading/job.py", serialized)
+        self.assertIn("/etc/porota/secrets.env", serialized)
+        self.assertEqual(result[0]["sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(set(result[0]["environment_names"]), {"TOKEN", "MODE"})
+
+    def test_tool_versions_are_sanitized_and_launcher_is_never_executed(self):
+        calls = []
+        def version(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "version 29.1.0 PRIVATE_DIAGNOSTIC", "")
+        with patch.object(setup.shutil, "which", side_effect=lambda name, **kwargs: "/usr/bin/" + name):
+            result = setup.toolchain_metadata(run=version)
+        self.assertTrue(result["vpnkit"]["available"])
+        self.assertEqual(result["docker"]["version"], "29.1.0")
+        self.assertNotIn("PRIVATE_DIAGNOSTIC", json.dumps(result))
+        self.assertFalse(any(command[0].endswith("dockerd-rootless.sh") for command in calls))
+
+    def test_filesystem_inspection_does_not_create_missing_store(self):
+        missing = self.root / "nested" / "docker"
+        result = setup.filesystem_metadata(missing)
+        self.assertEqual(result["status"], "OBSERVED")
+        self.assertFalse(result["target_exists"])
+        self.assertFalse(missing.parent.exists())
 
 
 class PrepareTests(unittest.TestCase):
