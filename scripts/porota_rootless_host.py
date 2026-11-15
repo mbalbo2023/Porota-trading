@@ -40,6 +40,16 @@ DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
 # Frozen PAPER settings enable both optional workers in this release contract.
 CONTROLLER_CHILDREN = ("scanner", "performance", "dynamic_shadow", "exit_reader", "notifications",
                        "candles", "intraday_scalping", "caucion_cash_sweep")
+DOCKER_OPERATIONS = {
+    ("image", "load"): "IMAGE_LOAD", ("image", "inspect"): "IMAGE_INSPECT",
+    ("image", "ls"): "IMAGE_LS", ("image", "rm"): "IMAGE_RM",
+    ("container", "create"): "CONTAINER_CREATE", ("container", "start"): "CONTAINER_START",
+    ("container", "inspect"): "CONTAINER_INSPECT", ("container", "exec"): "CONTAINER_EXEC",
+    ("container", "stop"): "CONTAINER_STOP", ("container", "rm"): "CONTAINER_RM",
+    ("container", "update"): "CONTAINER_UPDATE", ("container", "ls"): "CONTAINER_LS",
+    ("network", "ls"): "NETWORK_LS", ("network", "inspect"): "NETWORK_INSPECT",
+    ("network", "rm"): "NETWORK_RM",
+}
 
 
 class Hold(RuntimeError):
@@ -49,6 +59,24 @@ class Hold(RuntimeError):
 def require(condition, reason):
     if not condition:
         raise Hold(reason)
+
+
+def docker_failure(args, result, returncode=None):
+    """Export only fixed operation names and exit status, never command data."""
+    operation = {"info": "INFO", "compose": "COMPOSE"}.get(args[0] if args else "")
+    operation = operation or DOCKER_OPERATIONS.get(tuple(args[:2]), "OTHER")
+    error = Hold("DOCKER_COMMAND_FAILED" if result == "EXIT_NONZERO" else "DOCKER_COMMAND_UNAVAILABLE")
+    error.public_details = {"docker_failure": {"operation": operation, "result": result,
+        "returncode": returncode if type(returncode) is int else None}}
+    return error
+
+
+def failure_evidence(exc):
+    evidence = {"failure_signature": str(exc) if isinstance(exc, Hold) else "UNCLASSIFIED_HOST_FAILURE"}
+    details = getattr(exc, "public_details", {})
+    if isinstance(details, dict) and "docker_failure" in details:
+        evidence["docker_failure"] = details["docker_failure"]
+    return evidence
 
 
 @dataclass(frozen=True)
@@ -286,15 +314,18 @@ class Docker:
             result = self.run(command, check=False, text=True, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, timeout=timeout,
                               env=self.identity.environment(), cwd="/")
+        except subprocess.TimeoutExpired as exc:
+            raise docker_failure(args, "TIMEOUT") from exc
         except (OSError, subprocess.SubprocessError) as exc:
-            raise Hold("DOCKER_COMMAND_UNAVAILABLE") from exc
+            raise docker_failure(args, "UNAVAILABLE") from exc
         require(isinstance(result.stdout, str) and len(result.stdout) <= 1048576,
                 "DOCKER_RESPONSE_INVALID")
         return result
 
     def call(self, *args, timeout=60):
         result = self.command_result(*args, timeout=timeout)
-        require(result.returncode == 0, "DOCKER_COMMAND_FAILED")
+        if result.returncode != 0:
+            raise docker_failure(args, "EXIT_NONZERO", result.returncode)
         return result.stdout.strip()
 
     def json(self, *args):
@@ -308,13 +339,17 @@ def decode(raw):
         raise Hold("JSON_EVIDENCE_INVALID") from exc
 
 
-def validate_daemon(info, identity):
+def validate_daemon(info, identity, *, classic_store=True):
     require(identity.uid > 0 and isinstance(info, dict) and
             "name=rootless" in info.get("SecurityOptions", []), "ROOTLESS_DAEMON_REQUIRED")
     require(str(info.get("CgroupVersion")) == "2" and info.get("CgroupDriver") == "systemd",
             "ROOTLESS_CGROUP_REQUIRED")
     require(info.get("DockerRootDir") == str(identity.store), "DEDICATED_DOCKER_STORE_REQUIRED")
     require(isinstance(info.get("ID"), str) and bool(info["ID"]), "DAEMON_ID_REQUIRED")
+    if classic_store:
+        require(info.get("Driver") == "overlay2" and isinstance(info.get("DriverStatus"), list) and
+                ["driver-type", "io.containerd.snapshotter.v1"] not in info["DriverStatus"],
+                "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED")
     return info["ID"]
 
 
@@ -650,7 +685,7 @@ class Host:
                         "cleanup": {"state": "NOT_REQUIRED", "reclaimed_bytes": 0},
                         "ppi_watch_touched": False, "boca_touched": False}
 
-    def boundary(self):
+    def boundary(self, *, classic_store=True):
         for path in (self.identity.home, self.identity.socket.parent):
             meta = no_alias(path).stat()
             require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == self.identity.uid and
@@ -658,7 +693,8 @@ class Host:
         meta = self.identity.socket.lstat()
         require(stat.S_ISSOCK(meta.st_mode) and meta.st_uid == self.identity.uid,
                 "ROOTLESS_SOCKET_REQUIRED")
-        return validate_daemon(self.docker.json("info", "--format", "{{json .}}"), self.identity)
+        return validate_daemon(self.docker.json("info", "--format", "{{json .}}"), self.identity,
+                               classic_store=classic_store)
 
     def inspect(self, cid):
         require(CID.fullmatch(cid), "CONTAINER_ID_INVALID")
@@ -714,6 +750,7 @@ class Host:
             "--cpus", "0.25", "--no-healthcheck", "--entrypoint", "python", image_id,
             "-c", "import time;time.sleep(60)")
         require(CID.fullmatch(cid), "PROBE_BIRTH_UNVERIFIED")
+        primary_failed = False
         try:
             self.docker.call("container", "start", cid)
             before = self.inspect(cid)
@@ -742,15 +779,23 @@ class Host:
                 os.close(descriptor)
             return {"container_uid": 0, "host_uid": self.identity.uid, "host_gid": self.identity.gid,
                     "effective_cgroup_limits": "VERIFIED"}
+        except BaseException:
+            primary_failed = True
+            raise
         finally:
             # Only the CID returned by this create, never a name or a broad rm.
-            current = self.inspect(cid)
-            require(current.get("Image") == image_id and
-                    (current.get("Config", {}).get("Labels") or {}).get("io.porota.attempt") == attempt,
-                    "PROBE_CLEANUP_IDENTITY")
-            if current.get("State", {}).get("Running"):
-                self.docker.call("container", "stop", "--time", "5", cid)
-            self.docker.call("container", "rm", cid)
+            try:
+                current = self.inspect(cid)
+                require(current.get("Image") == image_id and
+                        (current.get("Config", {}).get("Labels") or {}).get("io.porota.attempt") == attempt,
+                        "PROBE_CLEANUP_IDENTITY")
+                if current.get("State", {}).get("Running"):
+                    self.docker.call("container", "stop", "--time", "5", cid)
+                self.docker.call("container", "rm", cid)
+            except Exception as cleanup_exc:
+                self.receipt["probe_cleanup_failure"] = failure_evidence(cleanup_exc)
+                if not primary_failed:
+                    raise
 
     def prepare_environment(self, directory, release):
         config = parse_env(read_regular(self.root / ".env").decode())
@@ -904,6 +949,7 @@ class Host:
             try:
                 self.receipt["phase"] = "LOAD"
                 self.docker.call("image", "load", "--input", release_dir / "porota-predeploy-image.tar.gz", timeout=600)
+                self.receipt["phase"] = "IMAGE_INSPECT"
                 images = self.docker.json("image", "inspect", release["image_id"])
                 require(len(images) == 1 and images[0].get("Id") == release["image_id"], "LOADED_IMAGE_ID_MISMATCH")
                 env = parse_env("\n".join(images[0].get("Config", {}).get("Env", [])))
@@ -911,6 +957,7 @@ class Host:
                         "LOADED_IMAGE_SOURCE_MISMATCH")
                 require(shutil.disk_usage(self.identity.store).free >= 2147483648, "ROOTLESS_POSTLOAD_RESERVE")
                 require(shutil.disk_usage(self.root / "data").free >= 2147483648, "DATA_POSTLOAD_RESERVE")
+                self.receipt["phase"] = "MAPPING_PROBE"
                 self.receipt["uid_mapping"] = self.effective_mapping_probe(release["image_id"], attempt)
                 self.receipt["phase"] = "CREATE"
                 self.compose(release_dir, directory, "create", "--no-build", "--pull", "never")
@@ -973,7 +1020,7 @@ class Host:
                 write_json(journal, self.receipt)
                 return self.receipt
             except Exception as exc:
-                self.receipt.update({"state": "VALIDADO_RUNTIME" if committed else "NO_VERIFICADO", "failure_signature": str(exc) if isinstance(exc, Hold) else "UNCLASSIFIED_HOST_FAILURE",
+                self.receipt.update({"state": "VALIDADO_RUNTIME" if committed else "NO_VERIFICADO", **failure_evidence(exc),
                                      "transition_started": transitioned, "action": "FIX_FORWARD_ONLY"})
                 self.receipt["cleanup"] = {"state": "INCOMPLETE", "reclaimed_bytes": 0}
                 if committed:
@@ -992,8 +1039,8 @@ class Host:
                         cleanup_after = shutil.disk_usage(self.identity.store).free
                         self.receipt["cleanup"] = {"state": "COMPLETE", "free_bytes_before": cleanup_before,
                             "free_bytes_after": cleanup_after, "reclaimed_bytes": max(0, cleanup_after - cleanup_before)}
-                    except Exception:
-                        pass
+                    except Exception as cleanup_exc:
+                        self.receipt["cleanup"].update(failure_evidence(cleanup_exc))
                     if transitioned:
                         publish_release_marker(self.root, release, validated=False, manifest=manifest)
                         failed = dict(current or self.receipt)
@@ -1004,6 +1051,8 @@ class Host:
                                 bool(current or self.receipt.get("legacy_quiescence", {}).get("state") == "QUIESCENT")})
                         write_json(current_path, failed)
                 write_json(journal, self.receipt)
+                if isinstance(exc, Hold):
+                    raise
                 raise Hold(self.receipt["failure_signature"]) from exc
 
 
@@ -1029,7 +1078,7 @@ def main(argv=None):
         return 0
     except Exception as exc:
         result = manager.receipt if manager else {"state": "BLOQUEADO", "phase": "IDENTITY"}
-        result["failure_signature"] = str(exc) if isinstance(exc, Hold) else "UNCLASSIFIED_HOST_FAILURE"
+        result.update(failure_evidence(exc))
         print(json.dumps(result, sort_keys=True))
         return 79
 

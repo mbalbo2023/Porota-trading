@@ -751,7 +751,8 @@ def daemon_configuration(identity, launcher, network="slirp4netns"):
     config_path = identity.home / ".config/porota-rc6/daemon.json"
     config = {"hosts": [f"unix://{identity.socket}"], "data-root": str(identity.store),
               "exec-root": runtime + "/exec", "pidfile": runtime + "/dockerd.pid",
-              "exec-opts": ["native.cgroupdriver=systemd"], "live-restore": False}
+              "exec-opts": ["native.cgroupdriver=systemd"], "live-restore": False,
+              "features": {"containerd-snapshotter": False}, "storage-driver": "overlay2"}
     unit = f'''[Unit]
 Description=Porota RC6 dedicated rootless Docker
 After=network-online.target
@@ -782,6 +783,76 @@ TasksMax=infinity
 WantedBy=default.target
 '''
     return config_path, (json.dumps(config, sort_keys=True) + "\n").encode(), unit.encode()
+
+
+def clear_unstarted_images(identity, docker, receipt):
+    """Remove only images bound to a private, pre-transition failed release."""
+    from scripts.porota_rootless_host import (require, read_regular, no_alias, decode,
+        SHA, IMAGE_ID, ATTEMPT, parse_env, remove_unreferenced_image, write_json)
+    change = receipt["storage_transition"]
+    require(not os.path.lexists(identity.state / "current.json") and
+            not docker.call("container", "ls", "--all", "--quiet", "--no-trunc"),
+            "ROOTLESS_STORE_TRANSITION_NOT_EMPTY")
+    ids = set(docker.call("image", "ls", "--all", "--quiet", "--no-trunc").splitlines())
+    require(all(IMAGE_ID.fullmatch(value) for value in ids), "ROOTLESS_STORE_IMAGE_PROVENANCE")
+    planned = []
+    for image_id in sorted(ids):
+        rows = docker.json("image", "inspect", image_id)
+        require(len(rows) == 1 and rows[0].get("Id") == image_id, "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        config = rows[0].get("Config") or {}
+        env, labels = parse_env("\n".join(config.get("Env", []))), config.get("Labels") or {}
+        sha, tree = env.get("POROTA_BUILD_SHA", ""), env.get("POROTA_CANDIDATE_TREE_SHA", "")
+        require(SHA.fullmatch(sha) and SHA.fullmatch(tree) and labels.get("porota.commit") == sha and
+                labels.get("porota.predeploy") == "v2", "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        path = identity.state / "releases" / sha / "release.json"
+        for directory in (identity.state, path.parent.parent, path.parent):
+            meta = no_alias(directory).stat()
+            require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == identity.uid and not meta.st_mode & 0o022,
+                    "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        raw = read_regular(path, 2 * 1024**2)
+        require(path.stat().st_uid == identity.uid and not path.stat().st_mode & 0o077,
+                "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        release = decode(raw)
+        require(release.get("schema") == "porota.release.v1" and release.get("source_sha") == sha and
+                release.get("source_tree") == tree and IMAGE_ID.fullmatch(str(release.get("image_id", ""))) and
+                release.get("operating_mode") == "PRODUCTION_PAPER" and release.get("execution_mode") == "SIMULATION" and
+                release.get("real_order_capability") == "BLOCKED" and
+                type(release.get("real_orders_sent_required")) is int and release["real_orders_sent_required"] == 0,
+                "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        release_hash = hashlib.sha256(raw).hexdigest()
+        proven = False
+        for journal in (identity.state / "attempts").glob("*/receipt.json"):
+            if not ATTEMPT.fullmatch(journal.parent.name):
+                continue
+            for entry, mask in ((journal.parent.parent, 0o022), (journal.parent, 0o077), (journal, 0o077)):
+                meta = no_alias(entry).stat()
+                require(meta.st_uid == identity.uid and not meta.st_mode & mask,
+                        "ROOTLESS_STORE_IMAGE_PROVENANCE")
+            attempt = decode(read_regular(journal, 2 * 1024**2))
+            if (attempt.get("schema") == "porota.rootless.deploy.v1" and
+                attempt.get("state") == "NO_VERIFICADO" and attempt.get("roles") == {} and
+                attempt.get("transition_started") is False and
+                all(attempt.get(key) == release[key] for key in ("source_sha", "source_tree", "image_id")) and
+                attempt.get("release_manifest_sha256") == release_hash):
+                proven = True
+                break
+        require(proven, "ROOTLESS_STORE_IMAGE_PROVENANCE")
+        planned.append({"image_id": image_id, "source_sha": sha, "source_tree": tree,
+                        "config_image_id": release["image_id"], "release_manifest_sha256": release_hash})
+    change.update(state="CLEANUP", images=planned, removed_images=[],
+                  free_bytes_before=shutil.disk_usage(identity.store).free)
+    write_json(identity.state / "prepare.json", receipt)
+    for item in planned:
+        require(remove_unreferenced_image(docker, item["image_id"]) == "REMOVED_UNREFERENCED",
+                "ROOTLESS_STORE_IMAGE_REFERENCED")
+        change["removed_images"].append(item["image_id"])
+        write_json(identity.state / "prepare.json", receipt)
+    require(not docker.call("image", "ls", "--all", "--quiet", "--no-trunc") and
+            not docker.call("container", "ls", "--all", "--quiet", "--no-trunc"),
+            "ROOTLESS_STORE_TRANSITION_NOT_EMPTY")
+    change.update(state="IMAGES_CLEARED", free_bytes_after=shutil.disk_usage(identity.store).free)
+    change["reclaimed_bytes"] = max(0, change["free_bytes_after"] - change["free_bytes_before"])
+    write_json(identity.state / "prepare.json", receipt)
 
 
 def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=time.sleep):
@@ -824,22 +895,65 @@ def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=ti
         require(unit_path.parent.stat().st_uid == identity.uid and not unit_path.parent.stat().st_mode & 0o022,
                 "USER_UNIT_DIRECTORY_UNSAFE")
         existing = unit_path.exists()
-        # Never overwrite another daemon definition or undocumented configuration.
-        for path, raw in ((config_path, config), (unit_path, unit)):
-            if path.exists():
-                require(read_regular(path) == raw and path.stat().st_uid == identity.uid, "ROOTLESS_SETUP_DRIFT")
-            else:
-                atomic_write(path, raw, private=path != unit_path)
-        checked((SYSTEMCTL, "--user", "daemon-reload"), run=run)
-        checked((SYSTEMCTL, "--user", "enable", "--now", SERVICE), run=run, timeout=100)
+        previous = json.loads(config)
+        previous.pop("features")
+        previous.pop("storage-driver")
+        previous = (json.dumps(previous, sort_keys=True) + "\n").encode()
+        raw_config = read_regular(config_path) if config_path.exists() else None
+        require(raw_config is None or raw_config in (config, previous) and
+                config_path.stat().st_uid == identity.uid and not config_path.stat().st_mode & 0o077,
+                "ROOTLESS_SETUP_DRIFT")
+        require(not existing or read_regular(unit_path) == unit and unit_path.stat().st_uid == identity.uid and
+                not unit_path.stat().st_mode & 0o022, "ROOTLESS_SETUP_DRIFT")
+        require(not existing or raw_config is not None, "ROOTLESS_SETUP_DRIFT")
+        require(raw_config != previous or existing, "ROOTLESS_SETUP_DRIFT")
         manager = Host(Path("/opt/porota-trading"), identity, Docker(identity, run=run))
+        restart = False
+        if existing:
+            properties = checked((SYSTEMCTL, "--user", "show", SERVICE,
+                "--property=FragmentPath,DropInPaths"), run=run)
+            observed = dict(line.split("=", 1) for line in properties.splitlines() if "=" in line)
+            require(observed.get("FragmentPath") == str(unit_path) and observed.get("DropInPaths") == "",
+                    "ROOTLESS_SETUP_DRIFT")
+            if raw_config == config:
+                # A failed restart may leave the known new configuration with
+                # its daemon stopped. Starting an already active unit is a no-op.
+                checked((SYSTEMCTL, "--user", "enable", "--now", SERVICE), run=run, timeout=100)
+            # The only pre-upgrade exception is the storage backend; socket,
+            # rootless UID, private store and effective cgroups remain required.
+            daemon_id = manager.boundary(classic_store=False)
+            info = manager.docker.json("info", "--format", "{{json .}}")
+            require(info.get("ID") == daemon_id, "ROOTLESS_DAEMON_CHANGED")
+            classic = info.get("Driver") == "overlay2" and isinstance(info.get("DriverStatus"), list) and \
+                ["driver-type", "io.containerd.snapshotter.v1"] not in info["DriverStatus"]
+            if raw_config != config or not classic:
+                require(classic or info.get("Driver") == "overlayfs" and isinstance(info.get("DriverStatus"), list) and
+                        ["driver-type", "io.containerd.snapshotter.v1"] in info.get("DriverStatus", []),
+                        "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED")
+                change = receipt["storage_transition"] = {"state": "NO_VERIFICADO", "daemon_id": daemon_id,
+                    "driver_before": info.get("Driver"), "driver_after": "NO_VERIFICADO", "restart_requested": False}
+                clear_unstarted_images(identity, manager.docker, receipt)
+                require(manager.boundary(classic_store=False) == daemon_id, "ROOTLESS_DAEMON_CHANGED")
+                restart = True
+        if raw_config != config:
+            atomic_write(config_path, config)
+        if not existing:
+            atomic_write(unit_path, unit, private=False)
+        checked((SYSTEMCTL, "--user", "daemon-reload"), run=run)
+        if restart:
+            receipt["storage_transition"]["restart_requested"] = True
+            write_json(identity.state / "prepare.json", receipt)
+            checked((SYSTEMCTL, "--user", "restart", SERVICE), run=run, timeout=130)
+        checked((SYSTEMCTL, "--user", "enable", "--now", SERVICE), run=run, timeout=100)
         try:
             deadline = clock() + 45
             while True:
                 try:
                     daemon_id = manager.boundary()
                     break
-                except (Hold, OSError):
+                except (Hold, OSError) as exc:
+                    if isinstance(exc, Hold) and str(exc) == "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED":
+                        raise
                     require(clock() < deadline, "ROOTLESS_DAEMON_START_TIMEOUT")
                     sleep(2)
         except Exception:
@@ -847,7 +961,10 @@ def prepare(identity=None, *, run=subprocess.run, clock=time.monotonic, sleep=ti
                 _call((SYSTEMCTL, "--user", "stop", SERVICE), run=run, timeout=130)
             raise
         receipt.update({"state": "PREPARADO", "daemon_id": daemon_id,
-                        "runtime_validation": "NO_VERIFICADO"})
+                        "runtime_validation": "NO_VERIFICADO",
+                        "image_store": {"driver": "overlay2", "containerd_snapshotter": False}})
+        if restart:
+            receipt["storage_transition"].update(state="COMPLETE", driver_after="overlay2")
         write_json(identity.state / "prepare.json", receipt)
         return receipt
 

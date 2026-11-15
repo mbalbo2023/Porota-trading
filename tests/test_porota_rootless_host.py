@@ -57,20 +57,34 @@ class RootlessContracts(unittest.TestCase):
     def test_rootful_daemon_is_refused_even_at_expected_socket(self):
         identity = host.Identity(1000, 1000, "porotaadmin", self.base)
         info = {"SecurityOptions": ["name=seccomp"], "CgroupVersion": "2",
-                "CgroupDriver": "systemd", "DockerRootDir": str(identity.store), "ID": "daemon"}
+                "CgroupDriver": "systemd", "DockerRootDir": str(identity.store), "ID": "daemon",
+                "Driver": "overlay2", "DriverStatus": [["Backing Filesystem", "extfs"]]}
         with self.assertRaisesRegex(host.Hold, "ROOTLESS_DAEMON_REQUIRED"):
             host.validate_daemon(info, identity)
 
     def test_wrong_store_or_cgroup_is_rejected(self):
         identity = host.Identity(1000, 1000, "porotaadmin", self.base)
         info = {"SecurityOptions": ["name=rootless"], "CgroupVersion": "2",
-                "CgroupDriver": "systemd", "DockerRootDir": str(identity.store), "ID": "daemon"}
+                "CgroupDriver": "systemd", "DockerRootDir": str(identity.store), "ID": "daemon",
+                "Driver": "overlay2", "DriverStatus": [["Backing Filesystem", "extfs"]]}
         self.assertEqual(host.validate_daemon(info, identity), "daemon")
         for key, value in (("DockerRootDir", "/var/lib/docker"), ("CgroupVersion", "1"),
                            ("CgroupDriver", "cgroupfs")):
             wrong = dict(info, **{key: value})
             with self.subTest(key=key), self.assertRaises(host.Hold):
                 host.validate_daemon(wrong, identity)
+
+    def test_classic_store_is_required_except_during_bounded_bootstrap_identity_check(self):
+        identity = host.Identity(1000, 1000, "porotaadmin", self.base)
+        info = {"SecurityOptions": ["name=rootless"], "CgroupVersion": "2", "CgroupDriver": "systemd",
+                "DockerRootDir": str(identity.store), "ID": "daemon", "Driver": "overlayfs",
+                "DriverStatus": [["driver-type", "io.containerd.snapshotter.v1"]]}
+        with self.assertRaisesRegex(host.Hold, "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED"):
+            host.validate_daemon(info, identity)
+        self.assertEqual(host.validate_daemon(info, identity, classic_store=False), "daemon")
+        for change in ({"SecurityOptions": []}, {"DockerRootDir": "/var/lib/docker"}, {"CgroupVersion": "1"}):
+            with self.subTest(change=change), self.assertRaises(host.Hold):
+                host.validate_daemon(dict(info, **change), identity, classic_store=False)
 
     def test_effective_mapping_must_map_only_namespace_root_to_ssh_user(self):
         host.validate_zero_mapping("0 1000 1\n1 231072 65536\n", 1000)
@@ -193,6 +207,64 @@ class RootlessContracts(unittest.TestCase):
         self.assertIn(compose, command.call_args.args)
         self.assertNotIn(release_dir / "source/compose.rootless.yml", command.call_args.args)
         self.assertIsNone(host.ATTEMPT.fullmatch("ABC"))
+
+    def test_docker_failure_keeps_exit_identity_without_command_or_output(self):
+        identity = host.Identity(1000, 1000, "porotaadmin", self.base)
+        def failed(command, **kwargs):
+            self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+            return subprocess.CompletedProcess(command, 37, "private-stdout", "private-stderr")
+        docker = host.Docker(identity, run=failed)
+        for command, operation in ((('image', 'load', '--input', '/private-path'), 'IMAGE_LOAD'),
+                                   (('private-verb', 'private-argument'), 'OTHER')):
+            with self.subTest(operation=operation), self.assertRaisesRegex(host.Hold, "DOCKER_COMMAND_FAILED") as caught:
+                docker.call(*command)
+            evidence = getattr(caught.exception, "public_details", {})
+            self.assertEqual(evidence, {"docker_failure": {
+                "operation": operation, "result": "EXIT_NONZERO", "returncode": 37}})
+            self.assertNotIn("private-", json.dumps(evidence))
+
+    def test_docker_unavailable_distinguishes_timeout_without_exception_text(self):
+        identity = host.Identity(1000, 1000, "porotaadmin", self.base)
+        failures = ((subprocess.TimeoutExpired(['private-command'], 1, output='private-output'), 'TIMEOUT'),
+                    (OSError('private-system-message'), 'UNAVAILABLE'))
+        for error, result in failures:
+            def failed(*_args, **_kwargs):
+                raise error
+            with self.subTest(result=result), self.assertRaisesRegex(host.Hold, "DOCKER_COMMAND_UNAVAILABLE") as caught:
+                host.Docker(identity, run=failed).call('container', 'exec', 'private-cid', 'private-command')
+            evidence = getattr(caught.exception, "public_details", {})
+            self.assertEqual(evidence, {"docker_failure": {
+                "operation": "CONTAINER_EXEC", "result": result, "returncode": None}})
+            self.assertNotIn("private-", json.dumps(evidence))
+
+    def test_probe_cleanup_cannot_replace_a_docker_or_identity_failure(self):
+        identity = host.Identity(1000, 1000, "porotaadmin", self.base)
+        for primary in ('PROBE_NOT_RUNNING', 'DOCKER_COMMAND_FAILED'):
+            inspections = []
+            def command(args, **_kwargs):
+                operation = args[3:5]
+                if operation == ('container', 'create'):
+                    return subprocess.CompletedProcess(args, 0, 'a' * 64, '')
+                if operation == ('container', 'start'):
+                    return subprocess.CompletedProcess(args, 17 if primary == 'DOCKER_COMMAND_FAILED' else 0,
+                                                       'private-start-output', '')
+                if operation == ('container', 'inspect'):
+                    inspections.append(True)
+                    if primary == 'PROBE_NOT_RUNNING' and len(inspections) == 1:
+                        return subprocess.CompletedProcess(args, 0, json.dumps([
+                            {'Id': 'a' * 64, 'Image': IMAGE, 'State': {'Running': False}}]), '')
+                    return subprocess.CompletedProcess(args, 29, 'private-cleanup-output', '')
+                self.fail(f'Unexpected operation: {operation}')
+            manager = host.Host(self.base, identity, host.Docker(identity, run=command))
+            with self.subTest(primary=primary), self.assertRaisesRegex(host.Hold, primary) as caught:
+                manager.effective_mapping_probe(IMAGE, 'next')
+            if primary == 'DOCKER_COMMAND_FAILED':
+                self.assertEqual(getattr(caught.exception, 'public_details', {}).get('docker_failure'),
+                                 {'operation': 'CONTAINER_START', 'result': 'EXIT_NONZERO', 'returncode': 17})
+            self.assertEqual(manager.receipt.get('probe_cleanup_failure'), {
+                'failure_signature': 'DOCKER_COMMAND_FAILED',
+                'docker_failure': {'operation': 'CONTAINER_INSPECT', 'result': 'EXIT_NONZERO', 'returncode': 29}})
+            self.assertNotIn('private-', json.dumps(manager.receipt))
 
     def test_disk_requirement_preserves_executable_policy_formula(self):
         release = {"image_size_bytes": 200,
@@ -512,6 +584,61 @@ class DeploymentFailureTests(unittest.TestCase):
         self.assertEqual(manager.docker.containers, {})
         self.assertEqual(manager.receipt["cleanup"]["state"], "COMPLETE")
         self.assertFalse((self.identity.state / "current.json").exists())
+
+    def test_load_inspect_and_mapping_failures_keep_distinct_phases_and_public_details(self):
+        failed_docker = host.Docker(self.identity, run=lambda args, **kwargs:
+            subprocess.CompletedProcess(args, 71, 'private-failure-output', ''))
+        cases = (('IMAGE_INSPECT', ('image', 'inspect'), 'IMAGE_INSPECT'),
+                 ('MAPPING_PROBE', None, 'CONTAINER_CREATE'),
+                 ('LOAD', ('image', 'load'), 'IMAGE_LOAD'))
+        for phase, target, operation in cases:
+            manager = self.manager()
+            original = manager.docker.call
+            def command(*args, **kwargs):
+                if args[:2] == target:
+                    return failed_docker.call(*args, **kwargs)
+                return original(*args, **kwargs)
+            def mapping(*_args):
+                return failed_docker.call('container', 'create', 'private-probe-argument')
+            attempt = phase.lower()
+            transitions = []
+            with self.subTest(phase=phase), patch.object(manager.docker, 'call', side_effect=command), \
+                    patch.object(manager, 'effective_mapping_probe', side_effect=mapping):
+                with self.assertRaisesRegex(host.Hold, 'DOCKER_COMMAND_FAILED') as caught:
+                    manager.deploy(self.root, SHA, TREE, attempt, transition=lambda: transitions.append(True))
+            receipt = json.loads((self.identity.state / 'attempts' / attempt / 'receipt.json').read_text())
+            expected = {'operation': operation, 'result': 'EXIT_NONZERO', 'returncode': 71}
+            self.assertEqual(receipt['phase'], phase)
+            self.assertEqual(receipt.get('docker_failure'), expected)
+            self.assertEqual(getattr(caught.exception, 'public_details', {}).get('docker_failure'), expected)
+            self.assertEqual(receipt['cleanup']['state'], 'COMPLETE')
+            self.assertFalse(receipt['transition_started'])
+            self.assertEqual(transitions, [])
+            self.assertNotIn('private-', json.dumps(receipt))
+
+    def test_cleanup_failure_is_secondary_to_the_original_docker_failure(self):
+        manager = self.manager()
+        original = manager.docker.call
+        def failed(args, **_kwargs):
+            return subprocess.CompletedProcess(args, 41 if args[3:5] == ('image', 'load') else 59,
+                                               'private-failure-output', '')
+        docker = host.Docker(self.identity, run=failed)
+        def command(*args, **kwargs):
+            if args[:2] in (('image', 'load'), ('network', 'ls')):
+                return docker.call(*args, **kwargs)
+            return original(*args, **kwargs)
+        with patch.object(manager.docker, 'call', side_effect=command):
+            with self.assertRaisesRegex(host.Hold, 'DOCKER_COMMAND_FAILED') as caught:
+                manager.deploy(self.root, SHA, TREE, 'next', transition=lambda: self.fail('Unexpected transition'))
+        receipt = manager.receipt
+        self.assertEqual(receipt.get('docker_failure'), {
+            'operation': 'IMAGE_LOAD', 'result': 'EXIT_NONZERO', 'returncode': 41})
+        self.assertEqual(getattr(caught.exception, 'public_details', {}).get('docker_failure'), receipt['docker_failure'])
+        self.assertEqual(receipt['cleanup'], {'state': 'INCOMPLETE', 'reclaimed_bytes': 0,
+            'failure_signature': 'DOCKER_COMMAND_FAILED',
+            'docker_failure': {'operation': 'NETWORK_LS', 'result': 'EXIT_NONZERO', 'returncode': 59}})
+        self.assertFalse(receipt['transition_started'])
+        self.assertNotIn('private-', json.dumps(receipt))
 
     def test_data_disk_is_independently_checked_before_load_or_quiescence(self):
         manager = self.manager(previous=True)

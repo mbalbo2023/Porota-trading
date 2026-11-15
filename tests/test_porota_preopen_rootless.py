@@ -111,7 +111,8 @@ def runtime(tmp_path, monkeypatch):
                     if role == "dashboard" else {}},
         }
     info = {"SecurityOptions": ["name=rootless"], "CgroupVersion": "2", "CgroupDriver": "systemd",
-            "DockerRootDir": str(identity.store), "ID": "dedicated-daemon"}
+            "DockerRootDir": str(identity.store), "ID": "dedicated-daemon",
+            "Driver": "overlay2", "DriverStatus": [["Backing Filesystem", "extfs"]]}
     state = {"identity": identity, "current": current, "current_path": current_path,
              "manifest": manifest, "release": release, "marker": marker, "marker_path": marker_path,
              "containers": containers, "info": info, "legacy": False,
@@ -208,6 +209,8 @@ def test_current_custody_cannot_be_replaced_by_data_marker(runtime, monkeypatch,
 @pytest.mark.parametrize("change", [
     {"SecurityOptions": ["name=seccomp"]}, {"DockerRootDir": "/var/lib/docker"},
     {"CgroupVersion": "1"}, {"CgroupDriver": "cgroupfs"},
+    {"Driver": "overlayfs", "DriverStatus": [["driver-type", "io.containerd.snapshotter.v1"]]},
+    {"Driver": "vfs"}, {"DriverStatus": None},
 ])
 def test_wrong_daemon_boundary_cannot_reuse_private_receipt(runtime, change):
     runtime["info"].update(change)
