@@ -26,6 +26,13 @@ HOST_KEY = "AAAAC3NzaC1lZDI1NTE5AAAAIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8g
 OTHER_KEY = "AAAAC3NzaC1lZDI1NTE5AAAAIAIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAh"
 HOST_FINGERPRINT = "3b13435c2e35275b6642a717bce9b7b865512d0d9448949a324623b53e20cde8"
 LEASE_MARKER = "RC6_R362_DEPLOY_OWNER_V1="
+CONTROL_LEASE_MARKER = "RC6_R367_GENESIS_DEPLOY_OWNER_V1="
+ADMISSION_SCOPE = {
+    "operation": "PROMOTION_ADMISSION", "trusted_main_sha": MAIN,
+    "candidate_sha": "b" * 40, "candidate_tree": "d" * 40,
+    "host_identity_source": "PROTECTED_DO_PINS",
+    "host_identity_sha256": HOST_FINGERPRINT, "nonce": "a" * 32,
+}
 SCOPE = {
     "operation": "install_genesis_launcher",
     "trusted_main_sha": MAIN,
@@ -127,6 +134,107 @@ class AuthorityTest(unittest.TestCase):
 
     def verify(self):
         return self.auth.verify_authority(self.env)
+
+    def verify_lease(self, scope, marker=CONTROL_LEASE_MARKER):
+        return self.auth.verify_global_lease(
+            self.auth._GitHub(self.env["GITHUB_TOKEN"]), self.lc, LEASE_ID,
+            marker=marker, scope=scope)
+
+    def test_admission_lease_is_recognized_without_bootstrap_authority(self):
+        self.lc["body"] = encoded(CONTROL_LEASE_MARKER, {**ADMISSION_SCOPE, "status": "ACTIVE"})
+        with self.rest():
+            self.assertEqual(self.verify_lease(ADMISSION_SCOPE), (len(self.ledger), self.created))
+            # Recognizing ownership cannot substitute for the launcher's own GO/lease.
+            with self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_LEASE_MISMATCH"):
+                self.verify()
+
+    def test_control_leases_cannot_substitute_other_operations(self):
+        operations = ("PREPARE_ENV", "APPLY_GENESIS", "PROMOTION_ADMISSION")
+        for actual in operations:
+            self.lc["body"] = encoded(CONTROL_LEASE_MARKER,
+                                      {**ADMISSION_SCOPE, "operation": actual, "status": "ACTIVE"})
+            for expected in operations:
+                scope = {**ADMISSION_SCOPE, "operation": expected}
+                with self.subTest(actual=actual, expected=expected), self.rest():
+                    if actual == expected:
+                        self.assertEqual(self.verify_lease(scope), (len(self.ledger), self.created))
+                    else:
+                        with self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_LEASE_MISMATCH"):
+                            self.verify_lease(scope)
+
+    def test_admission_lease_requires_a_closed_well_typed_scope(self):
+        invalid = [{k: v for k, v in ADMISSION_SCOPE.items() if k != missing}
+                   for missing in ADMISSION_SCOPE]
+        invalid += [{**ADMISSION_SCOPE, "extra": False}]
+        invalid += [{**ADMISSION_SCOPE, key: True} for key in ADMISSION_SCOPE]
+        invalid += [{**ADMISSION_SCOPE, "operation": value}
+                    for value in ("INSTALL", "UNKNOWN", None, [], {})]
+        invalid += [{**ADMISSION_SCOPE, key: value} for key, value in (
+            ("trusted_main_sha", "c" * 39), ("candidate_sha", "z" * 40),
+            ("candidate_tree", "D" * 40), ("nonce", "a" * 31),
+            ("host_identity_source", "ENV"), ("host_identity_sha256", "a" * 63))]
+        for scope in invalid:
+            # Change both inputs together: rejection must come from the contract.
+            self.lc["body"] = encoded(CONTROL_LEASE_MARKER, {**scope, "status": "ACTIVE"})
+            with self.subTest(scope=scope), self.rest(), \
+                    self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_LEASE_MISMATCH"):
+                self.verify_lease(scope)
+
+    def test_admission_and_existing_leases_share_global_exclusion_and_exact_release(self):
+        custodian_marker = "RC6_R367_CUSTODIAN_DEPLOY_OWNER_V1="
+        custodian_scope = {"operation": "install_genesis_custodian", "trusted_main_sha": MAIN,
+                           "custodian_target": "/usr/local/libexec/porota-rc6-custody/rc6-genesis-custodian",
+                           "custodian_sha256": self.auth.CUSTODIAN_SHA256,
+                           "host_identity_source": "PROTECTED_DO_PINS",
+                           "host_identity_sha256": HOST_FINGERPRINT}
+        others = ((LEASE_MARKER, SCOPE), (custodian_marker, custodian_scope),
+                  (CONTROL_LEASE_MARKER, {**ADMISSION_SCOPE, "operation": "PREPARE_ENV"}),
+                  (CONTROL_LEASE_MARKER, {**ADMISSION_SCOPE, "operation": "APPLY_GENESIS"}))
+        history = self.ledger[:-1]
+        for other in others:
+            for admission_first in (True, False):
+                admission = (CONTROL_LEASE_MARKER, ADMISSION_SCOPE)
+                (previous_marker, previous_scope), (marker, scope) = (
+                    (admission, other) if admission_first else (other, admission))
+                # Different main/nonce must still conflict: this is global ownership.
+                previous_scope = {**previous_scope, "trusted_main_sha": "e" * 40}
+                if "nonce" in previous_scope:
+                    previous_scope["nonce"] = "f" * 32
+                opened = comment(LEASE_ID - 2, 980, encoded(previous_marker,
+                                 {**previous_scope, "status": "ACTIVE"}), self.created)
+                closed = comment(LEASE_ID - 1, 980, encoded(previous_marker,
+                                 {"status": "RELEASED", "lease_comment_id": LEASE_ID - 2}), self.created)
+                self.lc["body"] = encoded(marker, {**scope, "status": "ACTIVE"})
+                for rows, released in (([opened], False), ([opened, closed], True)):
+                    with self.subTest(other=other[1]["operation"], admission_first=admission_first,
+                                      released=released), patch.object(self, "ledger", history + rows + [self.lc]), \
+                            self.rest():
+                        if released:
+                            self.assertEqual(self.verify_lease(scope, marker), (len(self.ledger), self.created))
+                        else:
+                            with self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_LEASE_CONFLICT"):
+                                self.verify_lease(scope, marker)
+
+    def test_admission_revocation_and_malformed_or_duplicate_release_fail_closed(self):
+        self.lc["body"] = encoded(CONTROL_LEASE_MARKER, {**ADMISSION_SCOPE, "status": "ACTIVE"})
+        release = {"status": "RELEASED", "lease_comment_id": LEASE_ID}
+        closed = comment(GO_ID + 1, 980, encoded(CONTROL_LEASE_MARKER, release), self.created)
+        with patch.object(self, "ledger", self.ledger + [closed]), self.rest(), \
+                self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_ACTIVE_GLOBAL_OWNER_UNVERIFIED"):
+            self.verify_lease(ADMISSION_SCOPE)
+        malformed = [(CONTROL_LEASE_MARKER, {**release, "lease_comment_id": ident})
+                     for ident in (LEASE_ID - 1, str(LEASE_ID), True)]
+        malformed += [(LEASE_MARKER, release), (CONTROL_LEASE_MARKER, {**release, "extra": False})]
+        for marker, document in malformed:
+            wrong = comment(GO_ID + 1, 980, encoded(marker, document), self.created)
+            with self.subTest(marker=marker, document=document), \
+                    patch.object(self, "ledger", self.ledger + [wrong]), self.rest(), \
+                    self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_RELEASE_AMBIGUOUS"):
+                self.verify_lease(ADMISSION_SCOPE)
+        duplicate = comment(GO_ID + 2, 980, encoded(CONTROL_LEASE_MARKER, release), self.created)
+        with patch.object(self, "ledger", self.ledger + [closed, duplicate]), self.rest(), \
+                self.assertRaisesRegex(r295.BootstrapHold, "LAUNCHER_GLOBAL_RELEASE_AMBIGUOUS"):
+            self.verify_lease(ADMISSION_SCOPE)
 
     def test_custodian_needs_its_own_go_and_lease_and_honors_other_global_owners(self):
         custodian = "RC6_R367_CUSTODIAN_DEPLOY_OWNER_V1="

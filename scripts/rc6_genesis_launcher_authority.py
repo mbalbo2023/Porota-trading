@@ -238,9 +238,10 @@ def _valid_lease_scope(marker, scope):
     if not _hex(sha, 40) or not _hex(host, 64) or scope.get("host_identity_source") != "PROTECTED_DO_PINS":
         return False
     if marker == CONTROL_LEASE_MARKER:
+        # Recognizing a lease scope does not grant a GO or enable a dispatch operation.
         return (set(scope) == {"operation", "trusted_main_sha", "candidate_sha", "candidate_tree",
                                 "host_identity_source", "host_identity_sha256", "nonce"}
-                and scope["operation"] in ("PREPARE_ENV", "APPLY_GENESIS")
+                and scope["operation"] in ("PREPARE_ENV", "APPLY_GENESIS", "PROMOTION_ADMISSION")
                 and _hex(scope["candidate_sha"], 40) and _hex(scope["candidate_tree"], 40)
                 and _hex(scope["nonce"], 32))
     return marker in (LEASE_MARKER, CUSTODIAN_LEASE_MARKER) and scope == _scope(sha, host, marker)
