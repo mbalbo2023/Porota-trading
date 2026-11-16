@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -36,11 +36,11 @@ SYSTEMCTL = "/usr/bin/systemctl"
 INSPECT_UNITS = (
     "porota-snapshot-preopen-rc6.service", "porota-snapshot-postclose-rc6.service",
     "porota-runtime-evidence-rc6.service", "porota-critical-approval-rc6.service",
-    "porota-critical-github-proxy-rc6.service",
+    "porota-critical-github-proxy-rc6.service", "porota-preopen-rc6.service",
 )
 
 
-# This program performs only bounded reads of the five observed RC6 unit
+# This program performs only bounded reads of the six observed RC6 unit
 # definitions. Environment values and opaque shell arguments never leave it.
 UNIT_DETAILS = r'''import hashlib,json,os,re,shlex,stat,sys
 names=set(json.loads(sys.argv[1])); paths=json.loads(sys.argv[2]); results=[]
@@ -110,7 +110,37 @@ def detailed_units(inventory, *, run=subprocess.run):
             raise ValueError()
     except ValueError:
         return {"status": "NO_VERIFICADO", "files": []}
-    return {"status": "OBSERVED", "files": rows}
+    # For the newly audited preopen unit expose *only* digests; not even
+    # sanitized command tokens or private environment variable names.
+    safe_rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            return {"status": "NO_VERIFICADO", "files": []}
+        path = row.get("path")
+        preopen_path = isinstance(path, str) and (
+            path in {base + PREOPEN_UNIT for base in
+                     ("/etc/systemd/system/", "/usr/lib/systemd/system/", "/lib/systemd/system/")} or
+            bool(re.fullmatch(r"/etc/systemd/system/porota-preopen-rc6\.service\.d/[A-Za-z0-9_.-]+\.conf", path)))
+        if not preopen_path:
+            safe_rows.append(row)
+            continue
+        item = {"path": path, "status": row.get("status")}
+        if row.get("status") == "OBSERVED":
+            digest = row.get("sha256")
+            if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                return {"status": "NO_VERIFICADO", "files": []}
+            item["sha256"] = digest
+            commands = row.get("directives", [])
+            if not isinstance(commands, list):
+                return {"status": "NO_VERIFICADO", "files": []}
+            hashes = [part.get("sha256") for part in commands
+                      if isinstance(part, dict) and part.get("name") == "ExecStart"]
+            if any(not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value)
+                   for value in hashes):
+                return {"status": "NO_VERIFICADO", "files": []}
+            item["execstart_sha256"] = hashes
+        safe_rows.append(item)
+    return {"status": "OBSERVED", "files": safe_rows}
 
 
 def toolchain_metadata(*, run=subprocess.run):
@@ -178,6 +208,144 @@ def _scheduler_execution_evidence(properties, unit):
             "ExecMainCode": status("ExecMainCode"), "ExecMainStatus": status("ExecMainStatus"),
             "ExecMainStartTimestamp": stamp("ExecMainStartTimestamp"),
             "ExecMainExitTimestamp": stamp("ExecMainExitTimestamp")}
+
+
+PREOPEN_UNIT = "porota-preopen-rc6.service"
+PREOPEN_79_SIGNATURES = frozenset({
+    "SCHEDULER_LAUNCHER_CUSTODY", "SCHEDULER_LOCK_UNSAFE", "SCHEDULER_SOURCE_CUSTODY",
+    "SCHEDULER_DAEMON_CHANGED", "SCHEDULER_PAIR_REQUIRED", "SCHEDULER_RUNTIME_STOPPED",
+    "SCHEDULER_HOST_JOB_FAILED", "SCHEDULER_UNIT_SCOPE", "SCHEDULER_UNIT_REQUIRED",
+    "UNCLASSIFIED_SCHEDULER_FAILURE",
+    # Hold codes reachable from the pinned product's release/daemon/DB custody.
+    "PATH_ALIAS", "REQUIRED_FILE_UNREADABLE", "REQUIRED_FILE_UNSAFE", "REQUIRED_FILE_OVERSIZE",
+    "CURRENT_RELEASE_UNVERIFIED", "PRIVATE_RELEASE_DIRECTORY_UNSAFE",
+    "PRIVATE_RELEASE_MANIFEST_CHANGED", "PRIVATE_RELEASE_IDENTITY_MISMATCH",
+    "ROOTLESS_RUNTIME_DIRECTORY", "ROOTLESS_SOCKET_REQUIRED", "ROOTLESS_CLASSIC_IMAGE_STORE_REQUIRED",
+    "DEDICATED_DOCKER_STORE_REQUIRED", "DAEMON_ID_REQUIRED", "DOCKER_COMMAND_FAILED",
+    "DOCKER_COMMAND_UNAVAILABLE", "DOCKER_RESPONSE_INVALID", "CURRENT_PAIR_INCOMPLETE",
+    "EXACT_CONTAINER_REQUIRED", "CONTAINER_ID_INVALID", "RUNTIME_COMMAND_MISMATCH",
+    "RUNTIME_SOURCE_MISMATCH", "RUNTIME_IMAGE_MISMATCH", "RUNTIME_STORAGE_MISMATCH",
+    "RUNTIME_OOM", "RUNTIME_PAPER_CONFIG", "RUNTIME_PORT_BOUNDARY",
+    "RUNTIME_PROCESS_STOPPED", "RUNTIME_TMPFS_BOUNDARY", "RUNTIME_ISOLATION",
+    "PAPER_DATABASE_SAFETY", "PAPER_DATABASE_UNREADABLE", "DATABASE_REQUIRED",
+    "DATABASE_ALIAS", "DATABASE_REPLACED", "UNOWNED_ROOTLESS_CONTAINERS",
+})
+
+
+def preopen_79_diagnostic(*, run=subprocess.run):
+    """Attribute the last Exit 79 using journal fields, never export MESSAGE.
+
+    The exact installed unit is queried twice. An absent, changed or ambiguous
+    invocation is explicitly unverified, not a reason to rerun preopen.
+    """
+    def unverified(reason):
+        return {"status": "NO_VERIFICADO", "failure_signature": None,
+                "subcheck": "NO_VERIFICADO", "reason": reason, "read_only": True}
+    names = {"Id", "Result", "ExecMainStatus", "ExecMainStartTimestamp",
+             "ExecMainExitTimestamp", "FragmentPath", "InvocationID"}
+    show_command = (SYSTEMCTL, "show", PREOPEN_UNIT,
+                    "--property=" + ",".join(sorted(names)))
+
+    def snapshot():
+        values = _properties(_call(show_command, run=run, timeout=5), names)
+        if (values.get("Id") != PREOPEN_UNIT or values.get("Result") != "exit-code" or
+                values.get("ExecMainStatus") != "79" or
+                values.get("FragmentPath") != "/etc/systemd/system/" + PREOPEN_UNIT or
+                not re.fullmatch(r"[0-9a-f]{32}", values.get("InvocationID", ""))):
+            return None
+        try:
+            raw_start = values["ExecMainStartTimestamp"]
+            raw_exit = values["ExecMainExitTimestamp"]
+            clock = r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) 20\d\d-\d\d-\d\d [0-2]\d:[0-5]\d:[0-5]\d UTC"
+            if (not re.fullmatch(clock, raw_start) or
+                    not re.fullmatch(clock, raw_exit)):
+                return None
+            start = datetime.strptime(raw_start, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+            exit_at = datetime.strptime(raw_exit, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+            if (start.strftime("%a") != raw_start[:3] or
+                    exit_at.strftime("%a") != raw_exit[:3] or
+                    not 0 <= (exit_at - start).total_seconds() <= 120):
+                return None
+        except (KeyError, ValueError, TypeError, OverflowError):
+            return None
+        return values, start, exit_at
+
+    first = snapshot()
+    if first is None:
+        return unverified("UNIT_RESULT_OR_INVOCATION_UNVERIFIED")
+    values, start, exit_at = first
+    fmt = lambda when: when.strftime("%Y-%m-%d %H:%M:%S UTC")
+    journal_command = (SUDO, "-n", "--", "/usr/bin/journalctl", "--quiet", "--no-pager",
+                       "--output=json", "--output-fields=__REALTIME_TIMESTAMP,_SYSTEMD_UNIT,_SYSTEMD_INVOCATION_ID,MESSAGE",
+                       "_SYSTEMD_UNIT=" + PREOPEN_UNIT, "--since=" + fmt(start - timedelta(seconds=2)),
+                       "--until=" + fmt(exit_at + timedelta(seconds=2)), "--lines=16")
+    try:
+        journal = _call(journal_command, run=run, timeout=8)
+    except UnicodeError:
+        return unverified("JOURNAL_QUERY_UNAVAILABLE")
+    if journal is None or journal.returncode != 0:
+        return unverified("JOURNAL_QUERY_UNAVAILABLE")
+    if len(journal.stdout) > 32768:
+        return unverified("JOURNAL_BUDGET_EXCEEDED")
+    lines = journal.stdout.splitlines()
+    if not lines:
+        return unverified("NO_TYPED_JOB_RECEIPT")
+    if len(lines) >= 16:
+        return unverified("JOURNAL_BUDGET_EXCEEDED")
+
+    def distinct(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError("DUPLICATE_JOURNAL_KEY")
+            result[key] = item
+        return result
+
+    identified = []
+    try:
+        for line in lines:
+            if len(line) > 4096:
+                return unverified("JOURNAL_BUDGET_EXCEEDED")
+            row = json.loads(line, object_pairs_hook=distinct)
+            if not isinstance(row, dict):
+                return unverified("JOURNAL_RECORD_UNTRUSTED")
+            message = row.get("MESSAGE")
+            if not isinstance(message, str) or len(message) > 2048:
+                continue  # systemd's own non-job messages are not evidence
+            try:
+                job = json.loads(message, object_pairs_hook=distinct)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(job, dict) or job.get("schema") != "porota.rootless.job.v1":
+                continue
+            # Ignore PID1 manager messages; a typed job from a foreign unit
+            # is a contradiction, not a receipt from the selected invocation.
+            if row.get("_SYSTEMD_UNIT") != PREOPEN_UNIT:
+                return unverified("JOURNAL_ATTRIBUTION_UNVERIFIED")
+            stamp = row.get("__REALTIME_TIMESTAMP")
+            if (row.get("_SYSTEMD_INVOCATION_ID") != values["InvocationID"] or
+                    not isinstance(stamp, str) or not re.fullmatch(r"\d{16}", stamp)):
+                return unverified("JOURNAL_ATTRIBUTION_UNVERIFIED")
+            observed = datetime.fromtimestamp(int(stamp) / 1_000_000, tz=timezone.utc)
+            if not start - timedelta(seconds=2) <= observed <= exit_at + timedelta(seconds=2):
+                return unverified("JOURNAL_ATTRIBUTION_UNVERIFIED")
+            signature = job.get("failure_signature")
+            if (job.get("state") != "BLOQUEADO" or
+                    signature not in PREOPEN_79_SIGNATURES or
+                    job.get("unit") not in (None, PREOPEN_UNIT)):
+                return unverified("JOURNAL_SIGNATURE_UNTRUSTED")
+            identified.append(signature)
+    except (ValueError, TypeError, OverflowError):
+        return unverified("JOURNAL_RECORD_UNTRUSTED")
+    if len(identified) != 1:
+        return unverified("NO_TYPED_JOB_RECEIPT" if not identified else
+                          "JOURNAL_ATTRIBUTION_AMBIGUOUS")
+    if snapshot() != first:
+        return unverified("UNIT_CHANGED_DURING_INSPECT")
+    return {"status": "OBSERVED", "failure_signature": identified[0],
+            "event_start_utc": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "subcheck": "NO_VERIFICADO", "reason": "TYPED_JOURNAL_SIGNATURE_BOUND",
+            "read_only": True}
 
 
 def unit_inventory(source=REPO, *, run=subprocess.run):
@@ -729,6 +897,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "linger": _properties(linger, {"Linger"}), "cgroup_controllers": controllers,
             "own_daemon": own_info, "legacy_rc6": legacy, "files": files,
             "legacy_units": units, "unit_details": detailed_units(units, run=run),
+            "preopen_79": preopen_79_diagnostic(run=run),
             "toolchain": toolchain_metadata(run=run), "subordinate_ids": subid_metadata(account),
             "filesystems": {"data": filesystem_metadata(root / "data"),
                 "docker": filesystem_metadata(home / ".local/share/porota-rc6/docker"),
