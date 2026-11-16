@@ -172,11 +172,151 @@ class RootlessAdmissionTests(unittest.TestCase):
         from unittest.mock import call
         host = Mock()
         current = {'roles': {'observer': 'a'*64, 'dashboard': 'b'*64}}
-        cold.stop_pair(host, current)
+        windows = cold.stop_pair(host, current)
         self.assertEqual(host.docker.call.call_args_list, [
             call('container', 'stop', '--time', '150', 'a'*64, timeout=180),
             call('container', 'stop', '--time', '65', 'b'*64, timeout=95),
         ])
+        self.assertEqual(set(windows), {'observer', 'dashboard'})
+        for before, after in windows.values():
+            self.assertLessEqual(before, after)
+            self.assertIsNotNone(before.tzinfo)
+            self.assertIsNotNone(after.tzinfo)
+
+    def test_dashboard_143_requires_ordered_bounded_uvicorn_shutdown_logs(self):
+        start = datetime.now(timezone.utc) - timedelta(seconds=9)
+        end = start + timedelta(seconds=8)
+        host = Mock()
+        host.identity.socket = Path('/run/user/1000/docker.sock')
+        host.identity.environment.return_value = {'PATH': '/usr/bin'}
+
+        def line(stamp, message):
+            return stamp.isoformat().replace('+00:00', 'Z') + ' INFO:     ' + message + '\n'
+
+        good = (line(start+timedelta(seconds=1), 'Shutting down') +
+                line(start+timedelta(seconds=2), 'Waiting for application shutdown.') +
+                line(start+timedelta(seconds=3), 'Application shutdown complete.') +
+                line(start+timedelta(seconds=4), 'Finished server process [1]'))
+        host.docker.run.return_value = subprocess.CompletedProcess([], 0, '', good)
+        self.assertTrue(cold.dashboard_uvicorn_shutdown(host, 'b'*64, (start, end)))
+        command = host.docker.run.call_args.args[0]
+        self.assertEqual(command[-1], 'b'*64)
+        self.assertIn('--timestamps', command)
+        self.assertIn('--tail', command)
+        self.assertEqual(host.docker.run.call_args.kwargs['timeout'], 12)
+        self.assertEqual(host.docker.run.call_args.kwargs['stderr'], subprocess.PIPE)
+
+        for raw in (
+            line(start+timedelta(seconds=4), 'Finished server process [1]'),
+            line(start+timedelta(seconds=2), 'Waiting for application shutdown.') +
+                line(start+timedelta(seconds=3), 'Application shutdown complete.') +
+                line(start+timedelta(seconds=4), 'Finished server process [1]'),
+            line(start+timedelta(seconds=1), 'Shutting down') +
+                line(start+timedelta(seconds=3), 'Application shutdown complete.') +
+                line(start+timedelta(seconds=4), 'Finished server process [1]'),
+            line(start+timedelta(seconds=4), 'Finished server process [1]') +
+                line(start+timedelta(seconds=5), 'Application shutdown complete.'),
+            line(start-timedelta(seconds=3), 'Application shutdown complete.') +
+                line(start+timedelta(seconds=4), 'Finished server process [1]'),
+            good + line(start+timedelta(seconds=5), 'Finished server process [9]'),
+            good.replace('INFO:     Application shutdown complete.',
+                'WARNING:  Cancel 1 running task(s), timeout graceful shutdown exceeded\n' +
+                'INFO:     Application shutdown complete.'),
+            good.replace('INFO:     Application shutdown complete.',
+                'ERROR:    Exception in ASGI application\n' +
+                'INFO:     Application shutdown complete.'),
+            good.replace('INFO:     Application shutdown complete.',
+                'WARNING:  Graceful shutdown exceeded timeout\n' +
+                'INFO:     Application shutdown complete.'),
+            good.replace('INFO:     Application shutdown complete.',
+                'Task was destroyed but it is pending!\n' +
+                'INFO:     Application shutdown complete.'),
+            good + 'Task: <Task pending name=orphaned-work>\n',
+            (line(start+timedelta(seconds=2), 'Nothing') * 128) + good,
+            'PRIVATE_CREDENTIAL=' + 'x' * 66000,
+        ):
+            with self.subTest(invalid_log=raw[:80]):
+                host.docker.run.return_value = subprocess.CompletedProcess([], 0, '', raw)
+                self.assertFalse(cold.dashboard_uvicorn_shutdown(host, 'b'*64, (start, end)))
+        # Docker's 128-line tail is shared across stdout and stderr: a 128-line
+        # response may have discarded an earlier cancellation/error.
+        benign = line(start+timedelta(seconds=1), 'Idle')
+        host.docker.run.return_value = subprocess.CompletedProcess(
+            [], 0, benign*70, benign*54 + good)
+        self.assertFalse(cold.dashboard_uvicorn_shutdown(host, 'b'*64, (start, end)))
+        host.docker.run.return_value = subprocess.CompletedProcess([], 1, '', good)
+        self.assertFalse(cold.dashboard_uvicorn_shutdown(host, 'b'*64, (start, end)))
+
+    def test_only_dashboard_143_with_causal_stop_and_graceful_logs_is_admitted(self):
+        cids = {'observer': 'a'*64, 'dashboard': 'b'*64}
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(seconds=6)
+        end = now - timedelta(seconds=1)
+        started_at = (now - timedelta(hours=2)).isoformat().replace('+00:00', 'Z')
+        finished_at = (start + timedelta(seconds=3)).isoformat().replace('+00:00', 'Z')
+        before = {'Id':cids['dashboard'], 'RestartCount':4,
+                  'State': {'Running':True, 'StartedAt':started_at,
+                            'OOMKilled':False, 'Pid':17}}
+        stopped = {
+            'observer': {'Id':cids['observer'], 'State': {'Running':False,
+                         'Status':'exited','Pid':0,'OOMKilled':False,'ExitCode':0}},
+            'dashboard': {'Id':cids['dashboard'], 'RestartCount':4,
+                          'State': {'Running':False,'Status':'exited','Pid':0,
+                                    'OOMKilled':False,'ExitCode':143,'Error':'',
+                                    'StartedAt':started_at,'FinishedAt':finished_at}},
+        }
+        host = Mock()
+        host.root = Path('/opt/porota-trading')
+        host.check_role.side_effect = lambda _current, role: stopped[role]
+        source = Mock()
+        source.DB_RELATIVE = Path('data/paper_v17/observer_v17.db')
+        book = {'state':'PAPER_FLAT', 'mode':'PRODUCTION_PAPER',
+                'real_orders_sent':0,'identity':[10,20]}
+        kwargs = {'expected_database':[10,20], 'stopped_after': start,
+                  'expected_dashboard':before,
+                  'stop_window':{'observer':(start-timedelta(seconds=20),start),
+                                 'dashboard':(start,end)}}
+        with patch.object(cold,'flat_book',return_value=book) as db, \
+             patch.object(cold,'dashboard_uvicorn_shutdown',return_value=True) as graceful, \
+             patch.object(cold,'critical_broker_proof',return_value={'state':'HEALTHY_ISSUES_ONLY'}), \
+             patch.object(cold,'read_shadow_status',return_value={'real_routes':'NOT_CALLED',
+                'real_orders_sent':0}), \
+             patch.object(cold,'operator_custody',return_value={'operator_uid_verified':True}), \
+             patch.object(cold,'legacy_writers_absent',return_value={'state':'NO_LEGACY_WRITERS'}):
+            evidence = cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
+            self.assertTrue(evidence['inflight_absent'])
+            self.assertTrue(db.call_args.kwargs['stopped'])
+            self.assertTrue(db.call_args.kwargs['clean_exit'])
+            graceful.assert_called_once_with(host,cids['dashboard'],(start,end))
+            for key, bad in (
+                ('FinishedAt',(end+timedelta(seconds=30)).isoformat()),
+                ('StartedAt',(now-timedelta(hours=1)).isoformat()),
+                ('Error','error'),
+            ):
+                with self.subTest(field=key):
+                    old = stopped['dashboard']['State'][key]
+                    stopped['dashboard']['State'][key] = bad
+                    with self.assertRaisesRegex(cold.StopProofHold,'ROOTLESS_PAIR_NOT_CLEANLY_STOPPED'):
+                        cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
+                    stopped['dashboard']['State'][key] = old
+            stopped['dashboard']['RestartCount'] = 5
+            with self.assertRaises(cold.StopProofHold):
+                cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
+            stopped['dashboard']['RestartCount'] = 4
+            graceful.return_value = False
+            with self.assertRaises(cold.StopProofHold):
+                cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
+            graceful.return_value = True
+            with self.assertRaises(cold.StopProofHold):
+                cold.stopped_admission(source,host,{'roles':cids},True,
+                                       expected_dashboard=before)
+            stopped['observer']['State']['ExitCode'] = 143
+            with self.assertRaises(cold.StopProofHold):
+                cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
+            stopped['observer']['State']['ExitCode'] = 0
+            stopped['dashboard']['State']['ExitCode'] = 137
+            with self.assertRaises(cold.StopProofHold):
+                cold.stopped_admission(source,host,{'roles':cids},True,**kwargs)
 
     def test_poststop_failure_reports_sanitized_predicates_for_both_roles(self):
         current = {'roles': {'observer': 'a'*64, 'dashboard': 'b'*64}}
@@ -378,7 +518,8 @@ class RootlessAdmissionTests(unittest.TestCase):
              patch.object(host_module,'Host',return_value=host), \
              patch.object(host_module,'user_lock',return_value=nullcontext()), \
              patch.object(successor,'inspect',return_value=release), \
-             patch.object(cold,'frozen_release',return_value=(current,{})), \
+             patch.object(cold,'frozen_release',return_value=(current,{
+                 'dashboard':{'Id':cold.FROZEN_CIDS['dashboard']}})), \
              patch.object(cold,'controller_live',return_value={'children':['r']*8}), \
              patch.object(cold,'flat_book',return_value=book), \
              patch.object(cold,'operator_custody',return_value={}), \
