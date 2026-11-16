@@ -83,6 +83,64 @@ def validate_runtime_receipt(receipt, release, returncode):
     require(receipt.get('cleanup', {}).get('state') == 'COMPLETE', 'RUNTIME_CLEANUP_INCOMPLETE')
 
 
+FROZEN_COLD_SHA = '21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76'
+FROZEN_COLD_TREE = 'b83cc6c167b0b80837099fe035f83311947a744e'
+FROZEN_COLD_FILES = ('porota_rootless_host.py', 'rc6_cold2_successor.py',
+                     'rc6_cold2_quarantine.py')
+
+
+def verify_frozen_cold_source(source):
+    """Require original, unmodified COLD code from the deployed source SHA."""
+    source = Path(source)
+    require(source.is_dir() and not source.is_symlink(), 'FROZEN_SOURCE_REQUIRED')
+    for pointer, expected in (('HEAD', FROZEN_COLD_SHA), ('HEAD^{tree}', FROZEN_COLD_TREE)):
+        try:
+            proc = subprocess.run(['git', '-C', str(source), 'rev-parse', pointer],
+                                  capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('FROZEN_SOURCE_UNAVAILABLE') from exc
+        require(proc.returncode == 0 and proc.stdout.decode().strip() == expected,
+                'FROZEN_SOURCE_SHA_MISMATCH')
+    for name in FROZEN_COLD_FILES:
+        path = source/'scripts'/name
+        require(path.is_file() and not path.is_symlink() and path.stat().st_nlink == 1,
+                'FROZEN_SOURCE_FILE_UNSAFE')
+        try:
+            actual = subprocess.run(['git', '-C', str(source), 'hash-object', str(path)],
+                                    capture_output=True, timeout=10)
+            original = subprocess.run(['git', '-C', str(source), 'rev-parse',
+                                       'HEAD:scripts/'+name], capture_output=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('FROZEN_SOURCE_UNAVAILABLE') from exc
+        require(actual.returncode == original.returncode == 0 and
+                actual.stdout == original.stdout and len(actual.stdout.strip()) == 40,
+                'FROZEN_SOURCE_FILE_CHANGED')
+
+
+def validate_cold_receipt(receipt, operation, returncode):
+    require(returncode == 0 and receipt.get('schema') == 'rc6.rootless.cold-recovery.v1'
+            and receipt.get('operation') == operation and
+            receipt.get('source_sha') == FROZEN_COLD_SHA and
+            receipt.get('controller_roles') == 8 and
+            type(receipt.get('real_orders_sent')) is int and receipt['real_orders_sent'] == 0 and
+            receipt.get('ppi_watch_touched') is False and receipt.get('boca_touched') is False,
+            'COLD_HOST_RECEIPT_UNVERIFIED')
+    if operation == 'cold_inspect':
+        require(receipt.get('state') == 'READ_ONLY_OBSERVED' and
+                receipt.get('mutations') == 0 and receipt.get('pack_content_hash_verified') is True,
+                'COLD_READ_ONLY_PROOF_UNVERIFIED')
+    elif operation == 'cold_resume':
+        require(receipt.get('state') == 'RUNTIME_RESTORED' and
+                receipt.get('restoration') == 'RESTORED_ORIGINAL_RUNTIME' and
+                receipt.get('runtime_validated') is True,
+                'COLD_RESUME_UNVERIFIED')
+    else:
+        require(receipt.get('state') == 'COLD_ARCHIVE_COMPLETE' and
+                receipt.get('archive_complete') is True and receipt.get('cold_queue_failed') is False and
+                receipt.get('runtime_validated') is True and receipt.get('mutations') == 1,
+                'COLD_RECOVERY_UNVERIFIED')
+
+
 @contextmanager
 def connection(env):
     host, user, key, known = connection_values(env)
@@ -134,10 +192,15 @@ shutil.rmtree(p)
 '''
 
 
-def execute(operation, repository, release_dir=None, *, env=None):
+def execute(operation, repository, release_dir=None, *, env=None, frozen_source=None):
     env = env or os.environ
-    require(operation in {'inspect', 'prepare', 'deploy', 'migrate'}, 'HOST_OPERATION_INVALID')
+    require(operation in {'inspect', 'prepare', 'deploy', 'migrate',
+                          'cold_inspect', 'cold_recover', 'cold_resume'}, 'HOST_OPERATION_INVALID')
     repository = Path(repository)
+    cold = operation in {'cold_inspect', 'cold_recover', 'cold_resume'}
+    if cold:
+        require(frozen_source is not None, 'FROZEN_SOURCE_REQUIRED')
+        verify_frozen_cold_source(frozen_source)
     with connection(env) as (ssh, scp, target):
         if operation == 'inspect':
             proc = ssh_run(ssh, ['python3', '-B', '-', 'inspect', '--root', '/opt/porota-trading'],
@@ -164,12 +227,20 @@ def execute(operation, repository, release_dir=None, *, env=None):
             else:
                 source = Path(temporary)/'source'
                 (source/'scripts').mkdir(parents=True)
-                for name in ('porota_rootless_setup.py', 'porota_rootless_host.py'):
-                    shutil.copyfile(repository/'scripts'/name, source/'scripts'/name)
+                if cold:
+                    shutil.copyfile(repository/'scripts'/'rc6_rootless_cold_recovery.py',
+                                    source/'scripts'/'rc6_rootless_cold_recovery.py')
+                    for name in FROZEN_COLD_FILES:
+                        shutil.copyfile(Path(frozen_source)/'scripts'/name,
+                                        source/'scripts'/name)
+                else:
+                    for name in ('porota_rootless_setup.py', 'porota_rootless_host.py'):
+                        shutil.copyfile(repository/'scripts'/name, source/'scripts'/name)
                 required = 2147483648
             # Actual free bytes on staging and Docker filesystems BEFORE upload.
             required += sum(p.stat().st_size for p in source.rglob('*') if p.is_file())
-            created = ssh_run(ssh, ['python3', '-I', '-B', '-c', STAGE_CREATE, str(required)])
+            created = ssh_run(ssh, ['python3', '-I', '-B', '-c', STAGE_CREATE,
+                                    str(required), 'staging-only' if cold else 'release'])
             require(created.returncode == 0, 'HOST_STAGING_OR_DISK_PREFLIGHT_FAILED')
             stage = created.stdout.decode().strip()
             validate_stage(stage)
@@ -184,7 +255,8 @@ def execute(operation, repository, release_dir=None, *, env=None):
                 except (OSError, subprocess.TimeoutExpired):
                     raise ValueError('RELEASE_TRANSFER_FAILED') from None
                 require(sent.returncode == 0, 'RELEASE_TRANSFER_FAILED')
-                helper = 'porota_rootless_host.py' if operation == 'deploy' else 'porota_rootless_setup.py'
+                helper = ('rc6_rootless_cold_recovery.py' if cold else
+                          'porota_rootless_host.py' if operation == 'deploy' else 'porota_rootless_setup.py')
                 command = ['python3', '-B', stage+'/source/scripts/'+helper, operation,
                            '--root', '/opt/porota-trading']
                 if operation in {'deploy', 'migrate'}:
@@ -204,7 +276,12 @@ def execute(operation, repository, release_dir=None, *, env=None):
                     raise HostFailure(str(exc), result) from exc
                 host_finished = True
                 result = decode_receipt(proc.stdout)
-                if operation in {'deploy', 'migrate'}:
+                if cold:
+                    try:
+                        validate_cold_receipt(result, operation, proc.returncode)
+                    except ValueError as exc:
+                        raise HostFailure(str(exc), result) from exc
+                elif operation in {'deploy', 'migrate'}:
                     try:
                         validate_runtime_receipt(result, release, proc.returncode)
                     except ValueError as exc:
@@ -226,13 +303,16 @@ def execute(operation, repository, release_dir=None, *, env=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('inspect', 'prepare', 'deploy', 'migrate'))
+    parser.add_argument('operation', choices=('inspect', 'prepare', 'deploy', 'migrate',
+                                              'cold_inspect', 'cold_recover', 'cold_resume'))
     parser.add_argument('--repository', type=Path, default=Path.cwd())
     parser.add_argument('--release-dir', type=Path)
+    parser.add_argument('--frozen-source', type=Path)
     parser.add_argument('--receipt', type=Path, required=True)
     args = parser.parse_args()
     try:
-        result = execute(args.operation, args.repository, args.release_dir)
+        result = execute(args.operation, args.repository, args.release_dir,
+                         frozen_source=args.frozen_source)
         code = 0
     except (ValueError, OSError, KeyError) as exc:
         # No raw command, connection value, credential or stderr is published.

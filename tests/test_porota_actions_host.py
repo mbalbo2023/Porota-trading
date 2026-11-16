@@ -119,6 +119,74 @@ class HostTransportTests(unittest.TestCase):
         self.assertEqual(caught.exception.receipt['failure_signature'], 'ROOTLESS_PACKAGES_REQUIRED')
         self.assertEqual(caught.exception.receipt['transfer_cleanup'], 'COMPLETE')
 
+    def test_cold_host_operation_requires_exact_deployed_source_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root/'scripts').mkdir()
+            for name in ('porota_rootless_host.py', 'rc6_cold2_successor.py',
+                         'rc6_cold2_quarantine.py'):
+                (root/'scripts'/name).write_text('# original frozen fixture\n')
+            with patch.object(host.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0,
+                    b'wrong-branch\n', b'')):
+                with self.assertRaisesRegex(ValueError, '^FROZEN_SOURCE_SHA_MISMATCH$'):
+                    host.verify_frozen_cold_source(root)
+
+    def test_cold_action_uses_private_stage_without_releasing_or_building_image(self):
+        commands = []
+        result = {'schema': 'rc6.rootless.cold-recovery.v1', 'operation': 'cold_inspect',
+                  'state': 'READ_ONLY_OBSERVED', 'controller_roles': 8, 'real_orders_sent': 0,
+                  'ppi_watch_touched': False, 'boca_touched': False,
+                  'mutations': 0, 'pack_content_hash_verified': True,
+                  'source_sha': '21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76'}
+        def remote(_connection, command, **kwargs):
+            commands.append(command)
+            if host.STAGE_CREATE in command:
+                self.assertIn('staging-only', command)
+                return subprocess.CompletedProcess([], 0,
+                    b'/home/porotaadmin/.local/state/porota-rc6/stage.A12bc\n', b'')
+            if host.STAGE_REMOVE in command:
+                return subprocess.CompletedProcess([], 0, b'', b'')
+            return subprocess.CompletedProcess([], 0, json.dumps(result).encode(), b'')
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)/'repo'
+            frozen = Path(temporary)/'frozen'
+            (repo/'scripts').mkdir(parents=True)
+            (frozen/'scripts').mkdir(parents=True)
+            (repo/'scripts'/'rc6_rootless_cold_recovery.py').write_text('# adapter\n')
+            for name in ('porota_rootless_host.py','rc6_cold2_successor.py','rc6_cold2_quarantine.py'):
+                (frozen/'scripts'/name).write_text('# pinned code\n')
+            with patch.object(host,'verify_frozen_cold_source'), \
+                 patch.object(host,'connection',return_value=nullcontext((['ssh'],['scp'],'user@host'))), \
+                 patch.object(host,'ssh_run',side_effect=remote), \
+                 patch.object(host.subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'',b'')):
+                received=host.execute('cold_inspect',repo,frozen_source=frozen)
+        self.assertEqual(received['state'],'READ_ONLY_OBSERVED')
+        self.assertTrue(any('rc6_rootless_cold_recovery.py' in ' '.join(c) for c in commands))
+
+    def test_cold_mutation_never_accepts_readonly_or_unverified_receipt(self):
+        base = {'schema': 'rc6.rootless.cold-recovery.v1', 'operation':'cold_recover',
+                'state':'COLD_ARCHIVE_COMPLETE','controller_roles':8,
+                'real_orders_sent':0,'ppi_watch_touched':False,'boca_touched':False,
+                'mutations':1,'source_sha':'21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76',
+                'archive_complete':True,'cold_queue_failed':False,'runtime_validated':True}
+        host.validate_cold_receipt(base,'cold_recover',0)
+        for invalid in ({'state':'READ_ONLY_OBSERVED'}, {'controller_roles':6},
+                        {'real_orders_sent':None}, {'cold_queue_failed':True},
+                        {'runtime_validated':False}, {'ppi_watch_touched':True},
+                        {'source_sha':'a'*40}, {'mutations':0}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                host.validate_cold_receipt({**base,**invalid},'cold_recover',0)
+
+    def test_disconnected_recovery_has_exact_cid_resume_operation(self):
+        receipt={'schema':'rc6.rootless.cold-recovery.v1','operation':'cold_resume',
+                 'state':'RUNTIME_RESTORED','controller_roles':8,'real_orders_sent':0,
+                 'ppi_watch_touched':False,'boca_touched':False,'runtime_validated':True,
+                 'restoration':'RESTORED_ORIGINAL_RUNTIME','source_sha':host.FROZEN_COLD_SHA}
+        host.validate_cold_receipt(receipt,'cold_resume',0)
+        for field in ('restoration','controller_roles','runtime_validated'):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                host.validate_cold_receipt({**receipt,field:None},'cold_resume',0)
+
 
 if __name__ == '__main__':
     unittest.main()
