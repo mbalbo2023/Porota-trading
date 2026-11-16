@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import json
 import os
@@ -35,6 +35,12 @@ FROZEN_CIDS = {
     'dashboard': '66775f99bf999b23e433f8930f1a041727002915cd43faf3eacf8e70e653943f',
 }
 RESERVE = 2 * 1024**3
+PPI_AUTH_SESSIONS = frozenset((
+    'CHECKING','BOOT_COMMAND','BOOT_CALENDAR','BOOT_PPI_SECRET','BOOT_PPI_CLIENT',
+    'BOOT_PPI_LOGIN','OPEN','MARKET_OPEN','CLOSED','MARKET_CLOSED','PREOPEN'))
+PPI_AUTH_BOOT_SESSIONS = frozenset((
+    'CHECKING','BOOT_COMMAND','BOOT_CALENDAR','BOOT_PPI_SECRET','BOOT_PPI_CLIENT','BOOT_PPI_LOGIN'))
+STOP_ACK = 'Observador detenido ordenadamente.'
 
 
 class ColdHold(ValueError):
@@ -46,7 +52,7 @@ def demand(condition, reason):
         raise ColdHold(reason)
 
 
-def flat_book(path, *, stopped=False, clean_exit=False):
+def flat_book(path, *, stopped=False, clean_exit=False, stopped_after=None):
     """Read the already-deployed SQLite PAPER book; never mutate the DB/WAL."""
     try:
         before = path.lstat()
@@ -56,30 +62,39 @@ def flat_book(path, *, stopped=False, clean_exit=False):
             db.execute('PRAGMA query_only=ON')
             db.execute('PRAGMA busy_timeout=1000')
             rows = db.execute('SELECT mode,real_orders_sent,process_state,session_state,'
-                              'heartbeat_at,ppi_auth,detail '
+                              'heartbeat_at,ppi_auth,detail,last_market_data_at '
                               'FROM observer_state WHERE id=1').fetchall()
             work = db.execute('SELECT dataset_id FROM paper_workspace WHERE id=1').fetchall()
             demand(len(rows) == len(work) == 1 and bool(work[0][0]), 'PAPER_DATABASE_IDENTITY')
-            mode, orders, process, session, heartbeat, ppi_auth, detail = rows[0]
+            mode, orders, process, session, heartbeat, ppi_auth, detail, last_market_data = rows[0]
             demand(mode == 'PRODUCTION_PAPER' and type(orders) is int and orders == 0,
                    'PAPER_ZERO_REQUIRED')
             if stopped:
-                demand(clean_exit is True and
-                       ((process == 'STOPPED' and session in
-                         {'OPEN','MARKET_OPEN','CLOSED','MARKET_CLOSED','PREOPEN'}) or
-                        (process in {'RUNNING','WAITING_MARKET','READY_PREOPEN','DEGRADED'} and
-                         session in {'OPEN','MARKET_OPEN','CLOSED','MARKET_CLOSED','PREOPEN'})),
+                # Pinned observer writes STOPPED + this exact acknowledgement
+                # WITHOUT changing the session; BOOT_CALENDAR survives STOP.
+                demand(clean_exit is True and process == 'STOPPED' and
+                       session in PPI_AUTH_SESSIONS and detail == STOP_ACK,
                        'PAPER_STOP_ACK_UNVERIFIED')
+                if session in PPI_AUTH_BOOT_SESSIONS or stopped_after is not None:
+                    try:
+                        stamp = datetime.fromisoformat(str(heartbeat).replace('Z','+00:00'))
+                        lag = (datetime.now(timezone.utc) - stamp).total_seconds()
+                        demand(isinstance(stopped_after,datetime) and
+                               stopped_after.tzinfo is not None and stamp.tzinfo is not None and
+                               stamp >= stopped_after and 0 <= lag <= 5400,
+                               'PAPER_STOP_ACK_UNVERIFIED')
+                    except (ValueError,TypeError) as exc:
+                        raise ColdHold('PAPER_STOP_ACK_UNVERIFIED') from exc
             else:
-                demand((process == 'RUNNING' and session == 'MARKET_OPEN') or
-                       (process == 'WAITING_MARKET' and session in {'CLOSED','MARKET_CLOSED'}) or
-                       (process == 'READY_PREOPEN' and session == 'PREOPEN') or
-                       (process == 'DEGRADED' and ppi_auth in {'ERROR','COOLDOWN'} and
-                        session in {'MARKET_OPEN','OPEN','CLOSED','MARKET_CLOSED','PREOPEN'} and
-                        isinstance(detail,str) and detail.startswith(
-                            ('Login fallo:','PPI en espera de reintento;',
-                             'Login local bloqueado por interlock'))),
-                       'PAPER_PROCESS_NOT_QUIESCIBLE')
+                healthy = ppi_auth == 'OK' and (
+                    (process == 'RUNNING' and session == 'MARKET_OPEN') or
+                    (process == 'WAITING_MARKET' and session in {'CLOSED','MARKET_CLOSED'}) or
+                    (process == 'READY_PREOPEN' and session == 'PREOPEN'))
+                degraded = process == 'DEGRADED' and ppi_auth in {'ERROR','COOLDOWN'} and \
+                    session in PPI_AUTH_SESSIONS and isinstance(detail,str) and detail.startswith(
+                        ('Login fallo:','PPI en espera de reintento;',
+                         'Login local bloqueado por interlock'))
+                demand(healthy or degraded,'PAPER_PROCESS_NOT_QUIESCIBLE')
                 try:
                     stamp = datetime.fromisoformat(str(heartbeat).replace('Z','+00:00'))
                     delta = (datetime.now(timezone.utc) - stamp).total_seconds()
@@ -87,6 +102,22 @@ def flat_book(path, *, stopped=False, clean_exit=False):
                            'PAPER_HEARTBEAT_UNVERIFIED')
                 except (ValueError, TypeError) as exc:
                     raise ColdHold('PAPER_HEARTBEAT_UNVERIFIED') from exc
+                if degraded:
+                    # Reuse the immutable deployed runtime classifier as an
+                    # independent authority for the PPI-only AMBER exception.
+                    from scripts import porota_rootless_host as frozen_host
+                    row = {'mode':mode,'real_orders_sent':orders,'process_state':process,
+                           'session_state':session,'ppi_auth':ppi_auth,'detail':detail,
+                           'heartbeat_at':heartbeat,'last_market_data_at':last_market_data}
+                    try:
+                        classified = frozen_host.classify_runtime(
+                            row,now=datetime.now(timezone.utc),
+                            started=datetime.now(timezone.utc)-timedelta(seconds=120))
+                    except (ValueError,RuntimeError,TypeError) as exc:
+                        raise ColdHold('PAPER_PROCESS_NOT_QUIESCIBLE') from exc
+                    demand(classified == {'status':'READY',
+                                          'source_alert':'AMBER_PPI_LOGIN_UNAVAILABLE'},
+                           'PAPER_PROCESS_NOT_QUIESCIBLE')
             # The original deployed engine treats EVERY non-terminal status as
             # exposure; testing only status='OPEN' falsely admitted EXIT_PENDING.
             demand(db.execute("SELECT 1 FROM paper_positions "
@@ -119,7 +150,7 @@ def flat_book(path, *, stopped=False, clean_exit=False):
         demand((before.st_dev, before.st_ino) == (after.st_dev, after.st_ino),
                'PAPER_DATABASE_CHANGED')
         return {'state': 'PAPER_FLAT', 'mode': mode, 'real_orders_sent': orders,
-                'process': process, 'session': session,
+                'process': process, 'session': session, 'ppi_auth':ppi_auth,
                 'identity': [before.st_dev, before.st_ino]}
     except (OSError, sqlite3.Error, TypeError, IndexError) as exc:
         raise ColdHold('PAPER_DATABASE_UNVERIFIED') from exc
@@ -269,7 +300,7 @@ def arm_stop_witness(state, roles, operator_hash):
     return token
 
 
-def verify_stop_witness(state, roles, operator_hash):
+def verify_stop_witness(state, roles, operator_hash, *, with_receipt=False):
     """An independent resume is permitted ONLY for a recent OWNED COLD stop."""
     import time
     directory = _state_descriptor(state)
@@ -286,7 +317,7 @@ def verify_stop_witness(state, roles, operator_hash):
     stamp = data.get('created_at')
     demand(type(stamp) in (int,float) and 0 <= time.time()-stamp <= 5400,
            'COLD_STOP_WITNESS_STALE')
-    return data['nonce']
+    return data if with_receipt else data['nonce']
 
 
 def clear_stop_witness(state,token):
@@ -455,7 +486,7 @@ def read_shadow_status(root):
 
 
 def stopped_admission(host_module, host, current, lock_held, *, expected_database=None,
-                      expected_operator=None):
+                      expected_operator=None, stopped_after=None):
     """Recheck Docker source/CIDs + flat DB after stop at EACH archive boundary."""
     demand(lock_held is True, 'ROOTLESS_LOCK_REQUIRED')
     host.boundary()
@@ -469,7 +500,7 @@ def stopped_admission(host_module, host, current, lock_held, *, expected_databas
                item.get('State',{}).get('ExitCode') == 0 for item in pair.values())
     demand(stopped, 'ROOTLESS_PAIR_NOT_CLEANLY_STOPPED')
     book = flat_book(host.root / host_module.DB_RELATIVE,
-                     stopped=True, clean_exit=stopped)
+                     stopped=True, clean_exit=stopped, stopped_after=stopped_after)
     if expected_database is not None:
         demand(book['identity'] == expected_database, 'PAPER_DATABASE_CHANGED')
     status = read_shadow_status(host.root)
@@ -542,13 +573,16 @@ def resume_only(host_module, host):
         roles = {role:host.check_role(current,role) for role in ('observer','dashboard')}
         policy = restart_policy_witness(roles)
         operator = operator_state_witness(identity.operator)
-        stop_token = verify_stop_witness(identity.state,current['roles'],operator)
+        stop_receipt = verify_stop_witness(identity.state,current['roles'],operator,
+                                            with_receipt=True)
+        stop_token = stop_receipt['nonce']
         critical_broker_proof()
         observer = roles['observer'].get('State',{})
         if observer.get('Running') is False:
             demand(observer.get('ExitCode') == 0 and observer.get('Pid') == 0 and
                    observer.get('OOMKilled') is False, 'RUNTIME_UNSAFE_TO_RESUME')
-            flat_book(host.root/host_module.DB_RELATIVE,stopped=True,clean_exit=True)
+            flat_book(host.root/host_module.DB_RELATIVE,stopped=True,clean_exit=True,
+                      stopped_after=datetime.fromtimestamp(stop_receipt['created_at'],timezone.utc))
         else:
             demand(observer.get('Running') is True, 'RUNTIME_UNSAFE_TO_RESUME')
             flat_book(host.root/host_module.DB_RELATIVE)
@@ -646,12 +680,14 @@ def operate(operation, root):
                 cid = current['roles'][role]
                 host.docker.call('container','stop','--time','65',cid,timeout=95)
             stopped_admission(host_module, host, current, True,
-                              expected_database=book['identity'], expected_operator=operator)
+                              expected_database=book['identity'], expected_operator=operator,
+                              stopped_after=started)
             # The successor's archive algorithm and all its fsync boundaries
             # are preserved, under a typed rootless revalidation callback.
             result = quarantine_existing(successor, root,
                 lambda: stopped_admission(host_module, host, current, True,
-                    expected_database=book['identity'], expected_operator=operator),
+                    expected_database=book['identity'], expected_operator=operator,
+                    stopped_after=started),
                 dict(current['roles']))
             end = successor.inspect(root, hash_pack=True)
             demand(end['archive_complete'] is True and end['queue_failed'] is False,
