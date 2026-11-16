@@ -858,5 +858,160 @@ class LegacyTransitionTests(unittest.TestCase):
             setup.LegacyTransition(self.root, self.source, run=denied)
 
 
+class Preopen79DiagnosticTests(unittest.TestCase):
+    """The inspect receipt must expose a cause, never raw journal content."""
+
+    UNIT = "porota-preopen-rc6.service"
+    START = datetime(2026, 11, 16, 13, 20, 24, tzinfo=timezone.utc)
+    INVOCATION = "a" * 32
+
+    def journal_row(self, signature="SCHEDULER_HOST_JOB_FAILED", **override):
+        event = {
+            "_SYSTEMD_UNIT": self.UNIT,
+            "_SYSTEMD_INVOCATION_ID": self.INVOCATION,
+            "__REALTIME_TIMESTAMP": str(int(self.START.timestamp() * 1_000_000) + 500000),
+            "MESSAGE": json.dumps({"schema": "porota.rootless.job.v1", "state": "BLOQUEADO",
+                                   "failure_signature": signature, "private": "TOKEN=never-export"}),
+        }
+        event.update(override)
+        return json.dumps(event)
+
+    def run_probe(self, *, journal=None, status=79, invocation=None, changed=False,
+                  journal_rc=0, journal_timeout=False):
+        calls = []
+        show_count = 0
+        if journal is None:
+            journal = self.journal_row()
+        def runner(command, **kwargs):
+            nonlocal show_count
+            calls.append(tuple(command))
+            if command[0] == setup.SYSTEMCTL and command[1] == "show":
+                show_count += 1
+                code = (0 if changed and show_count > 1 else status)
+                fields = (
+                    f"Id={self.UNIT}\nResult=exit-code\nExecMainStatus={code}\n"
+                    f"FragmentPath=/etc/systemd/system/{self.UNIT}\n"
+                    "ExecMainStartTimestamp=Mon 2026-11-16 13:20:24 UTC\n"
+                    "ExecMainExitTimestamp=Mon 2026-11-16 13:20:25 UTC\n"
+                    f"InvocationID={self.INVOCATION if invocation is None else invocation}\n")
+                return subprocess.CompletedProcess(command, 0, fields, "SECRET=not-exported")
+            if len(command) > 3 and command[3] == "/usr/bin/journalctl":
+                if journal_timeout:
+                    raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+                return subprocess.CompletedProcess(command, journal_rc, journal, "TOKEN=not-exported")
+            raise AssertionError(command)
+        return runner, calls
+
+    def test_exposes_single_typed_79_signature_without_journal_or_environment(self):
+        runner, calls = self.run_probe()
+        receipt = setup.preopen_79_diagnostic(run=runner)
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["failure_signature"], "SCHEDULER_HOST_JOB_FAILED")
+        self.assertEqual(receipt["subcheck"], "NO_VERIFICADO")
+        self.assertEqual(receipt["event_start_utc"], "2026-11-16T13:20:24Z")
+        self.assertNotIn("never-export", json.dumps(receipt))
+        self.assertEqual(len([c for c in calls if c[0] == setup.SYSTEMCTL]), 2)
+        journal = next(c for c in calls if len(c) > 3 and c[3] == "/usr/bin/journalctl")
+        self.assertIn("_SYSTEMD_UNIT=" + self.UNIT, journal)
+        self.assertNotIn("--unit", journal)
+        self.assertIn("--lines=16", journal)
+        self.assertIn("--since=2026-11-16 13:20:22 UTC", journal)
+        self.assertFalse(any(set(c) & {"start", "stop", "restart", "enable", "disable"} for c in calls))
+
+    def test_skips_systemd_manager_messages_but_not_other_unit_job_events(self):
+        manager = json.dumps({"__REALTIME_TIMESTAMP": str(int(self.START.timestamp() * 1e6)),
+                              "MESSAGE": "Started porota-preopen-rc6.service private=do-not-export"})
+        runner, _ = self.run_probe(journal=manager + "\n" + self.journal_row() + "\n" + manager)
+        receipt = setup.preopen_79_diagnostic(run=runner)
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["failure_signature"], "SCHEDULER_HOST_JOB_FAILED")
+        self.assertNotIn("do-not-export", json.dumps(receipt))
+
+    def test_custody_hold_codes_from_deployed_dispatcher_are_preserved(self):
+        for code in ("DATABASE_REQUIRED", "PAPER_DATABASE_UNREADABLE",
+                     "DATABASE_REPLACED", "REQUIRED_FILE_UNREADABLE",
+                     "DEDICATED_DOCKER_STORE_REQUIRED", "PATH_ALIAS"):
+            with self.subTest(code=code):
+                runner, _ = self.run_probe(journal=self.journal_row(code))
+                receipt = setup.preopen_79_diagnostic(run=runner)
+                self.assertEqual(receipt["failure_signature"], code)
+
+    def test_rejects_other_units_and_invocations(self):
+        for event in (
+            self.journal_row(**{"_SYSTEMD_UNIT": "boca-worker.service"}),
+            self.journal_row(**{"_SYSTEMD_INVOCATION_ID": "b" * 32}),
+        ):
+            with self.subTest(event=event[:45]):
+                runner, _ = self.run_probe(journal=event)
+                self.assertEqual(setup.preopen_79_diagnostic(run=runner)["status"], "NO_VERIFICADO")
+
+    def test_rejects_conflicting_multiple_invalid_or_large_records(self):
+        for journal in (
+            self.journal_row() + "\n" + self.journal_row("SCHEDULER_LAUNCHER_CUSTODY"),
+            self.journal_row() + "\n" + self.journal_row(),
+            self.journal_row("UNRECOGNIZED_PRIVATE_REASON"),
+            self.journal_row() + "x" * 65000,
+            self.journal_row(**{"__REALTIME_TIMESTAMP": str(int(self.START.timestamp() * 1e6) + 200_000_000)}),
+            self.journal_row()[:-1] + ',"MESSAGE":"forged"}',
+        ):
+            with self.subTest(size=len(journal)):
+                runner, _ = self.run_probe(journal=journal)
+                self.assertEqual(setup.preopen_79_diagnostic(run=runner)["status"], "NO_VERIFICADO")
+
+    def test_failed_permission_non79_or_unit_race_stay_unverified(self):
+        for options in ({"journal_rc": 1}, {"journal_timeout": True},
+                        {"status": 0}, {"changed": True},
+                        {"invocation": "not-an-invocation"}, {"journal": ""}):
+            with self.subTest(options=options):
+                runner, calls = self.run_probe(**options)
+                receipt = setup.preopen_79_diagnostic(run=runner)
+                self.assertEqual(receipt["status"], "NO_VERIFICADO")
+                self.assertNotIn("never-export", json.dumps(receipt))
+                if options.get("status") == 0:
+                    self.assertFalse(any(len(c) > 3 and c[3] == "/usr/bin/journalctl" for c in calls))
+
+    def test_unverified_diagnosis_explains_which_evidence_stage_failed(self):
+        for options, expected in (
+            ({"invocation": ""}, "UNIT_RESULT_OR_INVOCATION_UNVERIFIED"),
+            ({"journal_rc": 1}, "JOURNAL_QUERY_UNAVAILABLE"),
+            ({"journal": ""}, "NO_TYPED_JOB_RECEIPT"),
+            ({"changed": True}, "UNIT_CHANGED_DURING_INSPECT"),
+        ):
+            with self.subTest(options=options):
+                runner, _ = self.run_probe(**options)
+                receipt = setup.preopen_79_diagnostic(run=runner)
+                self.assertEqual(receipt["reason"], expected)
+
+    def test_preopen_is_included_in_existing_hashed_unit_allowlist(self):
+        self.assertIn(self.UNIT, setup.INSPECT_UNITS)
+
+    def test_preopen_installed_unit_exports_only_fragment_and_command_digests(self):
+        path = "/etc/systemd/system/" + self.UNIT
+        raw = [{"path": path, "status": "OBSERVED", "sha256": "a" * 64,
+                "environment_names": ["PRIVATE_KEY"],
+                "directives": [{"name": "ExecStart", "sha256": "b" * 64,
+                                "tokens": [{"path": "/private/never-export"}]}]}]
+        inventory = {"units": [{"name": self.UNIT, "FragmentPath": path, "DropInPaths": ""}]}
+        def fake(command, **kwargs):
+            self.assertEqual(command[0:4], ("/usr/bin/sudo", "-n", "--", "/usr/bin/python3"))
+            return subprocess.CompletedProcess(command, 0, json.dumps(raw), "")
+        result = setup.detailed_units(inventory, run=fake)
+        self.assertEqual(result["files"], [{"path": path, "status": "OBSERVED",
+                                            "sha256": "a" * 64, "execstart_sha256": ["b" * 64]}])
+        self.assertNotIn("never-export", json.dumps(result))
+
+    def test_existing_inspect_receipt_carries_only_sanitized_diagnosis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sentinel = {"status": "OBSERVED", "failure_signature": "SCHEDULER_LAUNCHER_CUSTODY",
+                        "subcheck": "NO_VERIFICADO", "read_only": True}
+            with patch.object(setup, "preopen_79_diagnostic", return_value=sentinel):
+                def unavailable(command, **kwargs):
+                    return subprocess.CompletedProcess(command, 1, "", "SECRET=never-include")
+                result = setup.inspect_host(Path(directory), run=unavailable)
+        self.assertEqual(result["preopen_79"], sentinel)
+        self.assertEqual(result["host_mutations"], 0)
+        self.assertNotIn("never-include", json.dumps(result))
+
+
 if __name__ == "__main__":
     unittest.main()
