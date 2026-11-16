@@ -32,6 +32,23 @@ SEVERITY = {"GREEN": 0, "P2": 1, "P1": 2, "P0": 3}
 # Product runtime is exactly the two roles in the private rootless release.
 # The separately owned legacy critical-approval broker is not a third role.
 CONTAINERS = ("observer", "dashboard")
+# Never publish exception messages, Docker stderr, paths or container env.
+# Only literal codes raised by this independent READ_ONLY verifier may cross
+# the Actions evidence boundary; everything else collapses to one safe code.
+ROOTLESS_SAFE_REASONS = frozenset({
+    "ROOTLESS_SSH_IDENTITY_REQUIRED", "ROOTLESS_PRIVATE_HOME_UNVERIFIED",
+    "ROOTLESS_RELEASE_CUSTODY", "ROOTLESS_CURRENT_CUSTODY",
+    "ROOTLESS_CURRENT_OVERSIZE", "ROOTLESS_CURRENT_RELEASE_UNVERIFIED",
+    "ROOTLESS_SOCKET_PATH_CHANGED", "ROOTLESS_SOCKET_CUSTODY",
+    "ROOTLESS_DOCKER_SCOPE_UNVERIFIED", "ROOTLESS_DOCKER_OUTPUT_UNVERIFIED",
+    "ROOTLESS_DOCKER_JSON_UNVERIFIED", "ROOTLESS_DAEMON_CHANGED",
+    "ROOTLESS_CONTAINER_INSPECT_UNVERIFIED", "ROOTLESS_EXACT_CONTAINER_UNVERIFIED",
+    "ROOTLESS_CONTAINER_IDENTITY_CHANGED", "ROOTLESS_CONTAINER_COMMAND_CHANGED",
+    "ROOTLESS_ENV_UNVERIFIED", "ROOTLESS_PAPER_CONFIG_CHANGED",
+    "ROOTLESS_CONTAINER_ISOLATION_CHANGED", "ROOTLESS_CONTAINER_MOUNTS_CHANGED",
+    "ROOTLESS_CONTAINER_PORTS_CHANGED", "ROOTLESS_CONTAINER_OOM",
+    "ROOTLESS_CURRENT_CHANGED_DURING_READ",
+})
 TRACKED = ("paper_decisions", "trade_gate_evaluations", "paper_fills",
            "paper_events", "market_snapshots", "scalping_candidates")
 MAX_JSON_BYTES = 1024 * 1024
@@ -523,7 +540,12 @@ def _rootless_context(*, runner=None):
         raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
     for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
-        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+        # Product Host.boundary/private_dir pins the account home and private
+        # state, not the owner of pre-existing non-writable ancestors. Root-
+        # owned .local and .local/state are safe when they cannot be replaced.
+        allowed_owner = (meta.st_uid == uid if directory in (home, state)
+                         else meta.st_uid in (0, uid))
+        if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or not allowed_owner or
                 stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
             raise ValueError("ROOTLESS_RELEASE_CUSTODY")
     identity = SimpleNamespace(
@@ -579,13 +601,15 @@ def _rootless_context(*, runner=None):
                            current=current, roles=roles, items=items)
 
 
-def _docker_inspect():
+def _docker_inspect(*, diagnostics=None):
     try:
         context = _rootless_context()
         parsed = {}
         for role in CONTAINERS:
             item = context.items[role]
             if item.get("Id") != context.roles[role]:
+                if diagnostics is not None:
+                    diagnostics.append("ROOTLESS_EXACT_CONTAINER_UNVERIFIED")
                 return None
             state = item.get("State") or {}
             parsed[role] = {
@@ -598,7 +622,11 @@ def _docker_inspect():
             }
         return parsed if set(parsed) == set(CONTAINERS) else None
     except (KeyError, TypeError, ValueError, RuntimeError, OSError,
-            subprocess.TimeoutExpired):
+            subprocess.TimeoutExpired) as exc:
+        if diagnostics is not None:
+            code = str(exc) if type(exc) is ValueError else ""
+            diagnostics.append(code if code in ROOTLESS_SAFE_REASONS
+                               else "ROOTLESS_UNCLASSIFIED")
         return None
 
 
@@ -935,7 +963,11 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
         "image_id", "validation_status", "mode",
         "real_orders_sent", "real_order_routes")} if provenance else {}
     result["expected_product_tree"] = expected_tree_sha
-    containers = _docker_inspect() if inspect is None else inspect
+    rootless_diagnostics = []
+    containers = (_docker_inspect(diagnostics=rootless_diagnostics)
+                  if inspect is None else inspect)
+    result["rootless_probe_reason"] = (rootless_diagnostics[0] if rootless_diagnostics
+                                        else "OK" if containers else "ROOTLESS_UNCLASSIFIED")
     rootless = bool(provenance and provenance.get("deployment_backend") == "ROOTLESS_SPLIT")
     result["observed_candidate_sha"] = provenance.get("candidate_sha") if rootless else None
     if rootless:
@@ -948,10 +980,11 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
             provenance_identity = "PRODUCT_TREE_NOT_PROVIDED"
         elif not isinstance(tree, str) or tree != expected_tree_sha:
             provenance_identity = "PRODUCT_TREE_MISMATCH"
+        elif (not isinstance(containers, dict) or
+              any(not isinstance(containers.get(role), dict) for role in CONTAINERS)):
+            provenance_identity = "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE"
         elif (not isinstance(marker_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", marker_sha)
-              or not isinstance(containers, dict)
-              or any(not isinstance(containers.get(role), dict) or
-                     containers[role].get("source_sha") != marker_sha or
+              or any(containers[role].get("source_sha") != marker_sha or
                      containers[role].get("source_tree") != tree for role in CONTAINERS)):
             provenance_identity = "PRIVATE_RELEASE_SOURCE_MISMATCH"
         else:
@@ -961,13 +994,18 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
         source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
         provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
     result["provenance_identity"] = provenance_identity
-    if (not provenance or not source_match or
-            provenance.get("mode") != "PRODUCTION_PAPER" or
-            provenance.get("validation_status") != "VALIDATED_RUNTIME" or
-            type(provenance.get("real_orders_sent")) is not int or
-            provenance["real_orders_sent"] != 0 or
-            provenance.get("real_order_routes") != "NOT_CALLED"):
+    provenance_fields_valid = bool(
+        provenance and provenance.get("mode") == "PRODUCTION_PAPER" and
+        provenance.get("validation_status") == "VALIDATED_RUNTIME" and
+        type(provenance.get("real_orders_sent")) is int and
+        provenance["real_orders_sent"] == 0 and
+        provenance.get("real_order_routes") == "NOT_CALLED")
+    if not provenance_fields_valid:
         add("DEPLOY_PROVENANCE_INVALID", "P0")
+    elif not source_match:
+        add("DEPLOY_PROVENANCE_UNVERIFIED" if
+            provenance_identity == "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE"
+            else "DEPLOY_PROVENANCE_INVALID", "P0")
 
     result["containers"] = containers or {}
     result["host_control_state"] = _host_control_state()
@@ -1036,7 +1074,8 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
         module = shadow.get("error_module")
         if isinstance(module, str) and module in {"runtime", "worker", "preopen", "promotion",
                 "stages", "families", "lab", "entry_signals", "funnel", "source_reads",
-                "read_contract", "persistence", "snapshot", "common", "live"}:
+                "read_contract", "persistence", "snapshot", "common", "live",
+                "cold_audit"}:
             result["shadow"]["error_module"] = module
         if (shadow.get("status") == "FAIL_CLOSED" and
                 shadow.get("error_class") == "EvidencePayloadLimit"):

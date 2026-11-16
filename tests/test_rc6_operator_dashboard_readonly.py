@@ -169,6 +169,7 @@ class ProductRootlessContextTests(TestCase):
     self.calls = []
     self.socket_mode = 0o660  # Physical private rootless socket: UID1000, mode 0660.
     self.socket_owner = 1000
+    self.intermediate_owner = 1000
     self.original_lstat = Path.lstat
     self.original_fstat = os.fstat
 
@@ -183,7 +184,9 @@ class ProductRootlessContextTests(TestCase):
     if Path(path) == self.socket.parent:
         return SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000, st_nlink=1, st_size=0)
     row = self.original_lstat(path)
-    return SimpleNamespace(st_mode=row.st_mode, st_uid=1000, st_nlink=row.st_nlink, st_size=row.st_size)
+    uid = (self.intermediate_owner if Path(path) in
+           {self.home / ".local", self.home / ".local/state"} else 1000)
+    return SimpleNamespace(st_mode=row.st_mode, st_uid=uid, st_nlink=row.st_nlink, st_size=row.st_size)
 
  def fstat(self, fd):
     row = self.original_fstat(fd)
@@ -254,6 +257,21 @@ class ProductRootlessContextTests(TestCase):
                      {("info", "--format"), ("container", "inspect")})
     self.assertEqual(len(self.calls), 3)
     self.assertNotIn("never-print-secret", repr(context))
+
+ def test_root_owned_intermediate_parents_allowed_but_foreign_owner_rejected(self):
+    self.intermediate_owner = 0
+    self.assertEqual(self.context().roles, self.cids)
+    self.intermediate_owner = 1002
+    with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+        self.context()
+
+ def test_dashboard_rootless_failure_receipt_never_exports_raw_error(self):
+    for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"), "ROOTLESS_RELEASE_CUSTODY"),
+                            (ValueError("token=never-print-secret"), "ROOTLESS_UNCLASSIFIED")):
+        with self.subTest(expected=expected), patch.object(operator, "_rootless_context", side_effect=error):
+            record = operator.audit_host()
+            self.assertEqual(record["rootless_probe_reason"], expected)
+            self.assertNotIn("never-print-secret", json.dumps(record))
 
  def test_duplicate_cid_fails_before_docker_inspect(self):
     self.current["roles"] = {"observer": self.cids["observer"], "dashboard": self.cids["observer"]}

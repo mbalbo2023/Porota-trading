@@ -148,6 +148,15 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(drift))
         self.assertEqual(drift["provenance_identity"], "PRIVATE_RELEASE_SOURCE_MISMATCH")
 
+        # Missing private Docker evidence is not proof of a source mismatch.
+        # Keep a preventive P0 while attributing its uncertainty honestly.
+        self.inspect = {}
+        unavailable = self.capture(expected_tree_sha="e" * 40)
+        self.assertEqual(unavailable["provenance_identity"], "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE")
+        self.assertIn("CONTAINER_OR_IMAGE_UNVERIFIED", self.codes(unavailable, "P0"))
+        self.assertIn("DEPLOY_PROVENANCE_UNVERIFIED", self.codes(unavailable, "P0"))
+        self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(unavailable))
+
     def test_private_rootless_inspection_carries_exact_source_provenance(self):
         cid = "1" * 64
         info = {"Id": cid, "Image": IMAGE, "State": {"Status": "running"}}
@@ -312,6 +321,46 @@ class MonitorContracts(unittest.TestCase):
             marker.symlink_to(self.provenance_path)
             with self.assertRaises(ValueError):
                 monitor._rootless_context(runner=runner)
+
+    def test_root_owned_nonwritable_parent_directories_follow_product_contract(self):
+        home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
+        real_lstat, real_fstat = Path.lstat, monitor.os.fstat
+        intermediates = {home / ".local", home / ".local/state"}
+        def owner(meta, uid):
+            values = list(meta)
+            values[4] = uid
+            return monitor.os.stat_result(values)
+        for intermediate_uid, expected in ((0, True), (1002, False)):
+            with self.subTest(intermediate_uid=intermediate_uid):
+                def lstat(path):
+                    return owner(real_lstat(path),
+                                 intermediate_uid if Path(path) in intermediates else 1000)
+                with patch.object(monitor.pwd, "getpwuid", return_value=account), \
+                        patch.object(monitor.os, "getuid", return_value=1000), \
+                        patch.object(monitor.os, "geteuid", return_value=1000), \
+                        patch.object(monitor.os, "getgid", return_value=1000), \
+                        patch.object(monitor.os, "getegid", return_value=1000), \
+                        patch.object(Path, "lstat", lstat), \
+                        patch.object(monitor.os, "fstat", side_effect=lambda fd: owner(real_fstat(fd), 1000)), \
+                        patch.object(monitor, "_verify_rootless_socket", return_value=None):
+                    if expected:
+                        self.assertEqual(monitor._rootless_context(runner=runner).roles, current["roles"])
+                    else:
+                        with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+                            monitor._rootless_context(runner=runner)
+
+    def test_rootless_failure_receipt_is_bounded_and_never_exports_secret(self):
+        for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"),
+                                 "ROOTLESS_RELEASE_CUSTODY"),
+                                (ValueError("private-token=do-not-export"),
+                                 "ROOTLESS_UNCLASSIFIED"),
+                                (OSError("private-token=do-not-export"),
+                                 "ROOTLESS_UNCLASSIFIED")):
+            with self.subTest(expected=expected), patch.object(monitor, "_rootless_context", side_effect=error):
+                diagnostic = []
+                self.assertIsNone(monitor._docker_inspect(diagnostics=diagnostic))
+                self.assertEqual(diagnostic, [expected])
+                self.assertNotIn("private-token", repr(diagnostic))
 
     def test_private_socket_0660_allowed_but_world_access_never_allowed(self):
         socket = Path("/run/user/1000/porota-rc6-docker.sock")
@@ -539,6 +588,17 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn("DYNAMIC_SHADOW_FAIL_CLOSED", self.codes(record, "P1"))
 
         payload["error_module"] = "stages/private-token"
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        self.assertNotIn("error_module", self.capture()["shadow"])
+
+        payload.update(error_module="cold_audit", error_line=595)
+        self.shadow_path.write_text(json.dumps({
+            "payload": payload, "digest": monitor.canonical_digest(payload)}))
+        observed = self.capture()["shadow"]
+        self.assertEqual(observed["error_module"], "cold_audit")
+        self.assertEqual(observed["error_line"], 595)
+        payload["error_module"] = "cold_audit/private-token"
         self.shadow_path.write_text(json.dumps({
             "payload": payload, "digest": monitor.canonical_digest(payload)}))
         self.assertNotIn("error_module", self.capture()["shadow"])
