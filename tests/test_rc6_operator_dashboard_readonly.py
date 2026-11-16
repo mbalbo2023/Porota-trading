@@ -212,6 +212,9 @@ class ProductRootlessContextTests(TestCase):
                 "CapDrop": ["ALL"], "CapAdd": [], "SecurityOpt": ["no-new-privileges:true"],
                 "NetworkMode": "porota-rc6-private", "PidMode": "",
                 "Memory": 1024 ** 3, "NanoCpus": 10 ** 9, "PidsLimit": 256,
+                "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=128m",
+                          "/home/botuser/.cache": "rw,noexec,nosuid,size=64m",
+                          "/home/botuser/.config": "rw,noexec,nosuid,size=16m"},
                 "PortBindings": ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                                  if role == "dashboard" else {})},
             "Mounts": [{"Type": "bind", "Destination": "/app/data",
@@ -220,12 +223,14 @@ class ProductRootlessContextTests(TestCase):
                          "Source": str(self.home / ".config/porota-rc6/operator"), "RW": False}]
                       + ([{"Type": "bind", "Destination": "/run/secrets/ppi_production.json",
                            "Source": "/opt/porota-trading/.secrets/ppi_production.json", "RW": False}]
-                         if role == "observer" else []),
+                         if role == "observer" else []) +
+                      [{"Type": "tmpfs", "Destination": destination, "RW": True}
+                       for destination in ("/tmp", "/home/botuser/.cache", "/home/botuser/.config")],
             "Config": {"Labels": {"io.porota.project": "rc6", "io.porota.role": role,
                        "io.porota.attempt": "43758003307-1", "private": "never-print-secret"},
                        "Image": self.image, "User": "0:0", "WorkingDir": "/app",
                        "Entrypoint": None,
-                       "Cmd": ["python", "bf_production_paper_observer.py" if role == "observer" else "o_dashboard.py"],
+                       "Cmd": ["python", "bv_paper_runtime.py" if role == "observer" else "o_dashboard.py"],
                        "Env": ["POROTA_BUILD_SHA=" + self.source_sha,
                                "POROTA_CANDIDATE_TREE_SHA=" + self.tree_sha,
                                "PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db",
@@ -307,6 +312,7 @@ class ProductRootlessContextTests(TestCase):
 
  def test_dashboard_rootless_failure_receipt_never_exports_raw_error(self):
     for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"), "ROOTLESS_RELEASE_CUSTODY"),
+                            (ValueError("ROOTLESS_ROLE_TMPFS_CHANGED"), "ROOTLESS_ROLE_TMPFS_CHANGED"),
                             (ValueError("token=never-print-secret"), "ROOTLESS_UNCLASSIFIED")):
         with self.subTest(expected=expected), patch.object(operator, "_rootless_context", side_effect=error):
             record = operator.audit_host()
@@ -336,7 +342,7 @@ class ProductRootlessContextTests(TestCase):
             if tuple(command)[3:5] == ("container", "inspect") and command[5] == self.cids["observer"]:
                 payload = json.loads(response.stdout)
                 if change == "Image": payload[0]["Config"]["Image"] = "sha256:" + "d" * 64
-                if change == "Cmd": payload[0]["Config"]["Cmd"] = ["python", "bv_paper_runtime.py"]
+                if change == "Cmd": payload[0]["Config"]["Cmd"] = ["python", "bf_production_paper_observer.py"]
                 if change == "POROTA_BUILD_SHA":
                     payload[0]["Config"]["Env"][0] = "POROTA_BUILD_SHA=" + "d" * 40
                 if change == "REAL_ORDER_CAPABILITY":
@@ -374,7 +380,8 @@ class ProductRootlessContextTests(TestCase):
                 if change == "NanoCpus": host["NanoCpus"] = 0
                 if change == "PidsLimit": host["PidsLimit"] = 0
                 if change == "Mounts" and role == "observer":
-                    row["Mounts"][-1]["RW"] = True
+                    next(m for m in row["Mounts"]
+                         if m["Destination"] == "/run/secrets/ppi_production.json")["RW"] = True
                 if change == "PortBindings" and role == "dashboard":
                     host["PortBindings"]["8000/tcp"][0]["HostIp"] = "0.0.0.0"
                 response.stdout = json.dumps(payload)
@@ -383,6 +390,44 @@ class ProductRootlessContextTests(TestCase):
             self.run_command = tampered
             try:
                 with self.assertRaises(ValueError): self.context()
+            finally:
+                self.run_command = original
+
+ def test_rootless_product_tmpfs_contract_accepts_binds_only_and_rejects_drift(self):
+    original = self.run_command
+    for change in ("binds_only", "extra_bind", "unknown_tmpfs", "missing_tmpfs",
+                   "unsafe_exec", "wrong_size", "additional_tmpfs_key"):
+        self.calls.clear()
+        def amended(command, **kwargs):
+            response = original(command, **kwargs)
+            if tuple(command)[3:5] == ("container", "inspect"):
+                payload = json.loads(response.stdout)
+                item = payload[0]
+                if change == "binds_only":
+                    item["Mounts"] = [m for m in item["Mounts"] if m["Type"] == "bind"]
+                elif change == "extra_bind":
+                    item["Mounts"].append({"Type": "bind", "Destination": "/extra",
+                                           "Source": "/extra", "RW": False})
+                elif change == "unknown_tmpfs":
+                    item["Mounts"].append({"Type": "tmpfs", "Destination": "/not-authorized",
+                                           "RW": True})
+                elif change == "missing_tmpfs":
+                    del item["HostConfig"]["Tmpfs"]["/tmp"]
+                elif change == "unsafe_exec":
+                    item["HostConfig"]["Tmpfs"]["/tmp"] = "rw,exec,nosuid,size=128m"
+                elif change == "wrong_size":
+                    item["HostConfig"]["Tmpfs"]["/tmp"] = "rw,noexec,nosuid,size=256m"
+                elif change == "additional_tmpfs_key":
+                    item["HostConfig"]["Tmpfs"]["/other"] = "rw,noexec,nosuid,size=8m"
+                response.stdout = json.dumps(payload)
+            return response
+        with self.subTest(change=change):
+            self.run_command = amended
+            try:
+                if change == "binds_only":
+                    self.assertEqual(self.context().roles, self.cids)
+                else:
+                    with self.assertRaises(ValueError): self.context()
             finally:
                 self.run_command = original
 

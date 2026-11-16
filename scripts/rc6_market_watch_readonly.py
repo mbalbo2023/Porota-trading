@@ -46,6 +46,7 @@ ROOTLESS_SAFE_REASONS = frozenset({
     "ROOTLESS_CONTAINER_IDENTITY_CHANGED", "ROOTLESS_CONTAINER_COMMAND_CHANGED",
     "ROOTLESS_ENV_UNVERIFIED", "ROOTLESS_PAPER_CONFIG_CHANGED",
     "ROOTLESS_CONTAINER_ISOLATION_CHANGED", "ROOTLESS_CONTAINER_MOUNTS_CHANGED",
+    "ROOTLESS_CONTAINER_TMPFS_CHANGED",
     "ROOTLESS_CONTAINER_PORTS_CHANGED", "ROOTLESS_CONTAINER_OOM",
     "ROOTLESS_CURRENT_CHANGED_DURING_READ",
 })
@@ -503,7 +504,7 @@ def _verify_rootless_item(item, *, cid, role, current, identity):
     if (config.get("User") != "0:0" or config.get("Entrypoint") or
             config.get("WorkingDir") != "/app" or
             config.get("Cmd") != ["python", "o_dashboard.py" if role == "dashboard"
-                                   else "bf_production_paper_observer.py"]):
+                                   else "bv_paper_runtime.py"]):
         raise ValueError("ROOTLESS_CONTAINER_COMMAND_CHANGED")
     lines = config.get("Env")
     if not isinstance(lines, list) or any(not isinstance(line, str) for line in lines):
@@ -550,12 +551,32 @@ def _verify_rootless_item(item, *, cid, role, current, identity):
     if role == "observer":
         expected_mounts["/run/secrets/ppi_production.json"] = (
             str(ROOT / ".secrets/ppi_production.json"), False)
-    if (not isinstance(mounts, list) or len(mounts) != len(expected_mounts) or
-            any(not isinstance(mount, dict) or mount.get("Type") != "bind" or
-                mount.get("Destination") not in expected_mounts or
-                (mount.get("Source"), mount.get("RW")) != expected_mounts[mount["Destination"]]
+    tmpfs_sizes = {"/tmp": 128 * 1024**2, "/home/botuser/.cache": 64 * 1024**2,
+                   "/home/botuser/.config": 16 * 1024**2}
+    binds = [mount for mount in mounts if isinstance(mount, dict) and
+             mount.get("Type") == "bind"] if isinstance(mounts, list) else []
+    if (not isinstance(mounts, list) or len(binds) != len(expected_mounts) or
+            {mount.get("Destination") for mount in binds} != set(expected_mounts) or
+            any((mount.get("Source"), mount.get("RW")) != expected_mounts[mount["Destination"]]
+                for mount in binds) or
+            any(not isinstance(mount, dict) or not
+                (mount.get("Type") == "bind" or
+                 (mount.get("Type") == "tmpfs" and mount.get("Destination") in tmpfs_sizes))
                 for mount in mounts)):
         raise ValueError("ROOTLESS_CONTAINER_MOUNTS_CHANGED")
+    tmpfs = host.get("Tmpfs") or {}
+    if not isinstance(tmpfs, dict) or set(tmpfs) != set(tmpfs_sizes):
+        raise ValueError("ROOTLESS_CONTAINER_TMPFS_CHANGED")
+    for destination, options in tmpfs.items():
+        flags = set(str(options).split(","))
+        sizes = [re.fullmatch(r"size=(\d+)([kKmMgG]?)(?:[bB])?", flag)
+                 for flag in flags if flag.startswith("size=")]
+        if ({"rw", "noexec", "nosuid"} - flags or {"exec", "suid"} & flags or
+                len(sizes) != 1 or sizes[0] is None or
+                int(sizes[0].group(1)) * {"": 1, "k": 1024, "m": 1024**2,
+                                           "g": 1024**3}[sizes[0].group(2).lower()] !=
+                tmpfs_sizes[destination]):
+            raise ValueError("ROOTLESS_CONTAINER_TMPFS_CHANGED")
     ports = host.get("PortBindings") or {}
     if ports != ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                  if role == "dashboard" else {}):
