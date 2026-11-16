@@ -40,6 +40,7 @@ MAX_FILE_BYTES = 256 * 1024
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_COMPRESSED_CUT_BYTES = 8 * 1024 * 1024
 MAX_DECOMPRESSED_CUT_BYTES = 8 * 1024 * 1024
+RESERVE_BYTES = 2 * 1024**3  # Match immutable product cold_audit.RESERVE.
 FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
 DIRECTORY_FLAGS = FLAGS | os.O_DIRECTORY
 NAME = re.compile(r"(?:queue\.json|(?:receipt|manifest)-[a-f0-9]{32}\.json|"
@@ -128,6 +129,43 @@ def _open_tree(data: Path, parts: tuple[str, ...], *, readonly: bool):
         for fd in reversed(fds):
             os.close(fd)
         raise
+
+
+def _filesystem_proof(data: Path, *, readonly: bool):
+    """Read statvfs at the exact files.root (`dynamic-shadow`), not `/`.
+
+    f_bavail is what shutil.disk_usage(...).free uses. f_bfree includes
+    reserved filesystem blocks and is deliberately reported separately.
+    The child cold-audit directory must be on that same device. This is a
+    CURRENT sample, never retrospective proof of a FAILED cut.
+    """
+    fds = _open_tree(data, COLD_PARTS, readonly=readonly)
+    try:
+        data_info, cold_info = os.fstat(fds[0]), os.fstat(fds[-2])
+        audit_info = os.fstat(fds[-1])
+        if audit_info.st_dev != cold_info.st_dev:
+            raise Hold("COLD_FILESYSTEM_DIVERGENCE_HOLD")
+        data_fs, cold_fs = os.fstatvfs(fds[0]), os.fstatvfs(fds[-2])
+        for fs in (data_fs, cold_fs):
+            if (type(fs.f_frsize) is not int or not 0 < fs.f_frsize <= 2**32 or
+                    any(type(value) is not int or not 0 <= value <= 2**63 - 1
+                        for value in (fs.f_bavail, fs.f_bfree, fs.f_favail)) or
+                    fs.f_bfree < fs.f_bavail):
+                raise Hold("COLD_FILESYSTEM_UNVERIFIED")
+        free = cold_fs.f_frsize * cold_fs.f_bavail
+        values = (free, cold_fs.f_frsize * cold_fs.f_bfree,
+                  data_fs.f_frsize * data_fs.f_bavail)
+        if any(value > 2**63 - 1 for value in values):
+            raise Hold("COLD_FILESYSTEM_UNVERIFIED")
+        return {"cold_fs_available_bytes": values[0],
+                "cold_fs_free_blocks_bytes": values[1],
+                "data_fs_available_bytes": values[2],
+                "cold_fs_available_inodes": cold_fs.f_favail,
+                "cold_data_same_device": data_info.st_dev == cold_info.st_dev,
+                "cold_reserve_2gib_met": free >= RESERVE_BYTES}
+    finally:
+        for fd in reversed(fds):
+            os.close(fd)
 
 
 def _read_file(fd: int, name: str, *, private: bool, readonly: bool,
@@ -653,6 +691,12 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
         "mutations": 0, "cold_audit_runtime_called": False,
         "state": "NO_VERIFICADO", "reason": "HOST_READ_NOT_VERIFIED",
         "os_readonly_mount_verified": False,
+        "cold_fs_available_bytes": None,
+        "cold_fs_free_blocks_bytes": None,
+        "data_fs_available_bytes": None,
+        "cold_fs_available_inodes": None,
+        "cold_data_same_device": None,
+        "cold_reserve_2gib_met": None,
         "observed_deploy_sha": None, "receipt_count": None,
         "failed_receipt_count": None, "folder_entries_checked": None,
         "queue_state": "NO_VERIFICADO", "queue_failed_binding": "NO_VERIFICADO",
@@ -683,7 +727,9 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
     }
     try:
         observed = _provenance(data, readonly=readonly)
+        space = _filesystem_proof(data, readonly=readonly)
         counts = _counts(data, readonly=readonly)
+        result.update(space)
         result.update(counts)
         result.update(_live_diagnostic(data, readonly=readonly))
         result.update(_archive_diagnostic(data, readonly=readonly))
@@ -698,7 +744,9 @@ def inspect(data: Path = DATA, *, readonly: bool = True):
             "DEPLOY_SHA_PROVENANCE_HOLD", "FILE_COUNT_BOUND_HOLD",
             "PRIVATE_BASENAME_HOLD", "TOTAL_BYTES_BOUND_HOLD",
             "RECEIPT_STATE_HOLD", "FAILED_RECEIPT_BINDING_HOLD",
-            "QUEUE_STATE_HOLD", "DIRECTORY_RACE_HOLD"} else "HOST_READ_NOT_VERIFIED"
+            "QUEUE_STATE_HOLD", "DIRECTORY_RACE_HOLD",
+            "COLD_FILESYSTEM_UNVERIFIED",
+            "COLD_FILESYSTEM_DIVERGENCE_HOLD"} else "HOST_READ_NOT_VERIFIED"
     except FileNotFoundError:
         result["reason"] = "ROOT_OR_DEPLOY_ABSENT"
     except (OSError, ValueError, TypeError):
