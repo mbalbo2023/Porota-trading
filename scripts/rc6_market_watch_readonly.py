@@ -582,6 +582,7 @@ def _rootless_context(*, runner=None):
     if not home.is_absolute() or ".." in home.parts or any(p.is_symlink() for p in home.parents):
         raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
     private_home = False
+    private_local = False
     local_owned_by_operator = False
     for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
@@ -591,17 +592,20 @@ def _rootless_context(*, runner=None):
                             and not mode & 0o077)
         elif directory == home / ".local":
             local_owned_by_operator = meta.st_uid == uid
+            private_local = (local_owned_by_operator and stat.S_ISDIR(meta.st_mode)
+                             and not mode & 0o077)
         # Product Host.boundary/private_dir pins the account home and private
         # state, not the owner of pre-existing non-writable ancestors. Root-
         # owned .local and .local/state are safe when they cannot be replaced.
         allowed_owner = (meta.st_uid == uid if directory in (home, state)
                          else meta.st_uid in (0, uid))
         # Only this one UID1000-owned intermediate may be group-writable, and
-        # only under a fully private HOME and a non-writable UID1000 .local.
-        # Other identities cannot traverse HOME to rename or replace STATE.
+        # only when HOME or .local is fully private. HOME always must be
+        # non-writable by others, and .local must be UID1000/non-writable:
+        # third parties cannot traverse or replace the private ancestor.
         # No chmod, fallback socket, repair or weakening of STATE/current.json.
         private_state_parent = (directory == home / ".local/state" and
-                                meta.st_uid == uid and private_home and
+                                meta.st_uid == uid and (private_home or private_local) and
                                 local_owned_by_operator and not mode & 0o002)
         forbidden_writes = 0o077 if directory == state else (0o002 if private_state_parent else 0o022)
         if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or not allowed_owner or

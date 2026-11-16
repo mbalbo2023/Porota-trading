@@ -349,17 +349,20 @@ class MonitorContracts(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
                             monitor._rootless_context(runner=runner)
 
-    def test_group_writable_local_state_requires_truly_private_home(self):
+    def test_group_writable_local_state_requires_private_ancestor(self):
         home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
         real_lstat, real_fstat = Path.lstat, monitor.os.fstat
         # A writable intermediate cannot be used for path substitution only
-        # when the account home itself prevents all traversal by other UIDs.
+        # when HOME or LOCAL blocks all traversal by other UIDs, while HOME
+        # itself remains non-writable to group/other users.
         cases = (
             ("private-home", 0o700, 0o700, 0o770, 0o700, True),
-            ("group-traversable-home", 0o750, 0o700, 0o770, 0o700, False),
-            ("public-home-private-local", 0o755, 0o700, 0o770, 0o700, False),
+            ("group-traversable-home-private-local", 0o750, 0o700, 0o770, 0o700, True),
+            ("public-home-private-local", 0o755, 0o700, 0o770, 0o700, True),
             ("public-home", 0o755, 0o755, 0o770, 0o700, False),
+            ("group-traversable-home-and-local", 0o750, 0o750, 0o770, 0o700, False),
             ("writable-home", 0o770, 0o700, 0o770, 0o700, False),
+            ("world-writable-home", 0o702, 0o700, 0o770, 0o700, False),
             ("writable-local", 0o700, 0o770, 0o770, 0o700, False),
             ("world-writable-state-parent", 0o700, 0o700, 0o777, 0o700, False),
             ("exposed-state", 0o700, 0o700, 0o770, 0o750, False),

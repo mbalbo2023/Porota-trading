@@ -338,6 +338,7 @@ def _rootless_context(*, runner=subprocess.run):
             any(parent.is_symlink() for parent in home.parents)):
         raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
     private_home = False
+    private_local = False
     local_owned_by_operator = False
     for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
@@ -347,13 +348,16 @@ def _rootless_context(*, runner=subprocess.run):
                             and not mode & 0o077)
         elif directory == home / ".local":
             local_owned_by_operator = meta.st_uid == uid
+            private_local = (local_owned_by_operator and stat.S_ISDIR(meta.st_mode)
+                             and not mode & 0o077)
         allowed_owner = (meta.st_uid == uid if directory in (home, state)
                          else meta.st_uid in (0, uid))
         # Same narrow rootless custody contract as Market Watch: UID1000's
-        # group-writable LOCAL_STATE cannot be traversed by other UIDs only
-        # when the HOME ancestor is fully private, and LOCAL is not writable.
+        # group-writable LOCAL_STATE cannot be traversed by other UIDs when
+        # HOME or LOCAL is fully private; HOME and LOCAL remain non-writable
+        # by third parties, preventing replacement of the private ancestor.
         private_state_parent = (directory == home / ".local/state" and
-                                meta.st_uid == uid and private_home and
+                                meta.st_uid == uid and (private_home or private_local) and
                                 local_owned_by_operator and not mode & 0o002)
         forbidden_writes = 0o077 if directory == state else (0o002 if private_state_parent else 0o022)
         if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or not allowed_owner or
