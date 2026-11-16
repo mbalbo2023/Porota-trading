@@ -495,9 +495,108 @@ def read_shadow_status(root):
 
 def stop_pair(host, current):
     """Allow the frozen observer's eight-child drain to finish before SIGKILL."""
+    windows = {}
     for role, grace, command_timeout in (('observer', 150, 180), ('dashboard', 65, 95)):
+        before = datetime.now(timezone.utc)
         host.docker.call('container', 'stop', '--time', str(grace),
                          current['roles'][role], timeout=command_timeout)
+        windows[role] = (before, datetime.now(timezone.utc))
+    return windows
+
+
+def utc_stamp(value):
+    """Parse a timezone-aware Docker timestamp without interpreting an empty epoch."""
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if stamp.tzinfo is not None:
+            return stamp.astimezone(timezone.utc)
+    except ValueError:
+        pass
+    return None
+
+
+def dashboard_uvicorn_shutdown(host, cid, window):
+    """Prove ordered Uvicorn shutdown via bounded, private logs of one CID."""
+    start, end = window
+    command = ('/usr/bin/docker', '--host', f'unix://{host.identity.socket}',
+               'container', 'logs', '--timestamps', '--since', start.isoformat(),
+               '--until', end.isoformat(), '--tail', '128', cid)
+    try:
+        result = host.docker.run(command, check=False, text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=12, env=host.identity.environment(), cwd='/')
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if (result.returncode != 0 or not isinstance(result.stdout, str) or
+            not isinstance(result.stderr, str) or
+            len(result.stdout) + len(result.stderr) > 65536):
+        return False
+    # Docker splits stdout and stderr. Uvicorn emits these lifecycle lines to
+    # stderr; never expose arbitrary log text to Actions or the receipt.
+    shutdown = []
+    line_count = 0
+    for output in (result.stdout, result.stderr):
+        lines = output.splitlines()
+        line_count += len(lines)
+        # A full tail may have dropped the earlier shutdown and warnings.
+        if line_count >= 128:
+            return False
+        for line in lines:
+            stamp_text, _, message = line.partition(' ')
+            # Uvicorn can print both positive final markers after timing out
+            # and cancelling outstanding ASGI tasks. Those shutdowns are NOT
+            # safe for a COLD archive, even though the process exited.
+            if (re.search(r'\b(WARNING|ERROR|CRITICAL):', message) or
+                    re.search(r'cancel|timeout|timed out|exception|traceback|destroyed|pending|resourcewarning',
+                              message, re.IGNORECASE)):
+                return False
+            marker = (
+                'SHUTTING' if message == 'INFO:     Shutting down' else
+                'WAITING' if message == 'INFO:     Waiting for application shutdown.' else
+                'COMPLETE' if message == 'INFO:     Application shutdown complete.' else
+                'FINISHED' if re.fullmatch(r'INFO:     Finished server process \[[0-9]+\]',
+                                             message) else None)
+            if marker is None:
+                continue
+            stamp = utc_stamp(stamp_text)
+            if stamp is None or not start <= stamp <= end:
+                return False
+            shutdown.append((stamp, marker))
+    return (len(shutdown) == 4 and
+            [item[1] for item in shutdown] ==
+                ['SHUTTING', 'WAITING', 'COMPLETE', 'FINISHED'] and
+            all(shutdown[i][0] <= shutdown[i + 1][0] for i in range(3)))
+
+
+def dashboard_sigterm_proof(host, cid, item, previous, window):
+    """Dashboard-only exception when a *specific* docker stop ended Uvicorn."""
+    if (not isinstance(previous, dict) or not isinstance(item, dict) or
+            not isinstance(window, (tuple, list)) or len(window) != 2):
+        return False
+    start, end = window
+    if (not isinstance(start, datetime) or not isinstance(end, datetime) or
+            start.tzinfo is None or end.tzinfo is None or
+            not start <= end or not 0 <= (end - start).total_seconds() <= 95):
+        return False
+    before = previous.get('State')
+    after = item.get('State')
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return False
+    begun, finished = utc_stamp(after.get('StartedAt')), utc_stamp(after.get('FinishedAt'))
+    if (item.get('Id') != cid or previous.get('Id') != cid or
+            before.get('Running') is not True or
+            before.get('StartedAt') != after.get('StartedAt') or
+            begun is None or finished is None or begun >= start or
+            not start <= finished <= end or
+            type(previous.get('RestartCount')) is not int or
+            item.get('RestartCount') != previous.get('RestartCount') or
+            after.get('Running') is not False or after.get('Status') != 'exited' or
+            after.get('Pid') != 0 or after.get('OOMKilled') is not False or
+            after.get('ExitCode') != 143 or after.get('Error') != ''):
+        return False
+    return dashboard_uvicorn_shutdown(host, cid, (start, end))
 
 
 def stopped_role_proof(item):
@@ -519,16 +618,27 @@ def stopped_role_proof(item):
 
 
 def stopped_admission(host_module, host, current, lock_held, *, expected_database=None,
-                      expected_operator=None, stopped_after=None):
+                      expected_operator=None, stopped_after=None,
+                      expected_dashboard=None, stop_window=None):
     """Recheck Docker source/CIDs + flat DB after stop at EACH archive boundary."""
     demand(lock_held is True, 'ROOTLESS_LOCK_REQUIRED')
     host.boundary()
     host.check_inventory(current)
     pair = {role: host.check_role(current, role) for role in ('observer', 'dashboard')}
     evidence = {role: stopped_role_proof(item) for role, item in pair.items()}
-    stopped = all(all(proof[field] for field in (
+    observer_ok = all(evidence['observer'][field] for field in (
         'running_false', 'status_exited', 'pid_zero', 'oom_false', 'exit_code_zero'))
-        for proof in evidence.values())
+    dashboard_base = all(evidence['dashboard'][field] for field in (
+        'running_false', 'status_exited', 'pid_zero', 'oom_false'))
+    dashboard_proven_143 = False
+    if (dashboard_base and evidence['dashboard']['exit_code_category'] == 'SIGTERM_143'
+            and isinstance(stop_window, dict) and 'dashboard' in stop_window):
+        dashboard_proven_143 = dashboard_sigterm_proof(
+            host, current['roles']['dashboard'], pair['dashboard'],
+            expected_dashboard, stop_window['dashboard'])
+    evidence['dashboard']['dashboard_sigterm_proven'] = dashboard_proven_143
+    stopped = (observer_ok and dashboard_base and
+               (evidence['dashboard']['exit_code_zero'] or dashboard_proven_143))
     if not stopped:
         raise StopProofHold(evidence)
     book = flat_book(host.root / host_module.DB_RELATIVE,
@@ -542,8 +652,8 @@ def stopped_admission(host_module, host, current, lock_held, *, expected_databas
     if expected_operator is not None:
         demand(operator_state_witness(host.identity.operator) == expected_operator,
                'OPERATOR_PAUSE_OR_TIMER_DRIFT')
-    # Both CIDs are now exited with kernel Pid=0, exit 0, no other containers
-    # exist on this scoped daemon, and the PAPER book has no liabilities.
+    # Both CIDs are exited with PID0; only the dashboard may have the narrowly
+    # corroborated SIGTERM143. Flat PAPER book and STOP_ACK remain mandatory.
     # This is derived quiescence, never an unconditional admission boolean.
     no_inflight = stopped and book['state'] == 'PAPER_FLAT'
     routing_guard = status['real_routes'] == 'NOT_CALLED' and book['real_orders_sent'] == 0
@@ -747,18 +857,22 @@ def operate(operation, root):
         stop_token = arm_stop_witness(host.identity.state,current['roles'],operator)
         try:
             stop_attempted = True
-            stop_pair(host, current)
+            stop_window = stop_pair(host, current)
             recovery_stage = 'POSTSTOP_ADMISSION'
             stopped_admission(host_module, host, current, True,
                               expected_database=book['identity'], expected_operator=operator,
-                              stopped_after=started)
+                              stopped_after=started,
+                              expected_dashboard=roles_recheck['dashboard'],
+                              stop_window=stop_window)
             # The successor's archive algorithm and all its fsync boundaries
             # are preserved, under a typed rootless revalidation callback.
             recovery_stage = 'COLD_QUARANTINE'
             result = quarantine_existing(successor, root,
                 lambda: stopped_admission(host_module, host, current, True,
                     expected_database=book['identity'], expected_operator=operator,
-                    stopped_after=started),
+                    stopped_after=started,
+                    expected_dashboard=roles_recheck['dashboard'],
+                    stop_window=stop_window),
                 dict(current['roles']))
             recovery_stage = 'COLD_VERIFY'
             end = successor.inspect(root, hash_pack=True)
