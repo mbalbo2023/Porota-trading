@@ -82,7 +82,7 @@ class ReadOnlyPolicyViolation(RuntimeError):
 
 
 class ProductionAuthResponseError(RuntimeError):
-    """Login no JSON con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
+    """Falla de login con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
 
 
 def _login_response_metadata(response, body) -> str:
@@ -352,12 +352,12 @@ class ReadOnlyTransportGuard:
                 if (wire_request is request or
                         wire_request.headers is request.headers):
                     raise ReadOnlyPolicyViolation("PPI_HTTP_PREPARED_REQUEST_COPY_UNSAFE")
+                if kwargs.get("stream"):
+                    raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
                 # Count login at the actual adapter boundary: Session.send()
                 # and a direct prepared send cannot bypass the same cooldown.
                 checked_method, checked_path = guard.check(
                     wire_request.method, wire_request.url, count_login=True)
-                if kwargs.get("stream"):
-                    raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
                 with guard._lock:
                     guard.calls_blocked += 1
@@ -520,11 +520,20 @@ class ProductionMarketReader:
         client = PPI(sandbox=False)
         self.__guard._scope.login_http_metadata = None
         non_json_metadata = None
+        provider_error_metadata = None
         try:
             client.account.login_api(self.__api_key, self.__api_secret)
         except JSONDecodeError:
             non_json_metadata = self.__guard._scope.login_http_metadata
             if not non_json_metadata:
+                raise
+        except Exception as error:
+            # SDK 1.3.0 can raise Exception(response) on JSON HTTP errors.
+            # Never let a provider-controlled body reach observer/state logs.
+            # Local policy/transport errors without a response remain distinct.
+            if not isinstance(error, ReadOnlyPolicyViolation):
+                provider_error_metadata = self.__guard._scope.login_http_metadata
+            if not provider_error_metadata:
                 raise
         finally:
             self.__guard._scope.login_http_metadata = None
@@ -533,6 +542,12 @@ class ProductionMarketReader:
             # retain a context object whose JSONDecodeError.doc is the body.
             raise ProductionAuthResponseError(
                 "PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: " + non_json_metadata
+            )
+        if provider_error_metadata:
+            # Raise outside the SDK handler to discard the unsafe exception
+            # context, which may contain raw response.text and credentials.
+            raise ProductionAuthResponseError(
+                "PPI_PRODUCTION_AUTH_PROVIDER_ERROR: " + provider_error_metadata
             )
         self.__client = client
         self.__authenticated = True

@@ -18,7 +18,7 @@ SECRET = "AUTH_SECRET_DO_NOT_REPORT_0123456789"
 
 def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
             fail_get=False,
-            direct_error=False):
+            direct_error=False, provider_exception=False):
     calls, audits = [], []
     body = b"<html>" + SECRET.encode() + b"</html>" if body is None else body
 
@@ -48,6 +48,11 @@ def _reader(monkeypatch, *, status=200, media="text/html", body=None, fail=None,
 
         def login_api(self, key, secret):
             assert key == "KEY" and secret == SECRET
+            if provider_exception:
+                response = requests.Session().post(LOGIN, json={"key": key, "secret": secret})
+                # ppi-client can include a provider JSON error response in a
+                # raised Exception. That raw body must not reach the observer.
+                raise RuntimeError(response.text)
             if direct_error:
                 if direct_error == "after_get":
                     requests.Session().get(READ)
@@ -107,6 +112,25 @@ def test_successful_json_login_preserves_one_call_and_clears_metadata(monkeypatc
         assert reader._ProductionMarketReader__guard._scope.login_http_metadata is None
         reader.login_once()
         assert len(calls) == 1
+    finally:
+        reader.close()
+
+
+def test_sdk_json_rejection_reports_only_http_metadata_never_provider_body(monkeypatch):
+    sensitive = b'{"detail":"' + SECRET.encode() + b'"}'
+    reader, calls, _, _ = _reader(monkeypatch, status=401, media="application/json",
+                                  body=sensitive, provider_exception=True)
+    try:
+        with pytest.raises(ProductionAuthResponseError) as failure:
+            reader.login_once()
+        assert str(failure.value) == (
+            "PPI_PRODUCTION_AUTH_PROVIDER_ERROR: "
+            f"HTTP=401; Content-Type=APPLICATION_JSON; Content-Length={len(sensitive)}")
+        assert SECRET not in str(failure.value)
+        assert failure.value.__context__ is None
+        assert reader.last_read_error_code == "PPI_HTTP_401"
+        assert reader.metrics["authenticated"] is False
+        assert calls == [("POST", LOGIN)]
     finally:
         reader.close()
 

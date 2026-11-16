@@ -105,3 +105,18 @@ def test_direct_prepared_login_cannot_evade_nine_hundred_second_cooldown(fake_wi
         assert guard.login_calls == 2
     finally:
         guard.restore()
+
+
+def test_streaming_login_rejection_does_not_consume_cooldown_without_wire(fake_wire):
+    guard = ReadOnlyTransportGuard(budget=None).install()
+    prepared = requests.Request("POST", BASE + "Account/LoginApi").prepare()
+    try:
+        with pytest.raises(ReadOnlyPolicyViolation, match="PPI_STREAMING_READ_NOT_OWNED"):
+            requests.Session().send(prepared, stream=True)
+        assert fake_wire == []
+        assert guard.login_calls == 0
+        assert requests.Session().send(prepared).status_code == 200
+        assert guard.login_calls == 1
+        assert len(fake_wire) == 1
+    finally:
+        guard.restore()
