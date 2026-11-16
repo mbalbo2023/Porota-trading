@@ -1,6 +1,6 @@
 """One-shot ROOTLESS_SPLIT COLD recovery: flat PAPER book and hard stop gates."""
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import hashlib
 import subprocess
@@ -21,9 +21,10 @@ class FlatPaperTests(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.executescript('''
                 CREATE TABLE observer_state(id INTEGER PRIMARY KEY, mode TEXT, real_orders_sent INTEGER,
-                  process_state TEXT, session_state TEXT, heartbeat_at TEXT, ppi_auth TEXT, detail TEXT);
+                  process_state TEXT, session_state TEXT, heartbeat_at TEXT, ppi_auth TEXT, detail TEXT,
+                  last_market_data_at TEXT);
                 INSERT INTO observer_state VALUES (1,'PRODUCTION_PAPER',0,'RUNNING','MARKET_OPEN',
-                   '2026-11-16T14:00:00+00:00','OK','');
+                   '2026-11-16T14:00:00+00:00','OK','','2026-11-16T14:00:00+00:00');
                 CREATE TABLE paper_workspace(id INTEGER PRIMARY KEY,dataset_id TEXT);
                 INSERT INTO paper_workspace VALUES(1,'session-01');
                 CREATE TABLE paper_positions(status TEXT);
@@ -42,6 +43,47 @@ class FlatPaperTests(unittest.TestCase):
         self.assertEqual(observed['state'], 'PAPER_FLAT')
         self.assertEqual(observed['real_orders_sent'], 0)
         self.assertEqual(observed['session'], 'MARKET_OPEN')
+
+    def test_ppi_only_degraded_boot_sessions_use_existing_runtime_classifier(self):
+        scenarios=(('BOOT_CALENDAR','COOLDOWN','PPI en espera de reintento;'),
+                   ('BOOT_PPI_LOGIN','ERROR','Login fallo:'),
+                   ('CHECKING','COOLDOWN','Login local bloqueado por interlock'))
+        for session,auth,detail in scenarios:
+            with self.subTest(session=session,auth=auth):
+                with sqlite3.connect(self.db) as connection:
+                    connection.execute('UPDATE observer_state SET process_state=?,session_state=?,ppi_auth=?,detail=?',
+                                       ('DEGRADED',session,auth,detail+' test privado'))
+                self.assertEqual(cold.flat_book(self.db)['state'],'PAPER_FLAT')
+
+    def test_ppi_cooldown_does_not_admit_unknown_sessions_causes_or_auth_mismatch(self):
+        for process,session,auth,detail in (
+            ('DEGRADED','UNKNOWN','COOLDOWN','Login fallo: privado'),
+            ('DEGRADED','BOOT_CALENDAR','NOT_ATTEMPTED','Login fallo: privado'),
+            ('DEGRADED','BOOT_CALENDAR','COOLDOWN','CAUCION_LEDGER_INVALID'),
+            ('DEGRADED','BOOT_CALENDAR','OK','PPI en espera de reintento;'),
+            ('RUNNING','MARKET_OPEN','COOLDOWN','PPI en espera de reintento;'),
+        ):
+            with self.subTest(process=process,session=session,auth=auth):
+                with sqlite3.connect(self.db) as connection:
+                    connection.execute('UPDATE observer_state SET process_state=?,session_state=?,ppi_auth=?,detail=?',
+                                       (process,session,auth,detail))
+                with self.assertRaisesRegex(cold.ColdHold,'PAPER_PROCESS_NOT_QUIESCIBLE'):
+                    cold.flat_book(self.db)
+
+    def test_poststop_bootcalendar_requires_exact_clean_ack_and_new_heartbeat(self):
+        since=datetime.now(timezone.utc)-timedelta(seconds=30)
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('UPDATE observer_state SET process_state=?,session_state=?,ppi_auth=?,detail=?,heartbeat_at=?',
+                               ('STOPPED','BOOT_CALENDAR','COOLDOWN',
+                                'Observador detenido ordenadamente.',datetime.now(timezone.utc).isoformat()))
+        self.assertEqual(cold.flat_book(self.db,stopped=True,clean_exit=True,stopped_after=since)['state'],
+                         'PAPER_FLAT')
+        with self.assertRaisesRegex(cold.ColdHold,'PAPER_STOP_ACK_UNVERIFIED'):
+            cold.flat_book(self.db,stopped=True,clean_exit=True,stopped_after=datetime.now(timezone.utc)+timedelta(seconds=5))
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('UPDATE observer_state SET detail=?',('No fue una parada limpia',))
+        with self.assertRaisesRegex(cold.ColdHold,'PAPER_STOP_ACK_UNVERIFIED'):
+            cold.flat_book(self.db,stopped=True,clean_exit=True,stopped_after=since)
 
     def test_open_paper_positions_cauciones_futures_and_fund_obligations_are_stoppers(self):
         for table, status in (('paper_positions', 'OPEN'), ('paper_cauciones', 'OPEN'),
@@ -102,7 +144,7 @@ class FlatPaperTests(unittest.TestCase):
 
     def test_stopped_market_open_requires_clean_exit_proof(self):
         with sqlite3.connect(self.db) as connection:
-            connection.execute("UPDATE observer_state SET process_state='STOPPED',session_state='OPEN'")
+            connection.execute("UPDATE observer_state SET process_state='STOPPED',session_state='OPEN',detail='Observador detenido ordenadamente.'")
         with self.assertRaises(cold.ColdHold):
             cold.flat_book(self.db)
         self.assertEqual(cold.flat_book(self.db, stopped=True, clean_exit=True)['state'], 'PAPER_FLAT')
