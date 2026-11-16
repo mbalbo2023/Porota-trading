@@ -58,6 +58,76 @@ class DispatcherTests(unittest.TestCase):
              patch.object(jobs, "database_snapshot", return_value={}):
             jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
 
+    def test_preopen_red_child_reports_only_allowlisted_checks_and_preserves_exit_two(self):
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+        private = "PRIVATE_PREOPEN_TOKEN_NOT_FOR_JOURNAL"
+        def run(command, **kwargs):
+            self.assertNotEqual(kwargs["stdout"], subprocess.DEVNULL)
+            self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+            body = {"schema": "POROTA_RC6_PREOPEN_V3", "status": "RED",
+                    "red_checks": ["observer_db", "required_rc6_timers"],
+                    "checks": {"observer_db": {"private": private}}}
+            kwargs["stdout"].write(json.dumps(body).encode("utf-8"))
+            return subprocess.CompletedProcess(command, 2)
+        with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+             patch.object(jobs, "database_snapshot", return_value={"real_orders_sent": 0}):
+            result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
+        self.assertEqual(result["state"], "BLOQUEADO")
+        self.assertEqual(result["failure_signature"], "PREOPEN_RED_CHECKS")
+        self.assertEqual(result["preopen_red_checks"], ["observer_db", "required_rc6_timers"])
+        self.assertEqual(result["child_exit_code"], 2)
+        self.assertEqual(result["exit_code"], 2)
+        self.assertNotIn(private, json.dumps(result))
+
+    def test_preopen_untrusted_child_receipt_never_publishes_raw_values(self):
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+        private = "PRIVATE_PREOPEN_TRACE_NOT_FOR_JOURNAL"
+        def run(command, **kwargs):
+            body = {"schema": "POROTA_RC6_PREOPEN_V3", "status": "RED",
+                    "red_checks": [private], "checks": {"private": private}}
+            kwargs["stdout"].write(json.dumps(body).encode("utf-8"))
+            return subprocess.CompletedProcess(command, 2)
+        with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+             patch.object(jobs, "database_snapshot", return_value={"real_orders_sent": 0}):
+            result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
+        self.assertEqual(result["failure_signature"], "PREOPEN_CHILD_RECEIPT_UNVERIFIED")
+        self.assertEqual(result["preopen_red_checks"], [])
+        self.assertEqual(result["exit_code"], 2)
+        self.assertNotIn(private, json.dumps(result))
+
+    def test_preopen_child_exception_exit_is_not_generic_79(self):
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+        def run(command, **kwargs):
+            kwargs["stdout"].write(b"private traceback")
+            return subprocess.CompletedProcess(command, 1)
+        with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+             patch.object(jobs, "database_snapshot", return_value={"real_orders_sent": 0}):
+            result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
+        self.assertEqual(result["failure_signature"], "PREOPEN_CHILD_EXIT_1")
+        self.assertEqual(result["exit_code"], 1)
+        self.assertNotIn("private traceback", json.dumps(result))
+
+    def test_preopen_dispatcher_hold_keeps_cause_but_not_generic_79(self):
+        stream = io.StringIO()
+        with patch.object(jobs.Identity, "current", return_value=self.identity), \
+             patch.object(jobs, "run_job", side_effect=host.Hold("PAPER_ZERO_REQUIRED")), \
+             redirect_stdout(stream):
+            code = jobs.main(["--unit", jobs.PREOPEN])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "PAPER_ZERO_REQUIRED")
+
+    def test_nonpreopen_dispatcher_hold_keeps_cause_without_generic_79(self):
+        stream = io.StringIO()
+        with patch.object(jobs.Identity, "current", return_value=self.identity), \
+             patch.object(jobs, "run_job", side_effect=host.Hold("SCHEDULER_SOURCE_CUSTODY")), \
+             redirect_stdout(stream):
+            code = jobs.main(["--unit", "porota-candle-integrity-rc6.service"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "SCHEDULER_SOURCE_CUSTODY")
+
     def test_deploy_lock_prevents_any_job_or_docker_call(self):
         with host.user_lock(self.identity.state / "deploy.lock"), \
              patch.object(jobs, "verified_host") as verified, \
@@ -104,8 +174,10 @@ class DispatcherTests(unittest.TestCase):
         with patch.object(setup.pwd, "getpwuid", return_value=account), redirect_stdout(output), \
              self.assertRaises(SystemExit) as stopped:
             exec(compile(jobs.LAUNCHER, "private-launcher", "exec"), namespace)
-        self.assertEqual(stopped.exception.code, 79)
-        self.assertEqual(json.loads(output.getvalue())["failure_signature"], "SCHEDULER_LAUNCHER_CUSTODY")
+        self.assertEqual(stopped.exception.code, 1)
+        failure = json.loads(output.getvalue())
+        self.assertEqual(failure["failure_signature"], "SCHEDULER_LAUNCHER_CUSTODY")
+        self.assertEqual(failure["failure_stage"], "CURRENT_RELEASE")
         self.assertNotIn(str(self.root), output.getvalue())
         os.close(namespace["lock"])
         output = io.StringIO()

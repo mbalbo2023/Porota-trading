@@ -1243,7 +1243,7 @@ def main(argv=None):
         print(json.dumps({"schema": "porota.rootless.setup.v1", "state": "BLOQUEADO", "operation": args.operation,
                           "failure_signature": public_reason,
                           **getattr(exc, "public_details", {})}))
-        return 79
+        return 1
 
 
 if __name__ == "__main__":

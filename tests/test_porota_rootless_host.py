@@ -11,6 +11,7 @@ import tempfile
 import types
 import tarfile
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
@@ -53,6 +54,25 @@ class RootlessContracts(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
+
+    def test_cli_custody_failure_returns_one_and_its_existing_reason(self):
+        stream = io.StringIO()
+        with patch.object(host, "Host", side_effect=host.Hold("NONROOT_SSH_IDENTITY_REQUIRED")), \
+             redirect_stdout(stream):
+            code = host.main(["inspect"])
+        self.assertEqual(code, 1)
+        receipt = json.loads(stream.getvalue())
+        self.assertEqual(receipt["phase"], "IDENTITY")
+        self.assertEqual(receipt["failure_signature"], "NONROOT_SSH_IDENTITY_REQUIRED")
+
+    def test_cli_unknown_failure_does_not_leak_exception_details(self):
+        stream = io.StringIO()
+        with patch.object(host, "Host", side_effect=ValueError("PRIVATE_HOST_CREDENTIAL")), \
+             redirect_stdout(stream):
+            code = host.main(["inspect"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "UNCLASSIFIED_HOST_FAILURE")
+        self.assertNotIn("PRIVATE_HOST_CREDENTIAL", stream.getvalue())
 
     def test_rootful_daemon_is_refused_even_at_expected_socket(self):
         identity = host.Identity(1000, 1000, "porotaadmin", self.base)

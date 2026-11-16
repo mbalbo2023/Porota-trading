@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from be_paper_engine import PaperStore, PaperBroker, D, Quote
 from bm_exit_supervisor import PositionExitSupervisor
-from rc6_performance.capture import BoundedCapture, EvidenceStore, ExitTelemetry
+from rc6_performance.capture import BoundedCapture, EvidenceStore, ExitTelemetry, run_worker
 from datetime import datetime, timedelta, timezone
 
 
@@ -88,6 +88,42 @@ def test_capture_storage_quota_is_explicit(tmp_path):
     source = PaperStore(str(tmp_path/"source.db"))
     target = EvidenceStore(tmp_path/"evidence.db", maximum_bytes=1)
     assert BoundedCapture(source.path, target).read_batch()["status"] == "EVIDENCE_CAPACITY_REACHED"
+
+
+def test_existing_128m_evidence_remains_writable_under_bounded_default_quota(tmp_path):
+    evidence = EvidenceStore(tmp_path/"evidence.db")
+    # A sparse sidecar exercises the quota arithmetic without allocating 128 MiB.
+    sidecar = Path(str(evidence.path)+"-shm")
+    with sidecar.open("wb") as output:
+        output.truncate(128*1024*1024 + 65536)
+    assert evidence.at_capacity() is False
+    with sidecar.open("wb") as output:
+        output.truncate(256*1024*1024)
+    assert evidence.at_capacity() is True
+
+
+def test_performance_worker_refreshes_report_even_when_capture_is_at_capacity(tmp_path, monkeypatch):
+    from rc6_performance import capture as capture_module
+    source = PaperStore(str(tmp_path/"source.db"))
+    monkeypatch.setattr(capture_module.os, "nice", lambda _value: None)
+    monkeypatch.setattr(BoundedCapture, "read_batch",
+                        lambda _self: {"status": "EVIDENCE_CAPACITY_REACHED", "rows": 0})
+
+    class OneCycle:
+        finished = False
+
+        def is_set(self):
+            return self.finished
+
+        def wait(self, _seconds):
+            self.finished = True
+
+    run_worker(source.path, OneCycle())
+    output = Path(str(source.path)+".performance.sqlite.latest.json")
+    assert output.is_file()
+    report = json.loads(output.read_text())
+    assert report["schema"] == "rc6.performance-report.v1"
+    assert report["selection"]["captured_events"] == 0
 
 
 def test_exit_probe_tracks_commit_and_final_fill_and_does_not_rewrite(tmp_path):

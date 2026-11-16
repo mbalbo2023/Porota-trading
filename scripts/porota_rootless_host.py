@@ -1113,7 +1113,7 @@ def main(argv=None):
         result = manager.receipt if manager else {"state": "BLOQUEADO", "phase": "IDENTITY"}
         result.update(failure_evidence(exc))
         print(json.dumps(result, sort_keys=True))
-        return 79
+        return 1
 
 
 if __name__ == "__main__":
