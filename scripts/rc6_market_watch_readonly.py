@@ -835,6 +835,80 @@ def _scalping_recent_error_codes(db, tables):
     return receipt
 
 
+def _ppi_auth_last_attempt(db, tables):
+    """Classify a persisted login result; never export detail or call PPI.
+
+    A COOLDOWN observer state is not an HTTP response. Only fixed metadata
+    from the existing api_health row can identify the last actual attempt.
+    """
+    result = {"status": "NO_VERIFICADO", "component": "PPI_PRODUCTION_AUTH",
+              "state": "NO_VERIFICADO", "checked_at": None, "last_success_at": None,
+              "error_class": None, "http_status": None,
+              "response_media_type": None, "response_bytes": None,
+              "reason": "NO_API_HEALTH_ROW", "provider_requests_by_probe": 0}
+    if "api_health" not in tables:
+        return result
+    try:
+        row = db.execute("SELECT state, detail, checked_at, last_success_at "
+                         "FROM api_health WHERE component=?",
+                         ("PPI_PRODUCTION_AUTH",)).fetchone()
+    except sqlite3.Error:
+        result["reason"] = "API_HEALTH_READ_UNAVAILABLE"
+        return result
+    if not row:
+        return result
+
+    def timestamp(value):
+        if not isinstance(value, str) or len(value) > 40:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return value if parsed.tzinfo is not None else None
+        except ValueError:
+            return None
+
+    result["checked_at"] = timestamp(row["checked_at"])
+    result["last_success_at"] = timestamp(row["last_success_at"])
+    state = row["state"]
+    if state not in {"ROJO", "VERDE", "AMARILLO", "GRIS"}:
+        result["reason"] = "API_HEALTH_STATE_UNVERIFIED"
+        return result
+    result["state"] = state
+    if state == "VERDE":
+        result.update(status="LAST_AUTH_SUCCESS_RECORDED", reason="AUTH_SUCCESS")
+        return result
+    result["status"] = "LAST_FAILED_AUTH_RECORDED" if state == "ROJO" else "NO_VERIFICADO"
+    result["reason"] = "EXCEPTION_CLASS_ONLY"
+    detail = row["detail"]
+    if not isinstance(detail, str) or len(detail) > 1000:
+        result["reason"] = "DETAIL_UNAVAILABLE"
+        return result
+    prefix = re.match(r"^([A-Za-z][A-Za-z0-9_]{0,79}):", detail)
+    allowed_classes = {"ProductionAuthResponseError", "HTTPError", "JSONDecodeError",
+                       "RuntimeError", "ValueError", "ConnectionError", "Timeout",
+                       "ReadOnlyPolicyViolation", "BudgetBackpressure", "OSError",
+                       "PermissionError", "FileNotFoundError", "ImportError",
+                       "ModuleNotFoundError", "AttributeError", "TypeError"}
+    if prefix and prefix.group(1) in allowed_classes:
+        result["error_class"] = prefix.group(1)
+    metadata = re.match(
+        r"^ProductionAuthResponseError: PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: "
+        r"HTTP=([1-5][0-9]{2}|UNKNOWN); Content-Type="
+        r"(APPLICATION_JSON|APPLICATION_PROBLEM_JSON|TEXT_HTML|TEXT_PLAIN|OTHER|ABSENT|UNKNOWN); "
+        r"Content-Length=([0-9]{1,9}|UNKNOWN)(?:\b|$)", detail)
+    if metadata:
+        result["http_status"] = (int(metadata.group(1)) if metadata.group(1) != "UNKNOWN" else None)
+        result["response_media_type"] = metadata.group(2)
+        result["response_bytes"] = (int(metadata.group(3)) if metadata.group(3) != "UNKNOWN" else None)
+        result["reason"] = "NON_JSON_LOGIN_RESPONSE_HTTP_METADATA"
+    else:
+        sdk_error = re.match(r"^HTTPError: ([1-5][0-9]{2}) Client Error:", detail)
+        if sdk_error:
+            result["http_status"] = int(sdk_error.group(1))
+            result["reason"] = "HTTP_ERROR_STATUS_ONLY"
+    return result
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -928,6 +1002,7 @@ def _db_snapshot(path):
                                 "events": []})
         return {"observer": observer, "workers": workers,
                 "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
+                "ppi_auth_last_attempt": _ppi_auth_last_attempt(db, tables),
                 "scalping_recent_error_codes": scalping_codes,
                 'paper_open_contracts':activity}
 
