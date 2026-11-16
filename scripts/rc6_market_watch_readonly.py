@@ -450,13 +450,13 @@ def _rootless_custody_metadata():
                                      "ROOT" if meta.st_uid == 0 else "OTHER"),
                      "group_write": bool(mode & 0o020),
                      "other_write": bool(mode & 0o002)}
-            if label == "STATE":
+            if label in ("HOME", "LOCAL", "STATE"):
                 entry["group_or_other_any_access"] = bool(mode & 0o077)
             segments[label] = entry
         except (OSError, ValueError, TypeError):
             segments[label] = {"kind": "UNAVAILABLE", "owner_class": "UNAVAILABLE",
                                "group_write": None, "other_write": None}
-            if label == "STATE":
+            if label in ("HOME", "LOCAL", "STATE"):
                 segments[label]["group_or_other_any_access"] = None
     return {"state": ("OBSERVED" if all(v["kind"] != "UNAVAILABLE"
                                   for v in segments.values()) else "PARTIAL"),
@@ -581,15 +581,31 @@ def _rootless_context(*, runner=None):
     state = home / ".local/state/porota-rc6"
     if not home.is_absolute() or ".." in home.parts or any(p.is_symlink() for p in home.parents):
         raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
+    private_home = False
+    local_owned_by_operator = False
     for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
+        mode = stat.S_IMODE(meta.st_mode)
+        if directory == home:
+            private_home = (meta.st_uid == uid and stat.S_ISDIR(meta.st_mode)
+                            and not mode & 0o077)
+        elif directory == home / ".local":
+            local_owned_by_operator = meta.st_uid == uid
         # Product Host.boundary/private_dir pins the account home and private
         # state, not the owner of pre-existing non-writable ancestors. Root-
         # owned .local and .local/state are safe when they cannot be replaced.
         allowed_owner = (meta.st_uid == uid if directory in (home, state)
                          else meta.st_uid in (0, uid))
+        # Only this one UID1000-owned intermediate may be group-writable, and
+        # only under a fully private HOME and a non-writable UID1000 .local.
+        # Other identities cannot traverse HOME to rename or replace STATE.
+        # No chmod, fallback socket, repair or weakening of STATE/current.json.
+        private_state_parent = (directory == home / ".local/state" and
+                                meta.st_uid == uid and private_home and
+                                local_owned_by_operator and not mode & 0o002)
+        forbidden_writes = 0o077 if directory == state else (0o002 if private_state_parent else 0o022)
         if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or not allowed_owner or
-                stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
+                mode & forbidden_writes):
             raise ValueError("ROOTLESS_RELEASE_CUSTODY")
     identity = SimpleNamespace(
         uid=uid, home=home, state=state,

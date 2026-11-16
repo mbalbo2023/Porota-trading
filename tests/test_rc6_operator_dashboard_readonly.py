@@ -265,6 +265,39 @@ class ProductRootlessContextTests(TestCase):
     with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
         self.context()
 
+ def test_rootless_group_writable_state_parent_needs_private_home(self):
+    local = self.home / ".local"
+    intermediate = self.home / ".local/state"
+    self.home.chmod(0o700)
+    local.chmod(0o700)
+    intermediate.chmod(0o770)
+    self.assertEqual(self.context().roles, self.cids)
+    for name, path, mode in (
+            ("group-executable-home", self.home, 0o750),
+            ("world-executable-home", self.home, 0o701),
+            ("writable-local", local, 0o770),
+            ("world-writable-state-parent", intermediate, 0o777)):
+        with self.subTest(name=name):
+            previous = path.stat().st_mode & 0o777
+            try:
+                path.chmod(mode)
+                with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+                    self.context()
+            finally:
+                path.chmod(previous)
+    self.intermediate_owner = 0
+    with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+        self.context()
+
+ def test_rootless_rejects_symlink_in_home_ancestors(self):
+    original = Path.is_symlink
+    def alias(path):
+        return Path(path) == self.home.parent or original(path)
+    with patch.object(Path, "is_symlink", alias):
+        with self.assertRaisesRegex(ValueError, "ROOTLESS_PRIVATE_HOME_UNVERIFIED"):
+            self.context()
+    self.assertEqual(self.calls, [])
+
  def test_dashboard_rootless_failure_receipt_never_exports_raw_error(self):
     for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"), "ROOTLESS_RELEASE_CUSTODY"),
                             (ValueError("token=never-print-secret"), "ROOTLESS_UNCLASSIFIED")):

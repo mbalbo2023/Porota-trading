@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_deploy_sha:
-        description: 'Exact deployed product SHA from the current runtime checkpoint'
+        description: 'Immutable deployed source SHA: ROOTLESS_SPLIT candidate_sha (not product HEAD); legacy deploy_sha'
         required: true
         type: string
   pull_request:

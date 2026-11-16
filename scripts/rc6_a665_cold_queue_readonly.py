@@ -187,9 +187,38 @@ def _provenance(data: Path, *, readonly: bool):
                          private=False, readonly=readonly)
         try:
             record = json.loads(raw)
-            sha = record.get("deploy_sha") if isinstance(record, dict) else None
         except (ValueError, UnicodeError, TypeError):
-            sha = None
+            record = None
+        if not isinstance(record, dict):
+            raise Hold("DEPLOY_SHA_PROVENANCE_HOLD")
+        if "deployment_backend" not in record:
+            # Historical legacy receipts may carry BOTH deploy_sha and
+            # candidate_sha. Only deploy_sha was authoritative for this reader;
+            # preserve that contract rather than inventing a new legacy HOLD.
+            sha = record.get("deploy_sha")
+        elif record.get("deployment_backend") == "ROOTLESS_SPLIT":
+            # Product publish_release_marker() emits candidate_sha, not
+            # deploy_sha. Bind the immutable deployed source to the existing
+            # workflow's expected SHA without fabricating the legacy field.
+            # Queue inspection must remain unavailable if PAPER or custody
+            # is ambiguous. No provider calls or runtime mutation here.
+            tree = record.get("candidate_tree_sha")
+            image = record.get("image_id")
+            if ("deploy_sha" in record or
+                    not isinstance(tree, str) or not SHA.fullmatch(tree) or
+                    not isinstance(image, str) or
+                    not re.fullmatch(r"sha256:[0-9a-f]{64}", image) or
+                    record.get("validation_status") != "VALIDATED_RUNTIME" or
+                    record.get("mode") != "PRODUCTION_PAPER" or
+                    type(record.get("real_orders_sent")) is not int or
+                    record["real_orders_sent"] != 0 or
+                    record.get("real_order_routes") != "NOT_CALLED" or
+                    record.get("ppi_watch_untouched") is not True or
+                    record.get("real_order_capability") != "BLOCKED"):
+                raise Hold("DEPLOY_SHA_PROVENANCE_HOLD")
+            sha = record.get("candidate_sha")
+        else:
+            raise Hold("DEPLOY_SHA_PROVENANCE_HOLD")
         if not isinstance(sha, str) or not SHA.fullmatch(sha):
             raise Hold("DEPLOY_SHA_PROVENANCE_HOLD")
         return sha
