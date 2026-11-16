@@ -530,10 +530,20 @@ def ensure_pair_restored(host, current, started):
     failures = []
     observer_pre = host.inspect(current['roles']['observer'])
     already_running = observer_pre.get('State',{}).get('Running') is True
+    # The stopped observer wrote a clean STOP_ACK heartbeat *after* the
+    # recovery's initial started timestamp. Treating that pre-restart STOPPED
+    # row as a new heartbeat makes the immutable postflight fail immediately.
+    # Keep its existing PENDING/wait loop by fencing at the observer's restart.
+    birth_floor = started - timedelta(days=30) if already_running else None
     for role in ('dashboard','observer'):
         cid = current['roles'][role]
         try:
             item = host.inspect(cid)
+            # An observer seen running at the first probe may have stopped
+            # before this second probe. Its next start is a new birth too.
+            if role == 'observer' and (not already_running or
+                                       item.get('State',{}).get('Running') is False):
+                birth_floor = datetime.now(timezone.utc)
             if item.get('State', {}).get('Running') is False:
                 host.docker.call('container','start',cid,timeout=95)
             else:
@@ -546,10 +556,14 @@ def ensure_pair_restored(host, current, started):
         # The immutable controller's already-live children predate a resume
         # request. Postflight still requires fresh heartbeat/PID health, but
         # must not invent that those child PIDs were born during this request.
-        from datetime import timedelta
-        birth_floor = started - timedelta(days=30) if already_running else started
         host.postflight(current, birth_floor, budget=600)
     except (OSError, ValueError, RuntimeError) as exc:
+        from scripts import porota_rootless_host as frozen_host
+        category = str(exc)
+        if isinstance(exc, frozen_host.Hold) and re.fullmatch(r'[A-Z0-9_]{5,100}',category):
+            # A public, typed host failure is essential to distinguish a
+            # transient boot from a PAPER/identity safety violation.
+            raise ColdHold(category) from exc
         raise ColdHold('RUNTIME_POSTFLIGHT_UNVERIFIED') from exc
     return {'state':'RESTORED_ORIGINAL_RUNTIME', 'roles':2, 'controller_roles':8}
 
@@ -657,6 +671,7 @@ def operate(operation, root):
     result = None
     restore_failure = None
     recovery_failure = None
+    recovery_stage = 'STOP_PAIR'
     with host_module.user_lock(host.identity.state/'deploy.lock'):
         # Fence against the lock-acquisition gap before touching runtime.
         current_recheck, roles_recheck = frozen_release(host_module, host)
@@ -679,16 +694,19 @@ def operate(operation, root):
             for role in ('observer','dashboard'):
                 cid = current['roles'][role]
                 host.docker.call('container','stop','--time','65',cid,timeout=95)
+            recovery_stage = 'POSTSTOP_ADMISSION'
             stopped_admission(host_module, host, current, True,
                               expected_database=book['identity'], expected_operator=operator,
                               stopped_after=started)
             # The successor's archive algorithm and all its fsync boundaries
             # are preserved, under a typed rootless revalidation callback.
+            recovery_stage = 'COLD_QUARANTINE'
             result = quarantine_existing(successor, root,
                 lambda: stopped_admission(host_module, host, current, True,
                     expected_database=book['identity'], expected_operator=operator,
                     stopped_after=started),
                 dict(current['roles']))
+            recovery_stage = 'COLD_VERIFY'
             end = successor.inspect(root, hash_pack=True)
             demand(end['archive_complete'] is True and end['queue_failed'] is False,
                    'COLD_QUARANTINE_INCOMPLETE')
@@ -712,11 +730,18 @@ def operate(operation, root):
                 except (OSError, ValueError, RuntimeError):
                     restore_failure = 'RUNTIME_RESTORE_UNVERIFIED'
         if restore_failure or recovery_failure:
-            reason = restore_failure or str(recovery_failure)
-            if not re.fullmatch('[A-Z0-9_]{5,100}', reason):
-                reason = 'COLD_RECOVERY_UNVERIFIED'
+            primary = str(recovery_failure) if recovery_failure else None
+            if primary is not None and not re.fullmatch(r'[A-Z0-9_]{5,100}',primary):
+                primary = 'COLD_RECOVERY_UNVERIFIED'
+            secondary = restore_failure
+            if secondary is not None and not re.fullmatch(r'[A-Z0-9_]{5,100}',secondary):
+                secondary = 'RUNTIME_RESTORE_UNVERIFIED'
             return {**receipt, 'operation':'cold_recover', 'state':'BLOQUEADO',
-                    'failure_signature':reason, 'archive_complete':False,
+                    'failure_signature':secondary or primary,
+                    'recovery_failure_signature':primary,
+                    'recovery_failure_stage':recovery_stage if primary else None,
+                    'restoration_failure_signature':secondary,
+                    'archive_complete':False,
                     'cold_queue_failed':None, 'runtime_validated':restore_failure is None,
                     'restoration':'RESTORED_ORIGINAL_RUNTIME' if restore_failure is None else 'NO_VERIFICADO',
                     'mutations':None}
