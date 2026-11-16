@@ -168,6 +168,56 @@ class FlatPaperTests(unittest.TestCase):
 
 
 class RootlessAdmissionTests(unittest.TestCase):
+    def test_cold_inspect_oserror_exposes_probe_stage_and_errno_without_private_path(self):
+        from scripts import porota_rootless_host as host_module
+        import sys
+        successor = Mock()
+        host = Mock()
+        with patch.dict(sys.modules, {'scripts.rc6_cold2_successor': successor}), \
+             patch.object(host_module, 'Host', return_value=host), \
+             patch.object(cold, 'frozen_release',
+                          side_effect=PermissionError(13, 'private path', '/private/secret')):
+            result = cold.operate('cold_inspect', Path('/opt/porota-trading'))
+        self.assertEqual(result['state'], 'BLOQUEADO')
+        self.assertEqual(result['failure_signature'], 'COLD_FROZEN_RELEASE_OSERROR')
+        self.assertEqual(result['failure_stage'], 'FROZEN_RELEASE')
+        self.assertEqual(result['failure_errno'], 13)
+        self.assertEqual(result['mutations'], 0)
+        self.assertIsNone(result['real_orders_sent'])
+        self.assertNotIn('/private/secret', json.dumps(result))
+
+    def test_cold_inspect_archive_oserror_is_distinct_from_rootless_probe_error(self):
+        from scripts import porota_rootless_host as host_module
+        import sys
+        successor = Mock()
+        host = Mock()
+        with patch.dict(sys.modules, {'scripts.rc6_cold2_successor': successor}), \
+             patch.object(host_module, 'Host', return_value=host), \
+             patch.object(cold, 'frozen_release', return_value=({}, {})), \
+             patch.object(cold, 'controller_live', return_value={}), \
+             patch.object(cold, 'flat_book', return_value={}), \
+             patch.object(successor, 'inspect',
+                          side_effect=FileNotFoundError(2, 'missing', '/private/archive')):
+            result = cold.operate('cold_inspect', Path('/opt/porota-trading'))
+        self.assertEqual(result['failure_signature'], 'COLD_ARCHIVE_INSPECT_OSERROR')
+        self.assertEqual(result['failure_stage'], 'ARCHIVE_INSPECT')
+        self.assertEqual(result['failure_errno'], 2)
+        self.assertEqual(result['mutations'], 0)
+        self.assertNotIn('/private/archive', json.dumps(result))
+
+    def test_cold_blocked_exit_uses_typed_nonzero_not_opaque_79(self):
+        import io
+        with patch.object(cold, 'operate', return_value={
+                'schema': 'rc6.rootless.cold-recovery.v1',
+                'state': 'BLOQUEADO',
+                'failure_signature': 'COLD_ARCHIVE_INSPECT_OSERROR',
+                'failure_stage': 'ARCHIVE_INSPECT',
+                'mutations': 0}), patch('sys.stdout', new_callable=io.StringIO) as output:
+            with self.assertRaises(SystemExit) as result:
+                cold.main(['cold_inspect'])
+        self.assertEqual(result.exception.code, 2)
+        self.assertEqual(json.loads(output.getvalue())['failure_stage'], 'ARCHIVE_INSPECT')
+
     def test_observer_grace_covers_frozen_eight_child_drain_without_changing_dashboard(self):
         from unittest.mock import call
         host = Mock()

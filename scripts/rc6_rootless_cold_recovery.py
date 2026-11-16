@@ -790,24 +790,42 @@ def operate(operation, root):
     host = host_module.Host(root)
     if operation == 'cold_resume':
         return resume_only(host_module,host)
+    probe_stage = 'FROZEN_RELEASE'
     try:
         current, roles = frozen_release(host_module, host)
+        probe_stage = 'CONTROLLER_LIVE'
         controller = controller_live(host_module, host, current)
+        probe_stage = 'PAPER_BOOK'
         book = flat_book(root / host_module.DB_RELATIVE)
+        probe_stage = 'ARCHIVE_INSPECT'
         before = successor.inspect(root, hash_pack=True)
         names = before['source_names']
+        probe_stage = 'OPERATOR_CUSTODY'
         custody = operator_custody(root, names)
+        probe_stage = 'RESOURCE_RESERVE'
         resources = resource_reserve(root)
+        probe_stage = 'RESTART_POLICY'
         policy = restart_policy_witness(roles)
+        probe_stage = 'OPERATOR_STATE'
         operator = operator_state_witness(host.identity.operator)
+        probe_stage = 'CRITICAL_BROKER'
         critical = critical_broker_proof()
+        probe_stage = 'LEGACY_WRITERS'
         legacy = legacy_writers_absent()
     except (OSError, KeyError, ValueError, host_module.Hold) as exc:
-        category = str(exc) if isinstance(exc, (ColdHold, host_module.Hold, ValueError)) else 'HOST_PROBE_UNVERIFIED'
+        if isinstance(exc, OSError):
+            category = f'COLD_{probe_stage}_OSERROR'
+        elif isinstance(exc, KeyError):
+            category = f'COLD_{probe_stage}_KEYERROR'
+        else:
+            category = str(exc)
         if not re.fullmatch(r'[A-Z0-9_]{5,100}', category):
-            category = 'HOST_PROBE_UNVERIFIED'
+            category = f'COLD_{probe_stage}_INVALID_VALUE'
+        errno = exc.errno if isinstance(exc, OSError) else None
         return {'schema':'rc6.rootless.cold-recovery.v1', 'operation':operation,
                 'state':'BLOQUEADO', 'failure_signature':category,
+                'failure_stage':probe_stage,
+                'failure_errno':errno if type(errno) is int and 0 <= errno <= 255 else None,
                 'real_orders_sent':None, 'mutations':0, 'ppi_watch_touched':False,
                 'boca_touched':False}
     receipt = {'schema':'rc6.rootless.cold-recovery.v1', 'operation':operation,
@@ -937,7 +955,7 @@ def main(argv=None):
                   'real_orders_sent':None, 'ppi_watch_touched':False,'boca_touched':False}
     print(json.dumps(result, sort_keys=True))
     raise SystemExit(0 if result['state'] in ('READ_ONLY_OBSERVED','COLD_ARCHIVE_COMPLETE',
-                                           'RUNTIME_RESTORED') else 79)
+                                           'RUNTIME_RESTORED') else 2)
 
 
 if __name__ == '__main__':
