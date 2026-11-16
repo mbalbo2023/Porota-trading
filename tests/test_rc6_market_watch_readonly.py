@@ -1554,6 +1554,27 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
         self.assertEqual(missing["recorded_period"]["status"], "NO_VERIFICADO")
         self.assertEqual(missing["recorded_period"]["reason"], "SQLITE_READ_OR_SCHEMA_UNAVAILABLE")
 
+    def test_live_wal_sidecars_are_never_opened_or_rewritten(self):
+        self.events((1, "2026-11-15T17:00:00Z"))
+        writer = sqlite3.connect(self.performance)
+        try:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("INSERT INTO events VALUES(?,?,?)",
+                           (2, "2026-11-16T17:00:00Z", "PRIVATE_WAL_PAYLOAD"))
+            writer.commit()
+            sidecars = [Path(str(self.performance)+"-wal"), Path(str(self.performance)+"-shm")]
+            self.assertTrue(all(p.is_file() and p.stat().st_size > 0 for p in sidecars))
+            before = [(p.stat().st_mtime_ns, p.read_bytes()) for p in (self.performance, *sidecars)]
+            outcome = monitor.performance_evidence_capacity_stat(
+                self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+            after = [(p.stat().st_mtime_ns, p.read_bytes()) for p in (self.performance, *sidecars)]
+            self.assertEqual(before, after)
+            self.assertEqual(outcome["recorded_period"]["status"], "NO_VERIFICADO")
+            self.assertEqual(outcome["recorded_period"]["reason"], "WAL_ACTIVE_OR_PRESENT")
+            self.assertNotIn("PRIVATE_WAL_PAYLOAD", json.dumps(outcome))
+        finally:
+            writer.close()
+
     def test_unavailable_database_read_does_not_emit_exception_body(self):
         self.events((1, "2026-11-16T17:00:00Z"))
         with patch.object(monitor.sqlite3, "connect",
