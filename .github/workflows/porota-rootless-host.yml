@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Inspect prerequisites or prepare the isolated rootless daemon once
+        description: Rootless prerequisites or single COLD successor inspection/recovery
         type: choice
-        options: [inspect, prepare]
+        options: [inspect, prepare, cold_inspect, cold_recover, cold_resume]
         default: inspect
         required: true
 
@@ -23,7 +23,7 @@ jobs:
       github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/main' &&
       github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 35
     steps:
       - name: Resolve the reviewed source for this operation
         id: source
@@ -47,6 +47,28 @@ jobs:
           ref: ${{ steps.source.outputs.source_sha }}
           persist-credentials: false
 
+      - name: Checkout only the existing deployed COLD archive modules
+        if: inputs.operation == 'cold_inspect' || inputs.operation == 'cold_recover' || inputs.operation == 'cold_resume'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76
+          path: .frozen_cold_source
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/porota_rootless_host.py
+            scripts/rc6_cold2_quarantine.py
+            scripts/rc6_cold2_successor.py
+          sparse-checkout-cone-mode: false
+
+      - name: Confirm immutable deployed-source identity
+        if: inputs.operation == 'cold_inspect' || inputs.operation == 'cold_recover' || inputs.operation == 'cold_resume'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C .frozen_cold_source rev-parse HEAD)" = 21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76
+          test "$(git -C .frozen_cold_source rev-parse 'HEAD^{tree}')" = b83cc6c167b0b80837099fe035f83311947a744e
+          echo 'Frozen source SHA/tree matched the deployed VALIDADO_RUNTIME package' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Execute the versioned host operation
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -57,20 +79,40 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$OPERATION" == inspect || "$OPERATION" == prepare ]]
+          [[ "$OPERATION" == inspect || "$OPERATION" == prepare || "$OPERATION" == cold_inspect || "$OPERATION" == cold_recover || "$OPERATION" == cold_resume ]]
+          cold_args=()
+          if [[ "$OPERATION" == cold_inspect || "$OPERATION" == cold_recover || "$OPERATION" == cold_resume ]]; then
+            cold_args=(--frozen-source "$GITHUB_WORKSPACE/.frozen_cold_source")
+          fi
           python3 -B -m scripts.porota_actions_host "$OPERATION" \
-            --receipt "$RUNNER_TEMP/rootless-host.json"
+            --receipt "$RUNNER_TEMP/rootless-host.json" "${cold_args[@]}"
+
+      - name: Resolve uncertain stop by resuming the exact existing CIDs
+        if: failure() && inputs.operation == 'cold_recover'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m scripts.porota_actions_host cold_resume \
+            --frozen-source "$GITHUB_WORKSPACE/.frozen_cold_source" \
+            --receipt "$RUNNER_TEMP/rootless-host-resume.json"
 
       - name: Preserve the observed host result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: porota-rootless-host-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/rootless-host.json
+          path: |
+            ${{ runner.temp }}/rootless-host.json
+            ${{ runner.temp }}/rootless-host-resume.json
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Report evidence without certifying a deployment
+      - name: Report physical evidence without certifying an unobserved outcome
         if: always()
         shell: bash
         run: |
@@ -80,5 +122,8 @@ jobs:
           path = Path(os.environ['RUNNER_TEMP']) / 'rootless-host.json'
           receipt = json.loads(path.read_text()) if path.is_file() else {'state': 'NO_VERIFICADO'}
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
-              output.write('## Rootless host prerequisites\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
+              output.write('## Rootless host / COLD physical evidence\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
+              rescue = path.with_name('rootless-host-resume.json')
+              if rescue.is_file():
+                  output.write('## Recovery of an uncertain stop\n\n```json\n' + rescue.read_text()[:8192] + '\n```\n')
           PY
