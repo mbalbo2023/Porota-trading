@@ -646,7 +646,9 @@ def evaluate_runtime_funnel(database, *, as_of, planner_report, entry_signal_rep
     metrics = checkpoint_metrics(checkpoint)
     checkpoint["checkpoint_sha256"] = metrics["sha256"]
     while metrics["signed_canonical_bytes"] > MAX_CHECKPOINT_BYTES:
-        if not _reclaim_oldest_session(checkpoint, at.astimezone(ART).date().isoformat()):
+        # The trading session advances after market close, before ART midnight.
+        # Use the same session as planner events when reclaiming old evidence.
+        if not _reclaim_oldest_session(checkpoint, planner_report.get("session") or at.astimezone(ART).date().isoformat()):
             raise ValueError("FUNNEL_CHECKPOINT_CAPACITY_EXCEEDED")
         retained = {v["session"] for v in checkpoint["reaches"].values()} | set(checkpoint["event_keys"].values())
         metrics = checkpoint_metrics(checkpoint)

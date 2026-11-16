@@ -385,6 +385,45 @@ def test_funnel_preserves_two_sessions_when_capacity_allows(tmp_path, monkeypatc
     assert "OLDER_SESSION_EVICTED_FOR_CAPACITY" not in report["source_gaps"]
 
 
+def test_funnel_after_close_reclaims_previous_trading_session_for_checkpoint_capacity(tmp_path, monkeypatch):
+    """The next session starts after BYMA closes, before the calendar day changes."""
+    store, cp = bootstrap(tmp_path)
+    during_session = START + timedelta(days=1)
+    current = plan(during_session)
+    current["session"] = "2026-10-06"
+    current["engines"]["EQUITY_SPOT"]["telemetry"][0]["identity"][0] = "B"
+    _, cp = funnel.evaluate_runtime_funnel(store.path, as_of=during_session,
+        previous=cp, planner_report=current)
+
+    after_close = during_session + timedelta(hours=7)  # 17:29 ART, Tuesday.
+    next_session = plan(after_close)
+    next_session["session"] = "2026-10-07"
+    rows = next_session["engines"]["EQUITY_SPOT"]["telemetry"]
+    rows[0]["identity"][0] = "C"
+    for symbol in ("D", "E"):
+        row = json.loads(json.dumps(rows[0]))
+        row["identity"][0] = symbol
+        rows.append(row)
+
+    # Previous two sessions fit, but the complete new trading session plus
+    # Tuesday cannot fit. Wednesday alone does, without dropping its evidence.
+    monkeypatch.setattr(funnel, "MAX_CHECKPOINT_BYTES", 12500)
+    report, checkpoint = funnel.evaluate_runtime_funnel(store.path, as_of=after_close,
+        previous=cp, planner_report=next_session)
+    assert report["sessions_retained"] == ["2026-10-07"]
+    assert {reach["identity"][0] for reach in report["state_reaches"]} == {"C", "D", "E"}
+    assert report["source_gaps"]["OLDER_SESSION_EVICTED_FOR_CAPACITY"] == 1
+    assert report["real_orders_sent"] == 0 and report["entry_authority"] is False
+    metrics = funnel.checkpoint_metrics(checkpoint)
+    assert metrics["signed_canonical_bytes"] <= 12500
+    assert checkpoint["checkpoint_sha256"] == metrics["sha256"]
+
+    repeated, repeated_checkpoint = funnel.evaluate_runtime_funnel(store.path,
+        as_of=after_close + timedelta(seconds=1), previous=checkpoint, planner_report=next_session)
+    assert repeated["denominators"] == report["denominators"]
+    assert repeated_checkpoint["checkpoint_sha256"] == funnel.checkpoint_metrics(repeated_checkpoint)["sha256"]
+
+
 def test_causal_discovery_only_reports_late_missed_when_contract_proves_it():
     event = START+timedelta(minutes=2)
     identity = dict(symbol="A", asset_class="ACCIONES", settlement="A-24HS", currency="ARS", market="BYMA")
