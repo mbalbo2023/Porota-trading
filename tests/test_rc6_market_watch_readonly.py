@@ -118,6 +118,63 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_ppi_auth_last_attempt_reports_http_metadata_without_raw_detail(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE api_health(
+                component TEXT PRIMARY KEY, state TEXT, detail TEXT,
+                checked_at TEXT, last_success_at TEXT, source TEXT)""")
+            connection.execute("INSERT INTO api_health VALUES(?,?,?,?,?,?)", (
+                "PPI_PRODUCTION_AUTH", "ROJO",
+                "ProductionAuthResponseError: PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: "
+                "HTTP=403; Content-Type=TEXT_HTML; Content-Length=228 "
+                "https://private.example/?token=DO_NOT_LEAK",
+                "2026-11-16T19:05:00+00:00", "2026-11-05T19:00:00+00:00", "PPI Producción"))
+        result = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(result["status"], "LAST_FAILED_AUTH_RECORDED")
+        self.assertEqual(result["error_class"], "ProductionAuthResponseError")
+        self.assertEqual(result["http_status"], 403)
+        self.assertEqual(result["response_media_type"], "TEXT_HTML")
+        self.assertEqual(result["response_bytes"], 228)
+        self.assertEqual(result["checked_at"], "2026-11-16T19:05:00+00:00")
+        self.assertEqual(result["last_success_at"], "2026-11-05T19:00:00+00:00")
+        self.assertEqual(result["provider_requests_by_probe"], 0)
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(result))
+        self.assertNotIn("private.example", json.dumps(result))
+        self.assertNotIn("url", json.dumps(result).lower())
+
+    def test_ppi_auth_unclassified_detail_never_becomes_guessed_http_status(self):
+        absent = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(absent["status"], "NO_VERIFICADO")
+        self.assertIsNone(absent["http_status"])
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE api_health(
+                component TEXT PRIMARY KEY, state TEXT, detail TEXT,
+                checked_at TEXT, last_success_at TEXT, source TEXT)""")
+            connection.execute("INSERT INTO api_health VALUES(?,?,?,?,?,?)", (
+                "PPI_PRODUCTION_AUTH", "ROJO",
+                "RuntimeError: secret=DO_NOT_LEAK http://private.example/401?token=123",
+                "2026-11-16T19:05:00Z", None, "PPI Producción"))
+        unknown = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(unknown["status"], "LAST_FAILED_AUTH_RECORDED")
+        self.assertEqual(unknown["error_class"], "RuntimeError")
+        self.assertIsNone(unknown["http_status"])
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(unknown))
+        self.assertNotIn("private.example", json.dumps(unknown))
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE api_health SET detail=? WHERE component=?", (
+                "HTTPError: 401 Client Error: Unauthorized for url: "
+                "https://private.example/api?token=DO_NOT_LEAK", "PPI_PRODUCTION_AUTH"))
+        http = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(http["http_status"], 401)
+        self.assertEqual(http["reason"], "HTTP_ERROR_STATUS_ONLY")
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(http))
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE api_health SET state='VERDE', detail='Login correcto' "
+                               "WHERE component='PPI_PRODUCTION_AUTH'")
+        recovered = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(recovered["status"], "LAST_AUTH_SUCCESS_RECORDED")
+        self.assertIsNone(recovered["http_status"])
+
     def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
         current = json.loads(self.provenance_path.read_text())
         current.pop("deploy_sha")
