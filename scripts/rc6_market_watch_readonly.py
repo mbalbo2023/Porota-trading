@@ -28,6 +28,14 @@ SCHEMA = "rc6.market-watch-readonly.v1"
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 ROOT = Path("/opt/porota-trading")
 DB_REL = Path("data/paper_v17/observer_v17.db")
+# Limits observed in exact product sources, never a prediction from branch HEAD:
+# deployed SHA21b6 (EvidenceStore default128MiB) and DRAFT candidate f0fc (256MiB).
+# Only a physically matched runtime source SHA may select either limit.
+PERFORMANCE_LIMIT_BY_SOURCE_SHA = {
+    "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76": 128 * 1024**2,
+    "642654b76fcfdc2dce3380a4b9bc96ffd4347595": 128 * 1024**2,
+    "f0fc1347df4a3f1c70db6cc3bbc18fc5b20a1341": 256 * 1024**2,
+}
 SEVERITY = {"GREEN": 0, "P2": 1, "P1": 2, "P0": 3}
 # Product runtime is exactly the two roles in the private rootless release.
 # The separately owned legacy critical-approval broker is not a third role.
@@ -924,15 +932,63 @@ def _db_snapshot(path):
                 'paper_open_contracts':activity}
 
 
-def performance_evidence_capacity_stat(root, *, default_limit=128*1024*1024):
-    """Only lstat existing dedicated performance evidence DB/WAL/SHM files.
+def _performance_recorded_period(path):
+    """Two PRIMARY KEY boundary reads only; private payloads never leave SQLite."""
+    base = {"status": "NO_VERIFICADO", "read_only": True,
+            "ordering": "EVENT_ID_PRIMARY_KEY",
+            "first_recorded_at": None, "last_recorded_at": None}
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return {**base, "status": "NO_EVIDENCE_FILES"}
+    except OSError:
+        return {**base, "reason": "FILESYSTEM_STAT_UNAVAILABLE"}
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        return {**base, "reason": "UNSAFE_FILE_TYPE"}
+    # Mode ro and query_only never UPDATE tables or create a persistent receipt.
+    # A short progress deadline bounds even a damaged schema/index.
+    uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=.2)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("PRAGMA busy_timeout=100")
+            stop_at = time.monotonic() + .2
+            db.set_progress_handler(lambda: int(time.monotonic() > stop_at), 1000)
+            first = db.execute("SELECT recorded_at FROM events ORDER BY id ASC LIMIT 1").fetchone()
+            last = db.execute("SELECT recorded_at FROM events ORDER BY id DESC LIMIT 1").fetchone()
+            if first is None and last is None:
+                return {**base, "status": "EMPTY"}
+            if first is None or last is None:
+                return {**base, "reason": "BOUNDARY_MISMATCH"}
+            def date_value(row):
+                value = row[0]
+                if type(value) is not str or len(value) > 64:
+                    raise ValueError("UNVERIFIED_TIMESTAMP")
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    raise ValueError("UNVERIFIED_TIMESTAMP")
+                return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+            first_at, last_at = date_value(first), date_value(last)
+            return {**base, "status": "OBSERVED", "first_recorded_at": first_at,
+                    "last_recorded_at": last_at}
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        return {**base, "reason": "SQLITE_READ_OR_SCHEMA_UNAVAILABLE"}
 
-    Never opens or modifies SQLite, never exposes host paths, never treats
-    below-quota as a fresh performance report. The limit mirrors the current
-    product's EvidenceStore default, not an operator-approved quota increase.
+
+def performance_evidence_capacity_stat(root, *, default_limit=None, runtime_source_sha=None):
+    """Lstat dedicated evidence bytes; read only two indexed timestamp boundaries.
+
+    Never infer a future product's 256MiB from a DRAFT branch: the active limit
+    is attached to the physical runtime source SHA verified by the host probe.
+    An unknown source reports NO_VERIFICADO rather than a false capacity state.
     """
-    if type(default_limit) is not int or default_limit < 1:
+    if default_limit is not None and (type(default_limit) is not int or default_limit < 1):
         raise ValueError("PERFORMANCE_DEFAULT_CAPACITY_LIMIT_INVALID")
+    limit_source = "EXPLICIT_EXPECTED_NOT_RUNTIME" if default_limit is not None else "NO_VERIFICADO"
+    if default_limit is None:
+        default_limit = PERFORMANCE_LIMIT_BY_SOURCE_SHA.get(runtime_source_sha)
+        if default_limit is not None:
+            limit_source = "EXACT_RUNTIME_SOURCE_SHA"
     db = Path(root) / DB_REL
     stem = Path(str(db) + ".performance.sqlite")
     sizes = {}
@@ -951,16 +1007,19 @@ def performance_evidence_capacity_stat(root, *, default_limit=128*1024*1024):
                     "read_only": True, "report_freshness": "NO_VERIFICADO"}
         sizes[name] = info.st_size
     total = sum(sizes.values())
-    return {"state": ("AT_OR_ABOVE_DEFAULT_LIMIT" if total >= default_limit
-                       else "NO_EVIDENCE_FILES" if total == 0
-                       else "BELOW_DEFAULT_LIMIT_NOT_HEALTH"),
+    period = _performance_recorded_period(stem)
+    return {"state": ("NO_EVIDENCE_FILES" if total == 0
+                      else "NO_VERIFICADO_CAPACITY_LIMIT" if default_limit is None
+                      else "AT_OR_ABOVE_DEFAULT_LIMIT" if total >= default_limit
+                      else "BELOW_DEFAULT_LIMIT_NOT_HEALTH"),
             "default_capacity_bytes": default_limit,
+            "capacity_limit_source": limit_source,
             "evidence_total_bytes": total,
             "evidence_by_component_bytes": sizes,
+            "recorded_period": period,
             "read_only": True,
             "report_freshness": "NO_VERIFICADO",
             "provider_requests": 0, "real_order_routes_called": 0}
-
 
 def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=None):
     root = Path(root)
@@ -981,7 +1040,6 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
               "expected_deploy_sha": expected_sha, "market_clock_window": active_hours(at),
               "broker_requests": 0, "real_order_routes_called": 0,
               "ppi_watch_accessed": False, "findings": findings}
-    result["performance_evidence_capacity"] = performance_evidence_capacity_stat(root)
     def add(code, level, evidence=None):
         findings.append(finding(code, level, evidence=evidence))
     expected = independent_session(at, root)
@@ -1080,6 +1138,8 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
         source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
         provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
     result["provenance_identity"] = provenance_identity
+    result["performance_evidence_capacity"] = performance_evidence_capacity_stat(
+        root, runtime_source_sha=marker_sha if rootless and source_match else None)
     provenance_fields_valid = bool(
         provenance and provenance.get("mode") == "PRODUCTION_PAPER" and
         provenance.get("validation_status") == "VALIDATED_RUNTIME" and
