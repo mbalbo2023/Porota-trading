@@ -168,6 +168,80 @@ class FlatPaperTests(unittest.TestCase):
 
 
 class RootlessAdmissionTests(unittest.TestCase):
+    def test_observer_grace_covers_frozen_eight_child_drain_without_changing_dashboard(self):
+        from unittest.mock import call
+        host = Mock()
+        current = {'roles': {'observer': 'a'*64, 'dashboard': 'b'*64}}
+        cold.stop_pair(host, current)
+        self.assertEqual(host.docker.call.call_args_list, [
+            call('container', 'stop', '--time', '150', 'a'*64, timeout=180),
+            call('container', 'stop', '--time', '65', 'b'*64, timeout=95),
+        ])
+
+    def test_poststop_failure_reports_sanitized_predicates_for_both_roles(self):
+        current = {'roles': {'observer': 'a'*64, 'dashboard': 'b'*64}}
+        good = {'Running': False, 'Status': 'exited', 'Pid': 0,
+                'OOMKilled': False, 'ExitCode': 0}
+        host = Mock()
+        host.root = Path('/opt/porota-trading')
+        source = Mock()
+        source.DB_RELATIVE = Path('data/paper_v17/observer_v17.db')
+        for role in ('observer', 'dashboard'):
+            for field, bad, category in (
+                ('Running', True, 'ZERO'),
+                ('Status', 'running', 'ZERO'),
+                ('Pid', 29, 'ZERO'),
+                ('OOMKilled', True, 'ZERO'),
+                ('ExitCode', 143, 'SIGTERM_143'),
+                ('ExitCode', 137, 'SIGKILL_137'),
+                ('ExitCode', True, 'NON_INTEGER'),
+                ('ExitCode', '0', 'NON_INTEGER'),
+            ):
+                with self.subTest(role=role, field=field, bad=bad):
+                    pair = {name: {'State': good.copy()} for name in current['roles']}
+                    pair[role]['State'][field] = bad
+                    host.check_role.side_effect = lambda _current, name: pair[name]
+                    with self.assertRaisesRegex(cold.StopProofHold,
+                                                'ROOTLESS_PAIR_NOT_CLEANLY_STOPPED') as raised:
+                        cold.stopped_admission(source, host, current, True)
+                    evidence = raised.exception.evidence
+                    self.assertEqual(set(evidence), {'observer', 'dashboard'})
+                    self.assertEqual(evidence[role]['exit_code_category'], category)
+                    self.assertFalse(all(evidence[role][key] for key in (
+                        'running_false', 'status_exited', 'pid_zero',
+                        'oom_false', 'exit_code_zero')))
+                    self.assertNotIn('Id', str(evidence))
+                    self.assertNotIn('/opt/', str(evidence))
+
+    def test_cold_resume_is_suppressed_only_for_exact_restored_same_run_receipt(self):
+        valid = {'schema': 'rc6.rootless.cold-recovery.v1',
+                 'operation': 'cold_recover', 'state': 'BLOQUEADO',
+                 'source_sha': cold.FROZEN_SOURCE_SHA, 'source_tree': cold.FROZEN_TREE,
+                 'controller_roles': 8, 'real_orders_sent': 0,
+                 'paper': 'PAPER_FLAT', 'critical': 'HEALTHY_ISSUES_ONLY',
+                 'pack_content_hash_verified': True, 'operator_state_unchanged': True,
+                 'restoration': 'RESTORED_ORIGINAL_RUNTIME',
+                 'runtime_validated': True, 'restoration_failure_signature': None,
+                 'ppi_watch_touched': False, 'boca_touched': False,
+                 'transfer_cleanup': 'COMPLETE'}
+        self.assertTrue(cold.restored_receipt_proves_safe_skip(valid))
+        for key, value in (
+            ('schema', 'UNKNOWN'), ('operation', 'cold_resume'),
+            ('state', 'COLD_ARCHIVE_COMPLETE'), ('source_sha', '0'*40),
+            ('source_tree', '0'*40), ('controller_roles', 7),
+            ('controller_roles', True), ('real_orders_sent', True),
+            ('real_orders_sent', 1), ('restoration', 'NO_VERIFICADO'),
+            ('paper', 'PAPER_EXPOSURE'), ('critical', 'UNKNOWN'),
+            ('pack_content_hash_verified', False), ('operator_state_unchanged', False),
+            ('runtime_validated', False), ('restoration_failure_signature', 'FAILED'),
+            ('ppi_watch_touched', True), ('boca_touched', True),
+            ('transfer_cleanup', 'INCOMPLETE'),
+        ):
+            with self.subTest(field=key, invalid=value):
+                self.assertFalse(cold.restored_receipt_proves_safe_skip({**valid, key: value}))
+        self.assertFalse(cold.restored_receipt_proves_safe_skip({}))
+        self.assertFalse(cold.restored_receipt_proves_safe_skip(None))
+
     def test_open_market_suspended_flat_quiescence_accepted_without_rootful_aliases(self):
         cid = {'observer': 'a'*64, 'dashboard': 'b'*64}
         state = {'backend': 'ROOTLESS_SPLIT', 'owned_ids': cid, 'owned_stopped': True,
@@ -314,14 +388,25 @@ class RootlessAdmissionTests(unittest.TestCase):
              patch.object(cold,'critical_broker_proof',return_value={'state':'HEALTHY_ISSUES_ONLY'}), \
              patch.object(cold,'legacy_writers_absent',return_value={'state':'NO_LEGACY_WRITERS'}), \
              patch.object(cold,'arm_stop_witness',return_value='nonce'), \
-             patch.object(cold,'stopped_admission',side_effect=cold.ColdHold('PAPER_STOP_ACK_UNVERIFIED')), \
+             patch.object(cold,'stopped_admission',side_effect=cold.ColdHold('PAPER_STOP_ACK_UNVERIFIED')) as stopped, \
              patch.object(cold,'ensure_pair_restored',side_effect=cold.ColdHold('RUNTIME_POSTFLIGHT_UNVERIFIED')):
             result=cold.operate('cold_recover',Path('/opt/porota-trading'))
+            stopped.side_effect = cold.StopProofHold({'observer': {
+                'running_false': True, 'status_exited': True, 'pid_zero': True,
+                'oom_false': True, 'exit_code_zero': False,
+                'exit_code_category': 'SIGKILL_137'}})
+            stopped_result = cold.operate('cold_recover',Path('/opt/porota-trading'))
         self.assertEqual(result['state'],'BLOQUEADO')
         self.assertEqual(result['recovery_failure_signature'],'PAPER_STOP_ACK_UNVERIFIED')
         self.assertEqual(result['recovery_failure_stage'],'POSTSTOP_ADMISSION')
         self.assertEqual(result['restoration_failure_signature'],'RUNTIME_POSTFLIGHT_UNVERIFIED')
         self.assertFalse(result['runtime_validated'])
+        self.assertEqual(stopped_result['recovery_failure_signature'],
+                         'ROOTLESS_PAIR_NOT_CLEANLY_STOPPED')
+        self.assertEqual(stopped_result['stopped_pair_evidence']['observer']['exit_code_category'],
+                         'SIGKILL_137')
+        self.assertEqual(stopped_result['restoration_failure_signature'],
+                         'RUNTIME_POSTFLIGHT_UNVERIFIED')
 
     def test_idempotent_resume_accepts_existing_running_observer_with_fresh_health(self):
         from datetime import datetime, timezone

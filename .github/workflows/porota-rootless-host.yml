@@ -97,9 +97,27 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -B -m scripts.porota_actions_host cold_resume \
-            --frozen-source "$GITHUB_WORKSPACE/.frozen_cold_source" \
-            --receipt "$RUNNER_TEMP/rootless-host-resume.json"
+          # The primary operation restores the exact CIDs in its finally block.
+          # A subsequent rescue is needed ONLY when that proof is absent or invalid.
+          # Never treat a failed archive as successful merely because restore worked.
+          if python3 - "$RUNNER_TEMP/rootless-host.json" <<'PY'
+          import sys
+          from scripts.porota_actions_host import decode_receipt
+          from scripts.rc6_rootless_cold_recovery import restored_receipt_proves_safe_skip
+          try:
+              with open(sys.argv[1], 'rb') as receipt_file:
+                  receipt = decode_receipt(receipt_file.read(131073))
+          except (OSError, ValueError, TypeError):
+              receipt = None
+          raise SystemExit(0 if restored_receipt_proves_safe_skip(receipt) else 1)
+          PY
+          then
+            echo 'COLD_AUTO_RESUME_SKIPPED_RUNTIME_ALREADY_RESTORED'
+          else
+            python3 -B -m scripts.porota_actions_host cold_resume \
+              --frozen-source "$GITHUB_WORKSPACE/.frozen_cold_source" \
+              --receipt "$RUNNER_TEMP/rootless-host-resume.json"
+          fi
 
       - name: Preserve the observed host result
         if: always()
