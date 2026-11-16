@@ -362,6 +362,32 @@ class MonitorContracts(unittest.TestCase):
                 self.assertEqual(diagnostic, [expected])
                 self.assertNotIn("private-token", repr(diagnostic))
 
+    def test_rootless_custody_metadata_is_fixed_scope_and_never_exports_paths(self):
+        home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
+        real_lstat = Path.lstat
+        def virtual_lstat(path):
+            meta = list(real_lstat(path))
+            meta[4] = 1000
+            if Path(path) == home / ".local":
+                meta[4] = 1002
+                meta[0] = (meta[0] & ~0o777) | 0o770
+            return monitor.os.stat_result(meta)
+        with patch.object(monitor.pwd, "getpwuid", return_value=account), \
+                patch.object(monitor.os, "getuid", return_value=1000), \
+                patch.object(monitor.os, "geteuid", return_value=1000), \
+                patch.object(Path, "lstat", virtual_lstat):
+            metadata = monitor._rootless_custody_metadata()
+        self.assertEqual(metadata["state"], "OBSERVED")
+        self.assertEqual(set(metadata["segments"]), {"HOME", "LOCAL", "LOCAL_STATE", "STATE"})
+        self.assertEqual(metadata["segments"]["LOCAL"], {
+            "owner_class": "OTHER", "kind": "DIRECTORY",
+            "group_write": True, "other_write": False})
+        self.assertEqual(metadata["segments"]["STATE"]["owner_class"], "UID1000")
+        self.assertIs(metadata["segments"]["STATE"]["group_or_other_any_access"], False)
+        self.assertNotIn(str(home), json.dumps(metadata))
+        with patch.object(monitor.os, "getuid", return_value=0):
+            self.assertEqual(monitor._rootless_custody_metadata()["state"], "IDENTITY_UNVERIFIED")
+
     def test_private_socket_0660_allowed_but_world_access_never_allowed(self):
         socket = Path("/run/user/1000/porota-rc6-docker.sock")
         identity = SimpleNamespace(uid=1000, socket=socket)

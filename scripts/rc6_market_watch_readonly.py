@@ -420,6 +420,49 @@ def _verify_rootless_socket(identity):
         raise ValueError("ROOTLESS_SOCKET_CUSTODY")
 
 
+def _rootless_custody_metadata():
+    """Four fixed path segments, lstat-only; no path, UID or content exported.
+
+    Diagnostic only. This never changes the strict current.json, Docker or
+    PAPER guard, and never grants ownership or deploy authority.
+    """
+    if os.getuid() != 1000 or os.geteuid() != 1000:
+        return {"state": "IDENTITY_UNVERIFIED", "segments": {}}
+    try:
+        account = pwd.getpwuid(1000)
+        home = Path(account.pw_dir)
+        if account.pw_name != "porotaadmin" or not home.is_absolute() or ".." in home.parts:
+            raise ValueError("UNTRUSTED_HOME")
+    except (KeyError, ValueError, TypeError, OSError):
+        return {"state": "IDENTITY_UNVERIFIED", "segments": {}}
+    segments = {}
+    targets = (("HOME", home), ("LOCAL", home / ".local"),
+               ("LOCAL_STATE", home / ".local/state"),
+               ("STATE", home / ".local/state/porota-rc6"))
+    for label, path in targets:
+        try:
+            meta = path.lstat()
+            mode = meta.st_mode
+            kind = ("DIRECTORY" if stat.S_ISDIR(mode) else
+                    "SYMLINK" if stat.S_ISLNK(mode) else "OTHER")
+            entry = {"kind": kind,
+                     "owner_class": ("UID1000" if meta.st_uid == 1000 else
+                                     "ROOT" if meta.st_uid == 0 else "OTHER"),
+                     "group_write": bool(mode & 0o020),
+                     "other_write": bool(mode & 0o002)}
+            if label == "STATE":
+                entry["group_or_other_any_access"] = bool(mode & 0o077)
+            segments[label] = entry
+        except (OSError, ValueError, TypeError):
+            segments[label] = {"kind": "UNAVAILABLE", "owner_class": "UNAVAILABLE",
+                               "group_write": None, "other_write": None}
+            if label == "STATE":
+                segments[label]["group_or_other_any_access"] = None
+    return {"state": ("OBSERVED" if all(v["kind"] != "UNAVAILABLE"
+                                  for v in segments.values()) else "PARTIAL"),
+            "segments": segments}
+
+
 def _read_private_current(path, uid):
     """Bounded, non-symlink, owner-private current.json as written by deploy."""
     try:
@@ -969,6 +1012,8 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
     result["rootless_probe_reason"] = (rootless_diagnostics[0] if rootless_diagnostics
                                         else "OK" if containers else "ROOTLESS_UNCLASSIFIED")
     rootless = bool(provenance and provenance.get("deployment_backend") == "ROOTLESS_SPLIT")
+    result["rootless_custody"] = (_rootless_custody_metadata() if rootless
+                                  else {"state": "NOT_APPLICABLE", "segments": {}})
     result["observed_candidate_sha"] = provenance.get("candidate_sha") if rootless else None
     if rootless:
         # Product's HEAD and the immutable source commit can differ while
