@@ -47,6 +47,14 @@ class ColdHold(ValueError):
     """Public fixed-category fail-closed reason; no private host paths."""
 
 
+class StopProofHold(ColdHold):
+    """Keep only typed Docker stop predicates after the original runtime is restored."""
+
+    def __init__(self, evidence):
+        super().__init__('ROOTLESS_PAIR_NOT_CLEANLY_STOPPED')
+        self.evidence = evidence
+
+
 def demand(condition, reason):
     if not condition:
         raise ColdHold(reason)
@@ -485,6 +493,31 @@ def read_shadow_status(root):
     return {'real_routes':'NOT_CALLED','real_orders_sent':0}
 
 
+def stop_pair(host, current):
+    """Allow the frozen observer's eight-child drain to finish before SIGKILL."""
+    for role, grace, command_timeout in (('observer', 150, 180), ('dashboard', 65, 95)):
+        host.docker.call('container', 'stop', '--time', str(grace),
+                         current['roles'][role], timeout=command_timeout)
+
+
+def stopped_role_proof(item):
+    """Fixed non-secret categories, never a raw Docker container inspection."""
+    state = item.get('State')
+    if type(state) is not dict:
+        state = {}
+    code = state.get('ExitCode')
+    category = ('NON_INTEGER' if type(code) is not int else
+                'ZERO' if code == 0 else
+                'SIGTERM_143' if code == 143 else
+                'SIGKILL_137' if code == 137 else 'OTHER_NONZERO')
+    return {'running_false': state.get('Running') is False,
+            'status_exited': state.get('Status') == 'exited',
+            'pid_zero': type(state.get('Pid')) is int and state['Pid'] == 0,
+            'oom_false': state.get('OOMKilled') is False,
+            'exit_code_zero': type(code) is int and code == 0,
+            'exit_code_category': category}
+
+
 def stopped_admission(host_module, host, current, lock_held, *, expected_database=None,
                       expected_operator=None, stopped_after=None):
     """Recheck Docker source/CIDs + flat DB after stop at EACH archive boundary."""
@@ -492,13 +525,12 @@ def stopped_admission(host_module, host, current, lock_held, *, expected_databas
     host.boundary()
     host.check_inventory(current)
     pair = {role: host.check_role(current, role) for role in ('observer', 'dashboard')}
-    stopped = all(item.get('State',{}).get('Running') is False and
-               item.get('State',{}).get('Status') == 'exited' and
-               item.get('State',{}).get('Pid') == 0 and
-               item.get('State',{}).get('OOMKilled') is False and
-               type(item.get('State',{}).get('ExitCode')) is int and
-               item.get('State',{}).get('ExitCode') == 0 for item in pair.values())
-    demand(stopped, 'ROOTLESS_PAIR_NOT_CLEANLY_STOPPED')
+    evidence = {role: stopped_role_proof(item) for role, item in pair.items()}
+    stopped = all(all(proof[field] for field in (
+        'running_false', 'status_exited', 'pid_zero', 'oom_false', 'exit_code_zero'))
+        for proof in evidence.values())
+    if not stopped:
+        raise StopProofHold(evidence)
     book = flat_book(host.root / host_module.DB_RELATIVE,
                      stopped=True, clean_exit=stopped, stopped_after=stopped_after)
     if expected_database is not None:
@@ -566,6 +598,30 @@ def ensure_pair_restored(host, current, started):
             raise ColdHold(category) from exc
         raise ColdHold('RUNTIME_POSTFLIGHT_UNVERIFIED') from exc
     return {'state':'RESTORED_ORIGINAL_RUNTIME', 'roles':2, 'controller_roles':8}
+
+
+def restored_receipt_proves_safe_skip(receipt):
+    """Do not run a second recovery when the same Action already restored it."""
+    return (type(receipt) is dict and
+            receipt.get('schema') == 'rc6.rootless.cold-recovery.v1' and
+            receipt.get('operation') == 'cold_recover' and
+            receipt.get('state') == 'BLOQUEADO' and
+            receipt.get('source_sha') == FROZEN_SOURCE_SHA and
+            receipt.get('source_tree') == FROZEN_TREE and
+            type(receipt.get('controller_roles')) is int and
+            receipt['controller_roles'] == 8 and
+            type(receipt.get('real_orders_sent')) is int and
+            receipt['real_orders_sent'] == 0 and
+            receipt.get('paper') == 'PAPER_FLAT' and
+            receipt.get('critical') == 'HEALTHY_ISSUES_ONLY' and
+            receipt.get('pack_content_hash_verified') is True and
+            receipt.get('operator_state_unchanged') is True and
+            receipt.get('restoration') == 'RESTORED_ORIGINAL_RUNTIME' and
+            receipt.get('restoration_failure_signature') is None and
+            receipt.get('runtime_validated') is True and
+            receipt.get('ppi_watch_touched') is False and
+            receipt.get('boca_touched') is False and
+            receipt.get('transfer_cleanup') == 'COMPLETE')
 
 
 def resume_only(host_module, host):
@@ -691,9 +747,7 @@ def operate(operation, root):
         stop_token = arm_stop_witness(host.identity.state,current['roles'],operator)
         try:
             stop_attempted = True
-            for role in ('observer','dashboard'):
-                cid = current['roles'][role]
-                host.docker.call('container','stop','--time','65',cid,timeout=95)
+            stop_pair(host, current)
             recovery_stage = 'POSTSTOP_ADMISSION'
             stopped_admission(host_module, host, current, True,
                               expected_database=book['identity'], expected_operator=operator,
@@ -736,10 +790,13 @@ def operate(operation, root):
             secondary = restore_failure
             if secondary is not None and not re.fullmatch(r'[A-Z0-9_]{5,100}',secondary):
                 secondary = 'RUNTIME_RESTORE_UNVERIFIED'
+            stop_evidence = (recovery_failure.evidence if isinstance(recovery_failure, StopProofHold)
+                             else None)
             return {**receipt, 'operation':'cold_recover', 'state':'BLOQUEADO',
                     'failure_signature':secondary or primary,
                     'recovery_failure_signature':primary,
                     'recovery_failure_stage':recovery_stage if primary else None,
+                    'stopped_pair_evidence':stop_evidence,
                     'restoration_failure_signature':secondary,
                     'archive_complete':False,
                     'cold_queue_failed':None, 'runtime_validated':restore_failure is None,
