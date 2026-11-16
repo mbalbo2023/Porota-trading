@@ -1480,6 +1480,90 @@ class A367CalendarSubprocessRegression(unittest.TestCase):
 
 
 
+class PerformanceEvidencePeriodContracts(unittest.TestCase):
+    """Only indexed, bounded reads from the dedicated performance evidence DB."""
+
+    CURRENT_SOURCE_SHA = "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76"
+    CANDIDATE_SOURCE_SHA = "f0fc1347df4a3f1c70db6cc3bbc18fc5b20a1341"
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.path = self.root / monitor.DB_REL
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.performance = Path(str(self.path) + ".performance.sqlite")
+
+    def events(self, *rows):
+        with sqlite3.connect(self.performance) as db:
+            db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, recorded_at TEXT NOT NULL, payload_json TEXT NOT NULL)")
+            db.executemany("INSERT INTO events VALUES(?,?,?)",
+                           [(i, at, "PRIVATE_ACCOUNT_VALUE") for i, at in rows])
+
+    def test_empty_files_are_explicit_not_evidence_of_fresh_reporting(self):
+        stat_result = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        self.assertEqual(stat_result["state"], "NO_EVIDENCE_FILES")
+        self.assertEqual(stat_result["default_capacity_bytes"], 128 * 1024**2)
+        self.assertEqual(stat_result["capacity_limit_source"], "EXACT_RUNTIME_SOURCE_SHA")
+        self.assertEqual(stat_result["recorded_period"]["status"], "NO_EVIDENCE_FILES")
+        self.assertFalse(self.performance.exists())
+
+    def test_first_and_last_recorded_at_by_index_without_leaking_payload(self):
+        self.events((7, "2026-10-01T12:00:00Z"), (19, "2026-11-16T17:00:00+00:00"),
+                    (11, "2026-10-20T14:00:00Z"))
+        before = self.performance.stat().st_size
+        result = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        period = result["recorded_period"]
+        self.assertEqual(period["status"], "OBSERVED")
+        self.assertEqual(period["first_recorded_at"], "2026-10-01T12:00:00+00:00")
+        self.assertEqual(period["last_recorded_at"], "2026-11-16T17:00:00+00:00")
+        self.assertEqual(period["ordering"], "EVENT_ID_PRIMARY_KEY")
+        self.assertEqual(result["default_capacity_bytes"], 128 * 1024**2)
+        self.assertEqual(self.performance.stat().st_size, before)
+        self.assertFalse(Path(str(self.performance)+"-wal").exists())
+        self.assertFalse(Path(str(self.performance)+"-shm").exists())
+        self.assertNotIn("PRIVATE_ACCOUNT_VALUE", json.dumps(result))
+
+    def test_planned_256_mib_is_only_source_bound_and_never_applied_to_current(self):
+        self.events((1, "2026-10-01T12:00:00Z"))
+        current = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        future = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CANDIDATE_SOURCE_SHA)
+        unknown = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha="e"*40)
+        self.assertEqual(current["default_capacity_bytes"], 128 * 1024**2)
+        self.assertEqual(future["default_capacity_bytes"], 256 * 1024**2)
+        self.assertEqual(future["capacity_limit_source"], "EXACT_RUNTIME_SOURCE_SHA")
+        self.assertIsNone(unknown["default_capacity_bytes"])
+        self.assertEqual(unknown["state"], "NO_VERIFICADO_CAPACITY_LIMIT")
+        self.assertEqual(unknown["recorded_period"]["status"], "OBSERVED")
+
+    def test_invalid_timestamp_or_unavailable_schema_is_no_verificado(self):
+        self.events((1, "PRIVATE_INVALID_TIMESTAMP"), (2, "2026-11-16T17:00:00Z"))
+        invalid = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        self.assertEqual(invalid["recorded_period"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE_INVALID_TIMESTAMP", json.dumps(invalid))
+        with sqlite3.connect(self.performance) as db:
+            db.execute("DROP TABLE events")
+        missing = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        self.assertEqual(missing["recorded_period"]["status"], "NO_VERIFICADO")
+        self.assertEqual(missing["recorded_period"]["reason"], "SQLITE_READ_OR_SCHEMA_UNAVAILABLE")
+
+    def test_unavailable_database_read_does_not_emit_exception_body(self):
+        self.events((1, "2026-11-16T17:00:00Z"))
+        with patch.object(monitor.sqlite3, "connect",
+                          side_effect=sqlite3.OperationalError("PRIVATE_CONNECTION_ERROR")):
+            outcome = monitor.performance_evidence_capacity_stat(
+                self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        self.assertEqual(outcome["recorded_period"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE_CONNECTION_ERROR", json.dumps(outcome))
+
+
 class A372PerformanceWorkerLogClassification(unittest.TestCase):
     """Only synthetic logs; non-sensitive labels and stable temporal budget."""
 
