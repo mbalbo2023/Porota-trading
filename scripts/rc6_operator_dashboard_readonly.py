@@ -13,6 +13,17 @@ import sys
 from types import SimpleNamespace
 
 SCHEMA = "rc6.operator-dashboard-readonly.v1"
+# Only internally authored symbolic guard names may reach the receipt.
+ROOTLESS_SAFE_REASONS = frozenset({
+    "ROOTLESS_SSH_IDENTITY_REQUIRED", "ROOTLESS_PRIVATE_HOME_UNVERIFIED",
+    "ROOTLESS_RELEASE_CUSTODY", "ROOTLESS_CURRENT_CUSTODY",
+    "ROOTLESS_CURRENT_OVERSIZE", "ROOTLESS_RECEIPT_DUPLICATE_KEY",
+    "ROOTLESS_CURRENT_RELEASE_UNVERIFIED", "ROOTLESS_PRIVATE_SOCKET_UNVERIFIED",
+    "ROOTLESS_DOCKER_READ_UNAVAILABLE", "ROOTLESS_DAEMON_CHANGED",
+    "ROOTLESS_ROLE_ENV_UNVERIFIED", "ROOTLESS_ROLE_IDENTITY_CHANGED",
+    "ROOTLESS_ROLE_ISOLATION_CHANGED", "ROOTLESS_ROLE_MOUNTS_CHANGED",
+    "ROOTLESS_ROLE_PORTS_CHANGED", "ROOTLESS_CURRENT_CHANGED",
+})
 ROUTES = (
     "/", "/en-vivo", "/en-vivo/oportunidades", "/trading",
     "/trading/scalping", "/universo", "/instrumentos", "/riesgo",
@@ -327,7 +338,9 @@ def _rootless_context(*, runner=subprocess.run):
         raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
     for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
-        if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+        allowed_owner = (meta.st_uid == uid if directory in (home, state)
+                         else meta.st_uid in (0, uid))
+        if (directory.is_symlink() or not stat.S_ISDIR(meta.st_mode) or not allowed_owner or
                 stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
             raise ValueError("ROOTLESS_RELEASE_CUSTODY")
     path = state / "current.json"
@@ -500,8 +513,10 @@ def _rootless_context(*, runner=subprocess.run):
 
 
 def audit_host(*, runner=subprocess.run):
+    stage = "ROOTLESS_CONTEXT"
     try:
         context = _rootless_context()
+        stage = "CHILD_AUDIT"
         proc = runner(["/usr/bin/docker", "--host", f"unix://{context.identity.socket}",
                        "container", "exec", context.roles["dashboard"], "python", "-B", "-c", CHILD],
                       capture_output=True, text=True, timeout=150, check=False,
@@ -657,8 +672,11 @@ def audit_host(*, runner=subprocess.run):
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
-    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, TypeError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        code = str(exc) if stage == "ROOTLESS_CONTEXT" and type(exc) is ValueError else ""
         return {"schema": SCHEMA, "read_only": True, "status": "NO_VERIFICADO",
+                "rootless_probe_reason": (code if code in ROOTLESS_SAFE_REASONS
+                                          else "ROOTLESS_UNCLASSIFIED"),
                 "routes": [], "sources": [], "source_status": "NO_VERIFICADO",
                 "source_sync": [], "source_sync_status": "NO_VERIFICADO",
                 "history_cutoff_repair": "NO_VERIFICADO"}
