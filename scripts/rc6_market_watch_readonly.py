@@ -29,12 +29,12 @@ ART = ZoneInfo("America/Argentina/Buenos_Aires")
 ROOT = Path("/opt/porota-trading")
 DB_REL = Path("data/paper_v17/observer_v17.db")
 # Limits observed in exact product sources, never a prediction from branch HEAD:
-# deployed SHA21b6 (EvidenceStore default128MiB) and DRAFT candidate f0fc (256MiB).
+# deployed SHA21b6 (EvidenceStore default128MiB) and reviewed release
+# candidate SHA494116 (256MiB, NOT deployed when this monitor was authored).
 # Only a physically matched runtime source SHA may select either limit.
 PERFORMANCE_LIMIT_BY_SOURCE_SHA = {
     "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76": 128 * 1024**2,
-    "642654b76fcfdc2dce3380a4b9bc96ffd4347595": 128 * 1024**2,
-    "f0fc1347df4a3f1c70db6cc3bbc18fc5b20a1341": 256 * 1024**2,
+    "494116c1200b1c2914369d1e0ffd186c1906d781": 256 * 1024**2,
 }
 SEVERITY = {"GREEN": 0, "P2": 1, "P1": 2, "P0": 3}
 # Product runtime is exactly the two roles in the private rootless release.
