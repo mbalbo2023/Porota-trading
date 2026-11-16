@@ -813,7 +813,9 @@ def operate(operation, root):
         probe_stage = 'LEGACY_WRITERS'
         legacy = legacy_writers_absent()
     except (OSError, KeyError, ValueError, host_module.Hold) as exc:
-        if isinstance(exc, OSError):
+        if isinstance(exc, json.JSONDecodeError):
+            category = f'COLD_{probe_stage}_JSON_DECODE_ERROR'
+        elif isinstance(exc, OSError):
             category = f'COLD_{probe_stage}_OSERROR'
         elif isinstance(exc, KeyError):
             category = f'COLD_{probe_stage}_KEYERROR'

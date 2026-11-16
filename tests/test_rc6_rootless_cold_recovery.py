@@ -205,6 +205,30 @@ class RootlessAdmissionTests(unittest.TestCase):
         self.assertEqual(result['mutations'], 0)
         self.assertNotIn('/private/archive', json.dumps(result))
 
+    def test_cold_inspect_json_decode_failure_is_typed_without_private_payload(self):
+        from scripts import porota_rootless_host as host_module
+        import sys
+        successor = Mock()
+        host = Mock()
+        private_error = json.JSONDecodeError(
+            'PRIVATE_CREDENTIAL_MESSAGE', 'top_secret_payload', 0)
+        with patch.dict(sys.modules, {'scripts.rc6_cold2_successor': successor}), \
+             patch.object(host_module, 'Host', return_value=host), \
+             patch.object(cold, 'frozen_release', return_value=({}, {})), \
+             patch.object(cold, 'controller_live', return_value={}), \
+             patch.object(cold, 'flat_book', return_value={}), \
+             patch.object(successor, 'inspect', side_effect=private_error):
+            result = cold.operate('cold_inspect', Path('/opt/porota-trading'))
+        self.assertEqual(result['state'], 'BLOQUEADO')
+        self.assertEqual(result['failure_signature'],
+                         'COLD_ARCHIVE_INSPECT_JSON_DECODE_ERROR')
+        self.assertEqual(result['failure_stage'], 'ARCHIVE_INSPECT')
+        self.assertIsNone(result['failure_errno'])
+        self.assertEqual(result['mutations'], 0)
+        self.assertIsNone(result['real_orders_sent'])
+        self.assertNotIn('PRIVATE_CREDENTIAL_MESSAGE', json.dumps(result))
+        self.assertNotIn('top_secret_payload', json.dumps(result))
+
     def test_cold_blocked_exit_uses_typed_nonzero_not_opaque_79(self):
         import io
         with patch.object(cold, 'operate', return_value={
