@@ -349,6 +349,51 @@ class MonitorContracts(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
                             monitor._rootless_context(runner=runner)
 
+    def test_group_writable_local_state_requires_truly_private_home(self):
+        home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
+        real_lstat, real_fstat = Path.lstat, monitor.os.fstat
+        # A writable intermediate cannot be used for path substitution only
+        # when the account home itself prevents all traversal by other UIDs.
+        cases = (
+            ("private-home", 0o700, 0o700, 0o770, 0o700, True),
+            ("group-traversable-home", 0o750, 0o700, 0o770, 0o700, False),
+            ("public-home-private-local", 0o755, 0o700, 0o770, 0o700, False),
+            ("public-home", 0o755, 0o755, 0o770, 0o700, False),
+            ("writable-home", 0o770, 0o700, 0o770, 0o700, False),
+            ("writable-local", 0o700, 0o770, 0o770, 0o700, False),
+            ("world-writable-state-parent", 0o700, 0o700, 0o777, 0o700, False),
+            ("exposed-state", 0o700, 0o700, 0o770, 0o750, False),
+        )
+        targets = (home, home / ".local", home / ".local/state",
+                   home / ".local/state/porota-rc6")
+        for name, *fields in cases:
+            *modes, allowed = fields
+            with self.subTest(name=name):
+                def lstat(path):
+                    meta = list(real_lstat(path))
+                    meta[4] = 1000
+                    if Path(path) in targets:
+                        meta[0] = (meta[0] & ~0o777) | modes[targets.index(Path(path))]
+                    return monitor.os.stat_result(meta)
+                def fstat(fd):
+                    meta = list(real_fstat(fd))
+                    meta[4] = 1000
+                    return monitor.os.stat_result(meta)
+                with patch.object(monitor.pwd, "getpwuid", return_value=account), \
+                        patch.object(monitor.os, "getuid", return_value=1000), \
+                        patch.object(monitor.os, "geteuid", return_value=1000), \
+                        patch.object(monitor.os, "getgid", return_value=1000), \
+                        patch.object(monitor.os, "getegid", return_value=1000), \
+                        patch.object(Path, "lstat", lstat), \
+                        patch.object(monitor.os, "fstat", side_effect=fstat), \
+                        patch.object(monitor, "_verify_rootless_socket", return_value=None):
+                    if allowed:
+                        self.assertEqual(monitor._rootless_context(runner=runner).roles,
+                                         current["roles"])
+                    else:
+                        with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+                            monitor._rootless_context(runner=runner)
+
     def test_rootless_failure_receipt_is_bounded_and_never_exports_secret(self):
         for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"),
                                  "ROOTLESS_RELEASE_CUSTODY"),
@@ -381,9 +426,11 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(set(metadata["segments"]), {"HOME", "LOCAL", "LOCAL_STATE", "STATE"})
         self.assertEqual(metadata["segments"]["LOCAL"], {
             "owner_class": "OTHER", "kind": "DIRECTORY",
-            "group_write": True, "other_write": False})
+            "group_write": True, "other_write": False,
+            "group_or_other_any_access": True})
         self.assertEqual(metadata["segments"]["STATE"]["owner_class"], "UID1000")
         self.assertIs(metadata["segments"]["STATE"]["group_or_other_any_access"], False)
+        self.assertIs(metadata["segments"]["HOME"]["group_or_other_any_access"], False)
         self.assertNotIn(str(home), json.dumps(metadata))
         with patch.object(monitor.os, "getuid", return_value=0):
             self.assertEqual(monitor._rootless_custody_metadata()["state"], "IDENTITY_UNVERIFIED")

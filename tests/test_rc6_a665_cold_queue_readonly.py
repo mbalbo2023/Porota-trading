@@ -23,6 +23,13 @@ spec.loader.exec_module(probe)
 PRODUCT = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 IDENT = "a" * 32
 MANIFEST = "b" * 64
+ROOTLESS_MARKER = {
+    "deployment_backend": "ROOTLESS_SPLIT", "candidate_sha": "c" * 40,
+    "candidate_tree_sha": "e" * 40, "image_id": "sha256:" + "f" * 64,
+    "validation_status": "VALIDATED_RUNTIME", "mode": "PRODUCTION_PAPER",
+    "real_orders_sent": 0, "real_order_routes": "NOT_CALLED",
+    "ppi_watch_untouched": True, "real_order_capability": "BLOCKED",
+}
 
 
 def envelope(value):
@@ -72,6 +79,56 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["observed_deploy_sha"], PRODUCT)
         self.assertFalse(record["paper_admission_verified"])
         self.assertFalse(record["causal_fix_verified"])
+
+    def test_rootless_marker_binds_source_and_preserves_readonly_cold_queue(self):
+        self.ledger.write_text(json.dumps(ROOTLESS_MARKER))
+        self.write_private("receipt-" + IDENT + ".json", {
+            "state": "FAILED", "snapshot_id": IDENT,
+            "manifest_sha256": MANIFEST, "secret": "MUST_NOT_ESCAPE"})
+        self.write_private("queue.json", {
+            "state": "FAILED", "snapshot_id": IDENT, "manifest_sha256": MANIFEST})
+        record = self.read()
+        self.assertEqual(record["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(record["observed_deploy_sha"], ROOTLESS_MARKER["candidate_sha"])
+        self.assertEqual(record["failed_receipt_count"], 1)
+        self.assertEqual(record["queue_state"], "FAILED")
+        self.assertEqual(record["queue_failed_binding"], "MATCHES_FAILED_RECEIPT")
+        self.assertFalse(record["paper_admission_verified"])
+        self.assertFalse(record["causal_fix_verified"])
+        self.assertNotIn("MUST_NOT_ESCAPE", json.dumps(record))
+
+    def test_rootless_marker_guards_fail_closed_before_cold_queue_counts(self):
+        cases = (
+            ("missing-source", {"candidate_sha": None}),
+            ("bad-source", {"candidate_sha": "not-a-sha"}),
+            ("missing-tree", {"candidate_tree_sha": None}),
+            ("bad-tree", {"candidate_tree_sha": "broken"}),
+            ("missing-image", {"image_id": None}),
+            ("bad-image", {"image_id": "sha256:broken"}),
+            ("not-validated", {"validation_status": "NO_VERIFICADO"}),
+            ("live-mode", {"mode": "PRODUCTION_LIVE"}),
+            ("nonzero-orders", {"real_orders_sent": 1}),
+            ("bool-is-not-zero", {"real_orders_sent": False}),
+            ("live-routes", {"real_order_routes": "CALLED"}),
+            ("ppi-watch-touch", {"ppi_watch_untouched": False}),
+            ("ppi-watch-not-bool", {"ppi_watch_untouched": 1}),
+            ("live-capability", {"real_order_capability": "ENABLED"}),
+            ("mixed-provenance", {"deploy_sha": PRODUCT}),
+            ("unknown-backend", {"deployment_backend": "ROOTFUL_FUTURE"}),
+        )
+        for name, changes in cases:
+            with self.subTest(name=name):
+                self.ledger.write_text(json.dumps({**ROOTLESS_MARKER, **changes}))
+                self.assert_no_counts(self.read())
+
+    def test_legacy_dual_sha_marker_still_uses_deploy_sha_authority(self):
+        self.ledger.write_text(json.dumps({"deploy_sha": PRODUCT,
+                                           "candidate_sha": "c" * 40}))
+        record = self.read()
+        self.assertEqual(record["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(record["observed_deploy_sha"], PRODUCT)
+        self.ledger.write_text(json.dumps({"candidate_sha": "c" * 40}))
+        self.assert_no_counts(self.read())
 
     def test_receipt_clock_is_utc_and_art_without_disclosing_private_root(self):
         record = self.read()
