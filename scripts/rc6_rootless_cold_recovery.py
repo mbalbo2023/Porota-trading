@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import sqlite3
 import stat
@@ -179,18 +180,125 @@ def critical_broker_proof():
 
 def legacy_writers_absent():
     """Read-only proof that no old ROOTFUL observer/dashboard still writes."""
-    for name in ('porota_production_observer','porota_production_dashboard'):
-        try:
-            proc = subprocess.run(['sudo','-n','/usr/bin/docker','container','ls',
-                                   '--format','{{.Names}}','--filter','name=^'+name+'$'],
-                                  capture_output=True,text=True,timeout=15,cwd='/')
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise ColdHold('LEGACY_DOCKER_INVENTORY_UNAVAILABLE') from exc
-        demand(proc.returncode == 0 and len(proc.stdout) <= 1024 and
-               all(entry == name for entry in proc.stdout.splitlines()),
-               'LEGACY_DOCKER_INVENTORY_UNVERIFIED')
-        demand(not proc.stdout.strip(), 'LEGACY_PAPER_WRITER_ACTIVE')
+    # Docker name filters regex-match the INTERNAL leading slash on some
+    # versions. A filter anchored without that slash can silently return zero
+    # results even with a live writer. Enumerate and compare exact names.
+    try:
+        proc = subprocess.run(['sudo','-n','/usr/bin/docker','container','ls',
+                               '--format','{{.Names}}'],
+                              capture_output=True,text=True,timeout=15,cwd='/')
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ColdHold('LEGACY_DOCKER_INVENTORY_UNAVAILABLE') from exc
+    demand(proc.returncode == 0 and len(proc.stdout) <= 65536,
+           'LEGACY_DOCKER_INVENTORY_UNVERIFIED')
+    names = proc.stdout.splitlines()
+    demand(len(names) <= 1024 and all(name and len(name) <= 255 for name in names),
+           'LEGACY_DOCKER_INVENTORY_UNVERIFIED')
+    prohibited = {'porota_production_observer','porota_production_dashboard'}
+    demand(not any(name.lstrip('/') in prohibited for name in names),
+           'LEGACY_PAPER_WRITER_ACTIVE')
     return {'state':'NO_LEGACY_WRITERS','checked_roles':2}
+
+
+STOP_WITNESS_NAME = 'cold-recover-stop.v1.json'
+
+
+def _state_descriptor(state):
+    """Confine the durable STOP witness to the rootless private state dir."""
+    try:
+        directory = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        info = os.fstat(directory)
+        demand(stat.S_ISDIR(info.st_mode) and info.st_uid == os.geteuid() and
+               stat.S_IMODE(info.st_mode) & 0o077 == 0,
+               'COLD_STOP_WITNESS_DIRECTORY_UNSAFE')
+        return directory
+    except (OSError, PermissionError) as exc:
+        raise ColdHold('COLD_STOP_WITNESS_DIRECTORY_UNSAFE') from exc
+
+
+def _read_stop_witness(directory):
+    try:
+        file = os.open(STOP_WITNESS_NAME,os.O_RDONLY | os.O_NOFOLLOW,dir_fd=directory)
+    except FileNotFoundError as exc:
+        raise ColdHold('COLD_STOP_WITNESS_REQUIRED') from exc
+    except OSError as exc:
+        raise ColdHold('COLD_STOP_WITNESS_UNREADABLE') from exc
+    with os.fdopen(file,'rb') as stream:
+        info = os.fstat(stream.fileno())
+        demand(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and
+               info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600 and
+               0 < info.st_size <= 4096, 'COLD_STOP_WITNESS_UNSAFE')
+        raw = stream.read(4097)
+        demand(len(raw) <= 4096,'COLD_STOP_WITNESS_UNSAFE')
+    def distinct(items):
+        value = {}
+        for key, item in items:
+            demand(key not in value,'COLD_STOP_WITNESS_UNSAFE')
+            value[key] = item
+        return value
+    try:
+        value = json.loads(raw,object_pairs_hook=distinct)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ColdHold('COLD_STOP_WITNESS_UNSAFE') from exc
+    demand(type(value) is dict,'COLD_STOP_WITNESS_UNSAFE')
+    return value
+
+
+def arm_stop_witness(state, roles, operator_hash):
+    """One-shot durable proof BEFORE any stop; no overwrite of prior incident."""
+    import time
+    token = secrets.token_hex(16)
+    data = {'schema':'rc6.cold.stop-intent.v1','source_sha':FROZEN_SOURCE_SHA,
+            'source_tree':FROZEN_TREE,'roles':roles,'operator_hash':operator_hash,
+            'nonce':token,'created_at':time.time()}
+    raw = (json.dumps(data,sort_keys=True,separators=(',',':'))+'\n').encode('utf-8')
+    directory = _state_descriptor(state)
+    try:
+        try:
+            file = os.open(STOP_WITNESS_NAME,os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                           os.O_NOFOLLOW,0o600,dir_fd=directory)
+        except FileExistsError as exc:
+            raise ColdHold('COLD_STOP_WITNESS_EXISTS') from exc
+        with os.fdopen(file,'wb') as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return token
+
+
+def verify_stop_witness(state, roles, operator_hash):
+    """An independent resume is permitted ONLY for a recent OWNED COLD stop."""
+    import time
+    directory = _state_descriptor(state)
+    try:
+        data = _read_stop_witness(directory)
+    finally:
+        os.close(directory)
+    demand(data.get('schema') == 'rc6.cold.stop-intent.v1' and
+           data.get('source_sha') == FROZEN_SOURCE_SHA and
+           data.get('source_tree') == FROZEN_TREE and data.get('roles') == roles and
+           data.get('operator_hash') == operator_hash and
+           type(data.get('nonce')) is str and re.fullmatch('[0-9a-f]{32}',data['nonce']),
+           'COLD_STOP_WITNESS_MISMATCH')
+    stamp = data.get('created_at')
+    demand(type(stamp) in (int,float) and 0 <= time.time()-stamp <= 5400,
+           'COLD_STOP_WITNESS_STALE')
+    return data['nonce']
+
+
+def clear_stop_witness(state,token):
+    """Clear only the exact successful incident after verified postflight."""
+    directory = _state_descriptor(state)
+    try:
+        data = _read_stop_witness(directory)
+        demand(data.get('nonce') == token,'COLD_STOP_WITNESS_MISMATCH')
+        os.unlink(STOP_WITNESS_NAME,dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def operator_custody(root, names=None):
@@ -434,6 +542,7 @@ def resume_only(host_module, host):
         roles = {role:host.check_role(current,role) for role in ('observer','dashboard')}
         policy = restart_policy_witness(roles)
         operator = operator_state_witness(identity.operator)
+        stop_token = verify_stop_witness(identity.state,current['roles'],operator)
         critical_broker_proof()
         observer = roles['observer'].get('State',{})
         if observer.get('Running') is False:
@@ -450,6 +559,7 @@ def resume_only(host_module, host):
                operator_state_witness(identity.operator) == operator,
                'RUNTIME_OR_OPERATOR_POLICY_CHANGED')
         critical_broker_proof()
+        clear_stop_witness(identity.state,stop_token)
     return {'schema':'rc6.rootless.cold-recovery.v1','operation':'cold_resume',
             'state':'RUNTIME_RESTORED','source_sha':FROZEN_SOURCE_SHA,
             'controller_roles':8,'real_orders_sent':0,'runtime_validated':True,
@@ -509,6 +619,7 @@ def operate(operation, root):
            'FAILED_COLD_QUEUE_NOT_PRESENT')
     started = datetime.now(timezone.utc)
     stop_attempted = False
+    stop_token = None
     result = None
     restore_failure = None
     recovery_failure = None
@@ -525,6 +636,10 @@ def operate(operation, root):
         demand(flat_book(root / host_module.DB_RELATIVE)['identity'] == book['identity'],
                'PAPER_DATABASE_CHANGED')
         successor.inspect(root, hash_pack=True)
+        # A restore from a separate Action is fenced to THIS incident.
+        # Without a durable STOP witness, operator-paused containers MUST NOT
+        # be restarted by the standalone cold_resume operation.
+        stop_token = arm_stop_witness(host.identity.state,current['roles'],operator)
         try:
             stop_attempted = True
             for role in ('observer','dashboard'):
@@ -555,6 +670,7 @@ def operate(operation, root):
                            operator_state_witness(host.identity.operator) == operator,
                            'RUNTIME_OR_OPERATOR_POLICY_CHANGED')
                     critical_broker_proof()
+                    clear_stop_witness(host.identity.state,stop_token)
                 except ColdHold as exc:
                     restore_failure = str(exc)
                 except (OSError, ValueError, RuntimeError):

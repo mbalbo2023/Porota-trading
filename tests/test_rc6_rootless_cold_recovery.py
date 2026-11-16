@@ -216,13 +216,56 @@ class RootlessAdmissionTests(unittest.TestCase):
                             for call in run.call_args_list))
 
     def test_legacy_rootful_paper_writers_must_be_absent_before_cold_mutation(self):
-        empty=subprocess.CompletedProcess([],0,'','')
-        with patch.object(cold.subprocess,'run',return_value=empty):
+        other=subprocess.CompletedProcess([],0,'ppi-watch\nboca-socios-controller-1\n','')
+        with patch.object(cold.subprocess,'run',return_value=other) as run:
             self.assertEqual(cold.legacy_writers_absent()['state'],'NO_LEGACY_WRITERS')
-        active=subprocess.CompletedProcess([],0,'porota_production_observer\n','')
-        with patch.object(cold.subprocess,'run',side_effect=[active,empty]):
+        self.assertEqual(run.call_count,1)
+        self.assertNotIn('--filter',run.call_args.args[0])
+        active=subprocess.CompletedProcess([],0,'ppi-watch\nporota_production_observer\n','')
+        with patch.object(cold.subprocess,'run',return_value=active):
             with self.assertRaises(cold.ColdHold):
                 cold.legacy_writers_absent()
+        prefixed=subprocess.CompletedProcess([],0,'/porota_production_dashboard\n','')
+        with patch.object(cold.subprocess,'run',return_value=prefixed):
+            with self.assertRaisesRegex(cold.ColdHold,'LEGACY_PAPER_WRITER_ACTIVE'):
+                cold.legacy_writers_absent()
+
+    def test_stop_witness_is_required_for_resume_and_cannot_reuse_stale_or_changed_operator(self):
+        with tempfile.TemporaryDirectory() as d:
+            state=Path(d)
+            cids={'observer':'a'*64,'dashboard':'b'*64}
+            with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_REQUIRED'):
+                cold.verify_stop_witness(state,cids,'operator-sha')
+            token=cold.arm_stop_witness(state,cids,'operator-sha')
+            self.assertEqual(cold.verify_stop_witness(state,cids,'operator-sha'),token)
+            with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_MISMATCH'):
+                cold.verify_stop_witness(state,cids,'other-operator')
+            with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_EXISTS'):
+                cold.arm_stop_witness(state,cids,'operator-sha')
+            with patch('time.time',return_value=10**10):
+                with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_STALE'):
+                    cold.verify_stop_witness(state,cids,'operator-sha')
+            cold.clear_stop_witness(state,token)
+            with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_REQUIRED'):
+                cold.verify_stop_witness(state,cids,'operator-sha')
+
+    def test_manual_cold_resume_does_not_restart_operator_paused_pair_without_incident(self):
+        from contextlib import nullcontext
+        with tempfile.TemporaryDirectory() as d:
+            source=Mock()
+            source.user_lock.return_value=nullcontext()
+            current={'source_sha':cold.FROZEN_SOURCE_SHA,'source_tree':cold.FROZEN_TREE,
+                     'roles':dict(cold.FROZEN_CIDS)}
+            source.read_release_state.return_value=(current,{'source_sha':cold.FROZEN_SOURCE_SHA})
+            host=Mock()
+            host.identity.state=Path(d)
+            host.identity.operator=Path(d)
+            host.check_role.return_value={'HostConfig':{'RestartPolicy':{
+                'Name':'always','MaximumRetryCount':0}}}
+            with patch.object(cold,'operator_state_witness',return_value='pause'):
+                with self.assertRaisesRegex(cold.ColdHold,'COLD_STOP_WITNESS_REQUIRED'):
+                    cold.resume_only(source,host)
+            host.docker.call.assert_not_called()
 
     def test_stopped_admission_rejects_live_pid_or_drifted_shadow_routes(self):
         cid={'observer':'a'*64,'dashboard':'b'*64}
