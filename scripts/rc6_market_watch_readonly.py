@@ -933,21 +933,33 @@ def _db_snapshot(path):
 
 
 def _performance_recorded_period(path):
-    """Two PRIMARY KEY boundary reads only; private payloads never leave SQLite."""
+    """Checkpoint-only indexed bounds: zero SQLite or filesystem writes."""
     base = {"status": "NO_VERIFICADO", "read_only": True,
             "ordering": "EVENT_ID_PRIMARY_KEY",
             "first_recorded_at": None, "last_recorded_at": None}
+    def descriptor(item):
+        try:
+            meta = item.lstat()
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1:
+            raise ValueError("UNSAFE_PERFORMANCE_FILE")
+        return (meta.st_dev, meta.st_ino, meta.st_size, meta.st_mtime_ns)
     try:
-        info = path.lstat()
-    except FileNotFoundError:
-        return {**base, "status": "NO_EVIDENCE_FILES"}
-    except OSError:
+        before = descriptor(path)
+        if before is None:
+            return {**base, "status": "NO_EVIDENCE_FILES"}
+        sidecars = (Path(str(path) + "-wal"), Path(str(path) + "-shm"))
+        before_sidecars = tuple(descriptor(item) for item in sidecars)
+        if any(meta is not None and meta[2] > 0 for meta in before_sidecars):
+            # mode=ro may mutate WAL shared memory. An active WAL can also
+            # contain newer events than the checkpoint. Neither is admissible.
+            return {**base, "reason": "WAL_ACTIVE_OR_PRESENT"}
+    except (OSError, ValueError):
         return {**base, "reason": "FILESYSTEM_STAT_UNAVAILABLE"}
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-        return {**base, "reason": "UNSAFE_FILE_TYPE"}
-    # Mode ro and query_only never UPDATE tables or create a persistent receipt.
-    # A short progress deadline bounds even a damaged schema/index.
-    uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+    # Immutable forces SQLite not to create -wal or -shm, and reads only the
+    # checkpointed main DB. Reject a concurrent writer by comparing metadata.
+    uri = "file:" + quote(str(path), safe="/") + "?mode=ro&immutable=1"
     try:
         with closing(sqlite3.connect(uri, uri=True, timeout=.2)) as db:
             db.execute("PRAGMA query_only=ON")
@@ -957,20 +969,27 @@ def _performance_recorded_period(path):
             first = db.execute("SELECT recorded_at FROM events ORDER BY id ASC LIMIT 1").fetchone()
             last = db.execute("SELECT recorded_at FROM events ORDER BY id DESC LIMIT 1").fetchone()
             if first is None and last is None:
-                return {**base, "status": "EMPTY"}
-            if first is None or last is None:
-                return {**base, "reason": "BOUNDARY_MISMATCH"}
-            def date_value(row):
-                value = row[0]
-                if type(value) is not str or len(value) > 64:
-                    raise ValueError("UNVERIFIED_TIMESTAMP")
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    raise ValueError("UNVERIFIED_TIMESTAMP")
-                return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
-            first_at, last_at = date_value(first), date_value(last)
-            return {**base, "status": "OBSERVED", "first_recorded_at": first_at,
-                    "last_recorded_at": last_at}
+                result = {**base, "status": "EMPTY"}
+            elif first is None or last is None:
+                result = {**base, "reason": "BOUNDARY_MISMATCH"}
+            else:
+                def date_value(row):
+                    value = row[0]
+                    if type(value) is not str or len(value) > 64:
+                        raise ValueError("UNVERIFIED_TIMESTAMP")
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    if parsed.tzinfo is None:
+                        raise ValueError("UNVERIFIED_TIMESTAMP")
+                    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+                first_at, last_at = date_value(first), date_value(last)
+                result = {**base, "status": "OBSERVED", "first_recorded_at": first_at,
+                          "last_recorded_at": last_at}
+        after = descriptor(path)
+        after_sidecars = tuple(descriptor(item) for item in sidecars)
+        if (after != before or after_sidecars != before_sidecars or
+                any(meta is not None and meta[2] > 0 for meta in after_sidecars)):
+            return {**base, "reason": "PERFORMANCE_SNAPSHOT_CHANGED"}
+        return result
     except (sqlite3.Error, OSError, ValueError, TypeError):
         return {**base, "reason": "SQLITE_READ_OR_SCHEMA_UNAVAILABLE"}
 
@@ -1138,8 +1157,11 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
         source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
         provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
     result["provenance_identity"] = provenance_identity
-    result["performance_evidence_capacity"] = performance_evidence_capacity_stat(
-        root, runtime_source_sha=marker_sha if rootless and source_match else None)
+    if rootless and source_match:
+        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(
+            root, runtime_source_sha=marker_sha)
+    else:
+        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(root)
     provenance_fields_valid = bool(
         provenance and provenance.get("mode") == "PRODUCTION_PAPER" and
         provenance.get("validation_status") == "VALIDATED_RUNTIME" and
