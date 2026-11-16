@@ -1484,7 +1484,7 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
     """Only indexed, bounded reads from the dedicated performance evidence DB."""
 
     CURRENT_SOURCE_SHA = "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76"
-    CANDIDATE_SOURCE_SHA = "f0fc1347df4a3f1c70db6cc3bbc18fc5b20a1341"
+    CANDIDATE_SOURCE_SHA = "494116c1200b1c2914369d1e0ffd186c1906d781"
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
