@@ -11,6 +11,7 @@ import re
 import stat
 import tempfile
 import textwrap
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -79,6 +80,73 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertEqual(record["observed_deploy_sha"], PRODUCT)
         self.assertFalse(record["paper_admission_verified"])
         self.assertFalse(record["causal_fix_verified"])
+
+    def test_cold_space_uses_available_not_all_free_blocks_on_exact_directory(self):
+        block = 4096
+        data_volume = SimpleNamespace(f_frsize=block, f_bavail=1_000_000,
+                                      f_bfree=1_100_000, f_favail=100)
+        cold_volume = SimpleNamespace(f_frsize=block, f_bavail=450_000,
+                                      f_bfree=700_000, f_favail=15)
+        real_fstatvfs = os.fstatvfs
+
+        def volume(fd):
+            info = os.fstat(fd)
+            if info.st_ino == self.cold.parent.stat().st_ino:
+                return cold_volume
+            if info.st_ino == self.data.stat().st_ino:
+                return data_volume
+            return real_fstatvfs(fd)
+
+        with patch.object(probe.os, "fstatvfs", side_effect=volume):
+            result = self.read()
+        self.assertEqual(result["state"], "READ_ONLY_OBSERVED")
+        self.assertEqual(result["cold_fs_available_bytes"], block * 450_000)
+        self.assertEqual(result["cold_fs_free_blocks_bytes"], block * 700_000)
+        self.assertEqual(result["data_fs_available_bytes"], block * 1_000_000)
+        self.assertEqual(result["cold_fs_available_inodes"], 15)
+        self.assertTrue(result["cold_data_same_device"])
+        self.assertFalse(result["cold_reserve_2gib_met"])
+
+    def test_cold_subdirectory_cross_device_is_not_claimed_as_guard_proof(self):
+        original_fstat = os.fstat
+        subdir_inode = self.cold.stat().st_ino
+
+        def stat_with_nested_mount(fd):
+            info = original_fstat(fd)
+            if info.st_ino != subdir_inode:
+                return info
+            return SimpleNamespace(st_mode=info.st_mode, st_dev=info.st_dev + 1,
+                                   st_ino=info.st_ino, st_uid=info.st_uid)
+
+        with patch.object(probe.os, "fstat", side_effect=stat_with_nested_mount):
+            result = self.read()
+        self.assert_no_counts(result)
+        self.assertEqual(result["reason"], "COLD_FILESYSTEM_DIVERGENCE_HOLD")
+
+    def test_cold_space_proof_fails_closed_on_statvfs_error(self):
+        with patch.object(probe.os, "fstatvfs", side_effect=OSError("untrusted")):
+            result = self.read()
+        self.assert_no_counts(result)
+        self.assertIsNone(result["cold_fs_available_bytes"])
+        self.assertIsNone(result["cold_reserve_2gib_met"])
+
+    def test_cold_space_reserve_boundary_is_exact_2gib(self):
+        for available, expected in ((524_287, False), (524_288, True)):
+            with self.subTest(available_blocks=available):
+                volume = SimpleNamespace(f_frsize=4096, f_bavail=available,
+                                         f_bfree=available + 1, f_favail=16)
+                with patch.object(probe.os, "fstatvfs", return_value=volume):
+                    result = self.read()
+                self.assertEqual(result["state"], "READ_ONLY_OBSERVED")
+                self.assertIs(result["cold_reserve_2gib_met"], expected)
+
+    def test_cold_space_invalid_metadata_has_specific_safe_hold(self):
+        volume = SimpleNamespace(f_frsize=4096, f_bavail=999,
+                                 f_bfree=998, f_favail=16)
+        with patch.object(probe.os, "fstatvfs", return_value=volume):
+            result = self.read()
+        self.assert_no_counts(result)
+        self.assertEqual(result["reason"], "COLD_FILESYSTEM_UNVERIFIED")
 
     def test_rootless_marker_binds_source_and_preserves_readonly_cold_queue(self):
         self.ledger.write_text(json.dumps(ROOTLESS_MARKER))
@@ -664,6 +732,16 @@ class ColdQueueReadOnly(unittest.TestCase):
         self.assertIn("LIVE_STATUS_UNBOUND",content)
         self.assertIn("raw.stat().st_size>4096",content)
         self.assertNotIn("pack_content_hash_verified':True",content)
+
+    def test_cold_space_workflow_sanitizes_integer_and_boolean_evidence(self):
+        content = WORKFLOW.read_text()
+        self.assertIn("cold_fs_available_bytes", content)
+        self.assertIn("cold_fs_free_blocks_bytes", content)
+        self.assertIn("data_fs_available_bytes", content)
+        self.assertIn("cold_fs_available_inodes", content)
+        self.assertIn("cold_data_same_device", content)
+        self.assertIn("cold_reserve_2gib_met", content)
+        self.assertIn("COLD_FS_FIELD_INVALID", content)
 
     def test_v2_all_inline_workflow_python_heredocs_compile_offhost(self):
         content = WORKFLOW.read_text()

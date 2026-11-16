@@ -100,6 +100,9 @@ jobs:
                 'reason':'HOST_RESPONSE_INVALID_OR_UNAVAILABLE',
                 'provider_gets':0,'orders_called':False,'mutations':0,
                 'cold_audit_runtime_called':False,'os_readonly_mount_verified':False,
+                'cold_fs_available_bytes':None,'cold_fs_free_blocks_bytes':None,
+                'data_fs_available_bytes':None,'cold_fs_available_inodes':None,
+                'cold_data_same_device':None,'cold_reserve_2gib_met':None,
                 'generated_at_utc':None,'generated_at_art':None,
                 'observed_deploy_sha':None,'expected_deploy_sha':os.environ['EXPECTED_DEPLOY_SHA'],
                 'receipt_count':None,'failed_receipt_count':None,'folder_entries_checked':None,
@@ -160,6 +163,23 @@ jobs:
                   safe[key]=value
               if not (safe['failed_receipt_count']<=safe['receipt_count']<=safe['folder_entries_checked']):
                   raise ValueError('COUNT_ORDER_INVALID')
+              # Exact COLD statvfs proof. f_bavail, not f_bfree, governs the
+              # product's 2GiB guard; never imply a previous failed cut is fixed.
+              for key in ('cold_fs_available_bytes','cold_fs_free_blocks_bytes',
+                          'data_fs_available_bytes','cold_fs_available_inodes'):
+                  value=obj.get(key)
+                  if type(value) is not int or not 0<=value<=2**63-1:
+                      raise ValueError('COLD_FS_FIELD_INVALID')
+                  safe[key]=value
+              for key in ('cold_data_same_device','cold_reserve_2gib_met'):
+                  value=obj.get(key)
+                  if type(value) is not bool:
+                      raise ValueError('COLD_FS_FIELD_INVALID')
+                  safe[key]=value
+              if (safe['cold_fs_free_blocks_bytes']<safe['cold_fs_available_bytes'] or
+                  safe['cold_reserve_2gib_met'] !=
+                      (safe['cold_fs_available_bytes']>=2*1024**3)):
+                  raise ValueError('COLD_FS_FIELD_INVALID')
               if obj.get('queue_state') not in ('ABSENT','FAILED','PENDING','COMPLETE'):
                   raise ValueError('QUEUE_STATE_INVALID')
               if obj.get('queue_failed_binding') not in (
@@ -328,6 +348,8 @@ jobs:
           print('A667_LIVE_STATUS='+safe['live_status_class'])
           print('A667_LIVE_CAUSE='+safe['live_error_origin_class'])
           print('A667_COLD2_PACK_CAUSE='+safe['historical_cold2_pack_metadata_cause'])
+          print('A667_COLD_FREE_BYTES='+str(safe['cold_fs_available_bytes']))
+          print('A667_COLD_RESERVE_MET='+str(safe['cold_reserve_2gib_met']))
           print('A667_PROVIDER_GETS=0 ORDERS_CALLED=false MUTATIONS=0')
           PY
           rm -f evidence/.a667_private_raw.json
