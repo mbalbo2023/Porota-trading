@@ -67,11 +67,14 @@ PREOPEN_CAPTURE_LIMIT = 1024 * 1024
 # release SHA. It never evaluates a path supplied by a caller or JSON field.
 LAUNCHER = r'''#!/usr/bin/python3
 import fcntl,json,os,pathlib,pwd,re,stat,sys
+stage='IDENTITY'
 try:
     p=pwd.getpwuid(os.getuid()); assert p.pw_uid>0
+    stage='STATE_CUSTODY'
     state=pathlib.Path(p.pw_dir)/'.local/state/porota-rc6'
     assert not any(x.is_symlink() for x in (state,*state.parents))
     meta=state.stat(); assert meta.st_uid==p.pw_uid and stat.S_ISDIR(meta.st_mode) and not meta.st_mode&0o077
+    stage='DEPLOY_LOCK'
     lock=os.open(state/'deploy.lock',os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
     meta=os.fstat(lock); assert stat.S_ISREG(meta.st_mode) and meta.st_uid==p.pw_uid and meta.st_nlink==1 and not meta.st_mode&0o077
     try: fcntl.flock(lock,fcntl.LOCK_SH|fcntl.LOCK_NB)
@@ -79,20 +82,23 @@ try:
         print(json.dumps({'schema':'porota.rootless.job.v1','state':'SKIPPED','failure_signature':'DEPLOY_IN_PROGRESS'}))
         raise SystemExit(0)
     # Keep lock open through source selection, import, the job and postflight.
+    stage='CURRENT_RELEASE'
     current=state/'current.json'
     fd=os.open(current,os.O_RDONLY|os.O_NOFOLLOW); meta=os.fstat(fd)
     assert stat.S_ISREG(meta.st_mode) and meta.st_uid==p.pw_uid and meta.st_nlink==1 and not meta.st_mode&0o077 and meta.st_size<131072
     raw=os.read(fd,131073); os.close(fd); data=json.loads(raw)
     sha=data.get('source_sha',''); assert re.fullmatch('[0-9a-f]{40}',sha)
+    stage='SOURCE_CUSTODY'
     source=state/'releases'/sha/'source'
     for directory in (state/'releases',source.parent,source):
         assert not directory.is_symlink()
         meta=directory.stat(); assert stat.S_ISDIR(meta.st_mode) and meta.st_uid==p.pw_uid and not meta.st_mode&0o022
     sys.path.insert(0,str(source))
+    stage='SOURCE_IMPORT'
     from scripts.porota_rootless_jobs import main
 except Exception:
-    print(json.dumps({'schema':'porota.rootless.job.v1','state':'BLOQUEADO','failure_signature':'SCHEDULER_LAUNCHER_CUSTODY'}))
-    raise SystemExit(79)
+    print(json.dumps({'schema':'porota.rootless.job.v1','state':'BLOQUEADO','failure_signature':'SCHEDULER_LAUNCHER_CUSTODY','failure_stage':stage}))
+    raise SystemExit(1)
 raise SystemExit(main())
 '''
 
@@ -284,7 +290,7 @@ def main(argv=None):
         reason = str(exc) if isinstance(exc, Hold) else "UNCLASSIFIED_SCHEDULER_FAILURE"
         print(json.dumps({"schema": "porota.rootless.job.v1", "state": "SKIPPED" if reason == "DEPLOY_IN_PROGRESS" else "BLOQUEADO",
                           "failure_signature": reason, "unit": args.unit}))
-        return 0 if reason == "DEPLOY_IN_PROGRESS" else 1 if args.unit == PREOPEN else 79
+        return 0 if reason == "DEPLOY_IN_PROGRESS" else 1
 
 
 if __name__ == "__main__":

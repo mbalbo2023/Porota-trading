@@ -27,6 +27,25 @@ class InspectTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.commands = []
 
+    def test_cli_prepare_hold_returns_one_with_specific_reason(self):
+        stream = io.StringIO()
+        with patch.object(setup, "prepare", side_effect=host.Hold("ROOTLESS_PREP_UNAVAILABLE")), \
+             redirect_stdout(stream):
+            code = setup.main(["prepare"])
+        self.assertEqual(code, 1)
+        result = json.loads(stream.getvalue())
+        self.assertEqual(result["operation"], "prepare")
+        self.assertEqual(result["failure_signature"], "ROOTLESS_PREP_UNAVAILABLE")
+
+    def test_cli_unknown_exception_sanitized_and_exit_one(self):
+        stream = io.StringIO()
+        with patch.object(setup, "prepare", side_effect=ValueError("PRIVATE_TOKEN_SECRET")), \
+             redirect_stdout(stream):
+            code = setup.main(["prepare"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "UNCLASSIFIED_BOOTSTRAP_FAILURE")
+        self.assertNotIn("PRIVATE_TOKEN_SECRET", stream.getvalue())
+
     def fake_run(self, command, **kwargs):
         self.commands.append(tuple(command))
         if command[0] == "/usr/bin/sudo" and command[-1] == "/usr/bin/true":

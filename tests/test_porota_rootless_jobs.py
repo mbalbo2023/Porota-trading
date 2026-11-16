@@ -119,6 +119,15 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "PAPER_ZERO_REQUIRED")
 
+    def test_nonpreopen_dispatcher_hold_keeps_cause_without_generic_79(self):
+        stream = io.StringIO()
+        with patch.object(jobs.Identity, "current", return_value=self.identity), \
+             patch.object(jobs, "run_job", side_effect=host.Hold("SCHEDULER_SOURCE_CUSTODY")), \
+             redirect_stdout(stream):
+            code = jobs.main(["--unit", "porota-candle-integrity-rc6.service"])
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(stream.getvalue())["failure_signature"], "SCHEDULER_SOURCE_CUSTODY")
+
     def test_deploy_lock_prevents_any_job_or_docker_call(self):
         with host.user_lock(self.identity.state / "deploy.lock"), \
              patch.object(jobs, "verified_host") as verified, \
@@ -165,8 +174,10 @@ class DispatcherTests(unittest.TestCase):
         with patch.object(setup.pwd, "getpwuid", return_value=account), redirect_stdout(output), \
              self.assertRaises(SystemExit) as stopped:
             exec(compile(jobs.LAUNCHER, "private-launcher", "exec"), namespace)
-        self.assertEqual(stopped.exception.code, 79)
-        self.assertEqual(json.loads(output.getvalue())["failure_signature"], "SCHEDULER_LAUNCHER_CUSTODY")
+        self.assertEqual(stopped.exception.code, 1)
+        failure = json.loads(output.getvalue())
+        self.assertEqual(failure["failure_signature"], "SCHEDULER_LAUNCHER_CUSTODY")
+        self.assertEqual(failure["failure_stage"], "CURRENT_RELEASE")
         self.assertNotIn(str(self.root), output.getvalue())
         os.close(namespace["lock"])
         output = io.StringIO()
