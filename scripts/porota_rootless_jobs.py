@@ -16,6 +16,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
@@ -51,6 +52,16 @@ PRESERVED_SERVICES = frozenset({
 PRESERVED_COMPANIONS = frozenset({
     "porota-critical-approval-rc6.service", "porota-critical-github-proxy-rc6.service",
 })
+
+# Only these fixed check names can leave the private preopen child. The nested
+# receipt may contain runtime/provider details and is never sent to journald.
+PREOPEN_RED_KEYS = frozenset((
+    "release_identity", "observer_container", "dashboard_container",
+    "observer_db", "disk", "required_rc6_timers", "byma_morning_watch",
+    "iol_reference_fallback", "history_quarantine", "foreign_market_policy",
+    "paper_admission_receipt",
+))
+PREOPEN_CAPTURE_LIMIT = 1024 * 1024
 
 # A stable bootstrap-installed launcher selects source by the validated private
 # release SHA. It never evaluates a path supplied by a caller or JSON field.
@@ -165,6 +176,27 @@ def publisher_command(arguments):
     return tuple(arguments[2:])
 
 
+def read_preopen_red_checks(output):
+    """Decode only bounded enum names; never publish raw stdout or traceback."""
+    try:
+        output.flush()
+        size = output.tell()
+        if not 0 < size <= PREOPEN_CAPTURE_LIMIT:
+            return None
+        output.seek(0)
+        receipt = json.loads(output.read(PREOPEN_CAPTURE_LIMIT))
+        if type(receipt) is not dict or receipt.get("schema") != "POROTA_RC6_PREOPEN_V3" or receipt.get("status") != "RED":
+            return None
+        names = receipt.get("red_checks")
+        if (type(names) is not list or not 1 <= len(names) <= len(PREOPEN_RED_KEYS) or
+                any(type(name) is not str or name not in PREOPEN_RED_KEYS for name in names) or
+                len(set(names)) != len(names)):
+            return None
+        return names
+    except (OSError, ValueError, TypeError, UnicodeDecodeError):
+        return None
+
+
 def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subprocess.run):
     identity = identity or Identity.current()
     require(unit in ADAPTED_SERVICES, "SCHEDULER_UNIT_SCOPE")
@@ -192,16 +224,39 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
                         "DOCKER_HOST": f"unix://{identity.socket}"})
             if unit == PREOPEN:
                 command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"), "--publish-paper-gate")
+                # The child already emits a typed JSON receipt and exit 2 for RED.
+                # Keep its complete output private; journal only allowlisted keys.
+                with tempfile.TemporaryFile(dir=identity.state) as output:
+                    result = run(command, cwd=root, env=env, check=False, stdout=output,
+                                 stderr=subprocess.DEVNULL, timeout=600)
+                    if result.returncode != 0:
+                        names = read_preopen_red_checks(output) if result.returncode == 2 else None
+                        signature = ("PREOPEN_RED_CHECKS" if names is not None else
+                                     "PREOPEN_CHILD_RECEIPT_UNVERIFIED" if result.returncode == 2 else
+                                     "PREOPEN_CHILD_EXIT_" + str(result.returncode)
+                                     if type(result.returncode) is int and 1 <= result.returncode <= 255 else
+                                     "PREOPEN_CHILD_EXIT_UNVERIFIED")
+                        preopen_failure = {"failure_signature": signature,
+                                           "preopen_red_checks": names or [],
+                                           "child_exit_code": result.returncode if type(result.returncode) is int else None,
+                                           "exit_code": 2 if result.returncode == 2 else 1}
+                    else:
+                        preopen_failure = None
             else:
                 # Only this unchanged publisher uses bare 'docker'. The shim
                 # accepts its exact local formatting/status commands above.
                 env["PATH"] = str(identity.state / "bin") + ":" + env["PATH"]
                 command = ("/bin/sh", str(source / "scripts/porota_publish_introspection_github_rc6.sh"))
-            result = run(command, cwd=root, env=env, check=False, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, timeout=600)
-            require(result.returncode == 0, "SCHEDULER_HOST_JOB_FAILED")
-            commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO"}]
+                result = run(command, cwd=root, env=env, check=False, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, timeout=600)
+                require(result.returncode == 0, "SCHEDULER_HOST_JOB_FAILED")
+                preopen_failure = None
+            commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
         database_snapshot(root / DB_RELATIVE)
+        if unit == PREOPEN and preopen_failure is not None:
+            return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "BLOQUEADO",
+                    "source_sha": current["source_sha"], "image_id": current["image_id"],
+                    "real_orders_sent": 0, **preopen_failure}
         return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "EXECUTED",
                 "source_sha": current["source_sha"], "image_id": current["image_id"],
                 "real_orders_sent": 0, "commands": commands_result,
@@ -229,7 +284,7 @@ def main(argv=None):
         reason = str(exc) if isinstance(exc, Hold) else "UNCLASSIFIED_SCHEDULER_FAILURE"
         print(json.dumps({"schema": "porota.rootless.job.v1", "state": "SKIPPED" if reason == "DEPLOY_IN_PROGRESS" else "BLOQUEADO",
                           "failure_signature": reason, "unit": args.unit}))
-        return 0 if reason == "DEPLOY_IN_PROGRESS" else 79
+        return 0 if reason == "DEPLOY_IN_PROGRESS" else 1 if args.unit == PREOPEN else 79
 
 
 if __name__ == "__main__":
