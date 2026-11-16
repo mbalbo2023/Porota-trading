@@ -9,7 +9,6 @@ import zipfile
 from contextlib import closing
 from datetime import date, datetime, timezone, timedelta
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -358,41 +357,56 @@ def add_schedule_health(current, repo, *, get=None):
     return current
 
 
-def _load_rootless_module(path):
-    """Load only the active, owner-custodied release helper, never main's copy."""
-    spec = importlib.util.spec_from_file_location("_porota_monitor_active_rootless", path)
-    if spec is None or spec.loader is None:
-        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+class _RootlessDockerReadOnly:
+    """Production Docker CLI shape; no hypothetical release helper imports.
 
-
-def _rootless_context(*, loader=None):
-    """Resolve one exact verified RC6 pair in the dedicated nonroot daemon.
-
-    The product's current release reader validates the private manifest; its
-    Host checks daemon identity, all container labels/CIDs, commands and PAPER
-    config. No branch in this reader probes or falls back to rootful Docker.
+    The deploy helper exposes Docker.call/json, not command_result. A dedicated
+    monitor adapter captures return codes for diagnostics, always addressed to
+    the exact private socket and restricted nonroot account. Never use an
+    implicit DOCKER_HOST or the legacy rootful Docker endpoint.
     """
-    uid = os.getuid()
-    account = pwd.getpwuid(uid)
-    if (uid != 1000 or os.geteuid() != uid or account.pw_uid != uid or
-            account.pw_name != "porotaadmin"):
-        raise ValueError("ROOTLESS_SSH_IDENTITY_REQUIRED")
-    home = Path(account.pw_dir)
-    state = home / ".local/state/porota-rc6"
-    if not home.is_absolute() or ".." in home.parts:
-        raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
-    for directory in (home, home / ".local", home / ".local/state", state):
-        meta = directory.lstat()
-        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
-                stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
-            raise ValueError("ROOTLESS_RELEASE_CUSTODY")
-    current_path = state / "current.json"
+    def __init__(self, identity, *, runner=None):
+        self.identity = identity
+        self.runner = runner or subprocess.run
+
+    def command_result(self, *args, timeout=9):
+        if (not args or any(not isinstance(part, str) or not part or "\x00" in part
+                            for part in args) or not 0 < timeout <= 30):
+            raise ValueError("ROOTLESS_DOCKER_SCOPE_UNVERIFIED")
+        completed = self.runner(
+            ["/usr/bin/docker", "--host", "unix://" + str(self.identity.socket), *args],
+            check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=timeout, env=self.identity.environment(), cwd="/")
+        if not isinstance(completed.stdout, str) or len(completed.stdout) > 1048576:
+            raise ValueError("ROOTLESS_DOCKER_OUTPUT_UNVERIFIED")
+        return completed
+
+    def json(self, *args):
+        result = self.command_result(*args, timeout=8)
+        if result.returncode != 0 or len(result.stdout) > 131072:
+            raise ValueError("ROOTLESS_DOCKER_JSON_UNVERIFIED")
+        return json.loads(result.stdout)
+
+
+def _verify_rootless_socket(identity):
+    """Verify the UID1000-owned socket; never probe any default Docker socket."""
+    runtime = identity.socket.parent
+    if (runtime != Path("/run/user/1000") or runtime.is_symlink() or
+            identity.socket != runtime / "porota-rc6-docker.sock"):
+        raise ValueError("ROOTLESS_SOCKET_PATH_CHANGED")
+    runtime_meta = runtime.lstat()
+    socket_meta = identity.socket.lstat()
+    if (not stat.S_ISDIR(runtime_meta.st_mode) or runtime_meta.st_uid != identity.uid or
+            stat.S_IMODE(runtime_meta.st_mode) & 0o022 or
+            not stat.S_ISSOCK(socket_meta.st_mode) or socket_meta.st_uid != identity.uid or
+            stat.S_IMODE(socket_meta.st_mode) & 0o007):
+        raise ValueError("ROOTLESS_SOCKET_CUSTODY")
+
+
+def _read_private_current(path, uid):
+    """Bounded, non-symlink, owner-private current.json as written by deploy."""
     try:
-        fd = os.open(current_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError:
         raise ValueError("ROOTLESS_CURRENT_CUSTODY") from None
     try:
@@ -404,48 +418,165 @@ def _rootless_context(*, loader=None):
         raw = os.read(fd, 131073)
         if len(raw) > 131072:
             raise ValueError("ROOTLESS_CURRENT_OVERSIZE")
-        preliminary = json.loads(raw)
+        return json.loads(raw)
     finally:
         os.close(fd)
-    sha = preliminary.get("source_sha") if isinstance(preliminary, dict) else None
-    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-        raise ValueError("ROOTLESS_SOURCE_SHA_UNVERIFIED")
-    release_dir = state / "releases" / sha
-    source = release_dir / "source"
-    script_dir = source / "scripts"
-    for directory in (state / "releases", release_dir, source, script_dir):
+
+
+def _verify_rootless_item(item, *, cid, role, current, identity):
+    """Bound exact active CID, image, labels, command and PAPER restrictions.
+
+    Mirror the deployed scripts/porota_rootless_host.py:validate_container
+    READ_ONLY contract, without invoking mutation-capable Host operations.
+    """
+    if not isinstance(item, dict) or item.get("Id") != cid:
+        raise ValueError("ROOTLESS_EXACT_CONTAINER_UNVERIFIED")
+    config = item.get("Config") or {}
+    labels = config.get("Labels") or {}
+    if (labels.get("io.porota.project") != "rc6" or
+            labels.get("io.porota.role") != role or
+            labels.get("io.porota.attempt") != current["attempt"] or
+            item.get("Name") != f"/porota-rc6-{role}-{current['attempt']}" or
+            item.get("Image") != current["image_id"] or
+            config.get("Image") != current["image_id"]):
+        raise ValueError("ROOTLESS_CONTAINER_IDENTITY_CHANGED")
+    if (config.get("User") != "0:0" or config.get("Entrypoint") or
+            config.get("WorkingDir") != "/app" or
+            config.get("Cmd") != ["python", "o_dashboard.py" if role == "dashboard"
+                                   else "bf_production_paper_observer.py"]):
+        raise ValueError("ROOTLESS_CONTAINER_COMMAND_CHANGED")
+    lines = config.get("Env")
+    if not isinstance(lines, list) or any(not isinstance(line, str) for line in lines):
+        raise ValueError("ROOTLESS_ENV_UNVERIFIED")
+    raw = "\n".join(lines)
+    # Align with the deployed product's porota_rootless_host.parse_env:
+    # no invalid names, duplicate keys or disallowed control bytes.
+    if any(ord(char) < 32 and char not in "\n\r\t" for char in raw):
+        raise ValueError("ROOTLESS_ENV_UNVERIFIED")
+    env = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key in env:
+            raise ValueError("ROOTLESS_ENV_UNVERIFIED")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        env[key] = value
+    expected = {"POROTA_BUILD_SHA": current["source_sha"],
+                "POROTA_CANDIDATE_TREE_SHA": current["source_tree"],
+                "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
+                "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER", "EXECUTION_MODE": "SIMULATION",
+                "REAL_ORDER_CAPABILITY": "BLOCKED"}
+    if any(env.get(k) != v for k, v in expected.items()):
+        raise ValueError("ROOTLESS_PAPER_CONFIG_CHANGED")
+    host = item.get("HostConfig") or {}
+    security = host.get("SecurityOpt") or []
+    network = str(host.get("NetworkMode", ""))
+    if (host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False or
+            host.get("CapDrop") != ["ALL"] or host.get("CapAdd") or
+            not any(option in {"no-new-privileges", "no-new-privileges:true"}
+                    for option in security) or network in {"host", "none"} or
+            network.startswith("container:") or host.get("PidMode") == "host" or
+            any(type(host.get(k)) is not int or not 0 < host[k] <= maximum
+                for k, maximum in (("Memory", 2 * 1024**3), ("NanoCpus", 2_000_000_000),
+                                   ("PidsLimit", 512)))):
+        raise ValueError("ROOTLESS_CONTAINER_ISOLATION_CHANGED")
+    mounts = item.get("Mounts")
+    expected_mounts = {"/app/data": (str(ROOT / "data"), True),
+                       "/app/operator": (str(identity.operator), False)}
+    if role == "observer":
+        expected_mounts["/run/secrets/ppi_production.json"] = (
+            str(ROOT / ".secrets/ppi_production.json"), False)
+    if (not isinstance(mounts, list) or len(mounts) != len(expected_mounts) or
+            any(not isinstance(mount, dict) or mount.get("Type") != "bind" or
+                mount.get("Destination") not in expected_mounts or
+                (mount.get("Source"), mount.get("RW")) != expected_mounts[mount["Destination"]]
+                for mount in mounts)):
+        raise ValueError("ROOTLESS_CONTAINER_MOUNTS_CHANGED")
+    ports = host.get("PortBindings") or {}
+    if ports != ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
+                 if role == "dashboard" else {}):
+        raise ValueError("ROOTLESS_CONTAINER_PORTS_CHANGED")
+    if (item.get("State") or {}).get("OOMKilled") is True:
+        raise ValueError("ROOTLESS_CONTAINER_OOM")
+    return item
+
+
+def _rootless_context(*, runner=None):
+    """Validate private release state and both CIDs using the real CLI schema.
+
+    No dependency on a copied helper under state/releases (the deployed source
+    does not guarantee one); no rootful fallback, network API or writes.
+    """
+    uid = os.getuid()
+    account = pwd.getpwuid(uid)
+    if (uid != 1000 or os.geteuid() != uid or os.getegid() != os.getgid() or
+            account.pw_uid != uid or account.pw_gid != os.getgid() or
+            account.pw_name != "porotaadmin"):
+        raise ValueError("ROOTLESS_SSH_IDENTITY_REQUIRED")
+    home = Path(account.pw_dir)
+    state = home / ".local/state/porota-rc6"
+    if not home.is_absolute() or ".." in home.parts or any(p.is_symlink() for p in home.parents):
+        raise ValueError("ROOTLESS_PRIVATE_HOME_UNVERIFIED")
+    for directory in (home, home / ".local", home / ".local/state", state):
         meta = directory.lstat()
         if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
-                stat.S_IMODE(meta.st_mode) & 0o022):
+                stat.S_IMODE(meta.st_mode) & (0o077 if directory == state else 0o022)):
             raise ValueError("ROOTLESS_RELEASE_CUSTODY")
-    helper = script_dir / "porota_rootless_host.py"
-    meta = helper.lstat()
-    if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
-            meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) & 0o022):
-        raise ValueError("ROOTLESS_RELEASE_HELPER_UNVERIFIED")
-    module = (loader or _load_rootless_module)(helper)
-    identity = module.Identity.current()
-    if (identity.uid != uid or Path(identity.home) != home or
-            Path(identity.state) != state or
-            Path(identity.socket) != Path(f"/run/user/{uid}/porota-rc6-docker.sock")):
-        raise ValueError("ROOTLESS_IDENTITY_DRIFT")
-    current, _release = module.read_release_state(identity)
+    identity = SimpleNamespace(
+        uid=uid, home=home, state=state,
+        socket=Path(f"/run/user/{uid}/porota-rc6-docker.sock"),
+        store=home / ".local/share/porota-rc6/docker",
+        operator=home / ".config/porota-rc6/operator",
+        environment=lambda: {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
+            "HOME": str(home), "USER": account.pw_name, "LOGNAME": account.pw_name,
+            "XDG_RUNTIME_DIR": f"/run/user/{uid}",
+            "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus",
+            "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
+            "DOCKER_CLI_HINTS": "false", "COMPOSE_DISABLE_ENV_FILE": "1"})
+    current_path = state / "current.json"
+    current = _read_private_current(current_path, uid)
     roles = current.get("roles") if isinstance(current, dict) else None
-    if (current != preliminary or current.get("state") != "VALIDADO_RUNTIME" or
+    if (not isinstance(current, dict) or current.get("schema") != "porota.rootless.deploy.v1" or
+            current.get("state") != "VALIDADO_RUNTIME" or
             current.get("operating_mode") != "PRODUCTION_PAPER" or
             current.get("execution_mode") != "SIMULATION" or
             type(current.get("real_orders_sent")) is not int or current["real_orders_sent"] != 0 or
+            not isinstance(current.get("source_sha"), str) or
+            not re.fullmatch(r"[0-9a-f]{40}", current["source_sha"]) or
+            not isinstance(current.get("source_tree"), str) or
+            not re.fullmatch(r"[0-9a-f]{40}", current["source_tree"]) or
+            not isinstance(current.get("image_id"), str) or
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", current["image_id"]) or
+            not isinstance(current.get("attempt"), str) or
+            not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", current["attempt"]) or
+            not isinstance(current.get("daemon_id"), str) or not current["daemon_id"] or
             not isinstance(roles, dict) or set(roles) != set(CONTAINERS) or
             any(not isinstance(cid, str) or not re.fullmatch(r"[0-9a-f]{64}", cid)
                 for cid in roles.values()) or len(set(roles.values())) != len(CONTAINERS)):
         raise ValueError("ROOTLESS_CURRENT_RELEASE_UNVERIFIED")
-    host = module.Host(ROOT, identity)
-    if not current.get("daemon_id") or host.boundary() != current["daemon_id"]:
+    _verify_rootless_socket(identity)
+    docker = _RootlessDockerReadOnly(identity, runner=runner)
+    info = docker.json("info", "--format", "{{json .}}")
+    if (not isinstance(info, dict) or "name=rootless" not in info.get("SecurityOptions", []) or
+            str(info.get("CgroupVersion")) != "2" or info.get("CgroupDriver") != "systemd" or
+            info.get("DockerRootDir") != str(identity.store) or
+            info.get("ID") != current["daemon_id"]):
         raise ValueError("ROOTLESS_DAEMON_CHANGED")
-    items = {role: host.check_role(current, role) for role in CONTAINERS}
-    if any(item.get("Id") != roles[role] for role, item in items.items()):
-        raise ValueError("ROOTLESS_ROLE_IDENTITY_CHANGED")
-    return SimpleNamespace(host=host, current=current, roles=roles, items=items)
+    items = {}
+    for role in CONTAINERS:
+        data = docker.json("container", "inspect", roles[role])
+        if not isinstance(data, list) or len(data) != 1:
+            raise ValueError("ROOTLESS_CONTAINER_INSPECT_UNVERIFIED")
+        items[role] = _verify_rootless_item(
+            data[0], cid=roles[role], role=role, current=current, identity=identity)
+    if _read_private_current(current_path, uid) != current:
+        raise ValueError("ROOTLESS_CURRENT_CHANGED_DURING_READ")
+    return SimpleNamespace(host=SimpleNamespace(identity=identity, docker=docker),
+                           current=current, roles=roles, items=items)
 
 
 def _docker_inspect():

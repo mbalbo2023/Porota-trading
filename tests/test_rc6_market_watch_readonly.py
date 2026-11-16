@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import sys
@@ -179,17 +180,13 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(containers["observer"]["cid"], observer_cid)
         self.assertEqual(containers["dashboard"]["cid"], dashboard_cid)
 
-    def test_rootless_resolver_requires_private_current_and_two_pinned_cids(self):
+    def rootless_production_fixture(self):
+        """Actual deploy receipt/daemon/container shapes, no hypothetical APIs."""
         home = self.root / "porotaadmin"
         state = home / ".local/state/porota-rc6"
-        source = state / "releases" / SHA / "source"
-        (source / "scripts").mkdir(parents=True)
-        for directory in (home, state, state / "releases", state / "releases" / SHA,
-                          source, source / "scripts"):
+        state.mkdir(parents=True)
+        for directory in (home, home / ".local", home / ".local/state", state):
             directory.chmod(0o700)
-        helper = source / "scripts/porota_rootless_host.py"
-        helper.write_text("# pinned runtime helper\n")
-        helper.chmod(0o600)
         cids = {"observer": "1" * 64, "dashboard": "2" * 64}
         current = {"schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
                    "source_sha": SHA, "source_tree": "e" * 40,
@@ -199,27 +196,66 @@ class MonitorContracts(unittest.TestCase):
         marker = state / "current.json"
         marker.write_text(json.dumps(current))
         marker.chmod(0o600)
+        daemon = {"ID": current["daemon_id"], "SecurityOptions": ["name=rootless"],
+                  "CgroupVersion": "2", "CgroupDriver": "systemd",
+                  "DockerRootDir": str(home / ".local/share/porota-rc6/docker")}
+        items = {}
+        for role, cid in cids.items():
+            mounts = [
+                {"Type": "bind", "Destination": "/app/data", "Source": str(monitor.ROOT / "data"), "RW": True},
+                {"Type": "bind", "Destination": "/app/operator", "Source": str(home / ".config/porota-rc6/operator"), "RW": False}]
+            if role == "observer":
+                mounts.append({"Type": "bind", "Destination": "/run/secrets/ppi_production.json",
+                               "Source": str(monitor.ROOT / ".secrets/ppi_production.json"), "RW": False})
+            host_config = {"ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"],
+                           "CapAdd": None, "SecurityOpt": ["no-new-privileges:true"],
+                           "NetworkMode": "porota-rc6-private", "PidMode": "", "Memory": 1024**3,
+                           "NanoCpus": 1000000000, "PidsLimit": 256,
+                           "PortBindings": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
+                           if role == "dashboard" else {}}
+            items[cid] = {"Id": cid, "Name": f"/porota-rc6-{role}-attempt-a", "Image": IMAGE,
+                "RestartCount": 0, "State": {"Status": "running", "Running": True, "OOMKilled": False},
+                "Config": {"Labels": {"io.porota.project": "rc6", "io.porota.role": role,
+                                      "io.porota.attempt": "attempt-a"},
+                           "Image": IMAGE, "User": "0:0", "Entrypoint": None,
+                           "WorkingDir": "/app", "Cmd": ["python", "o_dashboard.py" if role == "dashboard"
+                                                         else "bf_production_paper_observer.py"],
+                           "Env": [f"POROTA_BUILD_SHA={SHA}", f"POROTA_CANDIDATE_TREE_SHA={'e'*40}",
+                                   "PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db",
+                                   "DASHBOARD_OPERATION_MODE=PRODUCTION_PAPER",
+                                   "EXECUTION_MODE=SIMULATION", "REAL_ORDER_CAPABILITY=BLOCKED"]},
+                "HostConfig": host_config,
+                "Mounts": mounts}
+        calls = []
+        def runner(argv, **kwargs):
+            calls.append((argv, kwargs))
+            self.assertEqual(argv[:3], ["/usr/bin/docker", "--host",
+                                        "unix:///run/user/1000/porota-rc6-docker.sock"])
+            self.assertEqual(kwargs.get("env", {}).get("DOCKER_CONFIG"),
+                             str(home / ".config/porota-rc6/client"))
+            self.assertNotIn("sudo", argv)
+            command = argv[3:]
+            if command == ["info", "--format", "{{json .}}"]:
+                value = daemon
+            elif command[:2] == ["container", "inspect"] and command[2] in items:
+                value = [items[command[2]]]
+            elif command[:2] == ["container", "exec"] and command[2] in items:
+                value = {"schema": "rc6.shadow-readonly-diagnostic.v1", "read_only": True,
+                         "stages": [{"stage": "RUNTIME_INPUT", "status": "OK"}]}
+            else:
+                self.fail(f"Unexpected Docker operation: {command[:3]}")
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(value), stderr="secret=must_not_export")
         account = SimpleNamespace(pw_uid=1000, pw_gid=1000, pw_name="porotaadmin", pw_dir=str(home))
-        class PrivateHost:
-            def __init__(self, *args):
-                pass
-            def boundary(self):
-                return "dedicated-private-daemon"
-            def check_role(self, _current, role):
-                return {"Id": cids[role], "Image": IMAGE,
-                        "State": {"Status": "running", "OOMKilled": False}}
-        fake_identity = SimpleNamespace(uid=1000, home=home, state=state,
-             socket=Path("/run/user/1000/porota-rc6-docker.sock"))
-        fake_module = SimpleNamespace(Identity=SimpleNamespace(current=lambda: fake_identity),
-              read_release_state=lambda _: (current, {"schema": "porota.release.v1"}),
-              Host=PrivateHost)
-        loaded = []
-        def loader(path):
-            loaded.append(path)
-            return fake_module
-        # GitHub runners use a different UID from the productive UID 1000.
-        # Virtualize only filesystem ownership metadata in this fixture;
-        # the production resolver must still require the exact real identity.
+        return home, marker, current, daemon, items, runner, calls, account
+
+    def test_rootless_resolver_requires_private_current_and_two_pinned_cids(self):
+        home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
+        # This source commit contains NO private copied Python helper; the
+        # production Docker API has only call/json, no command_result.
+        self.assertFalse((home / ".local/state/porota-rc6/releases" / SHA /
+                          "source/scripts/porota_rootless_host.py").exists())
+        # Runner UID/owner may differ from productive 1000; simulate metadata
+        # only, while validating real file modes, symlinks and Docker shapes.
         real_lstat = Path.lstat
         real_fstat = monitor.os.fstat
         def owned_by_1000(meta):
@@ -228,20 +264,96 @@ class MonitorContracts(unittest.TestCase):
             return monitor.os.stat_result(values)
         def virtual_lstat(path):
             return owned_by_1000(real_lstat(path))
-        with patch.object(monitor, "pwd", SimpleNamespace(getpwuid=lambda _: account), create=True), \
+        with patch.object(monitor, "pwd", SimpleNamespace(getpwuid=lambda _: account)), \
                 patch.object(monitor.os, "getuid", return_value=1000), \
                 patch.object(monitor.os, "geteuid", return_value=1000), \
+                patch.object(monitor.os, "getgid", return_value=1000), \
+                patch.object(monitor.os, "getegid", return_value=1000), \
                 patch.object(Path, "lstat", virtual_lstat), \
-                patch.object(monitor.os, "fstat", side_effect=lambda fd: owned_by_1000(real_fstat(fd))):
-            context = monitor._rootless_context(loader=loader)
-            self.assertEqual(context.roles, cids)
+                patch.object(monitor.os, "fstat", side_effect=lambda fd: owned_by_1000(real_fstat(fd))), \
+                patch.object(monitor, "_verify_rootless_socket", return_value=None, create=True):
+            context = monitor._rootless_context(runner=runner)
+            self.assertEqual(context.roles, current["roles"])
             self.assertEqual(context.current["source_sha"], SHA)
-            self.assertEqual(loaded, [helper])
+            self.assertEqual(context.items["observer"]["Id"], "1" * 64)
+            self.assertEqual(context.items["dashboard"]["Id"], "2" * 64)
+            completed = context.host.docker.command_result(
+                "container", "exec", current["roles"]["observer"],
+                "python", "-B", "-c", "print(1)", timeout=7)
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual(json.loads(completed.stdout)["read_only"], True)
+            self.assertEqual(len(calls), 4)  # info, two exact inspect, one exec
+            self.provenance_path.write_text(json.dumps({
+                "candidate_sha": SHA, "candidate_tree_sha": current["source_tree"],
+                "deployment_backend": "ROOTLESS_SPLIT", "image_id": IMAGE,
+                "mode": "PRODUCTION_PAPER", "validation_status": "VALIDATED_RUNTIME",
+                "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"}))
+            real_context = monitor._rootless_context
+            with patch.object(monitor, "_rootless_context",
+                    side_effect=lambda: real_context(runner=runner)), patch.object(
+                    monitor, "independent_session", return_value={"state": "OPEN"}), patch.object(
+                    monitor, "_resources", return_value=self.resources), patch.object(
+                    monitor, "_host_control_state", return_value={
+                        "legacy_health_timer": "inactive", "fast_health_timer": "active"}):
+                observation = monitor.probe(root=self.root, at=NOW,
+                    expected_sha="f" * 40, expected_tree_sha=current["source_tree"])
+            self.assertNotIn("CONTAINER_OR_IMAGE_UNVERIFIED", self.codes(observation))
+            self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(observation))
+            self.assertEqual(observation["provenance_identity"], "ROOTLESS_PRODUCT_TREE_MATCHED")
+            self.assertEqual(set(observation["containers"]), {"observer", "dashboard"})
+            daemon["ID"] = "forged-daemon"
+            with self.assertRaises(ValueError):
+                monitor._rootless_context(runner=runner)
+            daemon["ID"] = current["daemon_id"]
+            items[current["roles"]["dashboard"]]["Config"]["Labels"]["io.porota.role"] = "observer"
+            with self.assertRaises(ValueError):
+                monitor._rootless_context(runner=runner)
             marker.unlink()
             marker.symlink_to(self.provenance_path)
             with self.assertRaises(ValueError):
-                monitor._rootless_context(loader=loader)
-        self.assertEqual(len(loaded), 1, "Symlink must fail before loading helper")
+                monitor._rootless_context(runner=runner)
+
+    def test_private_socket_0660_allowed_but_world_access_never_allowed(self):
+        socket = Path("/run/user/1000/porota-rc6-docker.sock")
+        identity = SimpleNamespace(uid=1000, socket=socket)
+        mode = {"socket": 0o660, "owner": 1000}
+        def virtual_lstat(path):
+            if Path(path) == socket.parent:
+                return SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000)
+            if Path(path) == socket:
+                return SimpleNamespace(st_mode=stat.S_IFSOCK | mode["socket"],
+                                       st_uid=mode["owner"])
+            self.fail("Unexpected filesystem lookup")
+        with patch.object(Path, "lstat", virtual_lstat):
+            monitor._verify_rootless_socket(identity)  # Real socket was 0660.
+            for socket_mode, owner in ((0o666, 1000), (0o664, 1000), (0o660, 1001)):
+                mode.update(socket=socket_mode, owner=owner)
+                with self.subTest(socket_mode=socket_mode, owner=owner):
+                    with self.assertRaises(ValueError):
+                        monitor._verify_rootless_socket(identity)
+
+    def test_runtime_env_parser_matches_product_key_and_control_guards(self):
+        home, _marker, current, _daemon, items, _runner, _calls, _account = (
+            self.rootless_production_fixture())
+        cid = current["roles"]["observer"]
+        identity = SimpleNamespace(operator=home / ".config/porota-rc6/operator")
+        def verify(lines):
+            item = json.loads(json.dumps(items[cid]))
+            item["Config"]["Env"] = lines
+            return monitor._verify_rootless_item(
+                item, cid=cid, role="observer", current=current, identity=identity)
+        original = list(items[cid]["Config"]["Env"])
+        self.assertEqual(verify(original)["Id"], cid)
+        quoted = [line.replace("REAL_ORDER_CAPABILITY=BLOCKED",
+                               "REAL_ORDER_CAPABILITY='BLOCKED'") for line in original]
+        self.assertEqual(verify(quoted)["Id"], cid)
+        for bad in ("lowercase_key=value", "BAD-NAME=value", "BAD\x00NAME=value",
+                    "EXTRA=value\x01", "REAL_ORDER_CAPABILITY=ENABLED"):
+            with self.subTest(invalid=repr(bad)):
+                with self.assertRaises(ValueError):
+                    verify(original + [bad])
+        with self.assertRaises(ValueError):
+            verify(original + ["POROTA_BUILD_SHA=" + SHA])  # Duplicate is ambiguous.
 
     def test_shadow_probe_executes_only_validated_private_observer_cid(self):
         calls = []

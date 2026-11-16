@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+from datetime import datetime, timezone
 import io
 import json
 from pathlib import Path
@@ -65,7 +66,123 @@ def fixture_db(path):
         c.commit()
 
 
+def fixture_auth_health(path, *, detail, checked_at="2026-11-15T23:45:27Z"):
+    """Product api_health shape; synthetic detail must never cross host sanitizer."""
+    with closing(sqlite3.connect(path)) as c:
+        c.execute("""CREATE TABLE api_health(
+            component TEXT PRIMARY KEY, state TEXT NOT NULL,
+            detail TEXT NOT NULL, checked_at TEXT NOT NULL,
+            last_success_at TEXT, source TEXT NOT NULL)""")
+        c.execute("INSERT INTO api_health VALUES(?,?,?,?,?,?)", (
+            "PPI_PRODUCTION_AUTH", "ROJO", detail, checked_at, None, "ppi_observer"))
+        c.commit()
+
+
 class TestA652MicroReadOnly(unittest.TestCase):
+    def test_physical_cooldown_not_attempted_and_boot_calendar_are_not_laundered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            for auth, session in (("COOLDOWN", "BOOT_CALENDAR"),
+                                  ("NOT_ATTEMPTED", "MARKET_CLOSED"),
+                                  ("INVALID_SECRET", "INVALID_SESSION")):
+                with self.subTest(auth=auth, session=session):
+                    with closing(sqlite3.connect(db)) as c:
+                        c.execute("UPDATE observer_state SET ppi_auth=?,session_state=?",
+                                  (auth, session))
+                        c.commit()
+                    with patch.object(a617, "_mount_is_readonly", return_value=True):
+                        report = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+                    observed = report["host"]["observer"]
+                    self.assertEqual(observed["ppi_auth"],
+                                     auth if auth != "INVALID_SECRET" else "UNKNOWN")
+                    self.assertEqual(observed["session_state"],
+                                     session if session != "INVALID_SESSION" else "UNKNOWN")
+                    self.assertFalse(report["paper_ready"])
+
+    def test_exact_api_health_guard_reports_cause_and_age_without_raw_detail(self):
+        detail = "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_auth_health(db, detail=detail)
+            fixed_now = datetime(2026, 11, 15, 23, 55, 27, tzinfo=timezone.utc)
+            with (patch.object(a617, "_mount_is_readonly", return_value=True),
+                  patch.object(a652, "_now_utc", return_value=fixed_now, create=True)):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            receipt = a652.build_receipt(raw)
+            observed = receipt["host"]["auth_health"]
+            self.assertEqual(observed, {
+                "state": "OBSERVED", "cause": "LOCAL_AUTH_GUARD",
+                "checked_at_utc": "2026-11-15T23:45:27+00:00", "age_seconds": 600})
+            self.assertNotIn(detail, json.dumps(raw))
+            self.assertNotIn(detail, json.dumps(receipt))
+            self.assertFalse(receipt["paper_ready"])
+            self.assertEqual(receipt["probe_provider_gets"], 0)
+            self.assertEqual(receipt["probe_host_file_writes"], 0)
+
+    def test_api_health_non_exact_details_are_other_redacted(self):
+        for detail in (
+                "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED suffix",
+                "ConnectionError: private-token private-account",
+                "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED\nsecret"):
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as directory:
+                db = Path(directory) / "observer.db"
+                fixture_db(db)
+                fixture_auth_health(db, detail=detail)
+                with patch.object(a617, "_mount_is_readonly", return_value=True):
+                    raw = a652.host_probe(db=db, runner=fake_systemctl)
+                receipt = a652.build_receipt(raw)
+                self.assertEqual(receipt["host"]["auth_health"]["cause"], "OTHER_REDACTED")
+                self.assertNotIn(detail, json.dumps(raw))
+                self.assertNotIn(detail, json.dumps(receipt))
+
+    def test_api_health_missing_table_or_row_remains_unverified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                missing_table = a652.build_receipt(
+                    a652.host_probe(db=db, runner=fake_systemctl))
+            self.assertEqual(missing_table["host"]["auth_health"]["state"], "NO_VERIFICADO")
+            fixture_auth_health(db, detail="never-disclosed")
+            with closing(sqlite3.connect(db)) as c:
+                c.execute("DELETE FROM api_health")
+                c.commit()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                missing_row = a652.build_receipt(
+                    a652.host_probe(db=db, runner=fake_systemctl))
+            self.assertEqual(missing_row["host"]["auth_health"]["cause"], "NO_VERIFICADO")
+
+    def test_api_health_uses_existing_sqlite_read_only_connection_without_http(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_auth_health(db, detail="synthetic-private-token")
+            original_connect = sqlite3.connect
+            seen = []
+            sql_trace = []
+
+            def guarded_connect(*args, **kwargs):
+                seen.append((args, kwargs))
+                self.assertIn("?mode=ro", args[0])
+                self.assertTrue(kwargs.get("uri"))
+                conn = original_connect(*args, **kwargs)
+                conn.set_trace_callback(sql_trace.append)
+                return conn
+
+            with (patch.object(a617, "_mount_is_readonly", return_value=True),
+                  patch.object(a652.sqlite3, "connect", side_effect=guarded_connect),
+                  patch("urllib.request.urlopen", side_effect=AssertionError("HTTP prohibited"))):
+                receipt = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+            self.assertEqual(len(seen), 1)
+            self.assertTrue(sql_trace)
+            self.assertTrue(all(statement.lstrip().split(None, 1)[0].upper() in
+                                {"SELECT", "PRAGMA", "WITH"} for statement in sql_trace))
+            self.assertEqual(receipt["host"]["auth_health"]["cause"], "OTHER_REDACTED")
+            self.assertEqual(receipt["probe_provider_gets"], 0)
+            self.assertEqual(receipt["probe_host_file_writes"], 0)
+
     def test_pytest_suite_short_alias_collision_keeps_namespaced_guards(self):
         """RCA CI: unrelated tests may load a second A617 short module alias."""
         shadow_a617 = types.ModuleType("rc6_a617_ppi_origin_selector_readonly")
