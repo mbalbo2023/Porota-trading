@@ -34,7 +34,7 @@ def capture_context():
 
 
 class EvidenceStore:
-    def __init__(self, path, *, maximum_bytes=128*1024*1024):
+    def __init__(self, path, *, maximum_bytes=256*1024*1024):
         self.path = Path(path).resolve()
         self.maximum_bytes = maximum_bytes
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +186,7 @@ def run_worker(source, stop):
                 report = capture.read_batch()
                 if report["status"] != "CAPTURED":
                     LOG.warning("PERFORMANCE_CAPTURE:%s", report["status"])
-                elif time.monotonic()-last_report >= 300:
+                if time.monotonic()-last_report >= 300:
                     from .report import evidence_report
                     snapshot = evidence_report(evidence_path, event_limit=1000)
                     # Bounded atomic report, outside the trading DB.
