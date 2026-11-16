@@ -14,5 +14,5 @@ def allow_fake_auth_only(monkeypatch):
     """Exercise SDK login/refresh on a fake transport, without provider IO."""
     if requests.adapters.HTTPAdapter.send is _NATIVE_ADAPTER_SEND:
         raise AssertionError("FAKE_HTTP_ADAPTER_REQUIRED_FOR_AUTH_TEST")
-    import bd_ppi_readonly_guard as auth_module
-    monkeypatch.setattr(auth_module, "require_ppi_authentication_authority", lambda: None)
+    # The runtime now allows only the account login/refresh whitelist. Keep
+    # this fixture as a hard guard against accidentally testing with live HTTP.

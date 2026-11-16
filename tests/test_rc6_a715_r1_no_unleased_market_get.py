@@ -124,12 +124,14 @@ def test_r1_backpressure_never_reaches_provider_adapter(fake_wire, allowed, erro
         guard.restore()
 
 
-def test_r1_login_without_independent_auth_lease_is_blocked_before_wire(fake_wire):
+def test_r1_login_has_own_cooldown_and_does_not_use_market_budget(fake_wire):
     guard = ReadOnlyTransportGuard(budget=None, consumer="SCANNER").install()
     try:
-        with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+        assert requests.post(PPI_HOST + "/api/1.0/account/loginapi").status_code == 200
+        with pytest.raises(ReadOnlyPolicyViolation, match="cooldown"):
             requests.post(PPI_HOST + "/api/1.0/account/loginapi")
-        assert fake_wire == [] and guard.login_calls == 0
+        assert fake_wire == [("POST", PPI_HOST + "/api/1.0/account/loginapi")]
+        assert guard.login_calls == 1
     finally:
         guard.restore()
 
@@ -145,15 +147,15 @@ def test_r1_forbidden_real_order_route_remains_blocked(fake_wire):
 
 
 @pytest.mark.parametrize("path", sorted(_GET_PATHS - _BUDGETED_MARKET_GET_PATHS))
-def test_r2_unmetered_catalog_history_configuration_get_never_reaches_adapter(fake_wire, path):
+def test_r2_allowlisted_catalog_history_configuration_get_reaches_fake_adapter(fake_wire, path):
     budget = BudgetStub()
     guard = ReadOnlyTransportGuard(budget=budget, consumer="SCANNER").install()
     try:
-        with pytest.raises(BudgetBackpressure, match="ENDPOINT_BUDGET_UNVERIFIED"):
-            requests.get(PPI_HOST + path)
-        assert fake_wire == []
-        assert guard.calls_allowed == 0
-        assert guard.calls_blocked == 1
+        assert requests.get(PPI_HOST + path).status_code == 200
+        assert fake_wire == [("GET", PPI_HOST + path)]
+        assert guard.calls_allowed == 1
+        assert guard.calls_blocked == 0
+        # Market-data leases cannot be misattributed to other GET routes.
         assert budget.acquires == []
     finally:
         guard.restore()
@@ -165,14 +167,16 @@ def test_r2_unmetered_catalog_history_configuration_get_never_reaches_adapter(fa
     "/api/1.0/marketdata/search",
     "/api/1.0/marketdata/bonds/estimate",
 ))
-def test_r2_direct_adapter_cannot_bypass_unmetered_get(fake_wire, path):
+def test_r2_direct_adapter_is_still_restricted_to_allowlisted_get(fake_wire, path):
     guard = ReadOnlyTransportGuard(budget=None, consumer="SCANNER").install()
     try:
         request = requests.Request("GET", PPI_HOST + path).prepare()
-        with pytest.raises(BudgetBackpressure, match="ENDPOINT_BUDGET_UNVERIFIED"):
-            requests.adapters.HTTPAdapter().send(request)
-        assert fake_wire == []
-        assert guard.calls_allowed == 0
+        assert requests.adapters.HTTPAdapter().send(request).status_code == 200
+        with pytest.raises(ReadOnlyPolicyViolation):
+            requests.adapters.HTTPAdapter().send(
+                requests.Request("POST", PPI_HOST + "/api/1.0/order/confirm").prepare())
+        assert fake_wire == [("GET", PPI_HOST + path)]
+        assert guard.calls_allowed == 1
     finally:
         guard.restore()
 

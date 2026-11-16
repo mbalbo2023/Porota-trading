@@ -1,4 +1,4 @@
-"""Process-global requests hook custody: AUTH HOLD must survive overlap.
+"""Process-global requests hook custody: no order route across overlap.
 
 All admissible sends terminate at a monkeypatched, in-memory adapter.
 """
@@ -42,15 +42,15 @@ def test_second_guard_is_denied_without_replacing_first_hooks(fake_wire):
             second.install()
         assert requests.sessions.Session.request is owned_request
         assert requests.adapters.HTTPAdapter.send is owned_send
-        with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
-            requests.post(BASE + "account/loginapi")
+        with pytest.raises(ReadOnlyPolicyViolation, match="Ruta bloqueada"):
+            requests.post(BASE + "order/confirm")
         assert fake_wire == []
     finally:
         second.restore()
         first.restore()
 
 
-def test_two_readers_cannot_bypass_auth_hold_by_out_of_order_close(fake_wire):
+def test_two_readers_cannot_bypass_order_hold_by_out_of_order_close(fake_wire):
     first = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET", budget=SyntheticWireLease())
     second = None
     try:
@@ -58,12 +58,12 @@ def test_two_readers_cannot_bypass_auth_hold_by_out_of_order_close(fake_wire):
             second = ProductionMarketReader("FAKE_KEY", "FAKE_SECRET",
                                             budget=SyntheticWireLease())
         first.close()
-        with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
+        with pytest.raises(ReadOnlyPolicyViolation, match="Ruta bloqueada"):
             # Once the sole reader closes, a new guard must be installed to
-            # take custody again. No stale reader can authorize a POST.
+            # take custody again. No stale reader can authorize an order POST.
             guard = ReadOnlyTransportGuard().install()
             try:
-                requests.post(BASE + "account/loginapi")
+                requests.post(BASE + "order/confirm")
             finally:
                 guard.restore()
         assert fake_wire == []
