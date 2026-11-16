@@ -100,11 +100,17 @@ def flat_book(path, *, stopped=False, clean_exit=False):
             demand(db.execute("SELECT 1 FROM paper_exit_intents "
                               "WHERE state IS NULL OR state NOT IN ('CLOSED','CANCELLED_ADMIN') LIMIT 1")
                    .fetchone() is None, 'PAPER_INFLIGHT_INTENT_PENDING')
+            demand(db.execute("SELECT 1 FROM paper_future_exit_intents "
+                              "WHERE state IS NULL OR state NOT IN ('CLOSED','CANCELLED_ADMIN') LIMIT 1")
+                   .fetchone() is None, 'PAPER_INFLIGHT_INTENT_PENDING')
             columns = {row[1] for row in db.execute('PRAGMA table_info(paper_family_lifecycle)')}
             demand({'family', 'state'} <= columns, 'PAPER_FAMILY_LEDGER_UNVERIFIED')
             demand(db.execute("SELECT 1 FROM paper_family_lifecycle WHERE family='FCI' "
                               "AND (state IS NULL OR state!='REDEEMED') LIMIT 1").fetchone() is None,
                    'PAPER_EXPOSURE_NOT_FLAT')
+            demand(db.execute("SELECT 1 FROM paper_family_lifecycle WHERE family='FUTUROS' "
+                              "AND (state IS NULL OR state NOT IN ('CLOSE','EXPIRY','ADMIN_CANCEL')) LIMIT 1")
+                   .fetchone() is None, 'PAPER_EXPOSURE_NOT_FLAT')
             demand(db.execute("SELECT 1 FROM paper_family_lifecycle "
                               "WHERE family IS NULL OR family NOT IN ('FCI','FUTUROS') LIMIT 1").fetchone() is None,
                    'PAPER_EXPOSURE_NOT_FLAT')

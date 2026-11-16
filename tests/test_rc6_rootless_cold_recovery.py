@@ -31,6 +31,7 @@ class FlatPaperTests(unittest.TestCase):
                 CREATE TABLE paper_future_positions(status TEXT);
                 CREATE TABLE paper_family_lifecycle(family TEXT,state TEXT);
                 CREATE TABLE paper_exit_intents(paper_id TEXT, state TEXT);
+                CREATE TABLE paper_future_exit_intents(lifecycle_id TEXT, state TEXT);
             ''')
         with sqlite3.connect(self.db) as connection:
             connection.execute('UPDATE observer_state SET heartbeat_at=?',
@@ -110,6 +111,17 @@ class FlatPaperTests(unittest.TestCase):
         with sqlite3.connect(self.db) as connection:
             connection.execute("INSERT INTO paper_exit_intents VALUES ('paper-001','EXIT_PENDING_MARKET_CLOSED')")
         with self.assertRaisesRegex(cold.ColdHold,'PAPER_INFLIGHT_INTENT_PENDING'):
+            cold.flat_book(self.db)
+
+    def test_future_intent_and_margin_liability_block_flat_claim(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("INSERT INTO paper_future_exit_intents VALUES ('future-001','EXIT_PENDING_EXECUTION')")
+        with self.assertRaisesRegex(cold.ColdHold,'PAPER_INFLIGHT_INTENT_PENDING'):
+            cold.flat_book(self.db)
+        with sqlite3.connect(self.db) as connection:
+            connection.execute('DELETE FROM paper_future_exit_intents')
+            connection.execute("INSERT INTO paper_family_lifecycle VALUES ('FUTUROS','MARGIN_DEFICIT')")
+        with self.assertRaisesRegex(cold.ColdHold,'PAPER_EXPOSURE_NOT_FLAT'):
             cold.flat_book(self.db)
 
 
