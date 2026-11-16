@@ -40,8 +40,10 @@ WATCH_STATES = {"ENUMERATED_NO_MATCH", "ENUMERATED_UNREGISTERED_CANDIDATE",
                 "ENUMERATED_AMBIGUOUS", "ENUMERATION_UNAVAILABLE"}
 OBSERVER_MODES = {"PRODUCTION_PAPER", "SIMULATION", "UNKNOWN"}
 PROCESS_STATES = {"RUNNING", "DEGRADED", "READY_PREOPEN", "WAITING_MARKET", "STOPPED", "UNKNOWN"}
-SESSION_STATES = {"MARKET_OPEN", "MARKET_CLOSED", "PREOPEN", "UNKNOWN"}
-AUTH_STATES = {"OK", "ERROR", "UNKNOWN"}
+SESSION_STATES = {"MARKET_OPEN", "MARKET_CLOSED", "PREOPEN", "BOOT_CALENDAR", "UNKNOWN"}
+AUTH_STATES = {"OK", "ERROR", "COOLDOWN", "NOT_ATTEMPTED", "UNKNOWN"}
+AUTH_HEALTH_CAUSES = {"LOCAL_AUTH_GUARD", "OTHER_REDACTED"}
+_LOCAL_AUTH_GUARD_EXACT = "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9_.@-]{1,128}\.service$")
 _HTTP_CODE = re.compile(r"^PPI_HTTP_([1-5][0-9]{2})$")
 _SAFE_CLASS = re.compile(r"^PPI_[A-Z0-9_]{1,64}$")
@@ -97,6 +99,43 @@ def _utc_stamp(value):
         return stamp.astimezone(timezone.utc).isoformat(timespec="seconds")
     except (ValueError, TypeError, OverflowError):
         return None
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _auth_health(conn, tables):
+    """Single indexed api_health lookup; classify in SQL so detail never leaves DB.
+
+    This is historic evidence at checked_at, not current provider availability,
+    permission to authenticate, or an instrument PAPER admission decision.
+    """
+    missing = {"state": "NO_VERIFICADO", "cause": "NO_VERIFICADO",
+               "checked_at_utc": None, "age_seconds": None}
+    if "api_health" not in tables:
+        return missing
+    try:
+        columns = {r[1] for r in conn.execute("PRAGMA table_info(api_health)")}
+        if not {"component", "detail", "checked_at"} <= columns:
+            return missing
+        row = conn.execute(
+            "SELECT CASE WHEN detail = ? THEN 'LOCAL_AUTH_GUARD' "
+            "ELSE 'OTHER_REDACTED' END, checked_at "
+            "FROM api_health WHERE component = ? LIMIT 1",
+            (_LOCAL_AUTH_GUARD_EXACT, "PPI_PRODUCTION_AUTH")).fetchone()
+        if row is None:
+            return missing
+        stamp = _utc_stamp(row[1])
+        if stamp is None:
+            return missing
+        age = _bounded_int(int((_now_utc() - datetime.fromisoformat(stamp)).total_seconds()))
+        if age is None or row[0] not in AUTH_HEALTH_CAUSES:
+            return missing
+        return {"state": "OBSERVED", "cause": row[0],
+                "checked_at_utc": stamp, "age_seconds": age}
+    except (sqlite3.Error, ValueError, TypeError, OverflowError):
+        return missing
 
 
 def _a617():
@@ -234,7 +273,9 @@ def _db_probe(db=DB, *, enforce_ro_mount=True):
     result = {"state": "NO_VERIFICADO", "reason": "DB_RO_OR_PAPER_IDENTITY_UNAVAILABLE",
               "private_ro_mount_verified": False, "paper_db_identity_verified": False,
               "cycle": {"state": "NO_VERIFICADO"}, "observer": {"state": "NO_VERIFICADO"},
-              "events": {"state": "NO_VERIFICADO"}}
+              "events": {"state": "NO_VERIFICADO"},
+              "auth_health": {"state": "NO_VERIFICADO", "cause": "NO_VERIFICADO",
+                              "checked_at_utc": None, "age_seconds": None}}
     a617 = _a617()
     if (not db.is_absolute() or db.is_symlink() or
             (enforce_ro_mount and not a617._mount_is_readonly(db))):
@@ -251,6 +292,7 @@ def _db_probe(db=DB, *, enforce_ro_mount=True):
         if not a617._verified_paper_db(conn, tables):
             return result
         result["paper_db_identity_verified"] = True
+        result["auth_health"] = _auth_health(conn, tables)
         if not {"universe_cycle_metrics", "observer_state", "paper_events"} <= tables:
             result["reason"] = "REQUIRED_TABLES_UNAVAILABLE"
             return result
@@ -387,6 +429,19 @@ def _sanitized_host(raw):
         for field in ("http_allowed_counter", "http_blocked_counter", "runtime_real_orders_sent"):
             out["observer"][field] = _bounded_int(observer.get(field))
         out["observer"]["counter_semantics"] = "PRE_SEND_NOT_SUCCESSFUL_GET"
+    # Auth reason is an optional, stale-at-checked_at database observation.
+    # Unknown/malformed host input cannot claim the local guard or PAPER GO.
+    out["auth_health"] = {"state": "NO_VERIFICADO", "cause": "NO_VERIFICADO",
+                          "checked_at_utc": None, "age_seconds": None}
+    auth_health = scan.get("auth_health", {})
+    if (out["private_ro_mount_verified"] and out["paper_db_identity_verified"] and
+            isinstance(auth_health, dict) and auth_health.get("state") == "OBSERVED"):
+        cause = _enum(auth_health.get("cause"), AUTH_HEALTH_CAUSES)
+        checked_at = _utc_stamp(auth_health.get("checked_at_utc"))
+        age_seconds = _bounded_int(auth_health.get("age_seconds"))
+        if cause != "UNKNOWN" and checked_at is not None and age_seconds is not None:
+            out["auth_health"] = {"state": "OBSERVED", "cause": cause,
+                                  "checked_at_utc": checked_at, "age_seconds": age_seconds}
     events = scan.get("events", {})
     if not isinstance(events, dict):
         raise ValueError("EVENTS_NOT_OBJECT")
