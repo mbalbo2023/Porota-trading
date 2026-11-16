@@ -227,6 +227,102 @@ class RootlessAdmissionTests(unittest.TestCase):
                          {'a'*64,'b'*64})
         self.assertEqual(host.postflight.call_count,1)
 
+    def test_poststop_ack_precedes_observer_restart_and_is_pending_not_degraded(self):
+        from scripts import porota_rootless_host as frozen_host
+        current = {'roles':{'observer':'a'*64,'dashboard':'b'*64}}
+        host = Mock()
+        host.inspect.side_effect = lambda cid: {'Id':cid, 'State':{'Running':False}}
+        stopped_heartbeat = datetime.now(timezone.utc)-timedelta(seconds=2)
+        started_before_stop = stopped_heartbeat-timedelta(seconds=30)
+        stopped_row = {'mode':'PRODUCTION_PAPER','real_orders_sent':0,
+                       'process_state':'STOPPED','session_state':'BOOT_CALENDAR',
+                       'heartbeat_at':stopped_heartbeat.isoformat(),
+                       'ppi_auth':'COOLDOWN','detail':cold.STOP_ACK}
+        with self.assertRaisesRegex(frozen_host.Hold,'RUNTIME_UNCLASSIFIED_DEGRADED'):
+            frozen_host.classify_runtime(stopped_row,now=datetime.now(timezone.utc),
+                                         started=started_before_stop)
+
+        def postflight(_current, birth_floor, *, budget):
+            self.assertEqual(budget,600)
+            self.assertGreater(birth_floor,stopped_heartbeat)
+            self.assertLessEqual(birth_floor,datetime.now(timezone.utc))
+            self.assertEqual(frozen_host.classify_runtime(stopped_row,
+                now=datetime.now(timezone.utc),started=birth_floor)['status'],'PENDING')
+            restarted_row={**stopped_row,'process_state':'DEGRADED',
+                           'detail':'PPI en espera de reintento; prueba',
+                           'heartbeat_at':(birth_floor+timedelta(seconds=1)).isoformat()}
+            self.assertEqual(frozen_host.classify_runtime(restarted_row,
+                now=birth_floor+timedelta(seconds=2),started=birth_floor),
+                {'status':'READY','source_alert':'AMBER_PPI_LOGIN_UNAVAILABLE'})
+            self.assertEqual(host.docker.call.call_count,2)
+            self.assertEqual(host.docker.call.call_args.args[-1],current['roles']['observer'])
+            return {'dashboard':'healthy','observer':'running'}
+
+        host.postflight.side_effect = postflight
+        self.assertEqual(cold.ensure_pair_restored(host,current,started_before_stop)['state'],
+                         'RESTORED_ORIGINAL_RUNTIME')
+        self.assertEqual(host.postflight.call_count,1)
+
+    def test_postflight_fatal_error_never_retries_or_recreates(self):
+        from scripts import porota_rootless_host as frozen_host
+        current={'roles':{'observer':'a'*64,'dashboard':'b'*64}}
+        host=Mock()
+        host.inspect.side_effect=lambda cid:{'Id':cid,'State':{'Running':False}}
+        host.postflight.side_effect=frozen_host.Hold('PAPER_RUNTIME_SAFETY')
+        with self.assertRaisesRegex(cold.ColdHold,'PAPER_RUNTIME_SAFETY'):
+            cold.ensure_pair_restored(host,current,datetime.now(timezone.utc))
+        host.postflight.assert_called_once()
+        self.assertEqual(host.docker.call.call_count,2)
+
+    def test_observer_stops_between_inspects_uses_fresh_floor_before_restart(self):
+        current={'roles':{'observer':'a'*64,'dashboard':'b'*64}}
+        host=Mock()
+        observer_inspects=iter([True,False])
+        def inspect(cid):
+            running=next(observer_inspects) if cid == current['roles']['observer'] else True
+            return {'Id':cid,'State':{'Running':running}}
+        host.inspect.side_effect=inspect
+        started=datetime.now(timezone.utc)-timedelta(seconds=120)
+        cold.ensure_pair_restored(host,current,started)
+        host.docker.call.assert_called_once_with('container','start',current['roles']['observer'],timeout=95)
+        self.assertGreater(host.postflight.call_args.args[1],started+timedelta(seconds=90))
+
+    def test_distinct_primary_and_restoration_causes_survive_failed_cold_receipt(self):
+        from contextlib import nullcontext
+        from scripts import porota_rootless_host as host_module
+        import sys
+        successor=Mock()
+        host=Mock()
+        host.identity.state=Path('/nonexistent/test-identity-state')
+        host.identity.operator=Path('/nonexistent/test-operator')
+        current={'source_sha':cold.FROZEN_SOURCE_SHA,'source_tree':cold.FROZEN_TREE,
+                 'roles':dict(cold.FROZEN_CIDS)}
+        release={'source_names':[],'queue_failed':True,'archive_complete':False,
+                 'failure_code':'SHADOW_COLD_DISK_RESERVE_BREACHED'}
+        book={'state':'PAPER_FLAT','session':'BOOT_CALENDAR','identity':[1,2]}
+        with patch.dict(sys.modules,{'scripts.rc6_cold2_successor':successor}), \
+             patch.object(host_module,'Host',return_value=host), \
+             patch.object(host_module,'user_lock',return_value=nullcontext()), \
+             patch.object(successor,'inspect',return_value=release), \
+             patch.object(cold,'frozen_release',return_value=(current,{})), \
+             patch.object(cold,'controller_live',return_value={'children':['r']*8}), \
+             patch.object(cold,'flat_book',return_value=book), \
+             patch.object(cold,'operator_custody',return_value={}), \
+             patch.object(cold,'resource_reserve',return_value={'free_bytes':35*1024**3,'free_inodes':200}), \
+             patch.object(cold,'restart_policy_witness',return_value={'observer':['always',0]}), \
+             patch.object(cold,'operator_state_witness',return_value='pause-fingerprint'), \
+             patch.object(cold,'critical_broker_proof',return_value={'state':'HEALTHY_ISSUES_ONLY'}), \
+             patch.object(cold,'legacy_writers_absent',return_value={'state':'NO_LEGACY_WRITERS'}), \
+             patch.object(cold,'arm_stop_witness',return_value='nonce'), \
+             patch.object(cold,'stopped_admission',side_effect=cold.ColdHold('PAPER_STOP_ACK_UNVERIFIED')), \
+             patch.object(cold,'ensure_pair_restored',side_effect=cold.ColdHold('RUNTIME_POSTFLIGHT_UNVERIFIED')):
+            result=cold.operate('cold_recover',Path('/opt/porota-trading'))
+        self.assertEqual(result['state'],'BLOQUEADO')
+        self.assertEqual(result['recovery_failure_signature'],'PAPER_STOP_ACK_UNVERIFIED')
+        self.assertEqual(result['recovery_failure_stage'],'POSTSTOP_ADMISSION')
+        self.assertEqual(result['restoration_failure_signature'],'RUNTIME_POSTFLIGHT_UNVERIFIED')
+        self.assertFalse(result['runtime_validated'])
+
     def test_idempotent_resume_accepts_existing_running_observer_with_fresh_health(self):
         from datetime import datetime, timezone
         current = {'roles':{'observer':'a'*64,'dashboard':'b'*64}}
