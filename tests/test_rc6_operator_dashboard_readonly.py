@@ -265,26 +265,33 @@ class ProductRootlessContextTests(TestCase):
     with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
         self.context()
 
- def test_rootless_group_writable_state_parent_needs_private_home(self):
+ def test_rootless_group_writable_state_parent_needs_private_ancestor(self):
     local = self.home / ".local"
     intermediate = self.home / ".local/state"
+    cases = (
+        ("private-home", 0o700, 0o755, 0o770, True),
+        ("private-local-public-home", 0o755, 0o700, 0o770, True),
+        ("private-local-group-home", 0o750, 0o700, 0o770, True),
+        ("both-traversable", 0o755, 0o755, 0o770, False),
+        ("group-traversable-both", 0o750, 0o750, 0o770, False),
+        ("group-writable-home", 0o770, 0o700, 0o770, False),
+        ("world-writable-home", 0o702, 0o700, 0o770, False),
+        ("writable-local", 0o700, 0o770, 0o770, False),
+        ("world-writable-state-parent", 0o700, 0o700, 0o777, False),
+    )
+    for name, home_mode, local_mode, parent_mode, permitted in cases:
+        with self.subTest(name=name):
+            self.home.chmod(home_mode)
+            local.chmod(local_mode)
+            intermediate.chmod(parent_mode)
+            if permitted:
+                self.assertEqual(self.context().roles, self.cids)
+            else:
+                with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
+                    self.context()
     self.home.chmod(0o700)
     local.chmod(0o700)
     intermediate.chmod(0o770)
-    self.assertEqual(self.context().roles, self.cids)
-    for name, path, mode in (
-            ("group-executable-home", self.home, 0o750),
-            ("world-executable-home", self.home, 0o701),
-            ("writable-local", local, 0o770),
-            ("world-writable-state-parent", intermediate, 0o777)):
-        with self.subTest(name=name):
-            previous = path.stat().st_mode & 0o777
-            try:
-                path.chmod(mode)
-                with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
-                    self.context()
-            finally:
-                path.chmod(previous)
     self.intermediate_owner = 0
     with self.assertRaisesRegex(ValueError, "ROOTLESS_RELEASE_CUSTODY"):
         self.context()
