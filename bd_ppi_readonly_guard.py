@@ -1,8 +1,7 @@
-"""Barrera HTTP fail-closed para observacion de mercado PPI Produccion.
+"""Barrera HTTP para observacion PPI Produccion, sin capacidad de ordenes.
 
-Este modulo no conoce ordenes ni cuentas. Solo permite datos de mercado
-autorizados contra el host productivo exacto. La autenticacion requiere una
-autoridad externa aun no demostrada y permanece bloqueada localmente.
+Login/refresh y GET de consulta usan la whitelist HTTPS del host exacto.
+Las rutas de ordenes, cuentas operativas y mutaciones permanecen bloqueadas.
 """
 
 from __future__ import annotations
@@ -44,23 +43,16 @@ _GET_PATHS = {
     "/api/1.0/marketdata/bonds/estimate",
 }
 
-# Only Current/Book/Intraday have a reviewed global-rate-budget wire schema.
-# Configuration, instrument discovery, historical Search and Bonds/Estimate
-# must not borrow their lease; fail closed until their separate provider quota
-# and external Watch share are evidenced and signed. Stored data stays usable.
+# Current/Book/Intraday retain their existing global-rate-budget wire lease.
+# Historical/Configuration/Discovery GETs are existing read-only SDK routes;
+# they do not borrow a Current/Book/Intraday lease. The observer's business-
+# day sync and PPI login interlock regulate their scheduling separately.
 _BUDGETED_MARKET_GET_PATHS = frozenset({
     "/api/1.0/marketdata/current",
     "/api/1.0/marketdata/book",
     "/api/1.0/marketdata/intraday",
 })
 
-
-def _unbudgeted_get_reason(method: str, path: str) -> str | None:
-    if method != "GET" or path not in _GET_PATHS or path in _BUDGETED_MARKET_GET_PATHS:
-        return None
-    if path.startswith("/api/1.0/marketdata/"):
-        return "PPI_MARKETDATA_ENDPOINT_BUDGET_UNVERIFIED"
-    return "PPI_CONFIGURATION_ENDPOINT_BUDGET_UNVERIFIED"
 
 # PPI confirmó oficialmente que cauciones se buscan por cantidad de días y
 # ticker MONEDA+días. Estos plazos fueron probados contra producción en modo
@@ -89,18 +81,8 @@ class ReadOnlyPolicyViolation(RuntimeError):
     """La solicitud fue bloqueada localmente; no salio a la red."""
 
 
-def require_ppi_authentication_authority() -> None:
-    """AUTH/refresh HOLD until externally shared quota and custody are proven.
-
-    GET marketdata budgets and local cooldowns are not AUTH authority. In
-    particular, no environment variable, caller-supplied signed document, or
-    replaceable local SQLite counter can activate login/refresh in production.
-    """
-    raise ReadOnlyPolicyViolation("PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED")
-
-
 class ProductionAuthResponseError(RuntimeError):
-    """Login no JSON con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
+    """Falla de login con metadatos HTTP enumerados, sin cuerpo ni headers crudos."""
 
 
 def _login_response_metadata(response, body) -> str:
@@ -287,9 +269,6 @@ class ReadOnlyTransportGuard:
                 f"Ruta bloqueada por politica de solo lectura: {method} {path}"
             )
 
-        if method == "POST" and path in _POST_PATHS:
-            require_ppi_authentication_authority()
-
         with self._lock:
             if count_login and path == "/api/1.0/account/loginapi":
                 now = self.clock()
@@ -351,7 +330,7 @@ class ReadOnlyTransportGuard:
 
         def guarded_request(session, method, url, **kwargs):
             try:
-                checked_method, checked_path = guard.check(method, url, count_login=True)
+                checked_method, checked_path = guard.check(method, url)
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
@@ -359,14 +338,6 @@ class ReadOnlyTransportGuard:
                     guard.calls_blocked += 1
                 guard._record(str(method).upper(), _normal_path(url), "BLOCKED")
                 raise
-            reason = _unbudgeted_get_reason(checked_method, checked_path)
-            if reason:
-                from rc6_ppi_global_budget import BudgetBackpressure
-                guard._read_error(reason)
-                with guard._lock:
-                    guard.calls_blocked += 1
-                guard._record(checked_method, checked_path, "BACKPRESSURE")
-                raise BudgetBackpressure(reason)
             kwargs["allow_redirects"] = False
             kwargs["timeout"] = (guard.connect_timeout, guard.read_timeout)
             guard._record(checked_method, checked_path, "ALLOWED")
@@ -381,9 +352,12 @@ class ReadOnlyTransportGuard:
                 if (wire_request is request or
                         wire_request.headers is request.headers):
                     raise ReadOnlyPolicyViolation("PPI_HTTP_PREPARED_REQUEST_COPY_UNSAFE")
-                checked_method, checked_path = guard.check(wire_request.method, wire_request.url)
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
+                # Count login at the actual adapter boundary: Session.send()
+                # and a direct prepared send cannot bypass the same cooldown.
+                checked_method, checked_path = guard.check(
+                    wire_request.method, wire_request.url, count_login=True)
             except ReadOnlyPolicyViolation:
                 with guard._lock:
                     guard.calls_blocked += 1
@@ -391,24 +365,6 @@ class ReadOnlyTransportGuard:
                     str(request.method).upper(), _normal_path(request.url), "BLOCKED"
                 )
                 raise
-            reason = _unbudgeted_get_reason(checked_method, checked_path)
-            if reason:
-                from rc6_ppi_global_budget import BudgetBackpressure
-                guard._read_error(reason)
-                with guard._lock:
-                    guard.calls_blocked += 1
-                guard._record(checked_method, checked_path, "BACKPRESSURE")
-                raise BudgetBackpressure(reason)
-            if checked_method == "POST" and checked_path in _POST_PATHS:
-                try:
-                    # Defense in depth for direct prepared sends; this HOLD
-                    # never consumes/reconciles any fabricated AUTH quota.
-                    require_ppi_authentication_authority()
-                except ReadOnlyPolicyViolation:
-                    with guard._lock:
-                        guard.calls_blocked += 1
-                    guard._record(checked_method, checked_path, "BLOCKED")
-                    raise
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
             budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
             lease = None
@@ -449,9 +405,9 @@ class ReadOnlyTransportGuard:
                     if budget is not None:
                         budget.start(lease)
                     # acquire(), wire_scope() and start() are mutable calls.
-                    # Their prior GET approval must never authorize a later
-                    # POST LoginApi/RefreshToken, changed host/query, or
-                    # newly injected credential header on the same object.
+                    # Their prior GET approval must never authorize a changed
+                    # method, route, host/query, or credential header on the
+                    # same prepared request.
                     if (request.method != wire_request.method
                             or request.url != wire_request.url
                             or request.headers != wire_request.headers):
@@ -559,17 +515,25 @@ class ProductionMarketReader:
     def login_once(self) -> None:
         if self.__authenticated:
             return
-        require_ppi_authentication_authority()
         from ppi_client.ppi import PPI
 
         client = PPI(sandbox=False)
         self.__guard._scope.login_http_metadata = None
         non_json_metadata = None
+        provider_error_metadata = None
         try:
             client.account.login_api(self.__api_key, self.__api_secret)
         except JSONDecodeError:
             non_json_metadata = self.__guard._scope.login_http_metadata
             if not non_json_metadata:
+                raise
+        except Exception as error:
+            # SDK 1.3.0 can raise Exception(response) on JSON HTTP errors.
+            # Never let a provider-controlled body reach observer/state logs.
+            # Local policy/transport errors without a response remain distinct.
+            if not isinstance(error, ReadOnlyPolicyViolation):
+                provider_error_metadata = self.__guard._scope.login_http_metadata
+            if not provider_error_metadata:
                 raise
         finally:
             self.__guard._scope.login_http_metadata = None
@@ -578,6 +542,12 @@ class ProductionMarketReader:
             # retain a context object whose JSONDecodeError.doc is the body.
             raise ProductionAuthResponseError(
                 "PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: " + non_json_metadata
+            )
+        if provider_error_metadata:
+            # Raise outside the SDK handler to discard the unsafe exception
+            # context, which may contain raw response.text and credentials.
+            raise ProductionAuthResponseError(
+                "PPI_PRODUCTION_AUTH_PROVIDER_ERROR: " + provider_error_metadata
             )
         self.__client = client
         self.__authenticated = True

@@ -1,4 +1,4 @@
-"""Prevent post-admission PreparedRequest drift from bypassing PPI AUTH HOLD.
+"""Prevent post-admission PreparedRequest drift from altering PPI HTTP identity.
 
 Only a fake HTTP adapter is invoked. All budget callbacks are synthetic.
 """

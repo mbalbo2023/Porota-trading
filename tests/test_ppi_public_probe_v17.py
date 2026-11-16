@@ -163,7 +163,7 @@ def test_parser_sintetico_config_familias_y_solo_tickers_devueltos(transport,cap
     assert capsys.readouterr().out==''
 
 
-def test_live_probe_without_auth_authority_is_blocked_before_fake_wire(transport):
+def test_legacy_live_probe_rejects_conflicting_http_hook_before_fake_wire(transport):
     secret,calls,_=transport
     report=probe.live_report(secret)
     assert report['status']=='STOPPED'
@@ -172,7 +172,10 @@ def test_live_probe_without_auth_authority_is_blocked_before_fake_wire(transport
     assert report['promotion_allowed'] is False and report['data_certified'] is False
     assert calls==[]  # No LoginApi/RefreshToken or Configuration/Search/Book GET.
     assert report['reader_metrics']['login_calls']==0
-    assert report['http']==[]
+    # This old probe replaces Session.request after the production guard owns
+    # the hook. The guard correctly detects stolen custody before any wire.
+    assert report['http']==[{'method':'POST',
+                            'path':'/api/1.0/account/loginapi','status':None}]
 
 
 @pytest.mark.parametrize('status',[302,400,401,403,429,500])
@@ -187,7 +190,7 @@ def test_rechazo_detiene_sin_refresh_reintento_o_cuerpo_de_error(transport,statu
 
 
 @pytest.mark.parametrize('value',[None,[],{'missing':'tokens'}])
-def test_auth_hold_precedes_even_malformed_fake_login_response(transport,value):
+def test_probe_hook_custody_precedes_malformed_fake_login_response(transport,value):
     secret,calls,responses=transport
     responses['loginapi']=(200,value)
     report=probe.live_report(secret)
@@ -296,7 +299,7 @@ def test_expiracion_total_se_reporta_y_restaura_handler(transport,monkeypatch):
 
 
 def test_timeout_http_no_expone_texto_ni_reintenta(transport,monkeypatch):
-    # AUTH HOLD occurs before an intentionally hostile fake timeout adapter.
+    # The old probe's hook conflict is detected before its hostile adapter.
     secret,calls,_=transport
     def timeout(*a,**k):
         calls.append('timeout')

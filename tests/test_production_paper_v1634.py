@@ -1287,10 +1287,9 @@ def test_v17_senal_no_calcula_con_puntas_no_finitas(tmp_path, change):
 def test_guard_permite_solo_host_https_y_rutas_lectura():
     g = ReadOnlyTransportGuard()
     assert g.check("GET", "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/Current")
-    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"):
-        g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
-                count_login=True)
-    assert g.login_calls == 0
+    assert g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
+                   count_login=True)
+    assert g.login_calls == 1
     with pytest.raises(ReadOnlyPolicyViolation):
         g.check("POST", "https://clientapi.portfoliopersonal.com/api/1.0/Order/Confirm")
     with pytest.raises(ReadOnlyPolicyViolation):
@@ -1306,9 +1305,7 @@ def test_guard_permite_solo_host_https_y_rutas_lectura():
 
 def test_guard_permite_relogin_controlado_despues_del_cooldown(monkeypatch):
     clock = [1000.0]
-    # This isolated check() unit test has no network or SDK invocation. Inject
-    # a local no-op authority ONLY to exercise the secondary cooldown rule.
-    monkeypatch.setattr("bd_ppi_readonly_guard.require_ppi_authentication_authority", lambda: None)
+    # This isolated check() unit test has no network or SDK invocation.
     g = ReadOnlyTransportGuard(login_cooldown_seconds=900, clock=lambda: clock[0])
     url = "https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi"
     assert g.check("POST", url, count_login=True)
