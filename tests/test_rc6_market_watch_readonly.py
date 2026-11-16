@@ -216,10 +216,15 @@ class MonitorContracts(unittest.TestCase):
             if role == "observer":
                 mounts.append({"Type": "bind", "Destination": "/run/secrets/ppi_production.json",
                                "Source": str(monitor.ROOT / ".secrets/ppi_production.json"), "RW": False})
+            mounts.extend({"Type": "tmpfs", "Destination": destination, "RW": True}
+                          for destination in ("/tmp", "/home/botuser/.cache", "/home/botuser/.config"))
             host_config = {"ReadonlyRootfs": True, "Privileged": False, "CapDrop": ["ALL"],
                            "CapAdd": None, "SecurityOpt": ["no-new-privileges:true"],
                            "NetworkMode": "porota-rc6-private", "PidMode": "", "Memory": 1024**3,
                            "NanoCpus": 1000000000, "PidsLimit": 256,
+                           "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=128m",
+                                     "/home/botuser/.cache": "rw,noexec,nosuid,size=64m",
+                                     "/home/botuser/.config": "rw,noexec,nosuid,size=16m"},
                            "PortBindings": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                            if role == "dashboard" else {}}
             items[cid] = {"Id": cid, "Name": f"/porota-rc6-{role}-attempt-a", "Image": IMAGE,
@@ -228,7 +233,7 @@ class MonitorContracts(unittest.TestCase):
                                       "io.porota.attempt": "attempt-a"},
                            "Image": IMAGE, "User": "0:0", "Entrypoint": None,
                            "WorkingDir": "/app", "Cmd": ["python", "o_dashboard.py" if role == "dashboard"
-                                                         else "bf_production_paper_observer.py"],
+                                                         else "bv_paper_runtime.py"],
                            "Env": [f"POROTA_BUILD_SHA={SHA}", f"POROTA_CANDIDATE_TREE_SHA={'e'*40}",
                                    "PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db",
                                    "DASHBOARD_OPERATION_MODE=PRODUCTION_PAPER",
@@ -256,6 +261,47 @@ class MonitorContracts(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(value), stderr="secret=must_not_export")
         account = SimpleNamespace(pw_uid=1000, pw_gid=1000, pw_name="porotaadmin", pw_dir=str(home))
         return home, marker, current, daemon, items, runner, calls, account
+
+    def test_rootless_product_command_and_tmpfs_contract(self):
+        home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
+        identity = SimpleNamespace(operator=home / ".config/porota-rc6/operator")
+        for role, cid in current["roles"].items():
+            with self.subTest(role=role):
+                item = items[cid]
+                self.assertEqual(monitor._verify_rootless_item(
+                    item, cid=cid, role=role, current=current, identity=identity), item)
+                without_optional_mount_rows = dict(item, Mounts=[row for row in item["Mounts"]
+                    if row["Type"] == "bind"])
+                self.assertEqual(monitor._verify_rootless_item(
+                    without_optional_mount_rows, cid=cid, role=role,
+                    current=current, identity=identity), without_optional_mount_rows)
+        observer = items[current["roles"]["observer"]]
+        for wrong in ("bf_production_paper_observer.py", "unexpected.py"):
+            with self.subTest(command=wrong):
+                altered = dict(observer, Config=dict(observer["Config"], Cmd=["python", wrong]))
+                with self.assertRaisesRegex(ValueError, "ROOTLESS_CONTAINER_COMMAND_CHANGED"):
+                    monitor._verify_rootless_item(altered, cid=observer["Id"], role="observer",
+                                                  current=current, identity=identity)
+        for change in ("additional_bind", "unknown_tmpfs", "missing_tmpfs", "unsafe_flags", "wrong_size"):
+            with self.subTest(change=change):
+                altered = dict(observer, Mounts=list(observer["Mounts"]),
+                               HostConfig=dict(observer["HostConfig"]))
+                if change == "additional_bind":
+                    altered["Mounts"].append({"Type": "bind", "Destination": "/other",
+                                               "Source": "/other", "RW": False})
+                elif change == "unknown_tmpfs":
+                    altered["Mounts"].append({"Type": "tmpfs", "Destination": "/unexpected", "RW": True})
+                else:
+                    altered["HostConfig"]["Tmpfs"] = dict(altered["HostConfig"]["Tmpfs"])
+                    if change == "missing_tmpfs":
+                        del altered["HostConfig"]["Tmpfs"]["/tmp"]
+                    if change == "unsafe_flags":
+                        altered["HostConfig"]["Tmpfs"]["/tmp"] = "rw,nosuid,size=128m"
+                    if change == "wrong_size":
+                        altered["HostConfig"]["Tmpfs"]["/tmp"] = "rw,noexec,nosuid,size=256m"
+                with self.assertRaises(ValueError):
+                    monitor._verify_rootless_item(altered, cid=observer["Id"], role="observer",
+                                                  current=current, identity=identity)
 
     def test_rootless_resolver_requires_private_current_and_two_pinned_cids(self):
         home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
@@ -400,6 +446,8 @@ class MonitorContracts(unittest.TestCase):
     def test_rootless_failure_receipt_is_bounded_and_never_exports_secret(self):
         for error, expected in ((ValueError("ROOTLESS_RELEASE_CUSTODY"),
                                  "ROOTLESS_RELEASE_CUSTODY"),
+                                (ValueError("ROOTLESS_CONTAINER_TMPFS_CHANGED"),
+                                 "ROOTLESS_CONTAINER_TMPFS_CHANGED"),
                                 (ValueError("private-token=do-not-export"),
                                  "ROOTLESS_UNCLASSIFIED"),
                                 (OSError("private-token=do-not-export"),
