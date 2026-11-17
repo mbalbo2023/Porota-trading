@@ -28,6 +28,7 @@ RECEIPT_SCHEMA = "rc6.a652.watch-budget-micro-sanitized.v2"
 DATA_ROOT = Path("/opt/porota-trading/data")
 DB = DATA_ROOT / "paper_v17/observer_v17.db"
 MAX_EVENTS = 512
+MAX_READY_ROWS = 25000
 ALLOWED_EVENT_TYPES = ("DATA_ERROR", "DATA_REJECTED", "HTTP_BLOCKED", "PPI_SESSION_INVALID")
 ERROR_BUCKETS = ("PPI_BUDGET_BACKPRESSURE", "PPI_SESSION_INVALID",
                  "PPI_INSTRUMENT_NOT_FOUND", "PPI_EMPTY_OR_NON_JSON_AFTER_RETRY",
@@ -43,6 +44,35 @@ PROCESS_STATES = {"RUNNING", "DEGRADED", "READY_PREOPEN", "WAITING_MARKET", "STO
 SESSION_STATES = {"MARKET_OPEN", "MARKET_CLOSED", "PREOPEN", "BOOT_CALENDAR", "UNKNOWN"}
 AUTH_STATES = {"OK", "ERROR", "COOLDOWN", "NOT_ATTEMPTED", "UNKNOWN"}
 AUTH_HEALTH_CAUSES = {"LOCAL_AUTH_GUARD", "OTHER_REDACTED"}
+READY_REASON_CODES = frozenset({
+    "PPI_PRIMARY_IDENTITY_NOT_VERIFIED",
+    "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED",
+    "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED",
+    "IDENTITY_INCOMPLETE", "PPI_FRESHNESS_STALE",
+    "CATALOG_STATUS_BLOCKED", "CAPABILITY_NOT_READY",
+    "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED", "RETRY_IDENTITY_AMBIGUOUS",
+    "OTHER_REDACTED",
+})
+READY_FAMILY_ALIASES = {
+    "ACCION": "ACCIONES", "ACCIONES": "ACCIONES",
+    "CEDEAR": "CEDEARS", "CEDEARS": "CEDEARS",
+    "BONO": "BONOS", "BONOS": "BONOS",
+    "LETRA": "LETRAS", "LETRAS": "LETRAS",
+    "ON": "OBLIGACIONES", "OBLIGACIONES": "OBLIGACIONES",
+    "ETF": "ETFS", "ETFS": "ETFS",
+    "OPCION": "OPCIONES", "OPCIONES": "OPCIONES",
+    "FUTURO": "FUTUROS", "FUTUROS": "FUTUROS",
+    "CAUCION": "CAUCIONES", "CAUCIONES": "CAUCIONES",
+    "FCI": "FCI",
+}
+READY_FAMILIES = frozenset(READY_FAMILY_ALIASES.values()) | {"OTRAS"}
+READY_REFRESH_STATES = frozenset({"COMPLETE", "RUNNING", "FAILED", "NO_VERIFICADO"})
+READY_HOLD_REASONS = frozenset({
+    "TABLE_ABSENT", "SCHEMA_UNAVAILABLE", "ROW_LIMIT_HOLD",
+    "INVALID_ROW", "INVALID_REFRESH_STATE", "READ_ERROR",
+    "SNAPSHOT_UNAVAILABLE", "REFRESH_CHANGED_DURING_READ",
+    "PROJECTION_MARKER_MISMATCH",
+})
 _LOCAL_AUTH_GUARD_EXACT = "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9_.@-]{1,128}\.service$")
 _HTTP_CODE = re.compile(r"^PPI_HTTP_([1-5][0-9]{2})$")
@@ -136,6 +166,127 @@ def _auth_health(conn, tables):
                 "checked_at_utc": stamp, "age_seconds": age}
     except (sqlite3.Error, ValueError, TypeError, OverflowError):
         return missing
+
+
+def _candidate_reason_buckets(detail):
+    """Return only fixed policy codes; raw detail never leaves host memory."""
+    if not isinstance(detail, str) or len(detail) > 512:
+        return {"OTHER_REDACTED"}
+    found = set()
+    for part in detail.split(";"):
+        token = part.strip()
+        if token.startswith("PAUSED_EXPLICIT:"):
+            # Presentation prefix, not a causal failure reason.
+            continue
+        if token in READY_REASON_CODES:
+            found.add(token)
+        elif token.startswith("CATALOG_STATUS:"):
+            found.add("CATALOG_STATUS_BLOCKED")
+        elif token.startswith("CAPABILITY:"):
+            found.add("CAPABILITY_NOT_READY")
+        elif token:
+            found.add("OTHER_REDACTED")
+    return found or {"OTHER_REDACTED"}
+
+
+def _candidate_readiness(conn, tables):
+    """Bounded read of the actual v2 projection; neither admission nor PPI GET."""
+    def unavailable(reason):
+        return {"state": "NO_VERIFICADO", "reason": reason,
+                "paper_admission_authority": False}
+
+    if "candidate_identity_v2" not in tables:
+        return unavailable("TABLE_ABSENT")
+    snapshot_open = False
+    try:
+        if conn.in_transaction:
+            return unavailable("SNAPSHOT_UNAVAILABLE")
+        # The producer publishes RUNNING, bounded row commits, then COMPLETE.
+        # Its marker and rows MUST be read from one WAL generation.
+        conn.execute("BEGIN")
+        snapshot_open = True
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(candidate_identity_v2)")}
+        if not {"instrument_type", "can_simulate", "status", "detail", "checked_at"} <= cols:
+            return unavailable("SCHEMA_UNAVAILABLE")
+        refresh_state, refresh_time = "NO_VERIFICADO", None
+        initial_marker = None
+        if "candidate_refresh_state" in tables:
+            refresh_cols = {row[1] for row in conn.execute(
+                "PRAGMA table_info(candidate_refresh_state)")}
+            if not {"id", "state", "checked_at"} <= refresh_cols:
+                return unavailable("INVALID_REFRESH_STATE")
+            refresh = conn.execute(
+                "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1 LIMIT 1"
+            ).fetchone()
+            if refresh:
+                refresh_state = refresh[0]
+                refresh_time = _utc_stamp(refresh[1])
+                if refresh_state not in READY_REFRESH_STATES or refresh_time is None:
+                    return unavailable("INVALID_REFRESH_STATE")
+                initial_marker = (refresh_state, refresh_time)
+        families, reasons = {}, {}
+        total = ready = 0
+        earliest = latest = None
+        cursor = conn.execute(
+            "SELECT instrument_type,can_simulate,status,detail,checked_at "
+            "FROM candidate_identity_v2 LIMIT ?", (MAX_READY_ROWS + 1,))
+        for family_raw, can_simulate, status, detail, checked_at in cursor:
+            total += 1
+            if total > MAX_READY_ROWS:
+                return unavailable("ROW_LIMIT_HOLD")
+            stamp = _utc_stamp(checked_at)
+            if (type(can_simulate) is not int or can_simulate not in (0, 1)
+                    or type(status) is not str or stamp is None):
+                return unavailable("INVALID_ROW")
+            earliest = min(earliest, stamp) if earliest else stamp
+            latest = max(latest, stamp) if latest else stamp
+            family = READY_FAMILY_ALIASES.get(str(family_raw).upper(), "OTRAS")
+            item = families.setdefault(family, {"total": 0, "ready": 0,
+                                                "blocked_reasons": {}})
+            item["total"] += 1
+            is_ready = can_simulate == 1 and status.upper() == "AVAILABLE"
+            if is_ready:
+                ready += 1
+                item["ready"] += 1
+            else:
+                for code in _candidate_reason_buckets(detail):
+                    reasons[code] = reasons.get(code, 0) + 1
+                    item["blocked_reasons"][code] = item["blocked_reasons"].get(code, 0) + 1
+        for item in families.values():
+            item["blocked_reasons"] = dict(sorted(item["blocked_reasons"].items()))
+        if (refresh_state == "COMPLETE" and total and
+                (earliest != refresh_time or latest != refresh_time)):
+            return unavailable("PROJECTION_MARKER_MISMATCH")
+        report = {"state": "OBSERVED", "total": total, "ready": ready,
+                "blocked": total - ready, "refresh_state": refresh_state,
+                "refresh_checked_at_utc": refresh_time,
+                "projection_min_checked_at_utc": earliest,
+                "projection_max_checked_at_utc": latest,
+                "generation_complete": refresh_state == "COMPLETE",
+                "paper_admission_authority": False,
+                "reason_semantics": "MULTIPLE_REASONS_PER_BLOCKED_IDENTITY",
+                "families": dict(sorted(families.items())),
+                "reason_totals": dict(sorted(reasons.items()))}
+        conn.execute("ROLLBACK")
+        snapshot_open = False
+        # Check the publication marker again in a NEW snapshot. A concurrent
+        # refresh invalidates even a coherent old snapshot as current evidence.
+        if "candidate_refresh_state" in tables:
+            after = conn.execute(
+                "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1 LIMIT 1"
+            ).fetchone()
+            final_marker = (after[0], _utc_stamp(after[1])) if after else None
+            if final_marker != initial_marker:
+                return unavailable("REFRESH_CHANGED_DURING_READ")
+        return report
+    except (sqlite3.Error, ValueError, TypeError, OverflowError):
+        return unavailable("READ_ERROR")
+    finally:
+        if snapshot_open:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
 
 
 def _a617():
@@ -274,6 +425,8 @@ def _db_probe(db=DB, *, enforce_ro_mount=True):
               "private_ro_mount_verified": False, "paper_db_identity_verified": False,
               "cycle": {"state": "NO_VERIFICADO"}, "observer": {"state": "NO_VERIFICADO"},
               "events": {"state": "NO_VERIFICADO"},
+              "candidate_readiness": {"state": "NO_VERIFICADO", "reason": "READ_ERROR",
+                                      "paper_admission_authority": False},
               "auth_health": {"state": "NO_VERIFICADO", "cause": "NO_VERIFICADO",
                               "checked_at_utc": None, "age_seconds": None}}
     a617 = _a617()
@@ -350,6 +503,7 @@ def _db_probe(db=DB, *, enforce_ro_mount=True):
             "SAMPLED_TRUNCATED" if result["events"]["sample_truncated"] else
             "MATCH" if error_count == result["cycle"]["failed_count"] else
             "MISMATCH_REQUIRES_RCA")
+        result["candidate_readiness"] = _candidate_readiness(conn, tables)
         result["state"] = "OBSERVED"
         result["reason"] = "AGGREGATE_ONLY_NO_PROVIDER_OR_ADMISSION_AUTHORITY"
     except (OSError, sqlite3.Error, ValueError, TypeError, AttributeError):
@@ -369,6 +523,82 @@ def host_probe(*, db=DB, runner=subprocess.run, enforce_ro_mount=True):
             "scanner": scanner,
             "budget": _sidecar_probe(db, ro_verified=scanner["private_ro_mount_verified"]),
             "watch": _watch_probe(runner)}
+
+
+def _sanitize_candidate_readiness(raw):
+    """Strictly revalidate host aggregates; untrusted strings cannot exit runner."""
+    if raw is None:
+        raw = {"state": "NO_VERIFICADO", "reason": "READ_ERROR",
+               "paper_admission_authority": False}
+    if not isinstance(raw, dict) or raw.get("paper_admission_authority") is not False:
+        raise ValueError("READY_ADMISSION_OR_SCHEMA_INVALID")
+    if raw.get("state") == "NO_VERIFICADO":
+        if (set(raw) != {"state", "reason", "paper_admission_authority"}
+                or raw.get("reason") not in READY_HOLD_REASONS):
+            raise ValueError("READY_UNKNOWN_REASON_OR_EXTRA_FIELDS")
+        return dict(raw)
+    keys = {"state", "total", "ready", "blocked", "refresh_state",
+            "refresh_checked_at_utc", "projection_min_checked_at_utc",
+            "projection_max_checked_at_utc", "generation_complete",
+            "paper_admission_authority", "reason_semantics", "families", "reason_totals"}
+    if (set(raw) != keys or raw["state"] != "OBSERVED" or
+            raw["refresh_state"] not in READY_REFRESH_STATES or
+            raw["generation_complete"] is not (raw["refresh_state"] == "COMPLETE") or
+            raw["reason_semantics"] != "MULTIPLE_REASONS_PER_BLOCKED_IDENTITY"):
+        raise ValueError("READY_SCHEMA_INVALID")
+    total = _bounded_int(raw["total"], MAX_READY_ROWS)
+    ready = _bounded_int(raw["ready"], MAX_READY_ROWS)
+    blocked = _bounded_int(raw["blocked"], MAX_READY_ROWS)
+    if total is None or ready is None or blocked is None or ready + blocked != total:
+        raise ValueError("READY_COUNTER_INVALID")
+    refresh_time = raw["refresh_checked_at_utc"]
+    if ((refresh_time is not None and _utc_stamp(refresh_time) != refresh_time)
+            or (raw["refresh_state"] != "NO_VERIFICADO" and refresh_time is None)):
+        raise ValueError("READY_REFRESH_CLOCK_INVALID")
+    for name in ("projection_min_checked_at_utc", "projection_max_checked_at_utc"):
+        stamp = raw[name]
+        if ((total == 0 and stamp is not None)
+                or (total > 0 and (not isinstance(stamp, str)
+                                   or _utc_stamp(stamp) != stamp))):
+            raise ValueError("READY_PROJECTION_CLOCK_INVALID")
+    if (total > 0 and
+            raw["projection_min_checked_at_utc"] > raw["projection_max_checked_at_utc"]):
+        raise ValueError("READY_PROJECTION_CLOCK_ORDER_INVALID")
+    families = raw["families"]
+    reason_totals = raw["reason_totals"]
+    if (not isinstance(families, dict) or not isinstance(reason_totals, dict)
+            or not set(families) <= READY_FAMILIES
+            or not set(reason_totals) <= READY_REASON_CODES):
+        raise ValueError("READY_BUCKET_KEYS_INVALID")
+    accumulated = {}
+    family_total = family_ready = 0
+    for family, counts in families.items():
+        if not isinstance(counts, dict) or set(counts) != {
+                "total", "ready", "blocked_reasons"}:
+            raise ValueError("READY_FAMILY_FIELDS_INVALID")
+        n = _bounded_int(counts["total"], MAX_READY_ROWS)
+        r = _bounded_int(counts["ready"], MAX_READY_ROWS)
+        causes = counts["blocked_reasons"]
+        if (n is None or r is None or r > n or n == 0 or
+                not isinstance(causes, dict) or not set(causes) <= READY_REASON_CODES):
+            raise ValueError("READY_FAMILY_COUNTS_INVALID")
+        family_total += n
+        family_ready += r
+        reason_count = 0
+        for code, count in causes.items():
+            value = _bounded_int(count, MAX_READY_ROWS)
+            if value is None or value < 1 or value > n - r:
+                raise ValueError("READY_FAMILY_REASON_INVALID")
+            accumulated[code] = accumulated.get(code, 0) + value
+            reason_count += value
+        if reason_count < n - r:
+            raise ValueError("READY_BLOCKED_WITHOUT_REASON")
+    if (family_total != total or family_ready != ready or
+            set(accumulated) != set(reason_totals) or
+            any(_bounded_int(reason_totals[code], MAX_READY_ROWS) != count
+                for code, count in accumulated.items())):
+        raise ValueError("READY_REASON_RECONCILIATION_INVALID")
+    return raw
 
 
 def _sanitized_host(raw):
@@ -482,6 +712,7 @@ def _sanitized_host(raw):
                          "RO_MOUNT_UNVERIFIED"}),
                      "snapshot_status": "NO_VERIFICADO", "effective_policy": "NO_VERIFICADO",
                      "active_leases": "NO_VERIFICADO"}
+    out["candidate_readiness"] = _sanitize_candidate_readiness(scan.get("candidate_readiness"))
     if (out["state"] == "OBSERVED" and not
             (out["private_ro_mount_verified"] and out["paper_db_identity_verified"])):
         raise ValueError("RO_MOUNT_OR_DB_IDENTITY_MISSING")
