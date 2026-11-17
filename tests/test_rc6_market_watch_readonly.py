@@ -118,6 +118,61 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_exit_reader_is_observed_with_allowlisted_state_and_utc_heartbeat(self):
+        heartbeat = "2026-11-17T00:52:45.885934+00:00"
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT, detail TEXT)""")
+            connection.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                               ("WAITING_MARKET", heartbeat,
+                                "token=DO_NOT_LEAK host=private.example"))
+        before = self.db.read_bytes()
+        snapshot = monitor._db_snapshot(self.db)
+        self.assertEqual(snapshot["sqlite_ops"]["exit_reader"], {
+            "state": "WAITING_MARKET", "heartbeat_at": heartbeat})
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(snapshot))
+        self.assertNotIn("private.example", json.dumps(snapshot))
+
+    def test_exit_reader_absent_table_or_row_is_unverified(self):
+        unknown = {"state": "NO_VERIFICADO", "heartbeat_at": None}
+        self.assertEqual(monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"],
+                         unknown)
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT)""")
+        self.assertEqual(monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"],
+                         unknown)
+
+    def test_exit_reader_invalid_state_or_timestamp_is_never_echoed(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT, detail TEXT)""")
+            connection.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                               ("token=DO_NOT_LEAK", "2026-11-17T00:52:45+00:00",
+                                "password=PRIVATE"))
+        record = monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"]
+        self.assertEqual(record["state"], "NO_VERIFICADO")
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(record))
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE paper_exit_reader_state SET state=?, heartbeat_at=?",
+                               ("READY", "token=DO_NOT_LEAK"))
+        record = monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"]
+        self.assertEqual(record, {"state": "READY", "heartbeat_at": None})
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE paper_exit_reader_state SET heartbeat_at=?",
+                               ("2026-11-17T00:52:45",))
+        self.assertIsNone(monitor._db_snapshot(self.db)["sqlite_ops"]
+                          ["exit_reader"]["heartbeat_at"])
+
+    def test_exit_reader_missing_columns_do_not_break_other_snapshot_fields(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("CREATE TABLE paper_exit_reader_state(id INTEGER PRIMARY KEY)")
+        snapshot = monitor._db_snapshot(self.db)
+        self.assertEqual(snapshot["sqlite_ops"]["exit_reader"], {
+            "state": "NO_VERIFICADO", "heartbeat_at": None})
+        self.assertEqual(snapshot["observer"]["mode"], "PRODUCTION_PAPER")
+
     def test_ppi_auth_last_attempt_reports_http_metadata_without_raw_detail(self):
         with sqlite3.connect(self.db) as connection:
             connection.execute("""CREATE TABLE api_health(
@@ -1557,6 +1612,141 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
             db.executemany("INSERT INTO events VALUES(?,?,?)",
                            [(i, at, "PRIVATE_ACCOUNT_VALUE") for i, at in rows])
 
+    def segmented_events(self):
+        self.events((1, "2026-10-01T12:00:00Z"))
+        active = Path(str(self.performance) + ".segment.000001.sqlite")
+        with sqlite3.connect(active) as db:
+            db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, recorded_at TEXT NOT NULL)")
+            db.execute("INSERT INTO events VALUES(1,'2026-11-17T13:00:00+00:00')")
+        manifest = Path(str(self.performance) + ".segments.json")
+        manifest.write_text(json.dumps({
+            "schema": "rc6.performance-segments.v1",
+            "segments": [self.performance.name, active.name],
+            "active": active.name,
+        }))
+        return active, manifest
+
+    def test_segment_capacity_compares_active_shard_not_historical_sum(self):
+        active, _ = self.segmented_events()
+        with sqlite3.connect(self.performance) as db:
+            db.execute("INSERT INTO events VALUES(2,?,?)",
+                       ("2026-10-02T12:00:00Z", "X" * 100000))
+        limit = active.stat().st_size + 4096
+        self.assertGreater(self.performance.stat().st_size, limit)
+        result = monitor.performance_evidence_capacity_stat(self.root, default_limit=limit)
+        self.assertEqual(result["state"], "BELOW_DEFAULT_LIMIT_NOT_HEALTH")
+        self.assertEqual(result["evidence_segments"], 2)
+        self.assertEqual(result["active_evidence_bytes"], active.stat().st_size)
+        self.assertEqual(result["evidence_total_bytes"], active.stat().st_size)
+        self.assertGreater(result["all_segments_evidence_bytes"], limit)
+        self.assertEqual(result["evidence_total_bytes"],
+                         sum(result["evidence_by_component_bytes"].values()))
+        self.assertEqual(result["evidence_by_component_bytes"]["db"], active.stat().st_size)
+        self.assertEqual(result["recorded_period"]["status"], "OBSERVED")
+        self.assertEqual(result["recorded_period"]["first_recorded_at"],
+                         "2026-10-01T12:00:00+00:00")
+        self.assertEqual(result["recorded_period"]["last_recorded_at"],
+                         "2026-11-17T13:00:00+00:00")
+        self.assertEqual(result["recorded_period"]["ordering"],
+                         "SEGMENT_MANIFEST_AND_EVENT_ID_PRIMARY_KEY")
+
+    def test_invalid_missing_or_symlinked_segment_manifest_fails_closed(self):
+        active, manifest = self.segmented_events()
+        invalid = {"schema": "rc6.performance-segments.v1",
+                   "segments": [self.performance.name, "../PRIVATE.db"],
+                   "active": "../PRIVATE.db"}
+        manifest.write_text(json.dumps(invalid))
+        result = monitor.performance_evidence_capacity_stat(self.root, default_limit=100000)
+        self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        self.assertEqual(result["recorded_period"]["status"], "NO_VERIFICADO")
+        self.assertIsNone(result["evidence_total_bytes"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        manifest.write_text(json.dumps({"schema": "rc6.performance-segments.v1",
+                                        "segments": [self.performance.name, active.name],
+                                        "active": active.name}))
+        active.unlink()
+        missing = monitor.performance_evidence_capacity_stat(self.root, default_limit=100000)
+        self.assertEqual(missing["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        active.symlink_to(self.performance)
+        unsafe = monitor.performance_evidence_capacity_stat(self.root, default_limit=100000)
+        self.assertEqual(unsafe["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+
+    def test_bounded_deeply_nested_manifest_is_rejected_without_exception(self):
+        _, manifest = self.segmented_events()
+        manifest.write_text("[" * 2048 + "0" + "]" * 2048)
+        result = monitor.performance_evidence_capacity_stat(self.root, default_limit=100000)
+        self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        self.assertIsNone(result["evidence_total_bytes"])
+
+    def test_manifest_parser_recursion_error_is_always_fail_closed(self):
+        self.segmented_events()
+        with patch.object(monitor.json, "loads",
+                          side_effect=RecursionError("PRIVATE_DEEPLY_NESTED_JSON")):
+            result = monitor.performance_evidence_capacity_stat(
+                self.root, default_limit=100000)
+        self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        self.assertIsNone(result["evidence_total_bytes"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
+    def test_segmented_hot_wal_is_not_opened_or_reported_stale(self):
+        active, manifest = self.segmented_events()
+        writer = sqlite3.connect(active)
+        try:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("INSERT INTO events VALUES(2,'2026-11-17T15:00:00Z')")
+            writer.commit()
+            paths = [self.performance, active, manifest,
+                     Path(str(active) + "-wal"), Path(str(active) + "-shm")]
+            self.assertTrue(all(p.is_file() for p in paths))
+            before = [(p.stat().st_mtime_ns, p.read_bytes()) for p in paths]
+            result = monitor.performance_evidence_capacity_stat(
+                self.root, default_limit=256 * 1024**2)
+            after = [(p.stat().st_mtime_ns, p.read_bytes()) for p in paths]
+            self.assertEqual(before, after)
+            self.assertEqual(result["recorded_period"]["status"], "NO_VERIFICADO")
+            self.assertEqual(result["recorded_period"]["reason"],
+                             "WAL_ACTIVE_OR_PRESENT")
+            self.assertIsNone(result["recorded_period"]["last_recorded_at"])
+            self.assertNotIn("2026-11-17T13:00:00", json.dumps(result["recorded_period"]))
+        finally:
+            writer.close()
+
+    def test_zero_length_wal_sidecar_still_prevents_immutable_sqlite_open(self):
+        active, _ = self.segmented_events()
+        Path(str(active) + "-wal").touch()
+        with patch.object(monitor.sqlite3, "connect",
+                          side_effect=AssertionError("HOT_SQLITE_OPEN_FORBIDDEN")):
+            result = monitor.performance_evidence_capacity_stat(
+                self.root, default_limit=256 * 1024**2)
+        self.assertEqual(result["recorded_period"]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["recorded_period"]["reason"], "WAL_ACTIVE_OR_PRESENT")
+
+    def test_manifest_change_during_boundary_probe_discards_all_capacity_claims(self):
+        active, manifest = self.segmented_events()
+        real_probe = monitor._performance_recorded_period
+
+        def concurrent_manifest_change(path):
+            result = real_probe(path)
+            if path == active:
+                manifest.write_text("INVALID_AFTER_SEGMENT_SNAPSHOT")
+            return result
+
+        with patch.object(monitor, "_performance_recorded_period",
+                          side_effect=concurrent_manifest_change):
+            result = monitor.performance_evidence_capacity_stat(
+                self.root, default_limit=256 * 1024**2)
+        self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        self.assertIsNone(result["evidence_total_bytes"])
+        self.assertEqual(result["recorded_period"]["status"], "NO_VERIFICADO")
+
+    def test_unknown_runtime_sha_never_claims_segment_capacity_limit(self):
+        active, _ = self.segmented_events()
+        result = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha="f" * 40)
+        self.assertEqual(result["state"], "NO_VERIFICADO_CAPACITY_LIMIT")
+        self.assertIsNone(result["default_capacity_bytes"])
+        self.assertEqual(result["active_evidence_bytes"], active.stat().st_size)
+
     def test_empty_files_are_explicit_not_evidence_of_fresh_reporting(self):
         stat_result = monitor.performance_evidence_capacity_stat(
             self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
@@ -1610,6 +1800,16 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
             self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
         self.assertEqual(missing["recorded_period"]["status"], "NO_VERIFICADO")
         self.assertEqual(missing["recorded_period"]["reason"], "SQLITE_READ_OR_SCHEMA_UNAVAILABLE")
+
+    def test_legacy_unsafe_file_classification_is_preserved_without_manifest(self):
+        self.events((1, "2026-11-16T17:00:00Z"))
+        outside = self.root / "PRIVATE_OUTSIDE_FILE"
+        outside.write_text("NEVER_READ")
+        Path(str(self.performance) + "-wal").symlink_to(outside)
+        result = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.CURRENT_SOURCE_SHA)
+        self.assertEqual(result["state"], "NO_VERIFICADO_UNSAFE_FILE_TYPE")
+        self.assertNotIn("PRIVATE", json.dumps(result))
 
     def test_live_wal_sidecars_are_never_opened_or_rewritten(self):
         self.events((1, "2026-11-15T17:00:00Z"))
