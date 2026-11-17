@@ -535,22 +535,37 @@ def scheduler_launcher_digest(home: Path, *, uid: int):
         directories = []
         segments = (*home.parts[1:], ".local", "state", "porota-rc6")
         home_index = len(home.parts) - 2
+        private_home = private_local = False
         for index, part in enumerate(segments):
             stage = ("HOME_ANCESTOR" if index < home_index else
                      "HOME" if index == home_index else
                      "LOCAL" if index == home_index + 1 else
                      "LOCAL_STATE" if index == home_index + 2 else "PRIVATE_STATE")
+            parent_fd = fd
             child = os.open(part, dir_flags, dir_fd=fd)
             descriptors.append(child)
-            directories.append((fd, part, child, stage))
             fd = child
             meta = os.fstat(fd)
+            directories.append((parent_fd, part, child, stage, meta))
             if not stat.S_ISDIR(meta.st_mode):
                 return unverified(stage, "NOT_DIRECTORY")
             if index >= home_index:
                 if meta.st_uid != uid:
                     return unverified(stage, "OWNER_MISMATCH")
-                if meta.st_mode & (0o077 if index == len(segments) - 1 else 0o022):
+                mode = stat.S_IMODE(meta.st_mode)
+                if index == home_index:
+                    private_home = not bool(mode & 0o077)
+                elif index == home_index + 1:
+                    private_local = not bool(mode & 0o077)
+                # Same narrow contract as MarketWatch/dashboard: only the
+                # UID-owned LOCAL_STATE may be g+w, protected by a private
+                # HOME or .local; never tolerate other-write or shared STATE.
+                private_state_parent = (index == home_index + 2 and
+                                        (private_home or private_local) and
+                                        not mode & 0o002)
+                forbidden_writes = (0o077 if index == len(segments) - 1 else
+                                    0o002 if private_state_parent else 0o022)
+                if mode & forbidden_writes:
                     return unverified(stage, "MODE_UNSAFE")
         stage = "LAUNCHER"
         file_fd = os.open("scheduler-dispatch.py",
@@ -578,9 +593,15 @@ def scheduler_launcher_digest(home: Path, *, uid: int):
         if not stable(meta, os.fstat(file_fd)) or not stable(
                 meta, os.stat("scheduler-dispatch.py", dir_fd=fd, follow_symlinks=False)):
             return unverified(stage, "METADATA_CHANGED")
-        for parent_fd, name, child_fd, stage in directories:
+        for parent_fd, name, child_fd, stage, pinned in directories:
             if not stable(os.fstat(child_fd), os.stat(name, dir_fd=parent_fd,
                                                      follow_symlinks=False)):
+                return unverified(stage, "METADATA_CHANGED")
+        # Preserve the existing rename-stage precedence above; reject only
+        # security-relevant owner/mode mutations relative to initial FD checks.
+        for _, _, child_fd, stage, pinned in directories:
+            current = os.fstat(child_fd)
+            if (current.st_uid, current.st_mode) != (pinned.st_uid, pinned.st_mode):
                 return unverified(stage, "METADATA_CHANGED")
         return {"status": "OBSERVED", "sha256": hashlib.sha256(contents).hexdigest(),
                 "bytes": len(contents), "read_only": True}
