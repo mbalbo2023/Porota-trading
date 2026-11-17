@@ -188,7 +188,8 @@ def bounded_private_failure_log(path: Path, private_root: Path, *,
     require(private_root.is_absolute() and private_root.resolve() == private_root
             and private_root.is_dir() and not private_root.is_symlink()
             and path.parent == private_root and path.name == expected_name
-            and expected_name in ("a330-private.log", "a502-private.log"),
+            and expected_name in ("a330-private.log", "a502-private.log",
+                                  "a503-private.log"),
             "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
     try:
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
