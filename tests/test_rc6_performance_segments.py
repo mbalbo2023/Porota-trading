@@ -1,6 +1,7 @@
 """Offline, synthetic crash/continuity regressions for 128-MiB evidence rollover."""
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -273,6 +274,109 @@ class EvidenceSegmentTests(unittest.TestCase):
         tiny = EvidenceStore(self.root/"tiny.db", maximum_bytes=1)
         self.assertFalse(tiny.ensure_writable())
         self.assertEqual(evidence_paths(tiny.path), (tiny.path,))
+
+    def test_manifest_size_budget_and_json_depth_fail_closed(self):
+        manifest = manifest_path(self.evidence)
+        for content in (b" " * 16385, b"[" * 1010 + b"0" + b"]" * 1010, b""):
+            with self.subTest(bytes=len(content)):
+                manifest.write_bytes(content)
+                with self.assertRaisesRegex(ValueError, "MANIFEST"):
+                    evidence_paths(self.evidence)
+        self.assertTrue(self.evidence.exists())
+
+    def test_manifest_shard_budget_and_name_budget(self):
+        names = [self.evidence.name] + [
+            self.evidence.name + f".segment.{number:06d}.sqlite" for number in range(127)]
+        for name in names[1:]:
+            (self.root / name).touch()
+        manifest = manifest_path(self.evidence)
+        payload = {"schema": "rc6.performance-segments.v1", "segments": names,
+                   "active": names[-1]}
+        manifest.write_text(json.dumps(payload))
+        self.assertEqual(len(evidence_paths(self.evidence)), 128)
+        too_many = names + [self.evidence.name + ".segment.000127.sqlite"]
+        manifest.write_text(json.dumps({**payload, "segments": too_many,
+                                        "active": too_many[-1]}))
+        with self.assertRaisesRegex(ValueError, "MANIFEST"):
+            evidence_paths(self.evidence)
+        long_name = self.evidence.name + ".segment." + "0" * 130 + ".sqlite"
+        manifest.write_text(json.dumps({**payload, "segments": [names[0], long_name],
+                                        "active": long_name}))
+        with self.assertRaisesRegex(ValueError, "MANIFEST"):
+            evidence_paths(self.evidence)
+
+    def test_manifest_requires_single_regular_inode_and_stable_fd(self):
+        manifest = manifest_path(self.evidence)
+        payload = {"schema": "rc6.performance-segments.v1",
+                   "segments": [self.evidence.name], "active": self.evidence.name}
+        manifest.write_text(json.dumps(payload))
+        linked = self.root / "manifest-hardlink.json"
+        os.link(manifest, linked)
+        with self.assertRaisesRegex(ValueError, "MANIFEST"):
+            evidence_paths(self.evidence)
+        linked.unlink()
+        before = manifest.lstat()
+        changed_inode = SimpleNamespace(st_dev=before.st_dev, st_ino=before.st_ino + 1,
+                                        st_mode=before.st_mode, st_nlink=before.st_nlink,
+                                        st_size=before.st_size, st_mtime_ns=before.st_mtime_ns,
+                                        st_ctime_ns=before.st_ctime_ns)
+        with patch("rc6_performance.segments.os.fstat", return_value=changed_inode):
+            with self.assertRaisesRegex(ValueError, "MANIFEST"):
+                evidence_paths(self.evidence)
+
+    def test_manifest_symlink_swap_between_lstat_and_open_is_rejected(self):
+        manifest = manifest_path(self.evidence)
+        payload = {"schema": "rc6.performance-segments.v1",
+                   "segments": [self.evidence.name], "active": self.evidence.name}
+        manifest.write_text(json.dumps(payload))
+        target = self.root / "alternative-manifest.json"
+        target.write_text(json.dumps(payload))
+        genuine_open = os.open
+        observed = []
+
+        def swap_before_open(path, flags, *args, **kwargs):
+            observed.append(flags)
+            manifest.unlink()
+            manifest.symlink_to(target)
+            return genuine_open(path, flags, *args, **kwargs)
+
+        with patch("rc6_performance.segments.os.open", side_effect=swap_before_open):
+            with self.assertRaisesRegex(ValueError, "MANIFEST"):
+                evidence_paths(self.evidence)
+        self.assertTrue(observed)
+        self.assertTrue(observed[0] & os.O_NOFOLLOW)
+
+    def test_manifest_inode_swap_after_read_is_rejected(self):
+        manifest = manifest_path(self.evidence)
+        payload = {"schema": "rc6.performance-segments.v1",
+                   "segments": [self.evidence.name], "active": self.evidence.name}
+        manifest.write_text(json.dumps(payload))
+        replacement = self.root / "replacement-manifest.json"
+        replacement.write_text(json.dumps(payload))
+        genuine_loads = json.loads
+
+        def replace_then_parse(value):
+            os.replace(replacement, manifest)
+            return genuine_loads(value)
+
+        with patch("rc6_performance.segments.json.loads", side_effect=replace_then_parse):
+            with self.assertRaisesRegex(ValueError, "MANIFEST"):
+                evidence_paths(self.evidence)
+
+    def test_full_128_shards_cannot_publish_invalid_129th(self):
+        from rc6_performance import segments
+        existing = tuple(self.evidence for _ in range(128))
+        with patch.object(segments, "evidence_paths", return_value=existing), \
+             patch.object(segments, "evidence_bytes", return_value=self.store.maximum_bytes):
+            self.assertFalse(self.store.ensure_writable())
+        self.assertFalse(manifest_path(self.evidence).exists())
+
+    def test_rollover_refuses_successor_name_outside_manifest_budget(self):
+        long_path = self.root / ("p" * 110 + ".db")
+        long_store = EvidenceStore(long_path, maximum_bytes=262144)
+        fill_to_limit(long_store)
+        self.assertFalse(long_store.ensure_writable())
+        self.assertFalse(manifest_path(long_path).exists())
 
     def test_product_default_retains_256_mib_capacity_from_pr_1160(self):
         evidence = EvidenceStore(self.root/"default.db")
