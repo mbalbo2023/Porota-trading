@@ -25,6 +25,26 @@ ROOTLESS_SAFE_REASONS = frozenset({
     "ROOTLESS_ROLE_TMPFS_CHANGED",
     "ROOTLESS_ROLE_PORTS_CHANGED", "ROOTLESS_CURRENT_CHANGED",
 })
+# Only immutable, internally authored HOLD symbols, never free text from
+# SQLite. This list is duplicated in CHILD (which executes in the container);
+# the host must independently check it before publishing any receipt.
+CAUCION_HOLD_SAFE_CODES = frozenset({
+    "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM", "OPERATOR_PAUSE_CLOCK_INVALID",
+    "PAPER_PREOPEN_RECEIPT_UNSAFE", "PAPER_PREOPEN_RECEIPT_INVALID",
+    "PAPER_PREOPEN_RECEIPT_CHANGED", "PAPER_PREOPEN_BUILD_IDENTITY_MISSING",
+    "PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED", "NO_GO_PAPER_SCALPING",
+    "OBLIGATION_PROVENANCE_MISSING", "OBLIGATION_SNAPSHOT_SOURCE_MISSING",
+    "OBLIGATION_SNAPSHOT_INCOMPLETE", "OBLIGATION_SNAPSHOT_AFTER_DEADLINE",
+    "EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING",
+    "SELECTED_OFFER_NOT_UNIQUE_OR_FEE_BUDGET_MISMATCH",
+    "NO_FREE_SETTLED_CASH_AFTER_RESERVE",
+    "NO_VERIFIED_POSITIVE_NET_CAUCION_FITS_LIQUIDITY",
+    "SCHEDULE_SOURCE_MISSING", "SCHEDULE_EVIDENCE_INVALID",
+    "SCHEDULE_ORDER_INVALID", "CAUCION_ORDER_CUTOFF_REACHED",
+    "SWEEP_WINDOW_NOT_OPEN", "CASH_SWEEP_REQUEST_ID_MISSING",
+    "CAUCION_PAPER_FEE_AUTHORITY_MISSING", "CAUCION_LIVE_BOOK_MISSING",
+    "CAUCION_LIVE_FILL_POLICY_MISSING",
+})
 ROUTES = (
     "/", "/en-vivo", "/en-vivo/oportunidades", "/trading",
     "/trading/scalping", "/universo", "/instrumentos", "/riesgo",
@@ -82,6 +102,24 @@ def age(value):
   seconds=(datetime.now(timezone.utc)-stamp).total_seconds()
   return int(seconds) if stamp.tzinfo and 0<=seconds<=365*86400 else None
  except (TypeError,ValueError): return None
+# Match the host-side allowlist without importing a module from the release.
+caucion_hold_safe_codes = {
+ "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM", "OPERATOR_PAUSE_CLOCK_INVALID",
+ "PAPER_PREOPEN_RECEIPT_UNSAFE", "PAPER_PREOPEN_RECEIPT_INVALID",
+ "PAPER_PREOPEN_RECEIPT_CHANGED", "PAPER_PREOPEN_BUILD_IDENTITY_MISSING",
+ "PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED", "NO_GO_PAPER_SCALPING",
+ "OBLIGATION_PROVENANCE_MISSING", "OBLIGATION_SNAPSHOT_SOURCE_MISSING",
+ "OBLIGATION_SNAPSHOT_INCOMPLETE", "OBLIGATION_SNAPSHOT_AFTER_DEADLINE",
+ "EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING",
+ "SELECTED_OFFER_NOT_UNIQUE_OR_FEE_BUDGET_MISMATCH",
+ "NO_FREE_SETTLED_CASH_AFTER_RESERVE",
+ "NO_VERIFIED_POSITIVE_NET_CAUCION_FITS_LIQUIDITY",
+ "SCHEDULE_SOURCE_MISSING", "SCHEDULE_EVIDENCE_INVALID",
+ "SCHEDULE_ORDER_INVALID", "CAUCION_ORDER_CUTOFF_REACHED",
+ "SWEEP_WINDOW_NOT_OPEN", "CASH_SWEEP_REQUEST_ID_MISSING",
+ "CAUCION_PAPER_FEE_AUTHORITY_MISSING", "CAUCION_LIVE_BOOK_MISSING",
+ "CAUCION_LIVE_FILL_POLICY_MISSING",
+}
 class VisibleGaps(HTMLParser):
  def __init__(self):
   super().__init__(); self.hidden=0; self.count=0; self.statuses={}
@@ -243,11 +281,15 @@ try:
    worker=cash.execute("SELECT evaluated_at,status,code FROM paper_caucion_cash_sweep_attempts "
                        "ORDER BY evaluated_at DESC LIMIT 11").fetchall()
    actual=worker[0] if worker else None
+   current_hold=bool(actual and in_art_day(actual[0]) and actual[1]=="HOLD")
+   raw_code=actual[2] if current_hold else None
    result["caucion_attempt"].update(worker_status="TRUNCATED" if len(worker)>10 else "BOUNDED" if worker else "EMPTY",
        worker_attempts_today=sum(in_art_day(r[0]) for r in worker[:10]),
        worker_latest_today=bool(actual and in_art_day(actual[0])),
        worker_latest_age_seconds=age(actual[0]) if actual else None,
-       worker_latest_result=actual[1] if actual and actual[1] in allowed else "OTHER_OR_MISSING")
+       worker_latest_result=actual[1] if actual and actual[1] in allowed else "OTHER_OR_MISSING",
+       worker_latest_code=(raw_code if isinstance(raw_code,str) and raw_code in caucion_hold_safe_codes
+                           else "OTHER_OR_UNVERIFIED") if current_hold else "NO_VERIFICADO")
   except sqlite3.Error: result["caucion_attempt"]["worker_status"]="SQLITE_UNAVAILABLE"
 except (sqlite3.Error,ValueError,TypeError): result["caucion_attempt"]["status"]="SQLITE_UNAVAILABLE"
 
@@ -671,6 +713,10 @@ def audit_host(*, runner=subprocess.run):
                            {"EOD_PAPER","STOP_PAPER","TAKE_PROFIT_PAPER","MAX_HOLD_PAPER",
                             "SCALPING_MAX_HOLD_PAPER","OTHER_OR_MISSING"})}
         attempt = data.get("caucion_attempt") if isinstance(data.get("caucion_attempt"), dict) else {}
+        worker_hold_today = (attempt.get("worker_status") in {"BOUNDED", "TRUNCATED"}
+                             and attempt.get("worker_latest_today") is True
+                             and attempt.get("worker_latest_result") == "HOLD")
+        worker_code = attempt.get("worker_latest_code") if worker_hold_today else None
         caucion_attempt = {"status": attempt.get("status") if attempt.get("status") in
                            {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                            "sampled": bounded(attempt.get("sampled"),10),
@@ -686,7 +732,10 @@ def audit_host(*, runner=subprocess.run):
                            "worker_latest_today": attempt.get("worker_latest_today") is True,
                            "worker_latest_age_seconds": bounded(attempt.get("worker_latest_age_seconds"),365*86400),
                            "worker_latest_result": attempt.get("worker_latest_result") if attempt.get("worker_latest_result") in
-                           {"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED","OTHER_OR_MISSING"} else "NO_VERIFICADO"}
+                           {"PLACED_SIMULATED","HOLD","SKIPPED","BLOCKED","OTHER_OR_MISSING"} else "NO_VERIFICADO",
+                           "worker_latest_code": ((worker_code if worker_code in CAUCION_HOLD_SAFE_CODES
+                                                  else "OTHER_OR_UNVERIFIED") if isinstance(worker_code, str)
+                                                  else "OTHER_OR_UNVERIFIED") if worker_hold_today else "NO_VERIFICADO"}
         clocks=data.get('identity_clocks') if isinstance(data.get('identity_clocks'),dict) else {}
         clock_rows=[]
         for row in clocks.get('rows',[])[:10] if isinstance(clocks.get('rows'),list) else []:
