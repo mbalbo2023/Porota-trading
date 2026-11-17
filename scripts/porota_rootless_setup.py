@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import errno
 import hashlib
 import json
 import os
@@ -496,62 +497,104 @@ def _metadata(path):
             "writable": os.access(path, os.W_OK)}
 
 
+LAUNCHER_CUSTODY_STAGES = frozenset({
+    "HOME_PATH", "ROOT", "HOME_ANCESTOR", "HOME", "LOCAL", "LOCAL_STATE",
+    "PRIVATE_STATE", "LAUNCHER",
+})
+LAUNCHER_CUSTODY_PREDICATES = frozenset({
+    "INPUT_INVALID", "MISSING", "ALIAS_OR_NONDIR", "ACCESS_DENIED", "IO_UNVERIFIED",
+    "NOT_DIRECTORY", "OWNER_MISMATCH", "MODE_UNSAFE", "NOT_REGULAR",
+    "MULTIPLE_LINKS", "MODE_MISMATCH", "SIZE_BOUND", "SHORT_READ", "METADATA_CHANGED",
+    "METADATA_UNVERIFIED",
+})
+
+
 def scheduler_launcher_digest(home: Path, *, uid: int):
     """Fingerprint only the fixed private launcher via pinned no-follow directory FDs.
 
     The bytes and original path are never exported. A replaced alias, link,
     permission change or inode race remains NO_VERIFICADO, not a matching SHA.
     """
-    unverified = {"status": "NO_VERIFICADO", "reason": "LAUNCHER_CUSTODY_UNVERIFIED",
-                  "read_only": True}
+    def unverified(stage, predicate):
+        assert stage in LAUNCHER_CUSTODY_STAGES and predicate in LAUNCHER_CUSTODY_PREDICATES
+        return {"status": "NO_VERIFICADO", "reason": "LAUNCHER_CUSTODY_UNVERIFIED",
+                "failure_stage": stage, "failure_predicate": predicate, "read_only": True}
+
     descriptors = []
     dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    stage = "HOME_PATH"
+    stability_phase = False
     try:
         if (not isinstance(home, Path) or not home.is_absolute() or home == home.parent or
                 type(uid) is not int or uid <= 0 or
                 any(part == ".." for part in home.parts)):
-            return unverified
+            return unverified(stage, "INPUT_INVALID")
+        stage = "ROOT"
         fd = os.open("/", dir_flags)
         descriptors.append(fd)
         directories = []
         segments = (*home.parts[1:], ".local", "state", "porota-rc6")
         home_index = len(home.parts) - 2
         for index, part in enumerate(segments):
+            stage = ("HOME_ANCESTOR" if index < home_index else
+                     "HOME" if index == home_index else
+                     "LOCAL" if index == home_index + 1 else
+                     "LOCAL_STATE" if index == home_index + 2 else "PRIVATE_STATE")
             child = os.open(part, dir_flags, dir_fd=fd)
             descriptors.append(child)
-            directories.append((fd, part, child))
+            directories.append((fd, part, child, stage))
             fd = child
             meta = os.fstat(fd)
-            if (not stat.S_ISDIR(meta.st_mode) or
-                    index >= home_index and (meta.st_uid != uid or
-                    meta.st_mode & (0o077 if index == len(segments) - 1 else 0o022))):
-                return unverified
+            if not stat.S_ISDIR(meta.st_mode):
+                return unverified(stage, "NOT_DIRECTORY")
+            if index >= home_index:
+                if meta.st_uid != uid:
+                    return unverified(stage, "OWNER_MISMATCH")
+                if meta.st_mode & (0o077 if index == len(segments) - 1 else 0o022):
+                    return unverified(stage, "MODE_UNSAFE")
+        stage = "LAUNCHER"
         file_fd = os.open("scheduler-dispatch.py",
                           os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
                           dir_fd=fd)
         descriptors.append(file_fd)
         meta = os.fstat(file_fd)
-        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
-                meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) != 0o600 or
-                not 0 < meta.st_size <= 16384):
-            return unverified
+        if not stat.S_ISREG(meta.st_mode):
+            return unverified(stage, "NOT_REGULAR")
+        if meta.st_uid != uid:
+            return unverified(stage, "OWNER_MISMATCH")
+        if meta.st_nlink != 1:
+            return unverified(stage, "MULTIPLE_LINKS")
+        if stat.S_IMODE(meta.st_mode) != 0o600:
+            return unverified(stage, "MODE_MISMATCH")
+        if not 0 < meta.st_size <= 16384:
+            return unverified(stage, "SIZE_BOUND")
         contents = os.read(file_fd, 16385)
         if len(contents) != meta.st_size:
-            return unverified
+            return unverified(stage, "SHORT_READ")
         stable = lambda a, b: (a.st_dev, a.st_ino, a.st_mode, a.st_size, a.st_mtime_ns,
                                a.st_ctime_ns) == (b.st_dev, b.st_ino, b.st_mode, b.st_size,
                                                   b.st_mtime_ns, b.st_ctime_ns)
+        stability_phase = True
         if not stable(meta, os.fstat(file_fd)) or not stable(
                 meta, os.stat("scheduler-dispatch.py", dir_fd=fd, follow_symlinks=False)):
-            return unverified
-        for parent_fd, name, child_fd in directories:
+            return unverified(stage, "METADATA_CHANGED")
+        for parent_fd, name, child_fd, stage in directories:
             if not stable(os.fstat(child_fd), os.stat(name, dir_fd=parent_fd,
                                                      follow_symlinks=False)):
-                return unverified
+                return unverified(stage, "METADATA_CHANGED")
         return {"status": "OBSERVED", "sha256": hashlib.sha256(contents).hexdigest(),
                 "bytes": len(contents), "read_only": True}
-    except (OSError, ValueError, TypeError):
-        return unverified
+    except OSError as exc:
+        predicate = ("METADATA_CHANGED" if stability_phase and
+                     exc.errno in {errno.ENOENT, errno.ENOTDIR, errno.ELOOP} else
+                     "METADATA_UNVERIFIED" if stability_phase else
+                     "MISSING" if exc.errno == errno.ENOENT else
+                     "ALIAS_OR_NONDIR" if exc.errno in {errno.ELOOP, errno.ENOTDIR} else
+                     "ACCESS_DENIED" if exc.errno in {errno.EACCES, errno.EPERM} else
+                     "IO_UNVERIFIED")
+        return unverified(stage, predicate)
+    except (ValueError, TypeError):
+        return unverified(stage, "IO_UNVERIFIED")
     finally:
         for fd in reversed(descriptors):
             os.close(fd)
