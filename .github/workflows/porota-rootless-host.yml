@@ -6,7 +6,7 @@ on:
       operation:
         description: Rootless prerequisites or single COLD successor inspection/recovery
         type: choice
-        options: [inspect, prepare, cold_inspect, cold_recover, cold_resume]
+        options: [inspect, prepare, config_parent_repair, cold_inspect, cold_recover, cold_resume]
         default: inspect
         required: true
 
@@ -47,6 +47,13 @@ jobs:
           ref: ${{ steps.source.outputs.source_sha }}
           persist-credentials: false
 
+      - name: Verify fixed-account, no-sudo mode-only repair contract
+        if: inputs.operation == 'config_parent_repair'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m unittest tests.test_rc6_preopen_config_parent_repair tests.test_porota_actions_host -q
+
       - name: Checkout only the existing deployed COLD archive modules
         if: inputs.operation == 'cold_inspect' || inputs.operation == 'cold_recover' || inputs.operation == 'cold_resume'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -79,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$OPERATION" == inspect || "$OPERATION" == prepare || "$OPERATION" == cold_inspect || "$OPERATION" == cold_recover || "$OPERATION" == cold_resume ]]
+          [[ "$OPERATION" == inspect || "$OPERATION" == prepare || "$OPERATION" == config_parent_repair || "$OPERATION" == cold_inspect || "$OPERATION" == cold_recover || "$OPERATION" == cold_resume ]]
           cold_args=()
           if [[ "$OPERATION" == cold_inspect || "$OPERATION" == cold_recover || "$OPERATION" == cold_resume ]]; then
             cold_args=(--frozen-source "$GITHUB_WORKSPACE/.frozen_cold_source")
