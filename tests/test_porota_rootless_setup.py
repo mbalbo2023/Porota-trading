@@ -105,6 +105,157 @@ class InspectTests(unittest.TestCase):
         self.assertEqual(result["coordinates"]["byma_morning_watch_latest"]["status"], "NO_VERIFICADO")
         self.assertNotIn("SECRET=", json.dumps(result))
 
+    def test_preopen_semantics_report_only_current_byma_and_declared_paper_status(self):
+        home = self.root / "owner"
+        operator = home / ".config/porota-rc6/operator"
+        operator.mkdir(parents=True)
+        for directory, mode in ((home, 0o755), (home / ".config", 0o750),
+                                (operator.parent, 0o700), (operator, 0o700)):
+            directory.chmod(mode)
+        watch = self.root / "data/market/byma_morning_watch_latest.json"
+        watch.parent.mkdir(parents=True)
+        watch.write_text(json.dumps({"state": "NO_CHANGE", "observed_at": "2026-11-17T12:40:00Z",
+                                     "payload_secret": "PRIVATE-BYMA-PAYLOAD"}), encoding="utf-8")
+        receipt = operator / "paper-rearm-v1.json"
+        receipt.write_text(json.dumps({"schema": "RC6_OPERATOR_PAPER_INTENT_V2",
+                                      "status": "PAPER_PAUSED_BY_OPERATOR",
+                                      "private_comment": "PRIVATE-OPERATOR-RECEIPT"}), encoding="utf-8")
+        receipt.chmod(0o600)
+        original_open = os.open
+        def read_only_open(path, flags, *args, **kwargs):
+            self.assertFalse(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
+            return original_open(path, flags, *args, **kwargs)
+        with patch.object(setup.os, "open", side_effect=read_only_open):
+            result = setup.preopen_current_inputs(
+                self.root, home, now=datetime(2026, 11, 17, 17, 0, tzinfo=timezone.utc))
+        semantics = result["semantics"]
+        self.assertEqual(semantics["operator_parent_custody"]["status"], "OBSERVED")
+        self.assertEqual(semantics["byma_morning_watch"], {
+            "status": "OBSERVED", "declared_state": "NO_CHANGE", "observed_date_ar": "2026-11-17",
+            "reason": "BYMA_DECLARATION_FRESH", "product_gate": "NO_VERIFICADO"})
+        self.assertEqual(semantics["operator_paper_intent"], {
+            "status": "OBSERVED", "declared_status": "PAPER_PAUSED_BY_OPERATOR",
+            "reason": "DECLARATION_ONLY", "operator_authority": "NO_VERIFICADO"})
+        self.assertEqual(result["historic_subcheck_cause"], "NO_VERIFICADO")
+        serialized = json.dumps(result)
+        self.assertNotIn("PRIVATE-BYMA-PAYLOAD", serialized)
+        self.assertNotIn("PRIVATE-OPERATOR-RECEIPT", serialized)
+
+    def test_preopen_semantics_detect_stale_and_degraded_watch_without_gate_claim(self):
+        home = self.root / "owner"
+        market = self.root / "data/market"
+        market.mkdir(parents=True)
+        watch = market / "byma_morning_watch_latest.json"
+        now = datetime(2026, 11, 17, 17, 0, tzinfo=timezone.utc)
+        for state, observed, reason in (
+            ("NO_CHANGE", "2026-11-16T12:40:00Z", "BYMA_WATCH_NOT_TODAY"),
+            ("DEGRADED", "2026-11-17T12:40:00Z", "BYMA_WATCH_DEGRADED"),
+            ("CHANGED_REVIEW_REQUIRED", "2026-11-17T12:40:00Z", "BYMA_REVIEW_NOT_EVALUATED"),
+            ("NO_CHANGE", "2026-11-18T02:30:00Z", "BYMA_DECLARATION_FRESH"),
+            ("NO_CHANGE", "2026-11-17T12:40:00", "BYMA_WATCH_TIMESTAMP_NAIVE"),
+        ):
+            with self.subTest(state=state, observed=observed):
+                watch.write_text(json.dumps({"state": state, "observed_at": observed}))
+                semantic = setup.preopen_current_inputs(self.root, home, now=now)["semantics"]["byma_morning_watch"]
+                self.assertEqual(semantic["reason"], reason)
+                self.assertEqual(semantic["product_gate"], "NO_VERIFICADO")
+                self.assertNotIn("GREEN", json.dumps(semantic))
+
+    def test_preopen_semantics_fail_closed_on_parent_custody_and_unsafe_private_file(self):
+        home = self.root / "owner"
+        operator = home / ".config/porota-rc6/operator"
+        operator.mkdir(parents=True)
+        for directory in (home, home / ".config", operator.parent, operator):
+            directory.chmod(0o700)
+        receipt = operator / "paper-rearm-v1.json"
+        receipt.write_text(json.dumps({"schema": "RC6_OPERATOR_PAPER_INTENT_V2",
+                                      "status": "PAPER_REARM_AUTHORIZED", "secret": "PRIVATE-CONSENT"}))
+        receipt.chmod(0o644)
+        result = setup.preopen_current_inputs(self.root, home)
+        self.assertEqual(result["semantics"]["operator_parent_custody"]["status"], "OBSERVED")
+        self.assertEqual(result["semantics"]["operator_paper_intent"]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["semantics"]["operator_paper_intent"]["operator_authority"], "NO_VERIFICADO")
+        receipt.chmod(0o600)
+        (home / ".config").chmod(0o770)
+        result = setup.preopen_current_inputs(self.root, home)
+        self.assertEqual(result["semantics"]["operator_parent_custody"]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["semantics"]["operator_parent_custody"]["failure_stage"], "CONFIG")
+        self.assertEqual(result["semantics"]["operator_parent_custody"]["failure_predicate"], "MODE_UNSAFE")
+        self.assertEqual(result["semantics"]["operator_paper_intent"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE-CONSENT", json.dumps(result))
+        (home / ".config").chmod(0o700)
+        receipt.unlink()
+        external = self.root / "private-intent"
+        external.write_text('{"schema":"RC6_OPERATOR_PAPER_INTENT_V2",'
+                            '"status":"PAPER_REARM_AUTHORIZED","private":"PRIVATE-ALIAS"}')
+        receipt.symlink_to(external)
+        result = setup.preopen_current_inputs(self.root, home)
+        self.assertEqual(result["semantics"]["operator_parent_custody"]["status"], "OBSERVED")
+        self.assertEqual(result["semantics"]["operator_paper_intent"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE-ALIAS", json.dumps(result))
+
+    def test_preopen_semantics_reject_alias_oversize_and_malformed_json_without_leaks(self):
+        market = self.root / "data/market"
+        market.mkdir(parents=True)
+        watch = market / "byma_morning_watch_latest.json"
+        sentinel = self.root / "secret.json"
+        sentinel.write_text('{"state":"NO_CHANGE","observed_at":"2026-11-17T12:00:00Z","secret":"VERY-SECRET"}')
+        watch.symlink_to(sentinel)
+        semantic = setup.preopen_current_inputs(self.root, self.root / "owner")["semantics"]["byma_morning_watch"]
+        self.assertEqual(semantic["status"], "NO_VERIFICADO")
+        watch.unlink()
+        for raw in ("x" * 65537, '{"state":"NO_CHANGE", "state":"DEGRADED"}',
+                    '{"state":"NO_CHANGE", "observed_at":"private-error"}'):
+            with self.subTest(raw=raw[:12]):
+                watch.write_text(raw)
+                semantic = setup.preopen_current_inputs(self.root, self.root / "owner")["semantics"]["byma_morning_watch"]
+                self.assertEqual(semantic["status"], "NO_VERIFICADO")
+                self.assertNotIn("private-error", json.dumps(semantic))
+                self.assertNotIn("VERY-SECRET", json.dumps(semantic))
+
+    def test_preopen_semantics_malformed_intent_field_types_fail_closed(self):
+        home = self.root / "owner"
+        operator = home / ".config/porota-rc6/operator"
+        operator.mkdir(parents=True)
+        for directory in (home, home / ".config", operator.parent, operator):
+            directory.chmod(0o700)
+        receipt = operator / "paper-rearm-v1.json"
+        for status in (["PAPER_REARM_AUTHORIZED"], {"secret": "do-not-serialize"}, None):
+            with self.subTest(status=status):
+                receipt.write_text(json.dumps({"schema": "RC6_OPERATOR_PAPER_INTENT_V2",
+                                              "status": status, "token": "SECRET-INTENT"}))
+                receipt.chmod(0o600)
+                result = setup.preopen_current_inputs(self.root, home)
+                semantic = result["semantics"]["operator_paper_intent"]
+                self.assertEqual(semantic["status"], "NO_VERIFICADO")
+                self.assertEqual(semantic["declared_status"], None)
+                self.assertNotIn("SECRET-INTENT", json.dumps(result))
+
+    def test_preopen_semantics_watch_inode_swap_during_read_is_not_observed(self):
+        market = self.root / "data/market"
+        market.mkdir(parents=True)
+        watch = market / "byma_morning_watch_latest.json"
+        replacement = market / "candidate.json"
+        watch.write_text('{"state":"NO_CHANGE","observed_at":"2026-11-17T12:00:00Z"}')
+        replacement.write_text('{"state":"DEGRADED","observed_at":"2026-11-17T12:00:00Z","secret":"PRIVATE-SWAP"}')
+        original_read = os.read
+        swapped = False
+        def swapping_read(fd, count):
+            nonlocal swapped
+            raw = original_read(fd, count)
+            if not swapped:
+                swapped = True
+                os.replace(replacement, watch)  # Simulate an external writer, not inspector behavior.
+            return raw
+        with patch.object(setup.os, "read", side_effect=swapping_read):
+            result = setup.preopen_current_inputs(
+                self.root, self.root / "owner", now=datetime(2026, 11, 17, tzinfo=timezone.utc))
+        self.assertTrue(swapped)
+        semantic = result["semantics"]["byma_morning_watch"]
+        self.assertEqual(semantic["status"], "NO_VERIFICADO")
+        self.assertEqual(semantic["reason"], "BYMA_RECEIPT_UNVERIFIED")
+        self.assertNotIn("PRIVATE-SWAP", json.dumps(result))
+
     def test_only_fixed_rc6_names_are_inspected_on_explicit_rootful_endpoint(self):
         setup.inspect_host(self.root, run=self.fake_run)
         commands = [c for c in self.commands if "inspect" in c]

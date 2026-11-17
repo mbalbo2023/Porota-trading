@@ -22,6 +22,7 @@ import stat
 import subprocess
 import sys
 import time
+from zoneinfo import ZoneInfo
 
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
@@ -497,12 +498,201 @@ def _metadata(path):
             "writable": os.access(path, os.W_OK)}
 
 
-def preopen_current_inputs(root: Path, home: Path):
-    """Metadata only for fixed inputs to today's preopen; not historic causes.
+_PREOPEN_ART = ZoneInfo("America/Argentina/Buenos_Aires")
+_PREOPEN_WATCH_STATES = frozenset({
+    "NO_CHANGE", "BASELINE_CREATED", "CHANGED_REVIEW_REQUIRED", "DEGRADED",
+})
+_PREOPEN_INTENT_DECLARATIONS = frozenset({
+    ("RC6_OPERATOR_PAPER_REARM_V1", "PAPER_REARM_AUTHORIZED"),
+    ("RC6_OPERATOR_PAPER_INTENT_V2", "PAPER_REARM_AUTHORIZED"),
+    ("RC6_OPERATOR_PAPER_INTENT_V2", "PAPER_PAUSED_BY_OPERATOR"),
+})
 
-    Never open the files, follow an alias, export private JSON, or claim that
-    a present input passed a preopen check. The existing unit inventory holds
-    the required timers' states separately.
+
+def _preopen_pinned_bytes(base: Path, relative, *, operator=False, directory_only=False, max_bytes=0):
+    """Read one fixed coordinate through no-follow FDs; return finite failures.
+
+    Even a seemingly benign declaration is untrusted unless all pinned
+    ancestors and the final inode remain the same throughout inspection.
+    The rootless HOME/.config/porota-rc6/operator custody mirrors the path
+    and mode checks in the product; it is not operator consent validation.
+    """
+    if (not isinstance(base, Path) or not base.is_absolute() or base == base.parent
+            or not isinstance(relative, tuple) or not relative
+            or len((*base.parts, *relative)) > 32
+            or any(not isinstance(part, str) or part in {"", ".", ".."} or "/" in part
+                   for part in (*base.parts[1:], *relative))
+            or (operator and relative not in {
+                (".config", "porota-rc6", "operator"),
+                (".config", "porota-rc6", "operator", "paper-rearm-v1.json"),
+            })):
+        return None, ("INPUT", "INPUT_INVALID")
+    dir_parts = (*base.parts[1:], *relative) if directory_only else (
+        *base.parts[1:], *relative[:-1])
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    descriptors = []
+    tracked = []
+    stage = "ROOT"
+    def signature(meta):
+        return (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_uid, meta.st_gid,
+                meta.st_nlink, meta.st_size, meta.st_mtime_ns, meta.st_ctime_ns)
+
+    try:
+        current = os.open("/", flags)
+        descriptors.append(current)
+        home_index = len(base.parts) - 2
+        for index, part in enumerate(dir_parts):
+            if operator:
+                stage = ("HOME_ANCESTOR" if index < home_index else
+                         ("HOME", "CONFIG", "CONFIG_ROOT", "OPERATOR")[index - home_index])
+            else:
+                stage = "PARENT"
+            parent = current
+            current = os.open(part, flags, dir_fd=parent)
+            descriptors.append(current)
+            meta = os.fstat(current)
+            if not stat.S_ISDIR(meta.st_mode):
+                return None, (stage, "NOT_DIRECTORY")
+            tracked.append((parent, part, current, meta))
+            if operator and index >= home_index:
+                if meta.st_uid != os.getuid():
+                    return None, (stage, "OWNER_MISMATCH")
+                mode = stat.S_IMODE(meta.st_mode)
+                unsafe = mode != 0o700 if stage == "OPERATOR" else bool(mode & 0o022)
+                if unsafe:
+                    return None, (stage, "MODE_UNSAFE")
+
+        raw = b""
+        if not directory_only:
+            stage = "TARGET"
+            file_fd = os.open(relative[-1], os.O_RDONLY | os.O_NOFOLLOW |
+                              os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=current)
+            descriptors.append(file_fd)
+            initial = os.fstat(file_fd)
+            if not stat.S_ISREG(initial.st_mode):
+                return None, (stage, "NOT_REGULAR")
+            if initial.st_nlink != 1:
+                return None, (stage, "MULTIPLE_LINKS")
+            if operator and (initial.st_uid != os.getuid() or
+                             stat.S_IMODE(initial.st_mode) != 0o600):
+                return None, (stage, "PRIVATE_FILE_UNSAFE")
+            if not 0 < initial.st_size <= max_bytes:
+                return None, (stage, "SIZE_BOUND")
+            raw = os.read(file_fd, max_bytes + 1)
+            if len(raw) != initial.st_size:
+                return None, (stage, "SHORT_READ")
+            latest_file = os.stat(relative[-1], dir_fd=current, follow_symlinks=False)
+            if (signature(latest_file) != signature(initial) or
+                    signature(os.fstat(file_fd)) != signature(initial)):
+                return None, (stage, "METADATA_CHANGED")
+
+        for parent, part, child, original in tracked:
+            latest = os.stat(part, dir_fd=parent, follow_symlinks=False)
+            if (signature(latest) != signature(original) or
+                    signature(os.fstat(child)) != signature(original)):
+                return None, ("PARENT", "METADATA_CHANGED")
+        return raw, None
+    except OSError as exc:
+        predicate = ("MISSING" if exc.errno == errno.ENOENT else
+                     "ALIAS_OR_NONDIR" if exc.errno in {errno.ELOOP, errno.ENOTDIR} else
+                     "ACCESS_DENIED" if exc.errno in {errno.EACCES, errno.EPERM} else
+                     "IO_UNVERIFIED")
+        return None, (stage, predicate)
+    finally:
+        for fd in reversed(descriptors):
+            os.close(fd)
+
+
+def _preopen_json(base, relative, *, operator=False, max_bytes):
+    raw, failure = _preopen_pinned_bytes(base, relative, operator=operator, max_bytes=max_bytes)
+    if failure is not None:
+        return None, failure
+    def unique_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("DUPLICATE_KEY")
+            result[key] = value
+        return result
+    def reject_constant(_):
+        raise ValueError("NONFINITE_NUMBER")
+    try:
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=unique_pairs,
+                             parse_constant=reject_constant)
+        if not isinstance(payload, dict):
+            raise ValueError("NOT_OBJECT")
+        return payload, None
+    except (ValueError, UnicodeError, RecursionError):
+        return None, ("TARGET", "JSON_UNVERIFIED")
+
+
+def _preopen_operator_parent_custody(home):
+    _, failure = _preopen_pinned_bytes(
+        home, (".config", "porota-rc6", "operator"), operator=True, directory_only=True)
+    if failure is not None:
+        stage, predicate = failure
+        return {"status": "NO_VERIFICADO", "failure_stage": stage,
+                "failure_predicate": predicate}
+    return {"status": "OBSERVED"}
+
+
+def _preopen_byma_declaration(root, now):
+    default = {"status": "NO_VERIFICADO", "declared_state": None,
+               "observed_date_ar": None, "product_gate": "NO_VERIFICADO"}
+    payload, failure = _preopen_json(
+        root, ("data", "market", "byma_morning_watch_latest.json"), max_bytes=65536)
+    if failure is not None:
+        return {**default, "reason": "BYMA_RECEIPT_UNVERIFIED",
+                "failure_stage": failure[0], "failure_predicate": failure[1]}
+    state = payload.get("state")
+    if not isinstance(state, str) or state.upper() not in _PREOPEN_WATCH_STATES:
+        return {**default, "reason": "BYMA_WATCH_STATE_UNKNOWN"}
+    state = state.upper()
+    stamp = payload.get("observed_at")
+    if not isinstance(stamp, str) or len(stamp) > 64:
+        return {**default, "reason": "BYMA_WATCH_TIMESTAMP_INVALID"}
+    try:
+        observed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return {**default, "reason": "BYMA_WATCH_TIMESTAMP_INVALID"}
+    if observed.tzinfo is None:
+        return {**default, "reason": "BYMA_WATCH_TIMESTAMP_NAIVE"}
+    try:
+        local = observed.astimezone(_PREOPEN_ART)
+    except (OverflowError, ValueError):
+        return {**default, "reason": "BYMA_WATCH_TIMESTAMP_INVALID"}
+    reason = ("BYMA_WATCH_NOT_TODAY" if local.date() != now.astimezone(_PREOPEN_ART).date() else
+              "BYMA_WATCH_DEGRADED" if state == "DEGRADED" else
+              "BYMA_REVIEW_NOT_EVALUATED" if state == "CHANGED_REVIEW_REQUIRED" else
+              "BYMA_DECLARATION_FRESH")
+    return {"status": "OBSERVED", "declared_state": state,
+            "observed_date_ar": local.date().isoformat(), "reason": reason,
+            "product_gate": "NO_VERIFICADO"}
+
+
+def _preopen_operator_intent_declaration(home):
+    default = {"status": "NO_VERIFICADO", "declared_status": None,
+               "operator_authority": "NO_VERIFICADO"}
+    payload, failure = _preopen_json(
+        home, (".config", "porota-rc6", "operator", "paper-rearm-v1.json"),
+        operator=True, max_bytes=16 * 1024)
+    if failure is not None:
+        return {**default, "reason": "INTENT_RECEIPT_UNVERIFIED",
+                "failure_stage": failure[0], "failure_predicate": failure[1]}
+    schema, status = payload.get("schema"), payload.get("status")
+    if (not isinstance(schema, str) or not isinstance(status, str)
+            or (schema, status) not in _PREOPEN_INTENT_DECLARATIONS):
+        return {**default, "reason": "INTENT_DECLARATION_UNKNOWN"}
+    return {"status": "OBSERVED", "declared_status": status,
+            "reason": "DECLARATION_ONLY", "operator_authority": "NO_VERIFICADO"}
+
+
+def preopen_current_inputs(root: Path, home: Path, *, now=None):
+    """Fixed preopen coordinates and bounded current declarations, never GO.
+
+    Presence and parsed declarations are distinct from validated product
+    checks, operator consent, and the unknown causes of past preopen runs.
+    The unit inventory separately holds the required timers' states.
     """
     coordinates = (
         ("byma_morning_watch_latest", root, ("data", "market", "byma_morning_watch_latest.json")),
@@ -557,8 +747,15 @@ def preopen_current_inputs(root: Path, home: Path):
 
     result = {label: pinned_metadata(base, segments)
               for label, base, segments in coordinates}
+    if not isinstance(now, datetime) or now.tzinfo is None:
+        now = datetime.now(timezone.utc)
     return {"schema": "porota.preopen.current-inputs-ro.v1", "read_only": True,
-            "historic_subcheck_cause": "NO_VERIFICADO", "coordinates": result}
+            "historic_subcheck_cause": "NO_VERIFICADO", "coordinates": result,
+            "semantics": {
+                "operator_parent_custody": _preopen_operator_parent_custody(home),
+                "byma_morning_watch": _preopen_byma_declaration(root, now),
+                "operator_paper_intent": _preopen_operator_intent_declaration(home),
+            }}
 
 
 LAUNCHER_CUSTODY_STAGES = frozenset({
