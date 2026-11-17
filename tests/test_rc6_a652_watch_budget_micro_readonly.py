@@ -78,7 +78,237 @@ def fixture_auth_health(path, *, detail, checked_at="2026-11-15T23:45:27Z"):
         c.commit()
 
 
+def fixture_candidate_readiness(path, rows, *, refresh_state="COMPLETE"):
+    """Mirror the deployed bu_instrument_catalog candidate v2/refresh schemas."""
+    with closing(sqlite3.connect(path)) as c:
+        c.executescript("""
+            CREATE TABLE candidate_identity_v2(
+                ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
+                currency TEXT NOT NULL,settlement TEXT NOT NULL,can_simulate INTEGER NOT NULL,
+                status TEXT NOT NULL,detail TEXT NOT NULL,checked_at TEXT NOT NULL,
+                PRIMARY KEY(ticker,instrument_type,market,currency,settlement));
+            CREATE TABLE candidate_refresh_state(
+                id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL,
+                checked_at TEXT NOT NULL);
+        """)
+        c.execute("INSERT INTO candidate_refresh_state VALUES(1,?,?)", (
+            refresh_state, "2026-11-16T23:53:15+00:00"))
+        c.executemany("INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)", rows)
+        c.commit()
+
+
 class TestA652MicroReadOnly(unittest.TestCase):
+    def test_v2_readiness_reasons_per_family_are_aggregate_and_secret_free(self):
+        """Catches a silent 0 READY readout or raw ticker/detail disclosure."""
+        checked = "2026-11-16T23:53:15+00:00"
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A1", "ACCIONES", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED;PPI_FRESHNESS_STALE", checked),
+                ("SECRET_A2", "ACCIONES", "BCBA", "ARS", "24HS", 0, "STALE",
+                 "CAPABILITY:VERY_PRIVATE_TOKEN;CATALOG_STATUS:PRIVATE_SECRET", checked),
+                ("SECRET_C1", "CEDEARS", "BCBA", "ARS", "CI", 1, "AVAILABLE",
+                 "READY_PAPER_PRICE", checked),
+                ("SECRET_O1", "OPCIONES", "BCBA", "ARS", "CI", 0,
+                 "PAUSED_EXPLICIT", "PAUSED_EXPLICIT:OPTION_CONTRACT_UNRESOLVED;"
+                 "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED;PPI_FRESHNESS_STALE", checked),
+                ("SECRET_X1", "SECRET_FAMILY", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PRIVATE_ACCOUNT_ACCESS_TOKEN", checked),
+            ])
+            original = db.read_bytes()
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            report = a652.build_receipt(raw)
+            self.assertEqual(db.read_bytes(), original)
+        found = report["host"]["candidate_readiness"]
+        self.assertEqual((found["state"], found["refresh_state"]), ("OBSERVED", "COMPLETE"))
+        self.assertEqual((found["total"], found["ready"], found["blocked"]), (5, 1, 4))
+        self.assertEqual(found["families"]["ACCIONES"]["ready"], 0)
+        self.assertEqual(found["families"]["ACCIONES"]["blocked_reasons"], {
+            "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1,
+            "PPI_FRESHNESS_STALE": 1,
+            "CAPABILITY_NOT_READY": 1,
+            "CATALOG_STATUS_BLOCKED": 1,
+        })
+        self.assertEqual(found["families"]["OPCIONES"]["blocked_reasons"], {
+            "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED": 1,
+            "PPI_FRESHNESS_STALE": 1,
+        })
+        self.assertEqual(found["families"]["OTRAS"]["blocked_reasons"], {
+            "OTHER_REDACTED": 1,
+        })
+        self.assertEqual(found["reason_totals"]["PPI_FRESHNESS_STALE"], 2)
+        self.assertFalse(found["paper_admission_authority"])
+        self.assertFalse(report["paper_ready"])
+        self.assertEqual(report["probe_provider_gets"], 0)
+        self.assertEqual(report["probe_budget_leases"], 0)
+        exposed = json.dumps(raw) + json.dumps(report)
+        for private in ("SECRET_A1", "SECRET_C1", "SECRET_FAMILY", "PRIVATE_SECRET",
+                        "VERY_PRIVATE_TOKEN", "PRIVATE_ACCOUNT_ACCESS_TOKEN"):
+            self.assertNotIn(private, exposed)
+        self.assertLess(len(json.dumps(report).encode()), 16384)
+
+    def test_readiness_refresh_running_is_not_a_completed_generation(self):
+        """Catches incorrectly certifying a bounded in-progress reproject."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SENSITIVE", "BONOS", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "2026-11-16T23:53:15Z")
+            ], refresh_state="RUNNING")
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                result = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+        found = result["host"]["candidate_readiness"]
+        self.assertEqual(found["state"], "OBSERVED")
+        self.assertEqual(found["refresh_state"], "RUNNING")
+        self.assertFalse(found["generation_complete"])
+        self.assertFalse(found["paper_admission_authority"])
+
+    def test_readiness_refresh_interleaving_cannot_claim_complete_partial_rows(self):
+        """Catches a WAL writer racing refresh before candidate row scan."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 1, "AVAILABLE",
+                 "READY_PAPER_PRICE", "2026-11-16T23:53:15Z"),
+            ])
+            real_connect = sqlite3.connect
+            with closing(real_connect(db)) as connection:
+                self.assertEqual(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0],
+                                 "wal")
+            changed = {"done": False}
+
+            class InterleavingConnection:
+                def __init__(self, real):
+                    self.real = real
+
+                def __getattr__(self, attr):
+                    return getattr(self.real, attr)
+
+                def execute(self, sql, params=()):
+                    if "FROM candidate_identity_v2 LIMIT" in sql and not changed["done"]:
+                        changed["done"] = True
+                        with closing(real_connect(db, timeout=1)) as writer:
+                            writer.execute("UPDATE candidate_refresh_state "
+                                           "SET state='RUNNING',checked_at=? WHERE id=1",
+                                           ("2026-11-16T23:54:00Z",))
+                            writer.execute("UPDATE candidate_identity_v2 SET "
+                                           "can_simulate=0,status='STALE',detail=?",
+                                           ("PPI_FRESHNESS_STALE",))
+                            writer.commit()
+                    return self.real.execute(sql, params)
+
+            def raced_connect(*args, **kwargs):
+                return InterleavingConnection(real_connect(*args, **kwargs))
+
+            with patch.object(a617, "_mount_is_readonly", return_value=True), \
+                    patch.object(a652.sqlite3, "connect", side_effect=raced_connect):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            self.assertTrue(changed["done"])
+            result = a652.build_receipt(raw)
+        found = result["host"]["candidate_readiness"]
+        self.assertEqual(found, {
+            "state": "NO_VERIFICADO", "reason": "REFRESH_CHANGED_DURING_READ",
+            "paper_admission_authority": False,
+        })
+        self.assertFalse(result["paper_ready"])
+        self.assertEqual(result["probe_provider_gets"], 0)
+
+    def test_readiness_absent_table_fails_closed_without_invalidating_scanner(self):
+        """Catches treating a missing candidate v2 projection as zero READY."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                result = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+        self.assertEqual(result["host"]["state"], "OBSERVED")
+        self.assertEqual(result["host"]["candidate_readiness"], {
+            "state": "NO_VERIFICADO", "reason": "TABLE_ABSENT",
+            "paper_admission_authority": False,
+        })
+
+    def test_readiness_all_17211_blocked_are_counted_without_raw_rows(self):
+        """Catches a partial histogram silently misreported as a full generation."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, (
+                (f"PRIVATE_{index:05d}", "BONOS", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "2026-11-16T23:53:15Z")
+                for index in range(17211)
+            ))
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                result = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+        found = result["host"]["candidate_readiness"]
+        self.assertEqual((found["total"], found["ready"], found["blocked"]), (17211, 0, 17211))
+        self.assertEqual(found["reason_totals"], {
+            "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 17211,
+        })
+        self.assertEqual(found["families"]["BONOS"]["total"], 17211)
+        self.assertNotIn("PRIVATE_00001", json.dumps(result))
+        self.assertLess(len(json.dumps(result).encode()), 16384)
+
+    def test_readiness_row_budget_and_secret_injection_fail_closed(self):
+        """Catches truncation falsely deemed complete and secret exfiltration."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, (
+                (f"PRIVATE_{index:05d}", "BONOS", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "2026-11-16T23:53:15Z")
+                for index in range(25001)
+            ))
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+        result = a652.build_receipt(raw)
+        self.assertEqual(result["host"]["candidate_readiness"], {
+            "state": "NO_VERIFICADO", "reason": "ROW_LIMIT_HOLD",
+            "paper_admission_authority": False,
+        })
+        raw["scanner"]["candidate_readiness"]["PRIVATE_ACCESS_TOKEN"] = "PRIVATE_VALUE"
+        poisoned = a652.build_receipt(raw)
+        self.assertEqual(poisoned["host"]["state"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE_ACCESS_TOKEN", json.dumps(poisoned))
+        self.assertNotIn("PRIVATE_VALUE", json.dumps(poisoned))
+
+    def test_readiness_complete_marker_must_match_projection_clock(self):
+        """Catches mixing an older projection with a newer COMPLETE marker."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_FRESHNESS_STALE", "2026-11-16T23:52:00Z"),
+            ])
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                result = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+        self.assertEqual(result["host"]["candidate_readiness"], {
+            "state": "NO_VERIFICADO", "reason": "PROJECTION_MARKER_MISMATCH",
+            "paper_admission_authority": False,
+        })
+
+    def test_runner_rejects_blocked_without_any_reason_counters(self):
+        """Catches forged sanitized reports hiding all 0 READY causes."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_FRESHNESS_STALE", "2026-11-16T23:53:15Z"),
+            ])
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+        projection = raw["scanner"]["candidate_readiness"]
+        projection["families"]["ACCIONES"]["blocked_reasons"] = {}
+        projection["reason_totals"] = {}
+        receipt = a652.build_receipt(raw)
+        self.assertEqual(receipt["host"]["state"], "NO_VERIFICADO")
+        self.assertFalse(receipt["paper_ready"])
+
     def test_physical_cooldown_not_attempted_and_boot_calendar_are_not_laundered(self):
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / "observer.db"
