@@ -14,22 +14,29 @@ NOW = "2026-10-03T16:00:00+00:00"
 
 def future_row(ticker="DLR/OCT26", *, capability="NEEDS_FUTURES_MARGIN_AND_CONTRACT",
                status="AVAILABLE", market="A3", currency="ARS",
-               settlement="INMEDIATA", discovery="PPI_PRIMARY"):
+               settlement="INMEDIATA", discovery="PPI_PRIMARY", native=True):
+    raw = {
+        "_discovery_source": discovery,
+        "_provider_instrument_type": "FUTUROS",
+    }
+    if native:
+        # These synthetic positive rows explicitly attest all five provider
+        # coordinates. A discovery/request tenor alone must not mint a
+        # provider-certified PAPER contract.
+        raw.update({"ticker": ticker, "type": "FUTUROS", "market": market,
+                    "currency": currency, "settlement": settlement})
     return {
         "ticker": ticker,
         "instrument_type": "FUTUROS",
         "market": market,
         "currency": currency,
         "settlement": settlement,
-        "settlement_source": "PPI_FIELD",
+        "settlement_source": "PPI_FIELD" if native else "REQUEST_CANDIDATE",
         "status": status,
         "capability": capability,
         "last_seen_at": NOW,
         "description": ticker,
-        "metadata_json": json.dumps({
-            "_discovery_source": discovery,
-            "_provider_instrument_type": "FUTUROS",
-        }),
+        "metadata_json": json.dumps(raw),
     }
 
 
@@ -97,6 +104,13 @@ def test_unresolved_future_keeps_explicit_mass_skip_reason():
     assert identities == {"FUTUROS": 1}
     assert len(records) == 1
     assert skipped["FUTURE_STANDARD_DLR_POLICY_UNRESOLVED"] == 1
+
+
+def test_request_only_future_cannot_mint_ppi_contract_evidence():
+    records, skipped, identities = mass.planned_records([future_row(native=False)])
+    assert records == []
+    assert skipped == {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1}
+    assert identities == {}
 
 
 def test_future_paper_window_is_a3_specific_and_has_eod_buffers():
