@@ -11,17 +11,19 @@ means zero new GETs. The public artifact carries hashes, NOT provider payload.
 from __future__ import annotations
 
 import base64
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
 import math
 import os
 from pathlib import Path
+import pwd
 import re
 import resource
 import sqlite3
 import stat
+import subprocess
 import sys
 from urllib.parse import parse_qsl, quote, urlsplit
 import uuid
@@ -32,7 +34,16 @@ SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
 PER_GET_CLOCK_FIELDS = frozenset({
     "current_received_at_utc", "book_received_at_utc", "pair_completed_at_utc",
 })
-PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
+# These are exact deployed *candidate* coordinates, NOT the merged product
+# branch SHA and NOT the separately audited BYMA calendar revision.
+ROOTLESS_CANDIDATE_SHA = "0dd7b46bafcc21649060e21c7bdf3e40ade6f666"
+ROOTLESS_CANDIDATE_TREE = "e1fa390418be5062d0f246834e38db2c5829d2e6"
+ROOTLESS_IMAGE_ID = "sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f"
+ROOTLESS_UID = 1000
+ROOTLESS_SCHEMA = "rc6.a630.rootless.capture.v1"
+# Historical A630 v1 receipts retain this field name for compatibility; the
+# identity is the candidate embedded into the exact already-deployed image.
+PRODUCT_SHA = ROOTLESS_CANDIDATE_SHA
 DB = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
 PPI_HOST = "clientapi.portfoliopersonal.com"
 MAX_BODY = 128 * 1024
@@ -40,6 +51,8 @@ MAX_LEVELS = 200
 MAX_AGE_MS = 120_000
 MAX_EXIT_ROUND_AGE_MS = 300_000
 SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+CID64 = re.compile(r"[a-f0-9]{64}\Z")
+ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 PPI_TYPES = {"ACCIONES": "ACCIONES", "BONOS": "BONOS"}
 # One reviewed target per intraday window. Catalog must prove the FULL 5-key.
 SLOTS = {
@@ -63,6 +76,11 @@ REASONS = frozenset({
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
     "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT", "RECEIPT_INVALID",
+    "ROOTLESS_PIN_MISMATCH", "ROOTLESS_SSH_IDENTITY_HOLD",
+    "ROOTLESS_PRIVATE_PATH_HOLD", "ROOTLESS_RELEASE_CUSTODY_HOLD",
+    "ROOTLESS_STATE_DRIFT_HOLD", "ROOTLESS_SOCKET_HOLD",
+    "ROOTLESS_DAEMON_HOLD", "ROOTLESS_OBSERVER_HOLD",
+    "ROOTLESS_DOCKER_TRANSPORT_HOLD", "ROOTLESS_EXEC_RECEIPT_HOLD",
 })
 
 
@@ -182,6 +200,386 @@ def host_preflight(slot, db=DB, *, enforce_mount=True):
         code = str(err)
         report["reason"] = code if code in REASONS else "HOST_PREFLIGHT_OR_RUNTIME_HOLD"
     return report
+
+
+def _attest_rootless_release(current, release, release_raw):
+    """Exact immutable RC6 PAPER release, not a provider identity authority."""
+    if (not isinstance(current, dict) or not isinstance(release, dict) or
+            not isinstance(release_raw, bytes) or len(release_raw) > 2 * 1024**2):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    pinned = {"source_sha": ROOTLESS_CANDIDATE_SHA,
+              "source_tree": ROOTLESS_CANDIDATE_TREE,
+              "image_id": ROOTLESS_IMAGE_ID}
+    if (any(current.get(k) != v or release.get(k) != v for k, v in pinned.items()) or
+            current.get("schema") != "porota.rootless.deploy.v1" or
+            current.get("state") != "VALIDADO_RUNTIME" or
+            current.get("phase") != "COMPLETE" or
+            current.get("operating_mode") != "PRODUCTION_PAPER" or
+            current.get("execution_mode") != "SIMULATION" or
+            type(current.get("real_orders_sent")) is not int or
+            current["real_orders_sent"] != 0 or
+            current.get("release_manifest_sha256") != sha256(release_raw).hexdigest() or
+            release.get("schema") != "porota.release.v1" or
+            release.get("operating_mode") != "PRODUCTION_PAPER" or
+            release.get("execution_mode") != "SIMULATION" or
+            release.get("real_order_capability") != "BLOCKED" or
+            type(release.get("real_orders_sent_required")) is not int or
+            release["real_orders_sent_required"] != 0):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    roles = current.get("roles")
+    attempt = current.get("attempt")
+    if (not isinstance(roles, dict) or set(roles) != {"observer", "dashboard"} or
+            not all(isinstance(cid, str) and CID64.fullmatch(cid) for cid in roles.values()) or
+            roles["observer"] == roles["dashboard"] or
+            not isinstance(attempt, str) or not ATTEMPT.fullmatch(attempt)):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    return roles["observer"]
+
+
+def _attest_rootless_observer(info, observer, current, *, uid, home):
+    """Project only trusted predicates from private Docker JSON; never log Env."""
+    expected_store = str(Path(home) / ".local/share/porota-rc6/docker")
+    if (not isinstance(info, dict) or not isinstance(observer, dict) or
+            type(uid) is not int or uid <= 0 or
+            "name=rootless" not in info.get("SecurityOptions", []) or
+            str(info.get("CgroupVersion")) != "2" or
+            info.get("CgroupDriver") != "systemd" or
+            info.get("DockerRootDir") != expected_store):
+        raise ValueError("ROOTLESS_DAEMON_HOLD")
+    role = (current.get("roles") or {}).get("observer")
+    attempt = current.get("attempt")
+    config = observer.get("Config") or {}
+    labels = config.get("Labels") or {}
+    state = observer.get("State") or {}
+    host = observer.get("HostConfig") or {}
+    if (observer.get("Id") != role or observer.get("Image") != ROOTLESS_IMAGE_ID or
+            observer.get("Name") != f"/porota-rc6-observer-{attempt}" or
+            labels.get("io.porota.project") != "rc6" or
+            labels.get("io.porota.role") != "observer" or
+            labels.get("io.porota.attempt") != attempt or
+            config.get("Image") != ROOTLESS_IMAGE_ID or
+            config.get("User") != "0:0" or config.get("Entrypoint") not in (None, []) or
+            config.get("WorkingDir") != "/app" or
+            config.get("Cmd") != ["python", "bv_paper_runtime.py"] or
+            state.get("Running") is not True or state.get("OOMKilled") is True or
+            host.get("ReadonlyRootfs") is not True or host.get("Privileged") is not False or
+            host.get("CapDrop") != ["ALL"] or host.get("CapAdd") not in (None, []) or
+            host.get("NetworkMode") in ("host", "none") or
+            str(host.get("NetworkMode", "")).startswith("container:") or
+            host.get("PidMode") == "host" or
+            type(host.get("Memory")) is not int or not 0 < host["Memory"] <= 2 * 1024**3 or
+            type(host.get("NanoCpus")) is not int or not 0 < host["NanoCpus"] <= 2_000_000_000 or
+            type(host.get("PidsLimit")) is not int or not 0 < host["PidsLimit"] <= 512 or
+            (host.get("PortBindings") or {}) != {} or
+            not any(s in {"no-new-privileges", "no-new-privileges:true"}
+                    for s in host.get("SecurityOpt", []))):
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    raw_env = config.get("Env")
+    if not isinstance(raw_env, list) or len(raw_env) > 512:
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    env = {}
+    for row in raw_env:
+        if not isinstance(row, str) or len(row) > 4096:
+            raise ValueError("ROOTLESS_OBSERVER_HOLD")
+        key, sep, value = row.partition("=")
+        if not sep or key in env:
+            raise ValueError("ROOTLESS_OBSERVER_HOLD")
+        if key in {"POROTA_BUILD_SHA", "POROTA_CANDIDATE_TREE_SHA",
+                   "PAPER_V17_DB_PATH", "DASHBOARD_OPERATION_MODE",
+                   "EXECUTION_MODE", "REAL_ORDER_CAPABILITY"}:
+            env[key] = value
+    required = {"POROTA_BUILD_SHA": ROOTLESS_CANDIDATE_SHA,
+                "POROTA_CANDIDATE_TREE_SHA": ROOTLESS_CANDIDATE_TREE,
+                "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
+                "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
+                "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED"}
+    if env != required:
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    expected = {"/app/data": ("/opt/porota-trading/data", True),
+                "/app/operator": (str(Path(home) / ".config/porota-rc6/operator"), False),
+                "/run/secrets/ppi_production.json": (
+                    "/opt/porota-trading/.secrets/ppi_production.json", False)}
+    mounts = observer.get("Mounts")
+    if not isinstance(mounts, list):
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    binds = [m for m in mounts if isinstance(m, dict) and m.get("Type") == "bind"]
+    tmpfs_sizes = {"/tmp": 128 * 1024**2,
+                   "/home/botuser/.cache": 64 * 1024**2,
+                   "/home/botuser/.config": 16 * 1024**2}
+    if (len(binds) != len(expected) or
+            {m.get("Destination") for m in binds} != set(expected) or
+            not all((m.get("Source"), m.get("RW")) == expected[m["Destination"]]
+                    for m in binds) or
+            any(not isinstance(m, dict) or not (m.get("Type") == "bind" or
+                m.get("Type") == "tmpfs" and m.get("Destination") in tmpfs_sizes)
+                for m in mounts)):
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    tmpfs = host.get("Tmpfs") or {}
+    if not isinstance(tmpfs, dict) or set(tmpfs) != set(tmpfs_sizes):
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    for destination, options in tmpfs.items():
+        flags = set(str(options).split(","))
+        sizes = [re.fullmatch(r"size=(\d+)([kKmMgG]?)(?:[bB])?", part)
+                 for part in flags if part.startswith("size=")]
+        if ({"rw", "noexec", "nosuid"} - flags or {"exec", "suid"} & flags or
+                len(sizes) != 1 or sizes[0] is None):
+            raise ValueError("ROOTLESS_OBSERVER_HOLD")
+        amount = int(sizes[0].group(1)) * {
+            "": 1, "k": 1024, "m": 1024**2, "g": 1024**3}[sizes[0].group(2).lower()]
+        if amount != tmpfs_sizes[destination]:
+            raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    return True
+
+
+def _private_rootless_directory(path, uid, *, allow_private_parent_group_write=False):
+    try:
+        meta = path.lstat()
+        if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                meta.st_mode & (0o002 if allow_private_parent_group_write else 0o022)):
+            raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+    except (OSError, ValueError):
+        raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD") from None
+    return meta
+
+
+def _private_rootless_read(path, uid, size_limit, *, parent_fd=None):
+    """FD-pinned, no-follow regular private source; detect replaced/stale paths."""
+    handle = None
+    try:
+        handle = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                         dir_fd=parent_fd)
+        before = os.fstat(handle)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != uid or
+                before.st_nlink != 1 or before.st_mode & 0o077 or
+                not 0 < before.st_size <= size_limit):
+            raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+        raw = os.read(handle, size_limit + 1)
+        after = os.fstat(handle)
+        path_now = os.stat(path, follow_symlinks=False, dir_fd=parent_fd)
+        fields = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid,
+                            s.st_nlink, s.st_size, s.st_mtime_ns)
+        if (len(raw) != before.st_size or fields(before) != fields(after) or
+                fields(before) != fields(path_now)):
+            raise ValueError("ROOTLESS_STATE_DRIFT_HOLD")
+        return raw
+    except (OSError, ValueError) as err:
+        if str(err) == "ROOTLESS_STATE_DRIFT_HOLD":
+            raise
+        raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD") from None
+    finally:
+        if handle is not None:
+            os.close(handle)
+
+
+def _rootless_state(home, uid):
+    # The dedicated state is UID-private. Historic ~/.local/state may be g+w
+    # only under an independently verified private ~/.local parent.
+    home = Path(home)
+    if not home.is_absolute():
+        raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+    # Open the private path component by component with pinned directory FDs.
+    # A moved or substituted symlink cannot redirect current/release readers.
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    with ExitStack() as stack:
+        try:
+            fd = os.open(home, flags)
+            stack.callback(os.close, fd)
+            meta = os.fstat(fd)
+            if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                    meta.st_mode & 0o022):
+                raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+            private_local = False
+            for component in (".local", "state", "porota-rc6"):
+                next_fd = os.open(component, flags, dir_fd=fd)
+                stack.callback(os.close, next_fd)
+                fd = next_fd
+                meta = os.fstat(fd)
+                if not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid:
+                    raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+                if component == ".local":
+                    private_local = not bool(meta.st_mode & 0o077)
+                if meta.st_mode & (0o002 if component == "state" and private_local else 0o022):
+                    raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+                if component == "porota-rc6" and meta.st_mode & 0o077:
+                    raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+            current_raw = _private_rootless_read("current.json", uid, 128 * 1024,
+                                                 parent_fd=fd)
+            try:
+                current = json.loads(current_raw)
+            except (ValueError, UnicodeError):
+                raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD") from None
+            if not isinstance(current, dict) or current.get("source_sha") != ROOTLESS_CANDIDATE_SHA:
+                raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+            for component in ("releases", ROOTLESS_CANDIDATE_SHA):
+                next_fd = os.open(component, flags, dir_fd=fd)
+                stack.callback(os.close, next_fd)
+                fd = next_fd
+                meta = os.fstat(fd)
+                if (not stat.S_ISDIR(meta.st_mode) or meta.st_uid != uid or
+                        meta.st_mode & 0o022):
+                    raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
+            release_raw = _private_rootless_read("release.json", uid, 2 * 1024**2,
+                                                 parent_fd=fd)
+        except OSError:
+            raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD") from None
+    try:
+        release = json.loads(release_raw)
+    except (ValueError, UnicodeError):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD") from None
+    cid = _attest_rootless_release(current, release, release_raw)
+    token = sha256(current_raw + b"\0" + release_raw).hexdigest()
+    return current, cid, token
+
+
+def _rootless_docker_json(command, environment, *, run=subprocess.run):
+    try:
+        finished = run(command, check=False, stdout=subprocess.PIPE,
+                       stderr=subprocess.DEVNULL, timeout=8, text=True,
+                       env=environment, cwd="/")
+        if (finished.returncode != 0 or not isinstance(finished.stdout, str) or
+                not 0 < len(finished.stdout) <= 128 * 1024):
+            raise ValueError("ROOTLESS_DOCKER_TRANSPORT_HOLD")
+        return json.loads(finished.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError, UnicodeError):
+        raise ValueError("ROOTLESS_DOCKER_TRANSPORT_HOLD") from None
+
+
+def _rootless_context(*, run=subprocess.run, runtime_override=None):
+    """One exact private, running and immutable RC6 observer; zero provider GET."""
+    uid = os.getuid()
+    if uid != ROOTLESS_UID or os.geteuid() != uid or os.getgid() != os.getegid():
+        raise ValueError("ROOTLESS_SSH_IDENTITY_HOLD")
+    try:
+        account = pwd.getpwuid(uid)
+    except KeyError:
+        raise ValueError("ROOTLESS_SSH_IDENTITY_HOLD") from None
+    home = Path(account.pw_dir)
+    if not home.is_absolute() or account.pw_name.startswith("boca"):
+        raise ValueError("ROOTLESS_SSH_IDENTITY_HOLD")
+    runtime = (Path(runtime_override) if runtime_override is not None
+               else Path(f"/run/user/{uid}"))
+    _private_rootless_directory(runtime, uid)
+    socket = runtime / "porota-rc6-docker.sock"
+    try:
+        socket_stat = socket.lstat()
+        if (not stat.S_ISSOCK(socket_stat.st_mode) or socket_stat.st_uid != uid or
+                socket_stat.st_mode & 0o002):
+            raise ValueError("ROOTLESS_SOCKET_HOLD")
+    except (OSError, ValueError):
+        raise ValueError("ROOTLESS_SOCKET_HOLD") from None
+    current, cid, state_token = _rootless_state(home, uid)
+    # Match the reviewed rootless release helper's environment/explicit socket.
+    environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
+                   "HOME": str(home), "USER": account.pw_name,
+                   "LOGNAME": account.pw_name,
+                   "XDG_RUNTIME_DIR": str(runtime),
+                   "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+                   "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
+                   "DOCKER_CLI_HINTS": "false", "COMPOSE_DISABLE_ENV_FILE": "1"}
+    docker = ("/usr/bin/docker", "--host", f"unix://{socket}")
+    info = _rootless_docker_json((*docker, "info", "--format", "{{json .}}"),
+                                 environment, run=run)
+    item = _rootless_docker_json((*docker, "container", "inspect", cid),
+                                 environment, run=run)
+    if not isinstance(item, list) or len(item) != 1:
+        raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    _attest_rootless_observer(info, item[0], current, uid=uid, home=home)
+    if not isinstance(info.get("ID"), str) or info["ID"] != current.get("daemon_id"):
+        raise ValueError("ROOTLESS_DAEMON_HOLD")
+    # Never include Docker Config.Env, credentials, raw JSON or host paths in
+    # the public receipt. Only internal command/identity values are returned.
+    return {"cid": cid, "state_token": state_token, "docker": docker,
+            "environment": environment}
+
+
+def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
+                          *, run=subprocess.run):
+    """One in-memory stdin stream through owned rootless Docker; no host files."""
+    result = {"schema": ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
+              "reason": "ROOTLESS_PIN_MISMATCH", "runtime_pin_verified": False,
+              "host_file_writes": 0, "provider_payload_uploaded": False,
+              "paper_admission_certified": False, "source_pit_verified": False,
+              "receipt": unverified_transport_receipt("ROOTLESS_PIN_MISMATCH")}
+    if (candidate != ROOTLESS_CANDIDATE_SHA or tree != ROOTLESS_CANDIDATE_TREE or
+            image != ROOTLESS_IMAGE_ID or not isinstance(source_bytes, bytes) or
+            not 0 < len(source_bytes) <= 1_000_000):
+        return result
+    try:
+        target = decode_target(target_b64)
+        before = _rootless_context(run=run)
+        command = (*before["docker"], "exec", "-i",
+                   "-e", f"RC6_A630_TARGET_B64={target_b64}",
+                   "-e", f"RC6_A630_EXPECTED_PRODUCT_SHA={PRODUCT_SHA}",
+                   "-e", "PYTHONDONTWRITEBYTECODE=1", before["cid"],
+                   "python", "-B", "-", "container-capture")
+        try:
+            captured = run(command, input=source_bytes, check=False,
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           timeout=55, env=before["environment"], cwd="/")
+        except (OSError, subprocess.SubprocessError):
+            raise ValueError("ROOTLESS_DOCKER_TRANSPORT_HOLD") from None
+        if (captured.returncode not in (0, 2) or not isinstance(captured.stdout, bytes) or
+                not 0 < len(captured.stdout) <= 65536):
+            raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD")
+        try:
+            payload = json.loads(captured.stdout)
+        except (ValueError, UnicodeError, TypeError):
+            raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD") from None
+        if (not verify_receipt(payload, target) or
+                (captured.returncode == 0 and payload.get("state") != "EVIDENCE_ONLY_NO_GO") or
+                (captured.returncode == 2 and payload.get("state") != "NO_VERIFICADO")):
+            raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD")
+        after = _rootless_context(run=run)
+        if before["state_token"] != after["state_token"] or before["cid"] != after["cid"]:
+            raise ValueError("ROOTLESS_STATE_DRIFT_HOLD")
+        result.update(state=payload["state"], reason=payload["reason"],
+                      runtime_pin_verified=True, receipt=payload)
+    except (OSError, ValueError, TypeError, KeyError) as err:
+        code = str(err)
+        result.update(reason=code if code in REASONS else "ROOTLESS_DOCKER_TRANSPORT_HOLD",
+                      receipt=unverified_transport_receipt(
+                          code if code in REASONS else "ROOTLESS_DOCKER_TRANSPORT_HOLD"))
+    return result
+
+
+def verified_rootless_wrapper(raw, target):
+    """Sanitize host stdout by a CLOSED schema and the existing A630 validator.
+
+    Typed provider/budget HOLDs remain evidence. Uncertain SSH/exec transport
+    has unknown provider GET counts, never a fabricated zero. No raw Docker
+    inspect or credential-bearing arbitrary keys can reach the public artifact.
+    """
+    keys = {"schema", "state", "reason", "runtime_pin_verified",
+            "host_file_writes", "provider_payload_uploaded",
+            "paper_admission_certified", "source_pit_verified", "receipt"}
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= 65536:
+        return None
+    try:
+        doc = json.loads(raw)
+        if (not isinstance(doc, dict) or set(doc) != keys or
+                doc["schema"] != ROOTLESS_SCHEMA or
+                doc["state"] not in {"NO_VERIFICADO", "EVIDENCE_ONLY_NO_GO"} or
+                doc["reason"] not in REASONS or
+                type(doc["runtime_pin_verified"]) is not bool or
+                doc["host_file_writes"] != 0 or
+                doc["provider_payload_uploaded"] is not False or
+                doc["paper_admission_certified"] is not False or
+                doc["source_pit_verified"] is not False):
+            return None
+        inner = doc["receipt"]
+        full = verify_receipt(inner, target)
+        unknown = inner == unverified_transport_receipt(doc["reason"])
+        if (not (full or unknown) or inner.get("state") != doc["state"] or
+                inner.get("reason") != doc["reason"]):
+            return None
+        if (doc["state"] == "EVIDENCE_ONLY_NO_GO" and
+                (not full or doc["runtime_pin_verified"] is not True)):
+            return None
+        if doc["state"] == "NO_VERIFICADO" and full and inner.get("state") != "NO_VERIFICADO":
+            return None
+        return doc
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
 
 
 def _utc(raw):
@@ -750,6 +1148,14 @@ def main():
         result = host_preflight(sys.argv[2])
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "IDENTITY_ONLY_NO_GET" else 2
+    if sys.argv[1:] and sys.argv[1] == "rootless-capture" and len(sys.argv) == 6:
+        # The runner streams an already blob-pinned copy of THIS program into
+        # one remote Python -c bootstrap; it is kept in memory and supplied to
+        # docker exec -i without writing an executable anywhere on the host.
+        result = rootless_host_capture(*sys.argv[2:],
+            globals().get("__RC6_SOURCE_BYTES__"))
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+        return 0 if result["state"] == "EVIDENCE_ONLY_NO_GO" else 2
     if sys.argv[1:] == ["container-capture"]:
         return container_main()
     raise SystemExit("A630_EXPLICIT_MODE_REQUIRED")
