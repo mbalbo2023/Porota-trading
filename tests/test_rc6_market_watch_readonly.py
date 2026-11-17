@@ -118,6 +118,61 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
 
+    def test_exit_reader_is_observed_with_allowlisted_state_and_utc_heartbeat(self):
+        heartbeat = "2026-11-17T00:52:45.885934+00:00"
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT, detail TEXT)""")
+            connection.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                               ("WAITING_MARKET", heartbeat,
+                                "token=DO_NOT_LEAK host=private.example"))
+        before = self.db.read_bytes()
+        snapshot = monitor._db_snapshot(self.db)
+        self.assertEqual(snapshot["sqlite_ops"]["exit_reader"], {
+            "state": "WAITING_MARKET", "heartbeat_at": heartbeat})
+        self.assertEqual(before, self.db.read_bytes())
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(snapshot))
+        self.assertNotIn("private.example", json.dumps(snapshot))
+
+    def test_exit_reader_absent_table_or_row_is_unverified(self):
+        unknown = {"state": "NO_VERIFICADO", "heartbeat_at": None}
+        self.assertEqual(monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"],
+                         unknown)
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT)""")
+        self.assertEqual(monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"],
+                         unknown)
+
+    def test_exit_reader_invalid_state_or_timestamp_is_never_echoed(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("""CREATE TABLE paper_exit_reader_state
+                (id INTEGER PRIMARY KEY, state TEXT, heartbeat_at TEXT, detail TEXT)""")
+            connection.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                               ("token=DO_NOT_LEAK", "2026-11-17T00:52:45+00:00",
+                                "password=PRIVATE"))
+        record = monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"]
+        self.assertEqual(record["state"], "NO_VERIFICADO")
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(record))
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE paper_exit_reader_state SET state=?, heartbeat_at=?",
+                               ("READY", "token=DO_NOT_LEAK"))
+        record = monitor._db_snapshot(self.db)["sqlite_ops"]["exit_reader"]
+        self.assertEqual(record, {"state": "READY", "heartbeat_at": None})
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE paper_exit_reader_state SET heartbeat_at=?",
+                               ("2026-11-17T00:52:45",))
+        self.assertIsNone(monitor._db_snapshot(self.db)["sqlite_ops"]
+                          ["exit_reader"]["heartbeat_at"])
+
+    def test_exit_reader_missing_columns_do_not_break_other_snapshot_fields(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("CREATE TABLE paper_exit_reader_state(id INTEGER PRIMARY KEY)")
+        snapshot = monitor._db_snapshot(self.db)
+        self.assertEqual(snapshot["sqlite_ops"]["exit_reader"], {
+            "state": "NO_VERIFICADO", "heartbeat_at": None})
+        self.assertEqual(snapshot["observer"]["mode"], "PRODUCTION_PAPER")
+
     def test_ppi_auth_last_attempt_reports_http_metadata_without_raw_detail(self):
         with sqlite3.connect(self.db) as connection:
             connection.execute("""CREATE TABLE api_health(

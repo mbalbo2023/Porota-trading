@@ -973,6 +973,22 @@ def _db_snapshot(path):
                     sqlite_ops["candle_worker"] = dict(row)
             except sqlite3.Error:
                 sqlite_ops["candle_query"] = "UNAVAILABLE"
+        exit_reader = {"state": "NO_VERIFICADO", "heartbeat_at": None}
+        if "paper_exit_reader_state" in tables:
+            try:
+                row = db.execute("SELECT state,heartbeat_at FROM paper_exit_reader_state WHERE id=1").fetchone()
+                if row:
+                    allowed_states = {"RUNNING", "WAITING_MARKET", "READY", "COOLDOWN",
+                                      "DEGRADED", "ERROR", "STOPPED", "SECURITY_BLOCK"}
+                    if isinstance(row["state"], str) and row["state"] in allowed_states:
+                        exit_reader["state"] = row["state"]
+                    heartbeat = row["heartbeat_at"]
+                    if (isinstance(heartbeat, str) and len(heartbeat) <= 48
+                            and timestamp(heartbeat) is not None):
+                        exit_reader["heartbeat_at"] = heartbeat
+            except sqlite3.Error:
+                pass
+        sqlite_ops["exit_reader"] = exit_reader
         readiness = None
         if "candidate_identity_v2" in tables:
             try:
