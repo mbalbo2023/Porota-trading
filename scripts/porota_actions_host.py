@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -141,6 +142,62 @@ def validate_cold_receipt(receipt, operation, returncode):
                 'COLD_RECOVERY_UNVERIFIED')
 
 
+def validate_config_parent_receipt(receipt, returncode):
+    """Allow only exact evidence from the one-directory mode-only repair."""
+    fields = {'schema', 'operation', 'state', 'uid', 'mutations',
+              'before_mode', 'after_mode', 'ppi_watch_touched', 'boca_touched',
+              'docker_touched', 'systemd_touched', 'db_touched', 'order_routes',
+              'private_group_verified', 'indirect_impact'}
+    require(returncode == 0 and set(receipt) == fields and
+            receipt.get('schema') == 'rc6.preopen.config-parent-mode.v1' and
+            receipt.get('operation') == 'config_parent_repair' and
+            receipt.get('uid') == 1000 and type(receipt.get('uid')) is int and
+            receipt.get('state') in ('REPAIRED', 'ALREADY_SAFE') and
+            receipt.get('mutations') in (0, 1) and
+            type(receipt.get('mutations')) is int and
+            all(receipt.get(key) is False for key in (
+                'ppi_watch_touched', 'boca_touched', 'docker_touched',
+                'systemd_touched', 'db_touched')) and
+            receipt.get('order_routes') == 'NOT_CALLED' and
+            receipt.get('private_group_verified') is True and
+            receipt.get('indirect_impact') == 'NO_VERIFICADO',
+            'CONFIG_PARENT_REPAIR_RECEIPT_UNVERIFIED')
+    before, after = receipt.get('before_mode'), receipt.get('after_mode')
+    require(all(type(value) is str and re.fullmatch(r'0o[0-7]{3}', value)
+                for value in (before, after)), 'CONFIG_PARENT_REPAIR_MODE_UNVERIFIED')
+    previous, updated = int(before, 8), int(after, 8)
+    require(not updated & 0o022 and previous & ~0o022 == updated and
+            (receipt['state'] == 'REPAIRED') == (previous != updated) and
+            receipt['mutations'] == int(previous != updated),
+            'CONFIG_PARENT_REPAIR_TRANSITION_UNVERIFIED')
+
+
+def read_config_parent_repair_source(path):
+    """Read only the reviewed local source from one pinned, stable regular FD."""
+    limit = 32768
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        initial = os.fstat(fd)
+        require(stat.S_ISREG(initial.st_mode) and initial.st_nlink == 1
+                and 0 < initial.st_size <= limit, 'CONFIG_PARENT_REPAIR_SOURCE_UNVERIFIED')
+        raw = os.read(fd, limit + 1)
+        final = os.fstat(fd)
+        named = os.stat(path, follow_symlinks=False)
+        identity = lambda item: (item.st_dev, item.st_ino, item.st_uid, item.st_gid,
+                                 item.st_mode, item.st_nlink, item.st_size,
+                                 item.st_mtime_ns, item.st_ctime_ns)
+        require(len(raw) == initial.st_size and
+                identity(initial) == identity(final) == identity(named),
+                'CONFIG_PARENT_REPAIR_SOURCE_UNVERIFIED')
+        return raw
+    except OSError:
+        raise ValueError('CONFIG_PARENT_REPAIR_SOURCE_UNVERIFIED') from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 @contextmanager
 def connection(env):
     host, user, key, known = connection_values(env)
@@ -194,7 +251,7 @@ shutil.rmtree(p)
 
 def execute(operation, repository, release_dir=None, *, env=None, frozen_source=None):
     env = env or os.environ
-    require(operation in {'inspect', 'prepare', 'deploy', 'migrate',
+    require(operation in {'inspect', 'prepare', 'deploy', 'migrate', 'config_parent_repair',
                           'cold_inspect', 'cold_recover', 'cold_resume'}, 'HOST_OPERATION_INVALID')
     repository = Path(repository)
     cold = operation in {'cold_inspect', 'cold_recover', 'cold_resume'}
@@ -209,6 +266,21 @@ def execute(operation, repository, release_dir=None, *, env=None, frozen_source=
             require(proc.returncode == 0 and result.get('host_mutations') == 0
                     and result.get('schema') == 'porota.rootless.inspect.v1', 'HOST_INSPECTION_UNVERIFIED')
             return result
+        if operation == 'config_parent_repair':
+            # No staging or sudo: the current UID1000 authenticates and changes
+            # only its own fixed .config dirfd. Never echo remote stderr.
+            code = read_config_parent_repair_source(
+                repository/'scripts/rc6_preopen_config_parent_repair.py')
+            proc = ssh_run(ssh, ['python3', '-I', '-B', '-'], data=code, timeout=35)
+            try:
+                receipt = decode_receipt(proc.stdout)
+                validate_config_parent_receipt(receipt, proc.returncode)
+            except (ValueError, KeyError, TypeError):
+                raise HostFailure('CONFIG_PARENT_REPAIR_UNVERIFIED', {
+                    'schema': 'rc6.preopen.config-parent-mode.v1',
+                    'operation': 'config_parent_repair', 'state': 'NO_VERIFICADO',
+                    'reason': 'CONFIG_PARENT_REPAIR_UNVERIFIED'}) from None
+            return receipt
         stage = None
         result = None
         host_started = host_finished = False
@@ -304,6 +376,7 @@ def execute(operation, repository, release_dir=None, *, env=None, frozen_source=
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('inspect', 'prepare', 'deploy', 'migrate',
+                                              'config_parent_repair',
                                               'cold_inspect', 'cold_recover', 'cold_resume'))
     parser.add_argument('--repository', type=Path, default=Path.cwd())
     parser.add_argument('--release-dir', type=Path)
