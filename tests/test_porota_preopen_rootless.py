@@ -385,15 +385,21 @@ def test_private_operator_directory_custody_blocks_reads_and_publication(operato
         directory.rename(moved)
         directory.symlink_to(moved, target_is_directory=True)
     else:
-        original_stat = Path.stat
-        def foreign_directory(path, *args, **kwargs):
-            observed = original_stat(path, *args, **kwargs)
-            if path == directory:
+        # The private reader pins each directory with open(O_NOFOLLOW) and
+        # checks its owner through fstat(fd), not Path.stat(path). Simulate a
+        # foreign owner at that exact trust boundary, identified by inode.
+        own_directory = os.stat(directory)
+        original_fstat = os.fstat
+
+        def foreign_directory(fd):
+            observed = original_fstat(fd)
+            if (observed.st_dev, observed.st_ino) == (own_directory.st_dev, own_directory.st_ino):
                 fields = list(observed)
                 fields[4] = os.getuid() + 1
                 return os.stat_result(fields)
             return observed
-        monkeypatch.setattr(Path, "stat", foreign_directory)
+
+        monkeypatch.setattr(os, "fstat", foreign_directory)
     assert rearm.evaluate_rearm(now=AT, context="host")[0] is False
     with pytest.raises((OSError, ValueError)):
         gate.publish_preopen({"status": "GREEN", "phase": "T_MINUS_10"}, now=AT)
