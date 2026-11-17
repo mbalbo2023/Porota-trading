@@ -45,6 +45,8 @@ class InspectTests(unittest.TestCase):
     def test_inspection_never_mutates_or_serializes_environment_values(self):
         result = setup.inspect_host(self.root, run=self.fake_run)
         self.assertEqual(result["host_mutations"], 0)
+        self.assertEqual(result["preopen_current_inputs"]["read_only"], True)
+        self.assertEqual(result["preopen_current_inputs"]["historic_subcheck_cause"], "NO_VERIFICADO")
         self.assertNotIn("must-never-leak", json.dumps(result))
         self.assertNotIn("denied secret detail", json.dumps(result))
         self.assertTrue(result["sudo_noninteractive_true"])
@@ -52,6 +54,56 @@ class InspectTests(unittest.TestCase):
         self.assertTrue(all(row["data_mount_matches"] for row in result["legacy_rc6"]))
         self.assertFalse(any(set(c) & {"stop", "start", "restart", "rm", "prune", "enable", "disable"}
                              for c in self.commands))
+
+    def test_preopen_current_input_coordinates_export_metadata_never_contents(self):
+        local_home = self.root / "owner"
+        watch = self.root / "data/market/byma_morning_watch_latest.json"
+        gate = local_home / ".config/porota-rc6/operator/paper-preopen-v2.json"
+        for path in (watch, gate):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("SECRET=should-not-export", encoding="utf-8")
+        state = self.root / "data/deploy/CURRENT_STATE_V2.json"
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text("SECRET=release-not-export", encoding="utf-8")
+        with patch.object(setup.os, "access", side_effect=AssertionError("must not follow aliases")):
+            result = setup.preopen_current_inputs(self.root, local_home)
+        self.assertEqual(result["read_only"], True)
+        self.assertEqual(result["historic_subcheck_cause"], "NO_VERIFICADO")
+        self.assertEqual(set(result["coordinates"]), {
+            "byma_morning_watch_latest", "paper_release_state",
+            "operator_private_directory", "operator_paper_intent",
+            "paper_preopen_v2_gate"})
+        self.assertEqual(result["coordinates"]["byma_morning_watch_latest"]["present"], True)
+        self.assertEqual(result["coordinates"]["paper_preopen_v2_gate"]["present"], True)
+        self.assertEqual(result["coordinates"]["operator_paper_intent"]["present"], False)
+        self.assertNotIn("SECRET=", json.dumps(result))
+
+    def test_preopen_input_aliases_fail_closed_without_following_file_or_parent(self):
+        local_home = self.root / "owner"
+        external = self.root / "private"
+        external.mkdir()
+        (external / "byma_morning_watch_latest.json").write_text("PRIVATE=never-export")
+        (self.root / "data").mkdir()
+        (self.root / "data/market").symlink_to(external, target_is_directory=True)
+        operator = local_home / ".config/porota-rc6/operator"
+        operator.parent.mkdir(parents=True)
+        operator.symlink_to(external, target_is_directory=True)
+        result = setup.preopen_current_inputs(self.root, local_home)
+        self.assertEqual(result["coordinates"]["byma_morning_watch_latest"]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["coordinates"]["paper_preopen_v2_gate"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("PRIVATE=", json.dumps(result))
+
+    def test_preopen_input_rejects_final_symlink_without_following_target(self):
+        home = self.root / "owner"
+        market = self.root / "data/market"
+        market.mkdir(parents=True)
+        sentinel = self.root / "private-file"
+        sentinel.write_text("SECRET=never-export")
+        (market / "byma_morning_watch_latest.json").symlink_to(sentinel)
+        with patch.object(setup.os, "access", side_effect=AssertionError("alias access")):
+            result = setup.preopen_current_inputs(self.root, home)
+        self.assertEqual(result["coordinates"]["byma_morning_watch_latest"]["status"], "NO_VERIFICADO")
+        self.assertNotIn("SECRET=", json.dumps(result))
 
     def test_only_fixed_rc6_names_are_inspected_on_explicit_rootful_endpoint(self):
         setup.inspect_host(self.root, run=self.fake_run)
