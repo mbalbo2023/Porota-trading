@@ -23,7 +23,7 @@ from scripts import rc6_operator_dashboard_readonly as operator
 
 
 class OperatorAuditTests(TestCase):
- def _run_embedded_caucion_probe(self, rows):
+ def _run_embedded_caucion_probe(self, rows, *, lstat=None):
     """Exercise the real embedded SQLite query, without host or network access."""
     with tempfile.TemporaryDirectory() as directory:
       db = Path(directory) / "observer.db"
@@ -38,7 +38,9 @@ class OperatorAuditTests(TestCase):
       self.assertIn(source_path, CHILD)
       script = CHILD.replace(source_path, "db=" + repr(str(db)))
       output = StringIO()
-      with patch.dict(os.environ, {"DASHBOARD_ACCESS_TOKEN": ""}), redirect_stdout(output):
+      with patch.dict(os.environ, {"DASHBOARD_ACCESS_TOKEN": ""}), \
+           patch.object(os, "lstat", side_effect=lstat or os.lstat), \
+           redirect_stdout(output):
         exec(compile(script, "<embedded-dashboard-child-test>", "exec"), {"__name__": "__main__"})
       self.assertEqual(sha256(db.read_bytes()).hexdigest(), before, "child changed a read-only DB")
       return json.loads(output.getvalue())
@@ -50,6 +52,64 @@ class OperatorAuditTests(TestCase):
     self.assertEqual(attempt["worker_latest_result"], "HOLD")
     self.assertTrue(attempt["worker_latest_today"])
     self.assertEqual(attempt["worker_latest_code"], "PAPER_PREOPEN_RECEIPT_UNSAFE")
+
+ def test_preopen_receipt_stat_distinguishes_missing_and_insecure_without_reading_contents(self):
+    parent = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+    secure = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0,
+                             st_nlink=1, st_size=128)
+    insecure_cases = (
+      SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0, st_nlink=1, st_size=128),
+      SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_nlink=2, st_size=128),
+      SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_nlink=1, st_size=4097),
+      SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=1000, st_nlink=1, st_size=128),
+      SimpleNamespace(st_mode=stat.S_IFREG | 0o622, st_uid=0, st_nlink=1, st_size=128),
+    )
+    cases = (
+      (parent, secure, "FILE_METADATA_MATCH"),
+      (parent, FileNotFoundError(), "FILE_MISSING"),
+      (FileNotFoundError(), secure, "PARENT_MISSING"),
+      (SimpleNamespace(st_mode=stat.S_IFDIR | 0o777, st_uid=0), secure, "PARENT_UNTRUSTED"),
+      (parent, PermissionError(), "NO_VERIFICADO"),
+    ) + tuple((parent, unsafe, "FILE_METADATA_UNSAFE") for unsafe in insecure_cases)
+    original_open = os.open
+    def forbid_receipt_open(path, *args, **kwargs):
+      if path == "/app/operator/paper-preopen-v2.json":
+        raise AssertionError("must not open receipt")
+      return original_open(path, *args, **kwargs)
+    for parent_value, file_value, expected in cases:
+      def lstat(path):
+        self.assertIn(path, ("/app/operator", "/app/operator/paper-preopen-v2.json"))
+        value = parent_value if path == "/app/operator" else file_value
+        if isinstance(value, OSError):
+          raise value
+        return value
+      with self.subTest(expected=expected, file_value=file_value):
+        with patch.object(os, "open", side_effect=forbid_receipt_open):
+          result = self._run_embedded_caucion_probe([], lstat=lstat)
+        self.assertEqual(result["preopen_receipt_stat"], expected)
+        self.assertNotIn("private", json.dumps(result))
+
+ def test_host_never_exposes_untrusted_preopen_stat_fields(self):
+    cid = "2" * 64
+    context = SimpleNamespace(roles={"observer": "1" * 64, "dashboard": cid},
+        identity=SimpleNamespace(socket="/run/user/1000/porota-rc6-docker.sock",
+            environment=lambda: {"PATH": "/usr/bin:/bin"}))
+    payload = {"schema": SCHEMA, "read_only": True, "audit_scope": "MARKET_CRITICAL",
+               "source_status": "BOUNDED", "sources": [{"component": "PPI_MARKETDATA", "state": "NO_VERIFICADO"}],
+               "routes": [{"path": path, "http": 200, "nav": True, "content": True} for path in ROUTES],
+               "preopen_receipt_stat": "FILE_MISSING",
+               "receipt_path": "/run/secrets/private", "private": "Bearer sentinel"}
+    def runner(argv, **_kwargs):
+      return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+    with patch.object(operator, "_rootless_context", return_value=context):
+      result = audit_host(runner=runner)
+    self.assertEqual(result["preopen_receipt_stat"], "FILE_MISSING")
+    self.assertNotIn("sentinel", json.dumps(result))
+    self.assertNotIn("receipt_path", json.dumps(result))
+    for value in ("FILE_MISSING;Bearer sentinel", "/run/secrets/private", 2, None):
+      with self.subTest(value=value), patch.object(operator, "_rootless_context", return_value=context):
+        payload["preopen_receipt_stat"] = value
+        self.assertEqual(audit_host(runner=runner)["preopen_receipt_stat"], "NO_VERIFICADO")
 
  def test_embedded_and_host_caucion_code_allowlists_remain_identical(self):
     values = [node.value for node in ast.parse(CHILD).body
