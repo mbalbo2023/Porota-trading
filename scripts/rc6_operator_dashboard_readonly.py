@@ -45,6 +45,10 @@ CAUCION_HOLD_SAFE_CODES = frozenset({
     "CAUCION_PAPER_FEE_AUTHORITY_MISSING", "CAUCION_LIVE_BOOK_MISSING",
     "CAUCION_LIVE_FILL_POLICY_MISSING",
 })
+PREOPEN_RECEIPT_STAT_CODES = frozenset({
+    "PARENT_MISSING", "PARENT_UNTRUSTED", "FILE_MISSING",
+    "FILE_METADATA_UNSAFE", "FILE_METADATA_MATCH", "NO_VERIFICADO",
+})
 ROUTES = (
     "/", "/en-vivo", "/en-vivo/oportunidades", "/trading",
     "/trading/scalping", "/universo", "/instrumentos", "/riesgo",
@@ -67,7 +71,7 @@ POSTCLOSE_ROUTES = ROUTES + EXTRA_ROUTES
 # Runs inside the existing dashboard container. Its token never leaves that
 # container; only allowlisted route and provider-state facts reach Actions.
 CHILD = r'''
-import json, os, re, sqlite3, time, urllib.error, urllib.request
+import json, os, re, sqlite3, stat, time, urllib.error, urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
@@ -137,6 +141,30 @@ result = {"schema":"rc6.operator-dashboard-readonly.v1", "read_only":True,
           "routes":[], "sources":[], "source_status":"NO_VERIFICADO",
           "source_sync":[], "source_sync_status":"NO_VERIFICADO",
           "history_cutoff_repair":"NO_VERIFICADO"}
+# Audit-time metadata in the namespace sharing the exact verified operator
+# bind mount with the observer. No receipt contents, paths or raw stat escape.
+result["preopen_receipt_stat"] = "NO_VERIFICADO"
+try:
+ parent = os.lstat("/app/operator")
+ if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or
+     parent.st_mode & 0o022):
+  result["preopen_receipt_stat"] = "PARENT_UNTRUSTED"
+ else:
+  try:
+   entry = os.lstat("/app/operator/paper-preopen-v2.json")
+   result["preopen_receipt_stat"] = (
+      "FILE_METADATA_MATCH" if stat.S_ISREG(entry.st_mode) and
+      entry.st_nlink == 1 and 0 < entry.st_size <= 4096 and
+      entry.st_uid == 0 and not (entry.st_mode & 0o022)
+      else "FILE_METADATA_UNSAFE")
+  except FileNotFoundError:
+   result["preopen_receipt_stat"] = "FILE_MISSING"
+  except OSError:
+   pass
+except FileNotFoundError:
+ result["preopen_receipt_stat"] = "PARENT_MISSING"
+except OSError:
+ pass
 token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
 if token:
  for path in routes:
@@ -659,6 +687,9 @@ def audit_host(*, runner=subprocess.run):
                 value = item.get(key)
                 safe[key] = value if type(value) is int and 0 <= value <= 365 * 86400 else None
             sync_rows.append(safe)
+        preopen_stat = data.get("preopen_receipt_stat")
+        if type(preopen_stat) is not str or preopen_stat not in PREOPEN_RECEIPT_STAT_CODES:
+            preopen_stat = "NO_VERIFICADO"
         complete = (len(routes) == len(expected) and all(
             row["http"] == 200 and row["nav"] and row["content"] and row["error"] is None
             for row in routes) and data.get("source_status") == "BOUNDED" and sources)
@@ -758,7 +789,8 @@ def audit_host(*, runner=subprocess.run):
                 "history_cutoff_repair": data.get("history_cutoff_repair") if data.get("history_cutoff_repair") in
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
-                "paper_today": paper_today, "caucion_attempt": caucion_attempt,"identity_clocks":identity_clocks,
+                "paper_today": paper_today, "caucion_attempt": caucion_attempt,
+                "preopen_receipt_stat": preopen_stat, "identity_clocks":identity_clocks,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
@@ -769,7 +801,8 @@ def audit_host(*, runner=subprocess.run):
                                           else "ROOTLESS_UNCLASSIFIED"),
                 "routes": [], "sources": [], "source_status": "NO_VERIFICADO",
                 "source_sync": [], "source_sync_status": "NO_VERIFICADO",
-                "history_cutoff_repair": "NO_VERIFICADO"}
+                "history_cutoff_repair": "NO_VERIFICADO",
+                "preopen_receipt_stat": "NO_VERIFICADO"}
 
 
 if __name__ == "__main__":
