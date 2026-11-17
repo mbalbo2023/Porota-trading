@@ -161,10 +161,15 @@ class ConfigParentRepairTests(unittest.TestCase):
             os.fstat(tracked[0])
 
     def test_private_group_must_not_have_another_primary_or_explicit_member(self):
-        account = SimpleNamespace(pw_name='porotaadmin', pw_dir='/home/porotaadmin', pw_gid=1000)
+        account = SimpleNamespace(pw_uid=1000, pw_name='porotaadmin',
+                                  pw_dir='/home/porotaadmin', pw_gid=1000)
         for members, accounts in [(['otheruser'], []),
                                   ([], [SimpleNamespace(pw_uid=1001, pw_gid=1000)])]:
             with self.subTest(members=members, accounts=accounts), \
+                 patch.object(repair.os, 'getuid', return_value=1000), \
+                 patch.object(repair.os, 'geteuid', return_value=1000), \
+                 patch.object(repair.os, 'getgid', return_value=1000), \
+                 patch.object(repair.os, 'getegid', return_value=1000), \
                  patch.object(repair.pwd, 'getpwuid', return_value=account), \
                  patch.object(repair.pwd, 'getpwall', return_value=accounts), \
                  patch.object(repair.grp, 'getgrgid', return_value=SimpleNamespace(
