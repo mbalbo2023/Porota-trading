@@ -991,6 +991,37 @@ class SyntheticPrivateCapture(unittest.TestCase):
         self.assertEqual(a330.sanitize_history_cutoff_census(
             raw, log, self.private, 0)['failure_class'], 'REMOTE_RECEIPT_INVALID')
 
+    def test_a504_a503_remote_failure_classified_without_private_log_leak(self):
+        """Regression for Action #44001152122: A503 was omitted from log allowlist.
+
+        The host's actual failure is not known until the failure-path receipt
+        exists. A330/A502 private log names must retain their original guards.
+        """
+        raw = self.private / 'a503-private.json'
+        log = self.private / 'a503-private.log'
+        raw.touch()
+        log.write_text('SECRET-PPI-IDENTITY\nA330_REJECTED=A503_SCHEMA_MISSING\n')
+        receipt = a330.sanitize_history_cutoff_census(raw, log, self.private, 2)
+        self.assertEqual(receipt['schema'], a330.CUTOFF_SCHEMA)
+        self.assertEqual(receipt['state'], 'NO_VERIFICADO')
+        self.assertEqual(receipt['failure_class'],
+                         'REMOTE_GUARD_A503_SCHEMA_MISSING')
+        self.assertFalse(receipt['host_purge_allowed'])
+        self.assertEqual(receipt['real_orders_sent_by_action'], 0)
+        self.assertNotIn('SECRET-PPI-IDENTITY', a330.encoded(receipt).decode())
+
+        # Exact-name isolation: a cross-mode A502 file remains forbidden.
+        with self.assertRaisesRegex(a330.GuardError,
+                                    'A330_CLASSIFIER_PRIVATE_PATH_INVALID'):
+            a330.sanitize_history_cutoff_census(
+                raw, self.private / 'a502-private.log', self.private, 2)
+
+        log.unlink()
+        log.symlink_to(self.observer)
+        refused = a330.sanitize_history_cutoff_census(raw, log, self.private, 2)
+        self.assertEqual(refused['failure_class'], 'REMOTE_LOG_UNAVAILABLE')
+        self.assertNotIn('SECRET', a330.encoded(refused).decode())
+
     def test_a503_missing_cutoff_row_is_absent_never_complete(self):
         gate = self.seed_a503_cold_history()
         with sqlite3.connect(self.source) as db:
