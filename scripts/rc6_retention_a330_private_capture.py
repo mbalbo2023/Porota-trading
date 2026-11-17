@@ -62,7 +62,8 @@ CUTOFF_STATES = frozenset({
     "COMPLETE", "INCOMPLETE", "PARTIAL", "PENDING", "RUNNING", "FAILED", "ABSENT",
     "OTHER_REDACTED"})
 CUTOFF_SCHEMA_STATES = frozenset({
-    "TABLE_COLUMNS_OK", "ABSENT", "VIEW", "WRONG_TYPE", "COLUMNS_MISSING"})
+    "TABLE_COLUMNS_OK", "ABSENT", "VIEW", "WRONG_TYPE", "COLUMNS_MISSING",
+    "TYPE_UNVERIFIED"})
 CUTOFF_ERRORS = frozenset({
     "NONE", "PROVENANCE_MISSING", "NO_ROWS", "PROVIDER_ERROR",
     "PPI_HISTORY_ERROR", "OTHER_REDACTED"})
@@ -512,6 +513,17 @@ def _cutoff_schema_state(db: sqlite3.Connection, table: str,
         return "VIEW"
     if kinds != ["table"]:
         return "WRONG_TYPE"
+    # SQLite reports FTS/other VIRTUAL TABLE objects as type='table' in
+    # sqlite_master. table_list differentiates regular/virtual/shadow since
+    # 3.37; on older/unsupported SQLite we cannot prove an ordinary table.
+    if sqlite3.sqlite_version_info < (3, 37, 0):
+        return "TYPE_UNVERIFIED"
+    objects = db.execute('PRAGMA table_list("' + table + '")').fetchall()
+    if (len(objects) != 1 or len(objects[0]) < 3 or
+            objects[0][0] != "main" or objects[0][1] != table):
+        return "TYPE_UNVERIFIED"
+    if objects[0][2] != "table":
+        return "WRONG_TYPE" if objects[0][2] in {"virtual", "shadow"} else "TYPE_UNVERIFIED"
     present = {row[1] for row in db.execute('PRAGMA table_info("' + table + '")')}
     return "TABLE_COLUMNS_OK" if columns <= present else "COLUMNS_MISSING"
 
@@ -520,7 +532,7 @@ def _cutoff_columns(db: sqlite3.Connection, table: str,
                     columns: frozenset[str]) -> None:
     unavailable, incomplete = CUTOFF_SCHEMA_GUARDS[table]
     status = _cutoff_schema_state(db, table, columns)
-    require(status not in {"ABSENT", "VIEW", "WRONG_TYPE"}, unavailable)
+    require(status in {"TABLE_COLUMNS_OK", "COLUMNS_MISSING"}, unavailable)
     require(status == "TABLE_COLUMNS_OK", incomplete)
 
 

@@ -1232,6 +1232,88 @@ class SyntheticPrivateCapture(unittest.TestCase):
                     self.assertFalse(public['host_purge_allowed'])
                     self.assertEqual(public['real_orders_sent_by_action'], 0)
 
+    def test_a507_virtual_table_is_wrong_type_even_when_sqlite_master_says_table(self):
+        """QA #1174: SQLite FTS5 virtual table must never pass as ordinary."""
+        try:
+            with sqlite3.connect(':memory:') as db:
+                db.execute('CREATE VIRTUAL TABLE fts_probe USING fts5(value)')
+        except sqlite3.OperationalError as exc:
+            if 'no such module: fts5' in str(exc).lower():
+                self.skipTest('SQLite FTS5 extension unavailable')
+            raise
+        self.seed_a503_cold_history()
+        baseline = self.source.read_bytes()
+        variants = (
+            ('rc6_history_cutoff_repair_runs', 'RUN',
+             ('cutoff', 'state', 'targets', 'archive_imports', 'ppi_queries',
+              'complete', 'failed', 'updated_at'), 'A503_RUN_TABLE_UNAVAILABLE'),
+            ('rc6_history_cutoff_repair_exact_v2', 'EXACT',
+             ('cutoff', 'instrument_type', 'source', 'state', 'error_class',
+              'latest_date'), 'A503_EXACT_TABLE_UNAVAILABLE'),
+            ('history_canonical_v2', 'CANONICAL',
+             ('instrument_type', 'source', 'date'), 'A503_CANONICAL_TABLE_UNAVAILABLE'),
+        )
+        for n, (table, logical, columns, legacy_error) in enumerate(variants):
+            with self.subTest(table=logical):
+                candidate = self.root / f'a507-virtual-{n}.db'
+                candidate.write_bytes(baseline)
+                with sqlite3.connect(candidate) as db:
+                    db.execute(f'DROP TABLE "{table}"')
+                    quoted = ','.join('"' + name + '"' for name in columns)
+                    db.execute(f'CREATE VIRTUAL TABLE "{table}" USING fts5({quoted})')
+                    self.assertEqual(db.execute(
+                        'SELECT type FROM sqlite_master WHERE name=?',
+                        (table,)).fetchone()[0], 'table')
+                    self.assertEqual(db.execute(
+                        'PRAGMA table_list("' + table + '")').fetchone()[2], 'virtual')
+                gate = {'source_stat': a330.check_quiet_file(
+                            candidate, 1024**3, sqlite_file=True),
+                        'both_history_writers_inactive': True,
+                        'a3_timers_masked': True}
+                report = a330.history_cutoff_census(
+                    candidate, gate=gate, deadline=time.monotonic() + 30,
+                    schema_diagnostic=True)
+                self.assertEqual(report['census_status'], 'SCHEMA_ONLY_HOLD')
+                self.assertEqual(report['schema_states'][logical], 'WRONG_TYPE')
+                self.assertEqual(report['state'], 'NO_VERIFICADO')
+                self.assertNotIn('repair_total', report)
+                raw = self.private / 'a503-private.json'
+                log = self.private / 'a503-private.log'
+                raw.write_bytes(a330.encoded(report))
+                log.write_text('SECRET-FTS5-CREATE-VIRTUAL-TABLE:' + table)
+                public = a330.sanitize_history_cutoff_census(
+                    raw, log, self.private, 0)
+                self.assertEqual(public, report)
+                self.assertNotIn('FTS5', a330.encoded(public).decode())
+                self.assertNotIn(table, a330.encoded(public).decode())
+                with self.assertRaisesRegex(a330.GuardError, legacy_error):
+                    a330.history_cutoff_census(
+                        candidate, gate=gate, deadline=time.monotonic() + 30)
+
+    def test_a507_older_sqlite_without_table_list_does_not_assume_regular(self):
+        self.seed_a503_cold_history()
+        gate = dict(self.gate,
+                    source_stat=a330.check_quiet_file(
+                        self.source, 1024**3, sqlite_file=True),
+                    both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+        with patch.object(a330.sqlite3, 'sqlite_version_info', (3, 36, 0)):
+            report = a330.history_cutoff_census(
+                self.source, gate=gate, deadline=time.monotonic() + 30,
+                schema_diagnostic=True)
+        self.assertEqual(report['schema_states'], {
+            'RUN': 'TYPE_UNVERIFIED', 'EXACT': 'TYPE_UNVERIFIED',
+            'CANONICAL': 'TYPE_UNVERIFIED'})
+        self.assertEqual(report['run_marker_state'], 'NO_VERIFICADO')
+        self.assertEqual(report['census_status'], 'SCHEMA_ONLY_HOLD')
+        self.assertNotIn('canonical_total', report)
+        raw = self.private / 'a503-private.json'
+        raw.write_bytes(a330.encoded(report))
+        log = self.private / 'a503-private.log'
+        log.write_text('SECRET-PRIVATE-OLD-SQLITE')
+        self.assertEqual(a330.sanitize_history_cutoff_census(
+            raw, log, self.private, 0), report)
+
     def test_a507_partial_marker_is_typed_and_not_a_full_history_proof(self):
         self.seed_a503_cold_history()
         baseline = self.source.read_bytes()
