@@ -23,13 +23,14 @@ class HistoryWalTransportTests(unittest.TestCase):
         self.connection.execute("PRAGMA wal_autocheckpoint=0")
         self.connection.execute(
             "CREATE TABLE history_versions_v2("
-            "symbol TEXT,instrument_type TEXT,market TEXT,"
-            "currency TEXT,settlement TEXT,date TEXT,close REAL)"
+            "id INTEGER PRIMARY KEY,symbol TEXT,instrument_type TEXT,"
+            "market TEXT,settlement TEXT,date TEXT,source TEXT,"
+            "metadata_json TEXT)"
         )
         self.connection.execute(
             "INSERT INTO history_versions_v2 VALUES("
-            "'PRIVATE_SYMBOL_101','BONOS','BYMA','ARS','A-24HS',"
-            "'2026-11-05',100.0)"
+            "1,'PRIVATE_SYMBOL_101','BONOS','BYMA','A-24HS',"
+            "'2026-11-05','PPI','{}')"
         )
         self.connection.commit()
         self.assertTrue(Path(str(self.source) + "-wal").exists())
@@ -53,7 +54,9 @@ class HistoryWalTransportTests(unittest.TestCase):
             output, private_root, time_budget_seconds=20,
         )
         self.assertEqual(report["state"], "OBSERVED_HISTORY_ONLY")
-        self.assertEqual(report["observed_fivekey_count"], 1)
+        self.assertEqual(report["observed_fivekey_count"], "NO_VERIFICADO")
+        self.assertFalse(report["fivekey_count_verified"])
+        self.assertEqual(report["cohort_scope"], "HISTORY_VERSION_ROWS_ONLY")
         self.assertEqual(report["history_rows"], 1)
         self.assertEqual(report["global_universe_coverage"], "NO_VERIFICADO")
         self.assertEqual(report["readiness_implication"], "NONE")
@@ -116,8 +119,8 @@ class HistoryWalTransportTests(unittest.TestCase):
                     self.mutated = True
                     test.connection.execute(
                         "INSERT INTO history_versions_v2 VALUES("
-                        "'PRIVATE_SYMBOL_102','BONOS','BYMA','ARS',"
-                        "'A-24HS','2026-11-06',101.0)"
+                        "2,'PRIVATE_SYMBOL_102','BONOS','BYMA',"
+                        "'A-24HS','2026-11-06','PPI','{}')"
                     )
                     test.connection.commit()
                 return super().write(raw)

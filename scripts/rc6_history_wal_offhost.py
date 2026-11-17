@@ -165,7 +165,7 @@ def capture_verified(
                     for s in FILES
                 ],
                 "shm_observed": "-shm" in before,
-                "cohort_scope": "HISTORY_OBSERVED_5KEY_ONLY",
+                "cohort_scope": "HISTORY_VERSION_ROWS_ONLY",
                 "global_universe_coverage": "NO_VERIFICADO",
                 "readiness_implication": "NONE",
             }
@@ -232,7 +232,7 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
             _require(found[MANIFEST][0] <= 8192, "BUNDLE_MANIFEST_INVALID")
             manifest = json.loads(manifest_path.read_text())
             _require(isinstance(manifest, dict) and manifest.get("schema") == SCHEMA and
-                     manifest.get("cohort_scope") == "HISTORY_OBSERVED_5KEY_ONLY" and
+                     manifest.get("cohort_scope") == "HISTORY_VERSION_ROWS_ONLY" and
                      manifest.get("global_universe_coverage") == "NO_VERIFICADO" and
                      manifest.get("readiness_implication") == "NONE",
                      "BUNDLE_MANIFEST_INVALID")
@@ -255,17 +255,19 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
                          "BUNDLE_SQLITE_INVALID")
                 row_count = connection.execute(
                     "SELECT COUNT(*) FROM history_versions_v2").fetchone()[0]
-                distinct = connection.execute(
-                    "SELECT COUNT(*) FROM (SELECT DISTINCT symbol,instrument_type,"
-                    "market,currency,settlement FROM history_versions_v2)").fetchone()[0]
-                _require(0 <= row_count <= 1_000_000 and
-                         0 <= distinct <= 100_000, "OBSERVED_ROW_BUDGET")
+                # history_versions_v2 has no authoritative currency column in
+                # the existing eight-column contract. Its rows are NOT a
+                # signed PPI 5-key cohort or a denominator of zero-row assets.
+                _require(0 <= row_count <= 1_000_000,
+                         "OBSERVED_ROW_BUDGET")
             finally:
                 connection.close()
             return {
                 "schema": SCHEMA, "state": "OBSERVED_HISTORY_ONLY",
-                "observed_fivekey_count": distinct, "history_rows": row_count,
-                "cohort_scope": "HISTORY_OBSERVED_5KEY_ONLY",
+                "observed_fivekey_count": "NO_VERIFICADO",
+                "fivekey_count_verified": False,
+                "history_rows": row_count,
+                "cohort_scope": "HISTORY_VERSION_ROWS_ONLY",
                 "global_universe_coverage": "NO_VERIFICADO",
                 "full_ohlc_certified": False,
                 "readiness_implication": "NONE",
