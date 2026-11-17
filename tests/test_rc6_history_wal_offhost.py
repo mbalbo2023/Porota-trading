@@ -166,6 +166,10 @@ class HistoryWalTransportTests(unittest.TestCase):
         output, _ = self.capture()
         public = self.root / "public"
         public.mkdir(mode=0o755)
+        # CI uses umask 077, so mkdir(mode=0755) can create mode 0700.
+        # Make the test's intentionally unsafe permission explicit.
+        public.chmod(0o755)
+        self.assertEqual(public.stat().st_mode & 0o777, 0o755)
         with self.assertRaises(a511.HistoryHold) as hold:
             a511.verify_private_bundle(
                 io.BytesIO(output.getvalue()), public,
