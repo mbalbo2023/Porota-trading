@@ -70,6 +70,8 @@ READY_REFRESH_STATES = frozenset({"COMPLETE", "RUNNING", "FAILED", "NO_VERIFICAD
 READY_HOLD_REASONS = frozenset({
     "TABLE_ABSENT", "SCHEMA_UNAVAILABLE", "ROW_LIMIT_HOLD",
     "INVALID_ROW", "INVALID_REFRESH_STATE", "READ_ERROR",
+    "SNAPSHOT_UNAVAILABLE", "REFRESH_CHANGED_DURING_READ",
+    "PROJECTION_MARKER_MISMATCH",
 })
 _LOCAL_AUTH_GUARD_EXACT = "ReadOnlyPolicyViolation: PPI_AUTHENTICATION_AUTHORITY_UNVERIFIED"
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9_.@-]{1,128}\.service$")
@@ -195,11 +197,19 @@ def _candidate_readiness(conn, tables):
 
     if "candidate_identity_v2" not in tables:
         return unavailable("TABLE_ABSENT")
+    snapshot_open = False
     try:
+        if conn.in_transaction:
+            return unavailable("SNAPSHOT_UNAVAILABLE")
+        # The producer publishes RUNNING, bounded row commits, then COMPLETE.
+        # Its marker and rows MUST be read from one WAL generation.
+        conn.execute("BEGIN")
+        snapshot_open = True
         cols = {row[1] for row in conn.execute("PRAGMA table_info(candidate_identity_v2)")}
         if not {"instrument_type", "can_simulate", "status", "detail", "checked_at"} <= cols:
             return unavailable("SCHEMA_UNAVAILABLE")
         refresh_state, refresh_time = "NO_VERIFICADO", None
+        initial_marker = None
         if "candidate_refresh_state" in tables:
             refresh_cols = {row[1] for row in conn.execute(
                 "PRAGMA table_info(candidate_refresh_state)")}
@@ -213,6 +223,7 @@ def _candidate_readiness(conn, tables):
                 refresh_time = _utc_stamp(refresh[1])
                 if refresh_state not in READY_REFRESH_STATES or refresh_time is None:
                     return unavailable("INVALID_REFRESH_STATE")
+                initial_marker = (refresh_state, refresh_time)
         families, reasons = {}, {}
         total = ready = 0
         earliest = latest = None
@@ -243,7 +254,10 @@ def _candidate_readiness(conn, tables):
                     item["blocked_reasons"][code] = item["blocked_reasons"].get(code, 0) + 1
         for item in families.values():
             item["blocked_reasons"] = dict(sorted(item["blocked_reasons"].items()))
-        return {"state": "OBSERVED", "total": total, "ready": ready,
+        if (refresh_state == "COMPLETE" and total and
+                (earliest != refresh_time or latest != refresh_time)):
+            return unavailable("PROJECTION_MARKER_MISMATCH")
+        report = {"state": "OBSERVED", "total": total, "ready": ready,
                 "blocked": total - ready, "refresh_state": refresh_state,
                 "refresh_checked_at_utc": refresh_time,
                 "projection_min_checked_at_utc": earliest,
@@ -253,8 +267,26 @@ def _candidate_readiness(conn, tables):
                 "reason_semantics": "MULTIPLE_REASONS_PER_BLOCKED_IDENTITY",
                 "families": dict(sorted(families.items())),
                 "reason_totals": dict(sorted(reasons.items()))}
+        conn.execute("ROLLBACK")
+        snapshot_open = False
+        # Check the publication marker again in a NEW snapshot. A concurrent
+        # refresh invalidates even a coherent old snapshot as current evidence.
+        if "candidate_refresh_state" in tables:
+            after = conn.execute(
+                "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1 LIMIT 1"
+            ).fetchone()
+            final_marker = (after[0], _utc_stamp(after[1])) if after else None
+            if final_marker != initial_marker:
+                return unavailable("REFRESH_CHANGED_DURING_READ")
+        return report
     except (sqlite3.Error, ValueError, TypeError, OverflowError):
         return unavailable("READ_ERROR")
+    finally:
+        if snapshot_open:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
 
 
 def _a617():
@@ -552,11 +584,15 @@ def _sanitize_candidate_readiness(raw):
             raise ValueError("READY_FAMILY_COUNTS_INVALID")
         family_total += n
         family_ready += r
+        reason_count = 0
         for code, count in causes.items():
             value = _bounded_int(count, MAX_READY_ROWS)
             if value is None or value < 1 or value > n - r:
                 raise ValueError("READY_FAMILY_REASON_INVALID")
             accumulated[code] = accumulated.get(code, 0) + value
+            reason_count += value
+        if reason_count < n - r:
+            raise ValueError("READY_BLOCKED_WITHOUT_REASON")
     if (family_total != total or family_ready != ready or
             set(accumulated) != set(reason_totals) or
             any(_bounded_int(reason_totals[code], MAX_READY_ROWS) != count

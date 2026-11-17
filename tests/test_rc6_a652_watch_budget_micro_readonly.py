@@ -167,6 +167,57 @@ class TestA652MicroReadOnly(unittest.TestCase):
         self.assertFalse(found["generation_complete"])
         self.assertFalse(found["paper_admission_authority"])
 
+    def test_readiness_refresh_interleaving_cannot_claim_complete_partial_rows(self):
+        """Catches a WAL writer racing refresh before candidate row scan."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 1, "AVAILABLE",
+                 "READY_PAPER_PRICE", "2026-11-16T23:53:15Z"),
+            ])
+            real_connect = sqlite3.connect
+            with closing(real_connect(db)) as connection:
+                self.assertEqual(connection.execute("PRAGMA journal_mode=WAL").fetchone()[0],
+                                 "wal")
+            changed = {"done": False}
+
+            class InterleavingConnection:
+                def __init__(self, real):
+                    self.real = real
+
+                def __getattr__(self, attr):
+                    return getattr(self.real, attr)
+
+                def execute(self, sql, params=()):
+                    if "FROM candidate_identity_v2 LIMIT" in sql and not changed["done"]:
+                        changed["done"] = True
+                        with closing(real_connect(db, timeout=1)) as writer:
+                            writer.execute("UPDATE candidate_refresh_state "
+                                           "SET state='RUNNING',checked_at=? WHERE id=1",
+                                           ("2026-11-16T23:54:00Z",))
+                            writer.execute("UPDATE candidate_identity_v2 SET "
+                                           "can_simulate=0,status='STALE',detail=?",
+                                           ("PPI_FRESHNESS_STALE",))
+                            writer.commit()
+                    return self.real.execute(sql, params)
+
+            def raced_connect(*args, **kwargs):
+                return InterleavingConnection(real_connect(*args, **kwargs))
+
+            with patch.object(a617, "_mount_is_readonly", return_value=True), \
+                    patch.object(a652.sqlite3, "connect", side_effect=raced_connect):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+            self.assertTrue(changed["done"])
+            result = a652.build_receipt(raw)
+        found = result["host"]["candidate_readiness"]
+        self.assertEqual(found, {
+            "state": "NO_VERIFICADO", "reason": "REFRESH_CHANGED_DURING_READ",
+            "paper_admission_authority": False,
+        })
+        self.assertFalse(result["paper_ready"])
+        self.assertEqual(result["probe_provider_gets"], 0)
+
     def test_readiness_absent_table_fails_closed_without_invalidating_scanner(self):
         """Catches treating a missing candidate v2 projection as zero READY."""
         with tempfile.TemporaryDirectory() as directory:
@@ -223,6 +274,40 @@ class TestA652MicroReadOnly(unittest.TestCase):
         self.assertEqual(poisoned["host"]["state"], "NO_VERIFICADO")
         self.assertNotIn("PRIVATE_ACCESS_TOKEN", json.dumps(poisoned))
         self.assertNotIn("PRIVATE_VALUE", json.dumps(poisoned))
+
+    def test_readiness_complete_marker_must_match_projection_clock(self):
+        """Catches mixing an older projection with a newer COMPLETE marker."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_FRESHNESS_STALE", "2026-11-16T23:52:00Z"),
+            ])
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                result = a652.build_receipt(a652.host_probe(db=db, runner=fake_systemctl))
+        self.assertEqual(result["host"]["candidate_readiness"], {
+            "state": "NO_VERIFICADO", "reason": "PROJECTION_MARKER_MISMATCH",
+            "paper_admission_authority": False,
+        })
+
+    def test_runner_rejects_blocked_without_any_reason_counters(self):
+        """Catches forged sanitized reports hiding all 0 READY causes."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = Path(directory) / "observer.db"
+            fixture_db(db)
+            fixture_candidate_readiness(db, [
+                ("SECRET_A", "ACCIONES", "BCBA", "ARS", "CI", 0, "STALE",
+                 "PPI_FRESHNESS_STALE", "2026-11-16T23:53:15Z"),
+            ])
+            with patch.object(a617, "_mount_is_readonly", return_value=True):
+                raw = a652.host_probe(db=db, runner=fake_systemctl)
+        projection = raw["scanner"]["candidate_readiness"]
+        projection["families"]["ACCIONES"]["blocked_reasons"] = {}
+        projection["reason_totals"] = {}
+        receipt = a652.build_receipt(raw)
+        self.assertEqual(receipt["host"]["state"], "NO_VERIFICADO")
+        self.assertFalse(receipt["paper_ready"])
 
     def test_physical_cooldown_not_attempted_and_boot_calendar_are_not_laundered(self):
         with tempfile.TemporaryDirectory() as directory:
