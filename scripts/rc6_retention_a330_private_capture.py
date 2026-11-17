@@ -47,6 +47,7 @@ PIN_SCHEMA = "RC6_A330_PIN_CENSUS_V1"
 HISTORY_SCHEMA = "RC6_A500_HISTORY_COPY_ONLY_V1"
 AGGREGATE_SCHEMA = "RC6_A502_HISTORY_AGGREGATE_ONLY_V1"
 CUTOFF_SCHEMA = "RC6_A503_HISTORY_CUTOFF_CENSUS_V1"
+CUTOFF_DIAG_SCHEMA = "RC6_A507_HISTORY_CUTOFF_SCHEMA_ONLY_V1"
 CUTOFF_DAY = "2026-09-21"
 CUTOFF_MAX_ROWS = 1_000_000
 CUTOFF_MAX_BUCKETS = 40
@@ -58,8 +59,10 @@ CUTOFF_SOURCES = frozenset({
     "A3_CEM_CLOSING", "DATA912", "DATA912_POROTA_BATCH", "YAHOO",
     "OTHER_REDACTED"})
 CUTOFF_STATES = frozenset({
-    "COMPLETE", "INCOMPLETE", "PENDING", "RUNNING", "FAILED", "ABSENT",
+    "COMPLETE", "INCOMPLETE", "PARTIAL", "PENDING", "RUNNING", "FAILED", "ABSENT",
     "OTHER_REDACTED"})
+CUTOFF_SCHEMA_STATES = frozenset({
+    "TABLE_COLUMNS_OK", "ABSENT", "VIEW", "WRONG_TYPE", "COLUMNS_MISSING"})
 CUTOFF_ERRORS = frozenset({
     "NONE", "PROVENANCE_MISSING", "NO_ROWS", "PROVIDER_ERROR",
     "PPI_HISTORY_ERROR", "OTHER_REDACTED"})
@@ -496,20 +499,58 @@ def _cutoff_iso_date(value: object) -> str | None:
     return value if parsed.isoformat() == value else None
 
 
-def _cutoff_columns(db: sqlite3.Connection, table: str,
-                    columns: frozenset[str]) -> None:
-    # Table names are hardcoded within this module, never user-supplied.
-    unavailable, incomplete = CUTOFF_SCHEMA_GUARDS[table]
+def _cutoff_schema_state(db: sqlite3.Connection, table: str,
+                         columns: frozenset[str]) -> str:
+    # Table names are hardcoded and reviewed; SQLite object type, not object
+    # names or column lists, is reduced to a fixed public enum.
+    require(table in CUTOFF_SCHEMA_GUARDS, "A503_SCHEMA_MISSING")
     kinds = [row[0] for row in db.execute(
         "SELECT type FROM sqlite_master WHERE name=?", (table,))]
-    require(kinds == ["table"], unavailable)
+    if not kinds:
+        return "ABSENT"
+    if kinds == ["view"]:
+        return "VIEW"
+    if kinds != ["table"]:
+        return "WRONG_TYPE"
     present = {row[1] for row in db.execute('PRAGMA table_info("' + table + '")')}
-    require(columns <= present, incomplete)
+    return "TABLE_COLUMNS_OK" if columns <= present else "COLUMNS_MISSING"
+
+
+def _cutoff_columns(db: sqlite3.Connection, table: str,
+                    columns: frozenset[str]) -> None:
+    unavailable, incomplete = CUTOFF_SCHEMA_GUARDS[table]
+    status = _cutoff_schema_state(db, table, columns)
+    require(status not in {"ABSENT", "VIEW", "WRONG_TYPE"}, unavailable)
+    require(status == "TABLE_COLUMNS_OK", incomplete)
+
+
+def _cutoff_schema_hold(db: sqlite3.Connection, states: dict[str, str]) -> dict:
+    """One private COLD snapshot; no counts or implied history completeness."""
+    run_marker = "NO_VERIFICADO"
+    if states["RUN"] == "TABLE_COLUMNS_OK":
+        row = db.execute(
+            "SELECT substr(state,1,32) FROM rc6_history_cutoff_repair_runs "
+            "WHERE cutoff=? LIMIT 1", (CUTOFF_DAY,)).fetchone()
+        run_marker = "ABSENT" if row is None else _cutoff_label(row[0], CUTOFF_STATES)
+    receipt = {
+        "schema": CUTOFF_DIAG_SCHEMA, "state": "NO_VERIFICADO",
+        "census_status": "SCHEMA_ONLY_HOLD", "cutoff": CUTOFF_DAY,
+        "schema_states": states, "run_marker_state": run_marker,
+        "resolution": "1D", "provider_requests_by_action": 0,
+        "observer_database_opened": False, "provider_pit_authenticated": False,
+        "external_consumer_universe_verified": False,
+        "source_mutated_by_action": False, "host_purge_allowed": False,
+        "physical_host_delete_count": 0, "real_orders_sent_by_action": 0,
+    }
+    require(len(encoded(receipt)) <= AGGREGATE_MAX_RECEIPT_BYTES,
+            "A503_RECEIPT_BUDGET")
+    return receipt
 
 
 def history_cutoff_census(source: Path = HOST_SOURCE, *,
                           gate: dict | None = None,
-                          deadline: float | None = None) -> dict:
+                          deadline: float | None = None,
+                          schema_diagnostic: bool = False) -> dict:
     """A503 optional bounded COLD census; never accesses HOT or provider APIs.
 
     Counts canonical daily rows, *not* true market-calendar missing candles.
@@ -518,14 +559,24 @@ def history_cutoff_census(source: Path = HOST_SOURCE, *,
     if deadline is None:
         deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
     with quiet_history_connection(source, gate, deadline, census=True) as (db, _):
-        _cutoff_columns(db, "rc6_history_cutoff_repair_runs", frozenset({
-            "cutoff", "state", "targets", "archive_imports", "ppi_queries",
-            "complete", "failed", "updated_at"}))
-        _cutoff_columns(db, "rc6_history_cutoff_repair_exact_v2", frozenset({
-            "cutoff", "instrument_type", "source", "state", "error_class",
-            "latest_date"}))
-        _cutoff_columns(db, "history_canonical_v2", frozenset({
-            "instrument_type", "source", "date"}))
+        checks = (
+            ("RUN", "rc6_history_cutoff_repair_runs", frozenset({
+                "cutoff", "state", "targets", "archive_imports", "ppi_queries",
+                "complete", "failed", "updated_at"})),
+            ("EXACT", "rc6_history_cutoff_repair_exact_v2", frozenset({
+                "cutoff", "instrument_type", "source", "state", "error_class",
+                "latest_date"})),
+            ("CANONICAL", "history_canonical_v2", frozenset({
+                "instrument_type", "source", "date"})),
+        )
+        if schema_diagnostic:
+            states = {logical: _cutoff_schema_state(db, table, columns)
+                      for logical, table, columns in checks}
+            if any(state != "TABLE_COLUMNS_OK" for state in states.values()):
+                return _cutoff_schema_hold(db, states)
+        else:
+            for _, table, columns in checks:
+                _cutoff_columns(db, table, columns)
         row = db.execute(
             "SELECT substr(state,1,32),targets,archive_imports,ppi_queries,"
             "complete,failed,substr(updated_at,1,10) "
@@ -714,6 +765,42 @@ def sanitize_history_aggregate(raw_path: Path, log_path: Path,
                 "real_orders_sent_by_action": 0}
 
 
+def _validate_cutoff_schema_receipt(body: object) -> dict:
+    """Strict A507 schema-only HOLD; no counts, names or remote SQL escape."""
+    fixed = {
+        "schema", "state", "census_status", "cutoff", "schema_states",
+        "run_marker_state", "resolution", "provider_requests_by_action",
+        "observer_database_opened", "provider_pit_authenticated",
+        "external_consumer_universe_verified", "source_mutated_by_action",
+        "host_purge_allowed", "physical_host_delete_count",
+        "real_orders_sent_by_action",
+    }
+    require(type(body) is dict and set(body) == fixed and
+            body["schema"] == CUTOFF_DIAG_SCHEMA and
+            body["state"] == "NO_VERIFICADO" and
+            body["census_status"] == "SCHEMA_ONLY_HOLD" and
+            body["cutoff"] == CUTOFF_DAY and body["resolution"] == "1D" and
+            all(body[key] is False for key in (
+                "observer_database_opened", "provider_pit_authenticated",
+                "external_consumer_universe_verified", "source_mutated_by_action",
+                "host_purge_allowed")) and
+            all(type(body[key]) is int and body[key] == 0 for key in (
+                "provider_requests_by_action", "physical_host_delete_count",
+                "real_orders_sent_by_action")), "A503_RECEIPT_INVALID")
+    states = body["schema_states"]
+    require(type(states) is dict and set(states) == {"RUN", "EXACT", "CANONICAL"}
+            and all(type(status) is str and status in CUTOFF_SCHEMA_STATES
+                    for status in states.values())
+            and any(status != "TABLE_COLUMNS_OK" for status in states.values()),
+            "A503_RECEIPT_INVALID")
+    marker = body["run_marker_state"]
+    require(type(marker) is str and marker in CUTOFF_STATES | {"NO_VERIFICADO"}
+            and (states["RUN"] == "TABLE_COLUMNS_OK" or marker == "NO_VERIFICADO")
+            and (states["RUN"] != "TABLE_COLUMNS_OK" or marker != "NO_VERIFICADO"),
+            "A503_RECEIPT_INVALID")
+    return {name: body[name] for name in sorted(fixed)}
+
+
 def _validate_cutoff_receipt(body: object) -> dict:
     """Strict public allowlist; never forwards unknown host-supplied fields."""
     require(type(body) is dict and set(body) == {
@@ -853,6 +940,8 @@ def sanitize_history_cutoff_census(raw_path: Path, log_path: Path,
                     0 < info.st_size <= AGGREGATE_MAX_RECEIPT_BYTES,
                     "A503_RECEIPT_INVALID")
             body = decode_json(stream.read(AGGREGATE_MAX_RECEIPT_BYTES + 1))
+        if type(body) is dict and body.get("schema") == CUTOFF_DIAG_SCHEMA:
+            return _validate_cutoff_schema_receipt(body)
         return _validate_cutoff_receipt(body)
     except (OSError, ValueError, TypeError, GuardError):
         return {"schema": CUTOFF_SCHEMA, "state": "NO_VERIFICADO",
@@ -1404,7 +1493,8 @@ def main() -> None:
                     args.capture_exit_code is None,
                     "A330_HOST_MODE_INPUTS_FORBIDDEN")
             receipt = history_cutoff_census(
-                HOST_SOURCE, deadline=time.monotonic() + AGGREGATE_HOST_SECONDS)
+                HOST_SOURCE, deadline=time.monotonic() + AGGREGATE_HOST_SECONDS,
+                schema_diagnostic=True)
             print(encoded(receipt).decode(), flush=True)
         elif args.sanitize_history_aggregate:
             require(args.raw is not None and args.capture_log is not None and
@@ -1435,8 +1525,8 @@ def main() -> None:
             write_exclusive(args.runner_root, args.sanitized_output.name,
                             io.BytesIO(encoded(receipt) + b"\n"))
             print("A503_CENSUS_STATUS=" +
-                  ("COLD_COUNTS_ONLY" if receipt.get("census_status") ==
-                   "COLD_COUNTS_ONLY" else "NO_VERIFICADO"))
+                  (receipt["census_status"] if receipt.get("census_status") in
+                   ("COLD_COUNTS_ONLY", "SCHEMA_ONLY_HOLD") else "NO_VERIFICADO"))
         elif args.runner_rehearsal or args.runner_history_rehearsal:
             require(all((args.bundle, args.capture_log, args.runner_root,
                          args.sanitized_output)) and args.capture_exit_code is None

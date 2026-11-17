@@ -1169,6 +1169,156 @@ class SyntheticPrivateCapture(unittest.TestCase):
                 self.assertNotIn('PRIVATE', a330.encoded(public).decode())
                 self.assertNotIn('/tmp/secret', a330.encoded(public).decode())
 
+    def test_a507_single_cold_schema_hold_independently_classifies_all_three_objects(self):
+        """One COLD FD, all schema causes; no invented counts or private metadata."""
+        self.seed_a503_cold_history()
+        baseline = self.source.read_bytes()
+        objects = (
+            ('rc6_history_cutoff_repair_runs', 'RUN'),
+            ('rc6_history_cutoff_repair_exact_v2', 'EXACT'),
+            ('history_canonical_v2', 'CANONICAL'),
+        )
+        variants = {
+            'missing': 'ABSENT', 'view': 'VIEW',
+            'index': 'WRONG_TYPE', 'columns': 'COLUMNS_MISSING',
+        }
+        raw = self.private / 'a503-private.json'
+        log = self.private / 'a503-private.log'
+        log.write_text('PRIVATE-PPI-HISTORY-PAYLOAD\n')
+        for number, (table, logical) in enumerate(objects):
+            for variant, expected in variants.items():
+                with self.subTest(logical=logical, variant=variant):
+                    candidate = self.root / f'a507-{number}-{variant}.db'
+                    candidate.write_bytes(baseline)
+                    with sqlite3.connect(candidate) as db:
+                        db.execute(f'DROP TABLE "{table}"')
+                        if variant == 'view':
+                            db.execute(f'''CREATE VIEW "{table}" AS
+                                SELECT 'SECRET-HOST-SYMBOL' AS private_value''')
+                        elif variant == 'index':
+                            db.execute('CREATE TABLE extra_private (id INTEGER)')
+                            db.execute(f'CREATE INDEX "{table}" ON extra_private(id)')
+                        elif variant == 'columns':
+                            db.execute(f'''CREATE TABLE "{table}"
+                                (SECRET_PRIVATE_COLUMN TEXT)''')
+                    gate = {'source_stat': a330.check_quiet_file(
+                                candidate, 1024**3, sqlite_file=True),
+                            'gated_at_utc': '2026-11-17T03:15:00Z',
+                            'both_history_writers_inactive': True,
+                            'a3_timers_masked': True}
+                    before = candidate.read_bytes()
+                    report = a330.history_cutoff_census(
+                        candidate, gate=gate, deadline=time.monotonic() + 30,
+                        schema_diagnostic=True)
+                    self.assertEqual(report['schema'], a330.CUTOFF_DIAG_SCHEMA)
+                    self.assertEqual(report['census_status'], 'SCHEMA_ONLY_HOLD')
+                    expected_status = {'RUN': 'TABLE_COLUMNS_OK',
+                                       'EXACT': 'TABLE_COLUMNS_OK',
+                                       'CANONICAL': 'TABLE_COLUMNS_OK'}
+                    expected_status[logical] = expected
+                    self.assertEqual(report['schema_states'], expected_status)
+                    self.assertEqual(report['run_marker_state'],
+                                     'NO_VERIFICADO' if logical == 'RUN' else 'INCOMPLETE')
+                    self.assertNotIn('repair_total', report)
+                    self.assertNotIn('canonical_total', report)
+                    self.assertEqual(candidate.read_bytes(), before)
+                    raw.write_bytes(a330.encoded(report))
+                    public = a330.sanitize_history_cutoff_census(
+                        raw, log, self.private, 0)
+                    self.assertEqual(public, report)
+                    for secret in ('SECRET', 'private_value', 'extra_private',
+                                   str(candidate), 'AL30', 'sqlite_master'):
+                        self.assertNotIn(secret, a330.encoded(public).decode())
+                    self.assertFalse(public['host_purge_allowed'])
+                    self.assertEqual(public['real_orders_sent_by_action'], 0)
+
+    def test_a507_partial_marker_is_typed_and_not_a_full_history_proof(self):
+        self.seed_a503_cold_history()
+        baseline = self.source.read_bytes()
+        for value, expected in (('PARTIAL', 'PARTIAL'), ('RUNNING', 'RUNNING'),
+                                ('COMPLETE', 'COMPLETE'),
+                                ('PRIVATE-ACCOUNT-ID', 'OTHER_REDACTED')):
+            with self.subTest(marker=value):
+                candidate = self.root / ('a507-marker-' + expected + '.db')
+                candidate.write_bytes(baseline)
+                with sqlite3.connect(candidate) as db:
+                    db.execute('DROP TABLE rc6_history_cutoff_repair_exact_v2')
+                    db.execute('UPDATE rc6_history_cutoff_repair_runs SET state=?',
+                               (value,))
+                gate = {'source_stat': a330.check_quiet_file(
+                            candidate, 1024**3, sqlite_file=True),
+                        'both_history_writers_inactive': True,
+                        'a3_timers_masked': True}
+                report = a330.history_cutoff_census(
+                    candidate, gate=gate, deadline=time.monotonic() + 30,
+                    schema_diagnostic=True)
+                self.assertEqual(report['run_marker_state'], expected)
+                self.assertEqual(report['state'], 'NO_VERIFICADO')
+                self.assertEqual(report['schema_states']['EXACT'], 'ABSENT')
+                self.assertNotIn('PRIVATE-ACCOUNT-ID', a330.encoded(report).decode())
+
+    def test_a507_all_schema_failures_collected_without_relaxing_cold_gate(self):
+        gate = self.seed_a503_cold_history()
+        with sqlite3.connect(self.source) as db:
+            for table in ('rc6_history_cutoff_repair_runs',
+                          'rc6_history_cutoff_repair_exact_v2',
+                          'history_canonical_v2'):
+                db.execute(f'DROP TABLE "{table}"')
+        gate['source_stat'] = a330.check_quiet_file(self.source, 1024**3,
+                                                    sqlite_file=True)
+        report = a330.history_cutoff_census(
+            self.source, gate=gate, deadline=time.monotonic() + 30,
+            schema_diagnostic=True)
+        self.assertEqual(report['schema_states'], {
+            'RUN': 'ABSENT', 'EXACT': 'ABSENT', 'CANONICAL': 'ABSENT'})
+        self.assertEqual(report['run_marker_state'], 'NO_VERIFICADO')
+        Path(str(self.source) + '-wal').symlink_to(self.root / 'SECRET-WAL')
+        with self.assertRaisesRegex(a330.GuardError, 'A502_HISTORY_SIDECAR_PRESENT'):
+            a330.history_cutoff_census(
+                self.source, gate=gate, deadline=time.monotonic() + 30,
+                schema_diagnostic=True)
+
+    def test_a507_schema_only_sanitizer_refuses_untrusted_fields_and_cli_is_typed(self):
+        gate = self.seed_a503_cold_history()
+        with sqlite3.connect(self.source) as db:
+            db.execute('DROP TABLE rc6_history_cutoff_repair_exact_v2')
+        gate['source_stat'] = a330.check_quiet_file(self.source, 1024**3,
+                                                    sqlite_file=True)
+        with (patch.object(a330, 'HOST_SOURCE', self.source),
+              patch.object(a330, 'host_history_gate', return_value=gate),
+              patch.object(sys, 'argv', ['a503', '--host-history-cutoff-census']),
+              redirect_stdout(io.StringIO()) as output):
+            a330.main()
+        report = json.loads(output.getvalue())
+        self.assertEqual(report['census_status'], 'SCHEMA_ONLY_HOLD')
+        self.assertEqual(report['schema_states']['EXACT'], 'ABSENT')
+        workflow = HISTORY_WORKFLOW.read_text()
+        self.assertIn('"census_status":"COLD_COUNTS_ONLY"', workflow)
+        self.assertNotIn('SCHEMA_ONLY_HOLD', workflow)  # Deliberately fails closed.
+        raw = self.private / 'a503-private.json'
+        log = self.private / 'a503-private.log'
+        raw.write_bytes(a330.encoded(report))
+        log.write_text('SECRET PRIVATE LOG\n')
+        valid = a330.sanitize_history_cutoff_census(raw, log, self.private, 0)
+        self.assertEqual(valid, report)
+        for tampered in ({**report, 'private_column': 'AL30'},
+                         {**report, 'schema_states': {**report['schema_states'],
+                                                     'EXACT': 'AL30'}},
+                         {**report, 'run_marker_state': 'SECRET-PPI-TOKEN'},
+                         {**report, 'schema_states': {**report['schema_states'],
+                                                     'CANONICAL': 'TABLE_COLUMNS_OK',
+                                                     'RUN': 'TABLE_COLUMNS_OK',
+                                                     'EXACT': 'TABLE_COLUMNS_OK'}},
+                         {**report, 'provider_requests_by_action': True},
+                         {**report, 'host_purge_allowed': True}):
+            with self.subTest(tampered_keys=tuple(tampered)):
+                raw.write_bytes(a330.encoded(tampered))
+                refused = a330.sanitize_history_cutoff_census(
+                    raw, log, self.private, 0)
+                self.assertEqual(refused['failure_class'], 'REMOTE_RECEIPT_INVALID')
+                for secret in ('SECRET', 'AL30', 'private_column'):
+                    self.assertNotIn(secret, a330.encoded(refused).decode())
+
     def test_a503_manual_main_only_workflow_modes_and_shell_syntax(self):
         body = HISTORY_WORKFLOW.read_text()
         self.assertIn('HISTORY_CUTOFF_CENSUS_ONLY', body)
