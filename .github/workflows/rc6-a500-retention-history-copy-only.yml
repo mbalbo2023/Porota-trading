@@ -7,6 +7,8 @@ on:
     paths:
       - 'scripts/rc6_retention_a330_private_capture.py'
       - 'tests/test_rc6_retention_a330_private_capture.py'
+      - 'scripts/rc6_history_wal_offhost.py'
+      - 'tests/test_rc6_history_wal_offhost.py'
       - '.github/workflows/rc6-a500-retention-history-copy-only.yml'
   workflow_dispatch:
     inputs:
@@ -18,6 +20,7 @@ on:
           - HISTORY_COPY_ONLY
           - HISTORY_AGGREGATE_ONLY
           - HISTORY_CUTOFF_CENSUS_ONLY
+          - HISTORY_WAL_COPY_ONLY
 
 permissions:
   contents: read
@@ -35,7 +38,8 @@ jobs:
         github.ref == 'refs/heads/main' &&
         (inputs.mode == 'HISTORY_COPY_ONLY' ||
          inputs.mode == 'HISTORY_AGGREGATE_ONLY' ||
-         inputs.mode == 'HISTORY_CUTOFF_CENSUS_ONLY')))
+         inputs.mode == 'HISTORY_CUTOFF_CENSUS_ONLY' ||
+         inputs.mode == 'HISTORY_WAL_COPY_ONLY')))
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -49,8 +53,10 @@ jobs:
           set -Eeuo pipefail
           test -f scripts/rc6_retention_a319_offhost.py
           python3 -m py_compile scripts/rc6_retention_a319_offhost.py \
-            scripts/rc6_retention_a330_private_capture.py
+            scripts/rc6_retention_a330_private_capture.py \
+            scripts/rc6_history_wal_offhost.py
           python3 -m unittest discover -s tests -p 'test_rc6_retention_a330_private_capture.py' -v
+          python3 -m unittest discover -s tests -p 'test_rc6_history_wal_offhost.py' -v
           echo 'A500_A502_A503_CONTRACTS=GREEN|NO_HOST_PR|PURGE=false'
 
   private-history-census:
@@ -339,3 +345,42 @@ jobs:
               -exec shred -u -- {} +
             rmdir "$private"
           fi
+
+  # A511 is deliberately transport-disabled until independent evidence of
+  # *all* possible history writers and physical release identity is reviewed.
+  # This manual gate is only a runner-side interface/CI contract; no SSH.
+  private-history-wal-copy:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.mode == 'HISTORY_WAL_COPY_ONLY'
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Checkout exact control plane
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin separately reviewed deployed source without executing it
+        uses: actions/checkout@v4
+        with:
+          ref: 57d5e8cdd6619dcbf967ed3e4901534fb5a7286e
+          path: a511-source-identity
+          persist-credentials: false
+      - name: Verify immutable source tree and synthetic transport contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C a511-source-identity rev-parse HEAD)" = \
+            57d5e8cdd6619dcbf967ed3e4901534fb5a7286e
+          test "$(git -C a511-source-identity rev-parse HEAD^{tree})" = \
+            159d34172b928a17a4b0106fc9def6783d139f6c
+          python3 -m unittest discover -s tests -p test_rc6_history_wal_offhost.py -q
+          # Not a runtime SHA witness. No remote capture until that is proven.
+          echo 'A511_HOLD=WRITER_COVERAGE_UNVERIFIED|NO_HOST_ACCESS|NO_DB_COPY|NO_ORDER'
+          exit 2
