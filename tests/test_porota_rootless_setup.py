@@ -1124,6 +1124,96 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         self.assertNotIn("private-code", json.dumps(receipt))
         self.assertEqual(self.launcher.read_bytes(), raw)
 
+    def test_local_state_group_write_only_when_home_or_local_private(self):
+        """#44005757066: match the existing MarketWatch/dashboard custody rule."""
+        local = self.home / ".local"
+        local_state = local / "state"
+        before = self.launcher.read_bytes()
+        for home_mode, local_mode in ((0o700, 0o755), (0o755, 0o700),
+                                      (0o700, 0o700)):
+            with self.subTest(home=oct(home_mode), local=oct(local_mode)):
+                self.home.chmod(home_mode)
+                local.chmod(local_mode)
+                local_state.chmod(0o770)  # UID-owned, group-write, NO other-write.
+                receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+                self.assertEqual(receipt, {
+                    "status": "OBSERVED", "sha256": hashlib.sha256(before).hexdigest(),
+                    "bytes": len(before), "read_only": True})
+                self.assertEqual(self.launcher.read_bytes(), before)
+                self.assertEqual(local_state.stat().st_mode & 0o777, 0o770)
+
+    def test_group_write_exception_never_extends_to_other_unsafe_directories(self):
+        """No relaxation for HOME/.local, nonprivate parents, other-write, STATE."""
+        local = self.home / ".local"
+        local_state = local / "state"
+        cases = (
+            (0o755, 0o755, 0o770, 0o700),  # Neither parent is private.
+            (0o700, 0o770, 0o770, 0o700),  # .local itself group-writable.
+            (0o770, 0o700, 0o770, 0o700),  # HOME itself group-writable.
+            (0o700, 0o700, 0o777, 0o700),  # LOCAL_STATE other-writable.
+            (0o700, 0o700, 0o770, 0o770),  # Final STATE not private.
+        )
+        for home_mode, local_mode, intermediate_mode, state_mode in cases:
+            with self.subTest(modes=(home_mode, local_mode, intermediate_mode, state_mode)):
+                self.home.chmod(home_mode)
+                local.chmod(local_mode)
+                local_state.chmod(intermediate_mode)
+                self.state.chmod(state_mode)
+                receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+                self.assertEqual(receipt["status"], "NO_VERIFICADO")
+                self.assertNotIn("sha256", receipt)
+
+    def test_group_writable_local_state_symlink_and_race_still_fail_closed(self):
+        local = self.home / ".local"
+        local_state = local / "state"
+        self.home.chmod(0o700)
+        local.chmod(0o700)
+        local_state.chmod(0o770)
+        original = os.read
+        moved = self.home / "relocated-local-state"
+
+        def replace_directory_during_read(fd, amount):
+            contents = original(fd, amount)
+            local_state.rename(moved)
+            local_state.mkdir(mode=0o770)
+            return contents
+
+        with patch.object(setup.os, "read", side_effect=replace_directory_during_read):
+            self.assertEqual(setup.scheduler_launcher_digest(
+                self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+
+        local_state.rmdir()
+        moved.rename(local_state)
+        self.assertEqual(setup.scheduler_launcher_digest(
+            self.home, uid=os.getuid())["status"], "OBSERVED")
+        relocated = self.home / "symlink-target"
+        local_state.rename(relocated)
+        local_state.symlink_to(relocated, target_is_directory=True)
+        self.assertEqual(setup.scheduler_launcher_digest(
+            self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+
+    def test_group_write_permission_changes_during_digest_remain_unverified(self):
+        """Pinned directory metadata must not be newly unsafe after file read."""
+        local = self.home / ".local"
+        local_state = local / "state"
+        original = os.read
+        for home_mode, changed_dir, changed_mode in (
+                (0o700, local_state, 0o777),
+                (0o755, local, 0o755)):
+            with self.subTest(changed_dir=changed_dir.name):
+                self.home.chmod(home_mode)
+                local.chmod(0o700)
+                local_state.chmod(0o770)
+
+                def change_permissions_during_read(fd, amount):
+                    contents = original(fd, amount)
+                    changed_dir.chmod(changed_mode)
+                    return contents
+
+                with patch.object(setup.os, "read", side_effect=change_permissions_during_read):
+                    self.assertEqual(setup.scheduler_launcher_digest(
+                        self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+
     def test_rejects_symlink_hardlink_public_mode_wrong_owner_and_oversize(self):
         for condition in ("file_symlink", "directory_symlink", "hardlink", "public_mode",
                           "wrong_owner", "oversize"):
