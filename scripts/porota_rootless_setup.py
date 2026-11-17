@@ -497,6 +497,70 @@ def _metadata(path):
             "writable": os.access(path, os.W_OK)}
 
 
+def preopen_current_inputs(root: Path, home: Path):
+    """Metadata only for fixed inputs to today's preopen; not historic causes.
+
+    Never open the files, follow an alias, export private JSON, or claim that
+    a present input passed a preopen check. The existing unit inventory holds
+    the required timers' states separately.
+    """
+    coordinates = (
+        ("byma_morning_watch_latest", root, ("data", "market", "byma_morning_watch_latest.json")),
+        ("paper_release_state", root, ("data", "deploy", "CURRENT_STATE_V2.json")),
+        ("operator_private_directory", home, (".config", "porota-rc6", "operator")),
+        ("operator_paper_intent", home, (".config", "porota-rc6", "operator", "paper-rearm-v1.json")),
+        ("paper_preopen_v2_gate", home, (".config", "porota-rc6", "operator", "paper-preopen-v2.json")),
+    )
+    def pinned_metadata(base, segments):
+        descriptors = []
+        walked = []
+        flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        try:
+            if (not isinstance(base, Path) or not base.is_absolute() or
+                    any(part in {"", ".."} for part in (*base.parts[1:], *segments))):
+                return {"status": "NO_VERIFICADO", "reason": "PATH_INVALID"}
+            current = os.open("/", flags)
+            descriptors.append(current)
+            for part in (*base.parts[1:], *segments[:-1]):
+                parent = current
+                current = os.open(part, flags, dir_fd=parent)
+                descriptors.append(current)
+                observed = os.fstat(current)
+                if not stat.S_ISDIR(observed.st_mode):
+                    return {"status": "NO_VERIFICADO", "reason": "PARENT_NOT_DIRECTORY"}
+                walked.append((parent, part, current, observed))
+            target = os.stat(segments[-1], dir_fd=current, follow_symlinks=False)
+            expected_directory = segments[-1] == "operator"
+            if not (stat.S_ISDIR(target.st_mode) if expected_directory else
+                    stat.S_ISREG(target.st_mode)):
+                return {"status": "NO_VERIFICADO", "reason": "TARGET_NOT_REGULAR"}
+            for parent, part, child, original in walked:
+                latest = os.stat(part, dir_fd=parent, follow_symlinks=False)
+                pinned = os.fstat(child)
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_mode,
+                                         item.st_mtime_ns, item.st_ctime_ns)
+                if identity(latest) != identity(original) or identity(pinned) != identity(original):
+                    return {"status": "NO_VERIFICADO", "reason": "PATH_CHANGED"}
+            return {"present": True, "uid": target.st_uid, "gid": target.st_gid,
+                    "mode": oct(stat.S_IMODE(target.st_mode)), "symlink": False,
+                    "socket": False}
+        except OSError as exc:
+            if exc.errno == errno.ENOENT:
+                return {"present": False}
+            reason = ("PARENT_ALIAS_OR_NONDIR" if exc.errno in {errno.ELOOP, errno.ENOTDIR}
+                      else "ACCESS_DENIED" if exc.errno in {errno.EACCES, errno.EPERM}
+                      else "METADATA_UNAVAILABLE")
+            return {"status": "NO_VERIFICADO", "reason": reason}
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+
+    result = {label: pinned_metadata(base, segments)
+              for label, base, segments in coordinates}
+    return {"schema": "porota.preopen.current-inputs-ro.v1", "read_only": True,
+            "historic_subcheck_cause": "NO_VERIFICADO", "coordinates": result}
+
+
 LAUNCHER_CUSTODY_STAGES = frozenset({
     "HOME_PATH", "ROOT", "HOME_ANCESTOR", "HOME", "LOCAL", "LOCAL_STATE",
     "PRIVATE_STATE", "LAUNCHER",
@@ -1104,6 +1168,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "legacy_units": units, "unit_details": detailed_units(units, run=run),
             "preopen_79": preopen_79_diagnostic(run=run),
             "preopen_last": preopen_last_diagnostic(run=run),
+            "preopen_current_inputs": preopen_current_inputs(root, home),
             "scheduler_launcher": scheduler_launcher_digest(home, uid=uid),
             "toolchain": toolchain_metadata(run=run), "subordinate_ids": subid_metadata(account),
             "filesystems": {"data": filesystem_metadata(root / "data"),
