@@ -213,6 +213,23 @@ class A669GuardTests(unittest.TestCase):
         self.assertRegex(guard.CALENDAR_GIT_BLOB, r"^[0-9a-f]{40}$")
         self.assertRegex(guard.SESSIONS_GIT_BLOB, r"^[0-9a-f]{40}$")
 
+    def test_current_engine_blob_is_pinned_before_ssh(self):
+        source = YAML.parents[2] / "scripts/rc6_a630_host_ppi_current_book.py"
+        self.assertTrue(guard.pinned_engine_ok(source),
+                        "A670 MUST re-pin reviewed changed A630 source before SSH")
+
+    def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
+        code = YAML.read_text()
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 0dd7b46bafcc21649060e21c7bdf3e40ade6f666", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: e1fa390418be5062d0f246834e38db2c5829d2e6", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f", code)
+        self.assertIn("rootless-capture", code)
+        self.assertNotIn("sudo -n docker", code)
+        self.assertNotIn("porota_production_observer", code)
+        # Calendar and engine object pin gates remain before host and network.
+        self.assertIn("rc6_a669_ppi_day_slot_guard.py", code)
+        self.assertIn("RC6_A669_ENGINE_BLOB", code)
+
 
 if __name__ == "__main__":
     unittest.main()

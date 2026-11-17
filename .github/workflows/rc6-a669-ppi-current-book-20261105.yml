@@ -26,7 +26,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/rc6-a669-ppi-current-book-20261105.yml'
+      - 'scripts/rc6_a630_host_ppi_current_book.py'
       - 'scripts/rc6_a669_ppi_day_slot_guard.py'
+      - 'tests/test_rc6_a630_host_ppi_current_book.py'
       - 'tests/test_rc6_a669_ppi_day_slot_guard.py'
 
 permissions:
@@ -86,8 +88,10 @@ jobs:
     env:
       RC6_A669_SCHEDULE: ${{ github.event.schedule }}
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
-      RC6_EXPECTED_PRODUCT_SHA: 7e1e744d6ca9ab30c51b5747dd4467af5ece0145
-      RC6_EXPECTED_IMAGE_ID: sha256:4a8f7306188979fe6976f400209151bd529bf0d9f46f068b50bbc54fc96fd70b
+      # Exact active deployed candidate; independent of the audited calendar.
+      RC6_EXPECTED_CANDIDATE_SHA: 0dd7b46bafcc21649060e21c7bdf3e40ade6f666
+      RC6_EXPECTED_TREE_SHA: e1fa390418be5062d0f246834e38db2c5829d2e6
+      RC6_EXPECTED_IMAGE_ID: sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f
     steps:
       - uses: actions/checkout@v4
         with:
@@ -180,19 +184,24 @@ jobs:
           print('A669_HOST_RO_IDENTITY=UNIQUE_REQUEST|NATIVE_5KEY_ATTESTED=NO|GETS=0')
           PY
 
-      - name: At most one Current then one Book via existing signed shared PPI budget
+      - name: At most one Current then one Book via exact rootless CID and shared budget
         shell: bash
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
         run: |
           set -Eeuo pipefail
+          # Source was blob-pinned by A669 BEFORE SSH. Keep the SAME source in
+          # memory on host; it attests the private rootless release/daemon/CID
+          # and streams bytes through docker exec -i. No remote file, rootful
+          # daemon, sudo docker, alias lookup or raw Docker JSON in artifacts.
+          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' rootless-capture '$RC6_A630_TARGET_B64' '$RC6_EXPECTED_CANDIDATE_SHA' '$RC6_EXPECTED_TREE_SHA' '$RC6_EXPECTED_IMAGE_ID'"
           set +e
           timeout --signal=TERM --kill-after=5s 100 ssh \
             -i "$HOME/.ssh/rc6_a669_readonly" -o BatchMode=yes \
             -o ConnectTimeout=8 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" "$DO_USER@$DO_HOST" \
-            "set -Eeuo pipefail; image=\$(sudo -n docker inspect -f '{{.Image}}' porota_production_observer); test \"\$image\" = '$RC6_EXPECTED_IMAGE_ID'; printf 'RUNTIME_IMAGE_ID=%s\n' \"\$image\"; sudo -n timeout 55 docker exec -i -e RC6_A630_TARGET_B64=$RC6_A630_TARGET_B64 -e RC6_A630_EXPECTED_PRODUCT_SHA=$RC6_EXPECTED_PRODUCT_SHA -e PYTHONDONTWRITEBYTECODE=1 porota_production_observer python -B - container-capture" \
+            "$remote" \
             < scripts/rc6_a630_host_ppi_current_book.py \
             > "$RUNNER_TEMP/rc6-a669-capture.private" 2>/dev/null
           rc=$?
@@ -202,23 +211,25 @@ jobs:
           import json,os
           from pathlib import Path
           from scripts.rc6_a630_host_ppi_current_book import (
-              SCHEMA,decode_target,verify_receipt,unverified_transport_receipt)
+              SCHEMA,decode_target,verify_receipt,verified_rootless_wrapper,
+              unverified_transport_receipt)
           rawfile=Path(os.environ['RUNNER_TEMP'])/'rc6-a669-capture.private'
           raw=rawfile.read_bytes() if rawfile.is_file() and rawfile.stat().st_size<=65536 else b''
-          lines=raw.decode('utf-8',errors='replace').splitlines()
           try:
               target=decode_target(os.environ['RC6_A630_TARGET_B64'])
-              image=(lines[0].partition('=')[2] if len(lines)==2 and
-                     lines[0].startswith('RUNTIME_IMAGE_ID=') else '')
-              payload=json.loads(lines[1]) if image==os.environ['RC6_EXPECTED_IMAGE_ID'] else {}
-              assert verify_receipt(payload,target)
+              wrapper=verified_rootless_wrapper(raw,target) or {}
+              payload=wrapper.get('receipt',unverified_transport_receipt())
+              if wrapper.get('state')=='EVIDENCE_ONLY_NO_GO':
+                  assert verify_receipt(payload,target)
           except (AssertionError,KeyError,TypeError,ValueError):
               payload=unverified_transport_receipt()
+              wrapper={}
           public={'schema':'rc6.a669.action.sanitized.v1',
                   'engine_schema':SCHEMA,'run_id':os.environ['GITHUB_RUN_ID'],
                   'control_plane_sha':os.environ['GITHUB_SHA'],
                   'engine_git_blob':os.environ['RC6_A669_ENGINE_BLOB'],
-                  'product_sha':os.environ['RC6_EXPECTED_PRODUCT_SHA'],
+                  'candidate_sha':os.environ['RC6_EXPECTED_CANDIDATE_SHA'],
+                  'candidate_tree':os.environ['RC6_EXPECTED_TREE_SHA'],
                   'image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
                   'art_date':os.environ['RC6_A670_ART_DATE'],'slot':os.environ['RC6_A669_SLOT'],
                   'market_calendar_gate':os.environ['RC6_A670_MARKET_SESSION'],
@@ -228,7 +239,11 @@ jobs:
                   'real_orders_sent_by_action':0,'predeploy_dispatches':0,
                   'deploy_dispatches':0,'provider_payload_uploaded':False,
                   'provider_signature_verified':False,'source_pit_verified':False,
-                  'paper_admission_certified':False,'runtime_sha_verified':False}
+                  'paper_admission_certified':False,
+                  'runtime_sha_verified':wrapper.get('runtime_pin_verified') is True,
+                  'runtime_backend':'ROOTLESS_SPLIT',
+                  'rootless_or_ppi_hold_reason':wrapper.get('reason','NO_VERIFICADO'),
+                  'shared_budget_lease_writes_possible':True}
           Path('evidence/a669_ppi_current_book.json').write_text(
               json.dumps(public,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
           print('A669_CURRENT_BOOK='+payload['state']+

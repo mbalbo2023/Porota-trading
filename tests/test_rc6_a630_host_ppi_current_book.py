@@ -1,17 +1,22 @@
 """A630 adversarial no-network tests: exact full-key and two true leases."""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import base64
 import json
+import io
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import stat
 import sys
 import tempfile
 import types
 import unittest
 from unittest.mock import patch
+from scripts import rc6_a630_host_ppi_current_book as engine
 
 from scripts.rc6_a630_host_ppi_current_book import (
     SLOTS, PER_GET_CLOCK_FIELDS, TwoGetAtomicBudget, _existing_shared_budget, _exit_round_fresh,
@@ -19,7 +24,9 @@ from scripts.rc6_a630_host_ppi_current_book import (
     _http_body_hashes,
     _utc, capture_two,
     decode_target, host_preflight, target_for_slot, unverified_transport_receipt,
-    verify_receipt,
+    verify_receipt, ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
+    _attest_rootless_release, _attest_rootless_observer, _rootless_state,
+    _rootless_context, rootless_host_capture, verified_rootless_wrapper,
 )
 
 NOW = datetime(2026, 11, 4, 14, 20, 1, tzinfo=timezone.utc)
@@ -697,6 +704,374 @@ class TestA630(unittest.TestCase):
             self.assertIsNone(receipt["current_gets"])
             self.assertIsNone(receipt["book_gets"])
             self.assertEqual(receipt["orders_sent"], 0)
+
+
+class TestA630RootlessEvidence(unittest.TestCase):
+    """Synthetic attestation only; no SSH, Docker daemon, provider, or host write."""
+
+    def setUp(self):
+        self.cid = "a" * 64
+        self.attempt = "20261117-a670"
+        self.release = {
+            "schema": "porota.release.v1", "source_sha": ROOTLESS_CANDIDATE_SHA,
+            "source_tree": ROOTLESS_CANDIDATE_TREE, "image_id": ROOTLESS_IMAGE_ID,
+            "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION",
+            "real_order_capability": "BLOCKED", "real_orders_sent_required": 0,
+        }
+        self.release_raw = (json.dumps(self.release, sort_keys=True) + "\n").encode()
+        self.current = {
+            "schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
+            "phase": "COMPLETE", "daemon_id": "synthetic-daemon",
+            "source_sha": ROOTLESS_CANDIDATE_SHA, "source_tree": ROOTLESS_CANDIDATE_TREE,
+            "image_id": ROOTLESS_IMAGE_ID, "operating_mode": "PRODUCTION_PAPER",
+            "execution_mode": "SIMULATION", "real_orders_sent": 0,
+            "release_manifest_sha256": sha256(self.release_raw).hexdigest(),
+            "attempt": self.attempt,
+            "roles": {"observer": self.cid, "dashboard": "b" * 64},
+        }
+        self.home = Path("/home/porotaadmin")
+        self.info = {
+            "SecurityOptions": ["name=rootless", "name=seccomp,profile=builtin"],
+            "CgroupVersion": "2", "CgroupDriver": "systemd",
+            "DockerRootDir": str(self.home / ".local/share/porota-rc6/docker"),
+            "ID": "synthetic-daemon",
+        }
+        self.observer = {
+            "Id": self.cid, "Name": f"/porota-rc6-observer-{self.attempt}",
+            "Image": ROOTLESS_IMAGE_ID,
+            "State": {"Running": True, "OOMKilled": False},
+            "Config": {
+                "Image": ROOTLESS_IMAGE_ID, "User": "0:0", "Entrypoint": None,
+                "WorkingDir": "/app", "Cmd": ["python", "bv_paper_runtime.py"],
+                "Labels": {"io.porota.project": "rc6", "io.porota.role": "observer",
+                           "io.porota.attempt": self.attempt},
+                "Env": ["POROTA_BUILD_SHA=" + ROOTLESS_CANDIDATE_SHA,
+                        "POROTA_CANDIDATE_TREE_SHA=" + ROOTLESS_CANDIDATE_TREE,
+                        "PAPER_V17_DB_PATH=/app/data/paper_v17/observer_v17.db",
+                        "DASHBOARD_OPERATION_MODE=PRODUCTION_PAPER",
+                        "EXECUTION_MODE=SIMULATION", "REAL_ORDER_CAPABILITY=BLOCKED"],
+            },
+            "HostConfig": {"ReadonlyRootfs": True, "Privileged": False,
+                           "CapDrop": ["ALL"], "CapAdd": [],
+                           "NetworkMode": "porota-rc6_default", "PidMode": "",
+                           "Memory": 1024**3, "NanoCpus": 1_000_000_000,
+                           "PidsLimit": 256, "PortBindings": {},
+                           "SecurityOpt": ["no-new-privileges:true"],
+                           "Tmpfs": {"/tmp": "rw,noexec,nosuid,size=128m",
+                                     "/home/botuser/.cache": "rw,noexec,nosuid,size=64m",
+                                     "/home/botuser/.config": "rw,noexec,nosuid,size=16m"}},
+            "Mounts": [
+                {"Type": "bind", "Source": "/opt/porota-trading/data",
+                 "Destination": "/app/data", "RW": True},
+                {"Type": "bind", "Source": "/opt/porota-trading/.secrets/ppi_production.json",
+                 "Destination": "/run/secrets/ppi_production.json", "RW": False},
+                {"Type": "bind", "Source": str(self.home / ".config/porota-rc6/operator"),
+                 "Destination": "/app/operator", "RW": False},
+            ],
+        }
+
+    def test_release_attests_candidate_tree_image_and_paper_zero(self):
+        self.assertEqual(_attest_rootless_release(self.current, self.release,
+                         self.release_raw), self.cid)
+        for updates in ({"source_sha": "f" * 40}, {"source_tree": "f" * 40},
+                        {"image_id": "sha256:" + "f" * 64},
+                        {"real_orders_sent": 1}, {"state": "NO_VERIFICADO"},
+                        {"phase": "POSTFLIGHT"},
+                        {"release_manifest_sha256": "a" * 64},
+                        {"roles": {"observer": "alias"}}):
+            with self.subTest(updates=updates):
+                with self.assertRaises(ValueError):
+                    _attest_rootless_release({**self.current, **updates},
+                                             self.release, self.release_raw)
+
+    def test_release_requires_real_blocked_capability_and_exact_manifest(self):
+        for change in ({"real_order_capability": "ALLOWED"},
+                       {"real_orders_sent_required": 1},
+                       {"source_sha": "f" * 40}):
+            with self.subTest(change=change):
+                with self.assertRaises(ValueError):
+                    _attest_rootless_release(self.current, {**self.release, **change},
+                                             self.release_raw)
+
+    def test_rootless_observer_matches_private_daemon_and_immutable_cid(self):
+        self.assertTrue(_attest_rootless_observer(self.info, self.observer,
+                        self.current, uid=1000, home=self.home))
+        for info_update in ({"SecurityOptions": ["name=seccomp"]},
+                            {"DockerRootDir": "/var/lib/docker"},
+                            {"CgroupVersion": "1"}):
+            with self.subTest(info_update=info_update):
+                with self.assertRaises(ValueError):
+                    _attest_rootless_observer({**self.info, **info_update}, self.observer,
+                                              self.current, uid=1000, home=self.home)
+
+    def test_rootless_observer_rejects_foreign_label_command_and_secret_rw(self):
+        cases = [
+            {"Name": "/porota_production_observer"},
+            {"Image": "sha256:" + "f" * 64},
+            {"State": {"Running": False}},
+            {"Config": {**self.observer["Config"], "Cmd": ["python", "evil.py"]}},
+            {"Config": {**self.observer["Config"], "Env": [
+                "POROTA_BUILD_SHA=" + ROOTLESS_CANDIDATE_SHA,
+                "POROTA_BUILD_SHA=" + ROOTLESS_CANDIDATE_SHA]}},
+            {"Mounts": [{**row, "RW": True} if row["Destination"] ==
+                "/run/secrets/ppi_production.json" else row
+                for row in self.observer["Mounts"]]},
+            {"Mounts": [*self.observer["Mounts"],
+                        {"Type": "tmpfs", "Destination": "/run/secrets", "RW": True}]},
+            {"HostConfig": {**self.observer["HostConfig"], "NetworkMode": "host"}},
+            {"HostConfig": {**self.observer["HostConfig"], "PidMode": "host"}},
+            {"HostConfig": {**self.observer["HostConfig"], "CapAdd": ["SYS_ADMIN"]}},
+            {"HostConfig": {**self.observer["HostConfig"], "Memory": 0}},
+            {"HostConfig": {**self.observer["HostConfig"], "PidsLimit": 0}},
+            {"HostConfig": {**self.observer["HostConfig"], "NanoCpus": 3_000_000_000}},
+            {"HostConfig": {**self.observer["HostConfig"], "Tmpfs": {"/tmp": "rw,exec,size=128m"}}},
+        ]
+        for change in cases:
+            with self.subTest(change=list(change)):
+                with self.assertRaises(ValueError):
+                    _attest_rootless_observer(self.info, {**self.observer, **change},
+                                              self.current, uid=1000, home=self.home)
+
+    def test_one_rootless_exec_reuses_exact_script_and_returns_only_signed_budget_evidence(self):
+        valid, _ = invoke(Shared())
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0,
+                                               stdout=json.dumps(valid).encode(), stderr=b"")
+
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        with patch("scripts.rc6_a630_host_ppi_current_book._rootless_context",
+                   side_effect=[context, context]):
+            result = rootless_host_capture(target_b64, ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"# bounded audited source\n",
+                run=fake_run)
+        self.assertEqual(result["state"], "EVIDENCE_ONLY_NO_GO")
+        self.assertTrue(result["runtime_pin_verified"])
+        self.assertFalse(result["source_pit_verified"])
+        self.assertEqual(result["receipt"]["current_gets"], 1)
+        self.assertEqual(result["receipt"]["book_gets"], 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0][:3], context["docker"])
+        self.assertEqual(calls[0][0][-5:], (self.cid, "python", "-B", "-", "container-capture"))
+        self.assertEqual(calls[0][1]["input"], b"# bounded audited source\n")
+        self.assertNotIn("sudo", " ".join(calls[0][0]))
+
+    def test_rootless_mismatch_or_exec_timeout_fails_closed_without_false_get_zero(self):
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        no_pin = rootless_host_capture(target_b64, "f" * 40,
+            ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"program")
+        self.assertEqual(no_pin["reason"], "ROOTLESS_PIN_MISMATCH")
+        self.assertIsNone(no_pin["receipt"]["current_gets"])
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        with patch("scripts.rc6_a630_host_ppi_current_book._rootless_context",
+                   return_value=context):
+            def timeout(command, **kwargs):
+                raise subprocess.TimeoutExpired(command, 55)
+            uncertain = rootless_host_capture(target_b64, ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"program", run=timeout)
+        self.assertEqual(uncertain["state"], "NO_VERIFICADO")
+        self.assertEqual(uncertain["reason"], "ROOTLESS_DOCKER_TRANSPORT_HOLD")
+        self.assertIsNone(uncertain["receipt"]["current_gets"])
+        self.assertEqual(uncertain["receipt"]["transport_count_authority"], "NO_VERIFICADO")
+
+    def test_rootless_state_change_after_provider_blocks_attestation(self):
+        valid, _ = invoke(Shared())
+        before = {"cid": self.cid, "state_token": "d" * 64,
+                  "docker": ("/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock"),
+                  "environment": {"LC_ALL": "C"}}
+        after = {**before, "state_token": "e" * 64}
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        with patch("scripts.rc6_a630_host_ppi_current_book._rootless_context",
+                   side_effect=[before, after]):
+            result = rootless_host_capture(target_b64, ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"program",
+                run=lambda cmd, **kwargs: subprocess.CompletedProcess(
+                    cmd, 0, stdout=json.dumps(valid).encode(), stderr=b""))
+        self.assertEqual(result["reason"], "ROOTLESS_STATE_DRIFT_HOLD")
+        self.assertFalse(result["runtime_pin_verified"])
+        self.assertIsNone(result["receipt"]["book_gets"])
+
+    def test_rootless_private_fd_walk_rejects_symlink_and_release_drift(self):
+        with tempfile.TemporaryDirectory(prefix="a630-fd-private-") as temporary:
+            home = Path(temporary) / "account"
+            parent = home / ".local/state/porota-rc6"
+            pinned = parent / "releases" / ROOTLESS_CANDIDATE_SHA
+            pinned.mkdir(parents=True, mode=0o700)
+            for directory in (home, home / ".local", home / ".local/state",
+                              parent, parent / "releases", pinned):
+                directory.chmod(0o700)
+            current_path = parent / "current.json"
+            release_path = pinned / "release.json"
+            current_path.write_text(json.dumps(self.current))
+            release_path.write_bytes(self.release_raw)
+            current_path.chmod(0o600)
+            release_path.chmod(0o600)
+            self.assertEqual(_rootless_state(home, os.getuid())[1], self.cid)
+            release_path.rename(pinned / "release.original")
+            release_path.symlink_to(pinned / "release.original")
+            with self.assertRaises(ValueError):
+                _rootless_state(home, os.getuid())
+            release_path.unlink()
+            release_path.write_bytes(b"{}")
+            with self.assertRaises(ValueError):
+                _rootless_state(home, os.getuid())
+            release_path.write_bytes(self.release_raw)
+            (home / ".local").chmod(0o777)
+            with self.assertRaises(ValueError):
+                _rootless_state(home, os.getuid())
+
+    def test_rootless_context_socket_and_daemon_identity_fail_closed_offhost(self):
+        with tempfile.TemporaryDirectory(prefix="a630-socket-") as temporary:
+            home = Path(temporary) / "home"
+            root = home / ".local/state/porota-rc6"
+            pinned = root / "releases" / ROOTLESS_CANDIDATE_SHA
+            pinned.mkdir(parents=True, mode=0o700)
+            for directory in (home, home / ".local", home / ".local/state",
+                              root, root / "releases", pinned):
+                directory.chmod(0o700)
+            (root / "current.json").write_text(json.dumps(self.current))
+            (pinned / "release.json").write_bytes(self.release_raw)
+            (root / "current.json").chmod(0o600)
+            (pinned / "release.json").chmod(0o600)
+            runtime = Path(temporary) / "runtime"
+            runtime.mkdir(mode=0o700)
+            runtime.chmod(0o700)
+            socket_path = runtime / "porota-rc6-docker.sock"
+            query_calls = []
+
+            def fake_run(command, **kwargs):
+                query_calls.append(command)
+                if command[3] == "info":
+                    info = {**self.info, "DockerRootDir": str(home / ".local/share/porota-rc6/docker")}
+                    return subprocess.CompletedProcess(command, 0, stdout=json.dumps(info))
+                return subprocess.CompletedProcess(command, 0, stdout=json.dumps([{
+                    **self.observer,
+                    "Mounts": [({**m, "Source": str(home / ".config/porota-rc6/operator")}
+                                if m["Destination"] == "/app/operator" else m)
+                               for m in self.observer["Mounts"]],
+                }]))
+
+            with patch("scripts.rc6_a630_host_ppi_current_book.ROOTLESS_UID", os.getuid()), \
+                 patch("scripts.rc6_a630_host_ppi_current_book.pwd.getpwuid",
+                       return_value=types.SimpleNamespace(pw_dir=str(home), pw_name="synthetic")):
+                with self.assertRaises(ValueError):
+                    _rootless_context(run=fake_run, runtime_override=runtime)
+                self.assertEqual(query_calls, [])
+                original_lstat = Path.lstat
+
+                def synthetic_socket(path):
+                    if path == socket_path:
+                        return types.SimpleNamespace(st_mode=stat.S_IFSOCK | 0o600,
+                                                     st_uid=os.getuid())
+                    return original_lstat(path)
+
+                with patch.object(Path, "lstat", synthetic_socket):
+                    context = _rootless_context(run=fake_run, runtime_override=runtime)
+                    self.assertEqual(context["cid"], self.cid)
+                    self.assertEqual(len(query_calls), 2)
+                    self.assertEqual(query_calls[0][:3],
+                                     ("/usr/bin/docker", "--host", f"unix://{socket_path}"))
+                socket_path.symlink_to(root / "current.json")
+                with self.assertRaises(ValueError):
+                    _rootless_context(run=fake_run, runtime_override=runtime)
+                self.assertEqual(len(query_calls), 2)
+
+    def test_sanitizer_preserves_only_validated_typed_budget_reason(self):
+        token = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        inner = capture_two(TARGET, None, Shared(), lambda *a, **k: None)
+        self.assertTrue(verify_receipt(inner, TARGET))
+        wrapper = {"schema": "rc6.a630.rootless.capture.v1",
+                   "state": "NO_VERIFICADO", "reason": "PPI_KEYPAIR_UNAVAILABLE",
+                   "runtime_pin_verified": True, "host_file_writes": 0,
+                   "provider_payload_uploaded": False,
+                   "paper_admission_certified": False, "source_pit_verified": False,
+                   "receipt": inner}
+        selected = verified_rootless_wrapper(json.dumps(wrapper).encode(), TARGET)
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["reason"], "PPI_KEYPAIR_UNAVAILABLE")
+        self.assertEqual(selected["receipt"]["current_gets"], 0)
+        for forged in ({**wrapper, "secret": "PRIVATE_TOKEN"},
+                       {**wrapper, "reason": "PPI_KEYPAIR_UNAVAILABLE\nPRIVATE"},
+                       {**wrapper, "receipt": {**inner, "source_pit_verified": True}},
+                       {**wrapper, "receipt": {**inner, "reason": "ATOMIC_LEASE_DENIED"}}):
+            with self.subTest(forged=list(forged)):
+                self.assertIsNone(verified_rootless_wrapper(
+                    json.dumps(forged).encode(), TARGET))
+
+    def test_sanitizer_accepts_bounded_unknown_counts_on_transport_failure(self):
+        from scripts.rc6_a630_host_ppi_current_book import unverified_transport_receipt
+        inner = unverified_transport_receipt("ROOTLESS_SOCKET_HOLD")
+        wrapper = {"schema": "rc6.a630.rootless.capture.v1",
+                   "state": "NO_VERIFICADO", "reason": "ROOTLESS_SOCKET_HOLD",
+                   "runtime_pin_verified": False, "host_file_writes": 0,
+                   "provider_payload_uploaded": False,
+                   "paper_admission_certified": False, "source_pit_verified": False,
+                   "receipt": inner}
+        self.assertEqual(verified_rootless_wrapper(json.dumps(wrapper).encode(), TARGET), wrapper)
+        self.assertIsNone(wrapper["receipt"]["current_gets"])
+
+    def test_rootless_cli_argument_order_preserves_target_and_candidate_identity(self):
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        outcome = {"schema": "rc6.a630.rootless.capture.v1", "state": "NO_VERIFICADO",
+                   "reason": "ROOTLESS_SOCKET_HOLD"}
+        with patch.object(engine, "rootless_host_capture", return_value=outcome) as capture, \
+             patch.object(sys, "argv", ["-c", "rootless-capture", target_b64,
+                                       ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                                       ROOTLESS_IMAGE_ID]), \
+             patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(engine.main(), 2)
+            self.assertEqual(json.loads(out.getvalue()), outcome)
+        capture.assert_called_once_with(target_b64, ROOTLESS_CANDIDATE_SHA,
+                                        ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source")
+
+    def test_in_memory_ssh_bootstrap_never_opens_docker_on_wrong_pin(self):
+        # The same Python -c bootstrap as A670; no remote host/SSH/secret/GET.
+        bootstrap = ('import sys; src=sys.stdin.buffer.read(1000001); '
+            'assert 0<len(src)<=1000000; '
+            'scope={"__name__":"__main__","__RC6_SOURCE_BYTES__":src}; '
+            'exec(compile(src,"A630_STDIN","exec"),scope)')
+        source = Path(engine.__file__).read_bytes()
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        completed = subprocess.run([sys.executable, "-B", "-c", bootstrap,
+            "rootless-capture", target_b64, "f" * 40, ROOTLESS_CANDIDATE_TREE,
+            ROOTLESS_IMAGE_ID], input=source, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=5)
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stderr, b"")
+        doc = json.loads(completed.stdout)
+        self.assertEqual(doc["reason"], "ROOTLESS_PIN_MISMATCH")
+        self.assertFalse(doc["runtime_pin_verified"])
+        self.assertIsNone(doc["receipt"]["current_gets"])
+
+    def test_rootless_typed_provider_failure_retains_exact_signed_budget_reason(self):
+        inner = capture_two(TARGET, None, Shared(), lambda *a, **k: None)
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        with patch("scripts.rc6_a630_host_ppi_current_book._rootless_context",
+                   side_effect=[context, context]):
+            result = rootless_host_capture(target_b64, ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source",
+                run=lambda cmd, **kwargs: subprocess.CompletedProcess(
+                    cmd, 2, stdout=json.dumps(inner).encode(), stderr=b""))
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertEqual(result["reason"], "PPI_KEYPAIR_UNAVAILABLE")
+        self.assertTrue(result["runtime_pin_verified"])
+        self.assertEqual(result["receipt"]["current_gets"], 0)
+        self.assertEqual(verified_rootless_wrapper(json.dumps(result).encode(), TARGET), result)
 
 
 if __name__ == "__main__":
