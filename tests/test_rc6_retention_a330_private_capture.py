@@ -690,6 +690,120 @@ class SyntheticPrivateCapture(unittest.TestCase):
                          {"within_365d": 3, "older_than_365d": 2,
                           "invalid_date": 2, "future_date": 1})
 
+    def test_a508_fixed_byma_sessions_count_versions_without_identity_or_ohlc_claim(self):
+        # A version count is deliberately not a distinct 5-key, canonical,
+        # FULL_OHLC or genuine intraday coverage claim.
+        arrivals = [
+            ("2026-11-05", "ACCIONES"), ("2026-11-05", "ACCIONES"),
+            ("2026-11-05", "CEDEARS"), ("2026-11-06", "ACCIONES"),
+            ("2026-11-09", "ACCIONES"), ("2026-11-10", "ACCIONES"),
+            ("2026-11-11", "BONOS"), ("2026-11-11", "SENSITIVE_FAMILY"),
+            ("2026-11-12", "ACCIONES"), ("2026-11-13", "BONOS"),
+            ("2026-11-13", "BONOS"), ("2026-11-16", "FCI"),
+            ("2026-11-17", "ACCIONES"),
+        ]
+        with sqlite3.connect(self.source) as db:
+            for index, (session, family) in enumerate(arrivals, start=9):
+                db.execute("INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?)",
+                           (index, "PRIVATE_SYMBOL", family, "BYMA", "T2",
+                            session, "PPI", "{}"))
+            db.execute("INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?)",
+                       (22, "PRIVATE_USA", "ACCIONES", "NASDAQ", "T2",
+                        "2026-11-11", "PPI", "{}"))
+        gate = dict(self.gate, gated_at_utc="2026-11-17T14:00:00Z",
+                    both_history_writers_inactive=True, a3_timers_masked=True,
+                    source_stat=a330.check_quiet_file(self.source, 1024**3,
+                                                      sqlite_file=True))
+        before = self.source.read_bytes()
+        receipt = a330.history_aggregate(self.source, gate=gate,
+                                         deadline=time.monotonic() + 30)
+        self.assertEqual(receipt["recent_session_versions"], [
+            {"session": "2026-11-05", "versions": 3, "families": [
+                {"family": "ACCIONES", "versions": 2},
+                {"family": "CEDEARS", "versions": 1}]},
+            {"session": "2026-11-11", "versions": 2, "families": [
+                {"family": "BONOS", "versions": 1},
+                {"family": "OTHER_REDACTED", "versions": 1}]},
+            {"session": "2026-11-12", "versions": 1, "families": [
+                {"family": "ACCIONES", "versions": 1}]},
+            {"session": "2026-11-13", "versions": 2, "families": [
+                {"family": "BONOS", "versions": 2}]},
+            {"session": "2026-11-16", "versions": 1, "families": [
+                {"family": "FCI", "versions": 1}]},
+        ])
+        self.assertEqual(receipt["recent_session_evidence"],
+                         "HISTORY_VERSION_ROWS_ONLY")
+        self.assertFalse(receipt["exact_5key_coverage_verified"])
+        self.assertFalse(receipt["full_ohlc_certified"])
+        self.assertFalse(receipt["canonical_history_verified"])
+        self.assertEqual(receipt["total_versions"], 22)
+        self.assertEqual(self.source.read_bytes(), before)
+        self.assertLessEqual(len(a330.encoded(receipt)),
+                             a330.AGGREGATE_MAX_RECEIPT_BYTES)
+        for private in ("PRIVATE_SYMBOL", "PRIVATE_USA", "SENSITIVE_FAMILY",
+                        "NASDAQ", "PPI", "2026-11-06",
+                        "2026-11-09", "2026-11-10", "2026-11-17"):
+            self.assertNotIn(private, a330.encoded(receipt).decode())
+
+        raw = self.private / "a502-private.json"
+        log = self.private / "a502-private.log"
+        raw.write_bytes(a330.encoded(receipt))
+        log.write_text("PRIVATE_SERVER_PATH=/var/private\n")
+        public = a330.sanitize_history_aggregate(raw, log, self.private, 0)
+        self.assertEqual(public["recent_session_versions"],
+                         receipt["recent_session_versions"])
+        self.assertNotIn("PRIVATE_SERVER_PATH", json.dumps(public))
+        for corrupt in ("private_family", "wrong_day", "wrong_count",
+                        "duplicate_family", "false_ohlc", "false_5key",
+                        "recent_exceeds_within_365d"):
+            tampered = json.loads(json.dumps(receipt))
+            first = tampered["recent_session_versions"][0]
+            if corrupt == "private_family":
+                first["families"][0]["family"] = "PRIVATE_SYMBOL"
+            elif corrupt == "wrong_day":
+                first["session"] = "2026-11-06"
+            elif corrupt == "wrong_count":
+                first["versions"] += 1
+            elif corrupt == "duplicate_family":
+                first["families"].append(first["families"][0])
+            elif corrupt == "false_ohlc":
+                tampered["full_ohlc_certified"] = True
+            elif corrupt == "recent_exceeds_within_365d":
+                tampered["older_than_365d"] += tampered["within_365d"]
+                tampered["within_365d"] = 0
+            else:
+                tampered["exact_5key_coverage_verified"] = True
+            raw.write_bytes(a330.encoded(tampered))
+            rejected = a330.sanitize_history_aggregate(raw, log, self.private, 0)
+            self.assertEqual(rejected["failure_class"], "REMOTE_RECEIPT_INVALID",
+                             corrupt)
+            self.assertNotIn("PRIVATE_SYMBOL", json.dumps(rejected))
+
+    def test_a508_recent_sessions_older_than_365_days_still_sanitize(self):
+        # A502 remains usable after the one-off November 2026 repair window.
+        with sqlite3.connect(self.source) as db:
+            for identity, session in ((9, "2026-11-05"), (10, "2026-11-11")):
+                db.execute("INSERT INTO history_versions_v2 VALUES(?,?,?,?,?,?,?,?)",
+                           (identity, "PRIVATE_SYMBOL", "ACCIONES", "BYMA", "T2",
+                            session, "PPI", "{}"))
+        gate = dict(self.gate, gated_at_utc="2027-11-10T14:00:00Z",
+                    both_history_writers_inactive=True, a3_timers_masked=True,
+                    source_stat=a330.check_quiet_file(self.source, 1024**3,
+                                                      sqlite_file=True))
+        receipt = a330.history_aggregate(self.source, gate=gate,
+                                         deadline=time.monotonic() + 30)
+        self.assertEqual(receipt["recent_versions_within_365d"], 1)
+        self.assertEqual(receipt["recent_versions_older_than_365d"], 1)
+        self.assertEqual(receipt["within_365d"], 1)
+        self.assertEqual(receipt["older_than_365d"], 9)
+        raw = self.private / "a502-private.json"
+        log = self.private / "a502-private.log"
+        raw.write_bytes(a330.encoded(receipt))
+        log.write_text("PRIVATE_SERVER_PATH=/var/private\n")
+        public = a330.sanitize_history_aggregate(raw, log, self.private, 0)
+        self.assertEqual(public["aggregate_status"], "SOURCE_COUNTS_ONLY")
+        self.assertEqual(public["recent_versions_older_than_365d"], 1)
+
     def test_a502_dangling_wal_and_unquiet_source_are_rejected(self):
         gate = dict(self.gate, both_history_writers_inactive=True,
                     a3_timers_masked=True)
