@@ -92,7 +92,8 @@ def _canonical_json(value) -> str:
     return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":"),allow_nan=False,default=str)
 
 
-def validate_daily_values(*, date, open, high, low, close, volume, known_at, market):
+def validate_daily_values(*, date, open, high, low, close, volume, known_at, market,
+                          family=None, settlement=None):
     """Shared numeric/session gate, including legacy evidence without identity.
 
     Passing this gate establishes values only. Currency and exact identity are
@@ -108,7 +109,13 @@ def validate_daily_values(*, date, open, high, low, close, volume, known_at, mar
     if market=='BYMA':
         from ak_byma_calendar import ANIOS_AUDITADOS,motivo_no_operativo
         if day.year in ANIOS_AUDITADOS and motivo_no_operativo(day):
-            raise ValueError('HISTORY_SESSION_NOT_OPERATIONAL')
+            # BYMA 06-Nov traded without settlement. A777 permits observing
+            # only exact T+1 contracts; a generic market/day has no authority
+            # to override the byte-frozen PAPER calendar.
+            from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
+            if estado_negociacion_fuente_byma(day,market=market,family=family,
+                                              settlement=settlement)!='LIMITED_T1_SOURCE_ONLY':
+                raise ValueError('HISTORY_SESSION_NOT_OPERATIONAL')
     values={}
     for name,raw in (('open',open),('high',high),('low',low),('close',close),('volume',volume)):
         if isinstance(raw,bool):raise ValueError('HISTORY_NUMBER_BOOLEAN')
@@ -189,7 +196,8 @@ class Candle:
             raise ValueError("HISTORY_FAMILY_UNVERIFIED")
         known=instant(value.observed_at)
         validate_daily_values(date=value.date,open=value.open,high=value.high,low=value.low,
-                              close=value.close,volume=value.volume,known_at=known,market=value.market)
+                              close=value.close,volume=value.volume,known_at=known,market=value.market,
+                              family=value.instrument_type,settlement=value.settlement)
         if value.price_basis not in {"RAW","SPLIT","DIVIDEND","TOTAL_RETURN","UNKNOWN_ADJUSTED"}:
             raise ValueError("HISTORY_PRICE_BASIS_UNVERIFIED")
         if value.price_basis=="RAW" and value.adjusted: raise ValueError("HISTORY_ADJUSTMENT_CONFLICT")

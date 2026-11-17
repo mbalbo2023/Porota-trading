@@ -17,6 +17,7 @@ import sqlite3
 import time
 
 import ak_byma_calendar as calendar
+from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
 from bl_candle_engine import Bar, CandleArchive, Series, canonical, fingerprint, init_schema, stamp
 from co_market_sessions_hf6 import TZ, session_for
 from cv_history_store_adapter_hf6 import HistoricalStore
@@ -277,7 +278,10 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     valid = (session is not None and series.market=='BYMA' and
                         series.price_kind=='TRADE_SAMPLES' and series.resolution in {'1m','5m'} and
                         series.adjustment=='RAW' and series.adjustment_basis!='UNKNOWN' and
-                        start.year in calendar.ANIOS_AUDITADOS and calendar.es_dia_habil_operativo(start.date()) and
+                        start.year in calendar.ANIOS_AUDITADOS and
+                        estado_negociacion_fuente_byma(start.date(),market=series.market,
+                            family=series.asset_class,settlement=series.settlement)
+                            in {'REGULAR','LIMITED_T1_SOURCE_ONLY'} and
                         start.time().replace(tzinfo=None)>=session.regular_open and
                         end.time().replace(tzinfo=None)<=session.regular_close and
                         start.date()==end.date() and end<=at.astimezone(TZ) and
