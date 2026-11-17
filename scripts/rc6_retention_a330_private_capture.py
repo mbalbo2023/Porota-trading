@@ -12,8 +12,9 @@ It copies only a quiet historical database to a private offhost runner for A319
 HOLD-only census. The original A330 mode and its same-session contract remain.
 
 A502 HISTORY_AGGREGATE_ONLY is a separate opt-in diagnostic of the quiet history
-file. It emits aggregate counts only, never raw dates, rows, symbols or the DB.
-It does not attest provider PIT, external pins, runtime PAPER/0 or purge safety.
+file. It emits aggregate counts plus fixed public BYMA session buckets only,
+never source-provided dates, rows, symbols or the DB. Version counts do not
+attest exact 5-key coverage, FULL_OHLC, provider PIT or purge safety.
 
 A503 HISTORY_CUTOFF_CENSUS_ONLY is a further opt-in COLD database census: it
 counts cutoff repair states and canonical family/source/date coverage. It cannot
@@ -45,7 +46,7 @@ from zoneinfo import ZoneInfo
 SCHEMA = "RC6_A330_PRIVATE_SAME_SESSION_V1"
 PIN_SCHEMA = "RC6_A330_PIN_CENSUS_V1"
 HISTORY_SCHEMA = "RC6_A500_HISTORY_COPY_ONLY_V1"
-AGGREGATE_SCHEMA = "RC6_A502_HISTORY_AGGREGATE_ONLY_V1"
+AGGREGATE_SCHEMA = "RC6_A502_HISTORY_AGGREGATE_ONLY_V2"
 CUTOFF_SCHEMA = "RC6_A503_HISTORY_CUTOFF_CENSUS_V1"
 CUTOFF_DIAG_SCHEMA = "RC6_A507_HISTORY_CUTOFF_SCHEMA_ONLY_V1"
 CUTOFF_DAY = "2026-09-21"
@@ -54,6 +55,8 @@ CUTOFF_MAX_BUCKETS = 40
 CUTOFF_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI", "OTHER_REDACTED"})
+RECENT_HISTORY_SESSIONS = (
+    "2026-11-05", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-16")
 CUTOFF_SOURCES = frozenset({
     "PPI", "PPI_API", "PPI_PRODUCTION_HISTORY", "IOL", "BYMA", "BYMA_EOD",
     "A3_CEM_CLOSING", "DATA912", "DATA912_POROTA_BATCH", "YAHOO",
@@ -125,7 +128,7 @@ HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
     "A502_SOURCE_CHANGED_DURING_SCAN", "A502_SOURCE_FD_MISMATCH",
     "A502_LEGACY_DATE_SCHEMA", "A502_ROW_BUDGET", "A502_TIME_BUDGET",
     "A502_GATE_CLOCK_INVALID", "A502_SQLITE_UNAVAILABLE", "A502_EMPTY_HISTORY",
-    "A502_HOST_CREDENTIALS_UNAVAILABLE",
+    "A502_HOST_CREDENTIALS_UNAVAILABLE", "A502_RECEIPT_BUDGET",
     "A503_SCHEMA_MISSING", "A503_CUTOFF_COUNTERS_INVALID",
     "A503_RUN_TABLE_UNAVAILABLE", "A503_RUN_COLUMNS_MISSING",
     "A503_EXACT_TABLE_UNAVAILABLE", "A503_EXACT_COLUMNS_MISSING",
@@ -418,18 +421,22 @@ def quiet_history_connection(source: Path, gate: dict | None,
 
 def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
                       deadline: float | None = None) -> dict:
-    """A502 date buckets from a quiet history inode; no raw rows or identities."""
+    """A502 bounded version counts, never canonical or FULL_OHLC coverage."""
     if deadline is None:
         deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
     counters = {"total_versions": 0, "within_365d": 0,
                 "older_than_365d": 0, "invalid_date": 0, "future_date": 0}
+    recent = {session: Counter() for session in RECENT_HISTORY_SESSIONS}
+    recent_within_365d = 0
+    recent_older_than_365d = 0
     with quiet_history_connection(source, gate, deadline) as (db, gate):
         kinds = [row[0] for row in db.execute(
             "SELECT type FROM sqlite_master WHERE name=?",
             ("history_versions_v2",))]
         columns = {row[1] for row in db.execute(
             'PRAGMA table_info("history_versions_v2")')}
-        require(kinds == ["table"] and "date" in columns,
+        require(kinds == ["table"] and
+                {"date", "instrument_type", "market"} <= columns,
                 "A502_LEGACY_DATE_SCHEMA")
         try:
             observed = datetime.fromisoformat(
@@ -449,6 +456,11 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
         cursor = db.execute(
             "SELECT CASE WHEN typeof(\"date\")='text' "
             "AND length(\"date\")=10 THEN \"date\" ELSE NULL END "
+            ",CASE WHEN typeof(\"instrument_type\")='text' "
+            "AND length(\"instrument_type\")<=32 THEN \"instrument_type\" "
+            "ELSE NULL END "
+            ",CASE WHEN typeof(\"market\")='text' "
+            "AND length(\"market\")<=16 THEN \"market\" ELSE NULL END "
             'FROM "history_versions_v2"')
         while True:
             require(time.monotonic() < deadline, "A502_TIME_BUDGET")
@@ -457,7 +469,7 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
                 break
             require(counters["total_versions"] + len(chunk) <=
                     AGGREGATE_MAX_ROWS, "A502_ROW_BUDGET")
-            for (value,) in chunk:
+            for value, family, market in chunk:
                 counters["total_versions"] += 1
                 if not isinstance(value, str) or len(value) != 10:
                     counters["invalid_date"] += 1
@@ -471,19 +483,40 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
                     counters["invalid_date"] += 1
                 elif day > today_art:
                     counters["future_date"] += 1
-                elif day >= cutoff:
-                    counters["within_365d"] += 1
                 else:
-                    counters["older_than_365d"] += 1
+                    if day >= cutoff:
+                        counters["within_365d"] += 1
+                    else:
+                        counters["older_than_365d"] += 1
+                    if market == "BYMA" and value in recent:
+                        recent[value][_cutoff_label(family, CUTOFF_FAMILIES)] += 1
+                        if day >= cutoff:
+                            recent_within_365d += 1
+                        else:
+                            recent_older_than_365d += 1
     require(counters["total_versions"] > 0, "A502_EMPTY_HISTORY")
-    return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
-            "aggregate_status": "SOURCE_COUNTS_ONLY", **counters,
-            "window_days": 365, "observer_database_opened": False,
-            "provider_pit_authenticated": False,
-            "external_consumer_universe_verified": False,
-            "source_mutated_by_action": False,
-            "host_purge_allowed": False, "physical_host_delete_count": 0,
-            "real_orders_sent_by_action": 0}
+    session_counts = [{
+        "session": session, "versions": sum(families.values()),
+        "families": [{"family": family, "versions": families[family]}
+                     for family in sorted(families)]}
+        for session, families in recent.items()]
+    receipt = {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
+               "aggregate_status": "SOURCE_COUNTS_ONLY", **counters,
+               "recent_session_evidence": "HISTORY_VERSION_ROWS_ONLY",
+               "recent_session_versions": session_counts,
+               "recent_versions_within_365d": recent_within_365d,
+               "recent_versions_older_than_365d": recent_older_than_365d,
+               "exact_5key_coverage_verified": False,
+               "full_ohlc_certified": False, "canonical_history_verified": False,
+               "window_days": 365, "observer_database_opened": False,
+               "provider_pit_authenticated": False,
+               "external_consumer_universe_verified": False,
+               "source_mutated_by_action": False,
+               "host_purge_allowed": False, "physical_host_delete_count": 0,
+               "real_orders_sent_by_action": 0}
+    require(len(encoded(receipt)) <= AGGREGATE_MAX_RECEIPT_BYTES,
+            "A502_RECEIPT_BUDGET")
+    return receipt
 
 
 def _cutoff_label(value: object, allowed: frozenset[str]) -> str:
@@ -750,22 +783,66 @@ def sanitize_history_aggregate(raw_path: Path, log_path: Path,
                  "future_date", "window_days", "observer_database_opened",
                  "provider_pit_authenticated", "external_consumer_universe_verified",
                  "source_mutated_by_action", "host_purge_allowed",
-                 "physical_host_delete_count", "real_orders_sent_by_action"}
+                 "physical_host_delete_count", "real_orders_sent_by_action",
+                 "recent_session_evidence", "recent_session_versions",
+                 "recent_versions_within_365d", "recent_versions_older_than_365d",
+                 "exact_5key_coverage_verified", "full_ohlc_certified",
+                 "canonical_history_verified"}
+        recent = body.get("recent_session_versions") if type(body) is dict else None
+        valid_recent = type(recent) is list and len(recent) == len(RECENT_HISTORY_SESSIONS)
+        if valid_recent:
+            recent_total = 0
+            for expected_session, item in zip(RECENT_HISTORY_SESSIONS, recent):
+                if (type(item) is not dict or set(item) !=
+                        {"session", "versions", "families"} or
+                        item["session"] != expected_session or
+                        type(item["versions"]) is not int or
+                        not 0 <= item["versions"] <= AGGREGATE_MAX_ROWS or
+                        type(item["families"]) is not list or
+                        len(item["families"]) > len(CUTOFF_FAMILIES)):
+                    valid_recent = False
+                    break
+                names = []
+                counted = 0
+                for family in item["families"]:
+                    if (type(family) is not dict or set(family) !=
+                            {"family", "versions"} or
+                            type(family["family"]) is not str or
+                            family["family"] not in CUTOFF_FAMILIES or
+                            type(family["versions"]) is not int or
+                            not 1 <= family["versions"] <= AGGREGATE_MAX_ROWS):
+                        valid_recent = False
+                        break
+                    names.append(family["family"])
+                    counted += family["versions"]
+                if not valid_recent or names != sorted(set(names)) or counted != item["versions"]:
+                    valid_recent = False
+                    break
+                recent_total += counted
         require(type(body) is dict and set(body) == fixed and
                 body["schema"] == AGGREGATE_SCHEMA and
                 body["state"] == "NO_VERIFICADO" and
                 body["aggregate_status"] == "SOURCE_COUNTS_ONLY" and
+                body["recent_session_evidence"] == "HISTORY_VERSION_ROWS_ONLY" and
+                valid_recent and recent_total <= body["total_versions"] and
                 body["window_days"] == 365 and
                 all(type(body[name]) is int and 0 <= body[name] <= AGGREGATE_MAX_ROWS
                     for name in ("total_versions", "within_365d",
-                                 "older_than_365d", "invalid_date", "future_date")) and
+                                 "older_than_365d", "invalid_date", "future_date",
+                                 "recent_versions_within_365d",
+                                 "recent_versions_older_than_365d")) and
                 0 < body["total_versions"] == sum(body[name] for name in
                     ("within_365d", "older_than_365d", "invalid_date",
                      "future_date")) and
+                recent_total == (body["recent_versions_within_365d"] +
+                                 body["recent_versions_older_than_365d"]) and
+                body["recent_versions_within_365d"] <= body["within_365d"] and
+                body["recent_versions_older_than_365d"] <= body["older_than_365d"] and
                 all(body[name] is False for name in
                     ("observer_database_opened", "provider_pit_authenticated",
                      "external_consumer_universe_verified", "source_mutated_by_action",
-                     "host_purge_allowed")) and
+                     "host_purge_allowed", "exact_5key_coverage_verified",
+                     "full_ohlc_certified", "canonical_history_verified")) and
                 body["physical_host_delete_count"] == 0 and
                 body["real_orders_sent_by_action"] == 0,
                 "A502_RECEIPT_INVALID")
