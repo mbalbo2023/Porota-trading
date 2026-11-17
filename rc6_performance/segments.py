@@ -11,12 +11,16 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import uuid
 from contextlib import closing, contextmanager
 from pathlib import Path
 
 
 SCHEMA = "rc6.performance-segments.v1"
+MAX_MANIFEST_BYTES = 16384
+MAX_SEGMENTS = 128
+MAX_SEGMENT_NAME_CHARS = 128
 TABLES = frozenset({"events", "cursors", "state", "exit_probes"})
 CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS events(
@@ -39,22 +43,43 @@ def manifest_path(base):
 
 
 def evidence_paths(base):
-    """Return all segments in order; malformed/missing entries fail closed."""
+    """Return bounded segments using the established Market Watch manifest custody."""
     base = Path(base).resolve()
     manifest = manifest_path(base)
-    if manifest.is_symlink():
-        raise ValueError("EVIDENCE_SEGMENT_MANIFEST_SYMLINK")
-    if not manifest.exists():
-        return (base,)
     try:
-        metadata = json.loads(manifest.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        before = manifest.lstat()
+    except FileNotFoundError:
+        return (base,)
+    except OSError as exc:
+        raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID") from exc
+    if stat.S_ISLNK(before.st_mode):
+        raise ValueError("EVIDENCE_SEGMENT_MANIFEST_SYMLINK")
+    if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
+            or not 0 < before.st_size <= MAX_MANIFEST_BYTES):
+        raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID")
+    identity = lambda item: (item.st_dev, item.st_ino, item.st_mode, item.st_nlink,
+                             item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+    expected = identity(before)
+    try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+        with os.fdopen(os.open(manifest, flags), "rb") as source:
+            if identity(os.fstat(source.fileno())) != expected:
+                raise ValueError("EVIDENCE_SEGMENT_MANIFEST_CHANGED")
+            raw = source.read(MAX_MANIFEST_BYTES + 1)
+        if len(raw) > MAX_MANIFEST_BYTES:
+            raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID")
+        metadata = json.loads(raw)
+        if identity(manifest.lstat()) != expected:
+            raise ValueError("EVIDENCE_SEGMENT_MANIFEST_CHANGED")
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID") from exc
     if not isinstance(metadata, dict):
         raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID")
     names = metadata.get("segments")
     if (metadata.get("schema") != SCHEMA or not isinstance(names, list) or
-            not names or not all(isinstance(name, str) for name in names) or
+            not 1 <= len(names) <= MAX_SEGMENTS or
+            not all(isinstance(name, str) and len(name) <= MAX_SEGMENT_NAME_CHARS
+                    for name in names) or
             names[0] != base.name or
             metadata.get("active") != names[-1] or len(names) != len(set(names))):
         raise ValueError("EVIDENCE_SEGMENT_MANIFEST_INVALID")
@@ -141,6 +166,10 @@ def rollover_when_full(base, maximum_bytes):
             segments = evidence_paths(base)
             if evidence_bytes(segments[-1]) < maximum_bytes:
                 return True
+            # Never publish a manifest that the independently bounded host
+            # monitor must reject as exceeding the 128-shard contract.
+            if len(segments) >= MAX_SEGMENTS:
+                return False
             configured = os.environ.get("RC6_PERFORMANCE_DISK_RESERVE_MIB", "512")
             if not configured.isdecimal() or int(configured) < 512:
                 raise ValueError("EVIDENCE_DISK_RESERVE_CONFIG_INVALID")
@@ -156,14 +185,17 @@ def rollover_when_full(base, maximum_bytes):
                 if not successor.exists() and not Path(str(successor) + "-wal").exists():
                     break
                 ordinal += 1
+            names = [p.name for p in segments] + [successor.name]
+            manifest = manifest_path(base)
+            payload = json.dumps({"schema": SCHEMA, "segments": names, "active": names[-1]},
+                                 separators=(",", ":"), sort_keys=True) + "\n"
+            if (len(successor.name) > MAX_SEGMENT_NAME_CHARS or
+                    len(payload.encode("utf-8")) > MAX_MANIFEST_BYTES):
+                return False
             _prepare_next(successor, segments[-1])
             if evidence_bytes(successor) >= maximum_bytes:
                 return False
-            names = [p.name for p in segments] + [successor.name]
-            manifest = manifest_path(base)
             staging = manifest.with_name(manifest.name + "." + uuid.uuid4().hex + ".tmp")
-            payload = json.dumps({"schema": SCHEMA, "segments": names, "active": names[-1]},
-                                 separators=(",", ":"), sort_keys=True) + "\n"
             with open(staging, "x", encoding="utf-8") as out:
                 out.write(payload)
                 out.flush()
