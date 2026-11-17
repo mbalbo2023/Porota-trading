@@ -1084,9 +1084,90 @@ class SyntheticPrivateCapture(unittest.TestCase):
             db.execute('DROP TABLE rc6_history_cutoff_repair_runs')
         gate['source_stat'] = a330.check_quiet_file(self.source, 1024**3,
                                                     sqlite_file=True)
-        with self.assertRaisesRegex(a330.GuardError, 'A503_SCHEMA_MISSING'):
+        with self.assertRaisesRegex(a330.GuardError,
+                                    'A503_RUN_TABLE_UNAVAILABLE'):
             a330.history_cutoff_census(self.source, gate=gate,
                                        deadline=time.monotonic() + 30)
+
+    def test_a505_cutoff_schema_absence_type_and_columns_are_typed_without_details(self):
+        """#44002764543 must name the fixed *class* of missing COLD schema.
+
+        A503's old blanket `A503_SCHEMA_MISSING` hid which of three checked
+        tables/columns failed. This local-only test never opens a host DB.
+        """
+        self.seed_a503_cold_history()
+        table_kinds = (
+            ('rc6_history_cutoff_repair_runs', 'RUN'),
+            ('rc6_history_cutoff_repair_exact_v2', 'EXACT'),
+            ('history_canonical_v2', 'CANONICAL'),
+        )
+        private_data = self.source.read_bytes()
+        raw = self.private / 'a503-private.json'
+        raw.touch()
+        log = self.private / 'a503-private.log'
+        checked_classes = set()
+        for number, (table, family) in enumerate(table_kinds):
+            for mode in ('missing', 'view', 'columns'):
+                with self.subTest(table=family, failure=mode):
+                    candidate = self.root / f'cold-schema-{number}-{mode}.db'
+                    candidate.write_bytes(private_data)
+                    with sqlite3.connect(candidate) as db:
+                        db.execute(f'DROP TABLE "{table}"')
+                        if mode == 'view':
+                            db.execute(f'''CREATE VIEW "{table}"
+                                AS SELECT 'SECRET_USER_SYMBOL' AS symbol''')
+                        elif mode == 'columns':
+                            db.execute(f'''CREATE TABLE "{table}"
+                                (only_private_value TEXT)''')
+                    gate = {
+                        'gated_at_utc': '2026-11-17T02:25:00Z',
+                        'source_stat': a330.check_quiet_file(
+                            candidate, 1024**3, sqlite_file=True),
+                        'both_history_writers_inactive': True,
+                        'a3_timers_masked': True,
+                    }
+                    expected = (f'A503_{family}_COLUMNS_MISSING' if mode == 'columns'
+                                else f'A503_{family}_TABLE_UNAVAILABLE')
+                    checked_classes.add(expected)
+                    with self.assertRaises(a330.GuardError) as failure:
+                        a330.history_cutoff_census(
+                            candidate, gate=gate,
+                            deadline=time.monotonic() + 30)
+                    self.assertEqual(str(failure.exception), expected)
+                    log.write_text('PRIVATE PPI TOKEN\nA330_REJECTED=' +
+                                   expected + '\n')
+                    receipt = a330.sanitize_history_cutoff_census(
+                        raw, log, self.private, 2)
+                    self.assertEqual(receipt['failure_class'],
+                                     'REMOTE_GUARD_' + expected)
+                    self.assertEqual(receipt['state'], 'NO_VERIFICADO')
+                    self.assertFalse(receipt['host_purge_allowed'])
+                    for sensitive in ('SECRET_USER_SYMBOL', 'PRIVATE PPI TOKEN',
+                                      'only_private_value', '.db', 'sqlite_master'):
+                        self.assertNotIn(sensitive, a330.encoded(receipt).decode())
+        self.assertEqual(len(checked_classes), 6)
+
+    def test_a505_cutoff_schema_failure_allowlist_remains_exact_and_private(self):
+        """Host-injected near matches may never become public error details."""
+        raw = self.private / 'a503-private.json'
+        raw.touch()
+        log = self.private / 'a503-private.log'
+        cases = (
+            ('A503_RUN_TABLE_UNAVAILABLE_PRIVATE', 'REMOTE_REJECTION_UNALLOWLISTED'),
+            ('A503_EXACT_COLUMNS_MISSING_EXTRA', 'REMOTE_REJECTION_UNALLOWLISTED'),
+            ('A503_CANONICAL_TABLE_UNAVAILABLE /tmp/secret',
+             'REMOTE_REJECTION_MALFORMED'),
+        )
+        for code, expected in cases:
+            with self.subTest(host_code=code):
+                log.write_text('PRIVATE PPI TOKEN\nA330_REJECTED=' + code + '\n')
+                public = a330.sanitize_history_cutoff_census(
+                    raw, log, self.private, 2)
+                self.assertEqual(public['failure_class'], expected)
+                self.assertEqual(public['state'], 'NO_VERIFICADO')
+                self.assertFalse(public['host_purge_allowed'])
+                self.assertNotIn('PRIVATE', a330.encoded(public).decode())
+                self.assertNotIn('/tmp/secret', a330.encoded(public).decode())
 
     def test_a503_manual_main_only_workflow_modes_and_shell_syntax(self):
         body = HISTORY_WORKFLOW.read_text()

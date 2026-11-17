@@ -63,6 +63,14 @@ CUTOFF_STATES = frozenset({
 CUTOFF_ERRORS = frozenset({
     "NONE", "PROVENANCE_MISSING", "NO_ROWS", "PROVIDER_ERROR",
     "PPI_HISTORY_ERROR", "OTHER_REDACTED"})
+CUTOFF_SCHEMA_GUARDS = {
+    "rc6_history_cutoff_repair_runs": (
+        "A503_RUN_TABLE_UNAVAILABLE", "A503_RUN_COLUMNS_MISSING"),
+    "rc6_history_cutoff_repair_exact_v2": (
+        "A503_EXACT_TABLE_UNAVAILABLE", "A503_EXACT_COLUMNS_MISSING"),
+    "history_canonical_v2": (
+        "A503_CANONICAL_TABLE_UNAVAILABLE", "A503_CANONICAL_COLUMNS_MISSING"),
+}
 HISTORY_PIN_SCHEMA = "RC6_A500_UNAVAILABLE_PIN_GROUPS_V1"
 MANIFEST_SCHEMA = "RC6_RETENTION_A319_MANIFEST_V1"
 HOST_SOURCE = Path("/opt/porota-trading/data/market_history.db")
@@ -115,6 +123,9 @@ HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
     "A502_GATE_CLOCK_INVALID", "A502_SQLITE_UNAVAILABLE", "A502_EMPTY_HISTORY",
     "A502_HOST_CREDENTIALS_UNAVAILABLE",
     "A503_SCHEMA_MISSING", "A503_CUTOFF_COUNTERS_INVALID",
+    "A503_RUN_TABLE_UNAVAILABLE", "A503_RUN_COLUMNS_MISSING",
+    "A503_EXACT_TABLE_UNAVAILABLE", "A503_EXACT_COLUMNS_MISSING",
+    "A503_CANONICAL_TABLE_UNAVAILABLE", "A503_CANONICAL_COLUMNS_MISSING",
     "A503_ROW_BUDGET", "A503_TIME_BUDGET",
     "A503_RECEIPT_BUDGET", "A503_HOST_CREDENTIALS_UNAVAILABLE",
 })
@@ -488,10 +499,12 @@ def _cutoff_iso_date(value: object) -> str | None:
 def _cutoff_columns(db: sqlite3.Connection, table: str,
                     columns: frozenset[str]) -> None:
     # Table names are hardcoded within this module, never user-supplied.
+    unavailable, incomplete = CUTOFF_SCHEMA_GUARDS[table]
     kinds = [row[0] for row in db.execute(
         "SELECT type FROM sqlite_master WHERE name=?", (table,))]
+    require(kinds == ["table"], unavailable)
     present = {row[1] for row in db.execute('PRAGMA table_info("' + table + '")')}
-    require(kinds == ["table"] and columns <= present, "A503_SCHEMA_MISSING")
+    require(columns <= present, incomplete)
 
 
 def history_cutoff_census(source: Path = HOST_SOURCE, *,
