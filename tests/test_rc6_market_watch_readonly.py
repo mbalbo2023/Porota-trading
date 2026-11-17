@@ -1678,6 +1678,16 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
         self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
         self.assertIsNone(result["evidence_total_bytes"])
 
+    def test_manifest_parser_recursion_error_is_always_fail_closed(self):
+        self.segmented_events()
+        with patch.object(monitor.json, "loads",
+                          side_effect=RecursionError("PRIVATE_DEEPLY_NESTED_JSON")):
+            result = monitor.performance_evidence_capacity_stat(
+                self.root, default_limit=100000)
+        self.assertEqual(result["state"], "NO_VERIFICADO_SEGMENT_MANIFEST")
+        self.assertIsNone(result["evidence_total_bytes"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
     def test_segmented_hot_wal_is_not_opened_or_reported_stale(self):
         active, manifest = self.segmented_events()
         writer = sqlite3.connect(active)

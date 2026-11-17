@@ -1106,7 +1106,7 @@ def _performance_segment_manifest(stem):
         if len(raw) > 16384:
             raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
         payload = json.loads(raw)
-    except (OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError, RecursionError) as exc:
         raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED") from exc
     names = payload.get("segments") if isinstance(payload, dict) else None
     if (not isinstance(payload, dict)
