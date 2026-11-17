@@ -1,5 +1,6 @@
 import json
 import hashlib
+import errno
 import io
 import os
 import subprocess
@@ -1110,6 +1111,11 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         self.launcher.write_bytes(b"#!/usr/bin/python3\nprint('private-code')\n")
         self.launcher.chmod(0o600)
 
+    def assert_custody_reason(self, observed, stage, predicate):
+        self.assertEqual(observed, {"status": "NO_VERIFICADO",
+            "reason": "LAUNCHER_CUSTODY_UNVERIFIED", "failure_stage": stage,
+            "failure_predicate": predicate, "read_only": True})
+
     def test_returns_digest_without_private_content_or_host_writes(self):
         raw = self.launcher.read_bytes()
         receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
@@ -1169,6 +1175,7 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         with patch.object(setup.os, "read", side_effect=swap_during_read):
             receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
         self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assert_custody_reason(receipt, "LAUNCHER", "METADATA_CHANGED")
         self.assertNotIn("DIFFERENT", json.dumps(receipt))
 
     def test_rejects_replaced_directory_during_digest(self):
@@ -1183,6 +1190,7 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         with patch.object(setup.os, "read", side_effect=swap_during_read):
             receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
         self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assert_custody_reason(receipt, "PRIVATE_STATE", "METADATA_CHANGED")
 
     def test_rejects_replaced_home_directory_during_digest(self):
         original = os.read
@@ -1195,6 +1203,7 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         with patch.object(setup.os, "read", side_effect=swap_during_read):
             receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
         self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assert_custody_reason(receipt, "HOME", "METADATA_CHANGED")
 
     def test_rejects_symlink_in_home_ancestor(self):
         alias = Path(self.temp.name) / "alias"
@@ -1205,6 +1214,79 @@ class SchedulerLauncherDigestTests(unittest.TestCase):
         aliased_home = alias / "deep" / self.home.name
         receipt = setup.scheduler_launcher_digest(aliased_home, uid=os.getuid())
         self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assert_custody_reason(receipt, "HOME_ANCESTOR", "ALIAS_OR_NONDIR")
+
+    def test_custody_reasons_identify_existing_predicates_without_values(self):
+        self.assert_custody_reason(setup.scheduler_launcher_digest("relative", uid=os.getuid()),
+                                   "HOME_PATH", "INPUT_INVALID")
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid() + 1),
+                                   "HOME", "OWNER_MISMATCH")
+        self.launcher.unlink()
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "LAUNCHER", "MISSING")
+        self.launcher.write_bytes(b"code\n")
+        self.launcher.chmod(0o600)
+        self.launcher.chmod(0o644)
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "LAUNCHER", "MODE_MISMATCH")
+        self.launcher.chmod(0o600)
+        self.launcher.write_bytes(b"x" * 16385)
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "LAUNCHER", "SIZE_BOUND")
+        self.launcher.write_bytes(b"code\n")
+        other = self.state / "other"
+        os.link(self.launcher, other)
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "LAUNCHER", "MULTIPLE_LINKS")
+        other.unlink()
+        local = self.home / ".local"
+        local.chmod(0o777)
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "LOCAL", "MODE_UNSAFE")
+        local.chmod(0o755)
+        self.state.chmod(0o755)
+        self.assert_custody_reason(setup.scheduler_launcher_digest(self.home, uid=os.getuid()),
+                                   "PRIVATE_STATE", "MODE_UNSAFE")
+        self.state.chmod(0o700)
+
+    def test_custody_reasons_sanitize_open_errors_and_short_reads(self):
+        original_open = os.open
+        def denied(name, *args, **kwargs):
+            if name == "scheduler-dispatch.py":
+                raise PermissionError(errno.EACCES, "TOKEN=secret-private")
+            return original_open(name, *args, **kwargs)
+        with patch.object(setup.os, "open", side_effect=denied):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assert_custody_reason(receipt, "LAUNCHER", "ACCESS_DENIED")
+        self.assertNotIn("secret-private", json.dumps(receipt))
+        with patch.object(setup.os, "read", return_value=b"short"):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assert_custody_reason(receipt, "LAUNCHER", "SHORT_READ")
+
+    def test_custody_race_missing_path_is_metadata_changed_not_originally_missing(self):
+        original = os.read
+        local = self.home / ".local"
+        moved = self.home / "moved-local"
+        def rename_after_open(fd, amount):
+            contents = original(fd, amount)
+            local.rename(moved)
+            return contents
+        with patch.object(setup.os, "read", side_effect=rename_after_open):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assert_custody_reason(receipt, "LOCAL", "METADATA_CHANGED")
+
+    def test_custody_stability_io_errors_do_not_claim_inode_change(self):
+        original_stat = os.stat
+        for err in (errno.EIO, errno.EACCES):
+            with self.subTest(errno=err):
+                def inaccessible(path, *args, **kwargs):
+                    if path == "scheduler-dispatch.py":
+                        raise OSError(err, "TOKEN=never-include")
+                    return original_stat(path, *args, **kwargs)
+                with patch.object(setup.os, "stat", side_effect=inaccessible):
+                    receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+                self.assert_custody_reason(receipt, "LAUNCHER", "METADATA_UNVERIFIED")
+                self.assertNotIn("never-include", json.dumps(receipt))
 
 
 if __name__ == "__main__":
