@@ -1042,7 +1042,7 @@ def _performance_recorded_period(path):
             return {**base, "status": "NO_EVIDENCE_FILES"}
         sidecars = (Path(str(path) + "-wal"), Path(str(path) + "-shm"))
         before_sidecars = tuple(descriptor(item) for item in sidecars)
-        if any(meta is not None and meta[2] > 0 for meta in before_sidecars):
+        if any(meta is not None for meta in before_sidecars):
             # mode=ro may mutate WAL shared memory. An active WAL can also
             # contain newer events than the checkpoint. Neither is admissible.
             return {**base, "reason": "WAL_ACTIVE_OR_PRESENT"}
@@ -1078,11 +1078,52 @@ def _performance_recorded_period(path):
         after = descriptor(path)
         after_sidecars = tuple(descriptor(item) for item in sidecars)
         if (after != before or after_sidecars != before_sidecars or
-                any(meta is not None and meta[2] > 0 for meta in after_sidecars)):
+                any(meta is not None for meta in after_sidecars)):
             return {**base, "reason": "PERFORMANCE_SNAPSHOT_CHANGED"}
         return result
     except (sqlite3.Error, OSError, ValueError, TypeError):
         return {**base, "reason": "SQLITE_READ_OR_SCHEMA_UNAVAILABLE"}
+
+
+def _performance_segment_manifest(stem):
+    """Bounded, exact-name manifest read; never open or mutate a SQLite shard."""
+    manifest = Path(str(stem) + ".segments.json")
+    try:
+        meta = manifest.lstat()
+    except FileNotFoundError:
+        return (stem,), None
+    if (not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1
+            or not 0 < meta.st_size <= 16384):
+        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+    before = (meta.st_dev, meta.st_ino, meta.st_size, meta.st_mtime_ns)
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(manifest, flags), "rb") as source:
+            opened = os.fstat(source.fileno())
+            if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != before:
+                raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+            raw = source.read(16385)
+        if len(raw) > 16384:
+            raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+        payload = json.loads(raw)
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED") from exc
+    names = payload.get("segments") if isinstance(payload, dict) else None
+    if (not isinstance(payload, dict)
+            or payload.get("schema") != "rc6.performance-segments.v1"
+            or not isinstance(names, list) or not 1 <= len(names) <= 128
+            or any(not isinstance(name, str) or len(name) > 128 for name in names)
+            or names[0] != stem.name or payload.get("active") != names[-1]
+            or len(names) != len(set(names))):
+        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+    for index, name in enumerate(names):
+        if index and not re.fullmatch(re.escape(stem.name)
+                                      + r"\.segment\.[0-9]{6,}\.sqlite", name):
+            raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+    end = manifest.lstat()
+    if (end.st_dev, end.st_ino, end.st_size, end.st_mtime_ns) != before:
+        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+    return tuple(stem.parent / name for name in names), before
 
 
 def performance_evidence_capacity_stat(root, *, default_limit=None, runtime_source_sha=None):
@@ -1101,30 +1142,103 @@ def performance_evidence_capacity_stat(root, *, default_limit=None, runtime_sour
             limit_source = "EXACT_RUNTIME_SOURCE_SHA"
     db = Path(root) / DB_REL
     stem = Path(str(db) + ".performance.sqlite")
-    sizes = {}
-    for name, path in (("db", stem), ("wal", Path(str(stem) + "-wal")),
-                       ("shm", Path(str(stem) + "-shm"))):
-        try:
-            info = path.lstat()
-        except FileNotFoundError:
-            sizes[name] = 0
-            continue
-        except OSError:
+    def segment_unknown():
+        return {"state": "NO_VERIFICADO_SEGMENT_MANIFEST", "health": "NO_VERIFICADO",
+                "evidence_total_bytes": None, "active_evidence_bytes": None,
+                "all_segments_evidence_bytes": None, "evidence_segments": None,
+                "read_only": True,
+                "recorded_period": {"status": "NO_VERIFICADO", "read_only": True,
+                                    "first_recorded_at": None, "last_recorded_at": None},
+                "report_freshness": "NO_VERIFICADO", "provider_requests": 0,
+                "real_order_routes_called": 0}
+    segmented = False
+    try:
+        shards, manifest_before = _performance_segment_manifest(stem)
+        segmented = manifest_before is not None
+        sizes = {"db": 0, "wal": 0, "shm": 0}
+        all_bytes = 0
+        snapshots = []
+        for shard in shards:
+            local = {}
+            for kind, path in (("db", shard), ("wal", Path(str(shard) + "-wal")),
+                               ("shm", Path(str(shard) + "-shm"))):
+                try:
+                    info = path.lstat()
+                except FileNotFoundError:
+                    if segmented and kind == "db":
+                        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+                    local[kind] = (0, None)
+                    continue
+                if (not stat.S_ISREG(info.st_mode) or info.st_size < 0
+                        or (segmented and info.st_nlink != 1)):
+                    raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED" if segmented
+                                     else "UNSAFE_PERFORMANCE_FILE")
+                local[kind] = (info.st_size, (info.st_dev, info.st_ino,
+                                               info.st_size, info.st_mtime_ns))
+            snapshots.append(local)
+            all_bytes += sum(value[0] for value in local.values())
+        sizes = {name: snapshots[-1][name][0] for name in sizes}
+        active_bytes = sum(sizes.values())
+        # Reject a manifest swap or file-size/identity race while observing.
+        # A manifest may also appear after the initial no-manifest legacy read.
+        after_shards, manifest_after = _performance_segment_manifest(stem)
+        if after_shards != shards or manifest_after != manifest_before:
+            raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+        if segmented:
+            for shard, old in zip(shards, snapshots):
+                for name, suffix in (("db", ""), ("wal", "-wal"), ("shm", "-shm")):
+                    path = Path(str(shard) + suffix)
+                    try:
+                        info = path.lstat()
+                        current = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+                    except FileNotFoundError:
+                        current = None
+                    if current != old[name][1]:
+                        raise ValueError("PERFORMANCE_SEGMENTS_UNVERIFIED")
+    except OSError:
+        if not segmented:
             return {"state": "NO_VERIFICADO_FILESYSTEM_STAT", "health": "NO_VERIFICADO",
                     "read_only": True, "report_freshness": "NO_VERIFICADO"}
-        if not stat.S_ISREG(info.st_mode) or info.st_size < 0:
+        return segment_unknown()
+    except (ValueError, TypeError) as exc:
+        if not segmented and str(exc) == "UNSAFE_PERFORMANCE_FILE":
             return {"state": "NO_VERIFICADO_UNSAFE_FILE_TYPE", "health": "NO_VERIFICADO",
                     "read_only": True, "report_freshness": "NO_VERIFICADO"}
-        sizes[name] = info.st_size
-    total = sum(sizes.values())
-    period = _performance_recorded_period(stem)
-    return {"state": ("NO_EVIDENCE_FILES" if total == 0
+        return segment_unknown()
+    if segmented:
+        # Immutable-only probes are allowed when WAL/SHM are absent; otherwise
+        # the currently writing shard cannot prove its newest timestamp.
+        newest = _performance_recorded_period(shards[-1])
+        oldest = _performance_recorded_period(shards[0]) if newest["status"] == "OBSERVED" else None
+        if oldest and oldest["status"] == "OBSERVED":
+            period = {"status": "OBSERVED", "read_only": True,
+                      "ordering": "SEGMENT_MANIFEST_AND_EVENT_ID_PRIMARY_KEY",
+                      "first_recorded_at": oldest["first_recorded_at"],
+                      "last_recorded_at": newest["last_recorded_at"]}
+        else:
+            period = {"status": "NO_VERIFICADO", "read_only": True,
+                      "ordering": "SEGMENT_MANIFEST_AND_EVENT_ID_PRIMARY_KEY",
+                      "first_recorded_at": None, "last_recorded_at": None,
+                      "reason": ((newest or {}).get("reason") or (oldest or {}).get("reason")
+                                 or "SEGMENT_BOUNDARY_UNAVAILABLE")}
+    else:
+        period = _performance_recorded_period(stem)
+    try:
+        final_shards, final_guard = _performance_segment_manifest(stem)
+        if final_shards != shards or final_guard != manifest_before:
+            return segment_unknown()
+    except (OSError, ValueError, TypeError):
+        return segment_unknown()
+    return {"state": ("NO_EVIDENCE_FILES" if all_bytes == 0
                       else "NO_VERIFICADO_CAPACITY_LIMIT" if default_limit is None
-                      else "AT_OR_ABOVE_DEFAULT_LIMIT" if total >= default_limit
+                      else "AT_OR_ABOVE_DEFAULT_LIMIT" if active_bytes >= default_limit
                       else "BELOW_DEFAULT_LIMIT_NOT_HEALTH"),
             "default_capacity_bytes": default_limit,
             "capacity_limit_source": limit_source,
-            "evidence_total_bytes": total,
+            "evidence_total_bytes": active_bytes,
+            "active_evidence_bytes": active_bytes,
+            "all_segments_evidence_bytes": all_bytes,
+            "evidence_segments": len(shards),
             "evidence_by_component_bytes": sizes,
             "recorded_period": period,
             "read_only": True,
