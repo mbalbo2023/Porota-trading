@@ -1,19 +1,80 @@
 """The internal probe exports status evidence, never HTML or credentials."""
+import ast
+from contextlib import redirect_stdout
+from datetime import datetime, timedelta
+from hashlib import sha256
+from io import StringIO
 import json
 import os
 from pathlib import Path
+import sqlite3
 import stat
 import subprocess
 import tempfile
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
-from scripts.rc6_operator_dashboard_readonly import CHILD, POSTCLOSE_ROUTES, ROUTES, SCHEMA, audit_host
+from scripts.rc6_operator_dashboard_readonly import (
+    CAUCION_HOLD_SAFE_CODES, CHILD, POSTCLOSE_ROUTES, ROUTES, SCHEMA, audit_host,
+)
 from scripts import rc6_operator_dashboard_readonly as operator
 
 
 class OperatorAuditTests(TestCase):
+ def _run_embedded_caucion_probe(self, rows):
+    """Exercise the real embedded SQLite query, without host or network access."""
+    with tempfile.TemporaryDirectory() as directory:
+      db = Path(directory) / "observer.db"
+      with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE paper_caucion_allocations "
+                     "(evaluated_at TEXT, decision_json TEXT, paper_id TEXT)")
+        conn.execute("CREATE TABLE paper_caucion_cash_sweep_attempts "
+                     "(evaluated_at TEXT, status TEXT, code TEXT)")
+        conn.executemany("INSERT INTO paper_caucion_cash_sweep_attempts VALUES (?,?,?)", rows)
+      before = sha256(db.read_bytes()).hexdigest()
+      source_path = 'db="/app/data/paper_v17/observer_v17.db"'
+      self.assertIn(source_path, CHILD)
+      script = CHILD.replace(source_path, "db=" + repr(str(db)))
+      output = StringIO()
+      with patch.dict(os.environ, {"DASHBOARD_ACCESS_TOKEN": ""}), redirect_stdout(output):
+        exec(compile(script, "<embedded-dashboard-child-test>", "exec"), {"__name__": "__main__"})
+      self.assertEqual(sha256(db.read_bytes()).hexdigest(), before, "child changed a read-only DB")
+      return json.loads(output.getvalue())
+
+ def test_caucion_worker_hold_code_allowlisted_at_sqlite_source(self):
+    today = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).isoformat()
+    child = self._run_embedded_caucion_probe([(today, "HOLD", "PAPER_PREOPEN_RECEIPT_UNSAFE")])
+    attempt = child["caucion_attempt"]
+    self.assertEqual(attempt["worker_latest_result"], "HOLD")
+    self.assertTrue(attempt["worker_latest_today"])
+    self.assertEqual(attempt["worker_latest_code"], "PAPER_PREOPEN_RECEIPT_UNSAFE")
+
+ def test_embedded_and_host_caucion_code_allowlists_remain_identical(self):
+    values = [node.value for node in ast.parse(CHILD).body
+              if isinstance(node, ast.Assign) and
+              any(isinstance(target, ast.Name) and target.id == "caucion_hold_safe_codes"
+                  for target in node.targets)]
+    self.assertEqual(len(values), 1)
+    self.assertEqual(ast.literal_eval(values[0]), CAUCION_HOLD_SAFE_CODES)
+
+ def test_caucion_worker_hold_code_never_leaks_unknown_or_stale_payload(self):
+    today = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+    cases = (
+      ([(today.isoformat(), "HOLD", "Bearer private-token /run/secrets/ppi.json")], "OTHER_OR_UNVERIFIED"),
+      ([(today.isoformat(), "HOLD", "PAPER_PREOPEN_RECEIPT_UNSAFE:private")], "OTHER_OR_UNVERIFIED"),
+      ([((today-timedelta(days=1)).isoformat(), "HOLD", "PAPER_PREOPEN_RECEIPT_UNSAFE")], "NO_VERIFICADO"),
+      ([(today.isoformat(), "SKIPPED", "PAPER_PREOPEN_RECEIPT_UNSAFE")], "NO_VERIFICADO"),
+      ([], "NO_VERIFICADO"),
+    )
+    for rows, expected in cases:
+      with self.subTest(rows=rows):
+        child = self._run_embedded_caucion_probe(rows)
+        attempt = child["caucion_attempt"]
+        self.assertEqual(attempt["worker_latest_code"], expected)
+        self.assertNotIn("private", json.dumps(child))
+
  def test_dashboard_probe_uses_exact_private_cid_without_rootful_docker(self):
     cid = "2" * 64
     context = SimpleNamespace(roles={"observer": "1" * 64, "dashboard": cid},
@@ -68,6 +129,7 @@ class OperatorAuditTests(TestCase):
                                    "has_paper_id": True, "today_attempts": 1,
                                    "worker_status": "BOUNDED", "worker_attempts_today": 1,
                                    "worker_latest_today": True, "worker_latest_result": "HOLD",
+                                   "worker_latest_code": "PAPER_PREOPEN_RECEIPT_UNSAFE",
                                    "secret": "must never leave host"}}
     def runner(argv, **kwargs):
         assert argv[:7] == ["/usr/bin/docker", "--host",
@@ -92,7 +154,26 @@ class OperatorAuditTests(TestCase):
     self.assertEqual(result["paper_today"]["wins_today"], 2)
     self.assertEqual(result["caucion_attempt"]["today_attempts"], 1)
     self.assertEqual(result["caucion_attempt"]["worker_latest_result"], "HOLD")
+    self.assertEqual(result["caucion_attempt"]["worker_latest_code"], "PAPER_PREOPEN_RECEIPT_UNSAFE")
     self.assertNotIn("must never leave host", json.dumps(result))
+    for value, status, today, expected in (
+          ("Bearer private-token", "HOLD", True, "OTHER_OR_UNVERIFIED"),
+          ("PAPER_PREOPEN_RECEIPT_UNSAFE;secret", "HOLD", True, "OTHER_OR_UNVERIFIED"),
+          ("PAPER_PREOPEN_RECEIPT_UNSAFE", "HOLD", False, "NO_VERIFICADO"),
+          ("PAPER_PREOPEN_RECEIPT_UNSAFE", "SKIPPED", True, "NO_VERIFICADO"),
+          (None, "HOLD", True, "OTHER_OR_UNVERIFIED"),
+          (["PAPER_PREOPEN_RECEIPT_UNSAFE"], "HOLD", True, "OTHER_OR_UNVERIFIED")):
+      with self.subTest(value=value, status=status, today=today):
+        payload["caucion_attempt"]["worker_latest_code"] = value
+        payload["caucion_attempt"]["worker_latest_result"] = status
+        payload["caucion_attempt"]["worker_latest_today"] = today
+        with patch.object(operator, "_rootless_context", return_value=context):
+          checked = audit_host(runner=runner)
+        self.assertEqual(checked["caucion_attempt"]["worker_latest_code"], expected)
+        self.assertNotIn("private-token", json.dumps(checked))
+    payload["caucion_attempt"]["worker_latest_code"] = "PAPER_PREOPEN_RECEIPT_UNSAFE"
+    payload["caucion_attempt"]["worker_latest_result"] = "HOLD"
+    payload["caucion_attempt"]["worker_latest_today"] = True
 
     payload["profile_status"] = "BOUNDED"
     payload["profile"] = [{"stage": "balances", "elapsed_ms": 2832,
