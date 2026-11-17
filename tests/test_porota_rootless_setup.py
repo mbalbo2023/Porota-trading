@@ -889,7 +889,7 @@ class Preopen79DiagnosticTests(unittest.TestCase):
                 show_count += 1
                 code = (0 if changed and show_count > 1 else status)
                 fields = (
-                    f"Id={self.UNIT}\nResult=exit-code\nExecMainStatus={code}\n"
+                    f"Id={self.UNIT}\nResult={'success' if code == 0 else 'exit-code'}\nExecMainStatus={code}\n"
                     f"FragmentPath=/etc/systemd/system/{self.UNIT}\n"
                     "ExecMainStartTimestamp=Mon 2026-11-16 13:20:24 UTC\n"
                     "ExecMainExitTimestamp=Mon 2026-11-16 13:20:25 UTC\n"
@@ -935,6 +935,20 @@ class Preopen79DiagnosticTests(unittest.TestCase):
                 runner, _ = self.run_probe(journal=self.journal_row(code))
                 receipt = setup.preopen_79_diagnostic(run=runner)
                 self.assertEqual(receipt["failure_signature"], code)
+
+    def test_legacy_79_preserves_original_allowlist_even_with_private_extra_fields(self):
+        typed = {"schema": "porota.rootless.job.v1", "state": "BLOQUEADO",
+                 "failure_signature": "SCHEDULER_HOST_JOB_FAILED",
+                 "failure_stage": "PRIVATE_OLD_EXTENSION", "secret": "TOKEN=never-export"}
+        runner, _ = self.run_probe(journal=self.journal_row(
+            **{"MESSAGE": json.dumps(typed)}))
+        legacy = setup.preopen_79_diagnostic(run=runner)
+        self.assertEqual(legacy["status"], "OBSERVED")
+        self.assertEqual(legacy["failure_signature"], "SCHEDULER_HOST_JOB_FAILED")
+        self.assertNotIn("PRIVATE_OLD_EXTENSION", json.dumps(legacy))
+        runner, _ = self.run_probe(journal=self.journal_row(
+            **{"MESSAGE": json.dumps(typed)}))
+        self.assertEqual(setup.preopen_last_diagnostic(run=runner)["status"], "NO_VERIFICADO")
 
     def test_rejects_other_units_and_invocations(self):
         for event in (
@@ -1009,8 +1023,188 @@ class Preopen79DiagnosticTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 1, "", "SECRET=never-include")
                 result = setup.inspect_host(Path(directory), run=unavailable)
         self.assertEqual(result["preopen_79"], sentinel)
+        self.assertIn("preopen_last", result)
+        self.assertIn("scheduler_launcher", result)
         self.assertEqual(result["host_mutations"], 0)
         self.assertNotIn("never-include", json.dumps(result))
+
+    def test_last_diagnosis_exposes_allowlisted_red_checks_only(self):
+        typed = {"schema": "porota.rootless.job.v1", "unit": self.UNIT,
+                 "state": "BLOQUEADO", "failure_signature": "PREOPEN_RED_CHECKS",
+                 "preopen_red_checks": ["observer_db", "disk"],
+                 "child_exit_code": 2, "exit_code": 2, "secret": "TOKEN=do-not-export"}
+        runner, calls = self.run_probe(status=2, journal=self.journal_row(
+            **{"MESSAGE": json.dumps(typed)}))
+        receipt = setup.preopen_last_diagnostic(run=runner)
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["service_exit_code"], 2)
+        self.assertEqual(receipt["failure_signature"], "PREOPEN_RED_CHECKS")
+        self.assertEqual(receipt["preopen_red_checks"], ["observer_db", "disk"])
+        self.assertEqual(receipt["child_exit_code"], 2)
+        self.assertNotIn("do-not-export", json.dumps(receipt))
+        self.assertFalse(any(set(c) & {"start", "stop", "restart", "reset-failed"} for c in calls))
+
+    def test_last_diagnosis_handles_success_skipped_import_error_and_old_79(self):
+        cases = (
+            (0, {"state": "EXECUTED", "unit": self.UNIT, "exit_code": 0},
+             {"job_state": "EXECUTED", "service_exit_code": 0}),
+            (0, {"state": "SKIPPED", "failure_signature": "DEPLOY_IN_PROGRESS"},
+             {"job_state": "SKIPPED", "service_exit_code": 0}),
+            (1, {"state": "BLOQUEADO", "failure_signature": "SCHEDULER_LAUNCHER_CUSTODY",
+                 "failure_stage": "SOURCE_IMPORT"},
+             {"failure_stage": "SOURCE_IMPORT", "service_exit_code": 1}),
+            (79, {"state": "BLOQUEADO", "failure_signature": "SCHEDULER_HOST_JOB_FAILED"},
+             {"failure_signature": "SCHEDULER_HOST_JOB_FAILED", "service_exit_code": 79}),
+        )
+        for code, fields, expected in cases:
+            with self.subTest(code=code, fields=fields):
+                typed = {"schema": "porota.rootless.job.v1", **fields,
+                         "private": "SECRET=not-exported"}
+                runner, _ = self.run_probe(status=code, journal=self.journal_row(
+                    **{"MESSAGE": json.dumps(typed)}))
+                receipt = setup.preopen_last_diagnostic(run=runner)
+                self.assertEqual(receipt["status"], "OBSERVED")
+                for key, value in expected.items():
+                    self.assertEqual(receipt[key], value)
+                self.assertNotIn("not-exported", json.dumps(receipt))
+
+    def test_last_diagnosis_fails_closed_on_untrusted_fields_and_journal_races(self):
+        red = {"schema": "porota.rootless.job.v1", "unit": self.UNIT,
+               "state": "BLOQUEADO", "failure_signature": "PREOPEN_RED_CHECKS",
+               "preopen_red_checks": ["disk"], "child_exit_code": 2, "exit_code": 2}
+        invalid = (
+            dict(red, preopen_red_checks=["disk", "TOKEN=private"]),
+            dict(red, preopen_red_checks=["disk", "disk"]),
+            dict(red, child_exit_code=1),
+            dict(red, exit_code=1),
+            dict(red, state="EXECUTED"),
+            dict(red, failure_stage="PRIVATE_INTERNAL"),
+        )
+        for fields in invalid:
+            with self.subTest(fields=fields):
+                runner, _ = self.run_probe(status=2, journal=self.journal_row(
+                    **{"MESSAGE": json.dumps(fields)}))
+                self.assertEqual(setup.preopen_last_diagnostic(run=runner)["status"], "NO_VERIFICADO")
+        mismatched_child = {"schema": "porota.rootless.job.v1", "unit": self.UNIT,
+                            "state": "BLOQUEADO", "failure_signature": "PREOPEN_CHILD_EXIT_7",
+                            "child_exit_code": 8, "exit_code": 1}
+        runner, _ = self.run_probe(status=1, journal=self.journal_row(
+            **{"MESSAGE": json.dumps(mismatched_child)}))
+        self.assertEqual(setup.preopen_last_diagnostic(run=runner)["status"], "NO_VERIFICADO")
+        for options in ({"changed": True}, {"journal_rc": 1},
+                        {"journal": self.journal_row() + "\n" + self.journal_row()}):
+            with self.subTest(options=options):
+                runner, _ = self.run_probe(status=79, **options)
+                self.assertEqual(setup.preopen_last_diagnostic(run=runner)["status"], "NO_VERIFICADO")
+
+
+class SchedulerLauncherDigestTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name) / "owner-home"
+        self.state = self.home / ".local/state/porota-rc6"
+        self.state.mkdir(parents=True)
+        self.state.chmod(0o700)
+        self.launcher = self.state / "scheduler-dispatch.py"
+        self.launcher.write_bytes(b"#!/usr/bin/python3\nprint('private-code')\n")
+        self.launcher.chmod(0o600)
+
+    def test_returns_digest_without_private_content_or_host_writes(self):
+        raw = self.launcher.read_bytes()
+        receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assertEqual(receipt, {"status": "OBSERVED", "sha256": hashlib.sha256(raw).hexdigest(),
+                                   "bytes": len(raw), "read_only": True})
+        self.assertNotIn("private-code", json.dumps(receipt))
+        self.assertEqual(self.launcher.read_bytes(), raw)
+
+    def test_rejects_symlink_hardlink_public_mode_wrong_owner_and_oversize(self):
+        for condition in ("file_symlink", "directory_symlink", "hardlink", "public_mode",
+                          "wrong_owner", "oversize"):
+            with self.subTest(condition=condition):
+                if condition == "file_symlink":
+                    with tempfile.TemporaryDirectory() as outside:
+                        target = Path(outside) / "outside"
+                        target.write_bytes(b"SECRET")
+                        self.launcher.unlink()
+                        self.launcher.symlink_to(target)
+                        self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+                        self.launcher.unlink()
+                        self.launcher.write_bytes(b"#!/usr/bin/python3\n")
+                        self.launcher.chmod(0o600)
+                elif condition == "directory_symlink":
+                    alt = self.home / "alternate"
+                    alt.mkdir()
+                    self.state.rename(alt / "porota-rc6")
+                    self.state.symlink_to(alt / "porota-rc6", target_is_directory=True)
+                    self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+                    self.state.unlink()
+                    (alt / "porota-rc6").rename(self.state)
+                    alt.rmdir()
+                elif condition == "hardlink":
+                    other = self.state / "other"
+                    os.link(self.launcher, other)
+                    self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+                    other.unlink()
+                elif condition == "public_mode":
+                    self.launcher.chmod(0o644)
+                    self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+                    self.launcher.chmod(0o600)
+                elif condition == "wrong_owner":
+                    self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid()+1)["status"], "NO_VERIFICADO")
+                elif condition == "oversize":
+                    self.launcher.write_bytes(b"x" * 16385)
+                    self.assertEqual(setup.scheduler_launcher_digest(self.home, uid=os.getuid())["status"], "NO_VERIFICADO")
+                    self.launcher.write_bytes(b"#!/usr/bin/python3\n")
+
+    def test_rejects_replaced_file_during_digest(self):
+        original = os.read
+        replacement = self.state / "replacement"
+        replacement.write_bytes(b"DIFFERENT_PRIVATE_CONTENT")
+        replacement.chmod(0o600)
+        def swap_during_read(fd, amount):
+            raw = original(fd, amount)
+            os.replace(replacement, self.launcher)
+            return raw
+        with patch.object(setup.os, "read", side_effect=swap_during_read):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assertNotIn("DIFFERENT", json.dumps(receipt))
+
+    def test_rejects_replaced_directory_during_digest(self):
+        original = os.read
+        moved = self.home / "moved-state"
+        def swap_during_read(fd, amount):
+            raw = original(fd, amount)
+            self.state.rename(moved)
+            self.state.mkdir()
+            self.state.chmod(0o700)
+            return raw
+        with patch.object(setup.os, "read", side_effect=swap_during_read):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assertEqual(receipt["status"], "NO_VERIFICADO")
+
+    def test_rejects_replaced_home_directory_during_digest(self):
+        original = os.read
+        moved = self.home.with_name("moved-home")
+        def swap_during_read(fd, amount):
+            raw = original(fd, amount)
+            self.home.rename(moved)
+            self.home.mkdir()
+            return raw
+        with patch.object(setup.os, "read", side_effect=swap_during_read):
+            receipt = setup.scheduler_launcher_digest(self.home, uid=os.getuid())
+        self.assertEqual(receipt["status"], "NO_VERIFICADO")
+
+    def test_rejects_symlink_in_home_ancestor(self):
+        alias = Path(self.temp.name) / "alias"
+        deep = Path(self.temp.name) / "deep"
+        deep.mkdir()
+        self.home.rename(deep / self.home.name)
+        alias.symlink_to(Path(self.temp.name), target_is_directory=True)
+        aliased_home = alias / "deep" / self.home.name
+        receipt = setup.scheduler_launcher_digest(aliased_home, uid=os.getuid())
+        self.assertEqual(receipt["status"], "NO_VERIFICADO")
 
 
 if __name__ == "__main__":
