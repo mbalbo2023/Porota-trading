@@ -230,9 +230,70 @@ PREOPEN_79_SIGNATURES = frozenset({
     "PAPER_DATABASE_SAFETY", "PAPER_DATABASE_UNREADABLE", "DATABASE_REQUIRED",
     "DATABASE_ALIAS", "DATABASE_REPLACED", "UNOWNED_ROOTLESS_CONTAINERS",
 })
+PREOPEN_RED_KEYS = frozenset({
+    "release_identity", "observer_container", "dashboard_container", "observer_db",
+    "disk", "required_rc6_timers", "byma_morning_watch", "iol_reference_fallback",
+    "history_quarantine", "foreign_market_policy", "paper_admission_receipt",
+})
+PREOPEN_LAUNCHER_STAGES = frozenset({
+    "IDENTITY", "STATE_CUSTODY", "DEPLOY_LOCK", "CURRENT_RELEASE",
+    "SOURCE_CUSTODY", "SOURCE_IMPORT",
+})
 
 
-def preopen_79_diagnostic(*, run=subprocess.run):
+def _typed_preopen_result(job, service_exit_code):
+    """Reduce a private typed journal message to independently allowlisted fields."""
+    if job.get("unit") not in (None, PREOPEN_UNIT):
+        return None
+    state, signature = job.get("state"), job.get("failure_signature")
+    reported = job.get("exit_code")
+    if reported is not None and (type(reported) is not int or reported != service_exit_code):
+        return None
+    red = job.get("preopen_red_checks", [])
+    child_exit = job.get("child_exit_code")
+    stage = job.get("failure_stage")
+    if (type(red) is not list or
+            any(type(name) is not str or name not in PREOPEN_RED_KEYS for name in red) or
+            len(set(red)) != len(red) or len(red) > len(PREOPEN_RED_KEYS) or
+            child_exit is not None and (type(child_exit) is not int or not 1 <= child_exit <= 255) or
+            stage is not None and (type(stage) is not str or stage not in PREOPEN_LAUNCHER_STAGES or
+                                   signature != "SCHEDULER_LAUNCHER_CUSTODY")):
+        return None
+    if service_exit_code == 0:
+        if (state == "EXECUTED" and signature is None or
+                state == "SKIPPED" and signature == "DEPLOY_IN_PROGRESS") and not red and child_exit is None and stage is None:
+            return {"job_state": state, "failure_signature": signature}
+        return None
+    if state != "BLOQUEADO":
+        return None
+    if service_exit_code == 79:
+        if signature in PREOPEN_79_SIGNATURES and not red and child_exit is None and stage is None:
+            return {"job_state": state, "failure_signature": signature}
+        return None
+    if service_exit_code == 2:
+        if signature == "PREOPEN_RED_CHECKS" and child_exit == 2 and red:
+            return {"job_state": state, "failure_signature": signature,
+                    "preopen_red_checks": red, "child_exit_code": 2}
+        if signature == "PREOPEN_CHILD_RECEIPT_UNVERIFIED" and child_exit == 2 and not red:
+            return {"job_state": state, "failure_signature": signature, "child_exit_code": 2}
+        return None
+    # Exit 1 includes dispatcher custody holds, a preopen child failure, and
+    # launcher pre-import failures. Never publish free-form exception details.
+    child_code = (re.fullmatch(r"PREOPEN_CHILD_EXIT_([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])", signature)
+                  if type(signature) is str else None)
+    child_failure = signature == "PREOPEN_CHILD_EXIT_UNVERIFIED" or child_code is not None
+    if child_code is not None and child_exit != int(child_code.group(1)):
+        return None
+    if (service_exit_code == 1 and not red and
+            (signature in PREOPEN_79_SIGNATURES or child_failure) and
+            (child_exit is None or child_failure)):
+        return {"job_state": state, "failure_signature": signature,
+                **({"failure_stage": stage} if stage is not None else {}),
+                **({"child_exit_code": child_exit} if child_exit is not None else {})}
+    return None
+
+
+def preopen_79_diagnostic(*, run=subprocess.run, _include_last=False):
     """Attribute the last Exit 79 using journal fields, never export MESSAGE.
 
     The exact installed unit is queried twice. An absent, changed or ambiguous
@@ -248,8 +309,10 @@ def preopen_79_diagnostic(*, run=subprocess.run):
 
     def snapshot():
         values = _properties(_call(show_command, run=run, timeout=5), names)
-        if (values.get("Id") != PREOPEN_UNIT or values.get("Result") != "exit-code" or
-                values.get("ExecMainStatus") != "79" or
+        code = values.get("ExecMainStatus")
+        accepted = {"0", "1", "2", "79"} if _include_last else {"79"}
+        if (values.get("Id") != PREOPEN_UNIT or code not in accepted or
+                values.get("Result") != ("success" if code == "0" else "exit-code") or
                 values.get("FragmentPath") != "/etc/systemd/system/" + PREOPEN_UNIT or
                 not re.fullmatch(r"[0-9a-f]{32}", values.get("InvocationID", ""))):
             return None
@@ -329,12 +392,19 @@ def preopen_79_diagnostic(*, run=subprocess.run):
             observed = datetime.fromtimestamp(int(stamp) / 1_000_000, tz=timezone.utc)
             if not start - timedelta(seconds=2) <= observed <= exit_at + timedelta(seconds=2):
                 return unverified("JOURNAL_ATTRIBUTION_UNVERIFIED")
-            signature = job.get("failure_signature")
-            if (job.get("state") != "BLOQUEADO" or
-                    signature not in PREOPEN_79_SIGNATURES or
-                    job.get("unit") not in (None, PREOPEN_UNIT)):
+            if _include_last:
+                typed = _typed_preopen_result(job, int(values["ExecMainStatus"]))
+            else:
+                # Historical Exit79 accepted these exact fields and ignored
+                # all other private fields. Preserve that legacy contract.
+                signature = job.get("failure_signature")
+                typed = ({"failure_signature": signature}
+                         if job.get("state") == "BLOQUEADO" and
+                         signature in PREOPEN_79_SIGNATURES and
+                         job.get("unit") in (None, PREOPEN_UNIT) else None)
+            if typed is None:
                 return unverified("JOURNAL_SIGNATURE_UNTRUSTED")
-            identified.append(signature)
+            identified.append(typed)
     except (ValueError, TypeError, OverflowError):
         return unverified("JOURNAL_RECORD_UNTRUSTED")
     if len(identified) != 1:
@@ -342,10 +412,20 @@ def preopen_79_diagnostic(*, run=subprocess.run):
                           "JOURNAL_ATTRIBUTION_AMBIGUOUS")
     if snapshot() != first:
         return unverified("UNIT_CHANGED_DURING_INSPECT")
-    return {"status": "OBSERVED", "failure_signature": identified[0],
+    if _include_last:
+        return {"status": "OBSERVED", "service_exit_code": int(values["ExecMainStatus"]),
+                "event_start_utc": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "reason": "TYPED_JOURNAL_RESULT_BOUND", "read_only": True,
+                **identified[0]}
+    return {"status": "OBSERVED", "failure_signature": identified[0]["failure_signature"],
             "event_start_utc": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "subcheck": "NO_VERIFICADO", "reason": "TYPED_JOURNAL_SIGNATURE_BOUND",
             "read_only": True}
+
+
+def preopen_last_diagnostic(*, run=subprocess.run):
+    """Read the last preopen result, including typed Exit 0/1/2/79, without running it."""
+    return preopen_79_diagnostic(run=run, _include_last=True)
 
 
 def unit_inventory(source=REPO, *, run=subprocess.run):
@@ -414,6 +494,67 @@ def _metadata(path):
             "mode": oct(stat.S_IMODE(meta.st_mode)), "symlink": stat.S_ISLNK(meta.st_mode),
             "socket": stat.S_ISSOCK(meta.st_mode), "readable": os.access(path, os.R_OK),
             "writable": os.access(path, os.W_OK)}
+
+
+def scheduler_launcher_digest(home: Path, *, uid: int):
+    """Fingerprint only the fixed private launcher via pinned no-follow directory FDs.
+
+    The bytes and original path are never exported. A replaced alias, link,
+    permission change or inode race remains NO_VERIFICADO, not a matching SHA.
+    """
+    unverified = {"status": "NO_VERIFICADO", "reason": "LAUNCHER_CUSTODY_UNVERIFIED",
+                  "read_only": True}
+    descriptors = []
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        if (not isinstance(home, Path) or not home.is_absolute() or home == home.parent or
+                type(uid) is not int or uid <= 0 or
+                any(part == ".." for part in home.parts)):
+            return unverified
+        fd = os.open("/", dir_flags)
+        descriptors.append(fd)
+        directories = []
+        segments = (*home.parts[1:], ".local", "state", "porota-rc6")
+        home_index = len(home.parts) - 2
+        for index, part in enumerate(segments):
+            child = os.open(part, dir_flags, dir_fd=fd)
+            descriptors.append(child)
+            directories.append((fd, part, child))
+            fd = child
+            meta = os.fstat(fd)
+            if (not stat.S_ISDIR(meta.st_mode) or
+                    index >= home_index and (meta.st_uid != uid or
+                    meta.st_mode & (0o077 if index == len(segments) - 1 else 0o022))):
+                return unverified
+        file_fd = os.open("scheduler-dispatch.py",
+                          os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                          dir_fd=fd)
+        descriptors.append(file_fd)
+        meta = os.fstat(file_fd)
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or
+                meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) != 0o600 or
+                not 0 < meta.st_size <= 16384):
+            return unverified
+        contents = os.read(file_fd, 16385)
+        if len(contents) != meta.st_size:
+            return unverified
+        stable = lambda a, b: (a.st_dev, a.st_ino, a.st_mode, a.st_size, a.st_mtime_ns,
+                               a.st_ctime_ns) == (b.st_dev, b.st_ino, b.st_mode, b.st_size,
+                                                  b.st_mtime_ns, b.st_ctime_ns)
+        if not stable(meta, os.fstat(file_fd)) or not stable(
+                meta, os.stat("scheduler-dispatch.py", dir_fd=fd, follow_symlinks=False)):
+            return unverified
+        for parent_fd, name, child_fd in directories:
+            if not stable(os.fstat(child_fd), os.stat(name, dir_fd=parent_fd,
+                                                     follow_symlinks=False)):
+                return unverified
+        return {"status": "OBSERVED", "sha256": hashlib.sha256(contents).hexdigest(),
+                "bytes": len(contents), "read_only": True}
+    except (OSError, ValueError, TypeError):
+        return unverified
+    finally:
+        for fd in reversed(descriptors):
+            os.close(fd)
 
 
 def _properties(value, allowed):
@@ -898,6 +1039,8 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "own_daemon": own_info, "legacy_rc6": legacy, "files": files,
             "legacy_units": units, "unit_details": detailed_units(units, run=run),
             "preopen_79": preopen_79_diagnostic(run=run),
+            "preopen_last": preopen_last_diagnostic(run=run),
+            "scheduler_launcher": scheduler_launcher_digest(home, uid=uid),
             "toolchain": toolchain_metadata(run=run), "subordinate_ids": subid_metadata(account),
             "filesystems": {"data": filesystem_metadata(root / "data"),
                 "docker": filesystem_metadata(home / ".local/share/porota-rc6/docker"),
