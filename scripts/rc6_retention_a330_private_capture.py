@@ -14,11 +14,16 @@ HOLD-only census. The original A330 mode and its same-session contract remain.
 A502 HISTORY_AGGREGATE_ONLY is a separate opt-in diagnostic of the quiet history
 file. It emits aggregate counts only, never raw dates, rows, symbols or the DB.
 It does not attest provider PIT, external pins, runtime PAPER/0 or purge safety.
+
+A503 HISTORY_CUTOFF_CENSUS_ONLY is a further opt-in COLD database census: it
+counts cutoff repair states and canonical family/source/date coverage. It cannot
+prove completeness, instrument readiness, session gaps, or authorization to purge.
 """
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import io
@@ -41,6 +46,23 @@ SCHEMA = "RC6_A330_PRIVATE_SAME_SESSION_V1"
 PIN_SCHEMA = "RC6_A330_PIN_CENSUS_V1"
 HISTORY_SCHEMA = "RC6_A500_HISTORY_COPY_ONLY_V1"
 AGGREGATE_SCHEMA = "RC6_A502_HISTORY_AGGREGATE_ONLY_V1"
+CUTOFF_SCHEMA = "RC6_A503_HISTORY_CUTOFF_CENSUS_V1"
+CUTOFF_DAY = "2026-09-21"
+CUTOFF_MAX_ROWS = 1_000_000
+CUTOFF_MAX_BUCKETS = 40
+CUTOFF_FAMILIES = frozenset({
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI", "OTHER_REDACTED"})
+CUTOFF_SOURCES = frozenset({
+    "PPI", "PPI_API", "PPI_PRODUCTION_HISTORY", "IOL", "BYMA", "BYMA_EOD",
+    "A3_CEM_CLOSING", "DATA912", "DATA912_POROTA_BATCH", "YAHOO",
+    "OTHER_REDACTED"})
+CUTOFF_STATES = frozenset({
+    "COMPLETE", "INCOMPLETE", "PENDING", "RUNNING", "FAILED", "ABSENT",
+    "OTHER_REDACTED"})
+CUTOFF_ERRORS = frozenset({
+    "NONE", "PROVENANCE_MISSING", "NO_ROWS", "PROVIDER_ERROR",
+    "PPI_HISTORY_ERROR", "OTHER_REDACTED"})
 HISTORY_PIN_SCHEMA = "RC6_A500_UNAVAILABLE_PIN_GROUPS_V1"
 MANIFEST_SCHEMA = "RC6_RETENTION_A319_MANIFEST_V1"
 HOST_SOURCE = Path("/opt/porota-trading/data/market_history.db")
@@ -92,6 +114,9 @@ HOST_EXPORT_REJECTION_ALLOWLIST = frozenset({
     "A502_LEGACY_DATE_SCHEMA", "A502_ROW_BUDGET", "A502_TIME_BUDGET",
     "A502_GATE_CLOCK_INVALID", "A502_SQLITE_UNAVAILABLE", "A502_EMPTY_HISTORY",
     "A502_HOST_CREDENTIALS_UNAVAILABLE",
+    "A503_SCHEMA_MISSING", "A503_CUTOFF_COUNTERS_INVALID",
+    "A503_ROW_BUDGET", "A503_TIME_BUDGET",
+    "A503_RECEIPT_BUDGET", "A503_HOST_CREDENTIALS_UNAVAILABLE",
 })
 HOST_EXPORT_GENERIC_EXCEPTIONS = frozenset({
     "OSError", "ValueError", "DatabaseError", "TarError",
@@ -306,17 +331,17 @@ def host_history_gate(source: Path = HOST_SOURCE) -> dict:
             "both_history_writers_inactive": True}
 
 
-def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
-                      deadline: float | None = None) -> dict:
-    """Read date cells from a quiet *history* inode; publish counts only.
+@contextmanager
+def quiet_history_connection(source: Path, gate: dict | None,
+                             deadline: float, *, census: bool = False):
+    """A502/A503 shared immutable SQLite and race guards, with no sidecars.
 
-    The pinned /proc/self/fd SQLite URI avoids path-swap redirection. Immutable
-    SQLite cannot replay WAL; therefore any sidecar, even a dangling symlink,
-    blocks this optional mode. Named writer gates do not prove a global lock.
+    The /proc/self/fd binding prevents path-swap redirection. Immutable SQLite
+    cannot replay WAL, so dangling symlinks, live writers and inode changes
+    fail closed. Named writer gates cannot prove a global host-wide lock.
     """
-    if deadline is None:
-        deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
-    require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+    timeout_code = "A503_TIME_BUDGET" if census else "A502_TIME_BUDGET"
+    require(time.monotonic() < deadline, timeout_code)
     if gate is None:
         gate = host_history_gate(source)
     require(gate.get("both_history_writers_inactive") is True and
@@ -337,8 +362,6 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | \
         getattr(os, "O_NOATIME", 0) | getattr(os, "O_CLOEXEC", 0)
     fd = os.open(source, flags)
-    counters = {"total_versions": 0, "within_365d": 0,
-                "older_than_365d": 0, "invalid_date": 0, "future_date": 0}
     try:
         with os.fdopen(fd, "rb") as stream:
             info = os.fstat(stream.fileno())
@@ -346,68 +369,21 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
                        info.st_mtime_ns, info.st_ctime_ns)
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
                     current == expected, "A502_SOURCE_FD_MISMATCH")
-            require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+            require(time.monotonic() < deadline, timeout_code)
             uri = "file:" + quote("/proc/self/fd/" + str(stream.fileno()),
                                   safe="/") + "?mode=ro&immutable=1"
             try:
-                with sqlite3.connect(uri, uri=True, timeout=.2) as db:
+                db = sqlite3.connect(uri, uri=True, timeout=.2)
+                try:
                     db.execute("PRAGMA query_only=ON")
                     db.execute("PRAGMA trusted_schema=OFF")
                     db.set_progress_handler(
                         lambda: int(time.monotonic() >= deadline), 1000)
-                    kinds = [row[0] for row in db.execute(
-                        "SELECT type FROM sqlite_master WHERE name=?",
-                        ("history_versions_v2",))]
-                    columns = {row[1] for row in db.execute(
-                        'PRAGMA table_info("history_versions_v2")')}
-                    require(kinds == ["table"] and "date" in columns,
-                            "A502_LEGACY_DATE_SCHEMA")
-                    try:
-                        observed = datetime.fromisoformat(
-                            gate["gated_at_utc"].replace("Z", "+00:00"))
-                        require(observed.tzinfo is not None and
-                                observed.utcoffset() is not None,
-                                "A502_GATE_CLOCK_INVALID")
-                    except (KeyError, AttributeError, TypeError, ValueError) as exc:
-                        if isinstance(exc, GuardError):
-                            raise
-                        raise GuardError("A502_GATE_CLOCK_INVALID") from exc
-                    today_art = observed.astimezone(
-                        ZoneInfo("America/Argentina/Buenos_Aires")).date()
-                    cutoff = today_art - timedelta(days=364)
-                    # No ORDER/GROUP BY: avoid SQLite disk-backed temp tables.
-                    # Never materialize unbounded TEXT/BLOB in the Python runner.
-                    cursor = db.execute(
-                        "SELECT CASE WHEN typeof(\"date\")='text' "
-                        "AND length(\"date\")=10 THEN \"date\" ELSE NULL END "
-                        'FROM "history_versions_v2"')
-                    while True:
-                        require(time.monotonic() < deadline, "A502_TIME_BUDGET")
-                        chunk = cursor.fetchmany(1024)
-                        if not chunk:
-                            break
-                        require(counters["total_versions"] + len(chunk) <=
-                                AGGREGATE_MAX_ROWS, "A502_ROW_BUDGET")
-                        for (value,) in chunk:
-                            counters["total_versions"] += 1
-                            if not isinstance(value, str) or len(value) != 10:
-                                counters["invalid_date"] += 1
-                                continue
-                            try:
-                                day = date.fromisoformat(value)
-                            except ValueError:
-                                counters["invalid_date"] += 1
-                                continue
-                            if day.isoformat() != value:
-                                counters["invalid_date"] += 1
-                            elif day > today_art:
-                                counters["future_date"] += 1
-                            elif day >= cutoff:
-                                counters["within_365d"] += 1
-                            else:
-                                counters["older_than_365d"] += 1
+                    yield db, gate
+                finally:
+                    db.close()
             except sqlite3.Error as exc:
-                raise GuardError("A502_TIME_BUDGET" if
+                raise GuardError(timeout_code if
                                  time.monotonic() >= deadline else
                                  "A502_SQLITE_UNAVAILABLE") from exc
             after = os.fstat(stream.fileno())
@@ -420,8 +396,69 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
             os.close(fd)
         except OSError:
             pass
-    require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+    require(time.monotonic() < deadline, timeout_code)
     require(stable() == expected, "A502_SOURCE_CHANGED_DURING_SCAN")
+
+
+def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
+                      deadline: float | None = None) -> dict:
+    """A502 date buckets from a quiet history inode; no raw rows or identities."""
+    if deadline is None:
+        deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
+    counters = {"total_versions": 0, "within_365d": 0,
+                "older_than_365d": 0, "invalid_date": 0, "future_date": 0}
+    with quiet_history_connection(source, gate, deadline) as (db, gate):
+        kinds = [row[0] for row in db.execute(
+            "SELECT type FROM sqlite_master WHERE name=?",
+            ("history_versions_v2",))]
+        columns = {row[1] for row in db.execute(
+            'PRAGMA table_info("history_versions_v2")')}
+        require(kinds == ["table"] and "date" in columns,
+                "A502_LEGACY_DATE_SCHEMA")
+        try:
+            observed = datetime.fromisoformat(
+                gate["gated_at_utc"].replace("Z", "+00:00"))
+            require(observed.tzinfo is not None and
+                    observed.utcoffset() is not None,
+                    "A502_GATE_CLOCK_INVALID")
+        except (KeyError, AttributeError, TypeError, ValueError) as exc:
+            if isinstance(exc, GuardError):
+                raise
+            raise GuardError("A502_GATE_CLOCK_INVALID") from exc
+        today_art = observed.astimezone(
+            ZoneInfo("America/Argentina/Buenos_Aires")).date()
+        cutoff = today_art - timedelta(days=364)
+        # No ORDER/GROUP BY: avoid SQLite disk-backed temp tables.
+        # Never materialize unbounded TEXT/BLOB in the Python runner.
+        cursor = db.execute(
+            "SELECT CASE WHEN typeof(\"date\")='text' "
+            "AND length(\"date\")=10 THEN \"date\" ELSE NULL END "
+            'FROM "history_versions_v2"')
+        while True:
+            require(time.monotonic() < deadline, "A502_TIME_BUDGET")
+            chunk = cursor.fetchmany(1024)
+            if not chunk:
+                break
+            require(counters["total_versions"] + len(chunk) <=
+                    AGGREGATE_MAX_ROWS, "A502_ROW_BUDGET")
+            for (value,) in chunk:
+                counters["total_versions"] += 1
+                if not isinstance(value, str) or len(value) != 10:
+                    counters["invalid_date"] += 1
+                    continue
+                try:
+                    day = date.fromisoformat(value)
+                except ValueError:
+                    counters["invalid_date"] += 1
+                    continue
+                if day.isoformat() != value:
+                    counters["invalid_date"] += 1
+                elif day > today_art:
+                    counters["future_date"] += 1
+                elif day >= cutoff:
+                    counters["within_365d"] += 1
+                else:
+                    counters["older_than_365d"] += 1
     require(counters["total_versions"] > 0, "A502_EMPTY_HISTORY")
     return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
             "aggregate_status": "SOURCE_COUNTS_ONLY", **counters,
@@ -431,6 +468,181 @@ def history_aggregate(source: Path = HOST_SOURCE, *, gate: dict | None = None,
             "source_mutated_by_action": False,
             "host_purge_allowed": False, "physical_host_delete_count": 0,
             "real_orders_sent_by_action": 0}
+
+
+def _cutoff_label(value: object, allowed: frozenset[str]) -> str:
+    return value if type(value) is str and value in allowed else "OTHER_REDACTED"
+
+
+def _cutoff_iso_date(value: object) -> str | None:
+    if type(value) is not str or len(value) != 10:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value if parsed.isoformat() == value else None
+
+
+def _cutoff_columns(db: sqlite3.Connection, table: str,
+                    columns: frozenset[str]) -> None:
+    # Table names are hardcoded within this module, never user-supplied.
+    kinds = [row[0] for row in db.execute(
+        "SELECT type FROM sqlite_master WHERE name=?", (table,))]
+    present = {row[1] for row in db.execute('PRAGMA table_info("' + table + '")')}
+    require(kinds == ["table"] and columns <= present, "A503_SCHEMA_MISSING")
+
+
+def history_cutoff_census(source: Path = HOST_SOURCE, *,
+                          gate: dict | None = None,
+                          deadline: float | None = None) -> dict:
+    """A503 optional bounded COLD census; never accesses HOT or provider APIs.
+
+    Counts canonical daily rows, *not* true market-calendar missing candles.
+    Repair state is a persisted marker, never a provider completeness proof.
+    """
+    if deadline is None:
+        deadline = time.monotonic() + AGGREGATE_HOST_SECONDS
+    with quiet_history_connection(source, gate, deadline, census=True) as (db, _):
+        _cutoff_columns(db, "rc6_history_cutoff_repair_runs", frozenset({
+            "cutoff", "state", "targets", "archive_imports", "ppi_queries",
+            "complete", "failed", "updated_at"}))
+        _cutoff_columns(db, "rc6_history_cutoff_repair_exact_v2", frozenset({
+            "cutoff", "instrument_type", "source", "state", "error_class",
+            "latest_date"}))
+        _cutoff_columns(db, "history_canonical_v2", frozenset({
+            "instrument_type", "source", "date"}))
+        row = db.execute(
+            "SELECT substr(state,1,32),targets,archive_imports,ppi_queries,"
+            "complete,failed,substr(updated_at,1,10) "
+            "FROM rc6_history_cutoff_repair_runs WHERE cutoff=? LIMIT 1",
+            (CUTOFF_DAY,)).fetchone()
+        if row is None:
+            cutoff_run = {"state": "ABSENT", "targets": 0,
+                          "archive_imports": 0, "ppi_queries": 0,
+                          "complete": 0, "failed": 0,
+                          "updated_date": None}
+        else:
+            state, targets, archive, queries, complete, failed, stamp = row
+            values = (targets, archive, queries, complete, failed)
+            require(all(type(n) is int and 0 <= n <= CUTOFF_MAX_ROWS for n in values)
+                    and complete + failed <= targets, "A503_CUTOFF_COUNTERS_INVALID")
+            cutoff_run = {"state": _cutoff_label(state, CUTOFF_STATES),
+                          "targets": targets, "archive_imports": archive,
+                          "ppi_queries": queries, "complete": complete,
+                          "failed": failed, "updated_date": _cutoff_iso_date(stamp)}
+
+        scanned = 0
+        repair_family: dict[str, dict] = {}
+        repair_source: dict[str, dict] = {}
+        repair_error: Counter[str] = Counter()
+        repair_cursor = db.execute(
+            "SELECT CASE WHEN typeof(instrument_type)='text' "
+            "AND length(instrument_type)<=32 THEN instrument_type ELSE NULL END,"
+            "CASE WHEN typeof(source)='text' AND length(source)<=32 "
+            "THEN source ELSE NULL END,"
+            "CASE WHEN typeof(state)='text' AND length(state)<=32 "
+            "THEN state ELSE NULL END,"
+            "CASE WHEN typeof(error_class)='text' AND length(error_class)<=48 "
+            "THEN error_class ELSE NULL END,"
+            "CASE WHEN typeof(latest_date)='text' AND length(latest_date)=10 "
+            "THEN latest_date ELSE NULL END "
+            "FROM rc6_history_cutoff_repair_exact_v2 WHERE cutoff=?", (CUTOFF_DAY,))
+        while True:
+            require(time.monotonic() < deadline, "A503_TIME_BUDGET")
+            rows = repair_cursor.fetchmany(1024)
+            if not rows:
+                break
+            require(scanned + len(rows) <= CUTOFF_MAX_ROWS, "A503_ROW_BUDGET")
+            scanned += len(rows)
+            for family, source_name, state, error, last in rows:
+                family = _cutoff_label(family, CUTOFF_FAMILIES)
+                source_name = _cutoff_label(source_name, CUTOFF_SOURCES)
+                state = _cutoff_label(state, CUTOFF_STATES)
+                error = "NONE" if error is None else _cutoff_label(error, CUTOFF_ERRORS)
+                last = _cutoff_iso_date(last)
+                bucket = repair_family.setdefault(family, {
+                    "family": family, "rows": 0, "complete": 0,
+                    "failed": 0, "incomplete": 0, "latest_date": None})
+                source_bucket = repair_source.setdefault(source_name, {
+                    "source": source_name, "rows": 0, "complete": 0,
+                    "failed": 0, "incomplete": 0, "latest_date": None})
+                for part in (bucket, source_bucket):
+                    part["rows"] += 1
+                    part["complete" if state == "COMPLETE" else
+                         "failed" if state == "FAILED" else "incomplete"] += 1
+                    if last is not None and (part["latest_date"] is None or
+                                             last > part["latest_date"]):
+                        part["latest_date"] = last
+                repair_error[error] += 1
+        repair_total = scanned
+
+        coverage: dict[tuple[str, str], dict] = {}
+        invalid_dates = 0
+        canonical_total = 0
+        canonical_recent = 0
+        canonical_cursor = db.execute(
+            "SELECT CASE WHEN typeof(instrument_type)='text' "
+            "AND length(instrument_type)<=32 THEN instrument_type ELSE NULL END,"
+            "CASE WHEN typeof(source)='text' AND length(source)<=32 "
+            "THEN source ELSE NULL END,"
+            "CASE WHEN typeof(date)='text' AND length(date)=10 THEN date "
+            "ELSE NULL END FROM history_canonical_v2")
+        while True:
+            require(time.monotonic() < deadline, "A503_TIME_BUDGET")
+            rows = canonical_cursor.fetchmany(1024)
+            if not rows:
+                break
+            require(scanned + len(rows) <= CUTOFF_MAX_ROWS, "A503_ROW_BUDGET")
+            scanned += len(rows)
+            for family, source_name, session in rows:
+                canonical_total += 1
+                family = _cutoff_label(family, CUTOFF_FAMILIES)
+                source_name = _cutoff_label(source_name, CUTOFF_SOURCES)
+                key = family, source_name
+                bucket = coverage.setdefault(key, {
+                    "family": family, "source": source_name, "rows": 0,
+                    "since_cutoff": 0, "earliest_date": None,
+                    "latest_date": None})
+                bucket["rows"] += 1
+                session = _cutoff_iso_date(session)
+                if session is None:
+                    invalid_dates += 1
+                    continue
+                if session >= CUTOFF_DAY:
+                    bucket["since_cutoff"] += 1
+                    canonical_recent += 1
+                if bucket["earliest_date"] is None or session < bucket["earliest_date"]:
+                    bucket["earliest_date"] = session
+                if bucket["latest_date"] is None or session > bucket["latest_date"]:
+                    bucket["latest_date"] = session
+        require(len(coverage) <= CUTOFF_MAX_BUCKETS and
+                len(repair_family) <= len(CUTOFF_FAMILIES) and
+                len(repair_source) <= len(CUTOFF_SOURCES),
+                "A503_RECEIPT_BUDGET")
+        receipt = {
+            "schema": CUTOFF_SCHEMA, "state": "NO_VERIFICADO",
+            "census_status": "COLD_COUNTS_ONLY", "cutoff": CUTOFF_DAY,
+            "cutoff_run": cutoff_run, "repair_total": repair_total,
+            "repair_by_family": sorted(repair_family.values(),
+                                       key=lambda item: item["family"]),
+            "repair_by_source": sorted(repair_source.values(),
+                                       key=lambda item: item["source"]),
+            "repair_by_error": [{"error": key, "rows": repair_error[key]}
+                                for key in sorted(repair_error)],
+            "canonical_total": canonical_total,
+            "canonical_on_or_after_cutoff": canonical_recent,
+            "canonical_invalid_dates": invalid_dates,
+            "coverage": [coverage[key] for key in sorted(coverage)],
+            "resolution": "1D", "provider_requests_by_action": 0,
+            "observer_database_opened": False,
+            "provider_pit_authenticated": False,
+            "external_consumer_universe_verified": False,
+            "source_mutated_by_action": False, "host_purge_allowed": False,
+            "physical_host_delete_count": 0, "real_orders_sent_by_action": 0}
+        require(len(encoded(receipt)) <= AGGREGATE_MAX_RECEIPT_BYTES,
+                "A503_RECEIPT_BUDGET")
+    return receipt
 
 
 def sanitize_history_aggregate(raw_path: Path, log_path: Path,
@@ -483,6 +695,153 @@ def sanitize_history_aggregate(raw_path: Path, log_path: Path,
         return {name: body[name] for name in sorted(fixed)}
     except (OSError, ValueError, TypeError, GuardError):
         return {"schema": AGGREGATE_SCHEMA, "state": "NO_VERIFICADO",
+                "failure_class": "REMOTE_RECEIPT_INVALID",
+                "host_purge_allowed": False, "physical_host_delete_count": 0,
+                "real_orders_sent_by_action": 0}
+
+
+def _validate_cutoff_receipt(body: object) -> dict:
+    """Strict public allowlist; never forwards unknown host-supplied fields."""
+    require(type(body) is dict and set(body) == {
+        "schema", "state", "census_status", "cutoff", "cutoff_run",
+        "repair_total", "repair_by_family", "repair_by_source",
+        "repair_by_error",
+        "canonical_total", "canonical_on_or_after_cutoff",
+        "canonical_invalid_dates", "coverage", "resolution",
+        "provider_requests_by_action", "observer_database_opened",
+        "provider_pit_authenticated", "external_consumer_universe_verified",
+        "source_mutated_by_action", "host_purge_allowed",
+        "physical_host_delete_count", "real_orders_sent_by_action",
+    }, "A503_RECEIPT_INVALID")
+    require(body["schema"] == CUTOFF_SCHEMA and body["state"] == "NO_VERIFICADO"
+            and body["census_status"] == "COLD_COUNTS_ONLY"
+            and body["cutoff"] == CUTOFF_DAY and body["resolution"] == "1D"
+            and all(body[key] is False for key in (
+                "observer_database_opened", "provider_pit_authenticated",
+                "external_consumer_universe_verified", "source_mutated_by_action",
+                "host_purge_allowed"))
+            and all(body[key] == 0 and type(body[key]) is int for key in (
+                "provider_requests_by_action", "physical_host_delete_count",
+                "real_orders_sent_by_action")), "A503_RECEIPT_INVALID")
+
+    def count(value):
+        require(type(value) is int and 0 <= value <= CUTOFF_MAX_ROWS,
+                "A503_RECEIPT_INVALID")
+        return value
+
+    run = body["cutoff_run"]
+    require(type(run) is dict and set(run) == {
+        "state", "targets", "archive_imports", "ppi_queries", "complete",
+        "failed", "updated_date"} and run["state"] in CUTOFF_STATES,
+        "A503_RECEIPT_INVALID")
+    for key in ("targets", "archive_imports", "ppi_queries", "complete", "failed"):
+        count(run[key])
+    require(run["complete"] + run["failed"] <= run["targets"] and
+            (run["updated_date"] is None or
+             _cutoff_iso_date(run["updated_date"]) == run["updated_date"]),
+            "A503_RECEIPT_INVALID")
+    for key in ("repair_total", "canonical_total", "canonical_invalid_dates",
+                "canonical_on_or_after_cutoff"):
+        count(body[key])
+
+    families = body["repair_by_family"]
+    sources = body["repair_by_source"]
+    errors = body["repair_by_error"]
+    coverage = body["coverage"]
+    require(type(families) is list and len(families) <= len(CUTOFF_FAMILIES)
+            and type(sources) is list and len(sources) <= len(CUTOFF_SOURCES)
+            and type(errors) is list and len(errors) <= len(CUTOFF_ERRORS)
+            and type(coverage) is list and len(coverage) <= CUTOFF_MAX_BUCKETS,
+            "A503_RECEIPT_INVALID")
+    for group_name, items, allowed in (
+            ("family", families, CUTOFF_FAMILIES),
+            ("source", sources, CUTOFF_SOURCES)):
+        last_group = ""
+        group_sum = 0
+        for item in items:
+            require(type(item) is dict and set(item) == {
+                group_name, "rows", "complete", "failed", "incomplete",
+                "latest_date"} and type(item[group_name]) is str
+                and item[group_name] in allowed and item[group_name] > last_group,
+                "A503_RECEIPT_INVALID")
+            last_group = item[group_name]
+            require(count(item["rows"]) > 0 and item["rows"] == sum(
+                count(item[key]) for key in ("complete", "failed", "incomplete"))
+                and (item["latest_date"] is None or
+                     _cutoff_iso_date(item["latest_date"]) == item["latest_date"]),
+                "A503_RECEIPT_INVALID")
+            group_sum += item["rows"]
+        require(group_sum == body["repair_total"], "A503_RECEIPT_INVALID")
+    repair_sum = body["repair_total"]
+    previous_error = ""
+    error_sum = 0
+    for item in errors:
+        require(type(item) is dict and set(item) == {"error", "rows"}
+                and type(item["error"]) is str and item["error"] in CUTOFF_ERRORS
+                and item["error"] > previous_error, "A503_RECEIPT_INVALID")
+        previous_error = item["error"]
+        error_sum += count(item["rows"])
+    require(error_sum == repair_sum, "A503_RECEIPT_INVALID")
+    previous_key = ("", "")
+    canonical_sum = 0
+    since_sum = 0
+    invalid_dates = body["canonical_invalid_dates"]
+    for item in coverage:
+        require(type(item) is dict and set(item) == {
+            "family", "source", "rows", "since_cutoff", "earliest_date",
+            "latest_date"} and type(item["family"]) is str
+            and type(item["source"]) is str
+            and item["family"] in CUTOFF_FAMILIES
+            and item["source"] in CUTOFF_SOURCES,
+            "A503_RECEIPT_INVALID")
+        key = item["family"], item["source"]
+        require(key > previous_key, "A503_RECEIPT_INVALID")
+        previous_key = key
+        rows = count(item["rows"])
+        since = count(item["since_cutoff"])
+        earliest = item["earliest_date"]
+        latest = item["latest_date"]
+        require(0 < rows and since <= rows and
+                ((earliest is None and latest is None and since == 0) or
+                 (type(earliest) is str and type(latest) is str and
+                  _cutoff_iso_date(earliest) == earliest and
+                  _cutoff_iso_date(latest) == latest and earliest <= latest)),
+                "A503_RECEIPT_INVALID")
+        canonical_sum += rows
+        since_sum += since
+    require(canonical_sum == body["canonical_total"] and
+            since_sum == body["canonical_on_or_after_cutoff"] and
+            invalid_dates <= canonical_sum and since_sum + invalid_dates <= canonical_sum,
+            "A503_RECEIPT_INVALID")
+    return {key: body[key] for key in sorted(body)}
+
+
+def sanitize_history_cutoff_census(raw_path: Path, log_path: Path,
+                                   runner_root: Path, capture_rc: int) -> dict:
+    """A503 runner-only allowlist, independently capped at 8KiB."""
+    root = runner_root.resolve()
+    require(root == runner_root and root.is_dir() and not root.is_symlink()
+            and raw_path.parent == root and raw_path.name == "a503-private.json"
+            and log_path.parent == root and log_path.name == "a503-private.log",
+            "A330_CLASSIFIER_PRIVATE_PATH_INVALID")
+    if capture_rc != 0:
+        private = bounded_private_failure_log(log_path, root,
+                                              expected_name="a503-private.log")
+        return {"schema": CUTOFF_SCHEMA, "state": "NO_VERIFICADO",
+                "failure_class": classify_capture_failure(capture_rc, private, 0),
+                "host_purge_allowed": False, "physical_host_delete_count": 0,
+                "real_orders_sent_by_action": 0}
+    try:
+        descriptor = os.open(raw_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and
+                    0 < info.st_size <= AGGREGATE_MAX_RECEIPT_BYTES,
+                    "A503_RECEIPT_INVALID")
+            body = decode_json(stream.read(AGGREGATE_MAX_RECEIPT_BYTES + 1))
+        return _validate_cutoff_receipt(body)
+    except (OSError, ValueError, TypeError, GuardError):
+        return {"schema": CUTOFF_SCHEMA, "state": "NO_VERIFICADO",
                 "failure_class": "REMOTE_RECEIPT_INVALID",
                 "host_purge_allowed": False, "physical_host_delete_count": 0,
                 "real_orders_sent_by_action": 0}
@@ -986,6 +1345,8 @@ def main() -> None:
     group.add_argument("--classify-history-capture-failure", action="store_true")
     group.add_argument("--host-history-aggregate", action="store_true")
     group.add_argument("--sanitize-history-aggregate", action="store_true")
+    group.add_argument("--host-history-cutoff-census", action="store_true")
+    group.add_argument("--sanitize-history-cutoff-census", action="store_true")
     parser.add_argument("--capture-exit-code", type=int)
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--capture-log", type=Path)
@@ -1023,6 +1384,14 @@ def main() -> None:
             receipt = history_aggregate(HOST_SOURCE, deadline=time.monotonic() +
                                        AGGREGATE_HOST_SECONDS)
             print(encoded(receipt).decode(), flush=True)
+        elif args.host_history_cutoff_census:
+            require(not any((args.bundle, args.capture_log, args.runner_root,
+                             args.sanitized_output, args.raw)) and
+                    args.capture_exit_code is None,
+                    "A330_HOST_MODE_INPUTS_FORBIDDEN")
+            receipt = history_cutoff_census(
+                HOST_SOURCE, deadline=time.monotonic() + AGGREGATE_HOST_SECONDS)
+            print(encoded(receipt).decode(), flush=True)
         elif args.sanitize_history_aggregate:
             require(args.raw is not None and args.capture_log is not None and
                     args.runner_root is not None and args.sanitized_output is not None
@@ -1039,6 +1408,21 @@ def main() -> None:
             print("A502_AGGREGATE_STATUS=" +
                   ("SOURCE_COUNTS_ONLY" if receipt.get("aggregate_status") ==
                    "SOURCE_COUNTS_ONLY" else "NO_VERIFICADO"))
+        elif args.sanitize_history_cutoff_census:
+            require(args.raw is not None and args.capture_log is not None and
+                    args.runner_root is not None and args.sanitized_output is not None
+                    and args.capture_exit_code is not None and
+                    args.bundle is None and
+                    args.sanitized_output.parent == args.runner_root and
+                    args.sanitized_output.name == "a503-sanitized.json",
+                    "A330_CLASSIFIER_INPUTS_REQUIRED")
+            receipt = sanitize_history_cutoff_census(
+                args.raw, args.capture_log, args.runner_root, args.capture_exit_code)
+            write_exclusive(args.runner_root, args.sanitized_output.name,
+                            io.BytesIO(encoded(receipt) + b"\n"))
+            print("A503_CENSUS_STATUS=" +
+                  ("COLD_COUNTS_ONLY" if receipt.get("census_status") ==
+                   "COLD_COUNTS_ONLY" else "NO_VERIFICADO"))
         elif args.runner_rehearsal or args.runner_history_rehearsal:
             require(all((args.bundle, args.capture_log, args.runner_root,
                          args.sanitized_output)) and args.capture_exit_code is None

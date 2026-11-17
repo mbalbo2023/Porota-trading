@@ -893,6 +893,184 @@ class SyntheticPrivateCapture(unittest.TestCase):
                 self.assertEqual(check.returncode, 0,
                                  f"{name}: bash -n: {check.stderr}")
 
+    def seed_a503_cold_history(self):
+        """COLD-only fixture: private instrument names must never reach JSON."""
+        with sqlite3.connect(self.source) as db:
+            db.execute('''CREATE TABLE rc6_history_cutoff_repair_runs (
+                cutoff TEXT PRIMARY KEY, state TEXT, targets INTEGER,
+                archive_imports INTEGER, ppi_queries INTEGER, complete INTEGER,
+                failed INTEGER, updated_at TEXT)''')
+            db.execute('''CREATE TABLE rc6_history_cutoff_repair_exact_v2 (
+                cutoff TEXT, symbol TEXT, instrument_type TEXT, source TEXT,
+                state TEXT, error_class TEXT, latest_date TEXT)''')
+            db.execute('''INSERT INTO rc6_history_cutoff_repair_runs
+                VALUES ('2026-09-21','INCOMPLETE',3,1,0,1,2,'2026-11-05T17:00:00Z')''')
+            db.executemany('''INSERT INTO rc6_history_cutoff_repair_exact_v2
+                VALUES ('2026-09-21',?,?,?,?,?,?)''', [
+                ('PRIVATE-AL30', 'BONOS', 'PPI_PRODUCTION_HISTORY',
+                 'COMPLETE', None, '2026-09-25'),
+                ('PRIVATE-YMCJO', 'OBLIGACIONES', 'PPI_PRODUCTION_HISTORY',
+                 'INCOMPLETE', 'PROVENANCE_MISSING', '2026-08-01'),
+                ('PRIVATE-OTHER', 'BONOS', 'PPI_PRODUCTION_HISTORY',
+                 'FAILED', 'SENSITIVE-UNEXPECTED', None),
+            ])
+            for field in ('instrument_type', 'source', 'date'):
+                db.execute('ALTER TABLE history_canonical_v2 ADD COLUMN "' +
+                           field + '" TEXT')
+            db.execute('''UPDATE history_canonical_v2 SET
+                instrument_type='BONOS',source='PPI_PRODUCTION_HISTORY',
+                date='2026-09-23' ''')
+            db.execute('''INSERT INTO history_canonical_v2
+                (version_id,instrument_type,source,date)
+                VALUES (3,'OBLIGACIONES','IOL','2026-05-01')''')
+        return dict(self.gate,
+                    source_stat=a330.check_quiet_file(self.source, 1024**3,
+                                                       sqlite_file=True),
+                    both_history_writers_inactive=True,
+                    a3_timers_masked=True)
+
+    def test_a503_cold_census_repair_run_and_family_source_date_no_identity(self):
+        gate = self.seed_a503_cold_history()
+        with sqlite3.connect(self.observer) as observer:
+            observer.execute('PRAGMA journal_mode=WAL')
+            observer.execute('INSERT INTO external_event VALUES (89)')
+            observer.commit()
+            before = self.source.read_bytes()
+            report = a330.history_cutoff_census(
+                self.source, gate=gate, deadline=time.monotonic() + 30)
+            self.assertEqual(report['schema'], a330.CUTOFF_SCHEMA)
+            self.assertEqual(report['state'], 'NO_VERIFICADO')
+            self.assertEqual(report['census_status'], 'COLD_COUNTS_ONLY')
+            self.assertEqual(report['cutoff'], '2026-09-21')
+            self.assertEqual(report['cutoff_run']['state'], 'INCOMPLETE')
+            self.assertEqual(report['repair_total'], 3)
+            self.assertEqual(report['repair_by_family'][0]['latest_date'],
+                             '2026-09-25')
+            self.assertEqual(report['repair_by_source'][0]['source'],
+                             'PPI_PRODUCTION_HISTORY')
+            self.assertEqual(report['repair_by_source'][0]['rows'], 3)
+            self.assertIn({'error': 'OTHER_REDACTED', 'rows': 1},
+                          report['repair_by_error'])
+            self.assertEqual(report['canonical_total'], 2)
+            self.assertEqual(report['canonical_on_or_after_cutoff'], 1)
+            self.assertEqual(report['coverage'][0]['earliest_date'], '2026-09-23')
+            self.assertFalse(report['observer_database_opened'])
+            self.assertFalse(report['host_purge_allowed'])
+            self.assertEqual(report['real_orders_sent_by_action'], 0)
+            self.assertEqual(self.source.read_bytes(), before)
+            self.assertTrue(Path(str(self.observer) + '-wal').exists())
+            self.assertLessEqual(len(a330.encoded(report)), 8192)
+            for sensitive in ('PRIVATE-', 'AL30', 'YMCJO', 'SENSITIVE-UNEXPECTED',
+                              'observer_v17', 'symbol', 'identity'):
+                self.assertNotIn(sensitive, a330.encoded(report).decode())
+
+    def test_a503_sanitizer_fails_closed_for_untrusted_host_fields_and_private_log(self):
+        gate = self.seed_a503_cold_history()
+        report = a330.history_cutoff_census(self.source, gate=gate,
+                                            deadline=time.monotonic() + 30)
+        raw = self.private / 'a503-private.json'
+        log = self.private / 'a503-private.log'
+        log.write_text('secret:/identity/private\n')
+        raw.write_bytes(a330.encoded(report))
+        public = a330.sanitize_history_cutoff_census(raw, log, self.private, 0)
+        self.assertEqual(public['canonical_total'], 2)
+        self.assertEqual(public['cutoff_run']['state'], 'INCOMPLETE')
+        for tampered in ({**report, 'symbol': 'PRIVATE'},
+                         {**report, 'host_purge_allowed': True},
+                         {**report, 'repair_total': True},
+                         {**report, 'canonical_total': 999},
+                         {**report, 'coverage': report['coverage'] + [
+                             {'family': 'PRIVATE', 'source': 'IOL', 'rows': 1,
+                              'earliest_date': '2026-09-22',
+                              'latest_date': '2026-09-22', 'since_cutoff': 1}]}):
+            raw.write_bytes(a330.encoded(tampered))
+            failed = a330.sanitize_history_cutoff_census(raw, log, self.private, 0)
+            self.assertEqual(failed['failure_class'], 'REMOTE_RECEIPT_INVALID')
+            self.assertNotIn('PRIVATE', a330.encoded(failed).decode())
+        raw.write_text('{"schema":"A","schema":"B"}')
+        self.assertEqual(a330.sanitize_history_cutoff_census(
+            raw, log, self.private, 0)['failure_class'], 'REMOTE_RECEIPT_INVALID')
+
+    def test_a503_missing_cutoff_row_is_absent_never_complete(self):
+        gate = self.seed_a503_cold_history()
+        with sqlite3.connect(self.source) as db:
+            db.execute('DELETE FROM rc6_history_cutoff_repair_runs')
+        gate['source_stat'] = a330.check_quiet_file(self.source, 1024**3,
+                                                    sqlite_file=True)
+        report = a330.history_cutoff_census(self.source, gate=gate,
+                                            deadline=time.monotonic() + 30)
+        self.assertEqual(report['cutoff_run']['state'], 'ABSENT')
+        self.assertEqual(report['state'], 'NO_VERIFICADO')
+        self.assertEqual(report['repair_total'], 3)
+        self.assertFalse(report['host_purge_allowed'])
+
+    def test_a503_cli_private_capture_rejects_extra_args_and_sanitizes(self):
+        gate = self.seed_a503_cold_history()
+        with (patch.object(a330, 'HOST_SOURCE', self.source),
+              patch.object(a330, 'host_history_gate', return_value=gate),
+              patch.object(sys, 'argv', ['a503', '--host-history-cutoff-census']),
+              redirect_stdout(io.StringIO()) as output):
+            a330.main()
+        report = json.loads(output.getvalue())
+        self.assertEqual(report['census_status'], 'COLD_COUNTS_ONLY')
+        raw = self.private / 'a503-private.json'
+        log = self.private / 'a503-private.log'
+        raw.write_bytes(a330.encoded(report))
+        log.write_text('PRIVATE SECRET ERROR\n')
+        sanitized = self.private / 'a503-sanitized.json'
+        argv = ['a503', '--sanitize-history-cutoff-census',
+                '--capture-exit-code', '0', '--raw', str(raw),
+                '--capture-log', str(log), '--runner-root', str(self.private),
+                '--sanitized-output', str(sanitized)]
+        with patch.object(sys, 'argv', argv), redirect_stdout(io.StringIO()) as status:
+            a330.main()
+        self.assertEqual(status.getvalue().strip(),
+                         'A503_CENSUS_STATUS=COLD_COUNTS_ONLY')
+        self.assertEqual(json.loads(sanitized.read_text())['repair_total'], 3)
+        self.assertNotIn('PRIVATE SECRET ERROR', sanitized.read_text())
+        with (patch.object(sys, 'argv', ['a503', '--host-history-cutoff-census',
+                                         '--raw', str(raw)]),
+              redirect_stderr(io.StringIO()) as rejected):
+            with self.assertRaises(SystemExit):
+                a330.main()
+        self.assertIn('A330_HOST_MODE_INPUTS_FORBIDDEN', rejected.getvalue())
+
+    def test_a503_quiet_gate_legacy_schema_and_budgets_fail_closed(self):
+        gate = self.seed_a503_cold_history()
+        Path(str(self.source) + '-wal').symlink_to(self.root / 'missing')
+        with self.assertRaisesRegex(a330.GuardError, 'A502_HISTORY_SIDECAR_PRESENT'):
+            a330.history_cutoff_census(self.source, gate=gate,
+                                       deadline=time.monotonic() + 30)
+        Path(str(self.source) + '-wal').unlink()
+        with self.assertRaisesRegex(a330.GuardError, 'A503_TIME_BUDGET'):
+            a330.history_cutoff_census(self.source, gate=gate,
+                                       deadline=time.monotonic() - 1)
+        with patch.object(a330, 'CUTOFF_MAX_ROWS', 4):
+            with self.assertRaisesRegex(a330.GuardError, 'A503_ROW_BUDGET'):
+                a330.history_cutoff_census(self.source, gate=gate,
+                                           deadline=time.monotonic() + 30)
+        with sqlite3.connect(self.source) as db:
+            db.execute('DROP TABLE rc6_history_cutoff_repair_runs')
+        gate['source_stat'] = a330.check_quiet_file(self.source, 1024**3,
+                                                    sqlite_file=True)
+        with self.assertRaisesRegex(a330.GuardError, 'A503_SCHEMA_MISSING'):
+            a330.history_cutoff_census(self.source, gate=gate,
+                                       deadline=time.monotonic() + 30)
+
+    def test_a503_manual_main_only_workflow_modes_and_shell_syntax(self):
+        body = HISTORY_WORKFLOW.read_text()
+        self.assertIn('HISTORY_CUTOFF_CENSUS_ONLY', body)
+        self.assertIn("inputs.mode == 'HISTORY_CUTOFF_CENSUS_ONLY'", body)
+        self.assertIn('--host-history-cutoff-census', body)
+        self.assertIn('--sanitize-history-cutoff-census', body)
+        self.assertIn('private-history-cutoff-census:', body)
+        self.assertIn('path: ${{ env.RC6_A503_DIR }}/a503-sanitized.json', body)
+        self.assertNotIn('path: ${{ env.RC6_A503_DIR }}/a503-private.json', body)
+        self.assertNotIn('\n  push:', body)
+        self.assertNotIn('\n  schedule:', body)
+        self.assertIn("github.ref == 'refs/heads/main'", body)
+
+
     def test_workflow_is_manual_main_runner_only_without_deploy(self):
         body = WORKFLOW.read_text()
         self.assertIn("workflow_dispatch:", body)
