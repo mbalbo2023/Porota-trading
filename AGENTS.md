@@ -11,9 +11,12 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
   actual del usuario prevalece sobre planes y procedimientos anteriores.
 - No pedir de nuevo autorización dentro de ese alcance, ni imponer micropasos,
   rondas de personajes, unanimidad ficticia o porcentajes de una misión antigua.
-- Revisar HEAD, componentes afectados, ownership y evidencia pertinente. Reusar
-  trabajo y pruebas válidas. Consultar antecedentes cuando resuelvan una duda
-  concreta; no releer todo el historial ni reabrir trabajos cerrados por rutina.
+- **Antes de escribir código**, inventariar en HEAD, ramas, PRs abiertos/cerrados,
+  commits, issues, workflows, tests y parches locales las soluciones anteriores del
+  mismo defecto. Registrar SHA/PR y si están completas, parciales o descartadas
+  con motivo. **Recuperar y completar la implementación parcial** antes de crear
+  otra o un PR duplicado. Reusar pruebas válidas; consultar historial relevante,
+  sin reabrir trabajo cerrado sin causa.
 - Una limitación real de acceso, una escritura solapada o una ampliación del
   alcance se informa con su causa y el siguiente paso concreto. No inventar
   permisos, controles satisfechos ni restricciones comerciales.
@@ -26,9 +29,10 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 - Órdenes reales bloqueadas. `real_orders_sent=0` es un requisito; sólo declararlo
   medido con evidencia del runtime correspondiente.
 - No modificar procesos, cuentas, contenedores ni datos ajenos al ownership
-  comprobado, salvo autorización concreta del usuario. Un nombre histórico como
-  «PPI Watch» no prueba la existencia, identidad ni consumo de cuota de un
-  servicio externo: verificar esos hechos antes de imponer una reserva o veto.
+  comprobado, salvo autorización concreta del usuario. **«PPI Watch intocable»
+  no es una regla del usuario** (corrección expresa del 18-Nov-2026): ese nombre
+  no justifica veto general, cuota supuesta ni prohibición de revisar o corregir
+  su integración. Verificar identidad, tráfico y ownership antes de mutaciones.
 - FIX-FORWARD ONLY: no rollback de runtime.
 - GitHub y GitHub Actions son el control normal. SSH/manual es break-glass;
   Codespaces no es el entorno operativo. Evitar tareas manuales rutinarias para
@@ -47,6 +51,11 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
   Usar branches y PRs, reconciliados contra HEAD real.
 - Integrar en el candidato vigente; conservar historia y heads con evidencia
   única. No abrir PRs de almacenamiento ni cerrar, fusionar o borrar por edad.
+- **Ningún PR huérfano:** asignar owner, scope, base/head, pruebas, siguiente acción
+  y disposición explícita (`INTEGRAR`, `COMPLETAR`, `RETENER_CON_CAUSA`,
+  `SUPERSEDIDO_CON_REFERENCIA` o `CERRAR_CON_EVIDENCIA`). Revisar todos los PR
+  abiertos en cada handoff y reconciliar con #980. Cerrar sólo tras verificar que
+  no queda código/evidencia única sin recuperar; jamás borrar su head a ciegas.
 - Mantener `group: rc6-unified-paper-deploy` y `cancel-in-progress: false`.
   Los frentes convergen en un candidato y una promoción final coherente.
 
@@ -70,8 +79,11 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
   capacidad, datos necesarios y seguridad PAPER. Después: identidad de procesos,
   salud, rutas reales bloqueadas y evidencia de cero órdenes reales.
 - Una caída de proveedor o mercado cerrado no veta por sí sola el deploy
-  técnico; bloquea la admisión del instrumento afectado. Corrupción de identidad,
-  datos, artefacto o seguridad PAPER sí bloquea la operación correspondiente.
+  técnico, incluso fuera de rueda. **Siguen siendo bloqueantes** la identidad
+  artefacto/digest↔contenedor↔controlador, procesos/hijos y health, acceso al host,
+  integridad de datos y seguridad PAPER. No degradar esos gates para obtener verde.
+  Sin mercado, diferir sólo el QA de frescura Current/Book a la **próxima rueda
+  válida**, con owner y prueba agendada; cada instrumento sigue fail-closed.
 - Limpiar sólo recursos de Porota identificados y no referenciados, con medida
   antes/después. No hacer prune global, borrar DB/volúmenes o tocar imágenes
   referenciadas. Registrar lo retenido y su motivo sin inventar una nueva barrera.
@@ -95,5 +107,26 @@ fuente de verdad operacional. Workflow SUCCESS no equivale a runtime correcto.
 
 Cerrar incidentes significativos con `ERROR → RCA → FIX → GUARD → TEST → EVIDENCIA`;
 dejar defensa permanente cuando sea técnicamente posible y explicar cualquier
-límite. Registrar sólo el delta útil: cambio, SHA/PR, pruebas, recibo o
-`NO_VERIFICADO`, pendiente y siguiente acción. Liberar ownership al terminar.
+límite. Registrar sólo el delta útil: cambio, SHA/PR, pruebas y recibos.
+`NO_VERIFICADO` **no se cierra ni se deja indefinido**: adjuntar owner, causa,
+prueba pendiente, mecanismo para ejecutarla y plazo o próxima rueda válida;
+`BLOQUEADO` exige causa y corrección. Nunca cambiar el estado a validado sin
+medición. Liberar ownership al terminar.
+
+## Incidente P0 PPI REST — corte 18-Nov-2026
+
+El [checkpoint #1093/6992170026](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026)
+registra #1192 MERGED y Predeploy V2 validado, pero Deploy V2 #44376376095
+FAILED en POSTFLIGHT (`RUNTIME_UNCLASSIFIED_DEGRADED`) y Current/Book frescos
+NO_VERIFICADOS. El parche de `scripts/porota_rootless_host.py` se preservó como
+diff local **no integrado**. Confirmar `observer.detail` físico antes de aceptar
+la hipótesis de ciclo 0/0; AMBER del contenedor no da READY a instrumentos.
+La API PPI existente usa REST; no imponer el supuesto límite de 2 GET/h.
+La inspección READ_ONLY #44408163645 halló `CURRENT_IDENTITY_UNVERIFIED` y
+contenedores sin atribución al release; Market Watch #44405692829 halló
+`broker_requests=0`, heartbeat antiguo y `0/17283` READY. El parche previo
+`4ef52f97`, recuperado localmente con 51 tests unitarios PASS, **no está en
+GitHub ni desplegado**; no resuelve por sí solo hijos/controlador. Separar RCA
+físico del fallo, único fix-forward y deploy seguro de QA Current/Book en próxima
+rueda. Consultar #980 para ownership actual y #1093 para la evidencia; este
+corte no prueba estado presente del runtime.

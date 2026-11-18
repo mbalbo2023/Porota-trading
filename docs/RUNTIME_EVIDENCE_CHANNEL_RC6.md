@@ -39,10 +39,14 @@ in force.
   route is not blocked, or the route-call state is not evidenced as
   `NOT_CALLED`/`BLOCKED`.
 
-PPI Watch remains a separate owner and is never mutated. Its evidence contract
-is versioned in `ops/policy/host-control-plane-reconciliation-v2.json`. The
-repository currently has no authoritative PPI Watch systemd unit name and does
-not assert that such a unit must be absent. Consequently:
+This read-only producer/publisher does not mutate PPI Watch. **That is its
+implementation scope, not a user-wide rule that PPI Watch is untouchable**:
+the operator explicitly corrected that attribution on 18-Nov-2026. Any change
+to such a service requires evidenced identity, exact ownership and Actions;
+no PPI quota or veto can be inferred from a historical name. Its evidence
+contract is versioned in `ops/policy/host-control-plane-reconciliation-v2.json`.
+The repository currently has no authoritative PPI Watch systemd unit name and
+does not assert that such a unit must be absent. Consequently:
 
 - one exact unit can be `VERIFIED_READ_ONLY` only when a future versioned
   contract names it and read-only checks prove it enabled, active and hashed;
@@ -56,7 +60,11 @@ An instrument can be `READY_PAPER` only with a PPI-primary identity, fresh PPI
 evidence, an AVAILABLE catalog row, an explicit `READY_PAPER_*` capability,
 no ambiguity and exactly one coherent candidate-ledger row. Unknown freshness
 never becomes READY. IOL/BYMA/A3/ROFEX are complementary only and cannot
-replace the PPI identity.
+replace the PPI identity. Mercado cerrado no impide verificar identidad de
+artefacto↔contenedor↔controlador ni salud y PAPER/0; tampoco aporta prueba de
+frescura de rueda. Dejar constancia por instrumento de owner, Acción READ_ONLY
+y próxima sesión válida; nunca usar un placeholder `NO_VERIFICADO` indefinido
+como cierre ni admitir READY sin timestamps y HTTP Current/Book reales.
 
 `candidate_universe` remains a legacy ticker/family/market summary so existing
 read-only consumers keep their schema. Reconciliation rebuilds it inside the
@@ -97,7 +105,12 @@ through GitHub Actions within the authorized scope, separate from normal
 Deploy V2 promotion. Promotion uses the prepared environment and does not
 implicitly install or enable this channel.
 
+Antes de escribir o desplegar otra implementación, inventariar producer y
+consumers existentes, parches locales y PRs previos; completar lo parcial y
+dejar todo PR con owner, disposición, evidencia y siguiente acción.
+
 Merely merging this code does not prove that a current runtime bundle exists.
 After a change to the producer or publisher, verify the affected behavior and
 its pinned evidence. Unrelated releases do not require reinstalling this
-channel or repeating its historical checks. PPI Watch remains untouched.
+channel or repeating its historical checks. This channel has no PPI Watch
+mutation path; that does not prohibit separately owned work.

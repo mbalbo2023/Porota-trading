@@ -29,6 +29,9 @@ GitHub y GitHub Actions son el plano de control. Trabajar en ramas aisladas,
 revisar el cambio y reunir los frentes en un candidato. Predeploy construye una
 imagen y prueba ese mismo paquete; Promote la instala sin reconstruirla.
 El bootstrap del entorno rootless es independiente del release.
+**Antes de programar**, recuperar del HEAD/branches/PRs/issues los parches y
+soluciones incompletas. Cada PR debe tener owner, disposición, prueba, siguiente
+acción y plazo: ni duplicados ni huérfanos. [Runbook](docs/RUNBOOK.md).
 
 El repositorio contiene código y evidencia de distintas fechas. Confirmar los
 SHA de `main`, producto y candidato antes de una acción; el HEAD de una rama no
@@ -38,5 +41,20 @@ estado: [Actions](https://github.com/mbalbo2023/Porota-trading/actions),
 [continuidad](https://github.com/mbalbo2023/Porota-trading/issues/1093) y
 [ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).
 
-PPI Watch queda fuera del alcance. Los cambios son fix-forward; la documentación
-por sí sola no instala servicios ni autoriza operaciones reales.
+**Incidente P0 REST (corte 18-Nov-2026):** #1192 recuperó el circuito REST
+de PPI en código y pasó Predeploy, pero [Deploy V2 #44376376095](https://github.com/mbalbo2023/Porota-trading/actions/runs/44376376095)
+falló en POSTFLIGHT. [Checkpoint y parche local](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026):
+Current/Book, frescura, instrumentos READY y workers siguen sin certificación
+física. Login PPI no acredita datos.
+
+Por corrección explícita del operador, **PPI Watch no es «intocable» por política**.
+Toda intervención requiere ownership, scope y evidencia real; no deducir cuotas
+PPI de dos GET/h ni prohibir la API REST existente. FIX-FORWARD; documentación
+sola no instala servicios ni autoriza órdenes reales.
+
+El deploy técnico puede realizarse **24×7** sin exigir rueda abierta. Debe
+acreditar digest/imagen, identidad del contenedor y controlador, hijos/health,
+PAPER y `real_orders_sent=0` antes de declararse validado; mercado cerrado no
+exime esos gates. Los GET Current/Book, timestamps y readiness por instrumento
+que dependan de rueda quedan con owner y prueba para la **próxima sesión válida**,
+fail-closed y sin falsos PASS. Evidencia actual: [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).

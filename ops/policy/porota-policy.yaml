@@ -58,6 +58,13 @@ development:
   read_only_nonblocking: true
   write_ownership_scope_required: true
   deploy_owner_globally_exclusive: true
+  existing_solution_inventory_before_new_code_required: true
+  existing_solution_sources: [HEAD, BRANCHES, OPEN_PRS, CLOSED_PRS, COMMITS, ISSUES, TESTS, WORKFLOWS, DOCUMENTED_LOCAL_PATCHES]
+  partial_fix_recovery_precedes_duplicate_implementation: true
+  duplicate_pr_for_same_solution_allowed: false
+  orphan_open_pull_requests_allowed: false
+  open_pr_owner_disposition_and_next_step_required: true
+  unresolved_evidence_without_owner_action_and_deadline_allowed: false
 
 deployment:
   strategy: FIX_FORWARD_ONLY
@@ -98,6 +105,9 @@ deployment:
   external_source_contract_corruption_remains_red: true
   paper_instrument_readiness_on_source_failure: FAIL_CLOSED
   host_access_artifact_integrity_and_paper_safety_still_blocking: true
+  runtime_container_controller_and_child_identity_still_blocking: true
+  closed_market_current_book_live_qa_deferred_to_next_valid_session: true
+  deferred_live_qa_keeps_instrument_readiness_fail_closed: true
 
 predeploy_gates:
   selection: CHANGE_IMPACT_AND_CURRENT_CONTRACT
@@ -127,6 +137,7 @@ promotion:
   success_requires_state_manifest: true
   partial_promotion_success_allowed: false
   current_runtime_paper_zero_evidence_required: true
+  runtime_receipt_must_identify_container_and_controller: true
   future_container_required_in_preflight: false
 
 failure_learning:
