@@ -463,17 +463,31 @@ class RootlessContracts(unittest.TestCase):
 
         document = {"source_sha": SHA, "source_tree": TREE,
                     "roles": {"observer": "1" * 64, "dashboard": "2" * 64}}
-        clock = iter((0, 0, 5))
+        # The seven non-scanner children have a 25-second startup grace.
+        # Keep them PENDING at each five-second poll before the deadline.
+        clock = iter((0, 0, 5, 10, 15, 20, 25))
         observed_waits = []
         with patch.object(manager, "check_role", return_value={
                  "State": {"Running": True, "Health": {"Status": "healthy"}}}), \
-             patch.object(manager.docker, "json", side_effect=[scan(startup_children), scan(children)]):
-            result = manager.postflight(document, started, budget=20,
+             patch.object(manager.docker, "json", side_effect=[scan(startup_children)] * 5 + [scan(children)]):
+            result = manager.postflight(document, started, budget=30,
                                         clock=lambda: next(clock), sleep=observed_waits.append)
-        self.assertEqual(observed_waits, [5])
+        self.assertEqual(observed_waits, [5] * 5)
         self.assertEqual(result["source_alert"], "AMBER_PPI_NO_READY_INSTRUMENTS")
         self.assertEqual(result["paper_readiness"], "FAIL_CLOSED_PER_INSTRUMENT")
         self.assertEqual(manager.receipt["controller"]["status"], "READY")
+
+        # A controller which never starts its children cannot pass just
+        # because the zero-eligible scanner classification is amber.
+        stalled = host.Host(self.base, host.Identity(os.getuid(), os.getgid(), "test", self.base))
+        clock = iter((0, 0, 5, 10, 15, 20, 25, 30))
+        with patch.object(stalled, "check_role", return_value={
+                 "State": {"Running": True, "Health": {"Status": "healthy"}}}), \
+             patch.object(stalled.docker, "json", return_value=scan(startup_children)):
+            with self.assertRaisesRegex(host.Hold, "RUNTIME_STARTUP_TIMEOUT"):
+                stalled.postflight(document, started, budget=30,
+                                   clock=lambda: next(clock), sleep=lambda _: None)
+        self.assertEqual(stalled.receipt["controller"]["reason"], "CONTROLLER_CHILDREN_NOT_RUNNING")
 
     def test_release_marker_is_accepted_only_after_real_postflight_signal(self):
         from scripts.rc6_operator_paper_rearm import _validated_paper_release
