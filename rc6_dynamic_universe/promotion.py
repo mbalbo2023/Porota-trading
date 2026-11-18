@@ -1,8 +1,8 @@
 """Read-only SHADOW assessment of measured PPI capacity.
 
 Benchmark hashes and review labels describe local evidence; they cannot prove
-an independent provider OPEN observation or PPI/Watch shared quota ownership.
-Until that external authority is verified, dynamic selection remains OFF even
+provider-wide OPEN capacity or identify any other actual shared-account user.
+Until sufficient capacity evidence is verified, dynamic selection remains OFF even
 with an approved local recommendation. The baseline stays at 20/40.
 """
 from __future__ import annotations
@@ -159,8 +159,8 @@ def resolve_capacity_policy(policy, recommendation=None, report=None, approval=N
         if not created <= stamp(approval["reviewed_at"]) <= at:
             raise ValueError("CAPACITY_APPROVAL_CLOCK_INVALID")
         # A self-consistent benchmark, hash and reviewer field do not prove a
-        # live production OPEN wire or an independently governed PPI/Watch
-        # shared quota. Preserve SHADOW recommendations as descriptive math,
+        # live production OPEN capacity or the total consumption of a shared
+        # provider account. Preserve SHADOW recommendations as descriptive math,
         # but never turn them into a runtime selector or a budget lease.
         raise ValueError("CAPACITY_PROVENANCE_UNVERIFIED")
     except (ValueError, KeyError, TypeError, OverflowError) as error:
@@ -213,7 +213,7 @@ class RuntimeCapacityController:
             "status", "mode", "configuration_fingerprint", "recommendation_digest", "approval_digest", "reason_codes", "exit_capacity")})
         return state
 
-    def state(self, as_of=None):
+    def state(self, as_of=None, *, deadline=None):
         try:
             policy = self.inputs["policy"]
             if policy is None:
@@ -234,7 +234,9 @@ class RuntimeCapacityController:
             resolved["approval_digest"] = (values.get("approval") or {}).get("approval_digest")
             if resolved["status"] == "APPROVED_DYNAMIC" and self.database is not None:
                 from rc6_ppi_global_budget import supervisable_position_count, exit_capacity_contract
-                opened = supervisable_position_count(self.database)
+                # The EXIT reader inherits one absolute round deadline; a
+                # contended ledger snapshot must not outlive that bound.
+                opened = supervisable_position_count(self.database, deadline=deadline)
                 if opened is None:
                     resolved.update(status="BASELINE_FAIL_CLOSED", production_limits_modified=False,
                         reason_codes=["CAPACITY_OPENED_LEDGER_UNVERIFIED"])
