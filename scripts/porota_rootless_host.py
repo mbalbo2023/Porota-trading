@@ -547,6 +547,17 @@ def classify_runtime(row, *, now, started):
     if process == "DEGRADED" and auth in {"ERROR", "COOLDOWN"} and str(row.get("detail", "")).startswith((
             "Login fallo:", "PPI en espera de reintento;", "Login local bloqueado por interlock")):
         return {"status": "READY", "source_alert": "AMBER_PPI_LOGIN_UNAVAILABLE"}
+    # With zero PIT/READY identities the scanner intentionally makes no
+    # tradable Current/Book round. Its precise 0/0 observation is DEGRADED
+    # as a *data* source, despite the live clock and successful PPI login.
+    # Permit the container lifecycle to validate with an explicit amber
+    # source alert. This is never PAPER instrument READY or order admission.
+    # No other DEGRADED/OK signature (failed GET, caucion ledger, route block)
+    # may evade the blocking postflight gate.
+    if (process == "DEGRADED" and auth == "OK" and row.get("session_state") == "MARKET_OPEN"
+            and row.get("detail") ==
+            "0/0 instrumentos actualizados de 0 elegibles; rotación activa; operaciones solo simuladas."):
+        return {"status": "READY", "source_alert": "AMBER_PPI_NO_READY_INSTRUMENTS"}
     boot = row.get("session_state") in {
         "BOOT_COMMAND", "BOOT_CALENDAR", "BOOT_PPI_SECRET", "BOOT_PPI_CLIENT", "BOOT_PPI_LOGIN"}
     if (process == "STARTING" and auth in {"OK", "NOT_ATTEMPTED", "COOLDOWN"}) or (
