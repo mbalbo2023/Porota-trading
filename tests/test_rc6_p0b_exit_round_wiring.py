@@ -118,6 +118,13 @@ class ExitRoundWiring(unittest.TestCase):
         self.assertEqual(reader.observations[0]["failures"], 1)
         self.assertEqual(statuses[-2][0], "DEGRADED")
 
+    def test_budget_observation_degraded_cannot_be_reported_as_ready(self):
+        reader, statuses, _, _ = run_one(
+            lambda stop: 0, reader=FakeExitReader(outcome="DEGRADED"))
+        self.assertEqual(len(reader.observations), 1)
+        self.assertEqual(statuses[-2][0], "DEGRADED")
+        self.assertIn("budget_round=DEGRADED", statuses[-2][1])
+
     def test_timeout_forwards_real_elapsed_not_synthetic_deadline(self):
         reader, statuses, _, _ = run_one(lambda stop: 0,
                                          reader=FakeExitReader(outcome="DEGRADED"),
