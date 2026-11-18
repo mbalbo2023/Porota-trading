@@ -39,10 +39,14 @@ in force.
   route is not blocked, or the route-call state is not evidenced as
   `NOT_CALLED`/`BLOCKED`.
 
-PPI Watch remains a separate owner and is never mutated. Its evidence contract
-is versioned in `ops/policy/host-control-plane-reconciliation-v2.json`. The
-repository currently has no authoritative PPI Watch systemd unit name and does
-not assert that such a unit must be absent. Consequently:
+This read-only producer/publisher does not mutate PPI Watch. **That is its
+implementation scope, not a user-wide rule that PPI Watch is untouchable**:
+the operator explicitly corrected that attribution on 18-Nov-2026. Any change
+to such a service requires evidenced identity, exact ownership and Actions;
+no PPI quota or veto can be inferred from a historical name. Its evidence
+contract is versioned in `ops/policy/host-control-plane-reconciliation-v2.json`.
+The repository currently has no authoritative PPI Watch systemd unit name and
+does not assert that such a unit must be absent. Consequently:
 
 - one exact unit can be `VERIFIED_READ_ONLY` only when a future versioned
   contract names it and read-only checks prove it enabled, active and hashed;
@@ -100,4 +104,5 @@ implicitly install or enable this channel.
 Merely merging this code does not prove that a current runtime bundle exists.
 After a change to the producer or publisher, verify the affected behavior and
 its pinned evidence. Unrelated releases do not require reinstalling this
-channel or repeating its historical checks. PPI Watch remains untouched.
+channel or repeating its historical checks. This channel has no PPI Watch
+mutation path; that does not prohibit separately owned work.

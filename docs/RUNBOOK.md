@@ -6,6 +6,27 @@ estables están en [AGENTS.md](../AGENTS.md) y la
 investigar un problema concreto; sus checkpoints, aprobaciones y pendientes no
 se convierten en puertas automáticas de una tarea nueva.
 
+## Incidente P0 PPI REST — corte 18-Nov-2026
+
+Partir del [checkpoint #1093/6992170026](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026)
+y ownership actual [#980](https://github.com/mbalbo2023/Porota-trading/issues/980),
+no de un resumen de chat. #1192 MERGED y Predeploy #44373257344 SUCCESS;
+Deploy V2 #44376376095 FAILED en POSTFLIGHT `RUNTIME_UNCLASSIFIED_DEGRADED`.
+La auditoría #44377715435 verificó PAPER/`real_orders_sent=0` sólo en su
+fotografía; no Current/Book ni readiness actual. El parche `4ef52f97` es
+diff **local no publicado**; `observer_state.detail` causal NO_VERIFICADO.
+HOLD de deploy hasta RCA, cambio revisado y owner global exclusivo.
+
+Camino crítico: (1) Action READ_ONLY para correlacionar firma POSTFLIGHT con
+`observer.detail`; (2) verificar el parche contra HEAD y RED→GREEN sin abrir
+otros DEGRADED; (3) candidato único bajo PR y WRITE_OWNER; (4) Predeploy V2 y
+artefacto/digest; (5) un Promote V2 PAPER bajo DEPLOY_OWNER; (6) evidencia física
+posdeploy de `real_orders_sent=0`, identidad rootless, Current/Book nativos,
+frescura y `READY/total` por diez familias; (7) QA separado de motores/workers,
+timers, históricos y DB. AMBER de proceso y login OK no dan readiness; nunca
+imponer un límite inventado de 2 GET/h. PPI Watch no tiene veto general por
+regla del usuario: cualquier intervención sigue ownership y Actions.
+
 ## 1. Retomar una tarea
 
 1. Identificar objetivo, criterio de éxito, componentes afectados y exclusiones.

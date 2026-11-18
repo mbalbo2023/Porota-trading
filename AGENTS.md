@@ -26,9 +26,10 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 - Órdenes reales bloqueadas. `real_orders_sent=0` es un requisito; sólo declararlo
   medido con evidencia del runtime correspondiente.
 - No modificar procesos, cuentas, contenedores ni datos ajenos al ownership
-  comprobado, salvo autorización concreta del usuario. Un nombre histórico como
-  «PPI Watch» no prueba la existencia, identidad ni consumo de cuota de un
-  servicio externo: verificar esos hechos antes de imponer una reserva o veto.
+  comprobado, salvo autorización concreta del usuario. **«PPI Watch intocable»
+  no es una regla del usuario** (corrección expresa del 18-Nov-2026): ese nombre
+  no justifica veto general, cuota supuesta ni prohibición de revisar o corregir
+  su integración. Verificar identidad, tráfico y ownership antes de mutaciones.
 - FIX-FORWARD ONLY: no rollback de runtime.
 - GitHub y GitHub Actions son el control normal. SSH/manual es break-glass;
   Codespaces no es el entorno operativo. Evitar tareas manuales rutinarias para
@@ -97,3 +98,14 @@ Cerrar incidentes significativos con `ERROR → RCA → FIX → GUARD → TEST �
 dejar defensa permanente cuando sea técnicamente posible y explicar cualquier
 límite. Registrar sólo el delta útil: cambio, SHA/PR, pruebas, recibo o
 `NO_VERIFICADO`, pendiente y siguiente acción. Liberar ownership al terminar.
+
+## Incidente P0 PPI REST — corte 18-Nov-2026
+
+El [checkpoint #1093/6992170026](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026)
+registra #1192 MERGED y Predeploy V2 validado, pero Deploy V2 #44376376095
+FAILED en POSTFLIGHT (`RUNTIME_UNCLASSIFIED_DEGRADED`) y Current/Book frescos
+NO_VERIFICADOS. El parche de `scripts/porota_rootless_host.py` se preservó como
+diff local **no integrado**. Confirmar `observer.detail` físico antes de aceptar
+la hipótesis de ciclo 0/0; AMBER del contenedor no da READY a instrumentos.
+La API PPI existente usa REST; no imponer el supuesto límite de 2 GET/h.
+Consultar #980 para ownership/HOLD actual y no tomar este corte como runtime presente.

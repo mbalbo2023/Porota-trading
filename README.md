@@ -38,5 +38,13 @@ estado: [Actions](https://github.com/mbalbo2023/Porota-trading/actions),
 [continuidad](https://github.com/mbalbo2023/Porota-trading/issues/1093) y
 [ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).
 
-PPI Watch queda fuera del alcance. Los cambios son fix-forward; la documentación
-por sí sola no instala servicios ni autoriza operaciones reales.
+**Incidente P0 REST (corte 18-Nov-2026):** #1192 recuperó el circuito REST
+de PPI en código y pasó Predeploy, pero [Deploy V2 #44376376095](https://github.com/mbalbo2023/Porota-trading/actions/runs/44376376095)
+falló en POSTFLIGHT. [Checkpoint y parche local](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026):
+Current/Book, frescura, instrumentos READY y workers siguen sin certificación
+física. Login PPI no acredita datos.
+
+Por corrección explícita del operador, **PPI Watch no es «intocable» por política**.
+Toda intervención requiere ownership, scope y evidencia real; no deducir cuotas
+PPI de dos GET/h ni prohibir la API REST existente. FIX-FORWARD; documentación
+sola no instala servicios ni autoriza órdenes reales.

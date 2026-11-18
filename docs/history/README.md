@@ -4,6 +4,10 @@ Estos enlaces fijan versiones de Git anteriores a la consolidación documental.
 Conservan código citado, decisiones, RCA y evidencia de su fecha. No son instrucciones
 vigentes, autorización de operación ni una lista de tareas que deba repetirse.
 Para trabajar, usar [AGENTS.md](../../AGENTS.md) y [RUNBOOK.md](../RUNBOOK.md).
+Las menciones antiguas a «PPI Watch intocable» son **registros históricos,
+no una regla vigente del usuario**: Tincho corrigió esa atribución el
+18-Nov-2026. Consultar ownership #980 y evidencia #1093; conservar recibos
+históricos sin reescribir su contenido.
 
 ## Fuentes preservadas
 

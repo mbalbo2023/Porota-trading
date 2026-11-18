@@ -9,3 +9,12 @@ Only POROTA Trading RC6 in PAPER/SHADOW mode is supported. The required operatin
 Do not disclose suspected vulnerabilities in a public issue. Use GitHub's private vulnerability-reporting or security-advisory channel for this repository. Include a minimal reproduction, affected commit or workflow, and impact. Do not include credentials, private endpoints, customer data, or production exports.
 
 The maintainer will acknowledge a report, assess impact, and coordinate a fix-forward remediation. No rollback or change to PAPER/SHADOW safety controls is implied by this policy.
+
+## Evidence handling during RC6 PPI recovery
+
+Publish only sanitized HTTP status, request category, timestamps, identity
+hashes and PAPER safety receipts. Do not publish PPI credentials, bearer tokens,
+quote payloads, private URLs or raw runtime databases in issues, PRs or Actions
+artifacts. A successful PPI login is not proof of Current/Book success. Refer to
+[#1093 incident evidence](https://github.com/mbalbo2023/Porota-trading/issues/1093)
+and [#980 ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).

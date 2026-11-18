@@ -22,5 +22,7 @@ el plano de control; Predeploy certifica su paquete exacto y Promote registra
 el resultado de runtime. Un cambio de documentación no requiere deploy.
 
 Se mantienen PAPER/SHADOW ONLY, PRODUCTION_PAPER / SIMULATION, bloqueo de órdenes
-reales, PPI Watch fuera del scope y FIX-FORWARD. Los valores observados de runtime
-requieren evidencia actual; esta plantilla no los certifica.
+reales y FIX-FORWARD. PPI Watch **no es intocable por regla del usuario**:
+indicar expresamente si integra o no el scope y acreditar ownership y aislamiento
+antes de mutar componentes. No imponer cuotas PPI supuestas. Los valores
+observados de runtime requieren evidencia actual; esta plantilla no los certifica.
