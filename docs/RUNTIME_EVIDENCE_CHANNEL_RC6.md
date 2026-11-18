@@ -60,7 +60,11 @@ An instrument can be `READY_PAPER` only with a PPI-primary identity, fresh PPI
 evidence, an AVAILABLE catalog row, an explicit `READY_PAPER_*` capability,
 no ambiguity and exactly one coherent candidate-ledger row. Unknown freshness
 never becomes READY. IOL/BYMA/A3/ROFEX are complementary only and cannot
-replace the PPI identity.
+replace the PPI identity. Mercado cerrado no impide verificar identidad de
+artefacto↔contenedor↔controlador ni salud y PAPER/0; tampoco aporta prueba de
+frescura de rueda. Dejar constancia por instrumento de owner, Acción READ_ONLY
+y próxima sesión válida; nunca usar un placeholder `NO_VERIFICADO` indefinido
+como cierre ni admitir READY sin timestamps y HTTP Current/Book reales.
 
 `candidate_universe` remains a legacy ticker/family/market summary so existing
 read-only consumers keep their schema. Reconciliation rebuilds it inside the
@@ -100,6 +104,10 @@ Installing or changing the dedicated service and timer is host/bootstrap work
 through GitHub Actions within the authorized scope, separate from normal
 Deploy V2 promotion. Promotion uses the prepared environment and does not
 implicitly install or enable this channel.
+
+Antes de escribir o desplegar otra implementación, inventariar producer y
+consumers existentes, parches locales y PRs previos; completar lo parcial y
+dejar todo PR con owner, disposición, evidencia y siguiente acción.
 
 Merely merging this code does not prove that a current runtime bundle exists.
 After a change to the producer or publisher, verify the affected behavior and

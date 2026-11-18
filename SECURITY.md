@@ -15,6 +15,11 @@ The maintainer will acknowledge a report, assess impact, and coordinate a fix-fo
 Publish only sanitized HTTP status, request category, timestamps, identity
 hashes and PAPER safety receipts. Do not publish PPI credentials, bearer tokens,
 quote payloads, private URLs or raw runtime databases in issues, PRs or Actions
-artifacts. A successful PPI login is not proof of Current/Book success. Refer to
+artifacts. A successful PPI login is not proof of Current/Book success. A market-closed
+technical release still requires verifiable container/image/controller identity,
+PAPER/zero-real-order safety and health; never waive those checks to conceal
+missing broker evidence. Time-bound the next-session instrument freshness QA.
+Before changing safety code, inspect and recover existing partial fixes and PRs;
+retain evidence and ownership for every open PR. Refer to
 [#1093 incident evidence](https://github.com/mbalbo2023/Porota-trading/issues/1093)
 and [#980 ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).

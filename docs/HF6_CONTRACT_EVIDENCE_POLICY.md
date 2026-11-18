@@ -23,3 +23,11 @@ pero no promueve `can_simulate`, `READY_PAPER` ni caución. La corrección de
 consumidores está en [PR #1182 DRAFT](https://github.com/mbalbo2023/Porota-trading/pull/1182)
 al corte; validar HEAD/CI/runtime antes de acreditarla. El snapshot 0/17.283 READY
 no se corrige por documentación: requiere prueba física instrumento por instrumento.
+
+Si la rueda está cerrada, el deploy **técnico** seguro puede hacerse sin quotes
+frescas; el QA de Current y Book debe registrar por cada identidad PPI: endpoint,
+HTTP/sanitized error, `asof` de fuente, hora de observación, edad contra umbral
+válido, asociación unívoca de contrato y `READY_PAPER_*`. Hasta la siguiente
+rueda válida, `NO_VERIFICADO` se acompaña de owner, Acción y vencimiento, y
+`READY_PAPER` permanece **fail-closed**. Reusar el PR/parche parcial de origen
+antes de duplicar la lógica de identidad o frescura.
