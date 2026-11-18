@@ -7,7 +7,9 @@ The source code and scheduler have NO fixed expiry day; unknown years, stale
 audits, holidays and closed sessions are evidence HOLD. This script never
 imports a broker SDK, accesses secrets, opens production host or acquires a
 PPI lease. Provider permissions remain exclusively in the existing audited
-capture engine, subject to its live shared-budget/EXIT/lease checks.
+capture engine, subject to its existing runtime shared-budget/EXIT/lease
+checks, or a separate explicitly manual local two-GET diagnostic at zero
+observed PAPER positions. Neither is an official provider-quota attestation.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "fc443b3e8aca3294b2ce00b0080974b6a8408cb6"
+ENGINE_GIT_BLOB = "40be02616b75411dbccf5709456fd82b6bb2db9c"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -38,7 +40,7 @@ BYMA_OFFICIAL_CALENDAR_SOURCE = "https://www.byma.com.ar/mercado/calendario-burs
 CALENDAR_AUDIT_MAX_AGE_DAYS = 60  # same bounded freshness policy as RC6 Market Watch
 # Exact historical product calendar reasons corresponding to BYMA footnote (3):
 # negotiated session, but NO settlement. Only diagnostic PPI Current/Book GET
-# under signed native budget is eligible; never PAPER entry or settlement.
+# under an explicitly bounded budget is eligible; never PAPER entry or settlement.
 LIMITED_NO_SETTLEMENT_REASONS = frozenset({
     "Día del Bancario; jornada especial sin liquidación",
     "Día no laborable con fines turísticos",
@@ -168,7 +170,8 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
 
     The caller must run this *before* reaching SSH or any provider/Watch route.
     Passing this time gate is never a PPI GET authorization: that additionally
-    requires the existing shared RuntimePPIBudget's live signed leases.
+    requires either the existing runtime budget's live leases or the strictly
+    opt-in local pilot, which cannot confer production quota authority.
     """
     if repository != REPOSITORY or ref != CONTROL_REF:
         return "", "NONCANONICAL_REPOSITORY_OR_REF"

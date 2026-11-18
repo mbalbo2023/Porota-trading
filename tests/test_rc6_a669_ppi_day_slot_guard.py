@@ -198,6 +198,14 @@ class A669GuardTests(unittest.TestCase):
         self.assertIn("source_pit_verified':False", code)
         self.assertIn("paper_admission_certified':False", code)
         self.assertIn("RC6_A670_HOLD_REASON", code)
+
+    def test_local_pilot_requires_manual_workflow_dispatch_and_is_off_by_default(self):
+        code = YAML.read_text()
+        self.assertIn("pilot_mode:", code)
+        self.assertIn("options: ['off', 'once']", code)
+        self.assertIn("github.event_name == 'workflow_dispatch'", code)
+        self.assertIn("RC6_A630_PILOT_MODE", code)
+        self.assertIn("RC6_A630_LOCAL_PILOT", code)
         self.assertIn("RC6_A670_MARKET_SESSION", code)
         self.assertIn("BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY", code)
         self.assertNotIn("pull_request_target:", code)
@@ -220,9 +228,9 @@ class A669GuardTests(unittest.TestCase):
 
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()
-        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 0dd7b46bafcc21649060e21c7bdf3e40ade6f666", code)
-        self.assertIn("RC6_EXPECTED_TREE_SHA: e1fa390418be5062d0f246834e38db2c5829d2e6", code)
-        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f", code)
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 57d5e8cdd6619dcbf967ed3e4901534fb5a7286e", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: 159d34172b928a17a4b0106fc9def6783d139f6c", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:cb69622e724fa015b84883bb5b6611ad1f233953ebdc44282ae27509461951ee", code)
         self.assertIn("rootless-capture", code)
         self.assertNotIn("sudo -n docker", code)
         self.assertNotIn("porota_production_observer", code)

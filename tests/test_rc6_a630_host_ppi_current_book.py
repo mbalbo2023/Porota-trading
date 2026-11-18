@@ -4,6 +4,7 @@ from contextlib import contextmanager, nullcontext, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import base64
+import fcntl
 import json
 import io
 import os
@@ -139,6 +140,86 @@ def invoke(shared, *, observations=None, **reader_options):
 
 
 class TestA630(unittest.TestCase):
+    def test_typed_provider_429_is_sanitized_without_leaking_exception_text(self):
+        class ThrottledReader(Reader):
+            def current(self, *args):
+                self.last_read_error_code = "PPI_HTTP_429"
+                raise RuntimeError("private upstream response body with credentials")
+        result = capture_two(TARGET, ("fake-key", "fake-secret"), Shared(),
+                             lambda *a, **kw: ThrottledReader(*a, **kw),
+                             clock=lambda: NOW, http_limiter=fake_hashes,
+                             adapter_guard=fake_adapter)
+        self.assertEqual(result["state"], "NO_VERIFICADO")
+        self.assertEqual(result["reason"], "PPI_HTTP_429")
+        self.assertEqual(result["current_gets"], 0)
+        self.assertTrue(verify_receipt(result, TARGET))
+        self.assertNotIn("credentials", json.dumps(result))
+
+    def test_typed_login_401_403_remain_sanitized(self):
+        for code in ("PPI_HTTP_401", "PPI_HTTP_403"):
+            class AuthRejected(Reader):
+                def login_once(self):
+                    self.last_read_error_code = code
+                    raise RuntimeError("private login response with account details")
+            result = capture_two(TARGET, ("fake-key", "fake-secret"), Shared(),
+                                 lambda *a, **kw: AuthRejected(*a, **kw),
+                                 http_limiter=fake_hashes, adapter_guard=fake_adapter)
+            self.assertEqual(result["reason"], code)
+            self.assertTrue(verify_receipt(result, TARGET))
+            self.assertNotIn("private login", json.dumps(result))
+
+    def test_actual_product_auth_metadata_shape_is_bounded_without_reader_error_code(self):
+        class ProductionAuthResponseError(RuntimeError):
+            pass
+        for status in (401, 403, 429):
+            class AuthRejected(Reader):
+                def login_once(self):
+                    raise ProductionAuthResponseError(
+                        f"PPI_PRODUCTION_AUTH_PROVIDER_ERROR: HTTP={status}; "
+                        "Content-Type=APPLICATION_JSON; Content-Length=128")
+            receipt = capture_two(TARGET, ("key", "secret"), Shared(),
+                                  lambda *a, **kw: AuthRejected(*a, **kw),
+                                  http_limiter=fake_hashes, adapter_guard=fake_adapter)
+            self.assertEqual(receipt["reason"], f"PPI_HTTP_{status}")
+            self.assertTrue(verify_receipt(receipt, TARGET))
+            self.assertNotIn("Length=128", json.dumps(receipt))
+        self.assertIsNone(engine._sanitized_native_auth_reason(
+            ProductionAuthResponseError("PPI_PRODUCTION_AUTH_PROVIDER_ERROR: HTTP=401; secret=SHOULD_NOT_LEAK")))
+
+    def test_pilot_time_gate_fails_closed_on_other_day_and_near_close(self):
+        from datetime import datetime
+        with patch.dict(os.environ, {"RC6_A630_LOCAL_SLOT": "1630",
+                                     "RC6_A630_LOCAL_ART_DATE": "2026-11-18"}):
+            self.assertTrue(engine._local_pilot_session_now(
+                now=datetime(2026, 11, 18, 19, 44, tzinfo=timezone.utc)))
+            self.assertFalse(engine._local_pilot_session_now(
+                now=datetime(2026, 11, 18, 19, 46, tzinfo=timezone.utc)))
+            self.assertFalse(engine._local_pilot_session_now(
+                now=datetime(2026, 11, 19, 19, 40, tzinfo=timezone.utc)))
+            self.assertFalse(engine._local_pilot_session_now(
+                now=datetime(2026, 11, 18, 19, 20, tzinfo=timezone.utc)))
+
+    def test_local_pilot_checks_positions_again_at_start_and_wire(self):
+        observed = {"count": 0}
+        module = types.ModuleType("rc6_ppi_global_budget")
+        module.supervisable_position_count = lambda *a: observed["count"]
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(sys.modules, {"rc6_ppi_global_budget": module}), \
+             patch.object(engine, "_local_pilot_session_now", return_value=True):
+            fd = os.open(Path(directory) / "bootstrap.lock", os.O_CREAT | os.O_RDWR, 0o600)
+            pilot = engine.LocalPilotBudget(Shared(), Path(directory) / "paper.db",
+                                            Path(directory) / "global.sqlite", fd)
+            self.assertTrue(pilot.acquire("current", consumer="UNSCOPED",
+                                          priority="DISCOVERY")["allowed"])
+            observed["count"] = 1
+            self.assertRaises(ValueError, pilot.start, "L1")
+            with self.assertRaises(ValueError):
+                with pilot.wire_scope("L1"):
+                    self.fail("wire must remain closed when PAPER positions are present")
+            self.assertFalse(pilot.acquire("book", consumer="UNSCOPED",
+                                           priority="DISCOVERY")["allowed"])
+            pilot.close()
+
     def test_fixed_slots_two_families_and_never_alias(self):
         self.assertEqual(len(SLOTS), 4)
         self.assertEqual({x[1] for x in SLOTS.values()}, {"BONOS", "ACCIONES"})
@@ -213,6 +294,119 @@ class TestA630(unittest.TestCase):
                 budget, reason = _existing_shared_budget()
                 self.assertIsNone(budget)
                 self.assertEqual(reason, 'PPI_EXIT_ROUND_NOT_ATTESTED')
+
+    def test_explicit_local_once_budget_uses_original_global_sidecar_and_zero_positions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "observer.db"
+            sidecar = root / "artifacts/ppi-budget/global.sqlite"
+            workspace = types.ModuleType("cg_paper_workspace")
+            workspace.database_path = lambda: database
+            workspace.artifact_root = lambda path: root / "artifacts"
+            module = types.ModuleType("rc6_ppi_global_budget")
+            seen = []
+            module.RuntimePPIBudget = type("RuntimePPIBudget", (), {})
+            module.budget_from_environment = lambda path: self.fail("unapproved runtime budget")
+            module.runtime_budget_snapshot = lambda path: self.fail("no sidecar to snapshot")
+            module.supervisable_position_count = lambda path, *a, **k: 0
+            module.SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
+            class GlobalPPIBudget:
+                def __init__(self, path, policy, **kwargs):
+                    seen.append((path, policy, kwargs))
+            module.GlobalPPIBudget = GlobalPPIBudget
+            with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
+                                          "rc6_ppi_global_budget": module}), \
+                 patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
+                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                budget, reason = _existing_shared_budget()
+            self.assertIsInstance(budget, engine.LocalPilotBudget)
+            self.assertIsInstance(budget.inner, GlobalPPIBudget)
+            self.assertIsNone(reason)
+            self.assertEqual(len(seen), 1)
+            path, policy, kwargs = seen[0]
+            self.assertEqual(path, root / "artifacts/ppi-a670-diagnostic/budget.sqlite")
+            self.assertIn(database, kwargs["protected"])
+            self.assertEqual(policy["authority"], "LOCAL_DIAGNOSTIC_ONLY_NOT_PROVIDER_QUOTA")
+            self.assertEqual(policy["endpoint_limits"],
+                             {"current": 1, "book": 1, "intraday": 1})
+            self.assertEqual(policy["global_limit"], 2)
+            self.assertEqual(policy["window_seconds"], 3600)
+            self.assertEqual(policy["max_parallel_requests"], 1)
+            self.assertEqual(policy["breaker_seconds"], 3600)
+            self.assertLessEqual((datetime.fromisoformat(policy["expires_at"]) -
+                                  datetime.now(timezone.utc)).total_seconds(), 120)
+            self.assertFalse(sidecar.exists())  # runtime budget never bootstrapped
+            self.assertTrue(Path(str(sidecar) + ".bootstrap.lock").is_file())
+            second_fd = os.open(str(sidecar) + ".bootstrap.lock", os.O_RDWR)
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(second_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(second_fd)
+            budget.close()
+            with open(str(sidecar) + ".bootstrap.lock", "rb") as reopened:
+                fcntl.flock(reopened.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(reopened.fileno(), fcntl.LOCK_UN)
+            self.assertFalse(sidecar.exists())
+
+    def test_manual_once_never_mints_a_second_authority_after_private_ledger_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db, sidecar = root / "paper.db", root / "artifacts/ppi-budget/global.sqlite"
+            workspace = types.ModuleType("cg_paper_workspace")
+            workspace.database_path = lambda: db
+            workspace.artifact_root = lambda path: root / "artifacts"
+            module = types.ModuleType("rc6_ppi_global_budget")
+            module.RuntimePPIBudget = type("RuntimePPIBudget", (), {})
+            module.budget_from_environment = lambda path: None
+            module.runtime_budget_snapshot = lambda path: None
+            module.SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
+            module.supervisable_position_count = lambda *a, **kw: 0
+            creations = []
+            class FakeGlobal:
+                def __init__(self, path, policy, **kwargs):
+                    creations.append(path)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("synthetic first diagnostic, not a runtime budget")
+            module.GlobalPPIBudget = FakeGlobal
+            with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
+                                          "rc6_ppi_global_budget": module}), \
+                 patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
+                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                first, first_reason = _existing_shared_budget()
+                self.assertIsNone(first_reason)
+                self.assertIsInstance(first, engine.LocalPilotBudget)
+                first.close()
+                second, second_reason = _existing_shared_budget()
+                self.assertIsNone(second)
+                self.assertEqual(second_reason, "PPI_LOCAL_PILOT_ALREADY_USED")
+            self.assertEqual(len(creations), 1)
+            self.assertFalse(sidecar.exists())
+
+    def test_local_pilot_rejects_any_positions_or_unverified_paper_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "observer.db"
+            workspace = types.ModuleType("cg_paper_workspace")
+            workspace.database_path = lambda: database
+            workspace.artifact_root = lambda path: root / "artifacts"
+            module = types.ModuleType("rc6_ppi_global_budget")
+            module.RuntimePPIBudget = type("RuntimePPIBudget", (), {})
+            module.SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
+            constructed = []
+            module.GlobalPPIBudget = lambda *a, **k: constructed.append(True)
+            module.runtime_budget_snapshot = lambda p: None
+            module.budget_from_environment = lambda p: None
+            with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
+                                          "rc6_ppi_global_budget": module}), \
+                 patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
+                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                for count in (1, None):
+                    module.supervisable_position_count = lambda *a, **k: count
+                    budget, reason = _existing_shared_budget()
+                    self.assertIsNone(budget)
+                    self.assertEqual(reason, "PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD")
+            self.assertFalse(constructed)
 
     def test_exit_round_must_be_recent_tz_aware_and_not_future(self):
         cycle={'status':'COMPLETE','required_scope_verified_current':True,
@@ -862,6 +1056,28 @@ class TestA630RootlessEvidence(unittest.TestCase):
         self.assertEqual(calls[0][1]["input"], b"# bounded audited source\n")
         self.assertNotIn("sudo", " ".join(calls[0][0]))
 
+    def test_local_pilot_is_only_forwarded_to_explicit_rootless_capture(self):
+        valid, _ = invoke(Shared())
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        commands = []
+        def run(command, **kwargs):
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0,
+                                               stdout=json.dumps(valid).encode(), stderr=b"")
+        target = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        with patch("scripts.rc6_a630_host_ppi_current_book._rootless_context",
+                   side_effect=[context, context]):
+            rootless_host_capture(target, ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                                  ROOTLESS_IMAGE_ID, b"program", local_pilot=True,
+                                  pilot_slot="1120", pilot_date="2026-11-18", run=run)
+        self.assertEqual(len(commands), 1)
+        self.assertIn("RC6_A630_LOCAL_PILOT=ONCE", commands[0])
+        self.assertIn("RC6_A630_LOCAL_SLOT=1120", commands[0])
+        self.assertIn("RC6_A630_LOCAL_ART_DATE=2026-11-18", commands[0])
+
     def test_rootless_mismatch_or_exec_timeout_fails_closed_without_false_get_zero(self):
         target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
         no_pin = rootless_host_capture(target_b64, "f" * 40,
@@ -1033,7 +1249,8 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 self.assertEqual(engine.main(), 2)
             self.assertEqual(json.loads(out.getvalue()), outcome)
         capture.assert_called_once_with(target_b64, ROOTLESS_CANDIDATE_SHA,
-                                        ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source")
+                                        ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source",
+                                        local_pilot=False, pilot_slot="", pilot_date="")
 
     def test_in_memory_ssh_bootstrap_never_opens_docker_on_wrong_pin(self):
         # The same Python -c bootstrap as A670; no remote host/SSH/secret/GET.

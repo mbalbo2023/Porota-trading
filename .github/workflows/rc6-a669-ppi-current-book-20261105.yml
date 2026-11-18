@@ -4,7 +4,8 @@ name: RC6 A670 evergreen BYMA PPI Current Book bounded READ_ONLY
 # avoids a second live scheduler. Each UTC clock, ART slot and audited holiday
 # gate runs BEFORE SSH, PPI SDK or any shared budget ledger access.
 # GitHub schedule is best-effort and may be delayed/dropped: manual fallback
-# uses the same exact-day session, 60-minute slot and signed quota gates.
+# uses the same exact-day session and 60-minute slot gate. Local two-GET pilot
+# is manual-only and NEVER asserts a signed quota from the PPI provider.
 on:
   schedule:
     - cron: '45 10 * * 1-5'
@@ -22,6 +23,12 @@ on:
         type: choice
         required: true
         options: ['1045', '1120', '1430', '1630']
+      pilot_mode:
+        description: 'OFF by default. ONCE permits at most 1 Current + 1 Book with zero PAPER positions; evidence only.'
+        type: choice
+        required: true
+        default: 'off'
+        options: ['off', 'once']
   pull_request:
     branches: [main]
     paths:
@@ -88,10 +95,11 @@ jobs:
     env:
       RC6_A669_SCHEDULE: ${{ github.event.schedule }}
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
+      RC6_A630_PILOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.pilot_mode == 'once' && 'ONCE' || 'OFF' }}
       # Exact active deployed candidate; independent of the audited calendar.
-      RC6_EXPECTED_CANDIDATE_SHA: 0dd7b46bafcc21649060e21c7bdf3e40ade6f666
-      RC6_EXPECTED_TREE_SHA: e1fa390418be5062d0f246834e38db2c5829d2e6
-      RC6_EXPECTED_IMAGE_ID: sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f
+      RC6_EXPECTED_CANDIDATE_SHA: 57d5e8cdd6619dcbf967ed3e4901534fb5a7286e
+      RC6_EXPECTED_TREE_SHA: 159d34172b928a17a4b0106fc9def6783d139f6c
+      RC6_EXPECTED_IMAGE_ID: sha256:cb69622e724fa015b84883bb5b6611ad1f233953ebdc44282ae27509461951ee
     steps:
       - uses: actions/checkout@v4
         with:
@@ -195,7 +203,15 @@ jobs:
           # memory on host; it attests the private rootless release/daemon/CID
           # and streams bytes through docker exec -i. No remote file, rootful
           # daemon, sudo docker, alias lookup or raw Docker JSON in artifacts.
-          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' rootless-capture '$RC6_A630_TARGET_B64' '$RC6_EXPECTED_CANDIDATE_SHA' '$RC6_EXPECTED_TREE_SHA' '$RC6_EXPECTED_IMAGE_ID'"
+          pilot_arg=""
+          if [[ "$RC6_A630_PILOT_MODE" == "ONCE" ]]; then
+            # Literal allowlisted suffix only; scheduled jobs always OFF.
+            # RC6_A630_LOCAL_PILOT is scoped to this one docker-exec child.
+            [[ "$RC6_A669_SLOT" =~ ^(1045|1120|1430|1630)$ ]]
+            [[ "$RC6_A670_ART_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+            pilot_arg=" 'ONCE' '$RC6_A669_SLOT' '$RC6_A670_ART_DATE'"
+          fi
+          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' rootless-capture '$RC6_A630_TARGET_B64' '$RC6_EXPECTED_CANDIDATE_SHA' '$RC6_EXPECTED_TREE_SHA' '$RC6_EXPECTED_IMAGE_ID'$pilot_arg"
           set +e
           timeout --signal=TERM --kill-after=5s 100 ssh \
             -i "$HOME/.ssh/rc6_a669_readonly" -o BatchMode=yes \
@@ -233,7 +249,9 @@ jobs:
                   'image_id':os.environ['RC6_EXPECTED_IMAGE_ID'],
                   'art_date':os.environ['RC6_A670_ART_DATE'],'slot':os.environ['RC6_A669_SLOT'],
                   'market_calendar_gate':os.environ['RC6_A670_MARKET_SESSION'],
-                  'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
+                  'provider_get_lease_gate':('A630_LOCAL_PILOT_UNCERTIFIED' if
+                      os.environ.get('RC6_A630_PILOT_MODE')=='ONCE'
+                      else 'A630_EXISTING_RUNTIME_BUDGET'),
                   'settlement_verified':False,'paper_entry_allowed':False,
                   'receipt':payload,'ppi_watch_mutations_by_action':0,
                   'real_orders_sent_by_action':0,'predeploy_dispatches':0,
@@ -243,7 +261,8 @@ jobs:
                   'runtime_sha_verified':wrapper.get('runtime_pin_verified') is True,
                   'runtime_backend':'ROOTLESS_SPLIT',
                   'rootless_or_ppi_hold_reason':wrapper.get('reason','NO_VERIFICADO'),
-                  'shared_budget_lease_writes_possible':True}
+                  'shared_budget_lease_writes_possible':True,
+                  'budget_sidecar_bootstrap_writes_possible':os.environ.get('RC6_A630_PILOT_MODE')=='ONCE'}
           Path('evidence/a669_ppi_current_book.json').write_text(
               json.dumps(public,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
           print('A669_CURRENT_BOOK='+payload['state']+
@@ -271,7 +290,9 @@ jobs:
                'art_date':os.environ.get('RC6_A670_ART_DATE',''),
                'slot':os.environ.get('RC6_A669_SLOT',''),
                'market_calendar_gate':os.environ.get('RC6_A670_HOLD_REASON','NO_VERIFICADO'),
-               'provider_get_lease_gate':'A630_SIGNED_NATIVE_ONLY',
+               'provider_get_lease_gate':('A630_LOCAL_PILOT_UNCERTIFIED' if
+                   os.environ.get('RC6_A630_PILOT_MODE')=='ONCE'
+                   else 'A630_EXISTING_RUNTIME_BUDGET'),
                'settlement_verified':False,'paper_entry_allowed':False,
                'receipt':unverified_transport_receipt(
                    'SLOT_OR_DAY_HOLD' if not os.environ.get('RC6_A669_SLOT')
