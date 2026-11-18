@@ -173,9 +173,10 @@ def test_legacy_live_probe_rejects_conflicting_http_hook_before_fake_wire(transp
     assert calls==[]  # No LoginApi/RefreshToken or Configuration/Search/Book GET.
     assert report['reader_metrics']['login_calls']==0
     # This old probe replaces Session.request after the production guard owns
-    # the hook. The guard correctly detects stolen custody before any wire.
-    assert report['http']==[{'method':'POST',
-                            'path':'/api/1.0/account/loginapi','status':None}]
+    # the hook. The hardened reader now detects stolen custody at _sdk_scope,
+    # before any HTTP request/audit is attempted; never manufacture a POST
+    # receipt for a wire event that never occurred.
+    assert report['http']==[]
 
 
 @pytest.mark.parametrize('status',[302,400,401,403,429,500])

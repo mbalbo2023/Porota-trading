@@ -1167,6 +1167,118 @@ def _eligible_symbols(store):
     return tuple(core)
 
 
+def _ppi_direct_rest_probe_candidates(store, *, limit=1):
+    """PPI-primary observation only, independent of simulation readiness.
+
+    A zero-READY bootstrap must still be able to *observe* an unequivocal
+    native PPI catalog identity. PPI's documented SearchInstrument response
+    can omit settlement: REQUEST_CANDIDATE may therefore be attempted only
+    as an untrusted native GET query, never promoted to PPI_FIELD or READY.
+    An old STALE PPI-primary row is likewise eligible only for this probe.
+    This never inserts a candidate into the trading/scanner universe,
+    changes can_simulate or authorizes an opening.
+    """
+    if type(limit) is not int or not 1 <= limit <= 3:
+        raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
+    try:
+        with store.connect() as c:
+            rows = c.execute("""WITH unique_identity AS (
+                  SELECT ticker,instrument_type,settlement
+                  FROM financial_instrument_catalog
+                  GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1
+                )
+                SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement
+                FROM financial_instrument_catalog f JOIN unique_identity u
+                  ON f.ticker=u.ticker AND f.instrument_type=u.instrument_type
+                 AND f.settlement=u.settlement
+                WHERE f.status IN ('AVAILABLE','STALE')
+                  AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                  AND f.market NOT IN ('','UNKNOWN') AND f.currency NOT IN ('','UNKNOWN')
+                  AND json_valid(f.metadata_json)
+                  AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
+                ORDER BY CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                         CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+                         f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement
+                LIMIT ?""", (limit,)).fetchall()
+        return [tuple(str(v).strip().upper() for v in row) for row in rows]
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return []
+
+
+def _ppi_direct_rest_observe_only(reader, store):
+    """Try one genuine Current+Book pair without invoking the PAPER broker.
+
+    Only invoked in explicit direct-REST recovery mode when zero READY
+    scanner symbols exist. A healthy quote is stored for provenance, but
+    carries an explicit opening block. It cannot change candidate readiness.
+    """
+    candidates = _ppi_direct_rest_probe_candidates(store, limit=1)
+    if not candidates:
+        return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False}
+    key = candidates[0]
+    ticker, family, market, currency, settlement = key
+    try:
+        # Require the EXISTING native wire receipt contract. An SDK cache,
+        # synthetic Book/Current or pre-send HTTP counter does not establish
+        # freshness. No extra REST retry is made to obtain this evidence.
+        capture = getattr(reader, "capture_guarded_native", None)
+        if not callable(capture):
+            raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_REQUIRED")
+        witnessed = {}
+        for endpoint in ("current", "book"):
+            witness = capture(endpoint, key, priority="DISCOVERY")
+            receipt = witness.get("guard_wire_receipt") if isinstance(witness, dict) else None
+            if (not isinstance(receipt, dict)
+                    or receipt.get("schema") != "RC6_PPI_NATIVE_WIRE_RECEIPT_V1"
+                    or receipt.get("endpoint") != endpoint
+                    or receipt.get("http_method") != "GET"
+                    or receipt.get("http_status_code") != 200
+                    or receipt.get("adapter_send_invoked") is not True
+                    or receipt.get("adapter_response_completed") is not True
+                    or receipt.get("request_identity_3key") != [ticker, family, settlement]
+                    or receipt.get("claimed_five_key") != list(key)
+                    or not isinstance(receipt.get("raw_body_sha256"), str)
+                    or len(receipt["raw_body_sha256"]) != 64
+                    or any(c not in "0123456789abcdef" for c in receipt["raw_body_sha256"])):
+                raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_INVALID")
+            # Evidence of an actual HTTP200 must survive even if the *next*
+            # REST GET fails or the paired quote is stale. Do not attribute
+            # success to a synthetic/current-only Book or imply READY.
+            witnessed[endpoint] = witness
+            store.event("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
+                        f"{ticker}:{family}:{settlement};endpoint={endpoint};"
+                        f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
+        witnessed_current = witnessed["current"]
+        witnessed_book = witnessed["book"]
+        current = witnessed_current["native_payload"]
+        book = witnessed_book["native_payload"]
+        metadata = financial_catalog.lookup(store, ticker, family, settlement,
+                                              market=market, currency=currency)
+        quote = normalize_quote(ticker, family, settlement, current, book,
+                                metadata=metadata, identity=key)
+        # The exact PPI-primary catalog supplies Market/Currency even when
+        # capability is not READY and lookup returns no tradeable contract.
+        quote = replace(quote, market=market, currency=currency)
+        quote.monetary_identity()  # reject any existing contract contradiction
+        if quote.time_error(now_iso(), require_trade=False):
+            store.event("PPI_DIRECT_REST_PROBE_HOLD", "NATIVE_BOOK_STALE_OR_INVALID")
+            return {"status": "STALE_OR_INVALID", "paper_ready": False}
+        quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
+        store.add_quote(quote)
+        # Digest of the *actual* guarded GET body, never its raw JSON, URL
+        # or broker credentials. Useful to reconcile with Deploy V2 evidence.
+        store.event("PPI_DIRECT_REST_PROBE_OBSERVED",
+                    f"{ticker}:{family}:{settlement}:read_only;"
+                    f"current_wire_sha256={witnessed_current['guard_wire_receipt']['raw_body_sha256']};"
+                    f"book_wire_sha256={witnessed_book['guard_wire_receipt']['raw_body_sha256']}")
+        return {"status": "FRESH_OBSERVED", "identity": list(key),
+                "paper_ready": False}
+    except Exception as error:
+        store.event("PPI_DIRECT_REST_PROBE_HOLD", classify_read_error(error))
+        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+                "reason": classify_read_error(error)}
+
+
 def _active_symbols(store):
     """Compatibilidad: devuelve el primer lote, no el universo histórico."""
     return _eligible_symbols(store)[:ACTIVE_SYMBOL_LIMIT]
@@ -2385,6 +2497,7 @@ def run():
     scanner_primary = ScannerPrimaryRecorder(
         Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
+    last_direct_rest_probe = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
@@ -2541,6 +2654,19 @@ def run():
                 continue
             (focus, symbols, eligible_total, cursor_before, cursor_after,
              feasibility) = _runtime_readiness(store, record_event=True)
+            if (not symbols and
+                    os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1" and
+                    time.monotonic() - last_direct_rest_probe >= 60):
+                # The existing READY-only basket can be empty even when PPI
+                # catalog identities exist. A separately fenced REST probe
+                # tests one exact native pair; it never calls broker.on_quote,
+                # changes eligibility or asserts PAPER_READY.
+                last_direct_rest_probe = time.monotonic()
+                probe = _ppi_direct_rest_observe_only(reader, store)
+                _health(store, "PPI_DIRECT_REST_RECOVERY",
+                        "VERDE" if probe["status"] == "FRESH_OBSERVED" else "AMARILLO",
+                        "Native REST observe-only: " + probe["status"],
+                        "PPI Producción", success=probe["status"] == "FRESH_OBSERVED")
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
