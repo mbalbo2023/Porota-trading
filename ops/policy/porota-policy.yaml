@@ -52,7 +52,7 @@ development:
   isolated_branch_required: true
   parallel_development_default: true
   shared_runtime_writers_serialized: true
-  ppi_watch_must_not_be_modified: true
+  unowned_resources_must_not_be_modified: true
   chat_memory_is_runtime_source_of_truth: false
   runtime_evidence_required: true
   read_only_nonblocking: true
@@ -164,7 +164,6 @@ cleanup:
     - active_or_referenced_containers_and_images
     - volumes_and_sqlite_databases
     - bind_mounted_data
-    - ppi_watch
     - shared_host_or_other_service_resources
 
 workflow_governance:

@@ -25,8 +25,10 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 - PAPER/SHADOW ONLY; modo esperado `PRODUCTION_PAPER / SIMULATION`.
 - Órdenes reales bloqueadas. `real_orders_sent=0` es un requisito; sólo declararlo
   medido con evidencia del runtime correspondiente.
-- PPI Watch y servicios ajenos quedan fuera del alcance, salvo autorización
-  explícita del usuario para un cambio concreto.
+- No modificar procesos, cuentas, contenedores ni datos ajenos al ownership
+  comprobado, salvo autorización concreta del usuario. Un nombre histórico como
+  «PPI Watch» no prueba la existencia, identidad ni consumo de cuota de un
+  servicio externo: verificar esos hechos antes de imponer una reserva o veto.
 - FIX-FORWARD ONLY: no rollback de runtime.
 - GitHub y GitHub Actions son el control normal. SSH/manual es break-glass;
   Codespaces no es el entorno operativo. Evitar tareas manuales rutinarias para

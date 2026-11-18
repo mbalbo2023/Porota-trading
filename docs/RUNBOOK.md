@@ -76,8 +76,11 @@ acceso y cualquier migración inicial de datos se realizan en su scope separado
 por Actions, con privilegios acotados cuando sean necesarios; las credenciales
 nunca van en el repo o en sus recibos públicos.
 
-PPI Watch, otros servicios, volúmenes y datos ajenos permanecen fuera del scope.
-La coexistencia debe comprobarse antes de sustituir el runtime de Porota.
+Los servicios ajenos identificados, sus volúmenes y datos permanecen fuera del
+scope. El nombre histórico «PPI Watch» no demuestra por sí solo un consumidor
+externo ni una reserva de cuota PPI; exigir evidencia de identidad y tráfico
+antes de convertirlo en dependencia. Comprobar la coexistencia real antes de
+sustituir el runtime de Porota.
 
 ## 5. Promover y verificar
 
