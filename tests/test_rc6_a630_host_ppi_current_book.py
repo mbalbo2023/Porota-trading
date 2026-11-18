@@ -199,13 +199,54 @@ class TestA630(unittest.TestCase):
             self.assertFalse(engine._local_pilot_session_now(
                 now=datetime(2026, 11, 18, 19, 20, tzinfo=timezone.utc)))
 
+    def test_local_pilot_only_accepts_a_real_operator_pause_and_closed_entry_gate(self):
+        operator = types.ModuleType("scripts.rc6_operator_paper_rearm")
+        operator.PAUSE_STATUS = "PAPER_PAUSED_BY_OPERATOR"
+        operator.trusted_operator_pause = lambda **kwargs: None
+        admission = types.ModuleType("rc6_paper_admission_gate")
+        admission.admission_status = lambda **kwargs: (
+            False, "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
+        with patch.dict(sys.modules, {
+                "scripts.rc6_operator_paper_rearm": operator,
+                "rc6_paper_admission_gate": admission}):
+            self.assertFalse(engine._local_pilot_admission_paused())
+            operator.trusted_operator_pause = lambda **kwargs: {
+                "status": operator.PAUSE_STATUS, "receipt_sha256": "a" * 64}
+            self.assertTrue(engine._local_pilot_admission_paused())
+            admission.admission_status = lambda **kwargs: (True, "")
+            self.assertFalse(engine._local_pilot_admission_paused())
+            admission.admission_status = lambda **kwargs: (
+                False, "PAPER_PREOPEN_RECEIPT_UNSAFE")
+            self.assertFalse(engine._local_pilot_admission_paused())
+
+    def test_local_pilot_cannot_admit_a_get_without_paused_entry_authority(self):
+        module = types.ModuleType("rc6_ppi_global_budget")
+        module.supervisable_position_count = lambda *args: 0
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(sys.modules, {"rc6_ppi_global_budget": module}), \
+             patch.object(engine, "_local_pilot_session_now", return_value=True), \
+             patch.object(engine, "_local_pilot_admission_paused", return_value=False):
+            fd = os.open(Path(directory) / "bootstrap.lock", os.O_CREAT | os.O_RDWR, 0o600)
+            pilot = engine.LocalPilotBudget(Shared(), Path(directory) / "paper.db",
+                                            Path(directory) / "global.sqlite", fd)
+            self.assertEqual(pilot.acquire("current", consumer="UNSCOPED",
+                                            priority="DISCOVERY"),
+                             {"allowed": False,
+                              "reason": "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD"})
+            self.assertRaises(ValueError, pilot.start, "L1")
+            with self.assertRaises(ValueError):
+                with pilot.wire_scope("L1"):
+                    self.fail("wire must remain closed without verified PAUSE")
+            pilot.close()
+
     def test_local_pilot_checks_positions_again_at_start_and_wire(self):
         observed = {"count": 0}
         module = types.ModuleType("rc6_ppi_global_budget")
         module.supervisable_position_count = lambda *a: observed["count"]
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(sys.modules, {"rc6_ppi_global_budget": module}), \
-             patch.object(engine, "_local_pilot_session_now", return_value=True):
+             patch.object(engine, "_local_pilot_session_now", return_value=True), \
+             patch.object(engine, "_local_pilot_admission_paused", return_value=True):
             fd = os.open(Path(directory) / "bootstrap.lock", os.O_CREAT | os.O_RDWR, 0o600)
             pilot = engine.LocalPilotBudget(Shared(), Path(directory) / "paper.db",
                                             Path(directory) / "global.sqlite", fd)
@@ -317,7 +358,8 @@ class TestA630(unittest.TestCase):
             with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
                                           "rc6_ppi_global_budget": module}), \
                  patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
-                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                 patch.object(engine, "_local_pilot_session_now", return_value=True), \
+                 patch.object(engine, "_local_pilot_admission_paused", return_value=True):
                 budget, reason = _existing_shared_budget()
             self.assertIsInstance(budget, engine.LocalPilotBudget)
             self.assertIsInstance(budget.inner, GlobalPPIBudget)
@@ -372,7 +414,8 @@ class TestA630(unittest.TestCase):
             with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
                                           "rc6_ppi_global_budget": module}), \
                  patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
-                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                 patch.object(engine, "_local_pilot_session_now", return_value=True), \
+                 patch.object(engine, "_local_pilot_admission_paused", return_value=True):
                 first, first_reason = _existing_shared_budget()
                 self.assertIsNone(first_reason)
                 self.assertIsInstance(first, engine.LocalPilotBudget)
@@ -400,7 +443,8 @@ class TestA630(unittest.TestCase):
             with patch.dict(sys.modules, {"cg_paper_workspace": workspace,
                                           "rc6_ppi_global_budget": module}), \
                  patch.dict(os.environ, {"RC6_A630_LOCAL_PILOT": "ONCE"}), \
-                 patch.object(engine, "_local_pilot_session_now", return_value=True):
+                 patch.object(engine, "_local_pilot_session_now", return_value=True), \
+                 patch.object(engine, "_local_pilot_admission_paused", return_value=True):
                 for count in (1, None):
                     module.supervisable_position_count = lambda *a, **k: count
                     budget, reason = _existing_shared_budget()

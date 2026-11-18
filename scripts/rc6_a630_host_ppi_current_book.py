@@ -78,6 +78,7 @@ REASONS = frozenset({
     "PPI_BUDGET_RUNTIME_BACKEND_MISMATCH", "PPI_BUDGET_PROBE_UNAVAILABLE",
     "PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD", "PPI_LOCAL_PILOT_STATE_UNAVAILABLE",
     "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD", "PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD",
+    "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD",
     "PPI_LOCAL_PILOT_ALREADY_USED",
     "PPI_HTTP_429", "PPI_HTTP_401", "PPI_HTTP_403", "PPI_SESSION_INVALID",
     "PROVIDER_GET_SCOPE_OR_COUNT_INVALID", "PPI_PROVIDER_OR_AUTH_FAILED",
@@ -734,6 +735,8 @@ class LocalPilotBudget:
 
     def _check(self):
         from rc6_ppi_global_budget import supervisable_position_count
+        if not _local_pilot_admission_paused():
+            raise ValueError("PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD")
         if supervisable_position_count(self.database) != 0:
             raise ValueError("PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD")
         if (self.bootstrap_fd is None or self.operational_sidecar.exists() or
@@ -789,6 +792,28 @@ def _local_pilot_session_now(*, now=None):
             and first <= minutes <= min(first + 59, 16 * 60 + 45))
 
 
+def _local_pilot_admission_paused():
+    """Require authenticated owner PAUSE, not merely a failing entry check.
+
+    `admission_status()` alone fails closed for several unrelated reasons,
+    including an unreadable receipt. Those failures are NOT proof that PAPER
+    entry cannot rearm while this diagnostic budget holds a bootstrap lock.
+    """
+    try:
+        from scripts.rc6_operator_paper_rearm import PAUSE_STATUS, trusted_operator_pause
+        from rc6_paper_admission_gate import admission_status
+        now = datetime.now(timezone.utc)
+        paused = trusted_operator_pause(now=now, context="runtime")
+        if (not isinstance(paused, dict)
+                or paused.get("status") != PAUSE_STATUS):
+            return False
+        allowed, reason = admission_status(now=now)
+        return (allowed is False
+                and reason == "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
+    except (OSError, ValueError, TypeError, KeyError, ImportError):
+        return False
+
+
 def _sanitized_native_auth_reason(error):
     """Only typed known ProductAuthResponseError metadata; no SDK text leak."""
     if type(error).__name__ != "ProductionAuthResponseError":
@@ -814,6 +839,8 @@ def _local_once_budget(database, sidecar):
         from rc6_ppi_global_budget import supervisable_position_count
         if not _local_pilot_session_now():
             return None, "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD"
+        if not _local_pilot_admission_paused():
+            return None, "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD"
         if supervisable_position_count(database) != 0:
             return None, "PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD"
         if sidecar.exists() or sidecar.is_symlink():
@@ -833,8 +860,11 @@ def _local_once_budget(database, sidecar):
                 (current.st_dev, current.st_ino) != (located.st_dev, located.st_ino)):
             raise ValueError("PPI_LOCAL_PILOT_STATE_UNAVAILABLE")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if sidecar.exists() or sidecar.is_symlink() or supervisable_position_count(database) != 0:
+        if (sidecar.exists() or sidecar.is_symlink()
+                or supervisable_position_count(database) != 0):
             return None, "PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD"
+        if not _local_pilot_admission_paused():
+            return None, "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD"
         private = sidecar.parent.parent / "ppi-a670-diagnostic" / "budget.sqlite"
         # Globally one-shot per artifact, even if no GET was completed. Never
         # mint a new authority after one hour or an unsuccessful login.
