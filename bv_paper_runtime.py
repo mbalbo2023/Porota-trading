@@ -384,6 +384,7 @@ def run_reader(store, stop):
             try:
                 round_started=time.monotonic()
                 cadence=exit_reader_cadence(store,now_iso())
+                budget_round="NOT_OBSERVED"
                 try:
                     failures = collect_exit_books(
                         reader, store, policy, now_iso(), should_stop=stop.is_set,
@@ -398,11 +399,19 @@ def run_reader(store, stop):
                     # partial traversal; it must never certify that round.
                     if not stop.is_set():
                         try:
-                            reader.observe_exit_round(
+                            observed=reader.observe_exit_round(
                                 elapsed_seconds=elapsed,
                                 deadline_seconds=(cadence if cadence is not None else
                                     DEFAULT_POLICY["budget"]["critical_book_seconds"]),
                                 failures=failures)
+                            # Only the shared budget may certify a completed
+                            # EXIT observation. Never show READY when it
+                            # explicitly returned DEGRADED/unmeasured.
+                            if isinstance(observed,dict) and observed.get("status") in {
+                                    "COMPLETE","DEGRADED","BASELINE_NOT_MEASURED"}:
+                                budget_round=observed["status"]
+                            else:
+                                budget_round="NO_VERIFICADO"
                         except Exception as exc:
                             LOG.warning("EXIT_READER_ROUND_OBSERVATION_UNAVAILABLE:%s",
                                         type(exc).__name__)
@@ -440,7 +449,8 @@ def run_reader(store, stop):
             detail=f"{failures} errores de lectura de abiertas; round_seconds={elapsed:.6f}; "
             detail+=(f"critical_cadence_seconds={cadence}; deadline_missed={missed}"
                 if cadence is not None else "baseline_cadence=NO_VERIFICADO")
-            status("DEGRADED" if failures or missed else "READY",detail)
+            detail+=f"; budget_round={budget_round}"
+            status("DEGRADED" if failures or missed or budget_round!="COMPLETE" else "READY",detail)
             # Do not add per-position sleeps and a second five-second pause to
             # an approved EXIT round. Slow transport remains observable.
             stop.wait(max(0.0,cadence-elapsed) if cadence is not None else 5)
