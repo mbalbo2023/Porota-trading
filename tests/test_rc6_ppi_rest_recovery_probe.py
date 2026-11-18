@@ -97,8 +97,15 @@ def test_probe_uses_exact_current_and_book_but_never_simulates(
                and call[2] == "DISCOVERY" for call in reader.calls)
     with catalog_store.connect() as c:
         quotes = c.execute("SELECT opening_block_reason,market,currency FROM market_snapshots").fetchall()
+        native_receipts = c.execute("""SELECT event_type,detail FROM paper_events
+            WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'
+            ORDER BY id""").fetchall()
     assert len(quotes) == 1 and tuple(quotes[0]) == (
         "PPI_DIRECT_REST_OBSERVE_ONLY", "BYMA", "ARS")
+    assert len(native_receipts) == 2
+    assert ["endpoint=" + endpoint in detail for (_, detail), endpoint in zip(
+        native_receipts, ("current", "book"))] == [True, True]
+    assert all("wire_sha256=" + "a" * 64 in detail for _, detail in native_receipts)
 
 
 def test_no_primary_exact_catalog_stays_off_wire(catalog_store):
@@ -112,3 +119,27 @@ def test_no_primary_exact_catalog_stays_off_wire(catalog_store):
     observed = _ppi_direct_rest_observe_only(NoProviderReader(), catalog_store)
     assert observed["status"] == "CATALOG_IDENTITY_UNAVAILABLE"
     assert observed["paper_ready"] is False
+
+
+def test_current_http200_receipt_survives_subsequent_book_failure(catalog_store):
+    class PartialReader:
+        def capture_guarded_native(self, endpoint, five_key, *, priority):
+            if endpoint == "book":
+                raise OSError("OFFHOST_SYNTHETIC_BOOK_UNAVAILABLE")
+            return {"native_payload": {"price": 99}, "guard_wire_receipt": {
+                "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": "current",
+                "http_status_code": 200, "http_method": "GET",
+                "adapter_send_invoked": True, "adapter_response_completed": True,
+                "request_identity_3key": [five_key[0], five_key[1], five_key[4]],
+                "claimed_five_key": list(five_key), "raw_body_sha256": "d" * 64}}
+
+    observed = _ppi_direct_rest_observe_only(PartialReader(), catalog_store)
+    assert observed["status"] == "PROVIDER_OR_CONTRACT_HOLD"
+    assert observed["paper_ready"] is False
+    with catalog_store.connect() as c:
+        native = c.execute("""SELECT detail FROM paper_events WHERE
+             event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'""").fetchall()
+        quotes = c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+    assert len(native) == 1 and "endpoint=current" in native[0][0]
+    assert "wire_sha256=" + "d" * 64 in native[0][0]
+    assert quotes == 0

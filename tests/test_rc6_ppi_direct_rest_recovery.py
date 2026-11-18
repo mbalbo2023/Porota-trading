@@ -6,8 +6,11 @@ not the WebSocket gateway. There is no assumed numeric provider quota.
 
 import pytest
 import requests
+from types import SimpleNamespace
 
-from bd_ppi_readonly_guard import ReadOnlyTransportGuard
+from bd_ppi_readonly_guard import (
+    ProductionMarketReader, ReadOnlyPolicyViolation, ReadOnlyTransportGuard,
+)
 from be_paper_engine import PaperStore
 from rc6_ppi_global_budget import (
     BudgetBackpressure, PaperDirectReadBudget, budget_from_environment,
@@ -143,3 +146,13 @@ def test_paper_counter_change_after_acquire_denies_at_wire_start(paper, fake_wir
             paper.state(real_orders_sent=1)
             budget.start(lease)
     assert calls == []
+
+
+def test_closed_reader_remains_closed_under_legacy_sdk_injection():
+    """A missing fixture flag must not make a truly closed reader reusable."""
+    reader = ProductionMarketReader.__new__(ProductionMarketReader)
+    reader._ProductionMarketReader__authenticated = True
+    reader._ProductionMarketReader__client = SimpleNamespace(marketdata=object())
+    reader._ProductionMarketReader__closed = True
+    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_READER_CLOSED"):
+        reader.market_configuration()

@@ -1224,9 +1224,9 @@ def _ppi_direct_rest_observe_only(reader, store):
         capture = getattr(reader, "capture_guarded_native", None)
         if not callable(capture):
             raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_REQUIRED")
-        witnessed_current = capture("current", key, priority="DISCOVERY")
-        witnessed_book = capture("book", key, priority="DISCOVERY")
-        for endpoint, witness in (("current", witnessed_current), ("book", witnessed_book)):
+        witnessed = {}
+        for endpoint in ("current", "book"):
+            witness = capture(endpoint, key, priority="DISCOVERY")
             receipt = witness.get("guard_wire_receipt") if isinstance(witness, dict) else None
             if (not isinstance(receipt, dict)
                     or receipt.get("schema") != "RC6_PPI_NATIVE_WIRE_RECEIPT_V1"
@@ -1241,6 +1241,15 @@ def _ppi_direct_rest_observe_only(reader, store):
                     or len(receipt["raw_body_sha256"]) != 64
                     or any(c not in "0123456789abcdef" for c in receipt["raw_body_sha256"])):
                 raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_INVALID")
+            # Evidence of an actual HTTP200 must survive even if the *next*
+            # REST GET fails or the paired quote is stale. Do not attribute
+            # success to a synthetic/current-only Book or imply READY.
+            witnessed[endpoint] = witness
+            store.event("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
+                        f"{ticker}:{family}:{settlement};endpoint={endpoint};"
+                        f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
+        witnessed_current = witnessed["current"]
+        witnessed_book = witnessed["book"]
         current = witnessed_current["native_payload"]
         book = witnessed_book["native_payload"]
         metadata = financial_catalog.lookup(store, ticker, family, settlement,

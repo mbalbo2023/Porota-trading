@@ -721,7 +721,11 @@ class ProductionMarketReader:
         self.__authenticated = True
 
     def _market(self):
-        if self.__closed:
+        # Legacy read-only SDK injection fixtures construct this facade via
+        # __new__ and supply just the authenticated market client.  A real
+        # reader always initializes __closed; preserve their exercised public
+        # configuration/search contract without bypassing a *set* closed bit.
+        if getattr(self, "_ProductionMarketReader__closed", False):
             raise ReadOnlyPolicyViolation("PPI_READER_CLOSED")
         if not self.__authenticated or self.__client is None:
             raise RuntimeError("El lector no esta autenticado.")
