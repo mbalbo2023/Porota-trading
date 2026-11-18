@@ -29,6 +29,12 @@ on:
         required: true
         default: 'off'
         options: ['off', 'once']
+      postclose_mode:
+        description: 'OFF by default. ONCE only with pilot once: stale native clocks are diagnostic, NEVER PAPER readiness.'
+        type: choice
+        required: true
+        default: 'off'
+        options: ['off', 'once']
   pull_request:
     branches: [main]
     paths:
@@ -96,10 +102,11 @@ jobs:
       RC6_A669_SCHEDULE: ${{ github.event.schedule }}
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
       RC6_A630_PILOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.pilot_mode == 'once' && 'ONCE' || 'OFF' }}
+      RC6_A630_POSTCLOSE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.postclose_mode == 'once' && 'ONCE' || 'OFF' }}
       # Exact active deployed candidate; independent of the audited calendar.
-      RC6_EXPECTED_CANDIDATE_SHA: 57d5e8cdd6619dcbf967ed3e4901534fb5a7286e
-      RC6_EXPECTED_TREE_SHA: 159d34172b928a17a4b0106fc9def6783d139f6c
-      RC6_EXPECTED_IMAGE_ID: sha256:cb69622e724fa015b84883bb5b6611ad1f233953ebdc44282ae27509461951ee
+      RC6_EXPECTED_CANDIDATE_SHA: 96c626dc09a045f75f5e743c030e8f8228783a54
+      RC6_EXPECTED_TREE_SHA: b82e85e8388463d35b6946adcaf3a562c5ad5dfb
+      RC6_EXPECTED_IMAGE_ID: sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563
     steps:
       - uses: actions/checkout@v4
         with:
@@ -211,6 +218,14 @@ jobs:
             [[ "$RC6_A670_ART_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
             pilot_arg=" 'ONCE' '$RC6_A669_SLOT' '$RC6_A670_ART_DATE'"
           fi
+          if [[ "$RC6_A630_POSTCLOSE_MODE" == "ONCE" ]]; then
+            # Calendar, exact engine blob and manual/PAPER pilot were already
+            # attested before SSH. No scheduled postclose mode is available.
+            [[ "$RC6_A630_PILOT_MODE" == "ONCE" ]]
+            [[ "$RC6_A670_POSTCLOSE" == "ONCE" ]]
+            [[ "$RC6_A670_MARKET_SESSION" == "BYMA_CLOSED_POSTCLOSE_DIAGNOSTIC_ONLY" ]]
+            pilot_arg="$pilot_arg 'POSTCLOSE'"
+          fi
           remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' rootless-capture '$RC6_A630_TARGET_B64' '$RC6_EXPECTED_CANDIDATE_SHA' '$RC6_EXPECTED_TREE_SHA' '$RC6_EXPECTED_IMAGE_ID'$pilot_arg"
           set +e
           timeout --signal=TERM --kill-after=5s 100 ssh \
@@ -226,6 +241,7 @@ jobs:
           python3 - <<'PY'
           import json,os
           from pathlib import Path
+          from scripts.rc6_a385_ten_family_snapshot_readonly import FAMILIES
           from scripts.rc6_a630_host_ppi_current_book import (
               SCHEMA,decode_target,verify_receipt,verified_rootless_wrapper,
               unverified_transport_receipt)
@@ -263,6 +279,23 @@ jobs:
                   'rootless_or_ppi_hold_reason':wrapper.get('reason','NO_VERIFICADO'),
                   'shared_budget_lease_writes_possible':True,
                   'budget_sidecar_bootstrap_writes_possible':os.environ.get('RC6_A630_PILOT_MODE')=='ONCE'}
+          # Exactly one selected five-key was independently host-proved. The
+          # other nine canonical families are NOT silently simulated as native
+          # PPI receipts: local one-shot authorizes only 2 GET total (not a
+          # global provider quota claim). FCI Book is not an attested NAV path.
+          # PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO is never READY.
+          selected=payload.get('target') if isinstance(payload,dict) else None
+          family=selected[1] if isinstance(selected,list) and len(selected)==5 else ''
+          public['sample_families']=[{
+              'family':name,
+              'state':payload['state'] if name==family else 'BLOQUEADO',
+              'reason':payload['reason'] if name==family else (
+                  'FCI_NAV_BOOK_APPLICABILITY_NOT_ATTESTED' if name=='FCI'
+                  else 'FIVE_KEY_NOT_SELECTED_OR_NO_BOUNDED_LEASE'),
+              'current_gets':payload.get('current_gets') if name==family else 0,
+              'book_gets':payload.get('book_gets') if name==family else 0,
+              'source_pit_verified':False,'instrument_ready':False,
+          } for name in FAMILIES]
           Path('evidence/a669_ppi_current_book.json').write_text(
               json.dumps(public,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
           print('A669_CURRENT_BOOK='+payload['state']+
@@ -283,6 +316,7 @@ jobs:
             python3 - <<'PY'
           import json,os
           from pathlib import Path
+          from scripts.rc6_a385_ten_family_snapshot_readonly import FAMILIES
           from scripts.rc6_a630_host_ppi_current_book import SCHEMA,unverified_transport_receipt
           doc={'schema':'rc6.a669.action.sanitized.v1',
                'engine_schema':SCHEMA,'run_id':os.environ['GITHUB_RUN_ID'],
@@ -302,6 +336,13 @@ jobs:
                'runtime_sha_verified':False,'ppi_watch_mutations_by_action':0,
                'real_orders_sent_by_action':0,'predeploy_dispatches':0,
                'deploy_dispatches':0}
+          doc['sample_families']=[{
+              'family':name,'state':'BLOQUEADO',
+              'reason':'FCI_NAV_BOOK_APPLICABILITY_NOT_ATTESTED' if name=='FCI'
+                       else 'NO_HOST_OR_CALENDAR_GATE',
+              'current_gets':0,'book_gets':0,
+              'source_pit_verified':False,'instrument_ready':False,
+          } for name in FAMILIES]
           Path('evidence/a669_ppi_current_book.json').write_text(
               json.dumps(doc,sort_keys=True)+'\n',encoding='utf-8')
           PY

@@ -40,9 +40,9 @@ PER_GET_CLOCK_FIELDS = frozenset({
 })
 # These are exact deployed *candidate* coordinates, NOT the merged product
 # branch SHA and NOT the separately audited BYMA calendar revision.
-ROOTLESS_CANDIDATE_SHA = "57d5e8cdd6619dcbf967ed3e4901534fb5a7286e"
-ROOTLESS_CANDIDATE_TREE = "159d34172b928a17a4b0106fc9def6783d139f6c"
-ROOTLESS_IMAGE_ID = "sha256:cb69622e724fa015b84883bb5b6611ad1f233953ebdc44282ae27509461951ee"
+ROOTLESS_CANDIDATE_SHA = "96c626dc09a045f75f5e743c030e8f8228783a54"
+ROOTLESS_CANDIDATE_TREE = "b82e85e8388463d35b6946adcaf3a562c5ad5dfb"
+ROOTLESS_IMAGE_ID = "sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563"
 ROOTLESS_UID = 1000
 ROOTLESS_SCHEMA = "rc6.a630.rootless.capture.v1"
 # Historical A630 v1 receipts retain this field name for compatibility; the
@@ -84,6 +84,7 @@ REASONS = frozenset({
     "PROVIDER_GET_SCOPE_OR_COUNT_INVALID", "PPI_PROVIDER_OR_AUTH_FAILED",
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
+    "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO",
     "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT", "RECEIPT_INVALID",
     "ROOTLESS_PIN_MISMATCH", "ROOTLESS_SSH_IDENTITY_HOLD",
     "ROOTLESS_PRIVATE_PATH_HOLD", "ROOTLESS_RELEASE_CUSTODY_HOLD",
@@ -502,7 +503,8 @@ def _rootless_context(*, run=subprocess.run, runtime_override=None):
 
 
 def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
-                          *, local_pilot=False, pilot_slot="", pilot_date="", run=subprocess.run):
+                          *, local_pilot=False, pilot_slot="", pilot_date="",
+                          postclose=False, run=subprocess.run):
     """In-memory code stream through rootless Docker; budget SQLite may write."""
     result = {"schema": ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
               "reason": "ROOTLESS_PIN_MISMATCH", "runtime_pin_verified": False,
@@ -515,6 +517,9 @@ def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
         return result
     try:
         target = decode_target(target_b64)
+        if postclose and not local_pilot:
+            result["reason"] = "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD"
+            return result
         if local_pilot and (pilot_slot not in SLOTS or
                 target_for_slot(pilot_slot) != target or
                 not re.fullmatch(r"\d{4}-\d{2}-\d{2}", pilot_date)):
@@ -523,7 +528,8 @@ def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
         before = _rootless_context(run=run)
         pilot_env = (("-e", "RC6_A630_LOCAL_PILOT=ONCE",
                       "-e", f"RC6_A630_LOCAL_SLOT={pilot_slot}",
-                      "-e", f"RC6_A630_LOCAL_ART_DATE={pilot_date}")
+                      "-e", f"RC6_A630_LOCAL_ART_DATE={pilot_date}",
+                      *(("-e", "RC6_A630_POSTCLOSE=ONCE") if postclose else ()))
                      if local_pilot is True else ())
         command = (*before["docker"], "exec", "-i",
                    "-e", f"RC6_A630_TARGET_B64={target_b64}",
@@ -788,8 +794,13 @@ def _local_pilot_session_now(*, now=None):
     art = stamp.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
     minutes = art.hour * 60 + art.minute
     first = int(slot[:2]) * 60 + int(slot[2:])
-    return (art.weekday() < 5 and art.date().isoformat() == target_day
-            and first <= minutes <= min(first + 59, 16 * 60 + 45))
+    if not (art.weekday() < 5 and art.date().isoformat() == target_day):
+        return False
+    if os.environ.get("RC6_A630_POSTCLOSE") == "ONCE":
+        # The audited calendar/time gate ran in Actions before remote access;
+        # recheck the same ART date and CLOSED window at each budget/wire seam.
+        return 17 * 60 <= minutes < 23 * 60
+    return first <= minutes <= min(first + 59, 16 * 60 + 45)
 
 
 def _local_pilot_admission_paused():
@@ -1133,7 +1144,7 @@ def unverified_transport_receipt(reason="HOST_PREFLIGHT_OR_RUNTIME_HOLD"):
 
 def capture_two(target, credentials, shared_budget, reader_factory,
                 *, clock=None, http_limiter=None, adapter_guard=None,
-                budget_reason=None):
+                budget_reason=None, allow_stale=False):
     receipt = _base_receipt(target)
     if credentials is None:
         receipt["reason"] = "PPI_KEYPAIR_UNAVAILABLE"
@@ -1200,9 +1211,11 @@ def capture_two(target, credentials, shared_budget, reader_factory,
         cp, bp = _utc(current.get("date")), _utc(book.get("date"))
         # Require both freshness at each GET and the historical pair-complete
         # freshness gate; long Book latency must not relax the original policy.
-        if not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
-                   for provider, received in ((cp, current_received), (bp, book_received),
-                                              (cp, now), (bp, now))):
+        ages = [(received - provider).total_seconds() * 1000
+                for provider, received in ((cp, current_received), (bp, book_received),
+                                           (cp, now), (bp, now))]
+        if (any(age < 0 for age in ages)
+                or (not allow_stale and any(age > MAX_AGE_MS for age in ages))):
             raise ValueError("PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
         expected_paths = ["/api/1.0/marketdata/current", "/api/1.0/marketdata/book"]
         if ([row[0] for row in body] != expected_paths
@@ -1254,7 +1267,9 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                 receipt["adapter_current_sends"] == receipt["adapter_book_sends"] == 1 and
                 receipt["current_http_body_sha256"] and receipt["book_http_body_sha256"]):
             receipt["state"] = "EVIDENCE_ONLY_NO_GO"
-            receipt["reason"] = "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT"
+            receipt["reason"] = ("PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"
+                if allow_stale and any(age > MAX_AGE_MS for age in ages)
+                else "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT")
         else:
             for field in PER_GET_CLOCK_FIELDS:
                 receipt.pop(field, None)
@@ -1295,7 +1310,8 @@ def verify_receipt(obj, target):
     digests = (obj["current_http_body_sha256"], obj["book_http_body_sha256"])
     dates = (obj["first_known_at_utc"], obj["current_provider_at_utc"], obj["book_provider_at_utc"])
     if obj["state"] == "EVIDENCE_ONLY_NO_GO":
-        if (obj["reason"] != "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT" or
+        if (obj["reason"] not in {"PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT",
+                                   "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"} or
                 obj["current_gets"] != 1 or obj["book_gets"] != 1 or
                 obj["adapter_current_sends"] != 1 or obj["adapter_book_sends"] != 1 or
                 any(obj[k] != 2 for k in ("lease_acquires", "lease_starts", "lease_finishes")) or
@@ -1311,18 +1327,23 @@ def verify_receipt(obj, target):
                 received_current, received_book, completed = map(_utc, raw_times)
                 # New fields must be canonical UTC instants, not local offsets,
                 # and all causal inequalities must hold independently.
+                ages = [(received - provider).total_seconds() * 1000
+                        for provider, received in ((current, received_current),
+                                                   (book, received_book),
+                                                   (current, known), (book, known))]
                 if (any(t.isoformat() != raw for t, raw in zip(
                         (received_current, received_book, completed), raw_times)) or
                         completed != known or
                         obj["pair_completed_at_utc"] != obj["first_known_at_utc"] or
                         not current <= received_current <= received_book <= completed or
                         not book <= received_book or
-                        not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
-                                for provider, received in ((current, received_current),
-                                                           (book, received_book),
-                                                           (current, known), (book, known)))):
+                        any(age < 0 for age in ages) or
+                        ((any(age > MAX_AGE_MS for age in ages)) !=
+                         (obj["reason"] == "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"))):
                     return False
                 return True
+            if obj["reason"] == "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO":
+                return False  # Stale diagnostics require per-GET causal clocks.
             # Archived v1 receipts lack per-GET clocks; remain valid evidence,
             # but must never be promoted to independent causal PIT authority.
             return all(0 <= (known - t).total_seconds() * 1000 <= MAX_AGE_MS for t in (current, book))
@@ -1348,7 +1369,9 @@ def container_main():
                 ProductionMarketReader = None
             try:
                 receipt = capture_two(target, credentials, budget, ProductionMarketReader,
-                                      budget_reason=budget_reason)
+                                      budget_reason=budget_reason,
+                                      allow_stale=(os.environ.get("RC6_A630_POSTCLOSE") == "ONCE"
+                                         and os.environ.get("RC6_A630_LOCAL_PILOT") == "ONCE"))
             finally:
                 if isinstance(budget, LocalPilotBudget):
                     budget.close()
@@ -1369,17 +1392,18 @@ def main():
         result = host_preflight(sys.argv[2])
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "IDENTITY_ONLY_NO_GET" else 2
-    if sys.argv[1:] and sys.argv[1] == "rootless-capture" and len(sys.argv) in (6, 9):
+    if sys.argv[1:] and sys.argv[1] == "rootless-capture" and len(sys.argv) in (6, 9, 10):
         # The runner streams an already blob-pinned copy of THIS program into
         # one remote Python -c bootstrap; it is kept in memory and supplied to
         # docker exec -i without writing an executable anywhere on the host.
-        local_pilot = len(sys.argv) == 9 and sys.argv[6] == "ONCE"
-        if len(sys.argv) == 9 and not local_pilot:
+        local_pilot = len(sys.argv) >= 9 and sys.argv[6] == "ONCE"
+        postclose = len(sys.argv) == 10 and sys.argv[9] == "POSTCLOSE"
+        if (len(sys.argv) >= 9 and not local_pilot) or (len(sys.argv) == 10 and not postclose):
             raise SystemExit("A630_LOCAL_PILOT_MODE_INVALID")
         result = rootless_host_capture(*sys.argv[2:6],
             globals().get("__RC6_SOURCE_BYTES__"), local_pilot=local_pilot,
             pilot_slot=sys.argv[7] if local_pilot else "",
-            pilot_date=sys.argv[8] if local_pilot else "")
+            pilot_date=sys.argv[8] if local_pilot else "", postclose=postclose)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "EVIDENCE_ONLY_NO_GO" else 2
     if sys.argv[1:] == ["container-capture"]:

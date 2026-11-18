@@ -86,6 +86,61 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(self.gate(event="pull_request")[0], "")
         self.assertEqual(self.gate(schedule="45 13 * * 3")[0], "")
 
+    def test_postclose_manual_gate_is_separate_from_live_slots_and_pilot_only(self):
+        params = dict(now_utc=utc(23, 0, day=18), event="workflow_dispatch",
+            manual_slot="1630", repository=guard.REPOSITORY,
+            ref=guard.CONTROL_REF, checkout_sha=SHA, source_sha=SHA,
+            engine_path=self.engine, expected_engine_blob=self.blob,
+            pilot_mode="ONCE")
+        self.assertEqual(guard.eligible_postclose(**params),
+                         ("1630", "PASS_POSTCLOSE_MANUAL_ENGINE_ONLY"))
+        self.assertEqual(self.gate(now=params["now_utc"], event="workflow_dispatch",
+                                   manual="1630")[0], "")
+        for edit in ({"event": "schedule"}, {"event": "pull_request"},
+                     {"pilot_mode": "OFF"}, {"manual_slot": "0000"},
+                     {"now_utc": utc(19, 55, day=18)},
+                     {"now_utc": utc(2, 0, day=19)},
+                     {"repository": "attacker/fork"},
+                     {"source_sha": "b" * 40}):
+            with self.subTest(edit=edit):
+                self.assertEqual(guard.eligible_postclose(**(params | edit))[0], "")
+
+    def test_postclose_audit_is_bounded_and_does_not_claim_market_open(self):
+        reasons = {
+            date(2026,11,6): "Día del Bancario; jornada especial sin liquidación",
+            date(2026,11,9): "Visita de Su Santidad el Papa León XIV",
+            date(2026,11,10): "Visita de Su Santidad el Papa León XIV",
+        }
+        calendar = SimpleNamespace(
+            FUENTE_OFICIAL="https://www.byma.com.ar/mercado/calendario-bursatil",
+            CALENDARIO_ACTUALIZADO_EL=date(2026, 10, 14),
+            ANIOS_AUDITADOS=frozenset({2026}),
+            es_dia_habil_operativo=lambda day: day.weekday()<5 and day not in reasons,
+            motivo_no_operativo=lambda day: reasons.get(day))
+        session = SimpleNamespace(TZ=ZoneInfo("America/Argentina/Buenos_Aires"),
+            BYMA_PAPER_SPOT_OPEN=time(10,30), BYMA_PAPER_SPOT_CLOSE=time(17))
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),calendar,session),
+                         (True,"BYMA_CLOSED_POSTCLOSE_DIAGNOSTIC_ONLY"))
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=6),calendar,session),
+                         (False,"BYMA_LIMITED_NO_SETTLEMENT_POSTCLOSE_HOLD"))
+        for day in (9, 10):
+            self.assertEqual(guard.audited_postclose_window(utc(23,0,day=day),calendar,session),
+                             (False,"BYMA_NO_NEGOTIATION_OR_SPECIAL_SESSION_HOLD"))
+        self.assertEqual(guard.audited_postclose_window(utc(19,55,day=18),calendar,session)[0],False)
+        self.assertEqual(guard.audited_postclose_window(utc(2,0,day=19),calendar,session)[0],False)
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=21),calendar,session)[0],False)
+        stale = SimpleNamespace(**{**vars(calendar),"CALENDARIO_ACTUALIZADO_EL":date(2026,8,1)})
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),stale,session)[0],False)
+        for broken in (
+            SimpleNamespace(**{k:v for k,v in vars(calendar).items()
+                               if k!="es_dia_habil_operativo"}),
+            SimpleNamespace(**{**vars(calendar),
+                               "es_dia_habil_operativo":lambda day: None}),
+            SimpleNamespace(**{**vars(calendar),
+                               "motivo_no_operativo":lambda day: "UNKNOWN_CLOSURE"}),
+        ):
+            self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),broken,session)[0],False)
+
     def test_official_market_calendar_limited_negotiation_no_settlement_and_stale(self):
         reasons = {date(2026,11,6):"Día del Bancario; jornada especial sin liquidación",
                    date(2026,11,9):"Visita de Su Santidad el Papa León XIV",
@@ -213,6 +268,14 @@ class A669GuardTests(unittest.TestCase):
         self.assertNotIn("porota-deploy-v2", code)
         self.assertNotIn("actions/upload-artifact@v3", code)
 
+    def test_postclose_explicit_manual_only_and_cannot_mutate_live_schedule(self):
+        code = YAML.read_text()
+        self.assertIn("postclose_mode:", code)
+        self.assertIn("RC6_A630_POSTCLOSE_MODE", code)
+        self.assertIn("RC6_A630_POSTCLOSE", code)
+        self.assertIn("PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO", code)
+        self.assertIn("sample_families", code)
+
     def test_git_blob_is_not_unprefixed_sha1_and_expected_pin_is_literal(self):
         content = self.engine.read_bytes()
         self.assertNotEqual(guard.git_blob_sha(content),
@@ -228,9 +291,9 @@ class A669GuardTests(unittest.TestCase):
 
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()
-        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 57d5e8cdd6619dcbf967ed3e4901534fb5a7286e", code)
-        self.assertIn("RC6_EXPECTED_TREE_SHA: 159d34172b928a17a4b0106fc9def6783d139f6c", code)
-        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:cb69622e724fa015b84883bb5b6611ad1f233953ebdc44282ae27509461951ee", code)
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 96c626dc09a045f75f5e743c030e8f8228783a54", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: b82e85e8388463d35b6946adcaf3a562c5ad5dfb", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563", code)
         self.assertIn("rootless-capture", code)
         self.assertNotIn("sudo -n docker", code)
         self.assertNotIn("porota_production_observer", code)

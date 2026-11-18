@@ -199,6 +199,74 @@ class TestA630(unittest.TestCase):
             self.assertFalse(engine._local_pilot_session_now(
                 now=datetime(2026, 11, 18, 19, 20, tzinfo=timezone.utc)))
 
+    def test_postclose_pilot_is_opt_in_same_day_and_never_an_open_session(self):
+        day = "2026-11-18"
+        with patch.dict(os.environ, {"RC6_A630_LOCAL_SLOT": "1630",
+                                     "RC6_A630_LOCAL_ART_DATE": day}, clear=False):
+            later = datetime(2026, 11, 18, 23, 0, tzinfo=timezone.utc)
+            self.assertFalse(engine._local_pilot_session_now(now=later))
+            with patch.dict(os.environ, {"RC6_A630_POSTCLOSE": "ONCE"}):
+                self.assertTrue(engine._local_pilot_session_now(now=later))
+                self.assertFalse(engine._local_pilot_session_now(
+                    now=datetime(2026, 11, 18, 19, 55, tzinfo=timezone.utc)))
+                self.assertFalse(engine._local_pilot_session_now(
+                    now=datetime(2026, 11, 19, 2, 0, tzinfo=timezone.utc)))
+                self.assertFalse(engine._local_pilot_session_now(
+                    now=datetime(2026, 11, 19, 3, 1, tzinfo=timezone.utc)))
+                self.assertFalse(engine._local_pilot_session_now(
+                    now=datetime(2026, 11, 19, 23, 0, tzinfo=timezone.utc)))
+
+    def test_postclose_stale_provider_clocks_are_evidence_not_readiness(self):
+        previous = (NOW - timedelta(days=1)).isoformat()
+        stale, objects = invoke(Shared(), clock=previous)
+        self.assertEqual(stale["state"], "NO_VERIFICADO")
+        self.assertEqual(stale["reason"], "PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
+        receipt = capture_two(TARGET, ("fake-key", "fake-secret"), Shared(),
+            lambda *args, **kwargs: Reader(*args, **kwargs, clock=previous),
+            clock=lambda: NOW, http_limiter=fake_hashes, adapter_guard=fake_adapter,
+            allow_stale=True)
+        self.assertTrue(verify_receipt(receipt, TARGET))
+        self.assertEqual(receipt["state"], "EVIDENCE_ONLY_NO_GO")
+        self.assertEqual(receipt["reason"], "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO")
+        self.assertEqual((receipt["current_gets"], receipt["book_gets"]), (1, 1))
+        self.assertIsNotNone(receipt["current_received_at_utc"])
+        self.assertFalse(receipt["source_pit_verified"])
+        self.assertFalse(receipt["execution_allowed"])
+        self.assertEqual(receipt["orders_sent"], 0)
+
+    def test_postclose_future_clock_and_missing_shapes_still_fail_closed(self):
+        for bad, shape, reason in (
+            ((NOW + timedelta(seconds=1)).isoformat(), False,
+             "PPI_NATIVE_CLOCK_STALE_OR_FUTURE"),
+            ((NOW - timedelta(days=1)).isoformat(), True,
+             "PROVIDER_RESPONSE_SHAPE_INVALID"),
+        ):
+            with self.subTest(reason=reason):
+                receipt = capture_two(TARGET, ("fake-key", "fake-secret"), Shared(),
+                    lambda *args, **kwargs: Reader(*args, **kwargs,
+                        clock=bad, bad_shape=shape),
+                    clock=lambda: NOW, http_limiter=fake_hashes,
+                    adapter_guard=fake_adapter, allow_stale=True)
+                self.assertEqual(receipt["state"], "NO_VERIFICADO")
+                self.assertEqual(receipt["reason"], reason)
+                self.assertNotIn("current_received_at_utc", receipt)
+
+    def test_postclose_receipt_reason_cannot_forge_fresh_or_legacy_pit(self):
+        old = (NOW - timedelta(days=1)).isoformat()
+        receipt = capture_two(TARGET, ("key", "secret"), Shared(),
+            lambda *args, **kwargs: Reader(*args, **kwargs, clock=old),
+            clock=lambda: NOW, http_limiter=fake_hashes,
+            adapter_guard=fake_adapter, allow_stale=True)
+        self.assertTrue(verify_receipt(receipt, TARGET))
+        forged = dict(receipt, reason="PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT")
+        self.assertFalse(verify_receipt(forged, TARGET))
+        for key in PER_GET_CLOCK_FIELDS:
+            forged.pop(key)
+        self.assertFalse(verify_receipt(forged, TARGET))
+        fresh, _ = invoke(Shared())
+        forged = dict(fresh, reason="PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO")
+        self.assertFalse(verify_receipt(forged, TARGET))
+
     def test_local_pilot_only_accepts_a_real_operator_pause_and_closed_entry_gate(self):
         operator = types.ModuleType("scripts.rc6_operator_paper_rearm")
         operator.PAUSE_STATUS = "PAPER_PAUSED_BY_OPERATOR"
@@ -1294,7 +1362,27 @@ class TestA630RootlessEvidence(unittest.TestCase):
             self.assertEqual(json.loads(out.getvalue()), outcome)
         capture.assert_called_once_with(target_b64, ROOTLESS_CANDIDATE_SHA,
                                         ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source",
-                                        local_pilot=False, pilot_slot="", pilot_date="")
+                                        local_pilot=False, pilot_slot="", pilot_date="",
+                                        postclose=False)
+
+    def test_postclose_cli_only_with_exact_manual_pilot_suffix(self):
+        target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
+        common = ["-c", "rootless-capture", target_b64, ROOTLESS_CANDIDATE_SHA,
+                  ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, "ONCE", "1120",
+                  "2026-11-18"]
+        outcome = {"schema": "rc6.a630.rootless.capture.v1", "state": "NO_VERIFICADO",
+                   "reason": "PPI_LOCAL_PILOT_ALREADY_USED"}
+        with patch.object(engine, "rootless_host_capture", return_value=outcome) as capture, \
+             patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}):
+            with patch.object(sys, "argv", common + ["POSTCLOSE"]), redirect_stdout(io.StringIO()):
+                self.assertEqual(engine.main(), 2)
+            capture.assert_called_once_with(target_b64, ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, b"source", local_pilot=True,
+                pilot_slot="1120", pilot_date="2026-11-18", postclose=True)
+            capture.reset_mock()
+            with patch.object(sys, "argv", common + ["ANYTHING"]):
+                self.assertRaises(SystemExit, engine.main)
+            capture.assert_not_called()
 
     def test_in_memory_ssh_bootstrap_never_opens_docker_on_wrong_pin(self):
         # The same Python -c bootstrap as A670; no remote host/SSH/secret/GET.
