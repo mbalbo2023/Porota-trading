@@ -1171,8 +1171,12 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1):
     """PPI-primary observation only, independent of simulation readiness.
 
     A zero-READY bootstrap must still be able to *observe* an unequivocal
-    native PPI catalog identity. This never inserts a candidate into the
-    trading/scanner universe, changes can_simulate or authorizes an opening.
+    native PPI catalog identity. PPI's documented SearchInstrument response
+    can omit settlement: REQUEST_CANDIDATE may therefore be attempted only
+    as an untrusted native GET query, never promoted to PPI_FIELD or READY.
+    An old STALE PPI-primary row is likewise eligible only for this probe.
+    This never inserts a candidate into the trading/scanner universe,
+    changes can_simulate or authorizes an opening.
     """
     if type(limit) is not int or not 1 <= limit <= 3:
         raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
@@ -1187,12 +1191,14 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1):
                 FROM financial_instrument_catalog f JOIN unique_identity u
                   ON f.ticker=u.ticker AND f.instrument_type=u.instrument_type
                  AND f.settlement=u.settlement
-                WHERE f.status='AVAILABLE' AND f.settlement_source='PPI_FIELD'
+                WHERE f.status IN ('AVAILABLE','STALE')
+                  AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
                   AND f.market NOT IN ('','UNKNOWN') AND f.currency NOT IN ('','UNKNOWN')
                   AND json_valid(f.metadata_json)
                   AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
-                ORDER BY CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
-                         f.instrument_type,f.ticker,f.settlement
+                ORDER BY CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                         CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+                         f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement
                 LIMIT ?""", (limit,)).fetchall()
         return [tuple(str(v).strip().upper() for v in row) for row in rows]
     except (sqlite3.Error, OSError, TypeError, ValueError):

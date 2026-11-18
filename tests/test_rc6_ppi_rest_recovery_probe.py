@@ -39,8 +39,32 @@ def test_observational_candidates_do_not_require_ready_but_reject_ambiguity(cata
         ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
 
 
-def test_probe_uses_exact_current_and_book_but_never_simulates(catalog_store):
+def test_documented_ppi_search_without_settlement_can_be_probed_observe_only(catalog_store):
+    """SearchInstrument can omit settlement; an explicit request remains probe-only.
+
+    A successful native Current+Book GET must verify the actual request at
+    runtime.  Neither the catalog settlement hint nor this selection grants
+    readiness or the capability to simulate a trade.
+    """
+    with catalog_store.connect() as c:
+        c.execute("""UPDATE financial_instrument_catalog
+                     SET settlement_source='REQUEST_CANDIDATE',status='STALE'
+                     WHERE ticker='AL30'""")
+    assert _ppi_direct_rest_probe_candidates(catalog_store, limit=3) == [
+        ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
+
+
+@pytest.mark.parametrize("settlement_source,status", [
+    ("PPI_FIELD", "AVAILABLE"),
+    ("REQUEST_CANDIDATE", "STALE"),
+])
+def test_probe_uses_exact_current_and_book_but_never_simulates(
+        catalog_store, settlement_source, status):
     stamp = datetime.now(timezone.utc).isoformat()
+    with catalog_store.connect() as c:
+        c.execute("""UPDATE financial_instrument_catalog
+                     SET settlement_source=?,status=? WHERE ticker='AL30'""",
+                  (settlement_source, status))
 
     class SyntheticReader:
         def __init__(self):
