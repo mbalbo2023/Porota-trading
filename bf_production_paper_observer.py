@@ -1287,8 +1287,16 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
         # capability is not READY and lookup returns no tradeable contract.
         quote = replace(quote, market=market, currency=currency)
         quote.monetary_identity()  # reject any existing contract contradiction
-        if quote.time_error(now_iso(), require_trade=False):
-            store.event("PPI_DIRECT_REST_PROBE_HOLD", "NATIVE_BOOK_STALE_OR_INVALID")
+        # HTTP200 on both endpoints proves wire reachability, not a usable
+        # Current/Book market-data sample. Require an actual fresh Current
+        # trade and a fresh two-sided Book with strictly positive size and a
+        # non-crossed spread before labeling the *diagnostic* FRESH_OBSERVED.
+        # This is still weaker than PIT/Book1/decision/Book2/costs/EXIT READY.
+        if (quote.time_error(now_iso(), require_trade=True) or
+                quote.last <= 0 or quote.bid <= 0 or quote.ask <= 0 or
+                quote.bid_size <= 0 or quote.ask_size <= 0 or
+                quote.bid > quote.ask):
+            store.event("PPI_DIRECT_REST_PROBE_HOLD", "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID")
             return {"status": "STALE_OR_INVALID", "paper_ready": False,
                     "native_receipts": list(witnessed)}
         quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
@@ -1328,45 +1336,71 @@ _PPI_OPEN_FAMILIES = (
 def _ppi_open_catalog_coverage(store):
     """Separate authoritative unique PPI identities from unresolved catalog.
 
-    This is a bounded aggregate over the existing catalog, not a provider
-    search or an attempt to enumerate the full 10k-instrument market by GET.
-    A missing/corrupt catalog is UNKNOWN rather than zero coverage.
+    SQL aggregates the whole stored denominator. At most 10k small raw PPI
+    records are then passed to the existing *pure* full five-key proof helper;
+    a PPI_FIELD label alone is never counted as provider attestation. Neither
+    this nor the separate REQUEST_CANDIDATE wire probe performs a provider GET.
     """
     try:
         with store.connect() as c:
-            rows = c.execute("""WITH identity_groups AS (
+            total = int(c.execute(
+                "SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0])
+            if not 0 <= total <= 1_000_000:
+                return None
+            rows = c.execute("""WITH attributed AS (
+              SELECT f.instrument_type,f.settlement_source,
+                     CASE WHEN json_valid(f.metadata_json)
+                       THEN COALESCE(json_extract(f.metadata_json,'$._discovery_source'),'')
+                       ELSE '' END AS discovery
+                FROM financial_instrument_catalog f
+            )
+            SELECT instrument_type,COUNT(*) FROM attributed
+             WHERE discovery='PPI_PRIMARY'
+                OR (discovery='' AND settlement_source IN
+                    ('PPI_FIELD','REQUEST_CANDIDATE'))
+             GROUP BY instrument_type""").fetchall()
+            candidates = c.execute("""WITH identity_groups AS (
                 SELECT ticker,instrument_type,settlement,COUNT(*) AS rows_in_identity
                   FROM financial_instrument_catalog
                  GROUP BY ticker,instrument_type,settlement
             )
-            SELECT f.instrument_type,f.status,f.settlement_source,
-                   g.rows_in_identity,
-                   CASE WHEN f.market NOT IN ('','UNKNOWN')
-                         AND f.currency NOT IN ('','UNKNOWN')
-                        THEN 1 ELSE 0 END AS monetary_identity_known,
-                   COUNT(*)
+            SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement,
+                   f.settlement_source,f.metadata_json
               FROM financial_instrument_catalog f JOIN identity_groups g
                 ON f.ticker=g.ticker AND f.instrument_type=g.instrument_type
                AND f.settlement=g.settlement
-             WHERE json_valid(f.metadata_json)
-               AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
-             GROUP BY f.instrument_type,f.status,f.settlement_source,
-                      g.rows_in_identity,monetary_identity_known""").fetchall()
+             WHERE g.rows_in_identity=1
+               AND f.status IN ('AVAILABLE','STALE')
+               AND f.settlement_source='PPI_FIELD'
+               AND f.market NOT IN ('','UNKNOWN')
+               AND f.currency NOT IN ('','UNKNOWN')
+               AND length(f.metadata_json)<=4096
+               AND (CASE WHEN json_valid(f.metadata_json)
+                         THEN json_extract(f.metadata_json,'$._discovery_source')
+                         ELSE '' END)='PPI_PRIMARY'
+             ORDER BY f.instrument_type,f.ticker,f.settlement
+             LIMIT 10001""").fetchall()
+        if len(candidates) > 10000:
+            return None
         exact = dict.fromkeys(_PPI_OPEN_FAMILIES, 0)
         unverified = dict.fromkeys(_PPI_OPEN_FAMILIES, 0)
-        for family, status, settlement_source, group_size, monetary_known, count in rows:
-            if family not in exact:
-                continue
-            if (status in ("AVAILABLE", "STALE") and
-                    settlement_source == "PPI_FIELD" and
-                    group_size == 1 and monetary_known == 1):
-                exact[family] += int(count)
-            else:
-                # REQUEST_CANDIDATE, uncertain settlement, a 3-key collision
-                # (even when five-key differs), invalid money identity, or a
-                # non-observable status is not authoritative READY evidence.
+        counted = 0
+        for family, count in rows:
+            if family in unverified:
                 unverified[family] += int(count)
-        return {"enumerated_exact": exact, "unverified": unverified}
+                counted += int(count)
+        for ticker, family, market, currency, settlement, source, raw_json in candidates:
+            record = {"ticker": ticker, "instrument_type": family,
+                      "market": market, "currency": currency,
+                      "settlement": settlement, "settlement_source": source,
+                      "metadata_json": raw_json}
+            if (family in exact and
+                    not financial_catalog.ppi_full_key_evidence_reason(record)):
+                exact[family] += 1
+                unverified[family] -= 1
+        return {"enumerated_exact": exact, "unverified": unverified,
+                "catalog_scope": "PPI_CLAIMED_ONLY",
+                "outside_ppi_scope": total - counted}
     except (sqlite3.Error, OSError, TypeError, ValueError):
         return None
 
@@ -1513,9 +1547,11 @@ def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
                   "day": requested_day, "paper_ready": False,
                   "order_authority": False,
                   "readiness_reason": "FULL_READINESS_NOT_EVIDENCED",
-                  "unattempted_reason": "BOUNDED_SAMPLE_OR_STOP",
+                  "unattempted_reason": "BOUNDED",
                   "statuses": statuses, "coverage": coverage,
-                  "unverified": catalog_coverage["unverified"]}
+                  "unverified": catalog_coverage["unverified"],
+                  "catalog_scope": catalog_coverage["catalog_scope"],
+                  "outside_ppi_scope": catalog_coverage["outside_ppi_scope"]}
         detail = json.dumps(report, separators=(",", ":"), sort_keys=True)
         if len(detail) > 2000:
             raise ValueError("PPI_OPEN_COVERAGE_RECEIPT_TOO_LARGE")
