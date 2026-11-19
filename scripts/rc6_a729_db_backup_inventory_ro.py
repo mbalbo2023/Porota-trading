@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 SCHEMA = "rc6.a729.db-backup-inventory-readonly.v1"
 ARCHIVE_SCHEMA = "rc6.a729.archive-provenance-ro.v1"
+LOCATOR_SCHEMA = "rc6.a729.historical-source-locator-ro.v1"
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 DATA = Path("/opt/porota-trading/data")
 DB_TARGETS = (
@@ -83,6 +84,32 @@ ARCHIVE_STATUSES = frozenset({
 })
 ARCHIVE_WAL_SCOPES = frozenset({"WAL_SNAPSHOT_CONSISTENT", "BASE_NO_WAL",
                                 "NO_VERIFICADO"})
+LOCATOR_TABLES = {
+    "HISTORY": ("history_versions_v2", "history_canonical_v2",
+                "market_historical_ohlcv"),
+    "OBSERVER": ("production_history", "production_history_attempts"),
+    "EXTERNAL_EXACT": ("exact_attempts_v1",),
+}
+LOCATOR_REQUIRED_COLUMNS = {
+    "history_versions_v2": frozenset({"id", "instrument_type", "date", "source"}),
+    "history_canonical_v2": frozenset({"instrument_type", "date", "source"}),
+    "market_historical_ohlcv": frozenset({"date", "source"}),
+    "production_history": frozenset({"instrument_type", "settlement", "date_to"}),
+    "production_history_attempts": frozenset({"instrument_type", "state", "attempted_at"}),
+    "exact_attempts_v1": frozenset({"origin", "quality", "inner_sha256", "wrapper_json"}),
+}
+LOCATOR_TARGETS = (
+    ("HISTORY", DATA / "market_history.db", 2 * 1024**3),
+    ("OBSERVER", DATA / "paper_v17/observer_v17.db", 5 * 1024**3),
+    ("EXTERNAL_EXACT", DATA / "evidence/ppi_history_exact_v1/manifest_exact_v1.db",
+     256 * 1024**2),
+)
+LOCATOR_OBJECTS_ROOT = DATA / "evidence/ppi_history_exact_v1/objects/sha256"
+LOCATOR_STATUSES = ARCHIVE_STATUSES | {"UNAVAILABLE"}
+LOCATOR_TABLE_STATUSES = frozenset({"NO_VERIFICADO", "TABLE_ABSENT",
+                                  "SCHEMA_INVALID", "COLUMNS_MISSING",
+                                  "PRESENT_COLUMNS_OK"})
+LOCATOR_SAMPLE_ROWS = 64
 
 
 class InventoryError(Exception):
@@ -199,7 +226,7 @@ def _archive_sqlite_binding(db: sqlite3.Connection, path: Path,
 
 
 def _archive_blob(db: sqlite3.Connection, column: str, row_id: int,
-                  limit: int) -> tuple[bytes | None, int]:
+                  limit: int, table: str = "historical_raw_archive") -> tuple[bytes | None, int]:
     """Read at most the allowance, even for a malicious multi-GiB TEXT value.
 
     SQLite's incremental blob handle works on TEXT as well.  The SQL SELECT
@@ -208,7 +235,7 @@ def _archive_blob(db: sqlite3.Connection, column: str, row_id: int,
     """
     if not callable(getattr(db, "blobopen", None)):
         raise InventoryError("SQLITE_UNAVAILABLE")
-    with db.blobopen("historical_raw_archive", column, row_id, readonly=True) as blob:
+    with db.blobopen(table, column, row_id, readonly=True) as blob:
         size = len(blob)
         if size > limit:
             return None, size
@@ -373,6 +400,217 @@ def archive_provenance_db(role: str, path: Path, maximum: int) -> dict:
         return _archive_empty(role, status if status in ARCHIVE_STATUSES else "SQLITE_UNAVAILABLE")
     except (OSError, sqlite3.Error, ValueError, TypeError, RecursionError) as exc:
         return _archive_empty(role, "TIME_BUDGET" if time.monotonic() >= deadline
+                              else "SQLITE_UNAVAILABLE")
+    finally:
+        os.close(parent_fd)
+
+
+def _locator_empty(role: str, status: str = "SQLITE_UNAVAILABLE") -> dict:
+    return {"role": role, "status": status, "wal_scope": "NO_VERIFICADO",
+            "db_bytes": None, "wal_bytes": None, "shm_bytes": None,
+            "sqlite_ro": False,
+            "tables": [{"name": name, "status": "NO_VERIFICADO",
+                        "sample_rows": 0, "truncated": False,
+                        "rows_total": None, "origin_ppi_history_labeled": 0,
+                        "origin_other_labeled": 0,
+                        "quality_valid_payload_labeled": 0,
+                        "quality_unvalidated_labeled": 0,
+                        "quality_other_labeled": 0}
+                       for name in LOCATOR_TABLES[role]]}
+
+
+def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
+                  receipt: dict) -> None:
+    """Inspect only predeclared physical tables; neither payload nor COUNT(*)."""
+    for part in receipt["tables"]:
+        if time.monotonic() >= deadline:
+            raise InventoryError("TIME_BUDGET")
+        name = part["name"]
+        if name not in LOCATOR_TABLES[role]:
+            raise InventoryError("SCHEMA_INVALID")
+        objects = db.execute("SELECT type FROM sqlite_schema WHERE name=? LIMIT 2",
+                             (name,)).fetchall()
+        if not objects:
+            part["status"] = "TABLE_ABSENT"
+            continue
+        if len(objects) != 1 or objects[0][0] != "table":
+            part["status"] = "SCHEMA_INVALID"
+            continue
+        schema = db.execute(f"PRAGMA table_list('{name}')").fetchall()
+        if (len(schema) != 1 or schema[0][0:3] != ("main", name, "table")
+                or type(schema[0][3]) is not int or not 1 <= schema[0][3] <= 64
+                or schema[0][4] != 0):
+            part["status"] = "SCHEMA_INVALID"
+            continue
+        # table_info omits generated/hidden columns, which can shadow SQLite
+        # rowid. table_xinfo must expose the full physical column catalog.
+        cols = db.execute(f"PRAGMA table_xinfo('{name}')").fetchall()
+        if (len(cols) != schema[0][3] or
+                any(len(c) < 7 or not isinstance(c[1], str) for c in cols)):
+            part["status"] = "COLUMNS_MISSING"
+            continue
+        # An explicit or generated `rowid` column would change the query into
+        # an unindexed ORDER BY scan, potentially sorting a multi-GiB table.
+        column_names = {c[1].casefold() for c in cols}
+        if column_names & {"rowid", "_rowid_", "oid"}:
+            part["status"] = "SCHEMA_INVALID"
+            continue
+        if (any(type(c[6]) is not int or c[6] != 0 for c in cols) or
+                not LOCATOR_REQUIRED_COLUMNS[name].issubset(column_names)):
+            part["status"] = "COLUMNS_MISSING"
+            continue
+        part["status"] = "PRESENT_COLUMNS_OK"
+        # An ordinary rowid table gives indexed latest-row probes. No full
+        # count or potentially unbounded date scan is used.
+        rows = db.execute(f'SELECT rowid FROM "{name}" '
+                          'ORDER BY rowid DESC LIMIT ?',
+                          (LOCATOR_SAMPLE_ROWS + 1,)).fetchall()
+        part["sample_rows"] = min(len(rows), LOCATOR_SAMPLE_ROWS)
+        part["truncated"] = len(rows) > LOCATOR_SAMPLE_ROWS
+        if role == "EXTERNAL_EXACT":
+            for (row_id,) in rows[:LOCATOR_SAMPLE_ROWS]:
+                if time.monotonic() >= deadline:
+                    raise InventoryError("TIME_BUDGET")
+                if type(row_id) is not int or row_id < 1:
+                    raise InventoryError("SCHEMA_INVALID")
+                origin, _ = _archive_blob(db, "origin", row_id, 64, name)
+                quality, _ = _archive_blob(db, "quality", row_id, 64, name)
+                part["origin_ppi_history_labeled" if origin == b"PPI_HISTORY"
+                     else "origin_other_labeled"] += 1
+                if quality == b"VALID_PAYLOAD":
+                    part["quality_valid_payload_labeled"] += 1
+                elif quality == b"UNVALIDATED":
+                    part["quality_unvalidated_labeled"] += 1
+                else:
+                    part["quality_other_labeled"] += 1
+
+
+def _locator_readonly_mount_attested(path: Path) -> bool:
+    """A missing descendant is safe to label MISSING only under pinned RO ancestors.
+
+    The older archive guard requires the immediate parent to exist, so it
+    cannot distinguish an absent exact manifest directory from a RW mount.
+    Walk only anchored, non-symlink ancestor directories and check each real
+    mount with fstatvfs. Never create the missing component.
+    """
+    if archive_readonly_mount_attested(path):
+        return True
+    if not path.is_absolute() or ".." in path.parts or not path.is_relative_to(DATA):
+        return False
+    try:
+        current = _anchored_directory(DATA)
+    except InventoryError:
+        return False
+    try:
+        if not os.fstatvfs(current).f_flag & os.ST_RDONLY:
+            return False
+        for component in path.parent.relative_to(DATA).parts:
+            try:
+                next_fd = os.open(component, os.O_PATH | os.O_DIRECTORY |
+                                  os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=current)
+            except FileNotFoundError:
+                return True  # First absent ancestor, pinned under the RO mount.
+            except OSError:
+                return False
+            os.close(current)
+            current = next_fd
+            if not os.fstatvfs(current).f_flag & os.ST_RDONLY:
+                return False
+        return True
+    except (OSError, ValueError):
+        return False
+    finally:
+        os.close(current)
+
+
+def source_locator_db(role: str, path: Path, maximum: int,
+                      table_names: tuple[str, ...]) -> dict:
+    """WAL-consistent OS-ro table presence, never source promotion.
+
+    External manifest labels are local assertions, not PPI economic proof.
+    """
+    if role not in LOCATOR_TABLES or tuple(table_names) != LOCATOR_TABLES[role]:
+        raise InventoryError("SCHEMA_INVALID")
+    receipt = _locator_empty(role)
+    if not _locator_readonly_mount_attested(path):
+        return _locator_empty(role, "RO_MOUNT_UNVERIFIED")
+    deadline = time.monotonic() + ARCHIVE_SCAN_SECONDS
+    try:
+        parent_fd = _anchored_directory(path.parent)
+    except InventoryError as exc:
+        return _locator_empty(role, "MISSING" if str(exc) == "MISSING" else "PATH_UNSAFE")
+    try:
+        status, before = _file_metadata(parent_fd, path.name)
+        if status != "REGULAR":
+            return _locator_empty(role, status if status == "MISSING" else "FILE_UNSAFE")
+        assert before is not None
+        if not 4096 <= before[2] <= maximum:
+            return _locator_empty(role, "SIZE_LIMIT")
+        sides = {}
+        for suffix in ("-wal", "-shm", "-journal"):
+            side_status, info = _file_metadata(parent_fd, path.name + suffix)
+            if side_status not in ("MISSING", "REGULAR"):
+                return _locator_empty(role, "FILE_UNSAFE")
+            sides[suffix] = info
+        if sides["-journal"] is not None:
+            return _locator_empty(role, "FILE_UNSAFE")
+        receipt.update(db_bytes=before[2],
+                       wal_bytes=sides["-wal"][2] if sides["-wal"] else 0,
+                       shm_bytes=sides["-shm"][2] if sides["-shm"] else 0)
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=parent_fd)
+        try:
+            info = os.fstat(fd)
+            if (info.st_dev, info.st_ino) != (before[0], before[1]):
+                return _locator_empty(role, "CHANGED_DURING_SCAN")
+            previous = _archive_fd_map()
+            uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True, timeout=.2,
+                                         isolation_level=None)) as db:
+                receipt["sqlite_ro"] = True
+                if (not callable(getattr(db, "setlimit", None)) or
+                        not hasattr(sqlite3, "SQLITE_LIMIT_LENGTH") or
+                        not hasattr(sqlite3, "SQLITE_LIMIT_SQL_LENGTH")):
+                    raise InventoryError("SQLITE_UNAVAILABLE")
+                db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 256 * 1024)
+                db.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, 256 * 1024)
+                db.execute("PRAGMA query_only=ON")
+                db.execute("PRAGMA temp_store=MEMORY")
+                db.execute("PRAGMA trusted_schema=OFF")
+                db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 500)
+                try:
+                    mode = db.execute("PRAGMA journal_mode").fetchone()
+                    if not mode or mode[0] != "wal":
+                        raise InventoryError("SCHEMA_INVALID")
+                    db.execute("BEGIN")
+                    _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
+                    _locator_scan(db, role, deadline, receipt)
+                    _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
+                    db.rollback()
+                    receipt["wal_scope"] = ("WAL_SNAPSHOT_CONSISTENT" if
+                                            receipt["wal_bytes"] else "BASE_NO_WAL")
+                finally:
+                    db.set_progress_handler(None, 0)
+            receipt["status"] = "OBSERVED_BOUNDED"
+            after_status, after = _file_metadata(parent_fd, path.name)
+            if after_status != "REGULAR" or not _archive_same_identity(before, after):
+                return _locator_empty(role, "CHANGED_DURING_SCAN")
+            for suffix, old in sides.items():
+                side_status, now = _file_metadata(parent_fd, path.name + suffix)
+                if (side_status not in ("MISSING", "REGULAR") or
+                        not _archive_same_identity(old, now)):
+                    return _locator_empty(role, "CHANGED_DURING_SCAN")
+            if time.monotonic() >= deadline:
+                return _locator_empty(role, "TIME_BUDGET")
+            return receipt
+        finally:
+            os.close(fd)
+    except InventoryError as exc:
+        status = str(exc)
+        return _locator_empty(role, status if status in LOCATOR_STATUSES
+                              else "SQLITE_UNAVAILABLE")
+    except (OSError, sqlite3.Error, ValueError, TypeError, RecursionError):
+        return _locator_empty(role, "TIME_BUDGET" if time.monotonic() >= deadline
                               else "SQLITE_UNAVAILABLE")
     finally:
         os.close(parent_fd)
@@ -647,6 +885,40 @@ def host_archive_provenance() -> dict:
             "ppi_provider_contract_verified": False}
 
 
+def _locator_objects_root_state(path: Path) -> str:
+    """Only directory existence; never enumerate or decompress raw objects."""
+    if not _locator_readonly_mount_attested(path):
+        return "RO_MOUNT_UNVERIFIED"
+    try:
+        fd = _anchored_directory(path)
+    except InventoryError as exc:
+        return "MISSING" if str(exc) == "MISSING" else "PATH_UNSAFE"
+    try:
+        return "PRESENT" if stat.S_ISDIR(os.fstat(fd).st_mode) else "PATH_UNSAFE"
+    except OSError:
+        return "PATH_UNSAFE"
+    finally:
+        os.close(fd)
+
+
+def host_source_locator() -> dict:
+    """Three code-derived SQLite paths only; no raw/archive reconstruction."""
+    now = datetime.now(timezone.utc)
+    return {"schema": LOCATOR_SCHEMA, "state": "SOURCE_LOCATOR_ONLY",
+            "generated_at_utc": now.isoformat(),
+            "source_inventory": [source_locator_db(role, path, maximum,
+                                                       LOCATOR_TABLES[role])
+                                 for role, path, maximum in LOCATOR_TARGETS],
+            "objects_root_state": _locator_objects_root_state(LOCATOR_OBJECTS_ROOT),
+            "read_only": True,
+            "os_ro_mount": all(_locator_readonly_mount_attested(path)
+                               for _, path, _ in LOCATOR_TARGETS),
+            "host_mutations": 0, "provider_calls": 0,
+            "ppi_watch_touched": False, "real_orders_sent_by_action": 0,
+            "history_source_selected": False,
+            "ppi_provider_contract_verified": False}
+
+
 def _int(value: object, maximum: int = MAX_NUMBER) -> int | None:
     return value if type(value) is int and 0 <= value <= maximum else None
 
@@ -842,10 +1114,106 @@ def archive_public_receipt(raw: object, remote_rc: int) -> dict:
         return dict(failure, failure_class="MALFORMED_HOST_RECEIPT")
 
 
+def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
+    """Allowlisted diagnostic only; no row-level material or source promotion."""
+    failure = {"schema": LOCATOR_SCHEMA, "state": "NO_VERIFICADO",
+               "failure_class": "HOST_UNAVAILABLE", "read_only": True,
+               "host_mutations": 0, "ppi_watch_touched": False,
+               "provider_calls": 0, "real_orders_sent_by_action": 0,
+               "history_source_selected": False,
+               "ppi_provider_contract_verified": False}
+    if remote_rc != 0 or not isinstance(raw, dict):
+        return failure
+    require = {"schema": LOCATOR_SCHEMA, "state": "SOURCE_LOCATOR_ONLY",
+               "read_only": True, "os_ro_mount": True,
+               "host_mutations": 0, "ppi_watch_touched": False,
+               "provider_calls": 0, "real_orders_sent_by_action": 0,
+               "history_source_selected": False,
+               "ppi_provider_contract_verified": False}
+    if any(raw.get(key) != value or type(raw.get(key)) is not type(value)
+           for key, value in require.items()):
+        return dict(failure, failure_class="INVARIANT_NOT_PROVEN")
+    try:
+        stamp = datetime.fromisoformat(raw["generated_at_utc"])
+        assert stamp.tzinfo is not None
+        objects_state = raw["objects_root_state"]
+        assert objects_state in {"PRESENT", "MISSING", "PATH_UNSAFE",
+                                 "RO_MOUNT_UNVERIFIED"}
+        sources = raw["source_inventory"]
+        assert isinstance(sources, list) and len(sources) == len(LOCATOR_TARGETS)
+        cleaned = []
+        for source, (role, _, _) in zip(sources, LOCATOR_TARGETS):
+            assert isinstance(source, dict) and source.get("role") == role
+            status, scope = source.get("status"), source.get("wal_scope")
+            assert status in LOCATOR_STATUSES and scope in ARCHIVE_WAL_SCOPES
+            assert type(source.get("sqlite_ro")) is bool
+            if status == "OBSERVED_BOUNDED":
+                assert source["sqlite_ro"] and scope != "NO_VERIFICADO"
+            else:
+                assert scope == "NO_VERIFICADO" and not source["sqlite_ro"]
+            sizes = {name: _int(source.get(name)) for name in
+                     ("db_bytes", "wal_bytes", "shm_bytes")}
+            assert all(source.get(k) is None or sizes[k] is not None for k in sizes)
+            if status != "OBSERVED_BOUNDED":
+                assert all(value is None for value in sizes.values())
+            tables = source["tables"]
+            assert isinstance(tables, list) and len(tables) == len(LOCATOR_TABLES[role])
+            clean_tables = []
+            for part, name in zip(tables, LOCATOR_TABLES[role]):
+                assert isinstance(part, dict) and part.get("name") == name
+                assert part.get("status") in LOCATOR_TABLE_STATUSES
+                assert type(part.get("truncated")) is bool
+                assert part.get("rows_total") is None
+                sample = _int(part.get("sample_rows"), LOCATOR_SAMPLE_ROWS)
+                labels = ("origin_ppi_history_labeled", "origin_other_labeled",
+                          "quality_valid_payload_labeled", "quality_unvalidated_labeled",
+                          "quality_other_labeled")
+                counters = {key: _int(part.get(key), LOCATOR_SAMPLE_ROWS)
+                            for key in labels}
+                assert sample is not None and all(n is not None for n in counters.values())
+                if part["status"] != "PRESENT_COLUMNS_OK" or status != "OBSERVED_BOUNDED":
+                    assert sample == 0 and not part["truncated"]
+                    assert all(n == 0 for n in counters.values())
+                if role == "EXTERNAL_EXACT" and part["status"] == "PRESENT_COLUMNS_OK":
+                    assert (counters["origin_ppi_history_labeled"] +
+                            counters["origin_other_labeled"] == sample)
+                    assert (counters["quality_valid_payload_labeled"] +
+                            counters["quality_unvalidated_labeled"] +
+                            counters["quality_other_labeled"] == sample)
+                else:
+                    assert all(n == 0 for n in counters.values())
+                clean_tables.append({"name": name, "status": part["status"],
+                                     "sample_rows": sample,
+                                     "truncated": part["truncated"],
+                                     "rows_total": None, **counters})
+            cleaned.append({"role": role, "status": status,
+                            "wal_scope": scope, "sqlite_ro": source["sqlite_ro"],
+                            **sizes, "tables": clean_tables})
+        okay = (all(x["status"] in ("OBSERVED_BOUNDED", "MISSING") for x in cleaned)
+                and objects_state in ("PRESENT", "MISSING"))
+        return {"schema": LOCATOR_SCHEMA,
+                "state": "SOURCE_LOCATOR_ONLY" if okay else "NO_VERIFICADO",
+                "generated_at_utc": stamp.isoformat(),
+                "source_inventory": cleaned, "objects_root_state": objects_state,
+                "read_only": True, "os_ro_mount": True, "host_mutations": 0,
+                "provider_calls": 0, "ppi_watch_touched": False,
+                "real_orders_sent_by_action": 0,
+                "history_source_selected": False,
+                "ppi_provider_contract_verified": False,
+                "limitations": ["LATEST_64_ROWIDS_ONLY", "FULL_COUNTS_NOT_SCANNED",
+                                "EXTERNAL_LABELS_NOT_PROVIDER_CONTRACT",
+                                "EXTERNAL_OBJECTS_NOT_OPENED_OR_HASH_VERIFIED",
+                                "NO_BACKUP_EXPANSION_OR_DB_RESTORE",
+                                "NO_HISTORY_SOURCE_SELECTION"]}
+    except (AssertionError, KeyError, TypeError, ValueError, OverflowError):
+        return dict(failure, failure_class="MALFORMED_HOST_RECEIPT")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("host-inventory", "sanitize",
-                                         "host-archive-provenance", "sanitize-archive"))
+                                         "host-archive-provenance", "sanitize-archive",
+                                         "host-source-locator", "sanitize-source"))
     parser.add_argument("--raw", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--remote-rc", type=int, default=255)
@@ -856,6 +1224,9 @@ def main() -> int:
     if args.mode == "host-archive-provenance":
         print(json.dumps(host_archive_provenance(), separators=(",", ":"), sort_keys=True))
         return 0
+    if args.mode == "host-source-locator":
+        print(json.dumps(host_source_locator(), separators=(",", ":"), sort_keys=True))
+        return 0
     if args.out is None or args.raw is None:
         parser.error("sanitize requires --raw and --out")
     try:
@@ -864,11 +1235,14 @@ def main() -> int:
         raw = json.loads(args.raw.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError, InventoryError):
         raw = None
-    clean = (archive_public_receipt(raw, args.remote_rc)
+    clean = (source_locator_public_receipt(raw, args.remote_rc)
+             if args.mode == "sanitize-source" else
+             archive_public_receipt(raw, args.remote_rc)
              if args.mode == "sanitize-archive" else public_receipt(raw, args.remote_rc))
     args.out.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    expected = ("ARCHIVE_PROVENANCE_ONLY" if args.mode == "sanitize-archive"
-                else "INVENTORY_ONLY")
+    expected = ("SOURCE_LOCATOR_ONLY" if args.mode == "sanitize-source" else
+                "ARCHIVE_PROVENANCE_ONLY" if args.mode == "sanitize-archive" else
+                "INVENTORY_ONLY")
     return 0 if clean["state"] == expected else 2
 
 
