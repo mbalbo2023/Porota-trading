@@ -9,13 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       issuer_mode:
-        description: 'Only command to ALREADY logged-in PAPER observer; legacy second PPI client is disabled'
+        description: 'Only command to ALREADY logged-in PAPER scanner; OPEN batch or POSTCLOSE, no second PPI client'
         type: choice
         required: true
         default: observer_postclose_command
-        options: [observer_postclose_command]
+        options: [observer_postclose_command, observer_open_ten_family_command]
       art_date:
-        description: 'Observer command only: same-day YYYY-MM-DD in ART, 17:00-23:00'
+        description: 'Observer command only: same-day YYYY-MM-DD in ART; OPEN 10:30-17:00 or POSTCLOSE 17:00-23:00'
         type: string
         required: false
       family:
@@ -23,7 +23,7 @@ on:
         type: choice
         required: true
         default: BONOS
-        options: [ACCIONES, CEDEARS, ETFS, BONOS, LETRAS, OBLIGACIONES, OPCIONES, FUTUROS, CAUCIONES, FCI]
+        options: [ACCIONES, CEDEARS, ETFS, BONOS, LETRAS, OBLIGACIONES, OPCIONES, FUTUROS, CAUCIONES, FCI, ALL]
       slot:
         description: 'Manual same-day audited BYMA ART slot (within 60 min)'
         type: choice
@@ -68,6 +68,58 @@ jobs:
             ak_byma_calendar.py
             co_market_sessions_hf6.py
           persist-credentials: false
+      - name: Checkout immutable candidate scanner OPEN handler for cross-SHA wire contract
+        uses: actions/checkout@v4
+        with:
+          ref: 7ae679e3c6bc958de3513e7a818c8c9063c10c5a
+          path: _audited_open_product_handler
+          sparse-checkout: |
+            bf_production_paper_observer.py
+          persist-credentials: false
+      - name: Verify product OPEN V1 reporter keys against issuer without executing scanner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B - <<'PY'
+          import ast,hashlib
+          from pathlib import Path
+          from scripts.rc6_a630_host_ppi_current_book import OPEN_FAMILIES,_open_summary
+          source=Path('_audited_open_product_handler/bf_production_paper_observer.py')
+          raw=source.read_bytes()
+          git_blob=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          assert git_blob=='607d889c22f8fd501a2117460a9d00700bfb858e'
+          module=ast.parse(raw)
+          routine=next(n for n in module.body if isinstance(n,ast.FunctionDef)
+                       and n.name=='_run_ppi_open_command')
+          report=next(n.value for n in ast.walk(routine) if isinstance(n,ast.Assign)
+                      and any(isinstance(t,ast.Name) and t.id=='report' for t in n.targets))
+          assert isinstance(report,ast.Dict)
+          keys={k.value for k in report.keys if isinstance(k,ast.Constant)}
+          assert keys=={'schema','day','paper_ready','order_authority',
+                        'readiness_reason','unattempted_reason','statuses',
+                        'coverage','unverified','catalog_scope','outside_ppi_scope'}
+          literals={k.value:v.value for k,v in zip(report.keys,report.values)
+                    if isinstance(k,ast.Constant) and isinstance(v,ast.Constant)}
+          assert literals['schema']=='RC6_PPI_OPEN_TEN_FAMILY_V1'
+          assert literals['readiness_reason']=='FULL_READINESS_NOT_EVIDENCED'
+          assert literals['unattempted_reason']=='BOUNDED'
+          assert literals['paper_ready'] is False and literals['order_authority'] is False
+          assert b'PPI_DIRECT_REST_NATIVE_WIRE_WITNESS' in raw and b'identity5=' in raw
+          sample={'schema':'RC6_PPI_OPEN_TEN_FAMILY_V1','day':'2026-11-19',
+                  'paper_ready':False,'order_authority':False,
+                  'readiness_reason':'FULL_READINESS_NOT_EVIDENCED',
+                  'unattempted_reason':'BOUNDED','catalog_scope':'PPI_CLAIMED_ONLY',
+                  'outside_ppi_scope':12,
+                  'statuses':{f:'CATALOG_IDENTITY_UNAVAILABLE' for f in OPEN_FAMILIES},
+                  'coverage':{f:dict(enumerated_exact=0,attempted=0,
+                                     native_pair_qa_pass=0,ready=0,hold=0,unattempted=0)
+                              for f in OPEN_FAMILIES},
+                  'unverified':{f:0 for f in OPEN_FAMILIES}}
+          import json
+          assert _open_summary(json.dumps(sample,separators=(',',':')),
+                               '2026-11-19')==sample
+          print('RC6_OPEN_CROSS_SHA_SCHEMA=PASS|PRODUCT_SHA=7ae679e3|BLOB=607d889c|NO_PPI_ACTOR')
+          PY
       - name: Pure OFFHOST evergreen session, day-slot and audited-engine tests
         shell: bash
         run: |
@@ -379,7 +431,8 @@ jobs:
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/main' &&
       github.event_name == 'workflow_dispatch' &&
-      inputs.issuer_mode == 'observer_postclose_command' &&
+      (inputs.issuer_mode == 'observer_postclose_command' ||
+       inputs.issuer_mode == 'observer_open_ten_family_command') &&
       github.actor == 'mbalbo2023' &&
       github.triggering_actor == 'mbalbo2023'
     concurrency:
@@ -388,7 +441,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     env:
-      RC6_A670_ISSUER_MODE: observer_postclose_command
+      RC6_A670_ISSUER_MODE: ${{ inputs.issuer_mode }}
       RC6_A670_OBSERVER_ART_DATE: ${{ inputs.art_date }}
       RC6_A670_OBSERVER_FAMILY: ${{ inputs.family }}
       RC6_A630_PILOT_MODE: ${{ inputs.pilot_mode == 'once' && 'ONCE' || 'OFF' }}
@@ -430,7 +483,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -n "$DO_HOST" && test -n "$DO_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          [[ "$RC6_A670_OBSERVER_COMMAND" == "PPI_DIRECT_REST_POSTCLOSE_ONCE:$RC6_A670_ART_DATE:$RC6_A670_FAMILY" ]]
+          case "$RC6_A670_ISSUER_MODE" in
+            observer_postclose_command)
+              [[ "$RC6_A670_OBSERVER_COMMAND" == "PPI_DIRECT_REST_POSTCLOSE_ONCE:$RC6_A670_ART_DATE:$RC6_A670_FAMILY" ]]
+              command_mode=rootless-enqueue ;;
+            observer_open_ten_family_command)
+              [[ "$RC6_A670_OBSERVER_COMMAND" == "PPI_DIRECT_REST_OPEN_ONCE:$RC6_A670_ART_DATE:ALL" ]]
+              [[ "$RC6_A670_FAMILY" == ALL ]]
+              [[ "$RC6_A670_MARKET_SESSION" == BYMA_AUDITED_OPEN ]]
+              command_mode=rootless-enqueue-open ;;
+            *) exit 2 ;;
+          esac
           [[ "$RC6_A670_ART_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
           [[ "$RC6_A670_FAMILY" =~ ^[A-Z]{2,16}$ ]]
           install -m 700 -d "$HOME/.ssh"
@@ -440,7 +503,7 @@ jobs:
           # The old rootless-capture/SDK path is NEVER selected by this job.
           # Exact UID-private release/daemon/CID/manifest is attested both sides
           # of one docker exec; child imports sqlite3, not a PPI client.
-          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' rootless-enqueue '$RC6_A670_ART_DATE' '$RC6_A670_FAMILY' '$RC6_P0_EXPECTED_CANDIDATE_SHA' '$RC6_P0_EXPECTED_TREE_SHA' '$RC6_P0_EXPECTED_IMAGE_ID' '$RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'"
+          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' '$command_mode' '$RC6_A670_ART_DATE' '$RC6_A670_FAMILY' '$RC6_P0_EXPECTED_CANDIDATE_SHA' '$RC6_P0_EXPECTED_TREE_SHA' '$RC6_P0_EXPECTED_IMAGE_ID' '$RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'"
           set +e
           timeout --signal=TERM --kill-after=5s 135 ssh \
             -i "$HOME/.ssh/rc6_p0_queue" -o BatchMode=yes \
@@ -459,12 +522,17 @@ jobs:
           family=os.environ['RC6_A670_FAMILY']
           source=Path(os.environ['RUNNER_TEMP'])/'rc6-p0-command.private'
           raw=source.read_bytes() if source.is_file() and source.stat().st_size<=8192 else b''
-          wrapper=verified_command_wrapper(raw,day,family)
+          open_mode=os.environ['RC6_A670_ISSUER_MODE']=='observer_open_ten_family_command'
+          wrapper=verified_command_wrapper(raw,day,family,open_batch=open_mode)
           public={'schema':'rc6.p0.action.sanitized.v1',
                   'run_id':os.environ['GITHUB_RUN_ID'],
                   'control_sha':os.environ['GITHUB_SHA'],
                   'candidate_sha':os.environ['RC6_P0_EXPECTED_CANDIDATE_SHA'],
+                  'candidate_tree':os.environ['RC6_P0_EXPECTED_TREE_SHA'],
+                  'image_id':os.environ['RC6_P0_EXPECTED_IMAGE_ID'],
+                  'release_manifest_sha256':os.environ['RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'],
                   'art_date':day,'family':family,
+                  'issuer_mode':os.environ['RC6_A670_ISSUER_MODE'],
                   'state':wrapper['state'] if wrapper else 'NO_VERIFICADO',
                   'reason':wrapper['reason'] if wrapper else 'ROOTLESS_EXEC_RECEIPT_HOLD',
                   'runtime_pin_verified':wrapper['runtime_pin_verified'] if wrapper else False,
@@ -473,8 +541,11 @@ jobs:
                   'provider_status':wrapper['receipt']['provider_status'] if wrapper else None,
                   'db_rows_inserted':wrapper['receipt']['db_rows_inserted'] if wrapper else None,
                   'ppi_client_or_login_by_action':False,
+                  'global_ppi_single_session_verified':False,
                   'real_orders_sent_by_action':0,
                   'paper_ready':False,'order_authority':False,
+                  'ten_family_qa':(wrapper['receipt'].get('summary')
+                                   if wrapper and open_mode else None),
                   'ppi_watch_mutations_by_action':0,
                   'provider_payload_uploaded':False}
           Path('evidence').mkdir(exist_ok=True)
@@ -497,12 +568,17 @@ jobs:
           from pathlib import Path
           doc={'schema':'rc6.p0.action.sanitized.v1',
                'run_id':os.environ['GITHUB_RUN_ID'],'control_sha':os.environ['GITHUB_SHA'],
+               'candidate_sha':os.environ.get('RC6_P0_EXPECTED_CANDIDATE_SHA'),
+               'candidate_tree':os.environ.get('RC6_P0_EXPECTED_TREE_SHA'),
+               'image_id':os.environ.get('RC6_P0_EXPECTED_IMAGE_ID'),
+               'release_manifest_sha256':os.environ.get('RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'),
                'art_date':'','family':'',
                'state':'NO_VERIFICADO',
                'reason':os.environ.get('RC6_A670_HOLD_REASON','OFFHOST_OR_RUNTIME_HOLD'),
                'runtime_pin_verified':False,'command_id':None,
                'observer_command_status':None,'provider_status':None,
                'db_rows_inserted':None,'ppi_client_or_login_by_action':False,
+               'global_ppi_single_session_verified':False,
                'real_orders_sent_by_action':0,'paper_ready':False,'order_authority':False,
                'ppi_watch_mutations_by_action':0,'provider_payload_uploaded':False}
           Path('evidence/p0_observer_command.json').write_text(
