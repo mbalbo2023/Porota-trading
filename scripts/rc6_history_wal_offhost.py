@@ -197,12 +197,21 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
     _require(stat.S_ISDIR(info.st_mode) and not root.is_symlink() and
              info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
              "RUNNER_PRIVATE_DIRECTORY_REQUIRED")
+    # The only supported producer is A511's uncompressed, record-padded TAR.
+    # Size must be inspected independently of tarfile, which silently ignores
+    # covert trailing bytes (and may read them into its private buffer).
+    _require(bundle.seekable(), "BUNDLE_MEMBER_UNSAFE")
+    bundle_start = bundle.tell()
+    bundle.seek(0, os.SEEK_END)
+    bundle_size = bundle.tell() - bundle_start
+    bundle.seek(bundle_start)
     with tempfile.TemporaryDirectory(prefix="rc6-a511-", dir=root) as temporary:
         directory = Path(temporary)
         found = {}
+        segments = []
         total = 0
         try:
-            with tarfile.open(fileobj=bundle, mode="r|*") as archive:
+            with tarfile.open(fileobj=bundle, mode="r|") as archive:
                 for member in archive:
                     _time(deadline)
                     _require(member.isfile() and member.name in (*FILES.values(), MANIFEST) and
@@ -226,12 +235,52 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
                             digest.update(piece)
                             remaining -= len(piece)
                     found[member.name] = (member.size, digest.hexdigest())
+                    segments.append((member.name, member.size,
+                                     member.offset_data))
+            # A511 writes exactly these three short-name members with zero
+            # metadata, two end blocks and 10 KiB TAR record padding.
+            # Reject compressed, PAX-extra, suffix or other noncanonical data.
+            _require([name for name, _, _ in segments] ==
+                     [*FILES.values(), MANIFEST], "BUNDLE_MEMBER_UNSAFE")
+            member_bytes = 0
+            for name, part_size, data_offset in segments:
+                expected = tarfile.TarInfo(name)
+                expected.size = part_size
+                expected.mode = 0o600
+                expected.mtime = 0
+                header = expected.tobuf(format=tarfile.PAX_FORMAT)
+                _require(len(header) == tarfile.BLOCKSIZE and
+                         data_offset == member_bytes + tarfile.BLOCKSIZE,
+                         "BUNDLE_MEMBER_UNSAFE")
+                bundle.seek(bundle_start + member_bytes)
+                _require(bundle.read(tarfile.BLOCKSIZE) == header,
+                         "BUNDLE_MEMBER_UNSAFE")
+                padding_size = (-part_size) % tarfile.BLOCKSIZE
+                bundle.seek(bundle_start + data_offset + part_size)
+                _require(bundle.read(padding_size) == b"\0" * padding_size,
+                         "BUNDLE_MEMBER_UNSAFE")
+                member_bytes += tarfile.BLOCKSIZE + part_size + padding_size
+            expected_bytes = (
+                (member_bytes + 2 * tarfile.BLOCKSIZE +
+                 tarfile.RECORDSIZE - 1) // tarfile.RECORDSIZE
+            ) * tarfile.RECORDSIZE
+            _require(bundle_size == expected_bytes, "BUNDLE_MEMBER_UNSAFE")
+            bundle.seek(bundle_start + member_bytes)
+            remaining_padding = bundle_size - member_bytes
+            while remaining_padding:
+                _time(deadline)
+                padding = bundle.read(min(8192, remaining_padding))
+                _require(bool(padding) and not any(padding),
+                         "BUNDLE_MEMBER_UNSAFE")
+                remaining_padding -= len(padding)
             _require(set(found) == {*FILES.values(), MANIFEST},
                      "BUNDLE_MEMBER_MISSING")
             manifest_path = directory / MANIFEST
             _require(found[MANIFEST][0] <= 8192, "BUNDLE_MANIFEST_INVALID")
             manifest = json.loads(manifest_path.read_text())
             _require(isinstance(manifest, dict) and manifest.get("schema") == SCHEMA and
+                     manifest.get("writer_exclusion") == "BOUNDED_WITNESS" and
+                     type(manifest.get("shm_observed")) is bool and
                      manifest.get("cohort_scope") == "HISTORY_VERSION_ROWS_ONLY" and
                      manifest.get("global_universe_coverage") == "NO_VERIFICADO" and
                      manifest.get("readiness_implication") == "NONE",
@@ -240,10 +289,60 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
             _require(isinstance(parts, list) and len(parts) == 2 and
                      {p.get("name") for p in parts if isinstance(p, dict)} ==
                      set(FILES.values()), "BUNDLE_MANIFEST_INVALID")
+            _require(all(type(p.get("size")) is int and
+                         isinstance(p.get("sha256"), str) and
+                         re.fullmatch(r"[0-9a-f]{64}", p["sha256"])
+                         for p in parts), "BUNDLE_MANIFEST_INVALID")
+            by_name = {p["name"]: p for p in parts}
+            main_size = by_name[FILES[""]]["size"]
+            wal_size = by_name[FILES["-wal"]]["size"]
+            _require(main_size >= 4096 and 0 < wal_size <= MAX_WAL_BYTES and
+                     main_size + wal_size <= max_total_bytes,
+                     "BUNDLE_MANIFEST_INVALID")
             for part in parts:
                 _require((part["size"], part["sha256"]) == found[part["name"]],
                          "BUNDLE_HASH_MISMATCH")
             db_path = directory / FILES[""]
+            wal_path = directory / FILES["-wal"]
+            with wal_path.open("rb") as wal_stream:
+                wal_header = wal_stream.read(32)
+            _require(len(wal_header) == 32 and
+                     int.from_bytes(wal_header[:4], "big") in
+                     (0x377F0682, 0x377F0683) and
+                     int.from_bytes(wal_header[4:8], "big") == 3007000,
+                     "BUNDLE_WAL_INVALID")
+            wal_page_size = int.from_bytes(wal_header[8:12], "big")
+            _require(512 <= wal_page_size <= 65536 and
+                     wal_page_size & (wal_page_size - 1) == 0 and
+                     wal_size >= 32 + 24 + wal_page_size and
+                     (wal_size - 32) % (24 + wal_page_size) == 0,
+                     "BUNDLE_WAL_INVALID")
+            physical_frames = (wal_size - 32) // (24 + wal_page_size)
+
+            # Only the runner-owned temporary cohort is writable. The SQLite
+            # engine verifies WAL salts/checksums and commit frames while
+            # checkpointing; ignored/truncated WAL must NOT silently fall
+            # back to a valid but stale MAIN file.
+            try:
+                replay = sqlite3.connect(db_path.as_uri() + "?mode=rw", uri=True,
+                                         timeout=0.025)
+                try:
+                    replay.execute("PRAGMA trusted_schema=OFF")
+                    replay.set_progress_handler(
+                        lambda: int(time.monotonic() >= deadline), 100)
+                    mode = replay.execute("PRAGMA journal_mode").fetchone()[0]
+                    page_size = replay.execute("PRAGMA page_size").fetchone()[0]
+                    busy, log_frames, applied_frames = replay.execute(
+                        "PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+                    _time(deadline)
+                    _require(mode == "wal" and page_size == wal_page_size and
+                             busy == 0 and log_frames == physical_frames and
+                             applied_frames == log_frames,
+                             "BUNDLE_WAL_INVALID")
+                finally:
+                    replay.close()
+            except sqlite3.Error:
+                raise HistoryHold("BUNDLE_WAL_INVALID") from None
             connection = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True,
                                          timeout=0.025)
             try:
