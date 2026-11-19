@@ -38,7 +38,9 @@ ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
 # Frozen PAPER settings enable both optional workers in this release contract.
-CONTROLLER_CHILDREN = ("scanner", "performance", "dynamic_shadow", "exit_reader", "notifications",
+# Performance capture is disabled by operator decision; it must not reappear
+# as a child under the current immutable release or be required by postflight.
+CONTROLLER_CHILDREN = ("scanner", "dynamic_shadow", "exit_reader", "notifications",
                        "candles", "intraday_scalping", "caucion_cash_sweep")
 DOCKER_OPERATIONS = {
     ("image", "load"): "IMAGE_LOAD", ("image", "inspect"): "IMAGE_INSPECT",

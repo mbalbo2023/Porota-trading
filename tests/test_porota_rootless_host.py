@@ -55,6 +55,11 @@ class RootlessContracts(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.base = Path(self.temp.name)
 
+    def test_performance_ingestion_is_not_an_expected_running_child(self):
+        """The postflight contract must prove seven children, never re-arm capture."""
+        self.assertNotIn("performance", host.CONTROLLER_CHILDREN)
+        self.assertEqual(len(host.CONTROLLER_CHILDREN), 7)
+
     def test_cli_custody_failure_returns_one_and_its_existing_reason(self):
         stream = io.StringIO()
         with patch.object(host, "Host", side_effect=host.Hold("NONROOT_SSH_IDENTITY_REQUIRED")), \
