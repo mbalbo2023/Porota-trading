@@ -534,7 +534,7 @@ class ArchiveProvenanceReadOnlyTests(unittest.TestCase):
     def test_archive_action_is_opt_in_and_host_data_mount_os_ro(self):
         workflow = (Path(inv.__file__).resolve().parents[1] / ".github/workflows/"
                     "rc6-a729-db-backup-inventory-readonly.yml").read_text()
-        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY]", workflow)
+        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]", workflow)
         self.assertIn("inputs.mode == 'INVENTORY_ONLY'", workflow)
         self.assertIn("inputs.mode == 'ARCHIVE_PROVENANCE_ONLY'", workflow)
         self.assertIn("group: rc6-unified-paper-deploy", workflow)
@@ -544,6 +544,364 @@ class ArchiveProvenanceReadOnlyTests(unittest.TestCase):
         self.assertIn("sanitize-archive", workflow)
         self.assertNotIn("docker exec", workflow)
         self.assertNotIn("PPI_API_KEY", workflow)
+
+
+class HistoricalSourceLocatorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.history = self.root / "market_history.db"
+        self.history_writer = sqlite3.connect(self.history)
+        self.addCleanup(self.history_writer.close)
+        self.history_writer.execute("PRAGMA journal_mode=WAL")
+        self.history_writer.execute("""CREATE TABLE history_versions_v2(
+            id INTEGER PRIMARY KEY, instrument_type TEXT, date TEXT, source TEXT)""")
+        self.history_writer.execute("""CREATE TABLE history_canonical_v2(
+            instrument_type TEXT, date TEXT, source TEXT)""")
+        self.history_writer.execute("""CREATE TABLE market_historical_ohlcv(
+            asset_class TEXT, date TEXT, source TEXT)""")
+        self.history_writer.commit()
+        self.history_writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    def test_existing_history_table_detects_committed_wal_row_without_payload(self):
+        self.history_writer.execute("INSERT INTO history_versions_v2 VALUES(1,?,?,?)",
+                                    ("ACCIONES", "2025-09-22", "SECRET_PPI_TICKER"))
+        self.history_writer.commit()
+        base_before = self.history.stat().st_mtime_ns
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.source_locator_db(
+                "HISTORY", self.history, 2 * 1024**2,
+                ("history_versions_v2", "history_canonical_v2", "market_historical_ohlcv"))
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["wal_scope"], "WAL_SNAPSHOT_CONSISTENT")
+        table = {item["name"]: item for item in result["tables"]}
+        self.assertEqual(table["history_versions_v2"]["status"], "PRESENT_COLUMNS_OK")
+        self.assertEqual(table["history_versions_v2"]["sample_rows"], 1)
+        self.assertEqual(table["history_canonical_v2"]["sample_rows"], 0)
+        self.assertIsNone(table["history_versions_v2"]["rows_total"])
+        self.assertNotIn("SECRET_PPI_TICKER", json.dumps(result))
+        self.assertEqual(self.history.stat().st_mtime_ns, base_before)
+
+    def external_manifest(self):
+        path = self.root / "evidence/ppi_history_exact_v1/manifest_exact_v1.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        writer = sqlite3.connect(path)
+        self.addCleanup(writer.close)
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("""CREATE TABLE exact_attempts_v1(
+            origin TEXT, quality TEXT, inner_sha256 TEXT, wrapper_json TEXT)""")
+        writer.commit()
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return path, writer
+
+    def test_external_exact_manifest_labels_are_not_provider_proof(self):
+        path, writer = self.external_manifest()
+        writer.executemany("INSERT INTO exact_attempts_v1 VALUES (?,?,?,?)", [
+            ("PPI_HISTORY", "UNVALIDATED", "a" * 64, "PRIVATE_TICKER_A"),
+            ("OTHER_SOURCE", "VALID_PAYLOAD", "b" * 64, "PRIVATE_TICKER_B"),
+        ])
+        writer.commit()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.source_locator_db("EXTERNAL_EXACT", path, 2 * 1024**2,
+                                           ("exact_attempts_v1",))
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["wal_scope"], "WAL_SNAPSHOT_CONSISTENT")
+        table, = result["tables"]
+        self.assertEqual(table["status"], "PRESENT_COLUMNS_OK")
+        self.assertEqual(table["sample_rows"], 2)
+        self.assertEqual(table["origin_ppi_history_labeled"], 1)
+        self.assertEqual(table["quality_unvalidated_labeled"], 1)
+        self.assertEqual(table["quality_valid_payload_labeled"], 1)
+        self.assertIsNone(table["rows_total"])
+        self.assertNotIn("PRIVATE_TICKER", json.dumps(result))
+
+    def test_absent_manifest_is_not_falsely_reported_empty_table(self):
+        missing = self.root / "not-created/manifest_exact_v1.db"
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.source_locator_db("EXTERNAL_EXACT", missing, 2 * 1024**2,
+                                           ("exact_attempts_v1",))
+        self.assertEqual(result["status"], "MISSING")
+        self.assertEqual(result["tables"][0]["status"], "NO_VERIFICADO")
+        self.assertEqual(result["tables"][0]["sample_rows"], 0)
+
+    def test_missing_external_ancestors_use_pinned_ro_mount_not_false_hold(self):
+        class VFS:
+            f_flag = os.ST_RDONLY
+
+        missing = self.root / "missing-parent/evidence/manifest_exact_v1.db"
+        objects = self.root / "missing-parent/evidence/objects/sha256"
+        with patch.object(inv, "DATA", self.root), \
+                patch.object(inv, "archive_readonly_mount_attested", return_value=False), \
+                patch.object(inv.os, "fstatvfs", return_value=VFS()):
+            self.assertTrue(inv._locator_readonly_mount_attested(missing))
+            self.assertEqual(inv.source_locator_db("EXTERNAL_EXACT", missing,
+                2 * 1024**2, ("exact_attempts_v1",))["status"], "MISSING")
+            self.assertEqual(inv._locator_objects_root_state(objects), "MISSING")
+        class RwVFS:
+            f_flag = 0
+        with patch.object(inv, "DATA", self.root), \
+                patch.object(inv, "archive_readonly_mount_attested", return_value=False), \
+                patch.object(inv.os, "fstatvfs", return_value=RwVFS()):
+            self.assertFalse(inv._locator_readonly_mount_attested(missing))
+            self.assertEqual(inv.source_locator_db("EXTERNAL_EXACT", missing,
+                2 * 1024**2, ("exact_attempts_v1",))["status"],
+                "RO_MOUNT_UNVERIFIED")
+
+    def test_host_locator_reads_three_fixed_sources_and_never_selects_any(self):
+        manifest, writer = self.external_manifest()
+        writer.execute("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?)",
+                       ("PPI_HISTORY", "UNVALIDATED", "a" * 64, "HIDDEN"))
+        writer.commit()
+        objects = manifest.parent / "objects/sha256"
+        objects.mkdir(parents=True)
+        missing_observer = self.root / "missing-observer.db"
+        targets = (("HISTORY", self.history, 2 * 1024**2),
+                   ("OBSERVER", missing_observer, 2 * 1024**2),
+                   ("EXTERNAL_EXACT", manifest, 2 * 1024**2))
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "LOCATOR_TARGETS", targets), \
+                patch.object(inv, "LOCATOR_OBJECTS_ROOT", objects):
+            raw = inv.host_source_locator()
+        self.assertEqual(raw["state"], "SOURCE_LOCATOR_ONLY")
+        self.assertEqual([x["role"] for x in raw["source_inventory"]],
+                         ["HISTORY", "OBSERVER", "EXTERNAL_EXACT"])
+        self.assertEqual(raw["source_inventory"][1]["status"], "MISSING")
+        self.assertEqual(raw["objects_root_state"], "PRESENT")
+        self.assertFalse(raw["history_source_selected"])
+        self.assertFalse(raw["ppi_provider_contract_verified"])
+        self.assertEqual(raw["provider_calls"], 0)
+        self.assertEqual(raw["host_mutations"], 0)
+
+    def test_source_locator_sanitizer_strips_host_secrets_and_rejects_forgery(self):
+        manifest, writer = self.external_manifest()
+        writer.execute("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?)",
+                       ("PPI_HISTORY", "UNVALIDATED", "a" * 64, "PRIVATE"))
+        writer.commit()
+        targets = (("HISTORY", self.history, 2 * 1024**2),
+                   ("OBSERVER", self.root / "missing.db", 2 * 1024**2),
+                   ("EXTERNAL_EXACT", manifest, 2 * 1024**2))
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "LOCATOR_TARGETS", targets):
+            raw = inv.host_source_locator()
+        raw["secret"] = "PRIVATE_CREDENTIAL"
+        raw["source_inventory"][2]["secret"] = "PRIVATE_ACCOUNT"
+        clean = inv.source_locator_public_receipt(raw, 0)
+        self.assertEqual(clean["state"], "SOURCE_LOCATOR_ONLY", clean)
+        self.assertNotIn("PRIVATE_", json.dumps(clean))
+        self.assertFalse(clean["history_source_selected"])
+        raw["history_source_selected"] = True
+        self.assertEqual(inv.source_locator_public_receipt(raw, 0)["state"],
+                         "NO_VERIFICADO")
+        self.assertEqual(inv.source_locator_public_receipt(raw, 255)["state"],
+                         "NO_VERIFICADO")
+
+    def test_external_manifest_latest_64_rowids_and_long_text_memory_budget(self):
+        manifest, writer = self.external_manifest()
+        writer.executemany("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?)", [
+            ("PPI_HISTORY", "UNVALIDATED", "a" * 64, "SECRET_TICKER")
+            for _ in range(68)])
+        writer.execute("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?)",
+                       ("O" * (8 * 1024 * 1024), "Q" * (8 * 1024 * 1024),
+                        "a" * 64, "W" * (8 * 1024 * 1024)))
+        writer.commit()
+        tracemalloc.start()
+        try:
+            with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                result = inv.source_locator_db("EXTERNAL_EXACT", manifest,
+                                               64 * 1024**2, ("exact_attempts_v1",))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        table, = result["tables"]
+        self.assertEqual(table["sample_rows"], 64)
+        self.assertTrue(table["truncated"])
+        self.assertEqual(table["origin_ppi_history_labeled"], 63)
+        self.assertEqual(table["quality_unvalidated_labeled"], 63)
+        self.assertEqual(table["quality_other_labeled"], 1)
+        self.assertLess(peak, 4 * 1024 * 1024)
+        self.assertNotIn("SECRET_TICKER", json.dumps(result))
+
+    def test_locator_rejects_symlink_and_wrong_physical_sqlite_inode(self):
+        link = self.root / "history-link.db"
+        link.symlink_to(self.history)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            self.assertEqual(inv.source_locator_db("HISTORY", link,
+                2 * 1024**2, inv.LOCATOR_TABLES["HISTORY"])["status"], "FILE_UNSAFE")
+        alternate = self.root / "foreign.db"
+        writer = sqlite3.connect(alternate)
+        self.addCleanup(writer.close)
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("CREATE TABLE history_versions_v2(id INTEGER PRIMARY KEY)")
+        writer.commit()
+        original_connect = sqlite3.connect
+
+        def redirect(path, *args, **kwargs):
+            if isinstance(path, str) and path.endswith("?mode=ro"):
+                return original_connect("file:" + str(alternate) + "?mode=ro",
+                                        *args, **kwargs)
+            return original_connect(path, *args, **kwargs)
+
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv.sqlite3, "connect", side_effect=redirect):
+            result = inv.source_locator_db("HISTORY", self.history, 2 * 1024**2,
+                                           inv.LOCATOR_TABLES["HISTORY"])
+        self.assertEqual(result["status"], "SOURCE_BINDING_UNVERIFIED")
+        self.assertTrue(all(x["sample_rows"] == 0 for x in result["tables"]))
+
+    def test_locator_unsupported_table_list_cannot_claim_absent(self):
+        class UnsupportedPragma:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args):
+                if sql.startswith("PRAGMA table_list"):
+                    class Empty:
+                        def fetchall(self):
+                            return []
+                    return Empty()
+                return self.connection.execute(sql, *args)
+
+        result = inv._locator_empty("HISTORY")
+        inv._locator_scan(UnsupportedPragma(self.history_writer), "HISTORY",
+                          time.monotonic() + 2, result)
+        self.assertEqual(result["tables"][0]["status"], "SCHEMA_INVALID")
+        self.assertEqual(result["tables"][0]["sample_rows"], 0)
+
+    def test_locator_unsupported_table_xinfo_cannot_probe_any_rows(self):
+        class UnsupportedXinfo:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, *args):
+                if sql.startswith("PRAGMA table_xinfo"):
+                    class Empty:
+                        def fetchall(self):
+                            return []
+                    return Empty()
+                return self.connection.execute(sql, *args)
+
+        result = inv._locator_empty("HISTORY")
+        inv._locator_scan(UnsupportedXinfo(self.history_writer), "HISTORY",
+                          time.monotonic() + 2, result)
+        self.assertEqual(result["tables"][0]["status"], "COLUMNS_MISSING")
+        self.assertEqual(result["tables"][0]["sample_rows"], 0)
+
+    def test_locator_refuses_shadowed_rowid_that_could_force_full_sort(self):
+        for alias in ("rowid", "_rowid_", "oid"):
+            with self.subTest(alias=alias):
+                manifest = self.root / f"shadowed-{alias}.db"
+                with sqlite3.connect(manifest) as writer:
+                    writer.execute("PRAGMA journal_mode=WAL")
+                    writer.execute(f"""CREATE TABLE exact_attempts_v1(
+                        {alias} INTEGER, origin TEXT, quality TEXT,
+                        inner_sha256 TEXT, wrapper_json TEXT)""")
+                    writer.execute("INSERT INTO exact_attempts_v1 VALUES (?,?,?,?,?)",
+                                   (1, "PPI_HISTORY", "UNVALIDATED",
+                                    "a" * 64, "SECRET_BODY"))
+                with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                    result = inv.source_locator_db("EXTERNAL_EXACT", manifest,
+                                                   2 * 1024**2, ("exact_attempts_v1",))
+                self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+                self.assertEqual(result["tables"][0]["status"], "SCHEMA_INVALID")
+                self.assertEqual(result["tables"][0]["sample_rows"], 0)
+                self.assertNotIn("SECRET", json.dumps(result))
+
+    def test_locator_rejects_generated_rowid_shadow_hidden_from_table_info(self):
+        manifest = self.root / "generated-shadow.db"
+        with sqlite3.connect(manifest) as writer:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("""CREATE TABLE exact_attempts_v1(
+                origin TEXT, quality TEXT, inner_sha256 TEXT, wrapper_json TEXT,
+                rowid TEXT GENERATED ALWAYS AS (substr(wrapper_json,1,16)) VIRTUAL)""")
+            writer.execute("INSERT INTO exact_attempts_v1(origin,quality,inner_sha256,wrapper_json)"
+                           " VALUES (?,?,?,?)",
+                           ("PPI_HISTORY", "UNVALIDATED", "a" * 64, "SECRET_BODY"))
+            self.assertNotIn("rowid", [c[1] for c in
+                             writer.execute("PRAGMA table_info(exact_attempts_v1)")])
+            self.assertIn("rowid", [c[1] for c in
+                          writer.execute("PRAGMA table_xinfo(exact_attempts_v1)")])
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.source_locator_db("EXTERNAL_EXACT", manifest,
+                                           2 * 1024**2, ("exact_attempts_v1",))
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["tables"][0]["status"], "SCHEMA_INVALID")
+        self.assertEqual(result["tables"][0]["sample_rows"], 0)
+
+    def test_locator_big_sqlite_ddl_is_safe_rejection_without_heap_growth(self):
+        manifest = self.root / "large-schema.db"
+        db = sqlite3.connect(manifest)
+        self.addCleanup(db.close)
+        db.execute("PRAGMA journal_mode=WAL")
+        ddl = """CREATE TABLE exact_attempts_v1(
+            origin TEXT,quality TEXT,inner_sha256 TEXT,wrapper_json TEXT)"""
+        db.execute(ddl.replace("exact_attempts_v1(",
+                               "exact_attempts_v1 /*" +
+                               "X" * (4 * 1024 * 1024) + "*/ ("))
+        db.commit()
+        tracemalloc.start()
+        try:
+            with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                result = inv.source_locator_db("EXTERNAL_EXACT", manifest,
+                                               64 * 1024**2, ("exact_attempts_v1",))
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["status"], "SQLITE_UNAVAILABLE")
+        self.assertEqual(result["tables"][0]["sample_rows"], 0)
+        self.assertLess(peak, 4 * 1024 * 1024)
+
+    def test_external_objects_directory_symlink_is_not_followed(self):
+        link = self.root / "object-link"
+        link.symlink_to(self.root, target_is_directory=True)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            self.assertEqual(inv._locator_objects_root_state(link), "PATH_UNSAFE")
+
+    def test_source_locator_workflow_manual_ro_and_two_existing_modes_stable(self):
+        workflow = (Path(inv.__file__).resolve().parents[1] / ".github/workflows/"
+                    "rc6-a729-db-backup-inventory-readonly.yml").read_text()
+        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]",
+                      workflow)
+        self.assertIn("inputs.mode == 'SOURCE_LOCATOR_ONLY'", workflow)
+        self.assertIn("host-source-locator", workflow)
+        self.assertIn("sanitize-source", workflow)
+        self.assertIn("unshare --mount --propagation private", workflow)
+        self.assertIn("mount -o remount,bind,ro /opt/porota-trading/data", workflow)
+        self.assertIn("group: rc6-unified-paper-deploy", workflow)
+        self.assertIn("inputs.mode == 'INVENTORY_ONLY'", workflow)
+        self.assertIn("inputs.mode == 'ARCHIVE_PROVENANCE_ONLY'", workflow)
+        self.assertNotIn("docker exec", workflow)
+        new_job = workflow.split("\n  host_source_locator:\n", 1)
+        self.assertEqual(len(new_job), 2)
+        self.assertIn("github.actor == 'mbalbo2023'", new_job[1])
+        self.assertIn("github.triggering_actor == 'mbalbo2023'", new_job[1])
+        self.assertNotIn("PPI_API_KEY", new_job[1])
+        self.assertNotIn("docker ", new_job[1])
+
+    def test_source_locator_cli_has_separate_private_and_sanitized_modes(self):
+        manifest, _ = self.external_manifest()
+        targets = (("HISTORY", self.history, 2 * 1024**2),
+                   ("OBSERVER", self.root / "missing.db", 2 * 1024**2),
+                   ("EXTERNAL_EXACT", manifest, 2 * 1024**2))
+        raw_output = io.StringIO()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "LOCATOR_TARGETS", targets), \
+                patch.object(sys, "argv", ["inventory", "host-source-locator"]), \
+                redirect_stdout(raw_output):
+            self.assertEqual(inv.main(), 0)
+        raw = json.loads(raw_output.getvalue())
+        self.assertEqual(raw["schema"], inv.LOCATOR_SCHEMA)
+        private = self.root / "private-locator.json"
+        private.write_text(json.dumps(raw))
+        public = self.root / "public-locator.json"
+        with patch.object(sys, "argv", ["inventory", "sanitize-source",
+                                      "--raw", str(private), "--out", str(public),
+                                      "--remote-rc", "0"]):
+            self.assertEqual(inv.main(), 0)
+        clean = json.loads(public.read_text())
+        self.assertEqual(clean["state"], "SOURCE_LOCATOR_ONLY")
+        self.assertFalse(clean["history_source_selected"])
 
 
 if __name__ == "__main__":

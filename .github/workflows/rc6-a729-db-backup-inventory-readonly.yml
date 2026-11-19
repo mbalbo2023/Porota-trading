@@ -14,10 +14,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Select existing base metadata or bounded WAL archive labels; no writes'
+        description: 'Select base metadata, bounded WAL archive labels, or historical source locator; no writes'
         required: true
         type: choice
-        options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY]
+        options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]
 
 permissions:
   contents: read
@@ -225,6 +225,102 @@ jobs:
              test "$(stat -c %a "$private")" = 700; then
             for file in "$private/id_key" "$private/known_hosts" \
                         "$private/.archive-raw.json" "$private/a729-archive-public.json"; do
+              if test -f "$file" && test ! -L "$file"; then
+                shred -u -- "$file"
+              fi
+            done
+            rmdir "$private"
+          fi
+
+  host_source_locator:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == 'mbalbo2023' &&
+      github.triggering_actor == 'mbalbo2023' &&
+      inputs.mode == 'SOURCE_LOCATOR_ONLY'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Allocate private runner receipt and SSH identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-a729-source-XXXXXX)"
+          chmod 700 "$private"
+          echo "RC6_A729_SOURCE_DIR=$private" >> "$GITHUB_ENV"
+      - name: Locate fixed historical SQLite and external exact manifest in OS read-only mount
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$RC6_A729_SOURCE_DIR"
+          test -n "$DO_HOST" && test -n "$DO_USER" && \
+            test -n "$DO_SSH_KEY" && test -n "$DO_KNOWN_HOSTS" || {
+              echo '::error::A729_SOURCE_HOST_ACCESS_UNAVAILABLE'
+              exit 2
+            }
+          printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
+          chmod 600 "$private/id_key" "$private/known_hosts"
+          ulimit -f 64
+          set +e
+          timeout 95 ssh -i "$private/id_key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            'sudo -n timeout 70 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-source-locator"' \
+            < scripts/rc6_a729_db_backup_inventory_ro.py \
+            > "$private/.source-raw.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          echo "RC6_A729_SOURCE_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
+          test "$remote_rc" -eq 0 || echo '::warning::A729_SOURCE_HOST_HOLD_SANITIZED'
+      - name: Sanitize ONLY fixed source roles, metadata, and bounded label counters
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A729_SOURCE_DIR:-}"
+          if test -z "$private" || test ! -d "$private"; then
+            echo '::error::A729_SOURCE_PRIVATE_DIR_UNAVAILABLE'
+            exit 2
+          fi
+          python3 -B scripts/rc6_a729_db_backup_inventory_ro.py sanitize-source \
+            --raw "$private/.source-raw.json" \
+            --out "$private/a729-source-public.json" \
+            --remote-rc "${RC6_A729_SOURCE_REMOTE_RC:-255}"
+      - name: Upload strictly sanitized historical source locator receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-a729-source-locator-${{ github.run_id }}
+          path: ${{ env.RC6_A729_SOURCE_DIR }}/a729-source-public.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy private runner credentials and raw receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_A729_SOURCE_DIR:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            for file in "$private/id_key" "$private/known_hosts" \
+                        "$private/.source-raw.json" "$private/a729-source-public.json"; do
               if test -f "$file" && test ! -L "$file"; then
                 shred -u -- "$file"
               fi
