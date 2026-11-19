@@ -6,15 +6,47 @@ estables están en [AGENTS.md](../AGENTS.md) y la
 investigar un problema concreto; sus checkpoints, aprobaciones y pendientes no
 se convierten en puertas automáticas de una tarea nueva.
 
+## Incidente P0 PPI REST — corte 18-Nov-2026
+
+Partir del [checkpoint #1093/6992170026](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026)
+y ownership actual [#980](https://github.com/mbalbo2023/Porota-trading/issues/980),
+no de un resumen de chat. #1192 MERGED y Predeploy #44373257344 SUCCESS;
+Deploy V2 #44376376095 FAILED en POSTFLIGHT `RUNTIME_UNCLASSIFIED_DEGRADED`.
+La auditoría READ_ONLY [Market Watch #44405692829](https://github.com/mbalbo2023/Porota-trading/actions/runs/44405692829)
+midió `broker_requests=0`, heartbeat vencido, `0/17283` READY y fallo de
+provenance/identidad. [Rootless inspect #44408163645](https://github.com/mbalbo2023/Porota-trading/actions/runs/44408163645)
+mostró daemon activo, `CURRENT_IDENTITY_UNVERIFIED`, contenedores privados sin
+atribución al release y journal de Deploy fallido. Parche local `4ef52f97`
+recuperado/testeado (51 unit tests PASS), **aún no integrado**; hipótesis de
+basket 0/0 sin `observer_state.detail` causal medido. **HOLD sólo mientras
+identidad, controlador, guards PAPER/provenance o ownership bloqueen**; mercado
+cerrado por sí solo no impide deploy técnico seguro.
+
+Camino crítico: (1) Action READ_ONLY para correlacionar firma POSTFLIGHT con
+`observer.detail`; (2) verificar el parche contra HEAD y RED→GREEN sin abrir
+otros DEGRADED; (3) candidato único bajo PR y WRITE_OWNER; (4) Predeploy V2 y
+artefacto/digest; (5) un Promote V2 PAPER bajo DEPLOY_OWNER; (6) evidencia física
+posdeploy de `real_orders_sent=0`, identidad rootless, Current/Book nativos,
+frescura y `READY/total` por diez familias en la próxima rueda válida si hoy
+está cerrada; (7) QA separado de motores/workers, timers, históricos y DB. AMBER de proceso y login OK no dan readiness; nunca
+imponer un límite inventado de 2 GET/h. PPI Watch no tiene veto general por
+regla del usuario: cualquier intervención sigue ownership y Actions.
+
 ## 1. Retomar una tarea
 
 1. Identificar objetivo, criterio de éxito, componentes afectados y exclusiones.
 2. Consultar HEAD de las ramas relevantes, candidato, runs y ownership vigentes.
    `main` es plano de control; producto es la rama protegida RC6 que indiquen las
    referencias actuales. Ninguna de ellas prueba por sí sola el runtime.
-3. Reusar implementación y evidencia aplicables. Buscar antecedentes donde haya
-   una duplicación o duda concreta; no reconstruir el proyecto en cada chat.
-4. Declarar `READ_ONLY` o registrar `WRITE_OWNER` con rama, SHA base y scope.
+3. **Antes de escribir una línea nueva de código**, buscar la solución previa en
+   `HEAD`, branches, PRs abiertos y cerrados, commits, issues, tests, workflows y
+   parches documentados/locales. Registrar referencias y estado de cada candidato;
+   recuperar y terminar el parche parcial vigente primero. Si es inservible,
+   explicar con evidencia por qué, antes de crear otro PR.
+4. Revisar **todos los PR abiertos** y asignar owner, scope, pruebas y destino:
+   `INTEGRAR`, `COMPLETAR`, `RETENER_CON_CAUSA`, `SUPERSEDIDO_CON_REFERENCIA`
+   o `CERRAR_CON_EVIDENCIA`, con siguiente paso y fecha; sin PR huérfanos.
+5. Declarar `READ_ONLY` o registrar `WRITE_OWNER` con rama, SHA base y scope.
    Resolver sólo los solapamientos reales; paralelizar el trabajo independiente.
 
 La orden del usuario autoriza su alcance. Continuar sin permisos repetidos por
@@ -99,9 +131,14 @@ sustituir el runtime de Porota.
    afectado que no podía observarse offhost.
 
 Mercado cerrado o proveedor externo degradado no bloquean por sí solos una
-promoción técnica segura. Cada instrumento conserva su admisión fail-closed;
-las pruebas que requieren sesión real quedan `NO_VERIFICADO` hasta observarla.
-Corrupción de identidad, artefacto, datos o seguridad sí bloquea la acción afectada.
+promoción técnica 24×7. Cada instrumento conserva su admisión fail-closed.
+**Gates técnicos indispensables**: manifest/digest y SHA del mismo artefacto,
+`current.json`/receipt que acrediten qué contenedor y qué controlador gobiernan
+el runtime, hijos y health reales, PAPER y rutas reales bloqueadas con
+`real_orders_sent=0`. La prueba de frescura de Current/Book que requiere datos
+de rueda se agenda por instrumento para la **siguiente sesión real**, con owner,
+run y plazo; hasta entonces `NO_VERIFICADO` no significa `READY` ni cierre.
+Una discrepancia de identidad, artefacto, datos o seguridad bloquea fix-forward.
 
 ## 6. Datos y limpieza
 
