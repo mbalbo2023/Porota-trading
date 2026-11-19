@@ -111,6 +111,8 @@ def test_probe_uses_exact_current_and_book_but_never_simulates(
     assert ["endpoint=" + endpoint in detail for (_, detail), endpoint in zip(
         native_receipts, ("current", "book"))] == [True, True]
     assert all("wire_sha256=" + "a" * 64 in detail for _, detail in native_receipts)
+    assert all("identity5=AL30:BONOS:BYMA:ARS:INMEDIATA" in detail
+               for _, detail in native_receipts)
     assert all("http_status=200" in detail and "market_timestamp_utc=" in detail
                and "wire_received_at_utc=" in detail for _, detail in native_receipts)
 
@@ -614,8 +616,15 @@ def test_open_current_book_probes_request_candidate_without_granting_settlement_
             FROM financial_instrument_catalog WHERE ticker='AL30'""").fetchone()
         quote = c.execute("""SELECT opening_block_reason FROM market_snapshots
             WHERE symbol='AL30'""").fetchone()
+        native = c.execute("""SELECT detail FROM paper_events
+            WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'
+            ORDER BY id""").fetchall()
     assert catalog[0] == "REQUEST_CANDIDATE" and catalog[1] == "NOT_READY"
     assert quote[0] == "PPI_DIRECT_REST_OBSERVE_ONLY"
+    assert len(native) == 2
+    assert all(f"command_id={command_id};" in item[0] and
+               "identity5=AL30:BONOS:BYMA:ARS:INMEDIATA" in item[0]
+               for item in native)
     assert _ppi_direct_rest_probe_candidates(catalog_store, family="BONOS") == [
         ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
 

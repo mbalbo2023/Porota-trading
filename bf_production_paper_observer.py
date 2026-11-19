@@ -1270,6 +1270,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                            else None)
             store.event("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
                         f"command_id={command_id or 0};{ticker}:{family}:{settlement};"
+                        f"identity5={ticker}:{family}:{market}:{currency}:{settlement};"
                         f"endpoint={endpoint};http_status=200;"
                         f"wire_received_at_utc={_safe_ppi_evidence_timestamp(receipt.get('received_at_utc'))};"
                         f"market_timestamp_utc={_safe_ppi_evidence_timestamp(native_time)};"
