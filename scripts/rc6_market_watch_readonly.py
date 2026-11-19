@@ -653,7 +653,10 @@ def _verify_rootless_item(item, *, cid, role, current, identity):
     if ports != ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                  if role == "dashboard" else {}):
         raise ValueError("ROOTLESS_CONTAINER_PORTS_CHANGED")
-    if (item.get("State") or {}).get("OOMKilled") is True:
+    state = item.get("State")
+    if not isinstance(state, dict) or type(state.get("OOMKilled")) is not bool:
+        raise ValueError("ROOTLESS_CONTAINER_INSPECT_UNVERIFIED")
+    if state["OOMKilled"]:
         raise ValueError("ROOTLESS_CONTAINER_OOM")
     return item
 

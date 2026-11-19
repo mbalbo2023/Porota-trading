@@ -107,9 +107,12 @@ class MonitorContracts(unittest.TestCase):
                                  expected_tree_sha=expected_tree_sha)
 
     def rootless_release(self, *, source_sha, source_tree, image=IMAGE):
-        current = json.loads(self.provenance_path.read_text())
-        current.update(candidate_sha=source_sha, candidate_tree_sha=source_tree,
-                       deployment_backend="ROOTLESS_SPLIT", image_id=image)
+        # Each adversarial subtest must start from a clean PAPER/0 receipt:
+        # otherwise a previous broken field masks failure of the next guard.
+        current = {"candidate_sha": source_sha, "candidate_tree_sha": source_tree,
+                   "deployment_backend": "ROOTLESS_SPLIT", "image_id": image,
+                   "mode": "PRODUCTION_PAPER", "validation_status": "VALIDATED_RUNTIME",
+                   "real_orders_sent": 0, "real_order_routes": "NOT_CALLED"}
         self.provenance_path.write_text(json.dumps(current))
         observed = {}
         for index, role in enumerate(monitor.CONTAINERS, start=1):
@@ -658,6 +661,21 @@ class MonitorContracts(unittest.TestCase):
                     monitor._verify_rootless_item(altered, cid=observer["Id"], role="observer",
                                                   current=current, identity=identity)
 
+    def test_private_docker_oom_evidence_must_be_explicit_boolean(self):
+        home, _, current, _, items, _, _, _ = self.rootless_production_fixture()
+        identity = SimpleNamespace(operator=home / ".config/porota-rc6/operator")
+        observer = items[current["roles"]["observer"]]
+        for bad_state in ({"Status": "running"}, {"Status": "running", "OOMKilled": None},
+                          {"Status": "running", "OOMKilled": "false"},
+                          {"Status": "running", "OOMKilled": 0}):
+            with self.subTest(bad_state=bad_state):
+                altered = dict(observer, State=bad_state)
+                with self.assertRaisesRegex(
+                        ValueError, "ROOTLESS_CONTAINER_INSPECT_UNVERIFIED"):
+                    monitor._verify_rootless_item(
+                        altered, cid=observer["Id"], role="observer",
+                        current=current, identity=identity)
+
     def test_rootless_resolver_requires_private_current_and_two_pinned_cids(self):
         home, marker, current, daemon, items, runner, calls, account = self.rootless_production_fixture()
         # This source commit contains NO private copied Python helper; the
@@ -711,13 +729,39 @@ class MonitorContracts(unittest.TestCase):
             self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(observation))
             self.assertEqual(observation["provenance_identity"], "ROOTLESS_PRODUCT_TREE_MATCHED")
             self.assertEqual(set(observation["containers"]), {"observer", "dashboard"})
-            daemon["ID"] = "forged-daemon"
-            with self.assertRaises(ValueError):
-                monitor._rootless_context(runner=runner)
-            daemon["ID"] = current["daemon_id"]
-            items[current["roles"]["dashboard"]]["Config"]["Labels"]["io.porota.role"] = "observer"
-            with self.assertRaises(ValueError):
-                monitor._rootless_context(runner=runner)
+            # End-to-end through the real strict private current+Docker adapter:
+            # a product HEAD tree ahead of this exact release is pending, not
+            # a claim that the ahead tree is deployed.
+            with patch.object(monitor, "_rootless_context",
+                    side_effect=lambda: real_context(runner=runner)), patch.object(
+                    monitor, "independent_session", return_value={"state": "OPEN"}), patch.object(
+                    monitor, "_resources", return_value=self.resources), patch.object(
+                    monitor, "_host_control_state", return_value={
+                        "legacy_health_timer": "inactive", "fast_health_timer": "active"}):
+                pending = monitor.probe(root=self.root, at=NOW,
+                    expected_sha="f" * 40, expected_tree_sha="f" * 40)
+                self.assertEqual(pending["provenance_identity"], "PRODUCT_TREE_MISMATCH",
+                                 pending["rootless_probe_reason"])
+                self.assertEqual(pending["release_status"], "RELEASE_PENDING")
+                self.assertIn("PRODUCT_RELEASE_PENDING", self.codes(pending, "P1"))
+                self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(pending))
+                daemon["ID"] = "forged-daemon"
+                with self.assertRaises(ValueError):
+                    real_context(runner=runner)
+                missing_private = monitor.probe(root=self.root, at=NOW,
+                    expected_sha="f" * 40, expected_tree_sha="f" * 40)
+                self.assertNotEqual(missing_private.get("release_status"), "RELEASE_PENDING")
+                self.assertIn("DEPLOY_PROVENANCE_UNVERIFIED",
+                              self.codes(missing_private, "P0"))
+                daemon["ID"] = current["daemon_id"]
+                items[current["roles"]["dashboard"]]["Config"]["Labels"]["io.porota.role"] = "observer"
+                with self.assertRaises(ValueError):
+                    real_context(runner=runner)
+                mismatched_cid = monitor.probe(root=self.root, at=NOW,
+                    expected_sha="f" * 40, expected_tree_sha="f" * 40)
+                self.assertNotEqual(mismatched_cid.get("release_status"), "RELEASE_PENDING")
+                self.assertIn("DEPLOY_PROVENANCE_UNVERIFIED",
+                              self.codes(mismatched_cid, "P0"))
             marker.unlink()
             marker.symlink_to(self.provenance_path)
             with self.assertRaises(ValueError):
