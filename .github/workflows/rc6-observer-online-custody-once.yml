@@ -1,0 +1,181 @@
+name: RC6 OBSERVER online WAL custody — guarded one-shot
+
+# A729 INVENTORY_ONLY and A511 offhost cannot reconcile the live 2.8 GiB
+# OBSERVER WAL. A private online SQLite snapshot is intentionally a distinct
+# manual host-writer operation requiring global DEPLOY_OWNER. No cron/push.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-observer-online-custody-once.yml'
+      - 'scripts/rc6_observer_online_custody_once.py'
+      - 'tests/test_rc6_observer_online_custody_once.py'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Metadata-only PREFLIGHT or explicitly owned one-shot private custody'
+        required: true
+        type: choice
+        options: [PREFLIGHT_ONLY, CUSTODY_ONCE]
+      deploy_owner_receipt_id:
+        description: 'Current ACTIVE global DEPLOY_OWNER issue #980 comment ID; required only for CUSTODY_ONCE'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned control-plane YAML parser
+        run: python3 -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
+      - name: Validate actual SQLite WAL, private restore and fail-closed contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/rc6_observer_online_custody_once.py \
+            tests/test_rc6_observer_online_custody_once.py
+          python3 -m unittest discover -s tests -p 'test_rc6_observer_online_custody_once.py' -v
+          git diff --check
+
+  host_custody:
+    needs: contracts
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      REQUEST_MODE: ${{ inputs.mode }}
+      DEPLOY_OWNER_RECEIPT_ID: ${{ inputs.deploy_owner_receipt_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Allocate private runner credentials and receipt
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$(mktemp -d -p "$RUNNER_TEMP" rc6-custody-private-XXXXXX)"
+          chmod 700 "$private"
+          echo "RC6_CUSTODY_PRIVATE=$private" >> "$GITHUB_ENV"
+      - name: Require current exclusive DEPLOY_OWNER before any host writer
+        id: owner_gate
+        if: inputs.mode == 'CUSTODY_ONCE'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 -B scripts/rc6_observer_online_custody_once.py \
+            verify-owner "$DEPLOY_OWNER_RECEIPT_ID"
+      - name: Execute only bounded host metadata or private one-shot custody
+        id: remote
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private="$RC6_CUSTODY_PRIVATE"
+          test -n "$DO_HOST" && test -n "$DO_USER" && \
+            test -n "$DO_SSH_KEY" && test -n "$DO_KNOWN_HOSTS" || {
+              echo '::error::CUSTODY_HOST_ACCESS_UNAVAILABLE'
+              exit 2
+            }
+          case "$REQUEST_MODE" in
+            PREFLIGHT_ONLY) remote_command='timeout 790 python3 -B - host-preflight' ;;
+            CUSTODY_ONCE)
+              case "$GITHUB_RUN_ID" in ''|*[!0-9]*) exit 2 ;; esac
+              remote_command="timeout 790 python3 -B - host-custody $GITHUB_RUN_ID" ;;
+            *) exit 2 ;;
+          esac
+          printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
+          printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
+          chmod 600 "$private/id_key" "$private/known_hosts"
+          ulimit -f 128
+          set +e
+          timeout 820 ssh -i "$private/id_key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" "$remote_command" \
+            < scripts/rc6_observer_online_custody_once.py \
+            > "$private/.raw.json" 2>/dev/null
+          remote_rc=$?
+          set -e
+          echo "RC6_CUSTODY_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
+          test "$remote_rc" -eq 0 || echo '::warning::CUSTODY_REMOTE_HOLD_SANITIZED'
+      - name: Sanitize strictly bounded public receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_CUSTODY_PRIVATE:-}"
+          test -n "$private" && test -d "$private" || exit 2
+          python3 -B scripts/rc6_observer_online_custody_once.py sanitize \
+            "$REQUEST_MODE" "$private/.raw.json" "$private/a-custody-public.json" \
+            "${RC6_CUSTODY_REMOTE_RC:-255}"
+      - name: Upload JSON metadata only — never private database
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-observer-custody-${{ github.run_id }}
+          path: ${{ env.RC6_CUSTODY_PRIVATE }}/a-custody-public.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy only ephemeral runner credentials and raw receipt
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          private="${RC6_CUSTODY_PRIVATE:-}"
+          if test -n "$private" && test -d "$private" && \
+             test "${private#"$RUNNER_TEMP"/}" != "$private" && \
+             test "$(stat -c %a "$private")" = 700; then
+            for file in "$private/id_key" "$private/known_hosts" \
+                        "$private/.raw.json" "$private/a-custody-public.json"; do
+              if test -f "$file" && test ! -L "$file"; then
+                shred -u -- "$file"
+              fi
+            done
+            rmdir "$private"
+          fi
+      - name: Never classify failed host custody as success
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${RC6_CUSTODY_REMOTE_RC:-255}" -eq 0
+          python3 - "$RC6_CUSTODY_PRIVATE/a-custody-public.json" "$REQUEST_MODE" <<'PY'
+          import json
+          import sys
+          expected = {'PREFLIGHT_ONLY': 'PREFLIGHT_METADATA_PASS',
+                      'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK'}
+          try:
+              with open(sys.argv[1], 'rb') as source:
+                  raw = source.read(8193)
+              receipt = json.loads(raw)
+              verified = (len(raw) <= 8192 and
+                          receipt.get('state') == expected.get(sys.argv[2]) and
+                          receipt.get('schema') == 'rc6.observer-online-custody-once.v1')
+          except (OSError, ValueError, TypeError, AttributeError):
+              verified = False
+          if not verified:
+              raise SystemExit('RC6_CUSTODY_SANITIZED_HOLD')
+          PY
