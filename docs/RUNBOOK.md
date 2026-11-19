@@ -122,7 +122,40 @@ y referencias antes de borrar; medir espacio antes/después. Prohibidos prune
 global, force, volúmenes/DB y cualquier recurso ajeno. Si algo debe conservarse,
 registrar identidad y motivo. El espacio libre no demuestra que hubo limpieza.
 
-## 7. Evidencia, incidentes y cierre
+## 7. PPI Current/Book — una sesión y evidencia por instrumento
+
+PPI no se sustituyó por otro proveedor: el SDK de PPI llama a sus endpoints
+REST/HTTP. El observador es propietario de la sesión autenticada de mercado;
+un diagnóstico no debe crear otro `ProductionMarketReader`, llamar otra vez a
+`login_once()` ni abrir un proceso que autentique por separado. El
+`ScannerLoginInterlock` separa intentos de autenticación; el presupuesto REST
+y su lock serializan lecturas. **Ninguno es un candado comercial de PPI ni
+acredita por sí mismo frescura, cuotas o capacidad EXIT.**
+
+La función nativa `bf_production_paper_observer._ppi_direct_rest_observe_only`
+reutiliza la sesión y el guard HTTP existentes. Para una muestra fuera de rueda,
+la solicitud debe llegar al mismo scanner mediante un comando cerrado de la
+cola `observer_commands` y un emisor de GitHub Actions autorizado. El comando
+caduca en la fecha/ventana ART declarada; no se reintenta automáticamente si
+una ejecución previa quedó parcial o `RUNNING`. Un SDK que reintenta o intenta
+reautenticar dentro del ámbito de evidencia no recibe un segundo envío HTTP.
+No introducir un servicio, parser, cliente, presupuesto o PR duplicado.
+
+Cada familia debe aportar una identidad PPI inequívoca de cinco campos y
+recibos independientes de Current y Book con estado HTTP, fecha de mercado y
+huella del cuerpo nativo. Registrar la causa exacta de cualquier `HOLD`:
+identidad inexistente/ambigua, sesión no disponible, ventana vencida, prioridad
+EXIT, presupuesto/breaker o respuesta/Book inválido. Una falta de testigo no
+demuestra que PPI carezca de información. Permitir simulación PAPER con datos
+históricos o stale debidamente etiquetados **no** convierte el instrumento en
+`READY` para decisiones basadas en cotización actual. Ninguna sonda autoriza
+órdenes ni modifica la postura de posiciones.
+
+Este apartado fija el contrato de trabajo; **no certifica que el comando, su
+workflow emisor o la captura física estén desplegados**. Sólo SHA, CI, artifact
+y recibos del runtime podrán elevar esos estados.
+
+## 8. Evidencia, incidentes y cierre
 
 Registrar por separado código SHA/PR, run de Actions, manifest/digest, instalación
 y comportamiento. `ARTEFACTO_VALIDADO`, `DESPLEGADO` y `VALIDADO_RUNTIME` exigen
