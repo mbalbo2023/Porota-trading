@@ -65,6 +65,7 @@ class A658EtfOperatorHoldTests(unittest.TestCase):
                 self.assertFalse(features.get("entry_authority", False))
                 gate.assert_called_once()
         self.assert_no_paper_entry()
+
     def test_direct_etf_paper_admission_still_requires_native_source(self):
         # The preopen guard alone is mocked; native evidence is still mandatory.
         # No source, economics or actual PAPER order route is mocked into success.
@@ -76,6 +77,7 @@ class A658EtfOperatorHoldTests(unittest.TestCase):
         self.assertEqual((opened, reason, paper_id), (False, "PPI_BOOK_UNVERIFIED_TEST", None))
         gate.assert_called_once()
         self.assert_no_paper_entry()
+
     def test_scalping_etf_without_native_inputs_stays_hold(self):
         record = synthetic_record()
         action = scalping.evaluate_candidate(self.store, record, at=AT)
@@ -87,6 +89,7 @@ class A658EtfOperatorHoldTests(unittest.TestCase):
             self.assertNotEqual(row["reason"], "ETF_OPERATOR_HOLD")
             self.assertTrue(row["reason"])
         self.assert_no_paper_entry()
+
     def test_scalping_active_etf_rechecks_session_before_broker(self):
         with patch.dict(os.environ, {"PAPER_SCALPING_MODE": "ACTIVE_PAPER"}), \
              patch.object(scalping, "_market_open", return_value=False) as session:
@@ -96,6 +99,7 @@ class A658EtfOperatorHoldTests(unittest.TestCase):
         with self.store.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_decisions").fetchone()[0], 0)
         self.assert_no_paper_entry()
+
     def test_dynamic_route_allows_etf_screening_but_not_entry(self):
         for family in ("ETF", "ETFS"):
             for scalp in (False, True):
@@ -115,6 +119,7 @@ class A658EtfOperatorHoldTests(unittest.TestCase):
         from rc6_operator_family_hold import paper_entry_hold_reason
         self.assertEqual(paper_entry_hold_reason("ETF"), "")
         self.assertEqual(paper_entry_hold_reason("ETFS"), "")
+
     def test_other_families_and_existing_etf_exit_path_unaffected(self):
         for family in ("ACCIONES", "CEDEARS"):
             with self.subTest(family=family):
