@@ -10,6 +10,7 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ import stat
 import sys
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # The one-shot runner is invoked by absolute path from the container.  Keep the
 # repository modules importable without depending on Docker's working directory.
@@ -222,57 +224,160 @@ def _save(db, identity, *, state: str, source: str = "", requested_from: str = "
         )
 
 
+def _archive_identity(wrapper: dict) -> tuple[str, ...] | None:
+    """Require the same explicit seven-key RAW identity from either archive.
+
+    Wrapper labels and SHA attest only byte custody. An absent basis, or
+    contradictory catalogue hint, cannot authorize RAW economic attribution.
+    """
+    from bs_instrument_contracts import cash_currency
+
+    if (not isinstance(wrapper, dict) or wrapper.get("price_basis") != "RAW" or
+            wrapper.get("adjustment_basis") != "RAW_NO_ADJUSTMENT" or
+            ("adjusted" in wrapper and wrapper["adjusted"] is not False) or
+            wrapper.get("authority") not in (None, "RAW_PROVIDER_EVIDENCE_ONLY")):
+        return None
+    if (wrapper.get("instrument_type") and wrapper.get("asset_class") and
+            str(wrapper["instrument_type"]).strip().upper() !=
+            str(wrapper["asset_class"]).strip().upper()):
+        return None
+    metadata = wrapper.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        return None
+    metadata = metadata or {}
+    if (metadata.get("price_basis") not in (None, "RAW") or
+            metadata.get("adjustment_basis") not in (None, "RAW_NO_ADJUSTMENT") or
+            ("adjusted" in metadata and metadata["adjusted"] is not False)):
+        return None
+    try:
+        identity = _exact_key((
+            str(wrapper["symbol"]).strip().upper(),
+            str(wrapper.get("instrument_type") or wrapper["asset_class"]).strip().upper(),
+            str(wrapper["market"]).strip().upper(),
+            str(wrapper["settlement"]).strip().upper(),
+            cash_currency(wrapper["currency"]), "RAW", "RAW_NO_ADJUSTMENT"))
+        aliases = (("symbol", 0), ("instrument_type", 1), ("asset_class", 1),
+                   ("market", 2), ("exchange", 2), ("settlement", 3))
+        if any(str(metadata[name]).strip().upper() != identity[index]
+               for name, index in aliases if metadata.get(name) not in (None, "")):
+            return None
+        if (metadata.get("currency") not in (None, "") and
+                cash_currency(metadata["currency"]) != identity[4]):
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    return identity
+
+
 def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tuple[list[dict], str]]:
     import fb_raw_evidence_exact_v1 as exact
 
     path = exact.manifest_path()
     if not path.exists():
         return _legacy_archive_payloads(targets)
-    c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=20)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA query_only=ON")
-    selected: dict[tuple[str, str, str, str], tuple[list[dict], str]] = {}
     try:
-        rows = c.execute(
-            """SELECT recorded_at,inner_sha256,wrapper_json
-               FROM exact_attempts_v1
-               WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
-                 AND inner_sha256 IS NOT NULL ORDER BY recorded_at DESC"""
-        )
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            return _legacy_archive_payloads(targets)
+        c = sqlite3.connect(path.resolve(strict=True).as_uri() + "?mode=ro",
+                            uri=True, timeout=20)
+    except (OSError, sqlite3.Error):
+        return _legacy_archive_payloads(targets)
+
+    selected: dict[tuple[str, ...], tuple[list[dict], str]] = {}
+    selected_at: dict[tuple[str, ...], datetime] = {}
+    selected_sizes: dict[tuple[str, ...], int] = {}
+    scanned_bytes = selected_bytes = 0
+    with closing(c):
+        c.row_factory = sqlite3.Row
+        try:
+            c.execute("PRAGMA query_only=ON")
+            # Physical recency is assessed before origin/quality filters. A
+            # long succession of rejects cannot become an unbounded sweep.
+            rows = c.execute(
+                """SELECT recorded_at,inner_sha256,body_hash,body_sha256,body_bytes,
+                          CASE WHEN length(CAST(wrapper_json AS BLOB))<=?
+                               THEN wrapper_json END AS wrapper_json
+                   FROM exact_attempts_v1
+                   WHERE rowid IN (SELECT rowid FROM exact_attempts_v1
+                                   ORDER BY rowid DESC LIMIT ?)
+                     AND origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
+                   ORDER BY rowid DESC""",
+                (LEGACY_ARCHIVE_MAX_BODY_BYTES, LEGACY_ARCHIVE_SCAN_LIMIT),
+            )
+        except sqlite3.Error:
+            return _legacy_archive_payloads(targets)
         for row in rows:
-            try:
-                wrapper = json.loads(row["wrapper_json"] or "{}")
-                metadata = wrapper.get("metadata") if isinstance(wrapper.get("metadata"), dict) else {}
-                identity = (
-                    str(wrapper.get("symbol") or metadata.get("symbol") or "").strip().upper(),
-                    str(wrapper.get("instrument_type") or metadata.get("instrument_type") or
-                        wrapper.get("asset_class") or metadata.get("asset_class") or "").strip().upper(),
-                    str(wrapper.get("market") or metadata.get("market") or metadata.get("exchange") or "").strip().upper(),
-                    str(wrapper.get("settlement") or metadata.get("settlement") or "").strip().upper(),
-                )
-                currency = wrapper.get("currency") or metadata.get("currency")
-                if not currency:
-                    continue
-                from bs_instrument_contracts import cash_currency
-                identity = (*identity, cash_currency(currency), "RAW", "RAW_NO_ADJUSTMENT")
-                if identity not in targets or identity in selected:
-                    continue
-                rebuilt = json.loads(exact.reconstruct(wrapper["wrapper_json"] if "wrapper_json" in wrapper
-                                                       else row["wrapper_json"], row["inner_sha256"]))
-                try:
-                    bars = json.loads(rebuilt.get("payload_json") or "[]")
-                except (TypeError, ValueError):
-                    continue
-                if not isinstance(bars, list):
-                    continue
-                dates = [str(x.get("date", ""))[:10] for x in bars
-                         if isinstance(x, dict) and x.get("date")]
-                if dates and max(dates) >= CUTOFF.isoformat():
-                    selected[identity] = (bars, str(row["recorded_at"]))
-            except (OSError, KeyError, TypeError, ValueError):
+            wrapper_json = row["wrapper_json"]
+            body_bytes = row["body_bytes"]
+            if (not isinstance(wrapper_json, str) or
+                    type(body_bytes) is not int or
+                    not 0 < body_bytes <= LEGACY_ARCHIVE_MAX_BODY_BYTES):
                 continue
-    finally:
-        c.close()
+            wrapper_size = len(wrapper_json.encode("utf-8", "surrogatepass"))
+            scanned_bytes += wrapper_size
+            if scanned_bytes > LEGACY_ARCHIVE_MAX_SCANNED_BYTES:
+                break
+            try:
+                attempted = datetime.fromisoformat(str(row["recorded_at"]).replace("Z", "+00:00"))
+                if attempted.tzinfo is None:
+                    continue
+                digest = row["inner_sha256"]
+                if (not isinstance(digest, str) or len(digest) != 64 or
+                        any(ch not in "0123456789abcdef" for ch in digest)):
+                    continue
+                object_path = exact.object_path(digest)
+                object_stat = object_path.lstat()
+                if not stat.S_ISREG(object_stat.st_mode) or object_stat.st_nlink != 1:
+                    continue
+                # Never call reconstruct() with an unbounded gzip member. A
+                # compromised size in SQLite cannot turn the cold read into
+                # gigabytes of decompression.
+                with gzip.open(object_path, "rb") as stream:
+                    inner = stream.read(LEGACY_ARCHIVE_MAX_BODY_BYTES + 1)
+                scanned_bytes += len(inner)
+                if (scanned_bytes > LEGACY_ARCHIVE_MAX_SCANNED_BYTES or
+                        len(inner) > LEGACY_ARCHIVE_MAX_BODY_BYTES or
+                        hashlib.sha256(inner).hexdigest() != digest):
+                    if scanned_bytes > LEGACY_ARCHIVE_MAX_SCANNED_BYTES:
+                        break
+                    continue
+                wrapper = json.loads(wrapper_json)
+                if not isinstance(wrapper, dict) or "payload_json" in wrapper:
+                    continue
+                wrapper["payload_json"] = inner.decode("utf-8", "surrogatepass")
+                encoded = exact.canonical(wrapper).encode("utf-8", "surrogatepass")
+                expected_hash = hashlib.sha256(encoded).hexdigest()
+                if (len(encoded) != body_bytes or
+                        expected_hash != row["body_hash"] or
+                        expected_hash != row["body_sha256"]):
+                    continue
+                identity = _archive_identity(wrapper)
+                if identity not in targets:
+                    continue
+                if identity in selected_at and attempted <= selected_at[identity]:
+                    continue
+                bars = json.loads(wrapper["payload_json"])
+                if not isinstance(bars, list) or len(bars) > 4096:
+                    continue
+                dates = [date.fromisoformat(x["date"][:10])
+                         for x in bars if isinstance(x, dict)
+                         and isinstance(x.get("date"), str)
+                         and len(x["date"]) >= 10]
+                if (not dates or max(dates) < CUTOFF or
+                        max(dates) > attempted.astimezone(
+                            ZoneInfo("America/Argentina/Buenos_Aires")).date()):
+                    continue
+                previous_size = selected_sizes.get(identity, 0)
+                if selected_bytes - previous_size + body_bytes > LEGACY_ARCHIVE_SELECTED_BYTES:
+                    continue
+            except (OSError, EOFError, KeyError, TypeError, ValueError,
+                    UnicodeDecodeError, RecursionError):
+                continue
+            selected[identity] = (bars, row["recorded_at"])
+            selected_at[identity] = attempted
+            selected_bytes += body_bytes - previous_size
+            selected_sizes[identity] = body_bytes
     # The byte-exact external manifest can be incomplete while the original
     # history DB still retains a valid archive. Never overwrite its selected
     # identities with lower-priority legacy rows.
@@ -288,8 +393,6 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
     """
     if not targets:
         return {}
-    import bs_instrument_contracts as contracts
-
     # HistoricalStore.connect() may create an absent DB and opens RW before
     # PRAGMA query_only. Cold archive inspection must open a pre-existing file
     # with SQLite mode=ro from its exact identity path instead.
@@ -308,16 +411,22 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
     selected_sizes = {}
     scanned_bytes = 0
     with closing(c):
-        c.execute("PRAGMA query_only=ON")
-        if not c.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
-                             AND name='historical_raw_archive'""").fetchone():
+        try:
+            c.execute("PRAGMA query_only=ON")
+            if not c.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+                                 AND name='historical_raw_archive'""").fetchone():
+                return {}
+            rows = c.execute("""SELECT body_hash,recorded_at,
+                  CASE WHEN length(CAST(body_json AS BLOB))<=?
+                       THEN body_json END AS body_json
+              FROM historical_raw_archive
+              WHERE id IN (SELECT id FROM historical_raw_archive
+                           ORDER BY id DESC LIMIT ?)
+                AND origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
+              ORDER BY id DESC""", (LEGACY_ARCHIVE_MAX_BODY_BYTES,
+                                    LEGACY_ARCHIVE_SCAN_LIMIT))
+        except sqlite3.Error:
             return {}
-        rows = c.execute("""SELECT body_hash,recorded_at,body_json
-          FROM historical_raw_archive
-          WHERE id IN (SELECT id FROM historical_raw_archive
-                       ORDER BY id DESC LIMIT ?)
-            AND origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
-          ORDER BY id DESC""", (LEGACY_ARCHIVE_SCAN_LIMIT,))
         for expected_hash, recorded_at, raw in rows:
             if not isinstance(raw, str):
                 continue
@@ -341,17 +450,7 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
                 wrapper = json.loads(raw)
                 if attempted.tzinfo is None or not isinstance(wrapper, dict):
                     continue
-                metadata = wrapper.get("metadata")
-                metadata = metadata if isinstance(metadata, dict) else {}
-                identity = (
-                    str(wrapper.get("symbol") or metadata.get("symbol") or "").strip().upper(),
-                    str(wrapper.get("instrument_type") or metadata.get("instrument_type") or
-                        wrapper.get("asset_class") or metadata.get("asset_class") or "").strip().upper(),
-                    str(wrapper.get("market") or metadata.get("market") or metadata.get("exchange") or "").strip().upper(),
-                    str(wrapper.get("settlement") or metadata.get("settlement") or "").strip().upper(),
-                    contracts.cash_currency(wrapper.get("currency") or metadata.get("currency")),
-                    "RAW", "RAW_NO_ADJUSTMENT",
-                )
+                identity = _archive_identity(wrapper)
                 if identity not in targets:
                     continue
                 previous = selected.get(identity)
@@ -369,12 +468,14 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
                             days.append(date.fromisoformat(bar["date"][:10]))
                         except ValueError:
                             continue
-                if not days or max(days) < CUTOFF:
+                if (not days or max(days) < CUTOFF or
+                        max(days) > attempted.astimezone(
+                            ZoneInfo("America/Argentina/Buenos_Aires")).date()):
                     continue
                 previous_size = selected_sizes.get(identity, 0)
                 if selected_bytes - previous_size + len(encoded) > LEGACY_ARCHIVE_SELECTED_BYTES:
                     continue
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, RecursionError):
                 continue
             selected[identity] = (bars, recorded_at)
             selected_bytes += len(encoded) - previous_size

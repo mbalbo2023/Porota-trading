@@ -2,6 +2,7 @@
 import hashlib
 import json
 import sqlite3
+import tracemalloc
 from datetime import timedelta
 import pytest
 
@@ -54,8 +55,135 @@ def _archive_attempt(store, *, body, origin="PPI_HISTORY", quality="VALID_PAYLOA
 
 def _ppi_wrapper(currency="ARS", close=100):
     return {"symbol": "TEST", "instrument_type": "ACCIONES", "market": "BYMA",
-            "settlement": "CI", "currency": currency,
+            "settlement": "CI", "currency": currency, "price_basis": "RAW",
+            "adjustment_basis": "RAW_NO_ADJUSTMENT", "adjusted": False,
             "payload_json": json.dumps([{"date": "2026-09-21", "close": close}])}
+
+
+def _external_attempt(tmp_path, monkeypatch, *, close=100, recorded_at="2026-09-22T10:00:00+00:00",
+                      row_key="one", quality="VALID_PAYLOAD", changes=None):
+    import fb_raw_evidence_exact_v1 as exact
+
+    monkeypatch.setenv("PPI_HISTORY_RAW_STORAGE_MODE", "EXTERNAL_EXACT_V1")
+    monkeypatch.setenv("PPI_HISTORY_EVIDENCE_ROOT", str(tmp_path / "exact"))
+    monkeypatch.setattr(repair, "_history_store", lambda: _Store(tmp_path / "no-legacy.db"))
+    wrapper = {**_ppi_wrapper(close=close), "price_basis": "RAW",
+               "adjustment_basis": "RAW_NO_ADJUSTMENT",
+               "authority": "RAW_PROVIDER_EVIDENCE_ONLY"}
+    wrapper.update(changes or {})
+    exact.archive_wrapper(row_key=row_key, wrapper=wrapper, recorded_at=recorded_at,
+                          quality=quality)
+    return exact.manifest_path()
+
+
+def _target():
+    return ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+
+
+def test_external_manifest_selects_only_exact_verified_raw_object(tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, close=109)
+
+    selected = repair._archive_payloads({_target()})
+
+    assert selected == {_target(): ([{"date": "2026-09-21", "close": 109}],
+                                    "2026-09-22T10:00:00+00:00")}
+
+
+@pytest.mark.parametrize("field,replacement", [
+    ("body_hash", "f" * 64),
+    ("body_sha256", "f" * 64),
+    ("body_bytes", 1),
+])
+def test_external_manifest_rejects_corrupted_full_body_commitment(
+        tmp_path, monkeypatch, field, replacement):
+    manifest = _external_attempt(tmp_path, monkeypatch)
+    with sqlite3.connect(manifest) as db:
+        db.execute(f"UPDATE exact_attempts_v1 SET {field}=?", (replacement,))
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+@pytest.mark.parametrize("changes", [
+    {"price_basis": "ADJUSTED"},
+    {"adjustment_basis": "SPLIT_ADJUSTED"},
+    {"price_basis": None},
+    {"market": None, "metadata": {"market": "BYMA"}},
+    {"currency": "ARS", "metadata": {"currency": "USD"}},
+    {"asset_class": "CEDEARS"},
+    {"metadata": {"adjustment_basis": "SPLIT_ADJUSTED"}},
+    {"authority": "PROMOTED_FULL_OHLC"},
+    {"adjusted": True},
+])
+def test_external_manifest_cannot_infer_raw_basis_or_qualified_identity(
+        tmp_path, monkeypatch, changes):
+    _external_attempt(tmp_path, monkeypatch, changes=changes)
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_rejects_future_payload_observed_before_cutoff(tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, recorded_at="2026-09-20T10:00:00+00:00")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_unvalidated_scanner_capture_cannot_be_salvaged(
+        tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, quality="UNVALIDATED")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_rejects_oversized_gzip_inner_even_when_compressed_small(
+        tmp_path, monkeypatch):
+    bars = [{"date": "2026-09-21", "close": 100,
+             "opaque": "x" * (repair.LEGACY_ARCHIVE_MAX_BODY_BYTES + 1)}]
+    _external_attempt(tmp_path, monkeypatch, changes={"payload_json": json.dumps(bars)})
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_rejects_deeply_nested_payload_without_crashing_run(
+        tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, changes={
+        "payload_json": "[" * 10000 + "0" + "]" * 10000})
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_existing_manifest_with_missing_table_fails_closed(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    monkeypatch.setenv("PPI_HISTORY_EVIDENCE_ROOT", str(tmp_path / "corrupt-manifest"))
+    monkeypatch.setattr(repair, "_history_store", lambda: _Store(tmp_path / "no-legacy.db"))
+    manifest = exact.manifest_path()
+    manifest.parent.mkdir(parents=True)
+    with sqlite3.connect(manifest) as db:
+        db.execute("CREATE TABLE unrelated(value TEXT)")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_scans_latest_physical_attempts_only(tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, close=109, row_key="old-valid")
+    _external_attempt(tmp_path, monkeypatch, close=999, row_key="new-unvalidated",
+                      quality="UNVALIDATED")
+    monkeypatch.setattr(repair, "LEGACY_ARCHIVE_SCAN_LIMIT", 1)
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_uses_actual_utc_observation_time_not_string_order(
+        tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, close=401, row_key="newer",
+                      recorded_at="2026-09-23T00:00:00-04:00")
+    _external_attempt(tmp_path, monkeypatch, close=301, row_key="older",
+                      recorded_at="2026-09-23T08:00:00+05:00")
+
+    selected = repair._archive_payloads({_target()})
+
+    assert selected[_target()][0] == [{"date": "2026-09-21", "close": 401}]
+    assert selected[_target()][1] == "2026-09-23T00:00:00-04:00"
 
 
 def test_legacy_raw_archive_recovers_exact_ppi_identity_when_external_manifest_absent(tmp_path, monkeypatch):
@@ -93,6 +221,76 @@ def test_legacy_archive_rejects_wrong_hash_non_ppi_origin_and_unknown_identity(t
     key = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
 
     assert repair._archive_payloads({key}) == {}
+
+
+@pytest.mark.parametrize("changes", [
+    {"price_basis": "ADJUSTED"},
+    {"adjustment_basis": "SPLIT_ADJUSTED"},
+    {"adjusted": True},
+    {"price_basis": None},
+    {"market": None, "metadata": {"market": "BYMA"}},
+    {"currency": "ARS", "metadata": {"currency": "USD"}},
+    {"asset_class": "CEDEARS"},
+])
+def test_legacy_archive_cannot_ascribe_ambiguous_or_adjusted_bars_to_raw(
+        tmp_path, monkeypatch, changes):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "legacy.db")
+    _archive_table(store)
+    _archive_attempt(store, body={**_ppi_wrapper(), **changes})
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_legacy_archive_refuses_payload_observed_before_its_market_date(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "legacy.db")
+    _archive_table(store)
+    _archive_attempt(store, body=_ppi_wrapper(), recorded_at="2026-09-20T10:00:00+00:00")
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_legacy_archive_missing_required_columns_fails_closed(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "legacy-partial.db")
+    with store.connect() as db:
+        db.execute("CREATE TABLE historical_raw_archive(id INTEGER PRIMARY KEY,origin TEXT)")
+        db.execute("INSERT INTO historical_raw_archive VALUES(1,'PPI_HISTORY')")
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_legacy_archive_does_not_materialize_oversized_body_before_guard(
+        tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "huge-legacy.db")
+    _archive_table(store)
+    with store.connect() as db:
+        db.execute("""INSERT INTO historical_raw_archive
+          (origin,row_key,body_hash,recorded_at,quality,body_json)
+          VALUES('PPI_HISTORY','huge','unused','2026-09-22T10:00:00+00:00',
+                 'VALID_PAYLOAD',zeroblob(?))""", (8 * 1024 * 1024,))
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+
+    tracemalloc.start()
+    try:
+        assert repair._archive_payloads({_target()}) == {}
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024  # SQLite must project NULL for the 8 MiB BLOB.
 
 
 def test_legacy_archive_deduplicates_to_latest_valid_attempt(tmp_path, monkeypatch):
