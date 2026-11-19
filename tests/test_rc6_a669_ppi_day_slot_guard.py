@@ -13,7 +13,9 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
+import zipfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -89,7 +91,7 @@ class A669GuardTests(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(self.open_command_gate(**args), ("", reason))
 
-    def test_open_main_gate_blocks_unproved_global_ppi_session_even_with_good_calendar(self):
+    def test_open_main_gate_rejects_unverified_promote_even_with_env_singleton_claim(self):
         with tempfile.TemporaryDirectory(prefix="a670-open-one-") as temp:
             env_path = Path(temp) / "gh-env"
             env_path.touch()
@@ -105,17 +107,18 @@ class A669GuardTests(unittest.TestCase):
             with patch.dict(os.environ, environment), \
                  patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
                  patch.object(guard, "pinned_engine_ok", return_value=True), \
-                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
+                 patch.object(guard, "_trusted_promote_claim",
+                              side_effect=ValueError("PROMOTE_ARTIFACT_CUSTODY_HOLD")), \
                  patch.object(guard, "_official_session_check",
                               return_value=(True, guard.SESSION_REGULAR)), \
                  redirect_stdout(io.StringIO()):
                 self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 2)
             output = env_path.read_text()
-        self.assertIn("RC6_A670_HOLD_REASON=PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED\n", output)
+        self.assertIn("RC6_A670_HOLD_REASON=OBSERVER_COMMAND_RELEASE_UNPINNED\n", output)
         self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
         self.assertNotIn("PPI_DIRECT_REST_POSTCLOSE_ONCE", output)
 
-    def test_postclose_main_gate_also_blocks_unproved_global_ppi_session(self):
+    def test_postclose_main_gate_rejects_unverified_promote_before_host(self):
         # The existing scanner may be logged in, but exit-reader/scalping
         # are other login_once actors. No POSTCLOSE GET without global proof.
         with tempfile.TemporaryDirectory(prefix="a670-postclose-global-hold-") as temp:
@@ -133,13 +136,14 @@ class A669GuardTests(unittest.TestCase):
             with patch.dict(os.environ, environment), \
                  patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
                  patch.object(guard, "pinned_engine_ok", return_value=True), \
-                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
+                 patch.object(guard, "_trusted_promote_claim",
+                              side_effect=ValueError("PROMOTE_ARTIFACT_CUSTODY_HOLD")), \
                  patch.object(guard, "_official_postclose_check",
                               return_value=(True, guard.SESSION_POSTCLOSE)), \
                  redirect_stdout(io.StringIO()):
                 self.assertEqual(guard.main(now_utc=utc(20, 15, 19)), 2)
             output = env_path.read_text()
-        self.assertIn("RC6_A670_HOLD_REASON=PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED\n", output)
+        self.assertIn("RC6_A670_HOLD_REASON=OBSERVER_COMMAND_RELEASE_UNPINNED\n", output)
         self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
 
     def test_open_main_gate_holds_before_host_for_unaudited_day(self):
@@ -157,7 +161,6 @@ class A669GuardTests(unittest.TestCase):
             with patch.dict(os.environ, environment), \
                  patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
                  patch.object(guard, "pinned_engine_ok", return_value=True), \
-                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
                  patch.object(guard, "_official_session_check",
                               return_value=(False, "MARKET_CALENDAR_NOT_VERIFIED")), \
                  redirect_stdout(io.StringIO()):
@@ -186,6 +189,15 @@ class A669GuardTests(unittest.TestCase):
             with patch.dict(os.environ, environment), \
                  patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
                  patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_trusted_promote_claim",
+                              return_value={"source_sha": engine.ROOTLESS_CANDIDATE_SHA,
+                               "source_tree": engine.ROOTLESS_CANDIDATE_TREE,
+                               "image_id": engine.ROOTLESS_IMAGE_ID,
+                               "release_manifest_sha256": "a" * 64,
+                               "observer_cid": "1" * 64, "dashboard_cid": "2" * 64,
+                               "promote_run_id": 44442769638,
+                               "promote_run_attempt": 1,
+                               "runtime_artifact_digest": "sha256:" + "1" * 64}), \
                  patch.object(guard, "_official_session_check",
                               return_value=(True, guard.SESSION_REGULAR)), \
                  redirect_stdout(io.StringIO()):
@@ -193,6 +205,44 @@ class A669GuardTests(unittest.TestCase):
             output = env_path.read_text()
         self.assertIn("RC6_A670_HOLD_REASON=OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED\n", output)
         self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
+
+    def test_new_promote_claim_only_allows_runner_to_attempt_host_physical_custody(self):
+        claim = {"source_sha": "d" * 40, "source_tree": "e" * 40,
+                 "image_id": "sha256:" + "f" * 64,
+                 "release_manifest_sha256": "c" * 64,
+                 "observer_cid": "1" * 64, "dashboard_cid": "2" * 64,
+                 "promote_run_id": 888, "promote_run_attempt": 2,
+                 "runtime_artifact_digest": "sha256:" + "3" * 64}
+        with tempfile.TemporaryDirectory(prefix="a670-new-promote-") as temp:
+            env_path = Path(temp) / "gh-env"
+            env_path.touch()
+            values = {"RC6_A670_ISSUER_MODE": "observer_open_ten_family_command",
+                      "RC6_A670_OBSERVER_ART_DATE": "2026-11-19",
+                      "RC6_A670_OBSERVER_FAMILY": "ALL", "RC6_A630_PILOT_MODE": "OFF",
+                      "RC6_A630_POSTCLOSE_MODE": "OFF",
+                      "GITHUB_EVENT_NAME": "workflow_dispatch",
+                      "GITHUB_REPOSITORY": guard.REPOSITORY,
+                      "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
+                      "GITHUB_ENV": str(env_path),
+                      "RC6_PPI_SINGLE_SESSION_GLOBAL_ATTESTED": "1",
+                      "RC6_P0_EXPECTED_CANDIDATE_SHA": "0" * 40}
+            with patch.dict(os.environ, values), \
+                 patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
+                 patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_trusted_promote_claim", return_value=claim), \
+                 patch.object(guard, "_official_session_check",
+                              return_value=(True, guard.SESSION_REGULAR)), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 0)
+            rows = env_path.read_text().splitlines()
+        self.assertIn("RC6_A670_OBSERVER_COMMAND=PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL", rows)
+        self.assertIn("RC6_P0_EXPECTED_CANDIDATE_SHA=" + "d" * 40, rows)
+        self.assertIn("RC6_P0_EXPECTED_TREE_SHA=" + "e" * 40, rows)
+        self.assertIn("RC6_P0_EXPECTED_IMAGE_ID=sha256:" + "f" * 64, rows)
+        self.assertIn("RC6_P0_EXPECTED_OBSERVER_CID=" + "1" * 64, rows)
+        self.assertIn("RC6_P0_EXPECTED_DASHBOARD_CID=" + "2" * 64, rows)
+        self.assertIn("RC6_A670_PROMOTE_ARTIFACT_DIGEST=sha256:" + "3" * 64, rows)
+        self.assertNotIn("RC6_PPI_SINGLE_SESSION_GLOBAL_ATTESTED=1", rows)
 
     def test_observer_command_manual_gate_never_uses_sample_slot(self):
         self.assertEqual(self.command_gate(),
@@ -534,26 +584,168 @@ class A669GuardTests(unittest.TestCase):
         self.assertTrue(guard.pinned_engine_ok(source),
                         "A670 MUST re-pin reviewed changed A630 source before SSH")
 
-    def test_p0_issuer_release_pins_match_deploy_v2_physical_receipt(self):
-        from scripts.rc6_a630_host_ppi_current_book import (
-            ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID)
-        receipt = {
-            "RC6_P0_EXPECTED_CANDIDATE_SHA": "b3cbe57a5b4b82016a65a0e253b251abbb84a04c",
-            "RC6_P0_EXPECTED_TREE_SHA": "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0",
-            "RC6_P0_EXPECTED_IMAGE_ID": "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d",
-            "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256": "991eebea372810b7d6ea0fbb9c9295c7504d187d840e30af4c5e70f99845e792",
-        }
-        self.assertEqual(ROOTLESS_CANDIDATE_SHA, receipt["RC6_P0_EXPECTED_CANDIDATE_SHA"])
-        self.assertEqual(ROOTLESS_CANDIDATE_TREE, receipt["RC6_P0_EXPECTED_TREE_SHA"])
-        self.assertEqual(ROOTLESS_IMAGE_ID, receipt["RC6_P0_EXPECTED_IMAGE_ID"])
-        workflow = YAML.read_text()
-        for name, value in receipt.items():
-            self.assertIn(f"{name}: {value}", workflow)
-        with patch.dict(os.environ, receipt):
-            self.assertTrue(guard._issuer_pin_ready())
-        with patch.dict(os.environ, {**receipt,
-                "RC6_P0_EXPECTED_CANDIDATE_SHA": "96c626dc09a045f75f5e743c030e8f8228783a54"}):
-            self.assertFalse(guard._issuer_pin_ready())
+    def test_issuer_release_pins_come_only_from_promote_artifact_not_env(self):
+        workflow = yaml.load(YAML.read_text(), Loader=yaml.BaseLoader)
+        job = workflow["jobs"]["queue_observer_main_only"]
+        for key in ("RC6_P0_EXPECTED_CANDIDATE_SHA", "RC6_P0_EXPECTED_TREE_SHA",
+                    "RC6_P0_EXPECTED_IMAGE_ID",
+                    "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256"):
+            self.assertNotIn(key, job["env"])
+        self.assertEqual(workflow["permissions"]["actions"], "read")
+        preflight = next(step for step in job["steps"] if "OFFHOST same-day" in step.get("name", ""))
+        self.assertEqual(preflight["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertNotIn("PPI_SINGLE_SESSION_GLOBAL_ATTESTED", YAML.read_text())
+        self.assertNotIn("_issuer_pin_ready", YAML.read_text())
+        ssh = next(step for step in job["steps"]
+                   if "Strict private rootless SSH" in step.get("name", ""))
+        body = ssh["run"]
+        for name in ("RC6_P0_EXPECTED_CANDIDATE_SHA", "RC6_P0_EXPECTED_TREE_SHA",
+                     "RC6_P0_EXPECTED_IMAGE_ID",
+                     "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256",
+                     "RC6_P0_EXPECTED_OBSERVER_CID", "RC6_P0_EXPECTED_DASHBOARD_CID",
+                     "RC6_A670_PROMOTE_ARTIFACT_DIGEST"):
+            self.assertIn("'$" + name + "'", body)
+        self.assertIn("'global_ppi_single_session_verified':False", body)
+        self.assertNotIn("GH_TOKEN", body)
+
+    def test_gh_api_refuses_missing_token_and_never_calls_gh_without_it(self):
+        with patch.dict(os.environ, {"GH_TOKEN": ""}), \
+             patch.object(guard.subprocess, "Popen") as api:
+            with self.assertRaisesRegex(ValueError, "PROMOTE_ARTIFACT_CUSTODY_HOLD"):
+                guard._trusted_promote_claim()
+            api.assert_not_called()
+
+    def test_gh_cli_downloads_three_promote_endpoints_only_and_validates_binary_zip(self):
+        from hashlib import sha256
+        run = {"id": 888, "run_attempt": 2, "status": "completed",
+               "conclusion": "success", "event": "workflow_dispatch",
+               "path": ".github/workflows/porota-deploy-v2-promote.yml",
+               "head_branch": "deploy/rc6-pr69-isolated-20260915",
+               "head_sha": "a" * 40,
+               "head_repository": {"full_name": guard.REPOSITORY}}
+        runtime = {"schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
+                   "phase": "COMPLETE", "source_sha": "d" * 40,
+                   "source_tree": "e" * 40, "image_id": "sha256:" + "f" * 64,
+                   "release_manifest_sha256": "c" * 64,
+                   "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION",
+                   "real_orders_sent": 0, "ppi_watch_touched": False,
+                   "roles": {"observer": "1" * 64, "dashboard": "2" * 64},
+                   "health": {"observer": "running", "dashboard": "healthy",
+                              "orders_guard": "BLOCKED"}}
+        download = {"schema": "porota.release.download.v1",
+                    "deployment_sha": "a" * 40, "source_sha": "d" * 40,
+                    "source_tree": "e" * 40, "image_id": "sha256:" + "f" * 64,
+                    "run_id": 777, "run_attempt": 1, "artifact_id": 444,
+                    "artifact_digest": "sha256:" + "3" * 64}
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("runtime.json", json.dumps(runtime))
+            archive.writestr("download.json", json.dumps(download))
+        payload = stream.getvalue()
+        artifact = {"id": 500, "name": "porota-runtime-888-2", "expired": False,
+                    "size_in_bytes": len(payload),
+                    "digest": "sha256:" + sha256(payload).hexdigest(),
+                    "workflow_run": {"id": 888, "head_sha": "a" * 40}}
+        endpoints = []
+        def transport(path, *, max_bytes):
+            endpoints.append(path)
+            self.assertLessEqual(max_bytes, 262144)
+            if path.endswith("/zip"):
+                self.assertEqual(max_bytes, 65536)
+            if "/workflows/porota-deploy-v2-promote.yml/runs?" in path:
+                output = json.dumps({"workflow_runs": [run]}).encode()
+            elif path.endswith("/actions/runs/888/artifacts?per_page=100"):
+                output = json.dumps({"artifacts": [artifact]}).encode()
+            elif path.endswith("/actions/artifacts/500/zip"):
+                output = payload
+            else:
+                self.fail("unexpected GH endpoint: " + path)
+            return output
+        with patch.dict(os.environ, {"GH_TOKEN": "synthetic-action-token"}), \
+             patch.object(guard, "_bounded_gh_api", side_effect=transport):
+            claim = guard._trusted_promote_claim()
+        self.assertEqual(claim["source_sha"], "d" * 40)
+        self.assertEqual(claim["runtime_artifact_digest"], artifact["digest"])
+        self.assertEqual(len(endpoints), 3)
+        self.assertTrue(all(arg.startswith("repos/mbalbo2023/Porota-trading/actions/")
+                            for arg in endpoints))
+
+    def test_gh_cli_reader_never_buffers_oversized_server_stdout(self):
+        original = subprocess.Popen
+        spawned = []
+        def fake_gh(argv, **kwargs):
+            self.assertEqual(argv[:4], ["gh", "api", "-H",
+                                         "Accept: application/vnd.github+json"])
+            self.assertEqual(kwargs.get("stdout"), subprocess.PIPE)
+            self.assertEqual(kwargs.get("stderr"), subprocess.DEVNULL)
+            count = 32 if not spawned else 100000
+            process = original([sys.executable, "-c",
+                "import sys;sys.stdout.buffer.write(b'x'*" + str(count) + ")"], **kwargs)
+            spawned.append(process)
+            return process
+        with patch.object(guard.subprocess, "Popen", side_effect=fake_gh):
+            self.assertEqual(guard._bounded_gh_api(
+                "repos/mbalbo2023/Porota-trading/actions/runs/1/artifacts", max_bytes=100),
+                b"x" * 32)
+            with self.assertRaisesRegex(ValueError, "PROMOTE_ARTIFACT_CUSTODY_HOLD"):
+                guard._bounded_gh_api(
+                    "repos/mbalbo2023/Porota-trading/actions/artifacts/1/zip",
+                    max_bytes=4096)
+        self.assertEqual(len(spawned), 2)
+        self.assertTrue(all(process.poll() is not None for process in spawned))
+
+    def test_gh_cli_exact_64k_boundary_nonzero_exit_and_timeout_are_fail_closed(self):
+        original = subprocess.Popen
+        endpoint = "repos/mbalbo2023/Porota-trading/actions/artifacts/1/zip"
+        scenarios = (("exact", 65536), ("larger", 65537),
+                     ("failure", 16), ("timeout", 0))
+        for name, count in scenarios:
+            with self.subTest(name=name):
+                spawned = []
+                def fake_gh(argv, **kwargs):
+                    code = ("import time;time.sleep(10)" if name == "timeout" else
+                            "import sys;sys.stdout.buffer.write(b'Z'*" + str(count) +
+                            ");sys.exit(" + ("7" if name == "failure" else "0") + ")")
+                    child = original([sys.executable, "-c", code], **kwargs)
+                    spawned.append(child)
+                    return child
+                with patch.object(guard.subprocess, "Popen", side_effect=fake_gh):
+                    if name == "exact":
+                        self.assertEqual(guard._bounded_gh_api(endpoint, max_bytes=65536),
+                                         b"Z" * 65536)
+                    elif name == "timeout":
+                        with patch.object(guard.select, "select", return_value=([], [], [])):
+                            with self.assertRaisesRegex(ValueError, "PROMOTE_ARTIFACT_CUSTODY_HOLD"):
+                                guard._bounded_gh_api(endpoint, max_bytes=65536)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "PROMOTE_ARTIFACT_CUSTODY_HOLD"):
+                            guard._bounded_gh_api(endpoint, max_bytes=65536)
+                self.assertEqual(len(spawned), 1)
+                self.assertIsNotNone(spawned[0].poll(), "stray GH child must be reaped")
+
+    def test_synthetic_forged_artifact_claim_cannot_append_dispatch_command(self):
+        claim = {"source_sha": "d" * 40, "source_tree": "e" * 40,
+                 "image_id": "sha256:" + "f" * 64,
+                 "release_manifest_sha256": "c" * 64,
+                 "observer_cid": "1" * 64, "dashboard_cid": "2" * 64,
+                 "promote_run_id": 888, "promote_run_attempt": 2,
+                 "runtime_artifact_digest": "sha256:" + "3" * 64}
+        env_file = self.root / "no_command.env"
+        env_file.touch()
+        command = "PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL"
+        self.assertTrue(guard._append_observer_command_env(
+            env_file, command, utc(13, 45, 19), guard.SESSION_REGULAR, claim))
+        original = env_file.read_text()
+        for key, invalid in (("observer_cid", "0" * 63),
+                             ("dashboard_cid", "1" * 64),
+                             ("source_sha", "b3cbe57;malicious"),
+                             ("promote_run_attempt", True),
+                             ("runtime_artifact_digest", "sha256:INVALID")):
+            with self.subTest(key=key):
+                self.assertFalse(guard._append_observer_command_env(
+                    env_file, command, utc(13, 45, 19), guard.SESSION_REGULAR,
+                    {**claim, key: invalid}))
+                self.assertEqual(env_file.read_text(), original)
 
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()

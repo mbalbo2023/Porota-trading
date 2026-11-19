@@ -52,6 +52,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   contracts:
@@ -446,13 +447,9 @@ jobs:
       RC6_A670_OBSERVER_FAMILY: ${{ inputs.family }}
       RC6_A630_PILOT_MODE: ${{ inputs.pilot_mode == 'once' && 'ONCE' || 'OFF' }}
       RC6_A630_POSTCLOSE_MODE: ${{ inputs.postclose_mode == 'once' && 'ONCE' || 'OFF' }}
-      # P0 single-session observer command MUST remain NO_GO until the one
-      # approved tested artifact is promoted and its coordinates are pinned.
-      # Historical A670 96c626dc image never contains the new command handler.
-      RC6_P0_EXPECTED_CANDIDATE_SHA: b3cbe57a5b4b82016a65a0e253b251abbb84a04c
-      RC6_P0_EXPECTED_TREE_SHA: 7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0
-      RC6_P0_EXPECTED_IMAGE_ID: sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d
-      RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256: 991eebea372810b7d6ea0fbb9c9295c7504d187d840e30af4c5e70f99845e792
+      # No static P0 pin or operator-supplied RELEASE/Gateway attestation.
+      # The OFFHOST guard obtains an immutable Promote V2 runtime artifact,
+      # then the host rechecks its private physical release, CID, PAPER/0.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -469,6 +466,8 @@ jobs:
           persist-credentials: false
       - name: OFFHOST same-day ART, family, calendar, source and release pins before SSH
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           python3 -B scripts/rc6_a669_ppi_day_slot_guard.py
@@ -503,7 +502,7 @@ jobs:
           # The old rootless-capture/SDK path is NEVER selected by this job.
           # Exact UID-private release/daemon/CID/manifest is attested both sides
           # of one docker exec; child imports sqlite3, not a PPI client.
-          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' '$command_mode' '$RC6_A670_ART_DATE' '$RC6_A670_FAMILY' '$RC6_P0_EXPECTED_CANDIDATE_SHA' '$RC6_P0_EXPECTED_TREE_SHA' '$RC6_P0_EXPECTED_IMAGE_ID' '$RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'"
+          remote="python3 -B -c 'import sys; src=sys.stdin.buffer.read(1000001); assert 0<len(src)<=1000000; scope={\"__name__\":\"__main__\",\"__RC6_SOURCE_BYTES__\":src}; exec(compile(src,\"A630_STDIN\",\"exec\"),scope)' '$command_mode' '$RC6_A670_ART_DATE' '$RC6_A670_FAMILY' '$RC6_P0_EXPECTED_CANDIDATE_SHA' '$RC6_P0_EXPECTED_TREE_SHA' '$RC6_P0_EXPECTED_IMAGE_ID' '$RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256' '$RC6_P0_EXPECTED_OBSERVER_CID' '$RC6_P0_EXPECTED_DASHBOARD_CID' '$RC6_A670_PROMOTE_ARTIFACT_DIGEST'"
           set +e
           timeout --signal=TERM --kill-after=5s 135 ssh \
             -i "$HOME/.ssh/rc6_p0_queue" -o BatchMode=yes \
@@ -531,6 +530,9 @@ jobs:
                   'candidate_tree':os.environ['RC6_P0_EXPECTED_TREE_SHA'],
                   'image_id':os.environ['RC6_P0_EXPECTED_IMAGE_ID'],
                   'release_manifest_sha256':os.environ['RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'],
+                  'observer_cid':os.environ['RC6_P0_EXPECTED_OBSERVER_CID'],
+                  'dashboard_cid':os.environ['RC6_P0_EXPECTED_DASHBOARD_CID'],
+                  'promote_artifact_digest':os.environ['RC6_A670_PROMOTE_ARTIFACT_DIGEST'],
                   'art_date':day,'family':family,
                   'issuer_mode':os.environ['RC6_A670_ISSUER_MODE'],
                   'state':wrapper['state'] if wrapper else 'NO_VERIFICADO',
@@ -572,6 +574,9 @@ jobs:
                'candidate_tree':os.environ.get('RC6_P0_EXPECTED_TREE_SHA'),
                'image_id':os.environ.get('RC6_P0_EXPECTED_IMAGE_ID'),
                'release_manifest_sha256':os.environ.get('RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256'),
+               'observer_cid':os.environ.get('RC6_P0_EXPECTED_OBSERVER_CID'),
+               'dashboard_cid':os.environ.get('RC6_P0_EXPECTED_DASHBOARD_CID'),
+               'promote_artifact_digest':os.environ.get('RC6_A670_PROMOTE_ARTIFACT_DIGEST'),
                'art_date':'','family':'',
                'state':'NO_VERIFICADO',
                'reason':os.environ.get('RC6_A670_HOLD_REASON','OFFHOST_OR_RUNTIME_HOLD'),
