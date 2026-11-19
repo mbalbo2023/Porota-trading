@@ -35,6 +35,9 @@ DB_REL = Path("data/paper_v17/observer_v17.db")
 PERFORMANCE_LIMIT_BY_SOURCE_SHA = {
     "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76": 128 * 1024**2,
     "494116c1200b1c2914369d1e0ffd186c1906d781": 256 * 1024**2,
+    # P0-deployed source has the same capture.py blob (a94f5b1148a6...) as
+    # 494116c; pin its physical source identity rather than guessing a limit.
+    "b3cbe57a5b4b82016a65a0e253b251abbb84a04c": 256 * 1024**2,
 }
 SEVERITY = {"GREEN": 0, "P2": 1, "P1": 2, "P0": 3}
 # Product runtime is exactly the two roles in the private rootless release.
