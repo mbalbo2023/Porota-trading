@@ -99,10 +99,10 @@ jobs:
               exit 2
             }
           case "$REQUEST_MODE" in
-            PREFLIGHT_ONLY) remote_command='sudo -n -u porotaadmin timeout 790 python3 -B - host-preflight' ;;
+            PREFLIGHT_ONLY) remote_command='timeout 790 python3 -B - host-preflight' ;;
             CUSTODY_ONCE)
               case "$GITHUB_RUN_ID" in ''|*[!0-9]*) exit 2 ;; esac
-              remote_command="sudo -n -u porotaadmin timeout 790 python3 -B - host-custody $GITHUB_RUN_ID" ;;
+              remote_command="timeout 790 python3 -B - host-custody $GITHUB_RUN_ID" ;;
             *) exit 2 ;;
           esac
           printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"

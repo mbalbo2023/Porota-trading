@@ -656,8 +656,9 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", remote["run"])
         self.assertIn("host-custody", remote["run"])
         self.assertIn("host-preflight", remote["run"])
-        self.assertIn("sudo -n -u porotaadmin", remote["run"])
-        self.assertNotIn("sudo -n timeout", remote["run"])
+        self.assertIn("timeout 790 python3 -B - host-preflight", remote["run"])
+        self.assertIn("timeout 790 python3 -B - host-custody", remote["run"])
+        self.assertNotIn("sudo", remote["run"])
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact")]
         self.assertEqual(len(uploads), 1)
         self.assertTrue(uploads[0]["with"]["path"].endswith("/a-custody-public.json"))
