@@ -19,7 +19,7 @@ from scripts import porota_rootless_host as host
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA, TREE = "a" * 40, "b" * 40
-CHILDREN = ("scanner", "dynamic_shadow", "exit_reader", "notifications",
+CHILDREN = ("ppi_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
             "candles", "intraday_scalping", "caucion_cash_sweep")
 NOW = datetime(2026, 11, 15, 18, 0, tzinfo=timezone.utc)
 STARTED = NOW - timedelta(seconds=30)
@@ -56,6 +56,7 @@ def test_compose_observer_plans_all_workers_under_the_exit_clock(tmp_path, monke
     assert len(clocks) == 1 and clocks[0][0] is store
     children = clocks[0][1]
     assert children.commands == {
+        "ppi_gateway": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--ppi-gateway-worker"],
         "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
         "dynamic_shadow": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--dynamic-shadow-worker"],
         "exit_reader": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--exit-reader"],
@@ -149,6 +150,14 @@ def test_controller_rejects_legacy_performance_child_even_when_reported_running(
     old["children"]["performance"] = {"state": "RUNNING", "pid": 909,
         "started_at": (STARTED + timedelta(seconds=1)).isoformat(), "alive": True}
     result = classify(old)
+    assert result["status"] == "PENDING"
+    assert result["reason"] == "CONTROLLER_CHILD_ROLES_MISMATCH"
+
+
+def test_controller_blocks_missing_single_ppi_gateway_child():
+    without_owner = controller_snapshot()
+    without_owner["children"].pop("ppi_gateway", None)
+    result = classify(without_owner)
     assert result["status"] == "PENDING"
     assert result["reason"] == "CONTROLLER_CHILD_ROLES_MISMATCH"
 

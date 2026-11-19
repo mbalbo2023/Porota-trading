@@ -24,13 +24,17 @@ from collections import deque
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
+import heapq
 import json
+import itertools
+import math
 import os
 from pathlib import Path
 import re
 import socket
 import socketserver
 import stat
+import struct
 import threading
 import time
 from typing import Any
@@ -50,6 +54,7 @@ _PRIORITY = {
 }
 _MAX_LEVELS = 40
 NATIVE_READ_SCHEMA = "rc6.ppi.native-read-receipts.offhost.v1"
+NATIVE_ACQUIRE_SCHEMA = "rc6.ppi.native-acquire-owner.v1"
 _NATIVE_REST_METHODS = frozenset(("current", "book", "intraday"))
 _NATIVE_UNBUDGETED_METHODS = frozenset(
     ("history", "search_instruments", "market_configuration"))
@@ -756,27 +761,379 @@ class PPIReadOnlyNativeReceiptStore:
                     "paper_authority": "NO_VERIFICADO"}
 
 
+_NATIVE_DEMAND_PRIORITY = {
+    "EXIT_CRITICAL": 0, "OPENED_CRITICAL": 1,
+    "SCALPING_HOT": 2, "STRATEGY_HOT": 2, "HOT": 2,
+    "WARM": 3, "DISCOVERY": 4,
+}
+
+
+class _PrioritizedNativeDemandRouter:
+    """Single bounded wire executor; EXIT overtakes queued lower priorities.
+
+    There is no preemption of a guarded GET already in flight. Pending
+    clients are bounded, lower-priority requests cannot queue indefinitely,
+    and an acquisition timeout reports UNKNOWN provider-call custody.
+    """
+
+    def __init__(self, acquire, *, max_pending=12):
+        self.acquire = acquire
+        self.max_pending = max_pending
+        self._cv = threading.Condition()
+        self._queue = []
+        self._sequence = itertools.count()
+        self._thread = None
+        self._running = False
+        self._inflight = False
+        self._completed = 0
+        self._rejected = 0
+
+    def start(self):
+        with self._cv:
+            if self._thread is not None:
+                raise RuntimeError("PPI_NATIVE_ROUTER_ALREADY_STARTED")
+            self._running = True
+            self._thread = threading.Thread(
+                target=self._work, name="ppi-owner-guarded-native-wire", daemon=True)
+            self._thread.start()
+
+    def _work(self):
+        while True:
+            with self._cv:
+                while self._running and not self._queue:
+                    self._cv.wait()
+                if not self._running:
+                    return
+                _, _, item = heapq.heappop(self._queue)
+                if item["cancelled"]:
+                    continue
+                self._inflight = True
+            try:
+                item["result"] = self.acquire(**item["request"])
+            except Exception as exc:
+                item["exception"] = exc
+            finally:
+                with self._cv:
+                    self._inflight = False
+                    self._completed += 1
+                    item["finished"].set()
+
+    def demand(self, **request):
+        priority = request.get("priority")
+        if type(priority) is not str or priority not in _NATIVE_DEMAND_PRIORITY:
+            raise ValueError("PPI_NATIVE_DEMAND_PRIORITY_DENIED")
+        item = {"request": request, "finished": threading.Event(),
+                "cancelled": False, "result": None, "exception": None}
+        with self._cv:
+            if not self._running or self._thread is None:
+                raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
+            if len(self._queue) >= self.max_pending:
+                self._rejected += 1
+                raise RuntimeError("PPI_NATIVE_ROUTER_CAPACITY_HOLD")
+            heapq.heappush(self._queue,
+                           (_NATIVE_DEMAND_PRIORITY[priority], next(self._sequence), item))
+            self._cv.notify()
+        if not item["finished"].wait(4.0):
+            with self._cv:
+                item["cancelled"] = True
+            # A request might already be in flight. Never claim zero provider
+            # calls on an unknown partial timeout, and never retry locally.
+            raise TimeoutError("PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED")
+        if item["exception"] is not None:
+            raise item["exception"]
+        return item["result"]
+
+    def status(self):
+        with self._cv:
+            return {"queued": sum(not item["cancelled"] for _, _, item in self._queue),
+                    "inflight": self._inflight, "completed": self._completed,
+                    "rejected": self._rejected, "max_pending": self.max_pending,
+                    "running": self._running}
+
+    def stop(self):
+        with self._cv:
+            self._running = False
+            for _, _, item in self._queue:
+                item["cancelled"] = True
+                item["exception"] = RuntimeError("PPI_NATIVE_ROUTER_CLOSED")
+                item["finished"].set()
+            self._queue.clear()
+            self._cv.notify_all()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=4.0)
+            if thread.is_alive():
+                raise RuntimeError("PPI_NATIVE_ROUTER_INFLIGHT_UNVERIFIED")
+            self._thread = None
+
+
 class ReadOnlyUnixFeedServer:
-    """Optional same-host read-only AF_UNIX cursor transport.
+    """Optional same-host read-only AF_UNIX cursor and owner-demand transport.
 
     It is never started automatically. A private parent directory (0700) and
-    socket (0600) are required. The listener knows no broker login, account,
-    order or PPI GET API.  Watch UID/permissions remain to be independently
-    verified before any real integration.
+    socket (0600) are required. Explicit native_acquire delegates to the
+    injected single owner, never a provider/client imported in this module.
+    Watch UID/permissions remain to be independently verified.
     """
 
     def __init__(self, bus: PPISharedMarketFeed, *, socket_path: Path,
-                 native_receipts: PPIReadOnlyNativeReceiptStore | None = None):
+                 native_receipts: PPIReadOnlyNativeReceiptStore | None = None,
+                 native_acquirer=None, owner_status=None, auxiliary_acquirer=None,
+                 exit_round_observer=None, exit_round_discarder=None,
+                 supervisor_pid=None):
         self.bus = bus
         if native_receipts is not None and native_receipts.feed is not bus:
             raise ValueError("PPI_NATIVE_RECEIPT_WRONG_FEED")
         self.native_receipts = native_receipts
+        self.native_acquirer = native_acquirer
+        self.auxiliary_acquirer = auxiliary_acquirer
+        self.exit_round_observer = exit_round_observer
+        self.exit_round_discarder = exit_round_discarder
+        self.owner_status = owner_status
         self.socket_path = Path(socket_path)
         self._server = None
         self._owned_socket_dev_inode = None
+        self._supervisor_pid = supervisor_pid
+        self._supervisor_starttime = self.process_starttime(supervisor_pid)
+        self._registered_clients = {}
+        self._role_lock = threading.RLock()
+        def one_owner_wire(**request):
+            kind = request.pop("_kind", "native")
+            if kind == "native":
+                return native_acquirer(**request)
+            if kind == "aux" and callable(auxiliary_acquirer):
+                request.pop("priority")  # owner determines eligibility
+                return auxiliary_acquirer(**request)
+            if kind == "exit_observe" and callable(exit_round_observer):
+                request.pop("priority")
+                return exit_round_observer(**request)
+            if kind == "exit_discard" and callable(exit_round_discarder):
+                request.pop("priority")
+                return exit_round_discarder(**request)
+            raise ValueError("PPI_GATEWAY_WIRE_METHOD_DENIED")
 
-    def dispatch(self, request: Any) -> dict:
-        """Pure read-only request protocol, testable without opening sockets."""
+        self._native_router = (
+            _PrioritizedNativeDemandRouter(one_owner_wire)
+            if callable(native_acquirer) else None)
+
+    def start_native_priority_router(self) -> None:
+        if self._native_router is None:
+            raise RuntimeError("PPI_NATIVE_ROUTER_ACQUIRER_MISSING")
+        self._native_router.start()
+
+    def native_router_status(self) -> dict:
+        return self._native_router.status() if self._native_router else {
+            "queued": 0, "inflight": False, "completed": 0,
+            "rejected": 0, "max_pending": 0, "running": False}
+
+    def stop_native_priority_router(self) -> None:
+        if self._native_router is not None:
+            self._native_router.stop()
+
+    @staticmethod
+    def process_starttime(pid):
+        """Linux /proc PID birth tick, resistant to ordinary PID reuse."""
+        if type(pid) is not int or not 1 <= pid <= 2**22:
+            return None
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+            parts = raw.rsplit(")", 1)[1].strip().split()
+            value = parts[19]  # field 22; first token after ) is field 3
+            return value if value.isdigit() and int(value) > 0 else None
+        except (OSError, IndexError, ValueError, UnicodeError):
+            return None
+
+    def role_registry_status(self):
+        with self._role_lock:
+            return {role: {"pid": pid, "proc_starttime": tick}
+                    for role, (pid, tick) in self._registered_clients.items()}
+
+    def _role_permitted(self, role, peer_pid):
+        if peer_pid is None and self._server is None:
+            return True  # direct OFFHOST protocol tests, never live socket
+        if type(peer_pid) is not int:
+            return False
+        if (self._supervisor_starttime is None
+                or self.process_starttime(self._supervisor_pid)
+                != self._supervisor_starttime):
+            return False  # stale/orphan owner cannot serve registered children
+        with self._role_lock:
+            candidate = self._registered_clients.get(role)
+        return (candidate is not None and candidate[0] == peer_pid
+                and self.process_starttime(peer_pid) == candidate[1])
+
+    def dispatch(self, request: Any, *, peer_pid=None) -> dict:
+        """Data-only RPC, with native acquisition exclusively by owner callback."""
+        if isinstance(request, dict) and request.get("op") == "register_client":
+            if (set(request) != {"op", "consumer", "client_pid", "client_starttime"}
+                    or self._supervisor_starttime is None
+                    or peer_pid != self._supervisor_pid
+                    or self.process_starttime(peer_pid) != self._supervisor_starttime):
+                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                        "state": "PPI_GATEWAY_SUPERVISOR_PEER_DENIED"}
+            role = request.get("consumer")
+            pid = request.get("client_pid")
+            tick = request.get("client_starttime")
+            if (role not in {"scanner", "exit_reader", "scalping"}
+                    or type(pid) is not int or type(tick) is not str
+                    or self.process_starttime(pid) != tick):
+                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                        "state": "PPI_GATEWAY_ROLE_PROCESS_UNVERIFIED"}
+            with self._role_lock:
+                self._registered_clients[role] = (pid, tick)
+            status = self.owner_status() if callable(self.owner_status) else {}
+            return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "REGISTERED",
+                    "owner_pid": status.get("owner_pid"),
+                    "session_generation": status.get("session_generation"),
+                    "registered_role": role, "registered_pid": pid}
+        if isinstance(request, dict) and request.get("op") == "owner_status":
+            if set(request) != {"op"} or not callable(self.owner_status):
+                return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "PPI_GATEWAY_OWNER_UNAVAILABLE"}
+            status = self.owner_status()
+            return {**status, "schema": NATIVE_ACQUIRE_SCHEMA,
+                    "registered_clients": self.role_registry_status()}
+        if isinstance(request, dict) and request.get("op") in {
+                "native_acquire", "native_read", "aux_acquire", "pull",
+                "exit_round_observe", "exit_round_discard"}:
+            if not self._role_permitted(request.get("consumer"), peer_pid):
+                status = self.owner_status() if callable(self.owner_status) else {}
+                result = {"state": "PPI_GATEWAY_UNREGISTERED_CLIENT",
+                          "provider_calls_by_rpc": 0}
+                if request["op"] in {"native_acquire", "aux_acquire",
+                                     "exit_round_observe", "exit_round_discard"}:
+                    result.update(schema=NATIVE_ACQUIRE_SCHEMA,
+                                  owner_pid=status.get("owner_pid"),
+                                  session_generation=status.get("session_generation"))
+                elif request["op"] == "native_read":
+                    result["schema"] = NATIVE_READ_SCHEMA
+                return result
+        if isinstance(request, dict) and request.get("op") == "native_acquire":
+            denied = {"schema": NATIVE_ACQUIRE_SCHEMA,
+                      "state": "PPI_NATIVE_DEMAND_DENIED", "provider_calls_by_rpc": 0}
+            if (set(request) != {"op", "consumer", "method", "ppi_five_key", "priority"}
+                    or not callable(self.native_acquirer)):
+                return denied
+            try:
+                demand = {"_kind": "native", "consumer": request["consumer"], "method": request["method"],
+                          "five_key": request["ppi_five_key"],
+                          "priority": request["priority"]}
+                if self._native_router and self._native_router.status()["running"]:
+                    return self._native_router.demand(**demand)
+                if self._server is not None:
+                    raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
+                # Pure offhost contract testing before any listener exists.
+                demand.pop("_kind")
+                return self.native_acquirer(**demand)
+            except Exception as exc:
+                # Never put SDK exceptions, URLs, secrets or HTTP response
+                # bodies onto the data socket. A known owner gate code is safe.
+                reason = str(exc)
+                if not re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", reason):
+                    reason = "PPI_NATIVE_ACQUIRE_FAILED"
+                status = self.owner_status() if callable(self.owner_status) else {}
+                return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": reason,
+                        # An SDK GET may have completed before native payload
+                        # validation, sink publication or an HTTP 429/401
+                        # raised. Once routed to the acquirer, a failed RPC
+                        # cannot certify zero provider wire attempts.
+                        "provider_calls_by_rpc": "NO_VERIFICADO",
+                        "owner_pid": status.get("owner_pid"),
+                        "session_generation": status.get("session_generation")}
+        if isinstance(request, dict) and request.get("op") == "aux_acquire":
+            denied = {"schema": NATIVE_ACQUIRE_SCHEMA,
+                      "state": "PPI_AUX_DEMAND_DENIED", "provider_calls_by_rpc": 0}
+            if (set(request) != {"op", "consumer", "method", "args"}
+                    or not callable(self.auxiliary_acquirer)
+                    or request.get("method") not in {
+                        "search_instruments", "history", "market_configuration"}):
+                return denied
+            if (self._server is not None
+                    and request["method"] == "market_configuration"):
+                # The legacy SDK convenience method performs seven GETs
+                # within one Python call. The single owner router cannot
+                # overtake that in-flight batch for an EXIT book. Until it
+                # has one-GET-per-task coverage, do not execute it live.
+                status = self.owner_status() if callable(self.owner_status) else {}
+                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                        "state": "PPI_AUX_CONFIGURATION_MULTI_GET_UNPREEMPTIBLE",
+                        "provider_calls_by_rpc": 0,
+                        "owner_pid": status.get("owner_pid"),
+                        "session_generation": status.get("session_generation")}
+            priority = ("WARM" if request["method"] == "history" else "DISCOVERY")
+            demand = {"_kind": "aux", "consumer": request["consumer"],
+                      "method": request["method"], "args": request["args"],
+                      "priority": priority}
+            try:
+                if self._native_router and self._native_router.status()["running"]:
+                    return self._native_router.demand(**demand)
+                if self._server is not None:
+                    raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
+                return self.auxiliary_acquirer(
+                    consumer=request["consumer"], method=request["method"],
+                    args=request["args"])
+            except Exception as exc:
+                reason = str(exc)
+                if not re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", reason):
+                    reason = "PPI_AUX_ACQUIRE_FAILED"
+                status = self.owner_status() if callable(self.owner_status) else {}
+                return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": reason,
+                        # After an SDK exception the number of aux GETs is
+                        # unknown; never imply a false zero-wire guarantee.
+                        "provider_calls_by_rpc": "UNKNOWN",
+                        "owner_pid": status.get("owner_pid"),
+                        "session_generation": status.get("session_generation")}
+        if isinstance(request, dict) and request.get("op") in {
+                "exit_round_observe", "exit_round_discard"}:
+            status = self.owner_status() if callable(self.owner_status) else {}
+            base = {"schema": NATIVE_ACQUIRE_SCHEMA,
+                    "provider_calls_by_rpc": 0,
+                    "owner_pid": status.get("owner_pid"),
+                    "session_generation": status.get("session_generation")}
+            if request.get("consumer") != "exit_reader":
+                return {**base, "state": "PPI_EXIT_ROUND_ROLE_DENIED"}
+            observe = request["op"] == "exit_round_observe"
+            if observe:
+                expected = {"op", "consumer", "elapsed_seconds",
+                            "deadline_seconds", "failures"}
+                if set(request) != expected or not callable(self.exit_round_observer):
+                    return {**base, "state": "PPI_EXIT_ROUND_ARGUMENTS_DENIED"}
+                elapsed, deadline, failures = (request["elapsed_seconds"],
+                                              request["deadline_seconds"], request["failures"])
+                if (type(elapsed) not in (int, float) or not math.isfinite(elapsed)
+                        or not 0 <= elapsed <= 3600
+                        or type(deadline) not in (int, float) or not math.isfinite(deadline)
+                        or not 0 < deadline <= 3600
+                        or type(failures) is not int or not 0 <= failures <= 20000):
+                    return {**base, "state": "PPI_EXIT_ROUND_ARGUMENTS_DENIED"}
+                demand = {"_kind": "exit_observe", "priority": "EXIT_CRITICAL",
+                          "consumer": "exit_reader", "elapsed_seconds": elapsed,
+                          "deadline_seconds": deadline, "failures": failures}
+            else:
+                if (set(request) != {"op", "consumer"}
+                        or not callable(self.exit_round_discarder)):
+                    return {**base, "state": "PPI_EXIT_ROUND_ARGUMENTS_DENIED"}
+                demand = {"_kind": "exit_discard", "priority": "EXIT_CRITICAL",
+                          "consumer": "exit_reader"}
+            try:
+                if self._native_router and self._native_router.status()["running"]:
+                    result = self._native_router.demand(**demand)
+                elif self._server is not None:
+                    raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
+                elif observe:
+                    result = self.exit_round_observer(
+                        consumer="exit_reader", elapsed_seconds=elapsed,
+                        deadline_seconds=deadline, failures=failures)
+                else:
+                    result = self.exit_round_discarder(consumer="exit_reader")
+            except Exception:
+                return {**base, "state": "PPI_EXIT_ROUND_CONTROL_UNVERIFIED"}
+            if not observe:
+                return {**base, "state": "RESET"}
+            if (not isinstance(result, dict)
+                    or result.get("status") not in {
+                        "COMPLETE", "DEGRADED", "BASELINE_NOT_MEASURED"}):
+                return {**base, "state": "PPI_EXIT_ROUND_OBSERVATION_UNVERIFIED"}
+            return {**base, "state": "OK", "observation": result}
         if isinstance(request, dict) and request.get("op") == "native_read":
             if self.native_receipts is None:
                 return PPIReadOnlyNativeReceiptStore._state(
@@ -802,11 +1159,35 @@ class ReadOnlyUnixFeedServer:
             raise PermissionError("PPI_UNIX_FEED_PRIVATE_PATH_REQUIRED")
         outer = self
 
-        class _Server(socketserver.UnixStreamServer):
-            # One bounded short-lived request at a time; no unbounded threads
-            # or worker pool on a low-memory droplet.
+        class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+            # Multiple waiting demand packets are sorted by the *one* owner
+            # wire worker. Bound concurrent socket handlers and pending GETs.
             request_queue_size = 8
             allow_reuse_address = False
+            daemon_threads = True
+            block_on_close = False
+            _handler_slots = threading.BoundedSemaphore(16)
+
+            def process_request(self, request, client_address):
+                if not self._handler_slots.acquire(blocking=False):
+                    try:
+                        request.sendall(_canonical_bytes({
+                            "state": "PPI_GATEWAY_CONNECTION_CAPACITY_HOLD"}) + b"\n")
+                    except OSError:
+                        pass
+                    self.shutdown_request(request)
+                    return
+                try:
+                    super().process_request(request, client_address)
+                except BaseException:
+                    self._handler_slots.release()
+                    raise
+
+            def process_request_thread(self, request, client_address):
+                try:
+                    super().process_request_thread(request, client_address)
+                finally:
+                    self._handler_slots.release()
 
         class _Handler(socketserver.StreamRequestHandler):
             def handle(self):
@@ -817,7 +1198,13 @@ class ReadOnlyUnixFeedServer:
                         response = {"state": "DENIED_READ_ONLY"}
                     else:
                         request = json.loads(request_data)
-                        response = outer.dispatch(request)
+                        if not hasattr(socket, "SO_PEERCRED"):
+                            peer_pid = None
+                        else:
+                            peer_pid, _, _ = struct.unpack("3i", self.connection.getsockopt(
+                                socket.SOL_SOCKET, socket.SO_PEERCRED,
+                                struct.calcsize("3i")))
+                        response = outer.dispatch(request, peer_pid=peer_pid)
                 except (ValueError, TypeError, TimeoutError, OSError):
                     response = {"state": "DENIED_READ_ONLY"}
                 data = _canonical_bytes(response)
@@ -830,6 +1217,12 @@ class ReadOnlyUnixFeedServer:
         own = os.stat(self.socket_path, follow_symlinks=False)
         self._owned_socket_dev_inode = (own.st_dev, own.st_ino)
         self._server = server
+        if self._native_router is not None:
+            try:
+                self.start_native_priority_router()
+            except BaseException:
+                self.close()
+                raise
 
     def serve_forever(self) -> None:
         if self._server is None:
@@ -841,6 +1234,7 @@ class ReadOnlyUnixFeedServer:
             self._server.shutdown()
 
     def close(self) -> None:
+        self.stop_native_priority_router()
         if self._server is not None:
             self._server.server_close()
             self._server = None
@@ -871,16 +1265,23 @@ class ReadOnlyUnixFeedClient:
             raise ValueError("PPI_SHARED_CLIENT_TIMEOUT_INVALID")
         self.socket_path = Path(socket_path)
         self.timeout_seconds = timeout_seconds
+        self._pinned_owner = None
 
-    def _request(self, packet: dict) -> dict:
+    def _request(self, packet: dict, *, require_owner_identity: bool = False) -> dict:
         """One bounded AF_UNIX request, never broker/provider I/O."""
         request = _canonical_bytes(packet) + b"\n"
         if len(request) > 4096:
             raise ValueError("PPI_SHARED_CLIENT_REQUEST_UNBOUNDED")
+        peer_pid = None
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(self.timeout_seconds)
                 connection.connect(str(self.socket_path))
+                if require_owner_identity:
+                    if not hasattr(socket, "SO_PEERCRED"):
+                        raise SharedFeedUnavailable("PPI_GATEWAY_PEER_IDENTITY_UNAVAILABLE")
+                    peer_pid, _, _ = struct.unpack("3i", connection.getsockopt(
+                        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
                 connection.sendall(request)
                 response_bytes = bytearray()
                 while len(response_bytes) <= 131_072:
@@ -901,7 +1302,178 @@ class ReadOnlyUnixFeedClient:
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID") from exc
         if not isinstance(result, dict):
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID")
+        if require_owner_identity and result.get("owner_pid") != peer_pid:
+            raise SharedFeedUnavailable("PPI_GATEWAY_PEER_IDENTITY_MISMATCH")
         return result
+
+    def owner_status(self) -> dict:
+        """Pin Linux AF_UNIX peer PID and one owner generation for this client."""
+        response = self._request({"op": "owner_status"}, require_owner_identity=True)
+        if (response.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or response.get("state") != "OPEN"
+                or type(response.get("owner_pid")) is not int
+                or response["owner_pid"] <= 0
+                or not _SHA256.fullmatch(str(response.get("session_generation")))
+                or response.get("login_invocations_by_owner") != 1):
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_UNVERIFIED")
+        actual = (response["owner_pid"], response["session_generation"])
+        if self._pinned_owner is not None and self._pinned_owner != actual:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
+        self._pinned_owner = actual
+        return response
+
+    def register_client(self, consumer: str, *, pid: int, proc_starttime: str) -> dict:
+        """Supervisor-only OS peer PID registration, never broker data/GET."""
+        if self._pinned_owner is None:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+        if (consumer not in {"scanner", "exit_reader", "scalping"}
+                or type(pid) is not int or pid <= 0
+                or type(proc_starttime) is not str or not proc_starttime.isdigit()):
+            raise ValueError("PPI_GATEWAY_ROLE_REGISTRATION_INVALID")
+        result = self._request({"op": "register_client", "consumer": consumer,
+                                "client_pid": pid,
+                                "client_starttime": proc_starttime},
+                               require_owner_identity=True)
+        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or result.get("state") != "REGISTERED"
+                or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner
+                or result.get("registered_role") != consumer
+                or result.get("registered_pid") != pid):
+            raise SharedFeedUnavailable("PPI_GATEWAY_ROLE_REGISTRATION_DENIED")
+        return result
+
+    def acquire_native(self, consumer: str, *, method: str, five_key,
+                       priority: str) -> dict:
+        """Ask the pinned owner for one guarded GET; no local SDK/GET fallback."""
+        if self._pinned_owner is None:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+        if not isinstance(consumer, str) or not _CONSUMER.fullmatch(consumer):
+            raise ValueError("PPI_NATIVE_CONSUMER_INVALID")
+        if method not in _NATIVE_REST_METHODS or type(method) is not str:
+            raise ValueError("PPI_NATIVE_DEMAND_METHOD_INVALID")
+        if type(priority) is not str or not _CONSUMER.fullmatch(priority.lower()):
+            raise ValueError("PPI_NATIVE_DEMAND_PRIORITY_INVALID")
+        identity = _five(five_key)
+        result = self._request({"op": "native_acquire", "consumer": consumer,
+                                "method": method, "ppi_five_key": list(identity),
+                                "priority": priority}, require_owner_identity=True)
+        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or type(result.get("state")) is not str
+                or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner):
+            raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_ENVELOPE_INVALID")
+        if result["state"] != "OK":
+            if (not re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", result["state"])
+                    or result.get("provider_calls_by_rpc") not in (0, "NO_VERIFICADO")
+                    or "receipt" in result or "guard_wire_receipt" in result):
+                raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_DENIAL_WITH_DATA")
+            return result
+        receipt = result.get("receipt")
+        if (result.get("provider_calls_by_rpc") != 1
+                or result.get("paper_ready") is not False
+                or result.get("order_route") != "NOT_PRESENT"
+                or not isinstance(receipt, dict)):
+            raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_RECEIPT_INVALID")
+        unsigned = {key: value for key, value in receipt.items()
+                    if key != "receipt_sha256"}
+        if (receipt.get("schema") != NATIVE_READ_SCHEMA
+                or receipt.get("method") != method
+                or receipt.get("ppi_five_key") != list(identity)
+                or receipt.get("session_fingerprint") != self._pinned_owner[1]
+                or receipt.get("ppi_catalog_authority") != "NO_VERIFICADO"
+                or receipt.get("guard_budget_receipt_authority") != "NO_VERIFICADO"
+                or receipt.get("paper_ready") is not False
+                or receipt.get("order_route") != "NOT_PRESENT"
+                or receipt.get("receipt_sha256") != _sha(unsigned)
+                or receipt.get("raw_sha256") != _sha(receipt.get("raw_payload"))):
+            raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_RECEIPT_INVALID")
+        # The distinct native P0 observer requires the original guarded
+        # HTTPAdapter.send receipt, never an invented copy of cache metadata.
+        from rc6_ppi_shared_rest_producer import (
+            RESTProducerBlocked, _validate_guard_witness,
+        )
+        try:
+            witness = result.get("guard_wire_receipt")
+            guard_sha, _, _ = _validate_guard_witness(
+                witness, method=method, priority=priority,
+                five_key=identity, raw_sha256=receipt["raw_sha256"])
+            if guard_sha != receipt.get("guard_budget_receipt_sha256"):
+                raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_GUARD_WITNESS_MISMATCH")
+        except RESTProducerBlocked as exc:
+            raise SharedFeedUnavailable("PPI_NATIVE_ACQUIRE_GUARD_WITNESS_INVALID") from exc
+        return result
+
+    def acquire_auxiliary(self, consumer: str, *, method: str, args: dict) -> dict:
+        """One owner-only scanner metadata/history read, never local SDK IO."""
+        if self._pinned_owner is None:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+        if consumer != "scanner" or method not in {
+                "search_instruments", "history", "market_configuration"}:
+            raise ValueError("PPI_AUX_CLIENT_METHOD_DENIED")
+        if not isinstance(args, dict):
+            raise ValueError("PPI_AUX_CLIENT_ARGUMENTS_INVALID")
+        result = self._request({"op": "aux_acquire", "consumer": consumer,
+                                "method": method, "args": args},
+                               require_owner_identity=True)
+        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or type(result.get("state")) is not str
+                or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner):
+            raise SharedFeedUnavailable("PPI_AUX_RPC_ENVELOPE_INVALID")
+        if result["state"] != "OK":
+            if "result" in result:
+                raise SharedFeedUnavailable("PPI_AUX_RPC_DENIAL_WITH_DATA")
+            return result
+        payload = result.get("result")
+        if (result.get("method") != method
+                or result.get("provider_calls_by_rpc") != "UNKNOWN"
+                or result.get("provider_quota") != "UNKNOWN"
+                or result.get("paper_ready") is not False
+                or result.get("order_route") != "NOT_PRESENT"
+                or result.get("result_sha256") != _sha(payload)):
+            raise SharedFeedUnavailable("PPI_AUX_RPC_PAYLOAD_INVALID")
+        return result
+
+    def observe_exit_round(self, consumer: str, *, elapsed_seconds,
+                           deadline_seconds, failures=0) -> dict:
+        """Existing owner's budget verdict; no local or fabricated COMPLETE."""
+        if self._pinned_owner is None:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+        if consumer != "exit_reader":
+            raise ValueError("PPI_EXIT_ROUND_ROLE_DENIED")
+        if (type(elapsed_seconds) not in (int, float)
+                or not math.isfinite(elapsed_seconds) or elapsed_seconds < 0
+                or type(deadline_seconds) not in (int, float)
+                or not math.isfinite(deadline_seconds) or deadline_seconds <= 0
+                or type(failures) is not int or failures < 0):
+            raise ValueError("PPI_EXIT_ROUND_ARGUMENTS_DENIED")
+        result = self._request({"op": "exit_round_observe", "consumer": consumer,
+                                "elapsed_seconds": elapsed_seconds,
+                                "deadline_seconds": deadline_seconds,
+                                "failures": failures}, require_owner_identity=True)
+        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or (result.get("owner_pid"), result.get("session_generation"))
+                != self._pinned_owner):
+            raise SharedFeedUnavailable("PPI_EXIT_ROUND_OWNER_MISMATCH")
+        if (result.get("state") != "OK" or result.get("provider_calls_by_rpc") != 0
+                or not isinstance(result.get("observation"), dict)
+                or result["observation"].get("status") not in {
+                    "COMPLETE", "DEGRADED", "BASELINE_NOT_MEASURED"}):
+            raise SharedFeedUnavailable("PPI_EXIT_ROUND_OBSERVATION_DENIED")
+        return result["observation"]
+
+    def discard_exit_round_scope(self, consumer: str) -> None:
+        """Reset temporal EXIT admission in SAME worker as its guarded GETs."""
+        if self._pinned_owner is None:
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+        if consumer != "exit_reader":
+            raise ValueError("PPI_EXIT_ROUND_ROLE_DENIED")
+        result = self._request({"op": "exit_round_discard", "consumer": consumer},
+                               require_owner_identity=True)
+        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+                or (result.get("owner_pid"), result.get("session_generation"))
+                != self._pinned_owner):
+            raise SharedFeedUnavailable("PPI_EXIT_ROUND_OWNER_MISMATCH")
+        if result.get("state") != "RESET" or result.get("provider_calls_by_rpc") != 0:
+            raise SharedFeedUnavailable("PPI_EXIT_ROUND_RESET_UNVERIFIED")
 
     def pull(self, consumer: str, *, after_sequence: int, limit: int = 32) -> dict:
         if not isinstance(consumer, str) or not _CONSUMER.fullmatch(consumer):

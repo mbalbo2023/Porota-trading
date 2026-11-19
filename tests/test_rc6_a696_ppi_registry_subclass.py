@@ -6,6 +6,7 @@ Different owners in one Python process must not construct competing readers.
 
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import threading
@@ -54,6 +55,8 @@ def _import_owner_with_offhost_stubs():
     feed = types.ModuleType("rc6_ppi_shared_feed")
     feed.PPISharedMarketFeed = _FakeFeed
     feed.PPIReadOnlyNativeReceiptStore = lambda instance: object()
+    feed.NATIVE_ACQUIRE_SCHEMA = "rc6.ppi.native-acquire-owner.v1"
+    feed._canonical_bytes = lambda value: json.dumps(value, sort_keys=True).encode()
     feed.ReadOnlyUnixFeedServer = lambda *args, **kwargs: object()
     sdk = types.ModuleType("rc6_ppi_shared_producer")
     sdk.PPISharedSDKProducer = lambda **kwargs: object()

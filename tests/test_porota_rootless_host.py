@@ -56,9 +56,10 @@ class RootlessContracts(unittest.TestCase):
         self.base = Path(self.temp.name)
 
     def test_performance_ingestion_is_not_an_expected_running_child(self):
-        """The postflight contract must prove seven children, never re-arm capture."""
+        """Exact eight include singleton Gateway, never re-arm Performance."""
         self.assertNotIn("performance", host.CONTROLLER_CHILDREN)
-        self.assertEqual(len(host.CONTROLLER_CHILDREN), 7)
+        self.assertEqual(len(host.CONTROLLER_CHILDREN), 8)
+        self.assertIn("ppi_gateway", host.CONTROLLER_CHILDREN)
 
     def test_cli_custody_failure_returns_one_and_its_existing_reason(self):
         stream = io.StringIO()

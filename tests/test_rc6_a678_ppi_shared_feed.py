@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import errno
+import os
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -63,6 +65,348 @@ def feed(*, capacity=8, slots=3, rows=None):
 
 
 class PPISharedFeedTests(unittest.TestCase):
+    def test_exit_round_observe_and_discard_share_native_wire_thread(self):
+        touched = []
+        status = {"owner_pid": os.getpid(), "session_generation": "a" * 64}
+
+        def native(**kwargs):
+            touched.append(("GET", threading.get_ident()))
+            return {"schema": "rc6.ppi.native-acquire-owner.v1", "state": "OK"}
+
+        def observe(**kwargs):
+            touched.append(("OBSERVE", threading.get_ident()))
+            return {"status": "DEGRADED", "lower_suspended": True}
+
+        def discard(**kwargs):
+            touched.append(("DISCARD", threading.get_ident()))
+
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            native_acquirer=native, exit_round_observer=observe,
+            exit_round_discarder=discard, owner_status=lambda: status,
+            supervisor_pid=os.getpid())
+        server._server = object()  # live ACL/worker, without sandbox socket
+        server._registered_clients["exit_reader"] = (
+            os.getpid(), server.process_starttime(os.getpid()))
+        server.start_native_priority_router()
+        try:
+            native_reply = server.dispatch({"op": "native_acquire",
+                "consumer": "exit_reader", "method": "book",
+                "ppi_five_key": list(FIVE), "priority": "EXIT_CRITICAL"},
+                peer_pid=os.getpid())
+            round_reply = server.dispatch({"op": "exit_round_observe",
+                "consumer": "exit_reader", "elapsed_seconds": 3.25,
+                "deadline_seconds": 5.0, "failures": 1}, peer_pid=os.getpid())
+            reset_reply = server.dispatch({"op": "exit_round_discard",
+                "consumer": "exit_reader"}, peer_pid=os.getpid())
+        finally:
+            server.stop_native_priority_router()
+        assert native_reply["state"] == "OK"
+        assert round_reply["state"] == "OK"
+        assert round_reply["observation"] == {
+            "status": "DEGRADED", "lower_suspended": True}
+        assert round_reply["provider_calls_by_rpc"] == 0
+        assert reset_reply["state"] == "RESET"
+        assert reset_reply["provider_calls_by_rpc"] == 0
+        assert [name for name, _ in touched] == ["GET", "OBSERVE", "DISCARD"]
+        assert len({tid for _, tid in touched}) == 1
+
+    def test_exit_round_control_rejects_role_spoof_and_unregistered_pid(self):
+        invoked = []
+        status = {"owner_pid": os.getpid(), "session_generation": "a" * 64}
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            native_acquirer=lambda **kwargs: None,
+            exit_round_observer=lambda **kwargs: invoked.append(kwargs),
+            owner_status=lambda: status, supervisor_pid=os.getpid())
+        server._server = object()
+        server._registered_clients["scanner"] = (
+            os.getpid(), server.process_starttime(os.getpid()))
+        request = {"op": "exit_round_observe", "consumer": "exit_reader",
+                   "elapsed_seconds": 2, "deadline_seconds": 5, "failures": 0}
+        denied = server.dispatch(request, peer_pid=os.getpid())
+        assert denied["state"] == "PPI_GATEWAY_UNREGISTERED_CLIENT"
+        bad_role = server.dispatch({**request, "consumer": "scanner"},
+                                   peer_pid=os.getpid())
+        assert bad_role["state"] == "PPI_EXIT_ROUND_ROLE_DENIED"
+        assert denied["provider_calls_by_rpc"] == bad_role["provider_calls_by_rpc"] == 0
+        assert invoked == []
+
+    def test_exit_round_client_requires_pinned_generation_and_exact_role(self):
+        client = ReadOnlyUnixFeedClient(socket_path=Path("/nonrunning.sock"))
+        client._pinned_owner = (os.getpid(), "a" * 64)
+        packets = []
+
+        def recv(packet, **kwargs):
+            packets.append(packet)
+            return {"schema": "rc6.ppi.native-acquire-owner.v1",
+                    "state": "OK" if packet["op"] == "exit_round_observe" else "RESET",
+                    "owner_pid": os.getpid(), "session_generation": "a" * 64,
+                    "provider_calls_by_rpc": 0,
+                    "observation": {"status": "DEGRADED", "lower_suspended": True}
+                    if packet["op"] == "exit_round_observe" else None}
+
+        client._request = recv
+        observation = client.observe_exit_round("exit_reader",
+            elapsed_seconds=3, deadline_seconds=5, failures=1)
+        assert observation == {"status": "DEGRADED", "lower_suspended": True}
+        client.discard_exit_round_scope("exit_reader")
+        assert [packet["op"] for packet in packets] == [
+            "exit_round_observe", "exit_round_discard"]
+        with self.assertRaises(ValueError):
+            client.observe_exit_round("scanner", elapsed_seconds=1,
+                                      deadline_seconds=5, failures=0)
+        client._request = lambda *a, **kw: {**recv({"op": "exit_round_observe"}),
+            "session_generation": "b" * 64}
+        with self.assertRaisesRegex(SharedFeedUnavailable,
+                                    "PPI_EXIT_ROUND_OWNER_MISMATCH"):
+            client.observe_exit_round("exit_reader", elapsed_seconds=1,
+                                      deadline_seconds=5, failures=0)
+
+    def test_orphan_gateway_rejects_read_after_supervisor_birth_changes(self):
+        observed = []
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            native_acquirer=lambda **kw: observed.append(kw),
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                "session_generation": "a" * 64},
+            supervisor_pid=os.getpid())
+        fake_child = 12345
+        server._registered_clients["scanner"] = (fake_child, "child-birth")
+        original = server._supervisor_starttime
+        with patch.object(ReadOnlyUnixFeedServer, "process_starttime",
+                          side_effect=lambda pid: (
+                              "new-parent-birth" if pid == os.getpid()
+                              else "child-birth")):
+            result = server.dispatch({"op": "native_acquire", "consumer": "scanner",
+                "method": "book", "ppi_five_key": list(FIVE),
+                "priority": "WARM"}, peer_pid=fake_child)
+        assert original != "new-parent-birth"
+        assert result["state"] == "PPI_GATEWAY_UNREGISTERED_CLIENT"
+        assert result["provider_calls_by_rpc"] == 0
+        assert not observed
+
+    def test_native_postwire_receipt_failure_never_reports_zero_provider_calls(self):
+        invoked = []
+
+        def fail_after_possible_wire(**kwargs):
+            invoked.append(kwargs)
+            raise RuntimeError("PPI_REST_RECEIPT_UNVERIFIED")
+
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            native_acquirer=fail_after_possible_wire,
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                "session_generation": "a" * 64})
+        result = server.dispatch({"op": "native_acquire", "consumer": "scanner",
+            "method": "book", "ppi_five_key": list(FIVE),
+            "priority": "WARM"})
+        assert len(invoked) == 1
+        assert result["state"] == "PPI_REST_RECEIPT_UNVERIFIED"
+        assert result["provider_calls_by_rpc"] == "NO_VERIFICADO"
+        assert "receipt" not in result and "guard_wire_receipt" not in result
+
+        # A verified peer may carry a sanitized denial-with-unknown-wire
+        # sentinel; it never becomes a successful quote or fabricated zero.
+        client = ReadOnlyUnixFeedClient(socket_path=Path("/nonrunning.sock"))
+        client._pinned_owner = (os.getpid(), "a" * 64)
+        client._request = lambda *a, **kw: result
+        denied = client.acquire_native("scanner", method="book", five_key=FIVE,
+                                      priority="WARM")
+        assert denied["state"] == "PPI_REST_RECEIPT_UNVERIFIED"
+        assert denied["provider_calls_by_rpc"] == "NO_VERIFICADO"
+
+    def test_live_gateway_denies_unpreemptible_seven_get_configuration(self):
+        called = []
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            native_acquirer=lambda **kw: None,
+            auxiliary_acquirer=lambda **kw: called.append(kw),
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                "session_generation": "a" * 64},
+            supervisor_pid=os.getpid())
+        # Simulate a live listener without creating an AF_UNIX socket in the
+        # local sandbox. ProductionMarketReader.market_configuration() does
+        # seven sequential SDK GETs and cannot yield to queued EXIT requests.
+        server._server = object()
+        server._registered_clients["scanner"] = (
+            os.getpid(), server.process_starttime(os.getpid()))
+        result = server.dispatch({"op": "aux_acquire", "consumer": "scanner",
+            "method": "market_configuration", "args": {}}, peer_pid=os.getpid())
+        assert result["state"] == "PPI_AUX_CONFIGURATION_MULTI_GET_UNPREEMPTIBLE"
+        assert result["provider_calls_by_rpc"] == 0
+        assert not called
+
+    def test_supervisor_admin_registration_rejects_parent_pid_reuse(self):
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"),
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                "session_generation": "a" * 64},
+            supervisor_pid=os.getpid())
+        assert server.process_starttime(os.getpid()) is not None
+        # Simulate an old parent PID being reused while the gateway process
+        # survived. The claimed child birth tick is valid for a new process,
+        # but supervisor authority must be tied to its ORIGINAL birth tick.
+        with patch.object(ReadOnlyUnixFeedServer,
+                          "process_starttime", return_value="999999999"):
+            result = server.dispatch({"op": "register_client",
+                "consumer": "exit_reader", "client_pid": os.getpid(),
+                "client_starttime": "999999999"}, peer_pid=os.getpid())
+        assert result["state"] == "PPI_GATEWAY_SUPERVISOR_PEER_DENIED"
+
+    def test_native_exit_role_requires_kernel_peer_pid_registration(self):
+        observed = []
+
+        def acquire(**kwargs):
+            observed.append(kwargs)
+            return {"schema": "rc6.ppi.native-acquire-owner.v1", "state": "OK"}
+
+        server = ReadOnlyUnixFeedServer(feed(),
+            socket_path=Path("/nonrunning.sock"), native_acquirer=acquire,
+            supervisor_pid=os.getpid())
+        exiting = {"op": "native_acquire", "consumer": "exit_reader",
+                   "method": "book", "ppi_five_key": list(FIVE),
+                   "priority": "EXIT_CRITICAL"}
+        assert server.dispatch(exiting, peer_pid=123456789)["state"] == (
+            "PPI_GATEWAY_UNREGISTERED_CLIENT")
+        start = server.process_starttime(os.getpid())
+        assert server.dispatch({"op": "register_client", "consumer": "exit_reader",
+            "client_pid": os.getpid(), "client_starttime": start},
+            peer_pid=123456789)["state"] == "PPI_GATEWAY_SUPERVISOR_PEER_DENIED"
+        registered = server.dispatch({"op": "register_client",
+            "consumer": "exit_reader", "client_pid": os.getpid(),
+            "client_starttime": start}, peer_pid=os.getpid())
+        assert registered["state"] == "REGISTERED"
+        assert server.dispatch(exiting, peer_pid=os.getpid())["state"] == "OK"
+        assert server.dispatch(exiting, peer_pid=123456789)["state"] == (
+            "PPI_GATEWAY_UNREGISTERED_CLIENT")
+        assert len(observed) == 1
+
+    def test_native_owner_router_prioritizes_queued_exit_before_warm(self):
+        """While one guarded GET is running, queued EXIT must overtake WARM."""
+        first_started = threading.Event()
+        release_first = threading.Event()
+        completion = []
+        work_order = []
+
+        def owner_acquire(*, consumer, method, five_key, priority):
+            work_order.append(priority)
+            if len(work_order) == 1:
+                first_started.set()
+                self.assertTrue(release_first.wait(2))
+            return {"schema": "rc6.ppi.native-acquire-owner.v1", "state": "DONE",
+                    "provider_calls_by_rpc": 0}
+
+        server = ReadOnlyUnixFeedServer(
+            feed(), socket_path=Path("/not-started.sock"),
+            native_acquirer=owner_acquire)
+        server.start_native_priority_router()
+
+        def ask(role, priority):
+            result = server.dispatch({
+                "op": "native_acquire", "consumer": role, "method": "book",
+                "ppi_five_key": list(FIVE), "priority": priority})
+            completion.append((priority, result["state"]))
+
+        def queued(n):
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if server.native_router_status()["queued"] == n:
+                    return True
+                time.sleep(.005)
+            return False
+
+        threads = [threading.Thread(target=ask, args=("scanner", "WARM")),
+                   threading.Thread(target=ask, args=("scanner", "DISCOVERY")),
+                   threading.Thread(target=ask, args=("exit_reader", "EXIT_CRITICAL"))]
+        try:
+            threads[0].start()
+            self.assertTrue(first_started.wait(2))
+            threads[1].start()
+            self.assertTrue(queued(1))
+            threads[2].start()
+            self.assertTrue(queued(2))
+            release_first.set()
+            for thread in threads:
+                thread.join(timeout=2)
+                self.assertFalse(thread.is_alive())
+            self.assertEqual(work_order, ["WARM", "EXIT_CRITICAL", "DISCOVERY"])
+            self.assertEqual(len(completion), 3)
+            self.assertEqual(server.native_router_status()["completed"], 3)
+        finally:
+            release_first.set()
+            server.stop_native_priority_router()
+
+    def test_inflight_warm_get_cannot_prove_exit_five_second_service(self):
+        """No false EXIT success while a lower-priority SDK GET is in flight.
+
+        The real guarded transport may wait connect10s/read30s. Priority
+        overtakes *queued* work only; a blocked GET is not preemptible. The
+        five-second EXIT SLA therefore remains NO_VERIFICADO pending physical
+        wire measurements or a separately proven bounded transport contract.
+        """
+        warm_entered = threading.Event()
+        release_warm = threading.Event()
+        exit_observed = threading.Event()
+        completion = {}
+
+        def guarded_get(**request):
+            if request["priority"] == "WARM":
+                warm_entered.set()
+                if not release_warm.wait(2):
+                    raise AssertionError("test did not release blocked GET")
+            return {"state": "OK", "provider_calls_by_rpc": 1}
+
+        def budget_verdict(**request):
+            exit_observed.set()
+            return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
+
+        server = ReadOnlyUnixFeedServer(
+            feed(), socket_path=Path("/not-started.sock"),
+            native_acquirer=guarded_get, exit_round_observer=budget_verdict,
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                                  "session_generation": "a" * 64})
+        server.start_native_priority_router()
+
+        def ask_warm():
+            completion["warm"] = server.dispatch({
+                "op": "native_acquire", "consumer": "scanner",
+                "method": "book", "ppi_five_key": list(FIVE),
+                "priority": "WARM"})
+
+        def ask_exit():
+            completion["exit"] = server.dispatch({
+                "op": "exit_round_observe", "consumer": "exit_reader",
+                "elapsed_seconds": 5, "deadline_seconds": 5,
+                "failures": 1})
+
+        warm = threading.Thread(target=ask_warm)
+        exit_control = threading.Thread(target=ask_exit)
+        try:
+            warm.start()
+            self.assertTrue(warm_entered.wait(1))
+            exit_control.start()
+            deadline = time.monotonic() + 1
+            while (server.native_router_status()["queued"] != 1
+                    and time.monotonic() < deadline):
+                time.sleep(.005)
+            self.assertEqual(server.native_router_status()["queued"], 1)
+            self.assertFalse(exit_observed.is_set())
+            self.assertNotIn("exit", completion)
+            self.assertTrue(server.native_router_status()["inflight"])
+            release_warm.set()
+            warm.join(timeout=2)
+            exit_control.join(timeout=2)
+            self.assertFalse(warm.is_alive())
+            self.assertFalse(exit_control.is_alive())
+            self.assertEqual(completion["exit"]["state"], "OK")
+            self.assertEqual(completion["exit"]["observation"]["status"],
+                             "BASELINE_NOT_MEASURED")
+            self.assertTrue(exit_observed.is_set())
+        finally:
+            release_warm.set()
+            server.stop_native_priority_router()
+
     def test_one_event_fans_out_to_two_independent_consumers_without_network(self):
         bus = feed()
         event = bus.publish_native_market_event(

@@ -1,9 +1,9 @@
-"""Runtime PAPER: reloj, escáner, lector, avisos y archivo en procesos distintos.
+"""Runtime PAPER: reloj, gateway PPI, escáner, lector y archivo aislados.
 
-No envía órdenes. Compartir SQLite permite que una llamada lenta a PPI/Gemini
-no detenga los vencimientos ni el estado de salida. El lector de salidas usa
-una sesión PPI propia; cuotas y coexistencia de sesiones requieren prueba PPI
-antes de promover. Las excepciones no se convierten en fills.
+No envía órdenes. Un hijo gateway es dueño del único login PPI de estos
+consumidores; scanner/EXIT/scalping sólo demandan lectura por AF_UNIX.
+Esto no prueba exclusividad account-wide ni aislamiento físico del secret
+compartido en compose; A670/OPEN permanecen fail-closed sin ese test.
 """
 from __future__ import annotations
 
@@ -12,13 +12,16 @@ import faulthandler
 faulthandler.enable(all_threads=True)
 
 import fcntl
+import errno
 import json
 import re
 import tempfile
-from contextlib import closing, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 import os
 import signal
+import socket
 import sqlite3
+import stat
 import logging
 import subprocess
 import sys
@@ -33,6 +36,180 @@ from cg_paper_workspace import DB_ENV, database_path, runtime_store, artifact_ro
 
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger("paper_runtime")
+
+
+def _make_ppi_gateway_owner(store):
+    """Concreto owner PAPER0: una fábrica SDK, catálogo literal, guard real."""
+    from bd_ppi_readonly_guard import ProductionMarketReader
+    from bf_production_paper_observer import _secret
+    from rc6_ppi_global_budget import PaperDirectReadBudget
+    from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+    from rc6_ppi_shared_session_owner import (
+        PPISharedSessionOwner, ObservedPaperCapacityAuthority,
+        PrimaryPPICatalogAuthority, load_primary_ppi_catalog_snapshot,
+    )
+
+    if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
+        raise RuntimeError("PPI_OBSERVED_DIRECT_BUDGET_NOT_ENABLED")
+    rows, five_keys, digest = load_primary_ppi_catalog_snapshot(store.path)
+    budget = PaperDirectReadBudget(store.path)
+    capacity = ObservedPaperCapacityAuthority(budget)
+
+    class _NoUnverifiedStreamPermit:
+        def permits(self, action, *, five_key=None):
+            return False  # no account/Watch subscription entitlement assumed
+
+    def reader_factory():
+        return ProductionMarketReader(
+            *_secret(), audit=store.audit_http, budget=budget,
+            consumer="SCANNER", priority="DISCOVERY")
+
+    def sdk_instrument(ticker, family, settlement):
+        from ppi_client.models.instrument import Instrument
+        return Instrument(ticker, family, settlement)
+
+    return PPISharedSessionOwner(
+        reader_factory=reader_factory, instrument_factory=sdk_instrument,
+        stream_authority=_NoUnverifiedStreamPermit(),
+        external_capacity_authority=capacity,
+        catalog_authority=PrimaryPPICatalogAuthority(five_keys),
+        ppi_catalog_rows=rows, catalog_five_keys=five_keys,
+        catalog_source_digest=digest,
+        consumer_five_keys={role: list(five_keys)
+                            for role in ("scanner", "exit_reader", "scalping")},
+        socket_path=gateway_socket_path(store.path),
+    )
+
+
+@contextmanager
+def ppi_gateway_lifetime_lease(socket_path):
+    """Cross-PID lock held from BEFORE login to AFTER reader close.
+
+    Unlike the 900s login interlock or per-GET flock, this prevents a second
+    gateway worker in this PAPER workspace even after the cooldown expires.
+    It does not exclude unrelated legacy jobs or another workspace/account.
+    """
+    private = Path(socket_path).parent
+    if private.is_symlink():
+        raise RuntimeError("PPI_GATEWAY_SOCKET_PATH_ALIAS")
+    private.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if private.is_symlink() or (private.stat().st_mode & 0o077):
+        raise RuntimeError("PPI_GATEWAY_SOCKET_DIRECTORY_NOT_PRIVATE")
+    lock_path = private / "owner.lock"
+    if lock_path.is_symlink():
+        raise RuntimeError("PPI_GATEWAY_LIFETIME_LEASE_ALIAS")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                 0o600)
+    try:
+        metadata = os.fstat(fd)
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                or metadata.st_mode & 0o077):
+            raise RuntimeError("PPI_GATEWAY_LIFETIME_LEASE_UNTRUSTED")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("PPI_GATEWAY_LIFETIME_LEASE_HELD") from None
+        try:
+            _reclaim_stale_gateway_socket_under_lease(Path(socket_path))
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _reclaim_stale_gateway_socket_under_lease(path):
+    """Inode-checked AF_UNIX crash cleanup, only after lifetime flock.
+
+    No regular file, symlink, foreign UID, open listener, changed inode or
+    ambiguous connection error is ever removed. A SIGKILL leaves the socket
+    node; this is the sole supported automatic stale-node recovery.
+    """
+    try:
+        original = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    if (not stat.S_ISSOCK(original.st_mode)
+            or original.st_uid != os.geteuid()
+            or original.st_nlink != 1
+            or original.st_mode & 0o077):
+        raise RuntimeError("PPI_GATEWAY_STALE_SOCKET_UNTRUSTED")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(.25)
+            probe.connect(str(path))
+    except OSError as exc:
+        if exc.errno != errno.ECONNREFUSED:
+            raise RuntimeError("PPI_GATEWAY_SOCKET_LIVENESS_UNVERIFIED") from None
+    else:
+        raise RuntimeError("PPI_GATEWAY_SOCKET_LIVE_OWNER")
+    try:
+        observed = os.lstat(path)
+    except FileNotFoundError:
+        raise RuntimeError("PPI_GATEWAY_STALE_SOCKET_RACED") from None
+    if (observed.st_dev, observed.st_ino, observed.st_mode, observed.st_uid,
+            observed.st_nlink, observed.st_ctime_ns) != (
+            original.st_dev, original.st_ino, original.st_mode,
+            original.st_uid, original.st_nlink, original.st_ctime_ns):
+        raise RuntimeError("PPI_GATEWAY_STALE_SOCKET_RACED")
+    path.unlink()
+    return True
+
+
+def run_ppi_gateway_worker(store, stop):
+    """One dedicated SDK process; NO reader login in any other PAPER child."""
+    from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+    socket_path = gateway_socket_path(store.path)
+    with ppi_gateway_lifetime_lease(socket_path):
+        _run_ppi_gateway_owned_loop(store, stop)
+
+
+def _run_ppi_gateway_owned_loop(store, stop):
+    from rc6_scanner_login_interlock import ScannerLoginInterlock
+    interlock = ScannerLoginInterlock(store.path, 900)
+    next_attempt = 0.0
+    while not stop.is_set():
+        if time.monotonic() < next_attempt:
+            stop.wait(5)
+            continue
+        owner = None
+        server_thread = None
+        try:
+            # Validate source and PAPER identity BEFORE reserving a login.
+            owner = _make_ppi_gateway_owner(store)
+            decision = interlock.reserve()
+            if decision != "ALLOWED":
+                raise RuntimeError("PPI_GATEWAY_LOGIN_INTERLOCK_" + decision)
+            owner.open_once()  # the only login_api in these four children
+            owner.start_gateway()
+            server_thread = threading.Thread(
+                target=owner.serve_gateway_forever,
+                name="ppi-single-owner-unix-server", daemon=True)
+            server_thread.start()
+            status = owner.status()
+            _best_effort_runtime_event(store, "PPI_GATEWAY_OWNER_OPEN",
+                "pid=" + str(status["owner_pid"]) +
+                ";generation=" + status["session_generation"] +
+                ";login_count=1;provider_quota=UNKNOWN;runtime_global=NO_VERIFICADO")
+            while not stop.wait(5):
+                if not server_thread.is_alive():
+                    raise RuntimeError("PPI_GATEWAY_SERVER_THREAD_EXITED")
+        except Exception as exc:
+            LOG.warning("PPI_GATEWAY_HOLD:%s", type(exc).__name__)
+            _best_effort_runtime_event(store, "PPI_GATEWAY_HOLD", type(exc).__name__)
+            next_attempt = time.monotonic() + 900
+        finally:
+            if owner is not None:
+                if server_thread is not None:
+                    owner.shutdown_gateway()
+                    server_thread.join(timeout=5)
+                    if server_thread.is_alive():
+                        # Never restore the process-wide HTTP guard while a
+                        # listener could still dispatch a PPI GET.
+                        raise RuntimeError("PPI_GATEWAY_SOCKET_DRAIN_UNVERIFIED")
+                owner.close_gateway()  # refuses an in-flight wire executor
+                if owner.status()["state"] == "OPEN":
+                    owner.close()
 
 
 def _sqlite_contention(exc):
@@ -131,11 +308,15 @@ class ChildProcesses:
         # consumidores juntos generaba I/O local antes de su primer pulso.
         started = self.clock()
         self.processes = {}
+        self._gateway_registered = {}
+        self._gateway_generation = None
+        self._gateway_registration_due = started
         self.health = {name: {"state": "STARTUP_WAIT", "pid": None,
             "restarts": 0, "spawn_failures": 0, "started_at": None,
             "last_exit_at": None, "last_error": None} for name in commands}
+        first = "ppi_gateway" if "ppi_gateway" in commands else "scanner"
         self.next_start = {
-            name: (started if name == "scanner" else started + startup_grace_seconds)
+            name: (started if name == first else started + startup_grace_seconds)
             for name in commands
         }
 
@@ -155,11 +336,61 @@ class ChildProcesses:
                     self.health[name].update(state="RUNNING",
                         pid=getattr(self.processes[name], "pid", None),
                         started_at=now_iso(), last_error=None)
+                    if name in {"ppi_gateway", "scanner", "exit_reader", "intraday_scalping"}:
+                        # A fresh PID/role must be registered immediately;
+                        # an earlier owner-status poll may have deferred its
+                        # next census for 15s before this child even existed.
+                        self._gateway_registration_due = now
                 except OSError:
                     self.next_start[name] = now + self.cooldown
                     self.health[name].update(state="SPAWN_FAILED", pid=None,
                         spawn_failures=self.health[name]["spawn_failures"] + 1,
                         last_error="CHILD_SPAWN_FAILED")
+        if "ppi_gateway" in self.commands and now >= self._gateway_registration_due:
+            self._register_gateway_clients(now)
+
+    def _register_gateway_clients(self, now):
+        """Only runtime parent registers real child PID + Linux start tick.
+
+        The gateway independently compares our AF_UNIX SO_PEERCRED PID to its
+        captured parent PID. Failed registration leaves children denied; no
+        consumer gains a provider credential or retries a local login.
+        """
+        roles = {"scanner": "scanner", "exit_reader": "exit_reader",
+                 "intraday_scalping": "scalping"}
+        try:
+            from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+            from rc6_ppi_shared_feed import (ReadOnlyUnixFeedClient,
+                                             ReadOnlyUnixFeedServer)
+            gateway = self.processes.get("ppi_gateway")
+            if gateway is None or gateway.poll() is not None:
+                raise RuntimeError("PPI_GATEWAY_PROCESS_NOT_RUNNING")
+            client = ReadOnlyUnixFeedClient(
+                socket_path=gateway_socket_path(database_path()),
+                timeout_seconds=.4)
+            status = client.owner_status()
+            generation = status["session_generation"]
+            if generation != self._gateway_generation:
+                self._gateway_registered.clear()
+                self._gateway_generation = generation
+            waiting = False
+            for child_name, role in roles.items():
+                child = self.processes.get(child_name)
+                if child is None or child.poll() is not None:
+                    continue
+                pid = getattr(child, "pid", None)
+                birth_tick = ReadOnlyUnixFeedServer.process_starttime(pid)
+                if birth_tick is None:
+                    waiting = True
+                    continue
+                identity = (pid, birth_tick, generation)
+                if self._gateway_registered.get(role) == identity:
+                    continue
+                client.register_client(role, pid=pid, proc_starttime=birth_tick)
+                self._gateway_registered[role] = identity
+            self._gateway_registration_due = now + (2 if waiting else 15)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+            self._gateway_registration_due = now + 2
 
     def snapshot(self):
         return {name: dict(value) for name, value in self.health.items()}
@@ -344,8 +575,10 @@ def exit_reader_cadence(store, at):
 def run_reader(store, stop):
     # Imports de red sólo en el hijo. El reloj padre no instala interceptores
     # ni comparte cliente HTTP mutable con el escáner.
-    from bd_ppi_readonly_guard import ProductionMarketReader, session_invalid
-    from bf_production_paper_observer import _secret, _support_schema, _market_phase
+    from bd_ppi_readonly_guard import session_invalid
+    from bf_production_paper_observer import _support_schema, _market_phase
+    from rc6_ppi_gateway_reader_adapter import (
+        connect_paper_gateway_reader, gateway_reader_needs_reattach)
     from rc6_dynamic_universe.promotion import DEFAULT_POLICY
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
         _support_schema(store)
@@ -361,21 +594,19 @@ def run_reader(store, stop):
                 continue
             if reader is None:
                 if time.monotonic() < next_login:
-                    status("COOLDOWN")
+                    status("GATEWAY_ATTACH_RETRY")
                     stop.wait(5)
                     continue
                 try:
-                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http,
-                                                    consumer="EXIT_READER", priority="EXIT_CRITICAL")
-                    reader.login_once()
-                    store.event("PPI_LOGIN", "owner=exit_reader")
-                    status("READY", "Sesión de lectura iniciada; sin órdenes")
+                    reader = connect_paper_gateway_reader(store.path, consumer="exit_reader")
+                    store.event("PPI_GATEWAY_ATTACHED", "consumer=exit_reader;no_sdk_login")
+                    status("READY", "Lector conectado al único gateway; sin órdenes")
                 except Exception as exc:
                     if reader:
                         reader.close()
                     reader = None
-                    next_login = time.monotonic() + 900
-                    store.event("EXIT_READER_LOGIN_ERROR", type(exc).__name__)
+                    next_login = time.monotonic() + 15  # local AF_UNIX only, never PPI login
+                    store.event("EXIT_READER_GATEWAY_ATTACH_ERROR", type(exc).__name__)
                     status("ERROR",type(exc).__name__)
                     continue
             try:
@@ -433,10 +664,10 @@ def run_reader(store, stop):
                 stop.wait(1)
                 continue
             except Exception as exc:
-                if not session_invalid(exc):
+                if not session_invalid(exc) and not gateway_reader_needs_reattach(exc):
                     raise
-                _best_effort_runtime_event(store, "EXIT_READER_SESSION_INVALID", type(exc).__name__)
-                status("ERROR", "Sesión PPI expirada; nuevas aperturas bloqueadas hasta reautenticar")
+                _best_effort_runtime_event(store, "EXIT_READER_GATEWAY_REATTACH", type(exc).__name__)
+                status("ERROR", "Gateway PPI ausente/rotado o auth inválida; reattach local sin login")
                 reader.close()
                 reader = None
                 next_login = time.monotonic() + 60
@@ -461,7 +692,7 @@ def run_reader(store, stop):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--dynamic-shadow-worker'],
+    if argv not in ([], ['--ppi-gateway-worker'], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--dynamic-shadow-worker'],
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     stop = threading.Event()
@@ -490,6 +721,9 @@ def main(argv=None):
         os.environ["POROTA_RUNTIME_SCHEMA_READY"] = "1"
     # Los hijos cambian cwd; todos deben heredar la misma ruta absoluta.
     os.environ[DB_ENV] = store.path
+    if argv == ["--ppi-gateway-worker"]:
+        run_ppi_gateway_worker(store, stop)
+        return 0
     if argv == ["--exit-reader"]:
         run_reader(store, stop)
         return 0
@@ -513,6 +747,7 @@ def main(argv=None):
     with open(store.path + ".runtime.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         children = ChildProcesses({
+            "ppi_gateway": [sys.executable, str(Path(__file__).resolve()), "--ppi-gateway-worker"],
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
             "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
