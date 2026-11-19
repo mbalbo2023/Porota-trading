@@ -1,25 +1,15 @@
-name: RC6 A670 evergreen BYMA PPI Current Book bounded READ_ONLY
+name: RC6 A670 manual-only BYMA PPI Current Book bounded READ_ONLY
 
-# Evergreen on audited BYMA business sessions; retained A669 workflow filename
-# avoids a second live scheduler. Each UTC clock, ART slot and audited holiday
-# gate runs BEFORE SSH, PPI SDK or any shared budget ledger access.
-# GitHub schedule is best-effort and may be delayed/dropped: manual fallback
-# uses the same exact-day session and 60-minute slot gate. Local two-GET pilot
-# is manual-only and NEVER asserts a signed quota from the PPI provider.
+# Explicit manual-only workflow. Four historical scheduled triggers were removed
+# by operator decision; A669 filename is retained to reuse the audited guard,
+# without creating another workflow or background provider traffic. Every ART
+# slot/calendar/engine gate runs BEFORE SSH, PPI SDK or shared budget access.
+# Local two-GET pilot never asserts a signed PPI provider quota.
 on:
-  schedule:
-    - cron: '45 10 * * 1-5'
-      timezone: 'America/Argentina/Buenos_Aires'
-    - cron: '20 11 * * 1-5'
-      timezone: 'America/Argentina/Buenos_Aires'
-    - cron: '30 14 * * 1-5'
-      timezone: 'America/Argentina/Buenos_Aires'
-    - cron: '30 16 * * 1-5'
-      timezone: 'America/Argentina/Buenos_Aires'
   workflow_dispatch:
     inputs:
       slot:
-        description: 'Fallback same-day audited BYMA ART slot (within 60 min)'
+        description: 'Manual same-day audited BYMA ART slot (within 60 min)'
         type: choice
         required: true
         options: ['1045', '1120', '1430', '1630']
@@ -91,7 +81,7 @@ jobs:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      github.event_name == 'workflow_dispatch'
     # A diagnostic must never race the single governed Deploy V2.
     concurrency:
       group: rc6-unified-paper-deploy
@@ -99,7 +89,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     env:
-      RC6_A669_SCHEDULE: ${{ github.event.schedule }}
       RC6_A669_MANUAL_SLOT: ${{ inputs.slot }}
       RC6_A630_PILOT_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.pilot_mode == 'once' && 'ONCE' || 'OFF' }}
       RC6_A630_POSTCLOSE_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.postclose_mode == 'once' && 'ONCE' || 'OFF' }}
@@ -212,7 +201,7 @@ jobs:
           # daemon, sudo docker, alias lookup or raw Docker JSON in artifacts.
           pilot_arg=""
           if [[ "$RC6_A630_PILOT_MODE" == "ONCE" ]]; then
-            # Literal allowlisted suffix only; scheduled jobs always OFF.
+            # Literal allowlisted suffix only; all invocations are manual.
             # RC6_A630_LOCAL_PILOT is scoped to this one docker-exec child.
             [[ "$RC6_A669_SLOT" =~ ^(1045|1120|1430|1630)$ ]]
             [[ "$RC6_A670_ART_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]

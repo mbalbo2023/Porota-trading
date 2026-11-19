@@ -33,8 +33,8 @@ class A669GuardTests(unittest.TestCase):
         self.engine.write_bytes(b"# A669 test data, never executable provider code\n")
         self.blob = guard.git_blob_sha(self.engine.read_bytes())
 
-    def gate(self, *, now=None, event="schedule", schedule="45 10 * * 1-5",
-             manual="", repo=guard.REPOSITORY, ref=guard.CONTROL_REF,
+    def gate(self, *, now=None, event="workflow_dispatch", schedule="",
+             manual="1045", repo=guard.REPOSITORY, ref=guard.CONTROL_REF,
              head=SHA, source=SHA, engine=None, expected_blob=None):
         return guard.eligible_slot(
             now_utc=now or utc(13, 45), event=event, schedule=schedule,
@@ -43,18 +43,20 @@ class A669GuardTests(unittest.TestCase):
             engine_path=engine or self.engine,
             expected_engine_blob=expected_blob or self.blob)
 
-    def test_four_explicit_ART_timezone_crons_resolve_correct_slot(self):
+    def test_four_explicit_ART_manual_slots_resolve_without_cron(self):
         cases = (
             (utc(13, 45), "45 10 * * 1-5", "1045"),
             (utc(14, 20), "20 11 * * 1-5", "1120"),
             (utc(17, 30), "30 14 * * 1-5", "1430"),
             (utc(19, 30), "30 16 * * 1-5", "1630"),
         )
-        self.assertEqual(len(guard.SCHEDULE_TO_SLOT), 4)
         for when, cron, target in cases:
-            with self.subTest(cron=cron):
-                self.assertEqual(self.gate(now=when, schedule=cron),
+            with self.subTest(slot=target):
+                self.assertEqual(self.gate(now=when, manual=target),
                                  (target, "PASS_WEEKDAY_SLOT_AND_ENGINE_ONLY"))
+                self.assertEqual(self.gate(now=when, event="schedule", schedule=cron,
+                                           manual=target),
+                                 ("", "MANUAL_DISPATCH_REQUIRED"))
 
     def test_future_weekdays_are_not_code_expired_weekends_and_naive_hold(self):
         for valid in (utc(13, 45, 12), utc(13, 45, 20),
@@ -68,12 +70,12 @@ class A669GuardTests(unittest.TestCase):
                 self.assertIn(reason, ("ART_BUSINESS_WEEKDAY_REQUIRED",
                                        "AWARE_UTC_CLOCK_REQUIRED"))
 
-    def test_schedule_lag_is_30_minutes_and_early_or_later_denied(self):
-        self.assertEqual(self.gate(now=utc(14, 15))[0], "1045")
-        self.assertEqual(self.gate(now=utc(14, 16))[0], "")
+    def test_manual_slot_60_minute_window_and_early_or_later_denied(self):
+        self.assertEqual(self.gate(now=utc(14, 45))[0], "1045")
+        self.assertEqual(self.gate(now=utc(14, 46))[0], "")
         self.assertEqual(self.gate(now=utc(13, 44))[0], "")
-        self.assertEqual(self.gate(now=utc(20, 0), schedule="30 16 * * 1-5")[0], "1630")
-        self.assertEqual(self.gate(now=utc(20, 1), schedule="30 16 * * 1-5")[0], "")
+        self.assertEqual(self.gate(now=utc(20, 30), manual="1630")[0], "1630")
+        self.assertEqual(self.gate(now=utc(20, 31), manual="1630")[0], "")
 
     def test_manual_bounded_60_minutes_not_an_arbitrary_time_or_slot(self):
         args = dict(event="workflow_dispatch", schedule="", manual="1045")
@@ -84,7 +86,8 @@ class A669GuardTests(unittest.TestCase):
             self.assertEqual(self.gate(now=utc(13, 45), event="workflow_dispatch",
                                        schedule="", manual=invalid)[0], "")
         self.assertEqual(self.gate(event="pull_request")[0], "")
-        self.assertEqual(self.gate(schedule="45 13 * * 3")[0], "")
+        self.assertEqual(self.gate(event="schedule",schedule="45 13 * * 3")[1],
+                         "MANUAL_DISPATCH_REQUIRED")
 
     def test_postclose_manual_gate_is_separate_from_live_slots_and_pilot_only(self):
         params = dict(now_utc=utc(23, 0, day=18), event="workflow_dispatch",
@@ -235,11 +238,13 @@ class A669GuardTests(unittest.TestCase):
         self.assertFalse(guard._append_hold_env(destination,
             "MARKET_CALENDAR_NOT_VERIFIED",utc(13,45)))
 
-    def test_single_evergreen_weekday_scheduler_and_no_unbounded_provider_job(self):
+    def test_manual_only_workflow_has_no_scheduler_or_unbounded_provider_job(self):
         code = YAML.read_text()
-        self.assertEqual(set(re.findall(r"cron: '([^']+)'", code)),
-                         set(guard.SCHEDULE_TO_SLOT))
-        self.assertEqual(code.count("timezone: 'America/Argentina/Buenos_Aires'"),4)
+        self.assertNotIn("\n  schedule:\n", code)
+        self.assertNotRegex(code, r"\bcron\s*:")
+        self.assertNotIn("github.event_name == 'schedule'", code)
+        self.assertNotIn("RC6_A669_SCHEDULE: ${{ github.event.schedule }}", code)
+        self.assertIn("\n  workflow_dispatch:\n", code)
         self.assertIn("github.ref == 'refs/heads/main'", code)
         self.assertIn("github.event_name == 'workflow_dispatch'", code)
         self.assertIn("python3 -B scripts/rc6_a669_ppi_day_slot_guard.py", code)
@@ -268,7 +273,7 @@ class A669GuardTests(unittest.TestCase):
         self.assertNotIn("porota-deploy-v2", code)
         self.assertNotIn("actions/upload-artifact@v3", code)
 
-    def test_postclose_explicit_manual_only_and_cannot_mutate_live_schedule(self):
+    def test_postclose_explicit_manual_only_without_background_schedule(self):
         code = YAML.read_text()
         self.assertIn("postclose_mode:", code)
         self.assertIn("RC6_A630_POSTCLOSE_MODE", code)

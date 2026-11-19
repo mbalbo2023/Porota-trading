@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""A670 evergreen control-plane gate for audited BYMA PPI Current/Book evidence.
+"""A670 manual-only control-plane gate for audited BYMA PPI Current/Book evidence.
 
 Validates the immutable existing A630 OFFHOST-tested capture engine, exact
 weekday ART slot, and product-pinned official BYMA operational-day calendar.
-The source code and scheduler have NO fixed expiry day; unknown years, stale
+The source code has NO fixed expiry day; unknown years, stale
 audits, holidays and closed sessions are evidence HOLD. This script never
 imports a broker SDK, accesses secrets, opens production host or acquires a
 PPI lease. Provider permissions remain exclusively in the existing audited
@@ -49,12 +49,6 @@ LIMITED_NO_SETTLEMENT_REASONS = frozenset({
 SESSION_REGULAR = "BYMA_AUDITED_OPEN"
 SESSION_LIMITED = "BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY"
 SESSION_POSTCLOSE = "BYMA_CLOSED_POSTCLOSE_DIAGNOSTIC_ONLY"
-SCHEDULE_TO_SLOT = {
-    "45 10 * * 1-5": "1045",
-    "20 11 * * 1-5": "1120",
-    "30 14 * * 1-5": "1430",
-    "30 16 * * 1-5": "1630",
-}
 SLOT_MINUTES = {"1045": 10 * 60 + 45, "1120": 11 * 60 + 20,
                 "1430": 14 * 60 + 30, "1630": 16 * 60 + 30}
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -239,20 +233,17 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
         art = observed.astimezone(ZONE)
     except (TypeError, ValueError, OverflowError):
         return "", "AWARE_UTC_CLOCK_REQUIRED"
+    if event != "workflow_dispatch":
+        return "", "MANUAL_DISPATCH_REQUIRED"
     if art.weekday() >= 5:
         return "", "ART_BUSINESS_WEEKDAY_REQUIRED"
-    if event == "schedule":
-        slot = SCHEDULE_TO_SLOT.get(schedule, "")
-        lag_minutes = 30
-    elif event == "workflow_dispatch":
-        slot = manual_slot if manual_slot in SLOT_MINUTES else ""
-        lag_minutes = 60
-    else:
-        return "", "NON_SAMPLING_EVENT"
+    if schedule:
+        return "", "SCHEDULE_INPUT_FORBIDDEN"
+    slot = manual_slot if manual_slot in SLOT_MINUTES else ""
     if not slot:
-        return "", "UNKNOWN_CRON_OR_MANUAL_SLOT"
+        return "", "UNKNOWN_MANUAL_SLOT"
     observed_minute = art.hour * 60 + art.minute
-    if not SLOT_MINUTES[slot] <= observed_minute <= SLOT_MINUTES[slot] + lag_minutes:
+    if not SLOT_MINUTES[slot] <= observed_minute <= SLOT_MINUTES[slot] + 60:
         return "", "OUTSIDE_ART_SLOT_WINDOW"
     if not pinned_engine_ok(engine_path, expected_engine_blob):
         return "", "AUDITED_ENGINE_BLOB_MISMATCH"
@@ -263,7 +254,7 @@ def eligible_postclose(*, now_utc: datetime, event: str, manual_slot: str,
                        repository: str, ref: str, checkout_sha: str,
                        source_sha: str, engine_path: Path,
                        pilot_mode: str, expected_engine_blob: str = ENGINE_GIT_BLOB):
-    """Additional opt-in manual gate; scheduled LIVE slots remain unchanged."""
+    """Additional opt-in manual gate; never authorizes a schedule event."""
     if (event != "workflow_dispatch" or pilot_mode != "ONCE"
             or repository != REPOSITORY or ref != CONTROL_REF
             or manual_slot not in SLOT_MINUTES):
@@ -354,7 +345,7 @@ def main() -> int:
             pilot_mode=os.environ.get("RC6_A630_PILOT_MODE", "OFF"))
     else:
         slot, reason = eligible_slot(**common,
-            schedule=os.environ.get("RC6_A669_SCHEDULE", ""))
+            schedule="")
     market_session = ""
     if slot:
         allowed, calendar_reason = (
