@@ -3,6 +3,7 @@ import importlib.util
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import stat
@@ -94,6 +95,30 @@ class MonitorContracts(unittest.TestCase):
                                  expected_tree_sha=expected_tree_sha,
                                  inspect=self.inspect)
 
+    def private_probe(self, inspected, *, expected_tree_sha):
+        # Simulates the *output* of the existing strict _rootless_context
+        # adapter; unlike capture(), the runtime call has no injected inspect.
+        with patch.object(monitor, "_docker_inspect", return_value=inspected), \
+                patch.object(monitor, "independent_session", return_value={"state": "OPEN"}), \
+                patch.object(monitor, "_resources", return_value=self.resources), \
+                patch.object(monitor, "_host_control_state", return_value={
+                    "legacy_health_timer": "inactive", "fast_health_timer": "active"}):
+            return monitor.probe(root=self.root, at=NOW, expected_sha=SHA,
+                                 expected_tree_sha=expected_tree_sha)
+
+    def rootless_release(self, *, source_sha, source_tree, image=IMAGE):
+        current = json.loads(self.provenance_path.read_text())
+        current.update(candidate_sha=source_sha, candidate_tree_sha=source_tree,
+                       deployment_backend="ROOTLESS_SPLIT", image_id=image)
+        self.provenance_path.write_text(json.dumps(current))
+        observed = {}
+        for index, role in enumerate(monitor.CONTAINERS, start=1):
+            observed[role] = {
+                "cid": str(index) * 64, "state": "running", "restarts": 0,
+                "oom": False, "image": image, "source_sha": source_sha,
+                "source_tree": source_tree}
+        return observed
+
     def rootless_context(self, command_result=None):
         identity = SimpleNamespace(
             socket="/run/user/1000/porota-rc6-docker.sock",
@@ -117,6 +142,115 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(observation["broker_requests"], 0)
         self.assertEqual(observation["real_order_routes_called"], 0)
         self.assertEqual(observation["host_control_state"]["legacy_health_timer"], "inactive")
+        report_file = observation["performance"]["report_file"]
+        self.assertEqual(report_file["status"], "VALID")
+        self.assertEqual(report_file["file_type"], "REGULAR_FILE")
+        self.assertEqual(report_file["size_bytes"], self.performance_path.stat().st_size)
+        self.assertEqual(report_file["mtime_ns"], self.performance_path.stat().st_mtime_ns)
+        self.assertEqual(report_file["limit_bytes"], 524288)
+        self.assertTrue(report_file["read_only"])
+
+    def test_performance_report_missing_is_not_conflated_with_invalid(self):
+        self.performance_path.unlink()
+        snapshot = self.capture()
+        self.assertEqual(snapshot["performance"]["report_file"]["status"], "MISSING")
+        self.assertIsNone(snapshot["performance"]["report_file"]["size_bytes"])
+        self.assertFalse(snapshot["performance"]["present"])
+        self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
+
+    def test_performance_report_oversize_is_metadata_only_and_does_not_open(self):
+        self.performance_path.write_bytes(b"X" * 524289)
+        with patch.object(monitor.os, "open",
+                          side_effect=AssertionError("OVERSIZE_WAS_OPENED")):
+            snapshot = self.capture()
+        record = snapshot["performance"]["report_file"]
+        self.assertEqual(record["status"], "OVERSIZE")
+        self.assertEqual(record["size_bytes"], 524289)
+        self.assertFalse(snapshot["performance"]["present"])
+        self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
+        self.assertNotIn("OVERSIZE_WAS_OPENED", json.dumps(snapshot))
+
+    def test_performance_report_non_regular_symlink_or_fifo_not_read(self):
+        outside = self.root / "PRIVATE_TARGET.json"
+        outside.write_text('{"account":"SECRET_TICKER","token":"PRIVATE_TOKEN"}')
+        self.performance_path.unlink()
+        self.performance_path.symlink_to(outside)
+        snapshot = self.capture()
+        self.assertEqual(snapshot["performance"]["report_file"]["status"],
+                         "NOT_REGULAR_FILE")
+        self.assertEqual(snapshot["performance"]["report_file"]["file_type"], "SYMLINK")
+        self.assertIsNone(snapshot["performance"]["report_file"]["size_bytes"])
+        self.assertNotIn("PRIVATE_TOKEN", json.dumps(snapshot))
+        self.assertFalse(snapshot["performance"]["present"])
+        self.performance_path.unlink()
+        os.mkfifo(self.performance_path)
+        snapshot = self.capture()
+        self.assertEqual(snapshot["performance"]["report_file"]["status"],
+                         "NOT_REGULAR_FILE")
+        self.assertEqual(snapshot["performance"]["report_file"]["file_type"], "OTHER")
+        self.assertFalse(snapshot["performance"]["present"])
+
+    def test_performance_report_malformed_json_object_and_depth_fail_closed(self):
+        for raw in (b"PRIVATE_INVALID_JSON", b"[]", b"{}", b"[" * 1024 + b"0" + b"]" * 1024):
+            with self.subTest(raw_length=len(raw)):
+                self.performance_path.write_bytes(raw)
+                snapshot = self.capture()
+                self.assertEqual(snapshot["performance"]["report_file"]["status"],
+                                 "MALFORMED")
+                self.assertFalse(snapshot["performance"]["present"])
+                self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
+                self.assertNotIn("PRIVATE_INVALID_JSON", json.dumps(snapshot))
+
+    def test_performance_report_permission_failure_redacts_exception(self):
+        with patch.object(monitor.os, "open",
+                          side_effect=PermissionError("PRIVATE_ACCOUNT_TOKEN")):
+            report, diagnostic = monitor.read_performance_report(self.performance_path)
+        self.assertIsNone(report)
+        self.assertEqual(diagnostic["status"], "UNREADABLE")
+        self.assertNotIn("PRIVATE_ACCOUNT_TOKEN", json.dumps(diagnostic))
+
+    def test_performance_report_hardlink_is_not_trusted(self):
+        link = self.root / "second-hardlink.json"
+        os.link(self.performance_path, link)
+        report, diagnostic = monitor.read_performance_report(self.performance_path)
+        self.assertIsNone(report)
+        self.assertEqual(diagnostic["status"], "UNSAFE_FILE")
+        self.assertEqual(diagnostic["file_type"], "REGULAR_FILE")
+
+    def test_performance_report_fd_and_path_inode_swap_is_rejected(self):
+        replacement = self.performance_path.with_suffix(".replacement")
+        replacement.write_text(json.dumps({"generated_at": NOW.isoformat(),
+                                           "private": "DO_NOT_LEAK"}))
+        original_open = os.open
+        opened_flags = []
+
+        def open_then_replace(path, flags, *args, **kwargs):
+            opened_flags.append(flags)
+            fd = original_open(path, flags, *args, **kwargs)
+            replacement.replace(self.performance_path)
+            return fd
+
+        with patch.object(monitor.os, "open", side_effect=open_then_replace):
+            report, diagnostic = monitor.read_performance_report(self.performance_path)
+        self.assertIsNone(report)
+        self.assertEqual(diagnostic["status"], "CHANGED_DURING_READ")
+        self.assertTrue(opened_flags[0] & os.O_NOFOLLOW)
+        self.assertTrue(opened_flags[0] & os.O_NONBLOCK)
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(diagnostic))
+
+    def test_performance_report_fields_are_allowlisted_in_snapshot(self):
+        self.performance_path.write_text(json.dumps({
+            "generated_at": NOW.isoformat(), "economic_edge_validated": {
+                "ticker": "SECRET_TICKER", "token": "PRIVATE_TOKEN"},
+            "forward_signal_evaluation": {"status": "account=PRIVATE_TOKEN"},
+            "payload": {"account": "PRIVATE_TOKEN"}}))
+        snapshot = self.capture()
+        self.assertEqual(snapshot["performance"]["report_file"]["status"], "VALID")
+        self.assertTrue(snapshot["performance"]["present"])
+        self.assertIsNone(snapshot["performance"]["edge_validated"])
+        self.assertIsNone(snapshot["performance"]["forward_status"])
+        self.assertNotIn("PRIVATE_TOKEN", json.dumps(snapshot))
+        self.assertNotIn("SECRET_TICKER", json.dumps(snapshot))
 
     def test_exit_reader_is_observed_with_allowlisted_state_and_utc_heartbeat(self):
         heartbeat = "2026-11-17T00:52:45.885934+00:00"
@@ -268,6 +402,86 @@ class MonitorContracts(unittest.TestCase):
         self.assertIn("CONTAINER_OR_IMAGE_UNVERIFIED", self.codes(unavailable, "P0"))
         self.assertIn("DEPLOY_PROVENANCE_UNVERIFIED", self.codes(unavailable, "P0"))
         self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(unavailable))
+
+    def test_two_distinct_physically_verified_releases_with_ahead_product_are_pending(self):
+        # A branch HEAD tree is not the deployed release: both synthetic
+        # prior releases must work without a per-SHA static allowlist.
+        for source_sha, release_tree, product_tree in (
+                ("1" * 40, "2" * 40, "3" * 40),
+                ("4" * 40, "5" * 40, "6" * 40)):
+            with self.subTest(source_sha=source_sha):
+                private = self.rootless_release(source_sha=source_sha,
+                                                source_tree=release_tree)
+                snapshot = self.private_probe(private, expected_tree_sha=product_tree)
+                self.assertEqual(snapshot["provenance_identity"], "PRODUCT_TREE_MISMATCH")
+                self.assertEqual(snapshot["release_status"], "RELEASE_PENDING")
+                self.assertIn("PRODUCT_RELEASE_PENDING", self.codes(snapshot, "P1"))
+                self.assertNotIn("DEPLOY_PROVENANCE_INVALID", self.codes(snapshot))
+                self.assertNotIn("DEPLOY_PROVENANCE_UNVERIFIED", self.codes(snapshot))
+                self.assertEqual(snapshot["observed_candidate_sha"], source_sha)
+                self.assertEqual(snapshot["expected_product_tree"], product_tree)
+                self.assertEqual(snapshot["performance_evidence_capacity"]
+                                 ["capacity_limit_source"], "NO_VERIFICADO")
+
+    def test_release_pending_never_downgrades_public_private_marker_or_cid_drift(self):
+        for corrupt in ("source_sha", "source_tree", "image", "duplicate_cid",
+                        "missing_cid", "missing_role", "stopped"):
+            with self.subTest(corrupt=corrupt):
+                observed = self.rootless_release(source_sha="1" * 40,
+                                                 source_tree="2" * 40)
+                marker = json.loads(self.provenance_path.read_text())
+                if corrupt == "source_sha":
+                    marker["candidate_sha"] = "7" * 40
+                elif corrupt == "source_tree":
+                    marker["candidate_tree_sha"] = "8" * 40
+                elif corrupt == "image":
+                    marker["image_id"] = "sha256:" + "9" * 64
+                elif corrupt == "duplicate_cid":
+                    observed["dashboard"]["cid"] = observed["observer"]["cid"]
+                elif corrupt == "missing_cid":
+                    del observed["observer"]["cid"]
+                elif corrupt == "missing_role":
+                    del observed["dashboard"]
+                elif corrupt == "stopped":
+                    observed["dashboard"]["state"] = "exited"
+                self.provenance_path.write_text(json.dumps(marker))
+                snapshot = self.private_probe(observed, expected_tree_sha="3" * 40)
+                self.assertNotEqual(snapshot.get("release_status"), "RELEASE_PENDING")
+                self.assertIn(("DEPLOY_PROVENANCE_UNVERIFIED" if corrupt == "missing_role"
+                               else "DEPLOY_PROVENANCE_INVALID"), self.codes(snapshot, "P0"))
+                self.assertNotIn("PRODUCT_RELEASE_PENDING", self.codes(snapshot))
+
+    def test_release_pending_requires_actual_private_inspector_not_injected_values(self):
+        observed = self.rootless_release(source_sha="1" * 40, source_tree="2" * 40)
+        # A direct inspect injection is for offline tests only: not physical
+        # evidence, even if it has plausible CIDs, source hashes and image.
+        self.inspect = observed
+        injected = self.capture(expected_tree_sha="3" * 40)
+        self.assertNotEqual(injected.get("release_status"), "RELEASE_PENDING")
+        self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(injected, "P0"))
+        unavailable = self.private_probe(None, expected_tree_sha="3" * 40)
+        self.assertNotEqual(unavailable.get("release_status"), "RELEASE_PENDING")
+        self.assertIn("DEPLOY_PROVENANCE_UNVERIFIED", self.codes(unavailable, "P0"))
+        self.assertIn("CONTAINER_OR_IMAGE_UNVERIFIED", self.codes(unavailable, "P0"))
+
+    def test_release_pending_preserves_paper_zero_and_real_route_guards(self):
+        for key, invalid in (("mode", "LIVE"), ("real_orders_sent", 1),
+                             ("real_order_routes", "CALLED"),
+                             ("validation_status", "NO_VERIFICADO")):
+            with self.subTest(key=key):
+                observed = self.rootless_release(source_sha="1" * 40,
+                                                 source_tree="2" * 40)
+                marker = json.loads(self.provenance_path.read_text())
+                marker[key] = invalid
+                self.provenance_path.write_text(json.dumps(marker))
+                snapshot = self.private_probe(observed, expected_tree_sha="3" * 40)
+                self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(snapshot, "P0"))
+                self.assertNotIn("PRODUCT_RELEASE_PENDING", self.codes(snapshot))
+        observed = self.rootless_release(source_sha="1" * 40, source_tree="2" * 40)
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE observer_state SET real_orders_sent=1")
+        observation = self.private_probe(observed, expected_tree_sha="3" * 40)
+        self.assertIn("REAL_ORDER_COUNTER_INVALID", self.codes(observation, "P0"))
 
     def test_private_rootless_inspection_carries_exact_source_provenance(self):
         cid = "1" * 64
