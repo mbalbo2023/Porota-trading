@@ -3,16 +3,19 @@
 
 This source is streamed via stdin to (a) a PRIVATE read-only host mount namespace
 for exact PPI catalog identity and (b) the existing pinned PAPER Docker container.
-The latter may write ONLY through the already activated shared RuntimePPIBudget's
-native acquire/start/finish. Missing identity, EXIT reserve, lease or credentials
-means zero new GETs. The public artifact carries hashes, NOT provider payload.
+Normal mode uses the existing shared RuntimePPIBudget. Only explicit manual
+pilot mode may instead create a separate bounded diagnostic SQLite ledger while
+holding the native bootstrap lock for the absent runtime budget. No production
+budget SQLite or orders are written. The public artifact carries sanitized
+status/hashes, never provider payload.
 """
 
 from __future__ import annotations
 
 import base64
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import fcntl
 from hashlib import sha256
 import json
 import math
@@ -27,6 +30,7 @@ import subprocess
 import sys
 from urllib.parse import parse_qsl, quote, urlsplit
 import uuid
+from zoneinfo import ZoneInfo
 
 SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
 # Additive, success-only evidence fields. Historical v1 receipts remain valid;
@@ -36,9 +40,9 @@ PER_GET_CLOCK_FIELDS = frozenset({
 })
 # These are exact deployed *candidate* coordinates, NOT the merged product
 # branch SHA and NOT the separately audited BYMA calendar revision.
-ROOTLESS_CANDIDATE_SHA = "0dd7b46bafcc21649060e21c7bdf3e40ade6f666"
-ROOTLESS_CANDIDATE_TREE = "e1fa390418be5062d0f246834e38db2c5829d2e6"
-ROOTLESS_IMAGE_ID = "sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f"
+ROOTLESS_CANDIDATE_SHA = "96c626dc09a045f75f5e743c030e8f8228783a54"
+ROOTLESS_CANDIDATE_TREE = "b82e85e8388463d35b6946adcaf3a562c5ad5dfb"
+ROOTLESS_IMAGE_ID = "sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563"
 ROOTLESS_UID = 1000
 ROOTLESS_SCHEMA = "rc6.a630.rootless.capture.v1"
 # Historical A630 v1 receipts retain this field name for compatibility; the
@@ -72,9 +76,15 @@ REASONS = frozenset({
     "PPI_EXIT_LOWER_SUSPENDED", "PPI_EXIT_ROUND_NOT_ATTESTED",
     "PPI_EXIT_ROUND_STALE_OR_CLOCK_INVALID",
     "PPI_BUDGET_RUNTIME_BACKEND_MISMATCH", "PPI_BUDGET_PROBE_UNAVAILABLE",
+    "PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD", "PPI_LOCAL_PILOT_STATE_UNAVAILABLE",
+    "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD", "PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD",
+    "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD",
+    "PPI_LOCAL_PILOT_ALREADY_USED",
+    "PPI_HTTP_429", "PPI_HTTP_401", "PPI_HTTP_403", "PPI_SESSION_INVALID",
     "PROVIDER_GET_SCOPE_OR_COUNT_INVALID", "PPI_PROVIDER_OR_AUTH_FAILED",
     "PROVIDER_RESPONSE_SHAPE_INVALID", "PPI_NATIVE_CLOCK_INVALID",
     "PPI_NATIVE_CLOCK_STALE_OR_FUTURE", "BODY_BUDGET_OR_DIGEST_INVALID",
+    "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO",
     "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT", "RECEIPT_INVALID",
     "ROOTLESS_PIN_MISMATCH", "ROOTLESS_SSH_IDENTITY_HOLD",
     "ROOTLESS_PRIVATE_PATH_HOLD", "ROOTLESS_RELEASE_CUSTODY_HOLD",
@@ -493,8 +503,9 @@ def _rootless_context(*, run=subprocess.run, runtime_override=None):
 
 
 def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
-                          *, run=subprocess.run):
-    """One in-memory stdin stream through owned rootless Docker; no host files."""
+                          *, local_pilot=False, pilot_slot="", pilot_date="",
+                          postclose=False, run=subprocess.run):
+    """In-memory code stream through rootless Docker; budget SQLite may write."""
     result = {"schema": ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
               "reason": "ROOTLESS_PIN_MISMATCH", "runtime_pin_verified": False,
               "host_file_writes": 0, "provider_payload_uploaded": False,
@@ -506,11 +517,24 @@ def rootless_host_capture(target_b64, candidate, tree, image, source_bytes,
         return result
     try:
         target = decode_target(target_b64)
+        if postclose and not local_pilot:
+            result["reason"] = "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD"
+            return result
+        if local_pilot and (pilot_slot not in SLOTS or
+                target_for_slot(pilot_slot) != target or
+                not re.fullmatch(r"\d{4}-\d{2}-\d{2}", pilot_date)):
+            result["reason"] = "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD"
+            return result
         before = _rootless_context(run=run)
+        pilot_env = (("-e", "RC6_A630_LOCAL_PILOT=ONCE",
+                      "-e", f"RC6_A630_LOCAL_SLOT={pilot_slot}",
+                      "-e", f"RC6_A630_LOCAL_ART_DATE={pilot_date}",
+                      *(("-e", "RC6_A630_POSTCLOSE=ONCE") if postclose else ()))
+                     if local_pilot is True else ())
         command = (*before["docker"], "exec", "-i",
                    "-e", f"RC6_A630_TARGET_B64={target_b64}",
                    "-e", f"RC6_A630_EXPECTED_PRODUCT_SHA={PRODUCT_SHA}",
-                   "-e", "PYTHONDONTWRITEBYTECODE=1", before["cid"],
+                   "-e", "PYTHONDONTWRITEBYTECODE=1", *pilot_env, before["cid"],
                    "python", "-B", "-", "container-capture")
         try:
             captured = run(command, input=source_bytes, check=False,
@@ -694,6 +718,197 @@ def existing_container_keypair():
     return None
 
 
+class LocalPilotBudget:
+    """Separate diagnostic debt, exclusive canonical bootstrap-lock custody.
+
+    Only while canonical budget is ABSENT. The runtime bootstrap itself takes
+    this same OS flock before creating global.sqlite, so production can never
+    inherit local policy/debt. Release even on failed HTTP; killed process
+    releases its open descriptor. The harmless bootstrap lock file may remain.
+    """
+    def __init__(self, inner, database, operational_sidecar, bootstrap_fd):
+        self.inner, self.database = inner, database
+        self.operational_sidecar = operational_sidecar
+        self.bootstrap_fd = bootstrap_fd
+
+    def close(self):
+        if self.bootstrap_fd is not None:
+            fd, self.bootstrap_fd = self.bootstrap_fd, None
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+    def _check(self):
+        from rc6_ppi_global_budget import supervisable_position_count
+        if not _local_pilot_admission_paused():
+            raise ValueError("PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD")
+        if supervisable_position_count(self.database) != 0:
+            raise ValueError("PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD")
+        if (self.bootstrap_fd is None or self.operational_sidecar.exists() or
+                self.operational_sidecar.is_symlink()):
+            raise ValueError("PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD")
+        if not _local_pilot_session_now():
+            raise ValueError("PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD")
+
+    def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
+        try:
+            self._check()
+        except ValueError as error:
+            return {"allowed": False, "reason": str(error)}
+        return self.inner.acquire(endpoint, consumer=consumer, priority=priority)
+
+    def start(self, lease):
+        self._check()
+        return self.inner.start(lease)
+
+    @contextmanager
+    def wire_scope(self, lease):
+        self._check()
+        with self.inner.wire_scope(lease):
+            self._check()
+            yield
+
+    def finish(self, lease, **outcome):
+        return self.inner.finish(lease, **outcome)
+
+    def report_error(self, endpoint, code):
+        return self.inner.report_error(endpoint, code)
+
+
+def _local_pilot_session_now(*, now=None):
+    """Recheck ART session at the actual HTTP seam, not only in Actions.
+
+    A670 already established the official BYMA day/calendar identity. Local
+    secondary check binds the same ART date+slot to this Docker child and
+    stops at 16:45 ART (well before end of spot session). Numeric limits are
+    local diagnostic limits, not a new provider policy.
+    """
+    slot = os.environ.get("RC6_A630_LOCAL_SLOT", "")
+    target_day = os.environ.get("RC6_A630_LOCAL_ART_DATE", "")
+    if slot not in SLOTS or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", target_day):
+        return False
+    stamp = now or datetime.now(timezone.utc)
+    if not isinstance(stamp, datetime) or stamp.tzinfo is None:
+        return False
+    art = stamp.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
+    minutes = art.hour * 60 + art.minute
+    first = int(slot[:2]) * 60 + int(slot[2:])
+    if not (art.weekday() < 5 and art.date().isoformat() == target_day):
+        return False
+    if os.environ.get("RC6_A630_POSTCLOSE") == "ONCE":
+        # The audited calendar/time gate ran in Actions before remote access;
+        # recheck the same ART date and CLOSED window at each budget/wire seam.
+        return 17 * 60 <= minutes < 23 * 60
+    return first <= minutes <= min(first + 59, 16 * 60 + 45)
+
+
+def _local_pilot_admission_paused():
+    """Require authenticated owner PAUSE, not merely a failing entry check.
+
+    `admission_status()` alone fails closed for several unrelated reasons,
+    including an unreadable receipt. Those failures are NOT proof that PAPER
+    entry cannot rearm while this diagnostic budget holds a bootstrap lock.
+    """
+    try:
+        from scripts.rc6_operator_paper_rearm import PAUSE_STATUS, trusted_operator_pause
+        from rc6_paper_admission_gate import admission_status
+        now = datetime.now(timezone.utc)
+        paused = trusted_operator_pause(now=now, context="runtime")
+        if (not isinstance(paused, dict)
+                or paused.get("status") != PAUSE_STATUS):
+            return False
+        allowed, reason = admission_status(now=now)
+        return (allowed is False
+                and reason == "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM")
+    except (OSError, ValueError, TypeError, KeyError, ImportError):
+        return False
+
+
+def _sanitized_native_auth_reason(error):
+    """Only typed known ProductAuthResponseError metadata; no SDK text leak."""
+    if type(error).__name__ != "ProductionAuthResponseError":
+        return None
+    stamp = re.fullmatch(
+        r"PPI_PRODUCTION_AUTH_(?:PROVIDER_ERROR|NON_JSON_RESPONSE): "
+        r"HTTP=(401|403|429); Content-Type=(?:APPLICATION_JSON|"
+        r"APPLICATION_PROBLEM_JSON|TEXT_HTML|TEXT_PLAIN|OTHER|ABSENT|UNKNOWN); "
+        r"Content-Length=(?:UNKNOWN|[0-9]{1,8})", str(error))
+    return "PPI_HTTP_" + stamp.group(1) if stamp else None
+
+
+def _local_once_budget(database, sidecar):
+    """Cold-start two-GET lease, NOT a PPI quota claim or a PAPER readiness.
+
+    One-hour rolling debt exceeds the 90-second local authority. The private
+    sidecar persists across Action retries. Runtime global.sqlite is NEVER
+    opened or written, and its bootstrap lock excludes concurrent activation.
+    """
+    fd = None
+    try:
+        from rc6_ppi_global_budget import GlobalPPIBudget, SCHEMA as BUDGET_SCHEMA
+        from rc6_ppi_global_budget import supervisable_position_count
+        if not _local_pilot_session_now():
+            return None, "PPI_LOCAL_PILOT_SLOT_OR_SESSION_HOLD"
+        if not _local_pilot_admission_paused():
+            return None, "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD"
+        if supervisable_position_count(database) != 0:
+            return None, "PPI_LOCAL_PILOT_PAPER_LEDGER_HOLD"
+        if sidecar.exists() or sidecar.is_symlink():
+            return None, "PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD"
+        # This exact path is the pre-existing native bootstrap mutex; unlike
+        # orphan *.wire.lock it does not invalidate runtime_budget_snapshot.
+        if any(parent.is_symlink() for parent in (sidecar, *sidecar.parents)):
+            return None, "PPI_BUDGET_SIDECAR_PATH_UNSAFE"
+        sidecar.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        mutex = Path(str(sidecar) + ".bootstrap.lock")
+        if mutex.is_symlink():
+            return None, "PPI_BUDGET_SIDECAR_PATH_UNSAFE"
+        fd = os.open(mutex, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        current = os.fstat(fd)
+        located = mutex.stat(follow_symlinks=False)
+        if (not stat.S_ISREG(current.st_mode) or current.st_nlink != 1 or
+                (current.st_dev, current.st_ino) != (located.st_dev, located.st_ino)):
+            raise ValueError("PPI_LOCAL_PILOT_STATE_UNAVAILABLE")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if (sidecar.exists() or sidecar.is_symlink()
+                or supervisable_position_count(database) != 0):
+            return None, "PPI_LOCAL_PILOT_RUNTIME_BUDGET_HOLD"
+        if not _local_pilot_admission_paused():
+            return None, "PPI_LOCAL_PILOT_PAPER_ADMISSION_HOLD"
+        private = sidecar.parent.parent / "ppi-a670-diagnostic" / "budget.sqlite"
+        # Globally one-shot per artifact, even if no GET was completed. Never
+        # mint a new authority after one hour or an unsuccessful login.
+        if private.exists() or private.is_symlink():
+            return None, "PPI_LOCAL_PILOT_ALREADY_USED"
+        now = datetime.now(timezone.utc)
+        version = f"rc6-a630-local-once-v1:{PRODUCT_SHA}:{now.isoformat()}"
+        token = sha256(version.encode("utf-8")).hexdigest()
+        policy = {
+            "schema": BUDGET_SCHEMA, "version": "rc6-a630-local-once-v1",
+            "authority": "LOCAL_DIAGNOSTIC_ONLY_NOT_PROVIDER_QUOTA",
+            "recommendation_digest": token, "configuration_fingerprint": token,
+            "window_seconds": 3600,
+            "endpoint_limits": {"current": 1, "book": 1, "intraday": 1},
+            "global_limit": 2, "max_parallel_requests": 1,
+            "safety_reserve": "LOCAL_DIAGNOSTIC_ONLY; PROVIDER_QUOTA_NO_VERIFICADO",
+            "priority_reserves": {}, "open_positions_count": 0, "exit_demand": {},
+            "expires_at": (now + timedelta(seconds=90)).isoformat(),
+            "critical_book_seconds": 5, "lease_seconds": 60,
+            "breaker_seconds": 3600, "session_breaker_seconds": 3600,
+            "server_error_threshold": 1, "maximum_bytes": 8 * 1024**2,
+        }
+        shared = GlobalPPIBudget(private, policy, protected=[database, sidecar])
+        budget = LocalPilotBudget(shared, database, sidecar, fd)
+        fd = None  # ownership transferred until container capture finally
+        return budget, None
+    except (OSError, ValueError, TypeError, RuntimeError, ImportError, BlockingIOError):
+        return None, "PPI_LOCAL_PILOT_STATE_UNAVAILABLE"
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def _existing_shared_budget():
     from cg_paper_workspace import artifact_root, database_path
     from rc6_ppi_global_budget import (RuntimePPIBudget, budget_from_environment,
@@ -702,6 +917,8 @@ def _existing_shared_budget():
     sidecar = artifact_root(database) / "ppi-budget/global.sqlite"
     if any(path.is_symlink() for path in (sidecar, *sidecar.parents)):
         return None, "PPI_BUDGET_SIDECAR_PATH_UNSAFE"
+    if os.environ.get("RC6_A630_LOCAL_PILOT") == "ONCE":
+        return _local_once_budget(database, sidecar)
     try:
         before = sidecar.stat()
         if not sidecar.is_file() or before.st_nlink != 1:
@@ -927,7 +1144,7 @@ def unverified_transport_receipt(reason="HOST_PREFLIGHT_OR_RUNTIME_HOLD"):
 
 def capture_two(target, credentials, shared_budget, reader_factory,
                 *, clock=None, http_limiter=None, adapter_guard=None,
-                budget_reason=None):
+                budget_reason=None, allow_stale=False):
     receipt = _base_receipt(target)
     if credentials is None:
         receipt["reason"] = "PPI_KEYPAIR_UNAVAILABLE"
@@ -942,6 +1159,7 @@ def capture_two(target, credentials, shared_budget, reader_factory,
     reader = None
     adapter_sends = []
     reader_close_failed = False
+    provider_error_code = None
     limiter = http_limiter or (lambda: _http_body_hashes(target))
     guard = adapter_guard or (lambda: _strict_adapter_send(target, budget))
     observed = clock or (lambda: datetime.now(timezone.utc))
@@ -970,6 +1188,9 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                         book_received = _observed_utc(observed)
                 finally:
                     if reader is not None:
+                        # Only the product guard's typed status, never exception
+                        # text, provider body, URL or SDK credentials, is public.
+                        provider_error_code = getattr(reader, "last_read_error_code", None)
                         try:
                             reader.close()
                         except Exception:
@@ -990,9 +1211,11 @@ def capture_two(target, credentials, shared_budget, reader_factory,
         cp, bp = _utc(current.get("date")), _utc(book.get("date"))
         # Require both freshness at each GET and the historical pair-complete
         # freshness gate; long Book latency must not relax the original policy.
-        if not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
-                   for provider, received in ((cp, current_received), (bp, book_received),
-                                              (cp, now), (bp, now))):
+        ages = [(received - provider).total_seconds() * 1000
+                for provider, received in ((cp, current_received), (bp, book_received),
+                                           (cp, now), (bp, now))]
+        if (any(age < 0 for age in ages)
+                or (not allow_stale and any(age > MAX_AGE_MS for age in ages))):
             raise ValueError("PPI_NATIVE_CLOCK_STALE_OR_FUTURE")
         expected_paths = ["/api/1.0/marketdata/current", "/api/1.0/marketdata/book"]
         if ([row[0] for row in body] != expected_paths
@@ -1008,8 +1231,15 @@ def capture_two(target, credentials, shared_budget, reader_factory,
             current_body_bytes=body[0][2], book_body_bytes=body[1][2],
             book_bid_levels=len(book["bids"]), book_offer_levels=len(book["offers"]))
     except Exception as error:
-        receipt["reason"] = (str(error) if str(error) in REASONS
-                             else "PPI_PROVIDER_OR_AUTH_FAILED")
+        typed = _sanitized_native_auth_reason(error)
+        if provider_error_code in {"PPI_HTTP_429", "PPI_HTTP_401",
+                                   "PPI_HTTP_403", "PPI_SESSION_INVALID"}:
+            receipt["reason"] = provider_error_code
+        elif typed is not None:
+            receipt["reason"] = typed
+        else:
+            receipt["reason"] = (str(error) if str(error) in REASONS
+                                 else "PPI_PROVIDER_OR_AUTH_FAILED")
     finally:
         if reader_close_failed:
             receipt["reason"] = "PPI_PROVIDER_OR_AUTH_FAILED"
@@ -1037,7 +1267,9 @@ def capture_two(target, credentials, shared_budget, reader_factory,
                 receipt["adapter_current_sends"] == receipt["adapter_book_sends"] == 1 and
                 receipt["current_http_body_sha256"] and receipt["book_http_body_sha256"]):
             receipt["state"] = "EVIDENCE_ONLY_NO_GO"
-            receipt["reason"] = "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT"
+            receipt["reason"] = ("PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"
+                if allow_stale and any(age > MAX_AGE_MS for age in ages)
+                else "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT")
         else:
             for field in PER_GET_CLOCK_FIELDS:
                 receipt.pop(field, None)
@@ -1078,7 +1310,8 @@ def verify_receipt(obj, target):
     digests = (obj["current_http_body_sha256"], obj["book_http_body_sha256"])
     dates = (obj["first_known_at_utc"], obj["current_provider_at_utc"], obj["book_provider_at_utc"])
     if obj["state"] == "EVIDENCE_ONLY_NO_GO":
-        if (obj["reason"] != "PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT" or
+        if (obj["reason"] not in {"PPI_GET_RECEIPT_SDK_ONLY_NO_CAUSAL_PIT",
+                                   "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"} or
                 obj["current_gets"] != 1 or obj["book_gets"] != 1 or
                 obj["adapter_current_sends"] != 1 or obj["adapter_book_sends"] != 1 or
                 any(obj[k] != 2 for k in ("lease_acquires", "lease_starts", "lease_finishes")) or
@@ -1094,18 +1327,23 @@ def verify_receipt(obj, target):
                 received_current, received_book, completed = map(_utc, raw_times)
                 # New fields must be canonical UTC instants, not local offsets,
                 # and all causal inequalities must hold independently.
+                ages = [(received - provider).total_seconds() * 1000
+                        for provider, received in ((current, received_current),
+                                                   (book, received_book),
+                                                   (current, known), (book, known))]
                 if (any(t.isoformat() != raw for t, raw in zip(
                         (received_current, received_book, completed), raw_times)) or
                         completed != known or
                         obj["pair_completed_at_utc"] != obj["first_known_at_utc"] or
                         not current <= received_current <= received_book <= completed or
                         not book <= received_book or
-                        not all(0 <= (received - provider).total_seconds() * 1000 <= MAX_AGE_MS
-                                for provider, received in ((current, received_current),
-                                                           (book, received_book),
-                                                           (current, known), (book, known)))):
+                        any(age < 0 for age in ages) or
+                        ((any(age > MAX_AGE_MS for age in ages)) !=
+                         (obj["reason"] == "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO"))):
                     return False
                 return True
+            if obj["reason"] == "PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO":
+                return False  # Stale diagnostics require per-GET causal clocks.
             # Archived v1 receipts lack per-GET clocks; remain valid evidence,
             # but must never be promoted to independent causal PIT authority.
             return all(0 <= (known - t).total_seconds() * 1000 <= MAX_AGE_MS for t in (current, book))
@@ -1129,8 +1367,14 @@ def container_main():
                 from bd_ppi_readonly_guard import ProductionMarketReader
             else:
                 ProductionMarketReader = None
-            receipt = capture_two(target, credentials, budget, ProductionMarketReader,
-                                  budget_reason=budget_reason)
+            try:
+                receipt = capture_two(target, credentials, budget, ProductionMarketReader,
+                                      budget_reason=budget_reason,
+                                      allow_stale=(os.environ.get("RC6_A630_POSTCLOSE") == "ONCE"
+                                         and os.environ.get("RC6_A630_LOCAL_PILOT") == "ONCE"))
+            finally:
+                if isinstance(budget, LocalPilotBudget):
+                    budget.close()
         if not verify_receipt(receipt, target):
             raise ValueError("RECEIPT_INVALID")
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
@@ -1148,12 +1392,18 @@ def main():
         result = host_preflight(sys.argv[2])
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "IDENTITY_ONLY_NO_GET" else 2
-    if sys.argv[1:] and sys.argv[1] == "rootless-capture" and len(sys.argv) == 6:
+    if sys.argv[1:] and sys.argv[1] == "rootless-capture" and len(sys.argv) in (6, 9, 10):
         # The runner streams an already blob-pinned copy of THIS program into
         # one remote Python -c bootstrap; it is kept in memory and supplied to
         # docker exec -i without writing an executable anywhere on the host.
-        result = rootless_host_capture(*sys.argv[2:],
-            globals().get("__RC6_SOURCE_BYTES__"))
+        local_pilot = len(sys.argv) >= 9 and sys.argv[6] == "ONCE"
+        postclose = len(sys.argv) == 10 and sys.argv[9] == "POSTCLOSE"
+        if (len(sys.argv) >= 9 and not local_pilot) or (len(sys.argv) == 10 and not postclose):
+            raise SystemExit("A630_LOCAL_PILOT_MODE_INVALID")
+        result = rootless_host_capture(*sys.argv[2:6],
+            globals().get("__RC6_SOURCE_BYTES__"), local_pilot=local_pilot,
+            pilot_slot=sys.argv[7] if local_pilot else "",
+            pilot_date=sys.argv[8] if local_pilot else "", postclose=postclose)
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "EVIDENCE_ONLY_NO_GO" else 2
     if sys.argv[1:] == ["container-capture"]:

@@ -33,8 +33,8 @@ class A669GuardTests(unittest.TestCase):
         self.engine.write_bytes(b"# A669 test data, never executable provider code\n")
         self.blob = guard.git_blob_sha(self.engine.read_bytes())
 
-    def gate(self, *, now=None, event="schedule", schedule="45 10 * * 1-5",
-             manual="", repo=guard.REPOSITORY, ref=guard.CONTROL_REF,
+    def gate(self, *, now=None, event="workflow_dispatch", schedule="",
+             manual="1045", repo=guard.REPOSITORY, ref=guard.CONTROL_REF,
              head=SHA, source=SHA, engine=None, expected_blob=None):
         return guard.eligible_slot(
             now_utc=now or utc(13, 45), event=event, schedule=schedule,
@@ -43,18 +43,20 @@ class A669GuardTests(unittest.TestCase):
             engine_path=engine or self.engine,
             expected_engine_blob=expected_blob or self.blob)
 
-    def test_four_explicit_ART_timezone_crons_resolve_correct_slot(self):
+    def test_four_explicit_ART_manual_slots_resolve_without_cron(self):
         cases = (
             (utc(13, 45), "45 10 * * 1-5", "1045"),
             (utc(14, 20), "20 11 * * 1-5", "1120"),
             (utc(17, 30), "30 14 * * 1-5", "1430"),
             (utc(19, 30), "30 16 * * 1-5", "1630"),
         )
-        self.assertEqual(len(guard.SCHEDULE_TO_SLOT), 4)
         for when, cron, target in cases:
-            with self.subTest(cron=cron):
-                self.assertEqual(self.gate(now=when, schedule=cron),
+            with self.subTest(slot=target):
+                self.assertEqual(self.gate(now=when, manual=target),
                                  (target, "PASS_WEEKDAY_SLOT_AND_ENGINE_ONLY"))
+                self.assertEqual(self.gate(now=when, event="schedule", schedule=cron,
+                                           manual=target),
+                                 ("", "MANUAL_DISPATCH_REQUIRED"))
 
     def test_future_weekdays_are_not_code_expired_weekends_and_naive_hold(self):
         for valid in (utc(13, 45, 12), utc(13, 45, 20),
@@ -68,12 +70,12 @@ class A669GuardTests(unittest.TestCase):
                 self.assertIn(reason, ("ART_BUSINESS_WEEKDAY_REQUIRED",
                                        "AWARE_UTC_CLOCK_REQUIRED"))
 
-    def test_schedule_lag_is_30_minutes_and_early_or_later_denied(self):
-        self.assertEqual(self.gate(now=utc(14, 15))[0], "1045")
-        self.assertEqual(self.gate(now=utc(14, 16))[0], "")
+    def test_manual_slot_60_minute_window_and_early_or_later_denied(self):
+        self.assertEqual(self.gate(now=utc(14, 45))[0], "1045")
+        self.assertEqual(self.gate(now=utc(14, 46))[0], "")
         self.assertEqual(self.gate(now=utc(13, 44))[0], "")
-        self.assertEqual(self.gate(now=utc(20, 0), schedule="30 16 * * 1-5")[0], "1630")
-        self.assertEqual(self.gate(now=utc(20, 1), schedule="30 16 * * 1-5")[0], "")
+        self.assertEqual(self.gate(now=utc(20, 30), manual="1630")[0], "1630")
+        self.assertEqual(self.gate(now=utc(20, 31), manual="1630")[0], "")
 
     def test_manual_bounded_60_minutes_not_an_arbitrary_time_or_slot(self):
         args = dict(event="workflow_dispatch", schedule="", manual="1045")
@@ -84,7 +86,63 @@ class A669GuardTests(unittest.TestCase):
             self.assertEqual(self.gate(now=utc(13, 45), event="workflow_dispatch",
                                        schedule="", manual=invalid)[0], "")
         self.assertEqual(self.gate(event="pull_request")[0], "")
-        self.assertEqual(self.gate(schedule="45 13 * * 3")[0], "")
+        self.assertEqual(self.gate(event="schedule",schedule="45 13 * * 3")[1],
+                         "MANUAL_DISPATCH_REQUIRED")
+
+    def test_postclose_manual_gate_is_separate_from_live_slots_and_pilot_only(self):
+        params = dict(now_utc=utc(23, 0, day=18), event="workflow_dispatch",
+            manual_slot="1630", repository=guard.REPOSITORY,
+            ref=guard.CONTROL_REF, checkout_sha=SHA, source_sha=SHA,
+            engine_path=self.engine, expected_engine_blob=self.blob,
+            pilot_mode="ONCE")
+        self.assertEqual(guard.eligible_postclose(**params),
+                         ("1630", "PASS_POSTCLOSE_MANUAL_ENGINE_ONLY"))
+        self.assertEqual(self.gate(now=params["now_utc"], event="workflow_dispatch",
+                                   manual="1630")[0], "")
+        for edit in ({"event": "schedule"}, {"event": "pull_request"},
+                     {"pilot_mode": "OFF"}, {"manual_slot": "0000"},
+                     {"now_utc": utc(19, 55, day=18)},
+                     {"now_utc": utc(2, 0, day=19)},
+                     {"repository": "attacker/fork"},
+                     {"source_sha": "b" * 40}):
+            with self.subTest(edit=edit):
+                self.assertEqual(guard.eligible_postclose(**(params | edit))[0], "")
+
+    def test_postclose_audit_is_bounded_and_does_not_claim_market_open(self):
+        reasons = {
+            date(2026,11,6): "Día del Bancario; jornada especial sin liquidación",
+            date(2026,11,9): "Visita de Su Santidad el Papa León XIV",
+            date(2026,11,10): "Visita de Su Santidad el Papa León XIV",
+        }
+        calendar = SimpleNamespace(
+            FUENTE_OFICIAL="https://www.byma.com.ar/mercado/calendario-bursatil",
+            CALENDARIO_ACTUALIZADO_EL=date(2026, 10, 14),
+            ANIOS_AUDITADOS=frozenset({2026}),
+            es_dia_habil_operativo=lambda day: day.weekday()<5 and day not in reasons,
+            motivo_no_operativo=lambda day: reasons.get(day))
+        session = SimpleNamespace(TZ=ZoneInfo("America/Argentina/Buenos_Aires"),
+            BYMA_PAPER_SPOT_OPEN=time(10,30), BYMA_PAPER_SPOT_CLOSE=time(17))
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),calendar,session),
+                         (True,"BYMA_CLOSED_POSTCLOSE_DIAGNOSTIC_ONLY"))
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=6),calendar,session),
+                         (False,"BYMA_LIMITED_NO_SETTLEMENT_POSTCLOSE_HOLD"))
+        for day in (9, 10):
+            self.assertEqual(guard.audited_postclose_window(utc(23,0,day=day),calendar,session),
+                             (False,"BYMA_NO_NEGOTIATION_OR_SPECIAL_SESSION_HOLD"))
+        self.assertEqual(guard.audited_postclose_window(utc(19,55,day=18),calendar,session)[0],False)
+        self.assertEqual(guard.audited_postclose_window(utc(2,0,day=19),calendar,session)[0],False)
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=21),calendar,session)[0],False)
+        stale = SimpleNamespace(**{**vars(calendar),"CALENDARIO_ACTUALIZADO_EL":date(2026,8,1)})
+        self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),stale,session)[0],False)
+        for broken in (
+            SimpleNamespace(**{k:v for k,v in vars(calendar).items()
+                               if k!="es_dia_habil_operativo"}),
+            SimpleNamespace(**{**vars(calendar),
+                               "es_dia_habil_operativo":lambda day: None}),
+            SimpleNamespace(**{**vars(calendar),
+                               "motivo_no_operativo":lambda day: "UNKNOWN_CLOSURE"}),
+        ):
+            self.assertEqual(guard.audited_postclose_window(utc(23,0,day=18),broken,session)[0],False)
 
     def test_official_market_calendar_limited_negotiation_no_settlement_and_stale(self):
         reasons = {date(2026,11,6):"Día del Bancario; jornada especial sin liquidación",
@@ -180,11 +238,13 @@ class A669GuardTests(unittest.TestCase):
         self.assertFalse(guard._append_hold_env(destination,
             "MARKET_CALENDAR_NOT_VERIFIED",utc(13,45)))
 
-    def test_single_evergreen_weekday_scheduler_and_no_unbounded_provider_job(self):
+    def test_manual_only_workflow_has_no_scheduler_or_unbounded_provider_job(self):
         code = YAML.read_text()
-        self.assertEqual(set(re.findall(r"cron: '([^']+)'", code)),
-                         set(guard.SCHEDULE_TO_SLOT))
-        self.assertEqual(code.count("timezone: 'America/Argentina/Buenos_Aires'"),4)
+        self.assertNotIn("\n  schedule:\n", code)
+        self.assertNotRegex(code, r"\bcron\s*:")
+        self.assertNotIn("github.event_name == 'schedule'", code)
+        self.assertNotIn("RC6_A669_SCHEDULE: ${{ github.event.schedule }}", code)
+        self.assertIn("\n  workflow_dispatch:\n", code)
         self.assertIn("github.ref == 'refs/heads/main'", code)
         self.assertIn("github.event_name == 'workflow_dispatch'", code)
         self.assertIn("python3 -B scripts/rc6_a669_ppi_day_slot_guard.py", code)
@@ -198,12 +258,28 @@ class A669GuardTests(unittest.TestCase):
         self.assertIn("source_pit_verified':False", code)
         self.assertIn("paper_admission_certified':False", code)
         self.assertIn("RC6_A670_HOLD_REASON", code)
+
+    def test_local_pilot_requires_manual_workflow_dispatch_and_is_off_by_default(self):
+        code = YAML.read_text()
+        self.assertIn("pilot_mode:", code)
+        self.assertIn("options: ['off', 'once']", code)
+        self.assertIn("github.event_name == 'workflow_dispatch'", code)
+        self.assertIn("RC6_A630_PILOT_MODE", code)
+        self.assertIn("RC6_A630_LOCAL_PILOT", code)
         self.assertIn("RC6_A670_MARKET_SESSION", code)
         self.assertIn("BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY", code)
         self.assertNotIn("pull_request_target:", code)
         self.assertNotIn("porota-predeploy-v2", code)
         self.assertNotIn("porota-deploy-v2", code)
         self.assertNotIn("actions/upload-artifact@v3", code)
+
+    def test_postclose_explicit_manual_only_without_background_schedule(self):
+        code = YAML.read_text()
+        self.assertIn("postclose_mode:", code)
+        self.assertIn("RC6_A630_POSTCLOSE_MODE", code)
+        self.assertIn("RC6_A630_POSTCLOSE", code)
+        self.assertIn("PPI_NATIVE_STALE_POSTCLOSE_DIAGNOSTIC_NO_GO", code)
+        self.assertIn("sample_families", code)
 
     def test_git_blob_is_not_unprefixed_sha1_and_expected_pin_is_literal(self):
         content = self.engine.read_bytes()
@@ -220,9 +296,9 @@ class A669GuardTests(unittest.TestCase):
 
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()
-        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 0dd7b46bafcc21649060e21c7bdf3e40ade6f666", code)
-        self.assertIn("RC6_EXPECTED_TREE_SHA: e1fa390418be5062d0f246834e38db2c5829d2e6", code)
-        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:6f5d34828f9cb0978d6fe78f3050940f69d11ab0aa7e96097b154d41ea67826f", code)
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 96c626dc09a045f75f5e743c030e8f8228783a54", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: b82e85e8388463d35b6946adcaf3a562c5ad5dfb", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563", code)
         self.assertIn("rootless-capture", code)
         self.assertNotIn("sudo -n docker", code)
         self.assertNotIn("porota_production_observer", code)

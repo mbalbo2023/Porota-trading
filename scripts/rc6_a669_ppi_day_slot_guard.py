@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""A670 evergreen control-plane gate for audited BYMA PPI Current/Book evidence.
+"""A670 manual-only control-plane gate for audited BYMA PPI Current/Book evidence.
 
 Validates the immutable existing A630 OFFHOST-tested capture engine, exact
 weekday ART slot, and product-pinned official BYMA operational-day calendar.
-The source code and scheduler have NO fixed expiry day; unknown years, stale
+The source code has NO fixed expiry day; unknown years, stale
 audits, holidays and closed sessions are evidence HOLD. This script never
 imports a broker SDK, accesses secrets, opens production host or acquires a
 PPI lease. Provider permissions remain exclusively in the existing audited
-capture engine, subject to its live shared-budget/EXIT/lease checks.
+capture engine, subject to its existing runtime shared-budget/EXIT/lease
+checks, or a separate explicitly manual local two-GET diagnostic at zero
+observed PAPER positions. Neither is an official provider-quota attestation.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "fc443b3e8aca3294b2ce00b0080974b6a8408cb6"
+ENGINE_GIT_BLOB = "eb7387f1409b990214e56d1cf04f44381c9b5be9"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -38,7 +40,7 @@ BYMA_OFFICIAL_CALENDAR_SOURCE = "https://www.byma.com.ar/mercado/calendario-burs
 CALENDAR_AUDIT_MAX_AGE_DAYS = 60  # same bounded freshness policy as RC6 Market Watch
 # Exact historical product calendar reasons corresponding to BYMA footnote (3):
 # negotiated session, but NO settlement. Only diagnostic PPI Current/Book GET
-# under signed native budget is eligible; never PAPER entry or settlement.
+# under an explicitly bounded budget is eligible; never PAPER entry or settlement.
 LIMITED_NO_SETTLEMENT_REASONS = frozenset({
     "Día del Bancario; jornada especial sin liquidación",
     "Día no laborable con fines turísticos",
@@ -46,12 +48,7 @@ LIMITED_NO_SETTLEMENT_REASONS = frozenset({
 })
 SESSION_REGULAR = "BYMA_AUDITED_OPEN"
 SESSION_LIMITED = "BYMA_LIMITED_TRADING_NO_SETTLEMENT_OBSERVE_ONLY"
-SCHEDULE_TO_SLOT = {
-    "45 10 * * 1-5": "1045",
-    "20 11 * * 1-5": "1120",
-    "30 14 * * 1-5": "1430",
-    "30 16 * * 1-5": "1630",
-}
+SESSION_POSTCLOSE = "BYMA_CLOSED_POSTCLOSE_DIAGNOSTIC_ONLY"
 SLOT_MINUTES = {"1045": 10 * 60 + 45, "1120": 11 * 60 + 20,
                 "1430": 14 * 60 + 30, "1630": 16 * 60 + 30}
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
@@ -123,6 +120,46 @@ def audited_market_session(now_utc: datetime, calendar, sessions):
         return False, "MARKET_CALENDAR_NOT_VERIFIED"
 
 
+def audited_postclose_window(now_utc: datetime, calendar, sessions):
+    """Manual 17:00-23:00 ART date/audit gate; NEVER a market-open grant.
+
+    This does not attest provider quota or freshness. On any missing official
+    calendar pin/stale source, return HOLD before contacting the droplet.
+    """
+    try:
+        if not isinstance(now_utc, datetime) or now_utc.tzinfo is None:
+            return False, "MARKET_CALENDAR_NOT_VERIFIED"
+        art = now_utc.astimezone(ZONE)
+        audit = calendar.CALENDARIO_ACTUALIZADO_EL
+        if (calendar.FUENTE_OFICIAL != BYMA_OFFICIAL_CALENDAR_SOURCE
+                or not isinstance(audit, date) or isinstance(audit, datetime)
+                or not isinstance(calendar.ANIOS_AUDITADOS, (set, frozenset))
+                or art.year not in calendar.ANIOS_AUDITADOS
+                or not 0 <= (art.date() - audit).days <= CALENDAR_AUDIT_MAX_AGE_DAYS
+                or sessions.TZ != ZONE
+                or not isinstance(sessions.BYMA_PAPER_SPOT_CLOSE, time)):
+            return False, "MARKET_CALENDAR_NOT_VERIFIED"
+        minutes = art.hour * 60 + art.minute
+        if (art.weekday() >= 5 or not 17 * 60 <= minutes < 23 * 60
+                or art.time().replace(tzinfo=None) < sessions.BYMA_PAPER_SPOT_CLOSE):
+            return False, "OUTSIDE_POSTCLOSE_DIAGNOSTIC_WINDOW"
+        # Outside spot hours is NOT proof that the day had a regular audited
+        # negotiation session. The pinned product calendar explicitly excludes
+        # Nov 6 limited-no-settlement and Nov 9/10 no-negotiation days. Do not
+        # use their stale quotes to mint a diagnostic GET entitlement.
+        operational = calendar.es_dia_habil_operativo(art.date())
+        reason = calendar.motivo_no_operativo(art.date())
+        if operational is False and type(reason) is str:
+            return (False, "BYMA_LIMITED_NO_SETTLEMENT_POSTCLOSE_HOLD"
+                    if reason in LIMITED_NO_SETTLEMENT_REASONS else
+                    "BYMA_NO_NEGOTIATION_OR_SPECIAL_SESSION_HOLD")
+        if operational is not True or reason is not None:
+            return False, "MARKET_CALENDAR_NOT_VERIFIED"
+        return True, SESSION_POSTCLOSE
+    except (AttributeError, TypeError, ValueError, OverflowError, OSError):
+        return False, "MARKET_CALENDAR_NOT_VERIFIED"
+
+
 def _verified_product_checkout(root: Path) -> bool:
     """No source from a moving product branch is accepted into the day gate."""
     try:
@@ -160,6 +197,17 @@ def _official_session_check(now_utc: datetime, root: Path):
         return False, "MARKET_CALENDAR_NOT_VERIFIED"
 
 
+def _official_postclose_check(now_utc: datetime, root: Path):
+    if not _verified_product_checkout(root):
+        return False, "PINNED_PRODUCT_CALENDAR_UNAVAILABLE"
+    try:
+        calendar = _load_product_module(root, "ak_byma_calendar.py", "byma_calendar")
+        sessions = _load_product_module(root, "co_market_sessions_hf6.py", "market_sessions")
+        return audited_postclose_window(now_utc, calendar, sessions)
+    except (OSError, ValueError, ImportError, TypeError, RuntimeError):
+        return False, "MARKET_CALENDAR_NOT_VERIFIED"
+
+
 def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
                   manual_slot: str, repository: str, ref: str,
                   checkout_sha: str, source_sha: str,
@@ -168,7 +216,8 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
 
     The caller must run this *before* reaching SSH or any provider/Watch route.
     Passing this time gate is never a PPI GET authorization: that additionally
-    requires the existing shared RuntimePPIBudget's live signed leases.
+    requires either the existing runtime budget's live leases or the strictly
+    opt-in local pilot, which cannot confer production quota authority.
     """
     if repository != REPOSITORY or ref != CONTROL_REF:
         return "", "NONCANONICAL_REPOSITORY_OR_REF"
@@ -184,31 +233,54 @@ def eligible_slot(*, now_utc: datetime, event: str, schedule: str,
         art = observed.astimezone(ZONE)
     except (TypeError, ValueError, OverflowError):
         return "", "AWARE_UTC_CLOCK_REQUIRED"
+    if event != "workflow_dispatch":
+        return "", "MANUAL_DISPATCH_REQUIRED"
     if art.weekday() >= 5:
         return "", "ART_BUSINESS_WEEKDAY_REQUIRED"
-    if event == "schedule":
-        slot = SCHEDULE_TO_SLOT.get(schedule, "")
-        lag_minutes = 30
-    elif event == "workflow_dispatch":
-        slot = manual_slot if manual_slot in SLOT_MINUTES else ""
-        lag_minutes = 60
-    else:
-        return "", "NON_SAMPLING_EVENT"
+    if schedule:
+        return "", "SCHEDULE_INPUT_FORBIDDEN"
+    slot = manual_slot if manual_slot in SLOT_MINUTES else ""
     if not slot:
-        return "", "UNKNOWN_CRON_OR_MANUAL_SLOT"
+        return "", "UNKNOWN_MANUAL_SLOT"
     observed_minute = art.hour * 60 + art.minute
-    if not SLOT_MINUTES[slot] <= observed_minute <= SLOT_MINUTES[slot] + lag_minutes:
+    if not SLOT_MINUTES[slot] <= observed_minute <= SLOT_MINUTES[slot] + 60:
         return "", "OUTSIDE_ART_SLOT_WINDOW"
     if not pinned_engine_ok(engine_path, expected_engine_blob):
         return "", "AUDITED_ENGINE_BLOB_MISMATCH"
     return slot, "PASS_WEEKDAY_SLOT_AND_ENGINE_ONLY"
 
 
+def eligible_postclose(*, now_utc: datetime, event: str, manual_slot: str,
+                       repository: str, ref: str, checkout_sha: str,
+                       source_sha: str, engine_path: Path,
+                       pilot_mode: str, expected_engine_blob: str = ENGINE_GIT_BLOB):
+    """Additional opt-in manual gate; never authorizes a schedule event."""
+    if (event != "workflow_dispatch" or pilot_mode != "ONCE"
+            or repository != REPOSITORY or ref != CONTROL_REF
+            or manual_slot not in SLOT_MINUTES):
+        return "", "POSTCLOSE_MANUAL_PILOT_REQUIRED"
+    if (not isinstance(checkout_sha, str) or not isinstance(source_sha, str)
+            or HEX40.fullmatch(checkout_sha) is None or checkout_sha != source_sha):
+        return "", "EXACT_CHECKOUT_SHA_REQUIRED"
+    if not isinstance(now_utc, datetime) or now_utc.tzinfo is None:
+        return "", "AWARE_UTC_CLOCK_REQUIRED"
+    try:
+        art = now_utc.astimezone(ZONE)
+        minutes = art.hour * 60 + art.minute
+        if art.weekday() >= 5 or not 17 * 60 <= minutes < 23 * 60:
+            return "", "OUTSIDE_POSTCLOSE_DIAGNOSTIC_WINDOW"
+    except (TypeError, ValueError, OverflowError):
+        return "", "AWARE_UTC_CLOCK_REQUIRED"
+    if not pinned_engine_ok(engine_path, expected_engine_blob):
+        return "", "AUDITED_ENGINE_BLOB_MISMATCH"
+    return manual_slot, "PASS_POSTCLOSE_MANUAL_ENGINE_ONLY"
+
+
 def _append_verified_env(path: Path, slot: str, now_utc: datetime,
                          market_session: str = SESSION_REGULAR) -> bool:
     """Append only bounded constant-shape values after the immutable gate."""
     try:
-        if market_session not in (SESSION_REGULAR, SESSION_LIMITED):
+        if market_session not in (SESSION_REGULAR, SESSION_LIMITED, SESSION_POSTCLOSE):
             return False
         if path.is_symlink() or not path.is_file():
             return False
@@ -220,7 +292,9 @@ def _append_verified_env(path: Path, slot: str, now_utc: datetime,
             payload = (f"RC6_A669_SLOT={slot}\n"
                        f"RC6_A669_ENGINE_BLOB={ENGINE_GIT_BLOB}\n"
                        f"RC6_A670_ART_DATE={now_utc.astimezone(ZONE).date().isoformat()}\n"
-                       f"RC6_A670_MARKET_SESSION={market_session}\n").encode("ascii")
+                       f"RC6_A670_MARKET_SESSION={market_session}\n"
+                       + ("RC6_A670_POSTCLOSE=ONCE\n" if market_session == SESSION_POSTCLOSE
+                          else "")).encode("ascii")
             return os.write(fd, payload) == len(payload)
         finally:
             os.close(fd)
@@ -257,19 +331,26 @@ def main() -> int:
     except (OSError, ValueError, subprocess.SubprocessError):
         current_sha = ""
     now_utc = datetime.now(timezone.utc)
-    slot, reason = eligible_slot(
-        now_utc=now_utc,
+    postclose = os.environ.get("RC6_A630_POSTCLOSE_MODE") == "ONCE"
+    common = dict(now_utc=now_utc,
         event=os.environ.get("GITHUB_EVENT_NAME", ""),
-        schedule=os.environ.get("RC6_A669_SCHEDULE", ""),
         manual_slot=os.environ.get("RC6_A669_MANUAL_SLOT", ""),
         repository=os.environ.get("GITHUB_REPOSITORY", ""),
         ref=os.environ.get("GITHUB_REF", ""),
         checkout_sha=current_sha,
         source_sha=os.environ.get("GITHUB_SHA", ""),
         engine_path=ENGINE_PATH)
+    if postclose:
+        slot, reason = eligible_postclose(**common,
+            pilot_mode=os.environ.get("RC6_A630_PILOT_MODE", "OFF"))
+    else:
+        slot, reason = eligible_slot(**common,
+            schedule="")
     market_session = ""
     if slot:
-        allowed, calendar_reason = _official_session_check(now_utc, PRODUCT_CALENDAR_ROOT)
+        allowed, calendar_reason = (
+            _official_postclose_check(now_utc, PRODUCT_CALENDAR_ROOT) if postclose
+            else _official_session_check(now_utc, PRODUCT_CALENDAR_ROOT))
         if not allowed:
             slot, reason = "", calendar_reason
         else:
