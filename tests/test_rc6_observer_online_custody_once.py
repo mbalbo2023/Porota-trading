@@ -161,20 +161,25 @@ class OneShotCustodyContracts(LiveWalFixture):
     def _custody(self):
         # Real host binding is separately tested; these SQLite fixtures do not
         # have the private rootless socket/current.json of the droplet.
-        with patch.object(custody, "_rootless_runtime_binding", return_value="BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"), \
-             patch.object(custody, "_market_offhours_guard", return_value="OFFHOURS_ART_SAFE"):
+        with patch.object(custody, "_rootless_runtime_binding", return_value="BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"):
             return custody.host_custody_once(self.db, self.marker, self.custody_root,
                                              run_id=self.RUN_ID)
 
-    def test_no_custody_during_market_window_before_opening_sqlite(self):
-        with patch.object(custody, "_market_offhours_guard",
-                          side_effect=custody.Hold("CUSTODY_MARKET_WINDOW_UNSAFE")), \
-             patch.object(custody.sqlite3, "connect", side_effect=AssertionError("SQLITE_OPEN")):
-            with self.assertRaises(custody.Hold) as raised:
-                custody.host_custody_once(self.db, self.marker, self.custody_root,
-                                         run_id=self.RUN_ID)
-        self.assertEqual(str(raised.exception), "CUSTODY_MARKET_WINDOW_UNSAFE")
-        self.assertFalse(self.custody_root.exists())
+    def test_closed_paper_zero_exit_flat_admits_custody_even_at_14_art(self):
+        # Thursday 14:00 ART (17:00 UTC) is not a storage-consistency signal.
+        class ClockAt14ART:
+            @staticmethod
+            def now(tz=None):
+                instant = datetime(2026, 11, 19, 17, 0, tzinfo=timezone.utc)
+                return instant.astimezone(tz) if tz is not None else instant
+
+        with patch.object(custody, "datetime", ClockAt14ART):
+            receipt = self._custody()
+        self.assertEqual(receipt["state"], "PRIVATE_SNAPSHOT_RESTORE_OK")
+        self.assertEqual(receipt["paper_zero"], "OBSERVED")
+        self.assertEqual(receipt["exit_quiescence"],
+                         "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED")
+        self.assertNotIn("offhours_gate", receipt)
 
     def test_exit_activity_or_open_positions_holds_before_destination(self):
         for update in (
@@ -205,13 +210,13 @@ class OneShotCustodyContracts(LiveWalFixture):
         self.assertEqual(str(raised.exception), "EXIT_QUIESCENCE_UNVERIFIED")
         self.assertFalse(self.custody_root.exists())
 
-    def test_market_window_guard_uses_argentina_local_time(self):
+    def test_exit_degraded_during_market_closed_holds_without_clock_override(self):
+        self.writer.execute("UPDATE paper_exit_reader_state SET state='DEGRADED' WHERE id=1")
+        self.writer.commit()
         with self.assertRaises(custody.Hold) as raised:
-            custody._market_offhours_guard(datetime(2026, 11, 19, 16, 0, tzinfo=timezone.utc))
-        self.assertEqual(str(raised.exception), "CUSTODY_MARKET_WINDOW_UNSAFE")
-        self.assertEqual(custody._market_offhours_guard(
-                         datetime(2026, 11, 19, 23, 0, tzinfo=timezone.utc)),
-                         "OFFHOURS_ART_SAFE")
+            self._custody()
+        self.assertEqual(str(raised.exception), "EXIT_QUIESCENCE_UNVERIFIED")
+        self.assertFalse(self.custody_root.exists())
 
     def test_online_snapshot_contains_committed_wal_and_restores_privately(self):
         self.assertNotIn(str(custody.CUSTODY), str(custody.ROOT))
@@ -246,6 +251,48 @@ class OneShotCustodyContracts(LiveWalFixture):
         self.assertEqual(before_source,
                          [(p.stat().st_size, p.stat().st_mtime_ns, p.read_bytes())
                           for p in (self.db, Path(str(self.db) + "-wal"))])
+
+    def test_exit_revoked_after_backup_still_blocks_final_custody(self):
+        original_sync = custody._fsync_private_file
+        observed = []
+
+        def revoke_after_snapshot(directory_fd, basename):
+            original_sync(directory_fd, basename)
+            if basename == "snapshot.sqlite":
+                observed.append(basename)
+                self.writer.execute(
+                    "UPDATE paper_exit_reader_state SET state='DEGRADED' WHERE id=1")
+                self.writer.commit()
+
+        with patch.object(custody, "_fsync_private_file",
+                          side_effect=revoke_after_snapshot):
+            with self.assertRaises(custody.Hold) as raised:
+                self._custody()
+        self.assertEqual(observed, ["snapshot.sqlite"])
+        self.assertEqual(str(raised.exception), "EXIT_QUIESCENCE_UNVERIFIED")
+        self.assertFalse((self.custody_root / ("observer_" + self.RUN_ID)).exists())
+        self.assertTrue((self.custody_root / (".partial_" + self.RUN_ID)).exists())
+
+    def test_paper_zero_revoked_after_backup_still_blocks_final_custody(self):
+        original_sync = custody._fsync_private_file
+        observed = []
+
+        def revoke_after_snapshot(directory_fd, basename):
+            original_sync(directory_fd, basename)
+            if basename == "snapshot.sqlite":
+                observed.append(basename)
+                self.writer.execute(
+                    "UPDATE observer_state SET real_orders_sent=1 WHERE id=1")
+                self.writer.commit()
+
+        with patch.object(custody, "_fsync_private_file",
+                          side_effect=revoke_after_snapshot):
+            with self.assertRaises(custody.Hold) as raised:
+                self._custody()
+        self.assertEqual(observed, ["snapshot.sqlite"])
+        self.assertEqual(str(raised.exception), "PAPER_ORDERS_UNVERIFIED")
+        self.assertFalse((self.custody_root / ("observer_" + self.RUN_ID)).exists())
+        self.assertTrue((self.custody_root / (".partial_" + self.RUN_ID)).exists())
 
     def test_private_snapshot_restore_manifest_and_parent_are_fsynced(self):
         actual_fsync = os.fsync
@@ -470,7 +517,6 @@ class RunnerReceiptAndOwnerContracts(unittest.TestCase):
         raw = {"schema": "rc6.observer-online-custody-once.v1",
                "state": "PRIVATE_SNAPSHOT_RESTORE_OK", "read_only": False,
                "source_sql_writes": 0, "shm_locking_possible": True,
-               "offhours_gate": "OFFHOURS_ART_SAFE",
                "runtime_db_binding": "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED",
                "exit_quiescence": "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED",
                "paper_zero": "OBSERVED",
@@ -488,6 +534,10 @@ class RunnerReceiptAndOwnerContracts(unittest.TestCase):
         self.assertEqual(receipt["state"], "PRIVATE_SNAPSHOT_RESTORE_OK")
         self.assertEqual(receipt["snapshot_sha256"], digest)
         self.assertEqual(receipt["paper_zero"], "OBSERVED")
+        stale_clock_only = dict(raw, offhours_gate="OFFHOURS_ART_SAFE")
+        self.assertEqual(custody.sanitize_receipt("CUSTODY_ONCE", stale_clock_only,
+                         remote_rc=0, expected_run_id="44508298821")["state"],
+                         "NO_VERIFICADO_RECEIPT_UNSAFE")
         raw["restore_sha256"] = "ef" * 32
         rejected = custody.sanitize_receipt("CUSTODY_ONCE", raw, remote_rc=0,
                                             expected_run_id="44508298821")
@@ -498,7 +548,6 @@ class RunnerReceiptAndOwnerContracts(unittest.TestCase):
         raw = {"schema": custody.SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
                "read_only": False, "source_sql_writes": 0, "shm_locking_possible": True,
                "paper_zero": "OBSERVED", "run_id": "44508298821",
-               "offhours_gate": "OFFHOURS_ART_SAFE",
                "runtime_db_binding": "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED",
                "exit_quiescence": "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED",
                "source_bytes": 1000, "wal_bytes_before": 1,
