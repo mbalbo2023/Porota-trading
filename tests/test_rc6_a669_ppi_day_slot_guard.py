@@ -89,7 +89,7 @@ class A669GuardTests(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(self.open_command_gate(**args), ("", reason))
 
-    def test_open_main_gate_exports_only_one_command_after_audited_calendar(self):
+    def test_open_main_gate_blocks_unproved_global_ppi_session_even_with_good_calendar(self):
         with tempfile.TemporaryDirectory(prefix="a670-open-one-") as temp:
             env_path = Path(temp) / "gh-env"
             env_path.touch()
@@ -100,7 +100,8 @@ class A669GuardTests(unittest.TestCase):
                            "GITHUB_EVENT_NAME": "workflow_dispatch",
                            "GITHUB_REPOSITORY": guard.REPOSITORY,
                            "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
-                           "GITHUB_ENV": str(env_path)}
+                           "GITHUB_ENV": str(env_path),
+                           "RC6_PPI_SINGLE_SESSION_GLOBAL_ATTESTED": "1"}
             with patch.dict(os.environ, environment), \
                  patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
                  patch.object(guard, "pinned_engine_ok", return_value=True), \
@@ -108,11 +109,38 @@ class A669GuardTests(unittest.TestCase):
                  patch.object(guard, "_official_session_check",
                               return_value=(True, guard.SESSION_REGULAR)), \
                  redirect_stdout(io.StringIO()):
-                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 0)
+                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 2)
             output = env_path.read_text()
-        self.assertIn("RC6_A670_OBSERVER_COMMAND=PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL\n", output)
-        self.assertIn("RC6_A670_MARKET_SESSION=BYMA_AUDITED_OPEN\n", output)
+        self.assertIn("RC6_A670_HOLD_REASON=PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED\n", output)
+        self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
         self.assertNotIn("PPI_DIRECT_REST_POSTCLOSE_ONCE", output)
+
+    def test_postclose_main_gate_also_blocks_unproved_global_ppi_session(self):
+        # The existing scanner may be logged in, but exit-reader/scalping
+        # are other login_once actors. No POSTCLOSE GET without global proof.
+        with tempfile.TemporaryDirectory(prefix="a670-postclose-global-hold-") as temp:
+            env_path = Path(temp) / "gh-env"
+            env_path.touch()
+            environment = {"RC6_A670_ISSUER_MODE": "observer_postclose_command",
+                           "RC6_A670_OBSERVER_ART_DATE": "2026-11-19",
+                           "RC6_A670_OBSERVER_FAMILY": "BONOS",
+                           "RC6_A630_PILOT_MODE": "OFF", "RC6_A630_POSTCLOSE_MODE": "OFF",
+                           "GITHUB_EVENT_NAME": "workflow_dispatch",
+                           "GITHUB_REPOSITORY": guard.REPOSITORY,
+                           "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
+                           "GITHUB_ENV": str(env_path),
+                           "RC6_PPI_SINGLE_SESSION_GLOBAL_ATTESTED": "1"}
+            with patch.dict(os.environ, environment), \
+                 patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
+                 patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
+                 patch.object(guard, "_official_postclose_check",
+                              return_value=(True, guard.SESSION_POSTCLOSE)), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(now_utc=utc(20, 15, 19)), 2)
+            output = env_path.read_text()
+        self.assertIn("RC6_A670_HOLD_REASON=PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED\n", output)
+        self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
 
     def test_open_main_gate_holds_before_host_for_unaudited_day(self):
         with tempfile.TemporaryDirectory(prefix="a670-open-hold-") as temp:

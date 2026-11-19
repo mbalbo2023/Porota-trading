@@ -31,7 +31,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "5af662fbbb2bba65c0e3bd61b39f9a30041c0557"
+ENGINE_GIT_BLOB = "94495603b6b637fd7bfe444e35c388589a04a85e"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -510,6 +510,16 @@ def main(now_utc=None) -> int:
                 command, reason = "", "OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED"
             elif not _issuer_pin_ready():
                 command, reason = "", "OBSERVER_COMMAND_RELEASE_UNPINNED"
+            else:
+                # Authenticated existing scanner != one PPI session globally,
+                # for POSTCLOSE as well as OPEN: both can cause PPI native GET.
+                # Exit-reader/scalping can be separate login actors and PPI
+                # Watch is out of scope. There is NO independently verified
+                # physical actor/authentication custody receipt yet, so the
+                # issuer must remain closed even if calendar/release are good.
+                # A later fix-forward may introduce a reviewed physical proof;
+                # no user-controlled environment value is sufficient.
+                command, reason = "", "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"
         env_path = Path(os.environ.get("GITHUB_ENV", ""))
         if not command:
             _append_hold_env(env_path, reason, now_utc)

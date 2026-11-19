@@ -1511,6 +1511,12 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
                 id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
                 command TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT,
                 finished_at TEXT, result TEXT NOT NULL DEFAULT '');
+            CREATE TABLE paper_events(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, event_at TEXT NOT NULL,
+                source TEXT NOT NULL, event_type TEXT NOT NULL, paper_id TEXT,
+                detail TEXT NOT NULL);
+            CREATE INDEX idx_shadow_event_type_at_jd
+                ON paper_events(event_type,julianday(event_at));
             """)
         self.environment = {"POROTA_BUILD_SHA": ROOTLESS_CANDIDATE_SHA,
             "POROTA_CANDIDATE_TREE_SHA": ROOTLESS_CANDIDATE_TREE,
@@ -1546,7 +1552,8 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
         return {"schema": "RC6_PPI_OPEN_TEN_FAMILY_V1", "day": "2026-11-19",
                 "paper_ready": False, "order_authority": False,
                 "readiness_reason": "FULL_READINESS_NOT_EVIDENCED",
-                "unattempted_reason": "BOUNDED_SAMPLE_OR_STOP",
+                "unattempted_reason": "BOUNDED",
+                "catalog_scope": "PPI_CLAIMED_ONLY", "outside_ppi_scope": 12,
                 "statuses": {family: ("FRESH_OBSERVED" if family == "ACCIONES"
                                         else "CATALOG_IDENTITY_UNAVAILABLE")
                              for family in families},
@@ -1558,6 +1565,27 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
                                       "ready": 0, "hold": 3 if family == "ACCIONES" else 0,
                                       "unattempted": 2 if family == "ACCIONES" else 0}
                              for family in families}}
+
+    def insert_open_wire(self, connection, *, family="ACCIONES", endpoint="current",
+                         command_id=None, identity5=None, symbol="GGAL",
+                         settlement="A-24HS",
+                         wire_time="2026-11-19T13:45:00+00:00",
+                         market_time="2026-11-19T13:44:59+00:00"):
+        if command_id is None:
+            command_id = connection.execute(
+                "SELECT id FROM observer_commands ORDER BY id DESC LIMIT 1").fetchone()[0]
+        if identity5 is None:
+            identity5 = f"{symbol}:{family}:BYMA:ARS:{settlement}"
+        detail = (f"command_id={command_id};{symbol}:{family}:{settlement};"
+                  f"identity5={identity5};endpoint={endpoint};http_status=200;"
+                  f"wire_received_at_utc={wire_time};"
+                  f"market_timestamp_utc={market_time};"
+                  f"wire_sha256={'a' if endpoint == 'current' else 'b'}"
+                  + "0" * 63 + ";paper_ready=false")
+        connection.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) "
+                           "VALUES (?,?,?,?,?)", (
+                               "2026-11-19T13:45:01+00:00", "PRODUCTION_PAPER",
+                               "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", None, detail))
 
     def test_open_batch_enqueues_one_row_and_never_retries_prior_hold(self):
         first = self.open_enqueue()
@@ -1579,6 +1607,8 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
         summary = self.open_summary()
         def scanner_finishes(_delay):
             with sqlite3.connect(self.db) as db:
+                self.insert_open_wire(db, endpoint="current")
+                self.insert_open_wire(db, endpoint="book")
                 db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
                            (json.dumps(summary, separators=(",", ":")),))
         result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
@@ -1592,6 +1622,173 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
         self.assertFalse(result["paper_ready"])
         self.assertEqual(len(result["summary"]["statuses"]), 10)
 
+    def test_open_batch_rejects_scanner_evidence_without_independent_native_wire(self):
+        summary = self.open_summary()
+        def scanner_finishes(_delay):
+            with sqlite3.connect(self.db) as db:
+                db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                           (json.dumps(summary, separators=(",", ":")),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_finishes)
+        self.assertEqual(result["state"], "HOLD")
+        self.assertEqual(result["reason"], "OBSERVER_COMMAND_OPEN_WIRE_UNVERIFIED")
+        self.assertEqual(result["command_status"], "EVIDENCE")
+        self.assertIsNone(result["summary"])
+        self.assertFalse(result["paper_ready"])
+        self.assertEqual(result["db_rows_inserted"], 1)
+        self.assertTrue(engine.verify_open_receipt(result, "2026-11-19"))
+
+    def test_open_batch_request_candidate_wire_is_not_ppi_field_or_ready(self):
+        summary = self.open_summary()
+        # RCA #1192: PPI SearchInstrument does not provide authoritative
+        # settlement. A REQUEST_CANDIDATE may be probed, never promoted.
+        summary["coverage"]["ACCIONES"]["enumerated_exact"] = 0
+        summary["unverified"]["ACCIONES"] = 3
+        def scanner_finishes(_delay):
+            with sqlite3.connect(self.db) as db:
+                self.insert_open_wire(db, endpoint="current")
+                self.insert_open_wire(db, endpoint="book")
+                db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                           (json.dumps(summary, separators=(",", ":")),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_finishes)
+        self.assertEqual(result["state"], "EVIDENCE")
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["enumerated_exact"], 0)
+        self.assertEqual(result["summary"]["unverified"]["ACCIONES"], 3)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["native_pair_qa_pass"], 1)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["ready"], 0)
+
+    def test_open_batch_preserves_verified_current_only_on_provider_hold(self):
+        summary = self.open_summary()
+        summary["statuses"]["ACCIONES"] = "PROVIDER_OR_CONTRACT_HOLD"
+        summary["coverage"]["ACCIONES"]["native_pair_qa_pass"] = 0
+        def scanner_holds(_delay):
+            with sqlite3.connect(self.db) as db:
+                self.insert_open_wire(db, endpoint="current")
+                db.execute("UPDATE observer_commands SET status='HOLD',result=?",
+                           (json.dumps(summary, separators=(",", ":")),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_holds)
+        self.assertEqual(result["state"], "HOLD")
+        self.assertEqual(result["reason"], "OBSERVER_COMMAND_SCANNER_HOLD")
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["attempted"], 1)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["native_pair_qa_pass"], 0)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["ready"], 0)
+
+    def test_open_batch_preexisting_event_cannot_attest_new_queue(self):
+        with sqlite3.connect(self.db) as db:
+            self.insert_open_wire(db, command_id=1, endpoint="current")
+            self.insert_open_wire(db, command_id=1, endpoint="book")
+        summary = self.open_summary()
+        def scanner_finishes(_delay):
+            with sqlite3.connect(self.db) as db:
+                db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                           (json.dumps(summary, separators=(",", ":")),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_finishes)
+        self.assertEqual((result["state"], result["reason"]),
+                         ("HOLD", "OBSERVER_COMMAND_OPEN_WIRE_UNVERIFIED"))
+
+    def test_open_batch_max_ten_pair_fixture_and_twenty_one_witness_hold(self):
+        # Synthetic SQLite fixture verifies the *parser limit*, not provider
+        # or full-instrument readiness. No HTTP, broker or PPI actor is used.
+        families = self.open_summary()["statuses"]
+        for over_limit in (False, True):
+            with self.subTest(over_limit=over_limit):
+                with sqlite3.connect(self.db) as db:
+                    db.execute("DELETE FROM observer_commands")
+                    db.execute("DELETE FROM paper_events")
+                summary = self.open_summary()
+                for family in families:
+                    summary["statuses"][family] = "FRESH_OBSERVED"
+                    summary["unverified"][family] = 0
+                    summary["coverage"][family] = {
+                        "enumerated_exact": 1, "attempted": 1,
+                        "native_pair_qa_pass": 1, "ready": 0, "hold": 1,
+                        "unattempted": 0}
+                self.assertLessEqual(len(json.dumps(
+                    summary, separators=(",", ":")).encode()), 2000)
+                def scanner_finishes(_delay):
+                    with sqlite3.connect(self.db) as db:
+                        for family in families:
+                            for endpoint in ("current", "book"):
+                                self.insert_open_wire(db, family=family,
+                                    symbol=family[:3] + "1", endpoint=endpoint)
+                        if over_limit:
+                            self.insert_open_wire(db, family="ACCIONES",
+                                symbol="ACC1", endpoint="current")
+                        db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                                   (json.dumps(summary, separators=(",", ":")),))
+                result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                           sleep=scanner_finishes)
+                if over_limit:
+                    self.assertEqual((result["state"], result["reason"]),
+                                     ("HOLD", "OBSERVER_COMMAND_OPEN_WIRE_UNVERIFIED"))
+                    self.assertIsNone(result["summary"])
+                else:
+                    self.assertEqual(result["state"], "EVIDENCE")
+                    self.assertEqual(len(result["summary"]["coverage"]), 10)
+                    self.assertTrue(all(
+                        result["summary"]["coverage"][f]["native_pair_qa_pass"] == 1
+                        for f in families))
+                    self.assertTrue(all(
+                        result["summary"]["coverage"][f]["ready"] == 0
+                        for f in families))
+
+    def test_open_batch_rejects_fake_or_mismatched_wire_custody(self):
+        cases = (
+            ("missing_book", {"endpoints": ("current",)}),
+            ("old_command", {"command_id": 0}),
+            ("mismatched_fivekey", {"book_identity5": "GGAL:ACCIONES:BYMA:USD:A-24HS"}),
+            ("unknown_wire_clock", {"wire_time": "UNVERIFIED"}),
+            ("future_provider_clock", {"market_time": "2026-11-19T14:10:00+00:00"}),
+            ("duplicate_current", {"endpoints": ("current", "current", "book")}),
+            ("book_before_current", {"endpoints": ("book", "current")}),
+        )
+        for name, options in cases:
+            with self.subTest(name=name):
+                with sqlite3.connect(self.db) as db:
+                    db.execute("DELETE FROM observer_commands")
+                    db.execute("DELETE FROM paper_events")
+                summary = self.open_summary()
+                def scanner_finishes(_delay):
+                    with sqlite3.connect(self.db) as db:
+                        for endpoint in options.get("endpoints", ("current", "book")):
+                            overrides = {k: v for k, v in options.items()
+                                         if k not in {"endpoints", "book_identity5"}}
+                            if endpoint == "book" and "book_identity5" in options:
+                                overrides["identity5"] = options["book_identity5"]
+                            self.insert_open_wire(db, endpoint=endpoint,
+                                **overrides)
+                        db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                                   (json.dumps(summary, separators=(",", ":")),))
+                result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                           sleep=scanner_finishes)
+                self.assertEqual((result["state"], result["reason"]),
+                                 ("HOLD", "OBSERVER_COMMAND_OPEN_WIRE_UNVERIFIED"))
+                self.assertIsNone(result["summary"])
+
+    def test_open_batch_rejects_same_path_different_db_inode(self):
+        summary = self.open_summary()
+        replacement = self.db.with_suffix(".replacement.db")
+        def malicious_path_swap(_delay):
+            with sqlite3.connect(self.db) as src, sqlite3.connect(replacement) as dst:
+                src.backup(dst)
+            with sqlite3.connect(replacement) as attacker:
+                rowid = attacker.execute("SELECT id FROM observer_commands").fetchone()[0]
+                self.insert_open_wire(attacker, endpoint="current", command_id=rowid)
+                self.insert_open_wire(attacker, endpoint="book", command_id=rowid)
+                attacker.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                                 (json.dumps(summary, separators=(",", ":")),))
+            os.replace(replacement, self.db)
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=malicious_path_swap)
+        self.assertEqual((result["state"], result["reason"]),
+                         ("HOLD", "OBSERVER_COMMAND_DB_CUSTODY_DRIFT"))
+        self.assertIsNone(result["summary"])
+        self.assertEqual(result["db_rows_inserted"], 1)
+        self.assertFalse(result["paper_ready"])
+
     def test_open_batch_rejects_malformed_or_overclaiming_summary(self):
         summary = self.open_summary()
         summary["coverage"]["ACCIONES"]["ready"] = 1  # No FULL readiness grant.
@@ -1602,8 +1799,29 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
                            (json.dumps(summary),))
         result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
                                    sleep=scanner_finishes)
-        self.assertNotEqual(result["state"], "EVIDENCE")
+        self.assertEqual((result["state"], result["reason"]),
+                         ("HOLD", "OBSERVER_COMMAND_OPEN_RESULT_INVALID"))
+        self.assertEqual(result["command_status"], "EVIDENCE")
         self.assertNotIn("PRIVATE_DO_NOT_UPLOAD", json.dumps(result))
+
+    def test_open_product_issuer_schema_v1_requires_honest_scope_and_bounded_reason(self):
+        native = self.open_summary()
+        self.assertEqual(engine._open_summary(
+            json.dumps(native, separators=(",", ":")), "2026-11-19"), native)
+        self.assertEqual(set(native), {
+            "schema", "day", "paper_ready", "order_authority",
+            "readiness_reason", "unattempted_reason", "catalog_scope",
+            "outside_ppi_scope", "statuses", "coverage", "unverified"})
+        legacy = dict(native)
+        legacy.pop("outside_ppi_scope")
+        with self.assertRaisesRegex(ValueError, "OBSERVER_COMMAND_OPEN_RESULT_INVALID"):
+            engine._open_summary(json.dumps(legacy), "2026-11-19")
+        legacy = dict(native, catalog_scope="ALL_CATALOG_READY")
+        with self.assertRaisesRegex(ValueError, "OBSERVER_COMMAND_OPEN_RESULT_INVALID"):
+            engine._open_summary(json.dumps(legacy), "2026-11-19")
+        legacy = dict(native, unattempted_reason="BOUNDED_SAMPLE_OR_STOP")
+        with self.assertRaisesRegex(ValueError, "OBSERVER_COMMAND_OPEN_RESULT_INVALID"):
+            engine._open_summary(json.dumps(legacy), "2026-11-19")
 
     def test_open_batch_outside_market_or_without_scanner_auth_inserts_nothing(self):
         before = self.open_enqueue(now=datetime(2026, 11, 19, 13, 29,
