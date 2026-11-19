@@ -7,11 +7,18 @@ module and the A669 guard pins the verified source Git blob before any SSH.
 
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from contextlib import redirect_stdout
+import io
+import json
+import os
 import re
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
+import yaml
 
 from scripts import rc6_a669_ppi_day_slot_guard as guard
 
@@ -42,6 +49,87 @@ class A669GuardTests(unittest.TestCase):
             checkout_sha=head, source_sha=source,
             engine_path=engine or self.engine,
             expected_engine_blob=expected_blob or self.blob)
+
+    def command_gate(self, **changes):
+        arguments = dict(
+            now_utc=utc(20, 15, 18), event="workflow_dispatch",
+            repository=guard.REPOSITORY, ref=guard.CONTROL_REF,
+            checkout_sha=SHA, source_sha=SHA, art_date="2026-11-18",
+            family="BONOS", pilot_mode="OFF", postclose_mode="OFF",
+            engine_path=self.engine, expected_engine_blob=self.blob)
+        arguments.update(changes)
+        return guard.eligible_observer_command(**arguments)
+
+    def test_observer_command_manual_gate_never_uses_sample_slot(self):
+        self.assertEqual(self.command_gate(),
+                         ("PPI_DIRECT_REST_POSTCLOSE_ONCE:2026-11-18:BONOS",
+                          "PASS_MANUAL_POSTCLOSE_OBSERVER_COMMAND_ONLY"))
+        for family in ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+                       "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI"):
+            with self.subTest(family=family):
+                self.assertTrue(self.command_gate(family=family)[0].endswith(":" + family))
+
+    def test_observer_command_rejects_nonmanual_invalid_day_or_old_pilot(self):
+        invalid = (
+            ({"event": "schedule"}, "MANUAL_DISPATCH_REQUIRED"),
+            ({"ref": "refs/heads/deploy/rc6-pr69-isolated-20260915"},
+             "NONCANONICAL_REPOSITORY_OR_REF"),
+            ({"art_date": "2026-11-17"}, "OBSERVER_COMMAND_ART_DATE_MISMATCH"),
+            ({"art_date": "2026-11-18;touch /tmp/injected"},
+             "OBSERVER_COMMAND_ART_DATE_INVALID"),
+            ({"family": "BONOS;touch /tmp/injected"}, "OBSERVER_COMMAND_FAMILY_INVALID"),
+            ({"pilot_mode": "ONCE"}, "OBSERVER_COMMAND_SAMPLE_MODE_FORBIDDEN"),
+            ({"postclose_mode": "ONCE"}, "OBSERVER_COMMAND_SAMPLE_MODE_FORBIDDEN"),
+            ({"now_utc": utc(19, 59, 18)}, "OUTSIDE_POSTCLOSE_DIAGNOSTIC_WINDOW"),
+            ({"now_utc": utc(2, 1, 19)}, "OUTSIDE_POSTCLOSE_DIAGNOSTIC_WINDOW"),
+            ({"now_utc": utc(20, 15, 21)}, "OBSERVER_COMMAND_ART_DATE_MISMATCH"),
+            ({"source_sha": "b" * 40}, "EXACT_CHECKOUT_SHA_REQUIRED"),
+            ({"expected_engine_blob": "0" * 40}, "AUDITED_ENGINE_BLOB_MISMATCH"),
+        )
+        for overrides, reason in invalid:
+            with self.subTest(reason=reason, overrides=overrides):
+                self.assertEqual(self.command_gate(**overrides), ("", reason))
+
+    def test_observer_dispatch_job_cannot_trigger_legacy_provider_job(self):
+        workflow = yaml.load(YAML.read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]
+                         ["issuer_mode"]["default"], "observer_postclose_command")
+        self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]
+                         ["issuer_mode"]["options"], ["observer_postclose_command"])
+        sample = workflow["jobs"]["sample_main_only"]
+        issuer = workflow["jobs"]["queue_observer_main_only"]
+        self.assertEqual(sample["if"], "false")
+        self.assertIn("inputs.issuer_mode == 'observer_postclose_command'", issuer["if"])
+        self.assertIn("github.actor == 'mbalbo2023'", issuer["if"])
+        self.assertIn("github.triggering_actor == 'mbalbo2023'", issuer["if"])
+        self.assertEqual(issuer["concurrency"]["group"], "rc6-unified-paper-deploy")
+        self.assertEqual(issuer["concurrency"]["cancel-in-progress"], "false")
+        self.assertNotIn("schedule", workflow["on"])
+
+    def test_observer_workflow_dispatch_refuses_legacy_sample_even_if_forced(self):
+        with patch.dict(os.environ, {"RC6_A670_ISSUER_MODE": "sample",
+                                  "GITHUB_EVENT_NAME": "workflow_dispatch"}), \
+             patch.object(guard, "eligible_slot", return_value=("1045", "PASS")) as legacy, \
+             redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(guard.main(now_utc=utc(13, 45)), 2)
+        legacy.assert_not_called()
+        self.assertIn("LEGACY_SECOND_PPI_SESSION_FORBIDDEN", output.getvalue())
+
+    def test_observer_failed_guard_artifact_does_not_publish_raw_dispatch_input(self):
+        workflow = yaml.load(YAML.read_text(), Loader=yaml.BaseLoader)
+        steps = workflow["jobs"]["queue_observer_main_only"]["steps"]
+        fallback = next(step["run"] for step in steps
+                        if step.get("name", "").startswith("Always retain sanitized"))
+        with tempfile.TemporaryDirectory(prefix="p0-no-private-input-") as directory:
+            env = dict(os.environ, GITHUB_RUN_ID="7", GITHUB_SHA=SHA,
+                RC6_A670_OBSERVER_ART_DATE="SECRET_ACCOUNT_TOKEN_DO_NOT_UPLOAD",
+                RC6_A670_OBSERVER_FAMILY="SECRET_API_KEY_DO_NOT_UPLOAD")
+            proc = subprocess.run(["bash", "-c", fallback], cwd=directory,
+                                  env=env, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads((Path(directory)/"evidence/p0_observer_command.json").read_text())
+        self.assertEqual(payload["art_date"], "")
+        self.assertEqual(payload["family"], "")
 
     def test_four_explicit_ART_manual_slots_resolve_without_cron(self):
         cases = (
@@ -294,11 +382,32 @@ class A669GuardTests(unittest.TestCase):
         self.assertTrue(guard.pinned_engine_ok(source),
                         "A670 MUST re-pin reviewed changed A630 source before SSH")
 
+    def test_p0_issuer_release_pins_match_deploy_v2_physical_receipt(self):
+        from scripts.rc6_a630_host_ppi_current_book import (
+            ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID)
+        receipt = {
+            "RC6_P0_EXPECTED_CANDIDATE_SHA": "b3cbe57a5b4b82016a65a0e253b251abbb84a04c",
+            "RC6_P0_EXPECTED_TREE_SHA": "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0",
+            "RC6_P0_EXPECTED_IMAGE_ID": "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d",
+            "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256": "991eebea372810b7d6ea0fbb9c9295c7504d187d840e30af4c5e70f99845e792",
+        }
+        self.assertEqual(ROOTLESS_CANDIDATE_SHA, receipt["RC6_P0_EXPECTED_CANDIDATE_SHA"])
+        self.assertEqual(ROOTLESS_CANDIDATE_TREE, receipt["RC6_P0_EXPECTED_TREE_SHA"])
+        self.assertEqual(ROOTLESS_IMAGE_ID, receipt["RC6_P0_EXPECTED_IMAGE_ID"])
+        workflow = YAML.read_text()
+        for name, value in receipt.items():
+            self.assertIn(f"{name}: {value}", workflow)
+        with patch.dict(os.environ, receipt):
+            self.assertTrue(guard._issuer_pin_ready())
+        with patch.dict(os.environ, {**receipt,
+                "RC6_P0_EXPECTED_CANDIDATE_SHA": "96c626dc09a045f75f5e743c030e8f8228783a54"}):
+            self.assertFalse(guard._issuer_pin_ready())
+
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()
-        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 96c626dc09a045f75f5e743c030e8f8228783a54", code)
-        self.assertIn("RC6_EXPECTED_TREE_SHA: b82e85e8388463d35b6946adcaf3a562c5ad5dfb", code)
-        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563", code)
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: b3cbe57a5b4b82016a65a0e253b251abbb84a04c", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: 7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d", code)
         self.assertIn("rootless-capture", code)
         self.assertNotIn("sudo -n docker", code)
         self.assertNotIn("porota_production_observer", code)
