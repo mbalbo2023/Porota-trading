@@ -208,6 +208,7 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
     with tempfile.TemporaryDirectory(prefix="rc6-a511-", dir=root) as temporary:
         directory = Path(temporary)
         found = {}
+        segments = []
         total = 0
         try:
             with tarfile.open(fileobj=bundle, mode="r|") as archive:
@@ -234,15 +235,31 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
                             digest.update(piece)
                             remaining -= len(piece)
                     found[member.name] = (member.size, digest.hexdigest())
+                    segments.append((member.name, member.size,
+                                     member.offset_data))
             # A511 writes exactly these three short-name members with zero
             # metadata, two end blocks and 10 KiB TAR record padding.
             # Reject compressed, PAX-extra, suffix or other noncanonical data.
-            member_bytes = sum(
-                tarfile.BLOCKSIZE +
-                ((part_size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE) *
-                tarfile.BLOCKSIZE
-                for part_size, _ in found.values()
-            )
+            _require([name for name, _, _ in segments] ==
+                     [*FILES.values(), MANIFEST], "BUNDLE_MEMBER_UNSAFE")
+            member_bytes = 0
+            for name, part_size, data_offset in segments:
+                expected = tarfile.TarInfo(name)
+                expected.size = part_size
+                expected.mode = 0o600
+                expected.mtime = 0
+                header = expected.tobuf(format=tarfile.PAX_FORMAT)
+                _require(len(header) == tarfile.BLOCKSIZE and
+                         data_offset == member_bytes + tarfile.BLOCKSIZE,
+                         "BUNDLE_MEMBER_UNSAFE")
+                bundle.seek(bundle_start + member_bytes)
+                _require(bundle.read(tarfile.BLOCKSIZE) == header,
+                         "BUNDLE_MEMBER_UNSAFE")
+                padding_size = (-part_size) % tarfile.BLOCKSIZE
+                bundle.seek(bundle_start + data_offset + part_size)
+                _require(bundle.read(padding_size) == b"\0" * padding_size,
+                         "BUNDLE_MEMBER_UNSAFE")
+                member_bytes += tarfile.BLOCKSIZE + part_size + padding_size
             expected_bytes = (
                 (member_bytes + 2 * tarfile.BLOCKSIZE +
                  tarfile.RECORDSIZE - 1) // tarfile.RECORDSIZE
