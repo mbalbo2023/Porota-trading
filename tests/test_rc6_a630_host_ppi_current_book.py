@@ -1365,6 +1365,192 @@ class TestA630RootlessEvidence(unittest.TestCase):
                                         local_pilot=False, pilot_slot="", pilot_date="",
                                         postclose=False)
 
+    def test_observer_enqueue_rootless_exec_is_single_sqlite_child_without_ppi_client(self):
+        manifest = "c" * 64
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "release_manifest_sha256": manifest,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        expected = {"schema": "rc6.p0.observer-command.child.v1", "state": "EVIDENCE",
+                    "reason": "OBSERVER_COMMAND_FINISHED", "art_date": "2026-11-18",
+                    "family": "BONOS", "command_id": 123, "command_status": "EVIDENCE",
+                    "provider_status": "FRESH_OBSERVED", "paper_ready": False,
+                    "order_authority": False, "db_rows_inserted": 1}
+        calls = []
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0,
+                stdout=json.dumps(expected).encode(), stderr=b"")
+        with patch.object(engine, "_rootless_context", side_effect=[context, context]):
+            wrapper = engine.rootless_host_enqueue(
+                "2026-11-18", "BONOS", ROOTLESS_CANDIDATE_SHA,
+                ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, manifest,
+                b"# source in memory\n", run=run)
+        self.assertEqual(wrapper["state"], "EVIDENCE")
+        self.assertTrue(wrapper["runtime_pin_verified"])
+        self.assertEqual(wrapper["receipt"], expected)
+        self.assertEqual(len(calls), 1)
+        command = calls[0][0]
+        self.assertEqual(command[:3], context["docker"])
+        self.assertEqual(command[-5:], (self.cid, "python", "-B", "-", "container-enqueue"))
+        self.assertIn("POROTA_RUNTIME_SCHEMA_READY=1", command)
+        self.assertNotIn("container-capture", command)
+        self.assertNotIn("RC6_A630_LOCAL_PILOT=ONCE", command)
+        self.assertNotIn("sudo", " ".join(command))
+        self.assertEqual(calls[0][1]["input"], b"# source in memory\n")
+
+    def test_observer_enqueue_rejects_unpinned_manifest_or_drift_without_retry(self):
+        self.assertEqual(engine.rootless_host_enqueue(
+            "2026-11-18", "BONOS", ROOTLESS_CANDIDATE_SHA,
+            ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, "UNPINNED", b"source")
+            ["reason"], "ROOTLESS_PIN_MISMATCH")
+        valid = {"schema": "rc6.p0.observer-command.child.v1", "state": "QUEUED",
+                 "reason": "OBSERVER_COMMAND_POLL_TIMEOUT", "art_date": "2026-11-18",
+                 "family": "BONOS", "command_id": 41, "command_status": "RUNNING",
+                 "provider_status": None, "paper_ready": False,
+                 "order_authority": False, "db_rows_inserted": 1}
+        before = {"cid": self.cid, "state_token": "d" * 64,
+                  "release_manifest_sha256": "c" * 64,
+                  "docker": ("/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock"),
+                  "environment": {"LC_ALL": "C"}}
+        after = {**before, "state_token": "e" * 64}
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 2,
+                stdout=json.dumps(valid).encode(), stderr=b"")
+        with patch.object(engine, "_rootless_context", side_effect=[before, after]):
+            wrapper = engine.rootless_host_enqueue("2026-11-18", "BONOS",
+                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
+                "c" * 64, b"source", run=run)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(wrapper["state"], "NO_VERIFICADO")
+        self.assertEqual(wrapper["reason"], "ROOTLESS_STATE_DRIFT_HOLD")
+        self.assertIsNone(wrapper["receipt"]["command_id"])
+
+
+class TestA630ObserverCommandSQLite(unittest.TestCase):
+    """Real local SQLite; no host, SDK, network, release mutation or provider."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="rc6-p0-command-")
+        self.addCleanup(self.tmp.cleanup)
+        self.db = Path(self.tmp.name) / "observer_v17.db"
+        self.now = datetime(2026, 11, 18, 20, 15, tzinfo=timezone.utc)
+        with sqlite3.connect(self.db) as c:
+            c.executescript("""
+            CREATE TABLE paper_workspace(id INTEGER PRIMARY KEY, namespace TEXT,
+                origin TEXT, imported_legacy INTEGER, dataset_id TEXT);
+            INSERT INTO paper_workspace VALUES (1,'POROTA_PAPER_V17_FRESH',
+                'FRESH_EMPTY',0,'123e4567-e89b-12d3-a456-426614174000');
+            CREATE TABLE observer_state(id INTEGER PRIMARY KEY,mode TEXT,
+                real_orders_sent INTEGER,ppi_auth TEXT,heartbeat_at TEXT);
+            INSERT INTO observer_state VALUES (1,'PRODUCTION_PAPER',0,'OK',
+                '2026-11-18T20:14:50+00:00');
+            CREATE TABLE observer_commands(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
+                command TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT,
+                finished_at TEXT, result TEXT NOT NULL DEFAULT '');
+            """)
+        self.environment = {"POROTA_BUILD_SHA": ROOTLESS_CANDIDATE_SHA,
+            "POROTA_CANDIDATE_TREE_SHA": ROOTLESS_CANDIDATE_TREE,
+            "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
+            "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED",
+            "PAPER_V17_DB_PATH": str(self.db),
+            "POROTA_RUNTIME_SCHEMA_READY": "1",
+            "RC6_P0_EXPECTED_PRODUCT_SHA": ROOTLESS_CANDIDATE_SHA,
+            "RC6_P0_EXPECTED_PRODUCT_TREE": ROOTLESS_CANDIDATE_TREE,
+            "RC6_P0_EXPECTED_IMAGE_ID": ROOTLESS_IMAGE_ID}
+        self.version = types.SimpleNamespace(MODE="PRODUCTION_PAPER",
+            EXECUTION="SIMULATED", REAL_ORDER_CAPABILITY="BLOCKED")
+
+    def enqueue(self, **kwargs):
+        arguments = {"db": self.db, "now": self.now, "poll_seconds": 0}
+        arguments.update(kwargs)
+        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+            return engine.container_enqueue("2026-11-18", "BONOS", **arguments)
+
+    def test_one_queued_row_and_idempotent_second_dispatch(self):
+        first = self.enqueue()
+        self.assertEqual(first["state"], "QUEUED")
+        self.assertEqual(first["command_status"], "QUEUED")
+        self.assertEqual(first["db_rows_inserted"], 1)
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual(c.execute("SELECT command,status FROM observer_commands").fetchall(),
+                [("PPI_DIRECT_REST_POSTCLOSE_ONCE:2026-11-18:BONOS", "QUEUED")])
+        second = self.enqueue()
+        self.assertEqual(second["state"], "HOLD")
+        self.assertEqual(second["reason"], "OBSERVER_COMMAND_ALREADY_REQUESTED")
+        self.assertEqual(second["db_rows_inserted"], 0)
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM observer_commands").fetchone()[0], 1)
+
+    def test_poll_reads_scanner_receipt_without_sdk_or_ddl(self):
+        def observer_completes(_delay):
+            with sqlite3.connect(self.db) as c:
+                rowid = c.execute("SELECT id FROM observer_commands").fetchone()[0]
+                result = json.dumps({"command_id": rowid, "family": "BONOS",
+                    "provider_status": "FRESH_OBSERVED", "reason": None,
+                    "paper_ready": False, "order_authority": False})
+                c.execute("UPDATE observer_commands SET status='EVIDENCE',result=? WHERE id=?",
+                          (result, rowid))
+        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+            receipt = engine.container_enqueue("2026-11-18", "BONOS",
+                db=self.db, now=self.now, poll_seconds=2,
+                poll_interval=0.001, sleep=observer_completes)
+        self.assertEqual(receipt["state"], "EVIDENCE")
+        self.assertEqual(receipt["provider_status"], "FRESH_OBSERVED")
+        self.assertFalse(receipt["paper_ready"])
+        self.assertFalse(receipt["order_authority"])
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual([row[1] for row in c.execute("PRAGMA table_info(observer_commands)")],
+                ["id", "created_at", "command", "status", "started_at", "finished_at", "result"])
+
+    def test_schema_auth_mode_and_stale_day_fail_without_any_row(self):
+        cases = (
+            ({"POROTA_RUNTIME_SCHEMA_READY": ""}, "OBSERVER_COMMAND_SCHEMA_NOT_READY"),
+            ({"REAL_ORDER_CAPABILITY": "ENABLED"}, "OBSERVER_COMMAND_PAPER_MODE_HOLD"),
+            ({"POROTA_BUILD_SHA": "f" * 40}, "OBSERVER_COMMAND_PAPER_MODE_HOLD"),
+        )
+        for changes, reason in cases:
+            with self.subTest(changes=changes):
+                with patch.dict(self.environment, changes):
+                    receipt = self.enqueue()
+                self.assertEqual((receipt["state"], receipt["reason"]), ("HOLD", reason))
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE observer_state SET ppi_auth='COOLDOWN' WHERE id=1")
+        self.assertEqual(self.enqueue()["reason"], "OBSERVER_COMMAND_SCANNER_AUTH_HOLD")
+        with sqlite3.connect(self.db) as c:
+            c.execute("UPDATE observer_state SET ppi_auth='OK' WHERE id=1")
+            c.execute("ALTER TABLE observer_commands RENAME TO old_commands")
+        self.assertEqual(self.enqueue()["reason"], "OBSERVER_COMMAND_SCHEMA_INVALID")
+        with sqlite3.connect(self.db) as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM old_commands").fetchone()[0], 0)
+        self.assertEqual(self.enqueue(now=self.now + timedelta(days=1))["state"], "HOLD")
+
+
+class TestA630RootlessTail(unittest.TestCase):
+    """Preserve historical rootless CLI and transport regressions."""
+
+    setUp = TestA630RootlessEvidence.setUp
+
+    def test_queue_cli_routes_only_to_rootless_enqueue_not_capture(self):
+        outcome = {"schema": engine.COMMAND_ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
+                   "reason": "ROOTLESS_SOCKET_HOLD"}
+        args = ["-c", "rootless-enqueue", "2026-11-18", "BONOS",
+                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                ROOTLESS_IMAGE_ID, "c" * 64]
+        with patch.object(engine, "rootless_host_enqueue", return_value=outcome) as issue, \
+             patch.object(engine, "rootless_host_capture") as capture, \
+             patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}), \
+             patch.object(sys, "argv", args), redirect_stdout(io.StringIO()):
+            self.assertEqual(engine.main(), 2)
+        issue.assert_called_once_with("2026-11-18", "BONOS",
+            ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
+            "c" * 64, b"source")
+        capture.assert_not_called()
+
     def test_postclose_cli_only_with_exact_manual_pilot_suffix(self):
         target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
         common = ["-c", "rootless-capture", target_b64, ROOTLESS_CANDIDATE_SHA,
