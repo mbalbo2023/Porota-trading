@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import io
+import hashlib
+import json
 import os
 from pathlib import Path
 import sqlite3
+import tarfile
 import tempfile
 import unittest
 
@@ -42,6 +45,23 @@ class HistoryWalTransportTests(unittest.TestCase):
             time_budget_seconds=20, **kwargs,
         )
         return output, receipt
+
+    def repack(self, changes):
+        """Repack a valid transport after a hostile private-hop alteration."""
+        output, _ = self.capture()
+        output.seek(0)
+        forged = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="r:") as original:
+            with tarfile.open(fileobj=forged, mode="w") as archive:
+                for member in original:
+                    payload = original.extractfile(member).read()
+                    if member.name == a511.MANIFEST:
+                        manifest = json.loads(payload)
+                        payload = json.dumps(changes(manifest), sort_keys=True).encode()
+                    member.size = len(payload)
+                    archive.addfile(member, io.BytesIO(payload))
+        forged.seek(0)
+        return forged
 
     def test_uncheckpointed_wal_record_is_visible_only_on_private_runner(self):
         output, host = self.capture()
@@ -163,6 +183,90 @@ class HistoryWalTransportTests(unittest.TestCase):
                 io.BytesIO(raw), private_root,
                 time_budget_seconds=20,
             )
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_manifest_without_writer_exclusion_witness(self):
+        for changed in (lambda m: {**m, "writer_exclusion": "NONE"},
+                        lambda m: {k: v for k, v in m.items()
+                                   if k != "writer_exclusion"}):
+            with self.subTest(changed=changed):
+                forged = self.repack(changed)
+                private_root = self.root / "runner-only"
+                private_root.mkdir(mode=0o700, exist_ok=True)
+                with self.assertRaises(a511.HistoryHold) as hold:
+                    a511.verify_private_bundle(forged, private_root,
+                                               time_budget_seconds=20)
+                self.assertEqual(hold.exception.code, "BUNDLE_MANIFEST_INVALID")
+                self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_manifest_with_unverifiable_shm_observation(self):
+        forged = self.repack(lambda m: {**m, "shm_observed": "UNKNOWN"})
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(forged, private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MANIFEST_INVALID")
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_zero_wal_even_when_base_db_is_valid(self):
+        # Base has valid history table and row; a second committed row is WAL-only.
+        self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        self.connection.execute(
+            "INSERT INTO history_versions_v2 VALUES("
+            "2,'PRIVATE_SYMBOL_102','BONOS','BYMA','A-24HS',"
+            "'2026-11-06','PPI','{}')")
+        self.connection.commit()
+
+        output, _ = self.capture()
+        output.seek(0)
+        forged = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="r:") as original:
+            with tarfile.open(fileobj=forged, mode="w") as archive:
+                for member in original:
+                    payload = original.extractfile(member).read()
+                    if member.name == a511.FILES["-wal"]:
+                        payload = b""
+                    elif member.name == a511.MANIFEST:
+                        manifest = json.loads(payload)
+                        for part in manifest["source_parts"]:
+                            if part["name"] == a511.FILES["-wal"]:
+                                part["size"] = 0
+                                part["sha256"] = hashlib.sha256(b"").hexdigest()
+                        payload = json.dumps(manifest, sort_keys=True).encode()
+                    member.size = len(payload)
+                    archive.addfile(member, io.BytesIO(payload))
+        forged.seek(0)
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(forged, private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MANIFEST_INVALID")
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_nonzero_trailing_payload_after_tar_end(self):
+        output, _ = self.capture()
+        forged = io.BytesIO(output.getvalue() + b"PRIVATE_TRAILING_PAYLOAD")
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(forged, private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_data_hidden_inside_canonical_tar_padding(self):
+        output, _ = self.capture()
+        forged = bytearray(output.getvalue())
+        self.assertEqual(forged[-1], 0)
+        forged[-1] = 0x41
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(io.BytesIO(forged), private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
         self.assertEqual(list(private_root.iterdir()), [])
 
     def test_runner_requires_private_directory(self):
