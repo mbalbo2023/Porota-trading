@@ -31,3 +31,43 @@ válido, asociación unívoca de contrato y `READY_PAPER_*`. Hasta la siguiente
 rueda válida, `NO_VERIFICADO` se acompaña de owner, Acción y vencimiento, y
 `READY_PAPER` permanece **fail-closed**. Reusar el PR/parche parcial de origen
 antes de duplicar la lógica de identidad o frescura.
+
+## P0 desplegado y fuentes complementarias — evidencia 18-Nov-2026
+
+El [único Promote V2 #44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638)
+acreditó el **runtime** PAPER (recibo #14492700787); el
+[PR #1197](https://github.com/mbalbo2023/Porota-trading/pull/1197) integró el
+emisor A670 al `main` de control para solicitar Current/Book a la **sesión PPI
+ya autenticada del scanner**. No es una sustitución de la API PPI: los métodos
+SDK previos consumían endpoints REST del mismo proveedor. El antiguo camino de
+`sample` que abría otro login quedó inaccesible. Ninguno de estos hechos prueba
+un GET exitoso ni un `READY_PAPER` por instrumento.
+
+La cadena de un contrato es **PPI identidad primaria exacta de cinco claves →
+Current/Book/History con proveedor y reloj → complemento externo para campos
+que PPI no acredita → conciliación sin conflicto → readiness PAPER individual**.
+Los complementos son rutas **condicionales**, no hechos de disponibilidad ni
+permisos para sustituir identidad:
+
+| Familia PAPER | Complemento candidato sólo con evidencia | Nunca inferir |
+|---|---|---|
+| ACCIONES, CEDEARS, ETFS | IOL, BYMA | Moneda, mercado, settlement o precio a partir del ticker |
+| BONOS, LETRAS, OBLIGACIONES | IOL, BYMA | Término, flujo, especie o cotización por semejanza de nombre |
+| OPCIONES, FUTUROS | BYMA, A3/ROFEX según contrato verificado | Subyacente, vencimiento, multiplicador, margen o rueda |
+| CAUCIONES | BYMA y oferta comprobada del colocador | Tasa ejecutable, plazo, monto libre o costo sin oferta exacta |
+| FCI | Fuente primaria/documentación oficial comprobada | Cuotaparte, rescate o fecha de valuación sin marca temporal |
+
+Para cada cinco-clave registrar `provider`, `endpoint`, `HTTP/status`, reloj
+de fuente y recepción, antigüedad, campo faltante, complemento elegido o
+rechazado con motivo, `can_simulate` y capacidad PAPER. Mercado cerrado permite
+`VALIDADO_RUNTIME` sin quote fresco, pero **no promueve** un dato histórico
+como Current ni inventa readiness. El scan físico por diez familias se mantiene
+pendiente de ventana real; usar estados con owner/RCA y próximo run en #1093.
+
+La cobertura histórica también es independiente de la frescura intradía.
+Existe un HOLD explícito en `rc6_source_cycle_dispatch.py::_paper_zero` por
+autoridad de DB/WAL, y History v2 exige `rc6_history_cutoff_repair_runs` para
+cutoff `2026-09-21` COMPLETE; el resultado registrado fue PARTIAL. No escribir
+datos retroactivos, ejecutar reingestas o emitir segundas sesiones PPI para
+disfrazarlo. La corrección requiere custodia física del mismo DB, avance
+idempotente de series exactas, regresión y recibo en Actions.

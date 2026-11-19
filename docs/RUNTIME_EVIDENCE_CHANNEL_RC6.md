@@ -114,3 +114,27 @@ After a change to the producer or publisher, verify the affected behavior and
 its pinned evidence. Unrelated releases do not require reinstalling this
 channel or repeating its historical checks. This channel has no PPI Watch
 mutation path; that does not prohibit separately owned work.
+
+## Release evidence cross-check — 18-Nov-2026
+
+The independent observability channel above must not be confused with the
+**physical Deploy V2 runtime receipt**: [run #44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638),
+artifact #14492700787, attempt `44442769638-1`. The sanitized `runtime.json`
+directly reported `VALIDADO_RUNTIME`, `controller.entrypoint=bv_paper_runtime.py`,
+`controller.status=READY`, eight declared child roles, `health.observer=running`,
+`health.orders_guard=BLOCKED`, `PRODUCTION_PAPER/SIMULATION` and
+`real_orders_sent=0`. Exact pins are candidate
+`b3cbe57a5b4b82016a65a0e253b251abbb84a04c`, tree
+`7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0`, image
+`sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d`
+and release manifest SHA256
+`991eebea372810b7d6ea0fbb9c9295c7504d187d840e30af4c5e70f99845e792`.
+The receipt identified PAPER DB device/inode `64769/789823` at deploy time,
+**not** an independent perpetual SQLite/WAL writer lease.
+
+This is a measured deployment result only. It cannot be used as an implicit
+`READY_PAPER` instrument admission, fresh Current/Book response, complete
+historical repair or proof that a separate evidence publisher is active. For
+those claims, preserve signed per-source clocks, five-key identity, producer
+receipts, DB custody and Actions run IDs. Current unresolved RCA for historical
+complements: [#1093/6997492857](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6997492857).

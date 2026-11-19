@@ -32,6 +32,50 @@ está cerrada; (7) QA separado de motores/workers, timers, históricos y DB. AMB
 imponer un límite inventado de 2 GET/h. PPI Watch no tiene veto general por
 regla del usuario: cualquier intervención sigue ownership y Actions.
 
+### Actualización física posterior, 18-Nov-2026
+
+El fallo anterior permanece documentado como **RCA histórico**; el único
+fix-forward de producto pasó [Predeploy #44440710070](https://github.com/mbalbo2023/Porota-trading/actions/runs/44440710070)
+y [Deploy V2 #44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638),
+artefacto físico #14492700787 `VALIDADO_RUNTIME`. Fuente
+`b3cbe57a5b4b82016a65a0e253b251abbb84a04c`, árbol
+`7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0`, imagen
+`sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d`,
+controlador `bv_paper_runtime.py` READY, ocho hijos declarados, observador
+running, órdenes reales BLOCKED y `real_orders_sent=0`. El PR producto #1196
+está MERGED; el PR de control #1197 está MERGED en `main` con CI y ownership
+verdes, usando cola del scanner PPI ya logueado en vez de segundo login.
+Ambos owners fueron liberados en #980. No volver a desplegar el mismo código
+por el mero hecho de cerrar documentación.
+
+**Plan para históricos/complementos:** el RCA #1093/6997492857 identifica dos
+guards distintos: `scripts/rc6_source_cycle_dispatch.py::_paper_zero` termina
+siempre en `PAPER_DATABASE_IDENTITY_UNVERIFIED` pese a una fila PAPER/0;
+`bf_production_paper_observer._history_cutoff_repair_complete` exige una fila
+`COMPLETE` al cutoff `2026-09-21`, mientras el último recibo fue `PARTIAL`.
+No hacer `ALTER TABLE`, importar RAW, simular un heartbeat ni ejecutar un writer
+histórico del host sólo para pasar un semáforo. Recuperar primero scripts,
+workflows y PRs de reparación previos. Luego:
+
+1. Action READ_ONLY: identidad del mismo DB físico con FD sin symlinks, inode,
+   dispositivo, journal/WAL, schema, `quick_check` y relación con el runtime;
+   publicar hash/estado sanitizado, nunca DB ni registros financieros.
+2. WRITE_OWNER separado: recuperación idempotente de esquema/archivo por serie
+   de cinco claves, locks y lease de writer exclusivos; PPI autenticado del
+   scanner y complementos externos sólo si sus campos conservan procedencia.
+3. Regresión OFFHOST de doble inicio, crash/WAL, reintento, faltantes y rechazo
+   de identidad ambigua; preflight/pipeline de la misma imagen antes de admitir
+   un cambio al runtime. Host únicamente mediante GitHub Actions.
+4. Recibo físico posterior con conteos de importación, cobertura por familia,
+   timestamps y motivos de exclusión. Sólo marcar `COMPLETE`/READY cuando los
+   registros correspondientes lo prueben; lo pendiente conserva owner, RCA,
+   acción y próxima ventana de rueda.
+
+La frescura del siguiente día **no altera** el recibo Deploy V2 ya acreditado.
+No ejecutar un workflow de mercado fuera de su calendario ni fabricar datos
+para que un instrumento figure READY. El único PR P1 abierto al corte es #1166
+(Performance; DRAFT/RETENER_CON_CAUSA, no merge ni deploy).
+
 ## 1. Retomar una tarea
 
 1. Identificar objetivo, criterio de éxito, componentes afectados y exclusiones.

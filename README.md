@@ -44,8 +44,27 @@ estado: [Actions](https://github.com/mbalbo2023/Porota-trading/actions),
 **Incidente P0 REST (corte 18-Nov-2026):** #1192 recuperó el circuito REST
 de PPI en código y pasó Predeploy, pero [Deploy V2 #44376376095](https://github.com/mbalbo2023/Porota-trading/actions/runs/44376376095)
 falló en POSTFLIGHT. [Checkpoint y parche local](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026):
-Current/Book, frescura, instrumentos READY y workers siguen sin certificación
-física. Login PPI no acredita datos.
+ese fallo y la falta anterior de certificado de controlador son **antecedentes**,
+no el estado actual. Login PPI tampoco acredita Current/Book frescos.
+
+**P0 deploy técnico físicamente validado (18-Nov-2026):**
+[PR producto #1196](https://github.com/mbalbo2023/Porota-trading/pull/1196),
+[Predeploy V2 #44440710070](https://github.com/mbalbo2023/Porota-trading/actions/runs/44440710070),
+[Promote V2 #44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638)
+y recibo runtime #14492700787. Estado `VALIDADO_RUNTIME`, SHA candidato
+`b3cbe57a5b4b82016a65a0e253b251abbb84a04c`, controlador
+`bv_paper_runtime.py` READY, observador running, ocho hijos declarados,
+`PRODUCTION_PAPER/SIMULATION` y `real_orders_sent=0`. El
+[PR control #1197](https://github.com/mbalbo2023/Porota-trading/pull/1197)
+está MERGED en `main`: A670 reutiliza la sesión PPI scanner, sin segundo login.
+No se hizo otro deploy por ese merge de control.
+
+**Pendiente medible:** Current/Book HTTP, timestamps y READINESS por cada
+identidad durante la siguiente rueda válida; reparación histórica SQLite/WAL y
+cutoff antes de writers; #1166 Performance continúa DRAFT P1, no mergeable
+operativamente. El detalle causal y owners están en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093)
+y [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). Sin datos
+ficticios insertados en el droplet: los tests se ejecutaron aislados offhost.
 
 Por corrección explícita del operador, **PPI Watch no es «intocable» por política**.
 Toda intervención requiere ownership, scope y evidencia real; no deducir cuotas
