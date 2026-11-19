@@ -300,7 +300,9 @@ def read_performance_report(path, maximum=524288):
             or len(raw) != before.st_size):
         return failed("CHANGED_DURING_READ")
     try:
-        value = json.loads(raw)
+        def reject_non_json_constant(_):
+            raise ValueError("NON_JSON_NUMBER")
+        value = json.loads(raw, parse_constant=reject_non_json_constant)
     except (ValueError, TypeError, RecursionError):
         return failed("MALFORMED")
     return (value, {**record, "status": "VALID"}) if isinstance(value, dict) and value else failed("MALFORMED")
@@ -769,7 +771,8 @@ def _docker_inspect(*, diagnostics=None):
             parsed[role] = {
                 "cid": context.roles[role], "state": state.get("Status"),
                 "restarts": item.get("RestartCount", 0),
-                "oom": state.get("OOMKilled") is True,
+                "oom": (state.get("OOMKilled") if type(state.get("OOMKilled")) is bool
+                        else None),
                 "image": item.get("Image"),
                 "source_sha": context.current.get("source_sha"),
                 "source_tree": context.current.get("source_tree"),

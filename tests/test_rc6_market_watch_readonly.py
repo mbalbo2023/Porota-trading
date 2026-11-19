@@ -201,6 +201,18 @@ class MonitorContracts(unittest.TestCase):
                 self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
                 self.assertNotIn("PRIVATE_INVALID_JSON", json.dumps(snapshot))
 
+    def test_performance_report_rejects_non_json_nan_or_infinity_constants(self):
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(constant=constant):
+                self.performance_path.write_text('{"generated_at":"2026-11-19T17:18:29Z",'
+                                                 '"value":' + constant + '}')
+                report, diagnostic = monitor.read_performance_report(self.performance_path)
+                self.assertIsNone(report)
+                self.assertEqual(diagnostic["status"], "MALFORMED")
+                snapshot = self.capture()
+                self.assertFalse(snapshot["performance"]["present"])
+                self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
+
     def test_performance_report_permission_failure_redacts_exception(self):
         with patch.object(monitor.os, "open",
                           side_effect=PermissionError("PRIVATE_ACCOUNT_TOKEN")):
@@ -494,6 +506,23 @@ class MonitorContracts(unittest.TestCase):
             rows = monitor._docker_inspect()
         self.assertEqual(rows["observer"]["source_sha"], "c" * 40)
         self.assertEqual(rows["dashboard"]["source_tree"], "e" * 40)
+
+    def test_missing_private_oom_flag_never_certifies_release_pending(self):
+        cid = "1" * 64
+        context = self.rootless_context()
+        context.current = {"source_sha": "1" * 40, "source_tree": "2" * 40}
+        context.items = {
+            "observer": {"Id": cid, "Image": IMAGE, "State": {"Status": "running"}},
+            "dashboard": {"Id": "2" * 64, "Image": IMAGE,
+                          "State": {"Status": "running", "OOMKilled": False}}}
+        with patch.object(monitor, "_rootless_context", return_value=context):
+            observed = monitor._docker_inspect()
+        self.assertIsNone(observed["observer"]["oom"])
+        self.assertIs(observed["dashboard"]["oom"], False)
+        self.rootless_release(source_sha="1" * 40, source_tree="2" * 40)
+        snapshot = self.private_probe(observed, expected_tree_sha="3" * 40)
+        self.assertNotEqual(snapshot.get("release_status"), "RELEASE_PENDING")
+        self.assertIn("DEPLOY_PROVENANCE_INVALID", self.codes(snapshot, "P0"))
 
     def test_docker_inspection_uses_exact_private_release_pair_and_no_legacy_names(self):
         observer_cid = "1" * 64
