@@ -218,6 +218,75 @@ def test_missing_multiple_or_mismatched_wire_receipt_never_certifies(fake_wire, 
     with pytest.raises(ReadOnlyPolicyViolation, match="PPI_NATIVE_WIRE_RECEIPT_"):
         reader.capture_guarded_native("current", FIVE, priority="HOT")
     assert all(item[0] == "GET" for item in calls)
+    if scenario == "two_reads":
+        # The SDK can retry. The guard must refuse the second send before
+        # HTTPAdapter.send: checking a receipt count afterwards is too late.
+        assert len(calls) == 1
+
+
+def test_native_wire_scope_rejects_retry_before_socket_and_resets_for_next_book(fake_wire):
+    reader, session, budget, calls, expected = fake_wire
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=SDKMarket(session, two_reads=True))
+    reader._ProductionMarketReader__authenticated = True
+    with pytest.raises(ReadOnlyPolicyViolation, match="PPI_NATIVE_WIRE_RECEIPT_"):
+        reader.capture_guarded_native("current", FIVE, priority="DISCOVERY")
+    assert len(calls) == 1
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=SDKMarket(session))
+    result = reader.capture_guarded_native("book", FIVE, priority="DISCOVERY")
+    assert result["native_payload"] == expected["Book"]
+    assert [x[1] for x in calls] == ["Current", "Book"]
+
+
+def test_sdk_401_retry_is_blocked_before_second_adapter_send(fake_wire):
+    reader, session, budget, calls, expected = fake_wire
+    budget.test_status = 401
+
+    class RetryAfter401(SDKMarket):
+        def current(self, ticker, type_, settlement):
+            first = self.session.get(f"{BASE}/Current", params={
+                "Ticker": ticker, "Type": type_, "Settlement": settlement})
+            if first.status_code == 401:
+                # Simulate SDK retry code, not another Porota caller.
+                return self.session.get(f"{BASE}/Current", params={
+                    "Ticker": ticker, "Type": type_, "Settlement": settlement}).json()
+            return first.json()
+
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=RetryAfter401(session))
+    reader._ProductionMarketReader__authenticated = True
+    with pytest.raises(ReadOnlyPolicyViolation,
+                       match="PPI_NATIVE_WIRE_RECEIPT_MULTIPLE_SEND_BLOCKED"):
+        reader.capture_guarded_native("current", FIVE, priority="DISCOVERY")
+    assert len(calls) == 1 and calls[0][1] == "Current"
+    assert budget.calls[-1][-1]["status_code"] == 401
+    budget.test_status = 200
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=SDKMarket(session))
+    assert reader.capture_guarded_native("book", FIVE, priority="DISCOVERY")[
+        "native_payload"] == expected["Book"]
+    assert len(calls) == 2 and calls[1][1] == "Book"
+
+
+def test_native_capture_blocks_unexpected_sdk_login_before_wire(fake_wire):
+    reader, session, budget, calls, _ = fake_wire
+
+    class UnexpectedRefresh(SDKMarket):
+        def current(self, ticker, type_, settlement):
+            # A compromised/auto-refreshing SDK must not open a new login
+            # while proving one native Current. No wire or second session.
+            self.session.post("https://clientapi.portfoliopersonal.com/api/1.0/Account/LoginApi",
+                              json={"apiKey": "OFFHOST_TEST_KEY"})
+            return self._read("Current", ticker, type_, settlement)
+
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=UnexpectedRefresh(session))
+    reader._ProductionMarketReader__authenticated = True
+    with pytest.raises(ReadOnlyPolicyViolation,
+                       match="PPI_NATIVE_WIRE_RECEIPT_UNEXPECTED_ENDPOINT"):
+        reader.capture_guarded_native("current", FIVE, priority="DISCOVERY")
+    assert calls == [] and budget.calls == []
 
 
 @pytest.mark.parametrize("endpoint", ["search", "history", "market_configuration",
@@ -287,3 +356,58 @@ def test_default_current_path_and_paper_read_only_surface_unchanged(fake_wire):
     assert [entry[0] for entry in budget.calls] == ["acquire", "start", "finish"]
     assert not any(hasattr(reader, name) for name in
                    ("send_order", "place_order", "cancel_order", "account"))
+
+
+def test_observer_command_reuses_existing_reader_through_real_guarded_adapter(
+        fake_wire, tmp_path, monkeypatch):
+    """Queue→scanner command→native SDK→guard→adapter, entirely OFFHOST."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import bf_production_paper_observer as observer
+    from be_paper_engine import PaperStore
+    from bu_instrument_catalog import init_schema as init_catalog_schema
+
+    art = datetime(2026, 11, 18, 21, 45, tzinfo=ZoneInfo(
+        "America/Argentina/Buenos_Aires"))
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return art.astimezone(tz) if tz else art.replace(tzinfo=None)
+
+    monkeypatch.setattr(observer, "datetime", FixedDatetime)
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_catalog_schema(store)
+    observer._support_schema(store)
+    command_text = "PPI_DIRECT_REST_POSTCLOSE_ONCE:2026-11-18:BONOS"
+    with store.connect() as c:
+        c.execute("UPDATE observer_state SET ppi_auth='OK',real_orders_sent=0")
+        c.execute("""INSERT INTO financial_instrument_catalog VALUES(
+            ?,?,?,?,?,?,?,?,?,?,?,?)""", (
+            "AL30", "BONOS", "BYMA", "ARS", "INMEDIATA", "PPI_FIELD",
+            "OFFHOST", "2026-11-18T20:00:00Z", "OFFHOST", "AVAILABLE",
+            "NOT_READY", json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+        c.execute("""INSERT INTO observer_commands(created_at,command,status)
+            VALUES(?,?,?)""", (art.isoformat(), command_text, "QUEUED"))
+
+    reader, session, _, calls, _ = fake_wire
+    reader._ProductionMarketReader__client = SimpleNamespace(
+        marketdata=SDKMarket(session))
+    reader._ProductionMarketReader__authenticated = True
+    queued = observer._claim_command(store)
+    assert queued is not None and queued[1] == command_text
+    assert observer._run_command(store, reader, queued) is reader
+    with store.connect() as c:
+        status, result = c.execute("""SELECT status,result FROM observer_commands
+            WHERE id=?""", (queued[0],)).fetchone()
+        receipts = c.execute("""SELECT detail FROM paper_events WHERE
+            event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS' ORDER BY id""").fetchall()
+        fills = c.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0]
+        sent = c.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0]
+    assert status == "EVIDENCE" and '"paper_ready": false' in result
+    assert [call[1] for call in calls] == ["Current", "Book"]
+    assert len(receipts) == 2 and all(
+        f"command_id={queued[0]}" in row[0] and "http_status=200" in row[0]
+        for row in receipts)
+    assert fills == 0 and sent == 0

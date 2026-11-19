@@ -304,16 +304,43 @@ class ReadOnlyTransportGuard:
             self._scope.identity = previous_identity
 
     @contextmanager
-    def native_wire_receipt_scope(self):
-        """Observe one actual adapter response; never grant provider I/O."""
+    def native_wire_receipt_scope(self, *, endpoint):
+        """Observe at most one actual adapter send, not just one SDK response.
+
+        An SDK may retry internally after 401/timeout. Counting completed
+        receipts after _read returns is too late to prevent the second wire.
+        """
         if getattr(self._scope, "native_wire_receipts", None) is not None:
             raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_NESTED")
+        if endpoint not in {"current", "book", "intraday"}:
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_ENDPOINT_DENIED")
         attempts = []
         self._scope.native_wire_receipts = attempts
+        self._scope.native_wire_send_count = 0
+        self._scope.native_wire_expected_endpoint = endpoint
         try:
             yield attempts
         finally:
             self._scope.native_wire_receipts = None
+            self._scope.native_wire_send_count = None
+            self._scope.native_wire_expected_endpoint = None
+
+    def _require_native_scope(self, method, url, *, prepared=False):
+        """An SDK's evidence read must not refresh login or query another key."""
+        endpoint = getattr(self._scope, "native_wire_expected_endpoint", None)
+        if endpoint is None:
+            return
+        if (str(method).upper() != "GET" or
+                _normal_path(url) != "/api/1.0/marketdata/" + endpoint):
+            raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_UNEXPECTED_ENDPOINT")
+        if prepared:
+            # Session.request receives params= separately; only the prepared
+            # adapter URL has the authoritative query to verify pre-wire.
+            identity = getattr(self._scope, "identity", None)
+            expected = ([identity[0], identity[1], identity[4]]
+                        if identity is not None and len(identity) == 5 else None)
+            if _native_wire_request_identity(url) != expected:
+                raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_REQUEST_IDENTITY_MISMATCH")
 
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
@@ -405,6 +432,7 @@ class ReadOnlyTransportGuard:
         def guarded_request(session, method, url, **kwargs):
             try:
                 checked_method, checked_path = guard.check(method, url)
+                guard._require_native_scope(checked_method, url)
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
@@ -428,6 +456,10 @@ class ReadOnlyTransportGuard:
                     raise ReadOnlyPolicyViolation("PPI_HTTP_PREPARED_REQUEST_COPY_UNSAFE")
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
+                # Deny an SDK login refresh BEFORE count_login=True can reserve
+                # a slot; this evidence scope owns only its named market GET.
+                guard._require_native_scope(wire_request.method, wire_request.url,
+                                             prepared=True)
                 # Count login at the actual adapter boundary: Session.send()
                 # and a direct prepared send cannot bypass the same cooldown.
                 checked_method, checked_path = guard.check(
@@ -444,6 +476,12 @@ class ReadOnlyTransportGuard:
             lease = None
             observed = getattr(guard._scope, "native_wire_receipts", None)
             attempt_id = secrets.token_hex(16) if observed is not None else None
+            if (observed is not None and endpoint in {"current", "book", "intraday"}
+                    and guard._scope.native_wire_send_count >= 1):
+                with guard._lock:
+                    guard.calls_blocked += 1
+                guard._record(checked_method, checked_path, "BLOCKED")
+                raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_MULTIPLE_SEND_BLOCKED")
             if checked_method != "POST" or checked_path != "/api/1.0/account/loginapi":
                 # Never attribute a later SDK JSON parse failure to an older
                 # login response from the same thread.
@@ -494,6 +532,10 @@ class ReadOnlyTransportGuard:
                     guard.check(wire_request.method, wire_request.url)
                     with guard._lock:
                         guard.calls_allowed += 1
+                    if observed is not None:
+                        # Consume the one-wire allowance immediately BEFORE
+                        # HTTPAdapter.send, even if it raises or returns 401.
+                        guard._scope.native_wire_send_count += 1
                     response = original_send(adapter, wire_request, **kwargs)
                     if response.status_code >= 400:
                         guard._read_error(f"PPI_HTTP_{response.status_code}")
@@ -784,7 +826,7 @@ class ProductionMarketReader:
 
         with self._sdk_scope():
             with self.__guard.read_scope(priority=priority, identity=identity):
-                with self.__guard.native_wire_receipt_scope() as attempts:
+                with self.__guard.native_wire_receipt_scope(endpoint=endpoint) as attempts:
                     result = self._read(endpoint, identity[0], identity[1], identity[4])
         if len(attempts) != 1:
             raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_COUNT_UNVERIFIED")
