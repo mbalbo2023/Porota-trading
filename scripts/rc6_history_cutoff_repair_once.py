@@ -7,6 +7,7 @@ override after a counted review. Re-running is idempotent.
 """
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 import fcntl
 import hashlib
@@ -14,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import time
 from typing import Any
@@ -121,11 +123,30 @@ def _latest(db, identity) -> str | None:
     return str(row[0])[:10] if row and row[0] else None
 
 
+def _resume_start(coverage: dict[str, Any], latest: str) -> date:
+    # A date awaiting audit is a bounded request hint, not a certified session.
+    for field in ("repair_start", "first_missing"):
+        if coverage.get(field):
+            return date.fromisoformat(coverage[field])
+    return date.fromisoformat(latest) + timedelta(days=1)
+
+
 def _coverage(db, identity) -> dict[str, Any]:
-    """Prove continuous BYMA-session coverage from the stored baseline to cutoff."""
+    """Fail closed unless a full, attested baseline through cutoff is proven.
+
+    The first stored candle is NOT evidence of a historical inception date.
+    An unaudited calendar year must never be mistaken for a year of holidays.
+    Canonical rows from IOL/other sources or with no pinned PPI row contract
+    cannot certify an exact PPI series merely because dates are present.
+    """
     with db.connect() as c:
+        columns = {str(row[1]) for row in c.execute("PRAGMA table_info(history_canonical_v2)")}
+        if not {"date", "source", "metadata_json", "adjusted"}.issubset(columns):
+            return {"complete": False, "start": None, "latest": None,
+                    "expected": None, "present": 0, "missing": None,
+                    "first_missing": None, "reason": "CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED"}
         rows = c.execute(
-            """SELECT DISTINCT substr(date,1,10) FROM history_canonical_v2
+            """SELECT substr(date,1,10),source,metadata_json,adjusted FROM history_canonical_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
                  AND currency=? AND price_basis=? AND adjustment_basis=?
                  AND date<=? ORDER BY date""",
@@ -141,8 +162,33 @@ def _coverage(db, identity) -> dict[str, Any]:
         return {"complete": False, "start": None, "latest": None, "expected": 0,
                 "present": 0, "missing": 0, "reason": "NO_VALID_HISTORY"}
     start, latest = min(days), max(days)
+    partial = {"complete": False, "start": start, "latest": latest,
+               "expected": None, "present": len(days), "missing": None,
+               "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat()}
+    baseline_years = set(range(BOOTSTRAP_START.year, CUTOFF.year + 1))
+    if not baseline_years.issubset(byma.ANIOS_AUDITADOS):
+        return {**partial, "reason": "BASELINE_CALENDAR_UNAUDITED"}
+    if any(row[1] != "PPI_PRODUCTION_HISTORY" for row in rows):
+        return {**partial, "reason": "NON_PPI_CANONICAL_HISTORY"}
+    if any(row[3] != 0 for row in rows):
+        return {**partial, "reason": "CANONICAL_RAW_BASIS_UNVERIFIED"}
+
+    import ct_ppi_history_salvage_hf6 as salvage
+    for row in rows:
+        try:
+            metadata = json.loads(row[2])
+            if not isinstance(metadata, dict) or metadata.get("history_quality") not in {
+                    "FULL_OHLC", "FULL_OHLCV"}:
+                return {**partial, "reason": "CANONICAL_FULL_OHLC_UNVERIFIED"}
+            if metadata.get("provider_contract_id") not in salvage.VERIFIED_PPI_HISTORY_CONTRACTS:
+                return {**partial, "reason": "PPI_PROVIDER_CONTRACT_UNVERIFIED"}
+        except (TypeError, ValueError):
+            return {**partial, "reason": "CANONICAL_PROVENANCE_UNVERIFIED"}
+
     expected_days = []
-    current = start
+    # Explicit 365-day target, not min(days); prior behavior certified a single
+    # cutoff-day row as a complete one-day series.
+    current = BOOTSTRAP_START
     while current <= CUTOFF:
         if byma.es_dia_habil_operativo(current):
             expected_days.append(current)
@@ -244,11 +290,24 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
         return {}
     import bs_instrument_contracts as contracts
 
+    # HistoricalStore.connect() may create an absent DB and opens RW before
+    # PRAGMA query_only. Cold archive inspection must open a pre-existing file
+    # with SQLite mode=ro from its exact identity path instead.
+    path = Path(_history_store().path)
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            return {}
+        c = sqlite3.connect(f"{path.resolve(strict=True).as_uri()}?mode=ro",
+                            uri=True, timeout=20)
+    except (OSError, sqlite3.Error):
+        return {}
+
     selected = {}
     selected_bytes = 0
     selected_sizes = {}
     scanned_bytes = 0
-    with _history_store().connect() as c:
+    with closing(c):
         c.execute("PRAGMA query_only=ON")
         if not c.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
                              AND name='historical_raw_archive'""").fetchone():
@@ -440,11 +499,11 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                 continue
             archived = archives.get(identity)
             if latest:
-                # Resume from the earliest missing BYMA session, not only after
-                # the last candle: a prior partial response can leave interior gaps.
-                start = (date.fromisoformat(coverage["first_missing"])
-                         if coverage.get("first_missing")
-                         else date.fromisoformat(latest) + timedelta(days=1))
+                # An unaudited baseline has no known first missing *session*.
+                # Retry archived evidence from the bounded bootstrap target,
+                # even when an isolated existing candle lies on cutoff day.
+                # Otherwise resume from the earliest proven missing session.
+                start = _resume_start(coverage, latest)
             elif archived:
                 archive_rows = _filtered(archived[0], date.min)
                 archive_days = []
@@ -472,12 +531,16 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                 try:
                     rows, last = _ingest(observer_store, history_store, identity, payload, start,
                                          source="PPI_ARCHIVE", observed_at=recorded_at)
+                    if rows:
+                        # Count staged archive ingestion even when the complete
+                        # historical series still fails the cutoff proof.
+                        archive_count += 1
                     latest = _latest(history_store, identity)
                     coverage = _coverage(history_store, identity)
                     if rows and coverage["complete"]:
                         _save(history_store, identity, state="COMPLETE", source="PPI_ARCHIVE",
                               requested_from=start.isoformat(), rows=coverage["present"], latest=latest)
-                        completed.add(identity); archive_count += 1
+                        completed.add(identity)
                         continue
                     _save(history_store, identity, state="ARCHIVE_PARTIAL_COVERAGE",
                           source="PPI_ARCHIVE", requested_from=start.isoformat(),
@@ -512,9 +575,7 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                         start = BOOTSTRAP_START
                     else:
                         coverage = _coverage(history_store, identity)
-                        start = (date.fromisoformat(coverage["first_missing"])
-                                 if coverage.get("first_missing")
-                                 else date.fromisoformat(latest) + timedelta(days=1))
+                        start = _resume_start(coverage, latest)
                     if start > CUTOFF:
                         coverage = _coverage(history_store, identity)
                         if coverage["complete"]:

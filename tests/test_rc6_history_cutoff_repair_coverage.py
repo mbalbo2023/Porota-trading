@@ -2,6 +2,8 @@
 import hashlib
 import json
 import sqlite3
+from datetime import timedelta
+import pytest
 
 from scripts import rc6_history_cutoff_repair_once as repair
 
@@ -20,6 +22,24 @@ def _archive_table(store):
           id INTEGER PRIMARY KEY,origin TEXT NOT NULL,row_key TEXT NOT NULL,
           body_hash TEXT NOT NULL,recorded_at TEXT NOT NULL,quality TEXT NOT NULL,
           body_json TEXT NOT NULL)""")
+
+
+def _canonical_table(store):
+    with store.connect() as db:
+        db.execute("""CREATE TABLE history_canonical_v2(
+          symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,currency TEXT,
+          price_basis TEXT,adjustment_basis TEXT,date TEXT,source TEXT NOT NULL,
+          adjusted INTEGER NOT NULL,metadata_json TEXT NOT NULL)""")
+
+
+def _canonical_row(store, identity, *, source="PPI_PRODUCTION_HISTORY",
+                   provider_contract_id=None, day="2026-09-21"):
+    with store.connect() as db:
+        db.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                   (*identity, day, source, 0, json.dumps({
+                       "history_quality": "FULL_OHLCV",
+                       "provider_contract_id": provider_contract_id,
+                   })))
 
 
 def _archive_attempt(store, *, body, origin="PPI_HISTORY", quality="VALID_PAYLOAD",
@@ -140,7 +160,21 @@ def test_legacy_archive_scans_only_latest_physical_ids_not_all_rows_until_match(
     assert repair._archive_payloads({key}) == {}
 
 
-def test_main_replays_legacy_archive_without_login_and_records_archive_provenance(tmp_path, monkeypatch):
+def test_missing_legacy_archive_db_is_never_created_by_readonly_fallback(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "history-not-created.db")
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+    key = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+
+    assert repair._archive_payloads({key}) == {}
+    assert not store.path.exists()
+
+
+@pytest.mark.parametrize("preexisting_cutoff_row", [False, True])
+def test_main_replays_legacy_archive_without_login_and_records_archive_provenance(
+        tmp_path, monkeypatch, preexisting_cutoff_row):
     import cg_paper_workspace as workspace
     import fb_raw_evidence_exact_v1 as exact
 
@@ -148,36 +182,107 @@ def test_main_replays_legacy_archive_without_login_and_records_archive_provenanc
     store = _Store(tmp_path / "history.db")
     _archive_table(store)
     _archive_attempt(store, body=_ppi_wrapper(close=105))
+    _canonical_table(store)
+    if preexisting_cutoff_row:
+        _canonical_row(store, identity)
     monkeypatch.setattr(repair, "LOCK_PATH", tmp_path / "repair.lock")
     monkeypatch.setattr(repair, "_history_store", lambda: store)
     monkeypatch.setattr(workspace, "runtime_store", lambda: store)
     monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
     monkeypatch.setattr(repair, "_targets", lambda _: [identity])
-    monkeypatch.setattr(repair, "_latest", lambda *_: None)
+    monkeypatch.setattr(repair, "_latest", lambda *_: "2026-09-21" if preexisting_cutoff_row else None)
     calls = []
-
-    def coverage(*_):
-        return {"complete": bool(calls), "present": len(calls),
-                "latest": "2026-09-21" if calls else None,
-                "missing": 0, "reason": "COVERAGE_COMPLETE" if calls else "NO_VALID_HISTORY"}
 
     def ingest(_, __, key, payload, start, *, source, observed_at):
         calls.append((key, payload, start.isoformat(), source, observed_at))
+        _canonical_row(store, key)
         return (1, "2026-09-21")
 
-    monkeypatch.setattr(repair, "_coverage", coverage)
     monkeypatch.setattr(repair, "_ingest", ingest)
     monkeypatch.delenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", raising=False)
     monkeypatch.delenv("RC6_HISTORY_QUARANTINE_REPEATED_PPI", raising=False)
 
-    assert repair.main() == 0
+    assert repair.main() == 1
     assert calls == [(identity, [{"date": "2026-09-21", "close": 105}],
-                      "2026-09-21", "PPI_ARCHIVE", "2026-09-22T10:00:00+00:00")]
+                      (repair.BOOTSTRAP_START.isoformat() if preexisting_cutoff_row else "2026-09-21"),
+                      "PPI_ARCHIVE", "2026-09-22T10:00:00+00:00")]
     with store.connect() as db:
         run = db.execute("SELECT state,archive_imports,ppi_queries,complete,failed FROM rc6_history_cutoff_repair_runs").fetchone()
         exact_state = db.execute("SELECT state,source FROM rc6_history_cutoff_repair_exact_v2").fetchone()
-    assert run == ("COMPLETE", 1, 0, 1, 0)
-    assert exact_state == ("COMPLETE", "PPI_ARCHIVE")
+    assert run == ("PARTIAL", 1, 0, 0, 1)
+    assert exact_state == ("ARCHIVE_PARTIAL_COVERAGE", "PPI_ARCHIVE")
+
+
+def test_one_cutoff_day_does_not_prove_required_history_baseline(tmp_path):
+    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    store = _Store(tmp_path / "history.db")
+    _canonical_table(store)
+    _canonical_row(store, identity)
+
+    coverage = repair._coverage(store, identity)
+
+    assert coverage["complete"] is False
+    assert coverage["latest"].isoformat() == "2026-09-21"
+    assert coverage["reason"] == "BASELINE_CALENDAR_UNAUDITED"
+    assert coverage["first_missing"] is None  # Unknown, not an invented 2025 BYMA session.
+    assert coverage["repair_start"] == repair.BOOTSTRAP_START.isoformat()
+
+
+def test_untrusted_iol_canonical_rows_cannot_certify_ppi_cutoff(tmp_path, monkeypatch):
+    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    store = _Store(tmp_path / "history.db")
+    _canonical_table(store)
+    _canonical_row(store, identity, source="IOL_HISTORY", provider_contract_id="test-contract")
+    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
+
+    coverage = repair._coverage(store, identity)
+
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "NON_PPI_CANONICAL_HISTORY"
+
+
+def test_unattested_ppi_canonical_rows_cannot_certify_cutoff(tmp_path, monkeypatch):
+    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    store = _Store(tmp_path / "history.db")
+    _canonical_table(store)
+    _canonical_row(store, identity)
+    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
+
+    coverage = repair._coverage(store, identity)
+
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "PPI_PROVIDER_CONTRACT_UNVERIFIED"
+
+
+def test_cutoff_coverage_requires_every_audited_day_and_pinned_ppi_contract(tmp_path, monkeypatch):
+    import ct_ppi_history_salvage_hf6 as salvage
+
+    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    store = _Store(tmp_path / "history.db")
+    _canonical_table(store)
+    # Hypothetical future audit + contract; NOT today's physical provenance.
+    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", frozenset({"fixture-pinned"}))
+    current = repair.BOOTSTRAP_START
+    expected = []
+    while current <= repair.CUTOFF:
+        if repair.byma.es_dia_habil_operativo(current):
+            _canonical_row(store, identity, provider_contract_id="fixture-pinned",
+                           day=current.isoformat())
+            expected.append(current)
+        current += timedelta(days=1)
+
+    coverage = repair._coverage(store, identity)
+    assert coverage["complete"] is True
+    assert coverage["expected"] == coverage["present"] == len(expected)
+
+    missing = expected[len(expected) // 2]
+    with store.connect() as db:
+        db.execute("DELETE FROM history_canonical_v2 WHERE date=?", (missing.isoformat(),))
+    gap = repair._coverage(store, identity)
+    assert gap["complete"] is False
+    assert gap["missing"] == 1
+    assert gap["first_missing"] == missing.isoformat()
 
 
 def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
