@@ -9,6 +9,7 @@ Sistema de análisis y simulación para el mercado argentino.
 | Fuente | Uso |
 |---|---|
 | [AGENTS.md](AGENTS.md) | Alcance, seguridad, autonomía, concurrencia y evidencia |
+| [Handoff vigente (19-Nov-2026)](docs/RC6_HANDOFF_2026-11-19.md) | Release P0, censo A385, RCA DB/WAL A729, PR/ownership y camino crítico |
 | [Runbook](docs/RUNBOOK.md) | Desarrollo, pruebas, Predeploy, Promote y cierre |
 | [Política](ops/policy/porota-policy.yaml) | Contrato estructurado de seguridad y release |
 | [Política de pruebas del candidato](https://github.com/mbalbo2023/Porota-trading/blob/integration/rc6-a1115-r87-unified-paper-candidate-20261110/ops/policy/test-policy.yaml) | Selección y clasificación de pruebas |
