@@ -53,6 +53,13 @@ COMMAND_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
+OPEN_FAMILIES = ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+                 "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")
+OPEN_STATUS_CODES = frozenset({
+    "FRESH_OBSERVED", "STALE_OR_INVALID", "CATALOG_IDENTITY_UNAVAILABLE",
+    "PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD", "NOT_ATTEMPTED_ABORTED",
+})
+OPEN_CHILD_SCHEMA = "rc6.p0.open-ten-family.child.v1"
 COMMAND_HOLD_REASONS = frozenset({
     "ROOTLESS_PIN_MISMATCH", "ROOTLESS_RELEASE_CUSTODY_HOLD",
     "ROOTLESS_STATE_DRIFT_HOLD", "ROOTLESS_SOCKET_HOLD",
@@ -67,6 +74,7 @@ COMMAND_HOLD_REASONS = frozenset({
     "OBSERVER_COMMAND_ALREADY_REQUESTED", "OBSERVER_COMMAND_SQLITE_HOLD",
     "OBSERVER_COMMAND_POLL_TIMEOUT", "OBSERVER_COMMAND_FINISHED",
     "OBSERVER_COMMAND_SCANNER_HOLD", "OBSERVER_COMMAND_RECEIPT_INVALID",
+    "PPI_OPEN_ALREADY_REQUESTED_NO_RETRY", "OBSERVER_COMMAND_OPEN_RESULT_INVALID",
 })
 # Historical A630 v1 receipts retain this field name for compatibility; the
 # identity is the candidate embedded into the exact already-deployed image.
@@ -596,8 +604,13 @@ def _command_unknown_receipt(day, family, reason):
             "db_rows_inserted": None}
 
 
+def _open_unknown_receipt(day, reason):
+    return {**_open_receipt(day, state="NO_VERIFICADO", reason=reason),
+            "db_rows_inserted": None}
+
+
 def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
-                          source_bytes, *, run=subprocess.run):
+                          source_bytes, *, run=subprocess.run, open_batch=False):
     """Issue only a SQLite command through the exact attested rootless observer.
 
     The old rootless-capture path remains separate; no PPI SDK/client/login
@@ -607,13 +620,16 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
               "reason": "ROOTLESS_PIN_MISMATCH", "runtime_pin_verified": False,
               "ppi_client_or_login_by_action": False,
               "real_orders_sent_by_action": 0,
-              "receipt": _command_unknown_receipt(day, family, "ROOTLESS_PIN_MISMATCH")}
+              "receipt": (_open_unknown_receipt(day, "ROOTLESS_PIN_MISMATCH")
+                          if open_batch else
+                          _command_unknown_receipt(day, family, "ROOTLESS_PIN_MISMATCH"))}
     if (candidate != ROOTLESS_CANDIDATE_SHA or tree != ROOTLESS_CANDIDATE_TREE or
             image != ROOTLESS_IMAGE_ID or not isinstance(manifest_sha, str) or
             SHA256.fullmatch(manifest_sha) is None or
             not isinstance(source_bytes, bytes) or not 0 < len(source_bytes) <= 1_000_000 or
             type(day) is not str or re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) is None or
-            type(family) is not str or family not in COMMAND_FAMILIES):
+            type(open_batch) is not bool or type(family) is not str or
+            (family != "ALL" if open_batch else family not in COMMAND_FAMILIES)):
         return result
     try:
         before = _rootless_context(run=run)
@@ -627,7 +643,8 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
                    "-e", f"RC6_P0_EXPECTED_IMAGE_ID={image}",
                    "-e", "POROTA_RUNTIME_SCHEMA_READY=1",
                    "-e", "PYTHONDONTWRITEBYTECODE=1",
-                   before["cid"], "python", "-B", "-", "container-enqueue")
+                   before["cid"], "python", "-B", "-",
+                   "container-enqueue-open" if open_batch else "container-enqueue")
         try:
             captured = run(command, input=source_bytes, check=False,
                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -642,7 +659,9 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
             payload = json.loads(captured.stdout)
         except (ValueError, TypeError, UnicodeError):
             raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD") from None
-        if (not verify_command_receipt(payload, day, family) or
+        valid = (verify_open_receipt(payload, day) if open_batch else
+                 verify_command_receipt(payload, day, family))
+        if (not valid or
                 (captured.returncode == 0 and payload["state"] != "EVIDENCE") or
                 (captured.returncode == 2 and payload["state"] == "EVIDENCE")):
             raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD")
@@ -659,12 +678,15 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
         if reason not in COMMAND_HOLD_REASONS:
             reason = "ROOTLESS_DOCKER_TRANSPORT_HOLD"
         result.update(reason=reason,
-                      receipt=_command_unknown_receipt(day, family, reason))
+                      receipt=(_open_unknown_receipt(day, reason) if open_batch
+                               else _command_unknown_receipt(day, family, reason)))
     return result
 
 
-def verified_command_wrapper(raw, day, family):
+def verified_command_wrapper(raw, day, family, *, open_batch=False):
     """Accept only a bounded safe result for Actions artifacts."""
+    if type(open_batch) is not bool or (open_batch and family != "ALL"):
+        return None
     if not isinstance(raw, bytes) or not 0 < len(raw) <= 8192:
         return None
     try:
@@ -681,8 +703,11 @@ def verified_command_wrapper(raw, day, family):
                 doc["real_orders_sent_by_action"] != 0):
             return None
         inner = doc["receipt"]
-        unknown = inner == _command_unknown_receipt(day, family, doc["reason"])
-        full = verify_command_receipt(inner, day, family)
+        unknown = (inner == _open_unknown_receipt(day, doc["reason"])
+                   if open_batch else
+                   inner == _command_unknown_receipt(day, family, doc["reason"]))
+        full = (verify_open_receipt(inner, day) if open_batch else
+                verify_command_receipt(inner, day, family))
         if not (full or unknown):
             return None
         if doc["state"] == "EVIDENCE":
@@ -1684,6 +1709,226 @@ def container_enqueue(day, family, *, db=CONTAINER_DB, now=None,
         return _command_receipt(day, family, reason=reason)
 
 
+def _open_summary(raw, day):
+    """Validate aggregate witness as untrusted DB data; never echo provider bytes.
+
+    A single native pair per family is the maximum observational coverage.
+    The remaining exact identities are always HOLD, not inferred READY.
+    """
+    try:
+        if type(raw) is not str or not 0 < len(raw.encode("utf-8")) <= 2000:
+            raise ValueError
+        def no_duplicates(pairs):
+            fields = {}
+            for key, value in pairs:
+                if key in fields:
+                    raise ValueError
+                fields[key] = value
+            return fields
+        doc = json.loads(raw, object_pairs_hook=no_duplicates)
+        if (type(doc) is not dict or set(doc) != {
+                "schema", "day", "paper_ready", "order_authority",
+                "readiness_reason", "unattempted_reason", "statuses", "coverage",
+                "unverified"}
+                or doc["schema"] != "RC6_PPI_OPEN_TEN_FAMILY_V1"
+                or doc["day"] != day or doc["paper_ready"] is not False
+                or doc["order_authority"] is not False
+                or doc["readiness_reason"] != "FULL_READINESS_NOT_EVIDENCED"
+                or doc["unattempted_reason"] != "BOUNDED_SAMPLE_OR_STOP"
+                or type(doc["statuses"]) is not dict
+                or type(doc["coverage"]) is not dict
+                or type(doc["unverified"]) is not dict
+                or set(doc["statuses"]) != set(OPEN_FAMILIES)
+                or set(doc["coverage"]) != set(OPEN_FAMILIES)
+                or set(doc["unverified"]) != set(OPEN_FAMILIES)):
+            raise ValueError
+        for family in OPEN_FAMILIES:
+            state = doc["statuses"][family]
+            counts = doc["coverage"][family]
+            unverified = doc["unverified"][family]
+            # REQUEST_CANDIDATE is a bounded native probe *candidate*, never
+            # an authoritative PPI_FIELD settlement or a PAPER READY identity.
+            total = counts["enumerated_exact"] + unverified if type(counts) is dict and \
+                type(counts.get("enumerated_exact")) is int and type(unverified) is int else -1
+            if (type(state) is not str or state not in OPEN_STATUS_CODES
+                    or type(unverified) is not int or not 0 <= unverified <= 60000
+                    or type(counts) is not dict
+                    or set(counts) != {"enumerated_exact", "attempted",
+                                       "native_pair_qa_pass", "ready", "hold", "unattempted"}
+                    or any(type(x) is not int or not 0 <= x <= 60000
+                           for x in counts.values())
+                    or not 0 <= total <= 60000
+                    or counts["attempted"] > 1
+                    or counts["attempted"] > total
+                    or counts["native_pair_qa_pass"] > counts["attempted"]
+                    or counts["ready"] != 0
+                    or counts["hold"] != total
+                    or counts["unattempted"] != total - counts["attempted"]
+                    or (state == "FRESH_OBSERVED" and counts["native_pair_qa_pass"] != 1)
+                    or (state == "STALE_OR_INVALID" and counts["attempted"] != 1)
+                    or (state not in {"FRESH_OBSERVED", "STALE_OR_INVALID"}
+                        and counts["native_pair_qa_pass"] != 0)):
+                raise ValueError
+        return doc
+    except (TypeError, ValueError, KeyError, UnicodeError, OverflowError):
+        raise ValueError("OBSERVER_COMMAND_OPEN_RESULT_INVALID") from None
+
+
+def _open_receipt(day, *, state="HOLD", reason="OBSERVER_COMMAND_SQLITE_HOLD",
+                  command_id=None, command_status=None, provider_status=None,
+                  inserted=0, summary=None):
+    return {"schema": OPEN_CHILD_SCHEMA, "state": state, "reason": reason,
+            "art_date": day, "family": "ALL", "command_id": command_id,
+            "command_status": command_status, "provider_status": provider_status,
+            "paper_ready": False, "order_authority": False,
+            "db_rows_inserted": inserted, "summary": summary}
+
+
+def verify_open_receipt(payload, day):
+    if (type(payload) is not dict or set(payload) != {
+            "schema", "state", "reason", "art_date", "family", "command_id",
+            "command_status", "provider_status", "paper_ready", "order_authority",
+            "db_rows_inserted", "summary"}
+            or payload.get("schema") != OPEN_CHILD_SCHEMA
+            or payload.get("art_date") != day or payload.get("family") != "ALL"
+            or payload.get("paper_ready") is not False
+            or payload.get("order_authority") is not False
+            or payload.get("state") not in {"EVIDENCE", "HOLD", "QUEUED"}
+            or payload.get("reason") not in COMMAND_HOLD_REASONS
+            or type(payload.get("db_rows_inserted")) is not int
+            or payload["db_rows_inserted"] not in (0, 1)):
+        return False
+    ident = payload["command_id"]
+    if ident is not None and (type(ident) is not int or ident <= 0):
+        return False
+    if payload["db_rows_inserted"] == 1 and ident is None:
+        return False
+    summary = payload["summary"]
+    if summary is not None:
+        try:
+            if _open_summary(json.dumps(summary, separators=(",", ":")), day) != summary:
+                return False
+        except ValueError:
+            return False
+    if payload["state"] == "EVIDENCE":
+        return (payload["reason"] == "OBSERVER_COMMAND_FINISHED"
+                and payload["command_status"] == "EVIDENCE"
+                and payload["provider_status"] == "OPEN_TEN_FAMILY_QA_EVIDENCE"
+                and ident is not None and payload["db_rows_inserted"] == 1
+                and summary is not None
+                and any(summary["statuses"][family] in {"FRESH_OBSERVED", "STALE_OR_INVALID"}
+                        for family in OPEN_FAMILIES))
+    if payload["state"] == "QUEUED":
+        return (payload["reason"] == "OBSERVER_COMMAND_POLL_TIMEOUT"
+                and payload["command_status"] in {"QUEUED", "RUNNING"}
+                and ident is not None and payload["db_rows_inserted"] == 1
+                and payload["provider_status"] is None and summary is None)
+    return (payload["command_status"] in {None, "HOLD"}
+            and payload["provider_status"] is None)
+
+
+def _open_session_gate(day, family, at):
+    if (type(day) is not str or re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) is None):
+        raise ValueError("OBSERVER_COMMAND_ART_DATE_INVALID")
+    try:
+        if datetime.fromisoformat(day).date().isoformat() != day:
+            raise ValueError
+    except ValueError:
+        raise ValueError("OBSERVER_COMMAND_ART_DATE_INVALID") from None
+    if family != "ALL":
+        raise ValueError("OBSERVER_COMMAND_FAMILY_INVALID")
+    if not isinstance(at, datetime) or at.tzinfo is None:
+        raise ValueError("OBSERVER_COMMAND_SESSION_HOLD")
+    art = at.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
+    minute = art.hour * 60 + art.minute
+    if (art.date().isoformat() != day or art.weekday() >= 5 or
+            not 10 * 60 + 30 <= minute < 17 * 60):
+        raise ValueError("OBSERVER_COMMAND_SESSION_HOLD")
+
+
+def container_enqueue_open_batch(day, family, *, db=CONTAINER_DB, now=None,
+                                 poll_seconds=75, poll_interval=2, sleep=time.sleep):
+    """Enqueue ONE ten-family QA command; the scanner is the only PPI client.
+
+    Existing observer_commands is the only host mutation. Never retry an
+    uncertain command, including HOLD, RUNNING, timeout or transport loss.
+    """
+    result = _open_receipt(day)
+    try:
+        at = datetime.now(timezone.utc) if now is None else now
+        _open_session_gate(day, family, at)
+        db = Path(db)
+        _command_runtime_gate(db)
+        if (not db.is_absolute() or db.is_symlink() or not db.is_file()
+                or not isinstance(poll_seconds, (int, float)) or isinstance(poll_seconds, bool)
+                or not 0 <= poll_seconds <= 90
+                or not isinstance(poll_interval, (int, float)) or isinstance(poll_interval, bool)
+                or not 0 < poll_interval <= 5):
+            raise ValueError("OBSERVER_COMMAND_SCHEMA_INVALID")
+        command = f"PPI_DIRECT_REST_OPEN_ONCE:{day}:ALL"
+        uri = "file:" + quote(str(db), safe="/") + "?mode=rw"
+        with sqlite3.connect(uri, uri=True, timeout=0.25, isolation_level=None) as conn:
+            conn.execute("PRAGMA busy_timeout=250")
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                _command_db_gate(conn, at)
+                previous = conn.execute("SELECT id FROM observer_commands WHERE command=? "
+                                        "ORDER BY id LIMIT 1", (command,)).fetchone()
+                if previous:
+                    conn.execute("ROLLBACK")
+                    return _open_receipt(day, reason="PPI_OPEN_ALREADY_REQUESTED_NO_RETRY",
+                                         command_id=int(previous[0]))
+                _open_session_gate(day, family, datetime.now(timezone.utc) if now is None else at)
+                row = conn.execute("INSERT INTO observer_commands(created_at,command,status) "
+                                   "VALUES(?,?,'QUEUED')", (at.isoformat(), command))
+                ident = int(row.lastrowid)
+                conn.execute("COMMIT")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+        result = _open_receipt(day, state="QUEUED", reason="OBSERVER_COMMAND_POLL_TIMEOUT",
+                               command_id=ident, command_status="QUEUED", inserted=1)
+        deadline = time.monotonic() + poll_seconds
+        while True:
+            with sqlite3.connect("file:" + quote(str(db), safe="/") + "?mode=ro",
+                                 uri=True, timeout=0.25) as readonly:
+                readonly.execute("PRAGMA query_only=ON")
+                row = readonly.execute("SELECT status,result FROM observer_commands "
+                                       "WHERE id=? AND command=?", (ident, command)).fetchone()
+            if row is None:
+                raise ValueError("OBSERVER_COMMAND_RECEIPT_INVALID")
+            status, details = row
+            if status in {"EVIDENCE", "HOLD"}:
+                summary = None
+                if isinstance(details, str) and details.startswith("{"):
+                    summary = _open_summary(details, day)
+                if status == "EVIDENCE":
+                    if (summary is None or not any(summary["statuses"][f] in {
+                            "FRESH_OBSERVED", "STALE_OR_INVALID"} for f in OPEN_FAMILIES)):
+                        raise ValueError("OBSERVER_COMMAND_OPEN_RESULT_INVALID")
+                    return _open_receipt(day, state="EVIDENCE",
+                        reason="OBSERVER_COMMAND_FINISHED", command_id=ident,
+                        command_status="EVIDENCE", provider_status="OPEN_TEN_FAMILY_QA_EVIDENCE",
+                        inserted=1, summary=summary)
+                return _open_receipt(day, state="HOLD",
+                    reason="OBSERVER_COMMAND_SCANNER_HOLD", command_id=ident,
+                    command_status="HOLD", inserted=1, summary=summary)
+            if status not in {"QUEUED", "RUNNING"}:
+                raise ValueError("OBSERVER_COMMAND_RECEIPT_INVALID")
+            result["command_status"] = status
+            if time.monotonic() >= deadline:
+                return result
+            sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+    except (sqlite3.Error, OSError, ValueError, TypeError, UnicodeError) as error:
+        reason = str(error)
+        if reason not in COMMAND_HOLD_REASONS:
+            reason = "OBSERVER_COMMAND_SQLITE_HOLD"
+        if result["db_rows_inserted"] == 1:
+            return {**result, "state": "QUEUED", "reason": "OBSERVER_COMMAND_POLL_TIMEOUT"}
+        return _open_receipt(day, reason=reason)
+
+
 def container_main():
     try:
         from _version import MODE, REAL_ORDER_CAPABILITY
@@ -1720,6 +1965,16 @@ def container_main():
 def main():
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    if sys.argv[1:] and sys.argv[1] == "rootless-enqueue-open" and len(sys.argv) == 8:
+        result = rootless_host_enqueue(*sys.argv[2:8],
+            globals().get("__RC6_SOURCE_BYTES__"), open_batch=True)
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+        return 0 if result["state"] == "EVIDENCE" else 2
+    if sys.argv[1:] == ["container-enqueue-open"]:
+        receipt = container_enqueue_open_batch(os.environ.get("RC6_P0_ART_DATE", ""),
+                                               os.environ.get("RC6_P0_FAMILY", ""))
+        print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        return 0 if receipt["state"] == "EVIDENCE" else 2
     if sys.argv[1:] and sys.argv[1] == "rootless-enqueue" and len(sys.argv) == 8:
         result = rootless_host_enqueue(*sys.argv[2:8],
             globals().get("__RC6_SOURCE_BYTES__"))

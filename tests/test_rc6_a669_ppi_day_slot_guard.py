@@ -60,6 +60,112 @@ class A669GuardTests(unittest.TestCase):
         arguments.update(changes)
         return guard.eligible_observer_command(**arguments)
 
+    def open_command_gate(self, **changes):
+        arguments = dict(
+            now_utc=utc(13, 45, 19), event="workflow_dispatch",
+            repository=guard.REPOSITORY, ref=guard.CONTROL_REF,
+            checkout_sha=SHA, source_sha=SHA, art_date="2026-11-19",
+            family="ALL", pilot_mode="OFF", postclose_mode="OFF",
+            engine_path=self.engine, expected_engine_blob=self.blob)
+        arguments.update(changes)
+        return guard.eligible_open_observer_command(**arguments)
+
+    def test_open_batch_emits_only_one_typed_command_during_verified_art_window(self):
+        self.assertEqual(self.open_command_gate(),
+                         ("PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL",
+                          "PASS_MANUAL_OPEN_TEN_FAMILY_OBSERVER_COMMAND_ONLY"))
+        cases = (
+            ({"event": "schedule"}, "MANUAL_DISPATCH_REQUIRED"),
+            ({"family": "BONOS"}, "OBSERVER_OPEN_ALL_ONLY"),
+            ({"family": "ALL;touch /tmp/foo"}, "OBSERVER_OPEN_ALL_ONLY"),
+            ({"now_utc": utc(13, 29, 19)}, "OUTSIDE_AUDITED_BYMA_SPOT_WINDOW"),
+            ({"now_utc": utc(20, 0, 19)}, "OUTSIDE_AUDITED_BYMA_SPOT_WINDOW"),
+            ({"now_utc": utc(13, 45, 21)}, "OBSERVER_COMMAND_ART_DATE_MISMATCH"),
+            ({"pilot_mode": "ONCE"}, "OBSERVER_COMMAND_SAMPLE_MODE_FORBIDDEN"),
+            ({"postclose_mode": "ONCE"}, "OBSERVER_COMMAND_SAMPLE_MODE_FORBIDDEN"),
+            ({"expected_engine_blob": "0"*40}, "AUDITED_ENGINE_BLOB_MISMATCH"),
+        )
+        for args, reason in cases:
+            with self.subTest(args=args):
+                self.assertEqual(self.open_command_gate(**args), ("", reason))
+
+    def test_open_main_gate_exports_only_one_command_after_audited_calendar(self):
+        with tempfile.TemporaryDirectory(prefix="a670-open-one-") as temp:
+            env_path = Path(temp) / "gh-env"
+            env_path.touch()
+            environment = {"RC6_A670_ISSUER_MODE": "observer_open_ten_family_command",
+                           "RC6_A670_OBSERVER_ART_DATE": "2026-11-19",
+                           "RC6_A670_OBSERVER_FAMILY": "ALL",
+                           "RC6_A630_PILOT_MODE": "OFF", "RC6_A630_POSTCLOSE_MODE": "OFF",
+                           "GITHUB_EVENT_NAME": "workflow_dispatch",
+                           "GITHUB_REPOSITORY": guard.REPOSITORY,
+                           "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
+                           "GITHUB_ENV": str(env_path)}
+            with patch.dict(os.environ, environment), \
+                 patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
+                 patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
+                 patch.object(guard, "_official_session_check",
+                              return_value=(True, guard.SESSION_REGULAR)), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 0)
+            output = env_path.read_text()
+        self.assertIn("RC6_A670_OBSERVER_COMMAND=PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL\n", output)
+        self.assertIn("RC6_A670_MARKET_SESSION=BYMA_AUDITED_OPEN\n", output)
+        self.assertNotIn("PPI_DIRECT_REST_POSTCLOSE_ONCE", output)
+
+    def test_open_main_gate_holds_before_host_for_unaudited_day(self):
+        with tempfile.TemporaryDirectory(prefix="a670-open-hold-") as temp:
+            env_path = Path(temp) / "gh-env"
+            env_path.touch()
+            environment = {"RC6_A670_ISSUER_MODE": "observer_open_ten_family_command",
+                           "RC6_A670_OBSERVER_ART_DATE": "2026-11-19",
+                           "RC6_A670_OBSERVER_FAMILY": "ALL",
+                           "RC6_A630_PILOT_MODE": "OFF", "RC6_A630_POSTCLOSE_MODE": "OFF",
+                           "GITHUB_EVENT_NAME": "workflow_dispatch",
+                           "GITHUB_REPOSITORY": guard.REPOSITORY,
+                           "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
+                           "GITHUB_ENV": str(env_path)}
+            with patch.dict(os.environ, environment), \
+                 patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
+                 patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_issuer_pin_ready", return_value=True), \
+                 patch.object(guard, "_official_session_check",
+                              return_value=(False, "MARKET_CALENDAR_NOT_VERIFIED")), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 2)
+            output = env_path.read_text()
+        self.assertIn("RC6_A670_HOLD_REASON=MARKET_CALENDAR_NOT_VERIFIED\n", output)
+        self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
+
+    def test_open_main_gate_rejects_current_p0_release_without_open_handler(self):
+        from scripts import rc6_a630_host_ppi_current_book as engine
+        with tempfile.TemporaryDirectory(prefix="a670-open-p0-hold-") as temp:
+            env_path = Path(temp) / "gh-env"
+            env_path.touch()
+            environment = {"RC6_A670_ISSUER_MODE": "observer_open_ten_family_command",
+                           "RC6_A670_OBSERVER_ART_DATE": "2026-11-19",
+                           "RC6_A670_OBSERVER_FAMILY": "ALL",
+                           "RC6_A630_PILOT_MODE": "OFF", "RC6_A630_POSTCLOSE_MODE": "OFF",
+                           "GITHUB_EVENT_NAME": "workflow_dispatch",
+                           "GITHUB_REPOSITORY": guard.REPOSITORY,
+                           "GITHUB_REF": guard.CONTROL_REF, "GITHUB_SHA": SHA,
+                           "GITHUB_ENV": str(env_path),
+                           "RC6_P0_EXPECTED_CANDIDATE_SHA": engine.ROOTLESS_CANDIDATE_SHA,
+                           "RC6_P0_EXPECTED_TREE_SHA": engine.ROOTLESS_CANDIDATE_TREE,
+                           "RC6_P0_EXPECTED_IMAGE_ID": engine.ROOTLESS_IMAGE_ID,
+                           "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256": "a"*64}
+            with patch.dict(os.environ, environment), \
+                 patch.object(guard.subprocess, "check_output", return_value=SHA+"\n"), \
+                 patch.object(guard, "pinned_engine_ok", return_value=True), \
+                 patch.object(guard, "_official_session_check",
+                              return_value=(True, guard.SESSION_REGULAR)), \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(guard.main(now_utc=utc(13, 45, 19)), 2)
+            output = env_path.read_text()
+        self.assertIn("RC6_A670_HOLD_REASON=OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED\n", output)
+        self.assertNotIn("RC6_A670_OBSERVER_COMMAND=", output)
+
     def test_observer_command_manual_gate_never_uses_sample_slot(self):
         self.assertEqual(self.command_gate(),
                          ("PPI_DIRECT_REST_POSTCLOSE_ONCE:2026-11-18:BONOS",
@@ -95,7 +201,8 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]
                          ["issuer_mode"]["default"], "observer_postclose_command")
         self.assertEqual(workflow["on"]["workflow_dispatch"]["inputs"]
-                         ["issuer_mode"]["options"], ["observer_postclose_command"])
+                         ["issuer_mode"]["options"],
+                         ["observer_postclose_command", "observer_open_ten_family_command"])
         sample = workflow["jobs"]["sample_main_only"]
         issuer = workflow["jobs"]["queue_observer_main_only"]
         self.assertEqual(sample["if"], "false")
@@ -105,6 +212,23 @@ class A669GuardTests(unittest.TestCase):
         self.assertEqual(issuer["concurrency"]["group"], "rc6-unified-paper-deploy")
         self.assertEqual(issuer["concurrency"]["cancel-in-progress"], "false")
         self.assertNotIn("schedule", workflow["on"])
+
+    def test_open_workflow_reuses_scanner_queue_and_global_safety_mutex(self):
+        workflow = yaml.load(YAML.read_text(), Loader=yaml.BaseLoader)
+        issuer = workflow["jobs"]["queue_observer_main_only"]
+        choices = workflow["on"]["workflow_dispatch"]["inputs"]["issuer_mode"]["options"]
+        self.assertEqual(choices, ["observer_postclose_command",
+                                   "observer_open_ten_family_command"])
+        self.assertEqual(workflow["jobs"]["sample_main_only"]["if"], "false")
+        self.assertIn("inputs.issuer_mode == 'observer_open_ten_family_command'", issuer["if"])
+        self.assertEqual(issuer["concurrency"]["group"], "rc6-unified-paper-deploy")
+        self.assertEqual(issuer["concurrency"]["cancel-in-progress"], "false")
+        runs = "\n".join(str(step.get("run", "")) for step in issuer["steps"])
+        self.assertIn("rootless-enqueue-open", runs)
+        self.assertIn("PPI_DIRECT_REST_OPEN_ONCE", runs)
+        self.assertIn("verified_command_wrapper", runs)
+        self.assertNotIn("login_once", runs)
+        self.assertNotIn("container-capture", runs)
 
     def test_observer_workflow_dispatch_refuses_legacy_sample_even_if_forced(self):
         with patch.dict(os.environ, {"RC6_A670_ISSUER_MODE": "sample",

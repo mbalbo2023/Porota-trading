@@ -1429,6 +1429,65 @@ class TestA630RootlessEvidence(unittest.TestCase):
         self.assertEqual(wrapper["reason"], "ROOTLESS_STATE_DRIFT_HOLD")
         self.assertIsNone(wrapper["receipt"]["command_id"])
 
+    def test_open_rootless_enqueues_one_scanner_child_without_new_ppi_client(self):
+        manifest = "c" * 64
+        context = {"cid": self.cid, "state_token": "d" * 64,
+                   "release_manifest_sha256": manifest,
+                   "docker": ("/usr/bin/docker", "--host",
+                              "unix:///run/user/1000/porota-rc6-docker.sock"),
+                   "environment": {"LC_ALL": "C"}}
+        child = {"schema": "rc6.p0.open-ten-family.child.v1", "state": "QUEUED",
+                 "reason": "OBSERVER_COMMAND_POLL_TIMEOUT", "art_date": "2026-11-19",
+                 "family": "ALL", "command_id": 27, "command_status": "RUNNING",
+                 "provider_status": None, "paper_ready": False, "order_authority": False,
+                 "db_rows_inserted": 1, "summary": None}
+        calls = []
+        def run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 2,
+                stdout=json.dumps(child).encode(), stderr=b"")
+        with patch.object(engine, "_rootless_context", side_effect=[context, context]):
+            wrapper = engine.rootless_host_enqueue("2026-11-19", "ALL",
+                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                ROOTLESS_IMAGE_ID, manifest, b"# audited source in memory\n",
+                run=run, open_batch=True)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][-5:], (self.cid, "python", "-B", "-", "container-enqueue-open"))
+        self.assertNotIn("container-capture", calls[0])
+        self.assertNotIn("PPI_PRODUCTION_SECRET_FILE", " ".join(calls[0]))
+        self.assertEqual(wrapper["state"], "NO_VERIFICADO")
+        self.assertTrue(wrapper["runtime_pin_verified"])
+        self.assertEqual(wrapper["receipt"], child)
+
+    def test_open_rootless_verifier_does_not_accept_legacy_postclose_receipt(self):
+        old = {"schema": "rc6.p0.observer-command.child.v1", "state": "EVIDENCE",
+               "reason": "OBSERVER_COMMAND_FINISHED", "art_date": "2026-11-19",
+               "family": "BONOS", "command_id": 27, "command_status": "EVIDENCE",
+               "provider_status": "FRESH_OBSERVED", "paper_ready": False,
+               "order_authority": False, "db_rows_inserted": 1}
+        wrapper = {"schema": "rc6.p0.observer-command.rootless.v1", "state": "EVIDENCE",
+                   "reason": "OBSERVER_COMMAND_FINISHED", "runtime_pin_verified": True,
+                   "ppi_client_or_login_by_action": False,
+                   "real_orders_sent_by_action": 0, "receipt": old}
+        self.assertIsNone(engine.verified_command_wrapper(json.dumps(wrapper).encode(),
+                           "2026-11-19", "ALL", open_batch=True))
+
+    def test_open_wrapper_rejects_mismatched_family_even_with_valid_child(self):
+        child = {"schema": "rc6.p0.open-ten-family.child.v1", "state": "QUEUED",
+                 "reason": "OBSERVER_COMMAND_POLL_TIMEOUT", "art_date": "2026-11-19",
+                 "family": "ALL", "command_id": 3, "command_status": "RUNNING",
+                 "provider_status": None, "paper_ready": False,
+                 "order_authority": False, "db_rows_inserted": 1, "summary": None}
+        wrapper = {"schema": "rc6.p0.observer-command.rootless.v1",
+                   "state": "NO_VERIFICADO", "reason": "OBSERVER_COMMAND_POLL_TIMEOUT",
+                   "runtime_pin_verified": True, "ppi_client_or_login_by_action": False,
+                   "real_orders_sent_by_action": 0, "receipt": child}
+        data = json.dumps(wrapper).encode()
+        self.assertIsNotNone(engine.verified_command_wrapper(data, "2026-11-19",
+                             "ALL", open_batch=True))
+        self.assertIsNone(engine.verified_command_wrapper(data, "2026-11-19",
+                          "BONOS", open_batch=True))
+
 
 class TestA630ObserverCommandSQLite(unittest.TestCase):
     """Real local SQLite; no host, SDK, network, release mutation or provider."""
@@ -1470,6 +1529,93 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
         arguments.update(kwargs)
         with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
             return engine.container_enqueue("2026-11-18", "BONOS", **arguments)
+
+    def open_enqueue(self, **kwargs):
+        when = datetime(2026, 11, 19, 13, 45, tzinfo=timezone.utc)
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE observer_state SET heartbeat_at=? WHERE id=1",
+                       ((when - timedelta(seconds=10)).isoformat(),))
+        arguments = {"db": self.db, "now": when, "poll_seconds": 0}
+        arguments.update(kwargs)
+        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+            return engine.container_enqueue_open_batch("2026-11-19", "ALL", **arguments)
+
+    def open_summary(self):
+        families = ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+                    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")
+        return {"schema": "RC6_PPI_OPEN_TEN_FAMILY_V1", "day": "2026-11-19",
+                "paper_ready": False, "order_authority": False,
+                "readiness_reason": "FULL_READINESS_NOT_EVIDENCED",
+                "unattempted_reason": "BOUNDED_SAMPLE_OR_STOP",
+                "statuses": {family: ("FRESH_OBSERVED" if family == "ACCIONES"
+                                        else "CATALOG_IDENTITY_UNAVAILABLE")
+                             for family in families},
+                "unverified": {family: 2 if family == "ACCIONES" else 0
+                               for family in families},
+                "coverage": {family: {"enumerated_exact": 1 if family == "ACCIONES" else 0,
+                                      "attempted": 1 if family == "ACCIONES" else 0,
+                                      "native_pair_qa_pass": 1 if family == "ACCIONES" else 0,
+                                      "ready": 0, "hold": 3 if family == "ACCIONES" else 0,
+                                      "unattempted": 2 if family == "ACCIONES" else 0}
+                             for family in families}}
+
+    def test_open_batch_enqueues_one_row_and_never_retries_prior_hold(self):
+        first = self.open_enqueue()
+        self.assertEqual(first["state"], "QUEUED")
+        self.assertEqual(first["db_rows_inserted"], 1)
+        self.assertEqual(first["family"], "ALL")
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT command FROM observer_commands").fetchall(),
+                             [("PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL",)])
+            db.execute("UPDATE observer_commands SET status='HOLD'")
+        second = self.open_enqueue()
+        self.assertEqual(second["state"], "HOLD")
+        self.assertEqual(second["reason"], "PPI_OPEN_ALREADY_REQUESTED_NO_RETRY")
+        self.assertEqual(second["db_rows_inserted"], 0)
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM observer_commands").fetchone()[0], 1)
+
+    def test_open_batch_attests_ten_family_summary_without_provider_payload(self):
+        summary = self.open_summary()
+        def scanner_finishes(_delay):
+            with sqlite3.connect(self.db) as db:
+                db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                           (json.dumps(summary, separators=(",", ":")),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_finishes)
+        self.assertEqual(result["state"], "EVIDENCE")
+        self.assertEqual(result["provider_status"], "OPEN_TEN_FAMILY_QA_EVIDENCE")
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["native_pair_qa_pass"], 1)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["ready"], 0)
+        self.assertEqual(result["summary"]["coverage"]["ACCIONES"]["hold"], 3)
+        self.assertEqual(result["summary"]["unverified"]["ACCIONES"], 2)
+        self.assertFalse(result["paper_ready"])
+        self.assertEqual(len(result["summary"]["statuses"]), 10)
+
+    def test_open_batch_rejects_malformed_or_overclaiming_summary(self):
+        summary = self.open_summary()
+        summary["coverage"]["ACCIONES"]["ready"] = 1  # No FULL readiness grant.
+        summary["api_key"] = "PRIVATE_DO_NOT_UPLOAD"
+        def scanner_finishes(_delay):
+            with sqlite3.connect(self.db) as db:
+                db.execute("UPDATE observer_commands SET status='EVIDENCE',result=?",
+                           (json.dumps(summary),))
+        result = self.open_enqueue(poll_seconds=2, poll_interval=0.001,
+                                   sleep=scanner_finishes)
+        self.assertNotEqual(result["state"], "EVIDENCE")
+        self.assertNotIn("PRIVATE_DO_NOT_UPLOAD", json.dumps(result))
+
+    def test_open_batch_outside_market_or_without_scanner_auth_inserts_nothing(self):
+        before = self.open_enqueue(now=datetime(2026, 11, 19, 13, 29,
+                                                tzinfo=timezone.utc))
+        self.assertEqual(before["state"], "HOLD")
+        self.assertEqual(before["reason"], "OBSERVER_COMMAND_SESSION_HOLD")
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE observer_state SET ppi_auth='COOLDOWN'")
+        refused = self.open_enqueue()
+        self.assertEqual(refused["reason"], "OBSERVER_COMMAND_SCANNER_AUTH_HOLD")
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM observer_commands").fetchone()[0], 0)
 
     def test_one_queued_row_and_idempotent_second_dispatch(self):
         first = self.enqueue()
@@ -1534,6 +1680,22 @@ class TestA630RootlessTail(unittest.TestCase):
     """Preserve historical rootless CLI and transport regressions."""
 
     setUp = TestA630RootlessEvidence.setUp
+
+    def test_open_queue_cli_routes_only_to_existing_scanner_command(self):
+        outcome = {"schema": engine.COMMAND_ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
+                   "reason": "ROOTLESS_SOCKET_HOLD"}
+        args = ["-c", "rootless-enqueue-open", "2026-11-19", "ALL",
+                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                ROOTLESS_IMAGE_ID, "c" * 64]
+        with patch.object(engine, "rootless_host_enqueue", return_value=outcome) as issue, \
+             patch.object(engine, "rootless_host_capture") as capture, \
+             patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}), \
+             patch.object(sys, "argv", args), redirect_stdout(io.StringIO()):
+            self.assertEqual(engine.main(), 2)
+        issue.assert_called_once_with("2026-11-19", "ALL",
+            ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
+            "c" * 64, b"source", open_batch=True)
+        capture.assert_not_called()
 
     def test_queue_cli_routes_only_to_rootless_enqueue_not_capture(self):
         outcome = {"schema": engine.COMMAND_ROOTLESS_SCHEMA, "state": "NO_VERIFICADO",
