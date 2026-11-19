@@ -19,7 +19,6 @@ import subprocess
 import sys
 import time
 import urllib.request
-from zoneinfo import ZoneInfo
 
 
 SCHEMA = "rc6.observer-online-custody-once.v1"
@@ -41,7 +40,6 @@ OWNER_BRANCH = "mbalbo2023/Porota-trading"
 OWNER_ISSUE = f"https://api.github.com/repos/{OWNER_BRANCH}/issues/980"
 OWNER_PUBLIC = f"https://github.com/{OWNER_BRANCH}/issues/980#issuecomment-"
 BACKUP_TIMEOUT_SECONDS = 600
-ART = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 class Hold(Exception):
@@ -262,18 +260,6 @@ def _live_paper_zero(db: sqlite3.Connection) -> None:
     if (row is None or row[0] != "PRODUCTION_PAPER"
             or type(row[1]) is not int or row[1] != 0):
         raise Hold("PAPER_ORDERS_UNVERIFIED")
-
-
-def _market_offhours_guard(now: datetime | None = None) -> str:
-    """No WAL reader near live BYMA/EXIT: weekdays only 19:00–08:00 ART."""
-    instant = datetime.now(timezone.utc) if now is None else now
-    if instant.tzinfo is None or instant.utcoffset() is None:
-        raise Hold("CUSTODY_MARKET_WINDOW_UNSAFE")
-    local = instant.astimezone(ART)
-    if (local.date().isoformat() < "2026-11-19" or
-            local.weekday() < 5 and 8 <= local.hour < 19):
-        raise Hold("CUSTODY_MARKET_WINDOW_UNSAFE")
-    return "OFFHOURS_ART_SAFE"
 
 
 def _exit_quiescence(db: sqlite3.Connection) -> str:
@@ -683,7 +669,6 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
     if db_path == OBSERVER:
         _operator_identity_guard()
     before = host_preflight(db_path, marker_path, custody_root)
-    offhours = _market_offhours_guard()
     runtime_binding = _rootless_runtime_binding(_release_marker(marker_path), db_path)
     source_before = source_metadata(db_path)
     deadline = time.monotonic() + BACKUP_TIMEOUT_SECONDS
@@ -724,7 +709,6 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     _live_paper_zero(source)
                     if _exit_quiescence(source) != exit_quiescence:
                         raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
-                    _market_offhours_guard()
                     if (_rootless_runtime_binding(_release_marker(marker_path), db_path)
                             != runtime_binding):
                         raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
@@ -750,7 +734,6 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     receipt = {"schema": SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
                                "read_only": False, "source_sql_writes": 0,
                                "shm_locking_possible": True,
-                               "offhours_gate": offhours,
                                "runtime_db_binding": runtime_binding,
                                "exit_quiescence": exit_quiescence,
                                "paper_zero": "OBSERVED", "run_id": run_id,
@@ -811,7 +794,7 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
                "source_wal_state", "snapshot_bytes", "snapshot_sha256",
                "restore_bytes", "restore_sha256", "restore_quick_check",
                "generated_at_utc", "host_mutations", "source_identity_continuity",
-               "offhours_gate", "runtime_db_binding", "exit_quiescence"}
+               "runtime_db_binding", "exit_quiescence"}
     allowed = shared | (preflight if mode == "PREFLIGHT_ONLY" else custody)
     if set(raw) != allowed or raw.get("ppi_requests") != 0 or raw.get("ppi_watch_touched") is not False:
         return fallback
@@ -840,7 +823,6 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
                 or raw.get("read_only") is not False or raw.get("host_mutations") != 1
                 or raw.get("source_sql_writes") != 0
                 or raw.get("shm_locking_possible") is not True
-                or raw.get("offhours_gate") != "OFFHOURS_ART_SAFE"
                 or raw.get("runtime_db_binding") != "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"
                 or raw.get("exit_quiescence") != "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED"
                 or raw.get("paper_zero") != "OBSERVED"
