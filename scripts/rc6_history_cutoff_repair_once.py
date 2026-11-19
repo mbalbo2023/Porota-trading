@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,11 @@ FAMILIES = {"ACCIONES", "CEDEARS"}
 LOCK_PATH = Path(os.getenv("HIST_DB_PATH", "/app/data/market_history.db")).parent / ".rc6-history-cutoff-repair.lock"
 STATE_TABLE = "rc6_history_cutoff_repair_exact_v2"
 RUN_TABLE = "rc6_history_cutoff_repair_runs"
+# A COLD legacy archive is evidence, not permission for an unbounded replay.
+LEGACY_ARCHIVE_SCAN_LIMIT = 4096
+LEGACY_ARCHIVE_MAX_BODY_BYTES = 2 * 1024 * 1024
+LEGACY_ARCHIVE_MAX_SCANNED_BYTES = 128 * 1024 * 1024
+LEGACY_ARCHIVE_SELECTED_BYTES = 64 * 1024 * 1024
 
 
 def _stamp() -> str:
@@ -170,12 +176,12 @@ def _save(db, identity, *, state: str, source: str = "", requested_from: str = "
         )
 
 
-def _archive_payloads(targets: set[tuple[str, str, str, str]]) -> dict[tuple[str, str, str, str], tuple[list[dict], str]]:
+def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tuple[list[dict], str]]:
     import fb_raw_evidence_exact_v1 as exact
 
     path = exact.manifest_path()
     if not path.exists():
-        return {}
+        return _legacy_archive_payloads(targets)
     c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=20)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA query_only=ON")
@@ -221,6 +227,89 @@ def _archive_payloads(targets: set[tuple[str, str, str, str]]) -> dict[tuple[str
                 continue
     finally:
         c.close()
+    # The byte-exact external manifest can be incomplete while the original
+    # history DB still retains a valid archive. Never overwrite its selected
+    # identities with lower-priority legacy rows.
+    selected.update(_legacy_archive_payloads(targets - selected.keys()))
+    return selected
+
+
+def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict], str]]:
+    """Bounded, hash-verified fallback to existing historical_raw_archive.
+
+    The external manifest may be absent before legacy migration. Reuse already
+    archived PPI bytes without contacting the broker or fabricating dates.
+    """
+    if not targets:
+        return {}
+    import bs_instrument_contracts as contracts
+
+    selected = {}
+    selected_bytes = 0
+    scanned_bytes = 0
+    with _history_store().connect() as c:
+        c.execute("PRAGMA query_only=ON")
+        if not c.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
+                             AND name='historical_raw_archive'""").fetchone():
+            return {}
+        rows = c.execute("""SELECT body_hash,recorded_at,body_json
+          FROM historical_raw_archive
+          WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
+          ORDER BY id DESC LIMIT ?""", (LEGACY_ARCHIVE_SCAN_LIMIT,))
+        for expected_hash, recorded_at, raw in rows:
+            if not isinstance(raw, str):
+                continue
+            # The query is streamed, but even a run of rejected oversized
+            # wrappers must not turn one-shot recovery into a full DB sweep.
+            if len(raw) > LEGACY_ARCHIVE_MAX_BODY_BYTES:
+                scanned_bytes += len(raw)
+                if scanned_bytes > LEGACY_ARCHIVE_MAX_SCANNED_BYTES:
+                    break
+                continue
+            encoded = raw.encode("utf-8")
+            scanned_bytes += len(encoded)
+            if scanned_bytes > LEGACY_ARCHIVE_MAX_SCANNED_BYTES:
+                break
+            if (len(encoded) > LEGACY_ARCHIVE_MAX_BODY_BYTES or
+                    not isinstance(recorded_at, str) or
+                    hashlib.sha256(encoded).hexdigest() != expected_hash):
+                continue
+            try:
+                attempted = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+                wrapper = json.loads(raw)
+                if attempted.tzinfo is None or not isinstance(wrapper, dict):
+                    continue
+                metadata = wrapper.get("metadata")
+                metadata = metadata if isinstance(metadata, dict) else {}
+                identity = (
+                    str(wrapper.get("symbol") or metadata.get("symbol") or "").strip().upper(),
+                    str(wrapper.get("instrument_type") or metadata.get("instrument_type") or
+                        wrapper.get("asset_class") or metadata.get("asset_class") or "").strip().upper(),
+                    str(wrapper.get("market") or metadata.get("market") or metadata.get("exchange") or "").strip().upper(),
+                    str(wrapper.get("settlement") or metadata.get("settlement") or "").strip().upper(),
+                    contracts.cash_currency(wrapper.get("currency") or metadata.get("currency")),
+                    "RAW", "RAW_NO_ADJUSTMENT",
+                )
+                if identity not in targets or identity in selected:
+                    continue
+                bars = json.loads(wrapper.get("payload_json") or "[]")
+                if not isinstance(bars, list) or len(bars) > 4096:
+                    continue
+                days = []
+                for bar in bars:
+                    if isinstance(bar, dict) and isinstance(bar.get("date"), str):
+                        try:
+                            days.append(date.fromisoformat(bar["date"][:10]))
+                        except ValueError:
+                            continue
+                if not days or max(days) < CUTOFF:
+                    continue
+                if selected_bytes + len(encoded) > LEGACY_ARCHIVE_SELECTED_BYTES:
+                    continue
+            except (KeyError, TypeError, ValueError):
+                continue
+            selected[identity] = (bars, recorded_at)
+            selected_bytes += len(encoded)
     return selected
 
 
@@ -280,18 +369,6 @@ def _ingest(observer_store, history_store, identity, payload, start: date, *, so
     return int(result.get("valid_rows") or 0), result.get("last_date")
 
 
-def _quarantine_unavailable(observer_store, identity) -> None:
-    """Exclude only a repeatedly unbacked PPI history identity from operation."""
-    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
-    with observer_store.connect() as c:
-        c.execute(
-            """UPDATE financial_instrument_catalog
-               SET status='STALE', capability='HISTORY_UNAVAILABLE_PPI'
-               WHERE ticker=? AND instrument_type=? AND market=? AND settlement=? AND currency=?""",
-            (symbol, family, market, settlement, currency),
-        )
-
-
 def _control(db, *, state: str, targets: int, archive: int, ppi: int, complete: int, failed: int) -> None:
     with db.connect() as c:
         c.execute(
@@ -305,9 +382,14 @@ def _control(db, *, state: str, targets: int, archive: int, ppi: int, complete: 
         )
 
 
-def main() -> int:
+def main(*, shared_reader=None, reserve_history_get=None) -> int:
+    """Archive-first repair; live history requires a borrowed scanner session.
+
+    CLI execution never opens its own PPI connection. The future in-process
+    caller must supply both its already-authenticated reader and a per-GET
+    reservation callback; no such caller is wired into the runtime today.
+    """
     from cg_paper_workspace import runtime_store
-    from bd_ppi_readonly_guard import ProductionMarketReader
     import bf_production_paper_observer as observer
 
     history_store = _history_store()
@@ -395,17 +477,13 @@ def main() -> int:
                           requested_from=start.isoformat(), error=type(exc).__name__)
         reader = None
         live_gap_repair = os.getenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "").strip() == "APPROVED"
-        if len(completed) < len(targets_list) and live_gap_repair and any(
+        if (len(completed) < len(targets_list) and live_gap_repair and
+                (not callable(getattr(shared_reader, "history", None)) or
+                 not callable(reserve_history_get))):
+            print("RC6_HISTORY_PPI_GAP=BLOCKED_NO_SHARED_SCANNER_SESSION_OR_BUDGET")
+        elif len(completed) < len(targets_list) and live_gap_repair and any(
                 _live_identity_unambiguous(targets_list,key) for key in targets_list if key not in completed):
-            try:
-                key, secret = observer._secret()
-                reader = ProductionMarketReader(key, secret)
-                reader.login_once()
-            except Exception as exc:
-                _control(history_store, state="PARTIAL", targets=len(targets), archive=archive_count,
-                         ppi=ppi_count, complete=len(completed), failed=len(targets_list) - len(completed))
-                print(f"RC6_HISTORY_CUTOFF_REPAIR=PARTIAL TARGETS={len(targets)} COMPLETE={len(completed)} AUTH={type(exc).__name__}")
-                return 1
+            reader = shared_reader
 
         if len(completed) < len(targets_list) and reader is not None:
             try:
@@ -446,6 +524,8 @@ def main() -> int:
                         # evidence until a valid response is obtained.
                         for json_attempt in range(3):
                             try:
+                                if reserve_history_get(identity, start, CUTOFF) is not True:
+                                    raise PermissionError("PPI_HISTORY_GET_BUDGET_DENIED")
                                 ppi_count += 1
                                 payload = reader.history(identity[0], identity[1], identity[3], start, CUTOFF)
                                 break
@@ -478,27 +558,20 @@ def main() -> int:
                         print(f"RC6_HISTORY_CUTOFF_PROGRESS={index}/{len(targets_list)} COMPLETE={len(completed)} FAILED={failed}", flush=True)
                     time.sleep(max(0.0, float(os.getenv("RC6_HISTORY_REQUEST_PAUSE_SECONDS", "1.0"))))
             finally:
-                if reader is not None:
-                    reader.close()
+                # The scanner retains sole ownership of authentication and
+                # cleanup. An archive repair must never close its live reader.
+                reader = None
 
         complete = len(completed)
         unresolved = [identity for identity in targets_list if identity not in completed]
         quarantined = 0
         if unresolved and os.getenv("RC6_HISTORY_QUARANTINE_REPEATED_PPI", "").strip() == "APPROVED":
-            # This explicit deployment override is used only after repeated
-            # read-only PPI attempts.  The symbol remains auditable but cannot
-            # enter the operational universe without fresh PPI history.
-            for identity in unresolved:
-                _quarantine_unavailable(observer_store, identity)
-                _save(history_store, identity, state="QUARANTINED_PPI_HISTORY",
-                      source="PPI", error="REPEATED_HISTORY_UNAVAILABLE")
-                quarantined += 1
-                print(
-                    "RC6_HISTORY_CUTOFF_QUARANTINED "
-                    f"SYMBOL={identity[0]} FAMILY={identity[1]} SETTLEMENT={identity[3]}",
-                    flush=True,
-                )
-            unresolved = []
+            # A flag is not a physical record of repeated provider failure.
+            # Prior code would silently mark every unresolved identity stale
+            # and the cutoff COMPLETE even when PPI queries were zero.
+            # Hold until a separate durable per-identity failure contract is
+            # implemented and tested; never self-certify by quarantine.
+            print("RC6_HISTORY_QUARANTINE=BLOCKED_REPEATED_PPI_EVIDENCE_UNVERIFIED")
         failed = len(unresolved)
         if failed:
             for identity in unresolved:
