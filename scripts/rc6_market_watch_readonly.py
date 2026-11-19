@@ -247,6 +247,67 @@ def load_bounded(path, maximum=MAX_JSON_BYTES):
         return None
 
 
+def read_performance_report(path, maximum=524288):
+    """Classify a bounded report read without exporting its contents or file identity.
+
+    File metadata is informational only; even VALID is not proof of a fresh
+    report or healthy Performance worker. Do not follow links or open SQLite.
+    """
+    record = {"status": "UNREADABLE", "file_type": None, "size_bytes": None,
+              "mtime_ns": None, "limit_bytes": maximum, "read_only": True}
+
+    def failed(status):
+        return None, {**record, "status": status}
+
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+                info.st_size, info.st_mtime_ns)
+
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        return failed("MISSING")
+    except OSError:
+        return failed("UNREADABLE")
+    if stat.S_ISLNK(before.st_mode):
+        record["file_type"] = "SYMLINK"
+        return failed("NOT_REGULAR_FILE")
+    if not stat.S_ISREG(before.st_mode):
+        record["file_type"] = "OTHER"
+        return failed("NOT_REGULAR_FILE")
+    record.update(file_type="REGULAR_FILE", size_bytes=before.st_size,
+                  mtime_ns=before.st_mtime_ns)
+    if before.st_nlink != 1:
+        return failed("UNSAFE_FILE")
+    if before.st_size > maximum:
+        return failed("OVERSIZE")
+    fingerprint = identity(before)
+    try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+        with os.fdopen(os.open(path, flags), "rb") as source:
+            if identity(os.fstat(source.fileno())) != fingerprint:
+                return failed("CHANGED_DURING_READ")
+            raw = source.read(maximum + 1)
+            opened_after = os.fstat(source.fileno())
+        path_after = path.lstat()
+    except OSError:
+        try:
+            same_path = identity(path.lstat()) == fingerprint
+        except OSError:
+            same_path = False
+        return failed("UNREADABLE" if same_path else "CHANGED_DURING_READ")
+    if (identity(opened_after) != fingerprint or identity(path_after) != fingerprint
+            or len(raw) != before.st_size):
+        return failed("CHANGED_DURING_READ")
+    try:
+        def reject_non_json_constant(_):
+            raise ValueError("NON_JSON_NUMBER")
+        value = json.loads(raw, parse_constant=reject_non_json_constant)
+    except (ValueError, TypeError, RecursionError):
+        return failed("MALFORMED")
+    return (value, {**record, "status": "VALID"}) if isinstance(value, dict) and value else failed("MALFORMED")
+
+
 def read_shadow_status(path):
     value = load_bounded(path, 262144)
     if not value or not isinstance(value.get("payload"), dict):
@@ -592,7 +653,10 @@ def _verify_rootless_item(item, *, cid, role, current, identity):
     if ports != ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                  if role == "dashboard" else {}):
         raise ValueError("ROOTLESS_CONTAINER_PORTS_CHANGED")
-    if (item.get("State") or {}).get("OOMKilled") is True:
+    state = item.get("State")
+    if not isinstance(state, dict) or type(state.get("OOMKilled")) is not bool:
+        raise ValueError("ROOTLESS_CONTAINER_INSPECT_UNVERIFIED")
+    if state["OOMKilled"]:
         raise ValueError("ROOTLESS_CONTAINER_OOM")
     return item
 
@@ -710,7 +774,8 @@ def _docker_inspect(*, diagnostics=None):
             parsed[role] = {
                 "cid": context.roles[role], "state": state.get("Status"),
                 "restarts": item.get("RestartCount", 0),
-                "oom": state.get("OOMKilled") is True,
+                "oom": (state.get("OOMKilled") if type(state.get("OOMKilled")) is bool
+                        else None),
                 "image": item.get("Image"),
                 "source_sha": context.current.get("source_sha"),
                 "source_tree": context.current.get("source_tree"),
@@ -1341,43 +1406,73 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
     result["rootless_custody"] = (_rootless_custody_metadata() if rootless
                                   else {"state": "NOT_APPLICABLE", "segments": {}})
     result["observed_candidate_sha"] = provenance.get("candidate_sha") if rootless else None
-    if rootless:
-        # Product's HEAD and the immutable source commit can differ while
-        # sharing the same Git tree. GitHub verifies HEAD -> tree; private
-        # current.json independently verifies source commit/tree + CID pair.
-        marker_sha = provenance.get("candidate_sha")
-        tree = provenance.get("candidate_tree_sha")
-        if not isinstance(expected_tree_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", expected_tree_sha):
-            provenance_identity = "PRODUCT_TREE_NOT_PROVIDED"
-        elif not isinstance(tree, str) or tree != expected_tree_sha:
-            provenance_identity = "PRODUCT_TREE_MISMATCH"
-        elif (not isinstance(containers, dict) or
-              any(not isinstance(containers.get(role), dict) for role in CONTAINERS)):
-            provenance_identity = "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE"
-        elif (not isinstance(marker_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", marker_sha)
-              or any(containers[role].get("source_sha") != marker_sha or
-                     containers[role].get("source_tree") != tree for role in CONTAINERS)):
-            provenance_identity = "PRIVATE_RELEASE_SOURCE_MISMATCH"
-        else:
-            provenance_identity = "ROOTLESS_PRODUCT_TREE_MATCHED"
-        source_match = provenance_identity == "ROOTLESS_PRODUCT_TREE_MATCHED"
-    else:
-        source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
-        provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
-    result["provenance_identity"] = provenance_identity
-    if rootless and source_match:
-        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(
-            root, runtime_source_sha=marker_sha)
-    else:
-        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(root)
     provenance_fields_valid = bool(
         provenance and provenance.get("mode") == "PRODUCTION_PAPER" and
         provenance.get("validation_status") == "VALIDATED_RUNTIME" and
         type(provenance.get("real_orders_sent")) is int and
         provenance["real_orders_sent"] == 0 and
         provenance.get("real_order_routes") == "NOT_CALLED")
+    paper_counter_verified = bool(
+        isinstance(result.get("observer"), dict) and
+        result["observer"].get("mode") == "PRODUCTION_PAPER" and
+        type(result["observer"].get("real_orders_sent")) is int and
+        result["observer"]["real_orders_sent"] == 0)
+    release_pending = False
+    if rootless:
+        # The product HEAD can advance without a deploy. GitHub attests its
+        # expected tree; _docker_inspect verifies private current.json, daemon,
+        # exact CIDs, source/tree/image and PAPER configuration independently.
+        marker_sha = provenance.get("candidate_sha")
+        tree = provenance.get("candidate_tree_sha")
+        roles_complete = (isinstance(containers, dict) and
+                          all(isinstance(containers.get(role), dict) for role in CONTAINERS))
+        private_source_match = bool(
+            roles_complete and isinstance(marker_sha, str) and
+            re.fullmatch(r"[0-9a-f]{40}", marker_sha) and
+            isinstance(tree, str) and re.fullmatch(r"[0-9a-f]{40}", tree) and
+            all(containers[role].get("source_sha") == marker_sha and
+                containers[role].get("source_tree") == tree for role in CONTAINERS))
+        if not isinstance(expected_tree_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", expected_tree_sha):
+            provenance_identity = "PRODUCT_TREE_NOT_PROVIDED"
+        elif not roles_complete:
+            provenance_identity = "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE"
+        elif not private_source_match:
+            provenance_identity = "PRIVATE_RELEASE_SOURCE_MISMATCH"
+        elif tree != expected_tree_sha:
+            provenance_identity = "PRODUCT_TREE_MISMATCH"
+            # Never downgrade a product-tree mismatch on injected or incomplete
+            # Docker data. Only the live, strict private inspector plus public
+            # marker agreement and PAPER/0 may establish a pending release.
+            cids = [containers[role].get("cid") for role in CONTAINERS]
+            release_pending = bool(
+                inspect is None and not rootless_diagnostics and
+                provenance_fields_valid and paper_counter_verified and
+                isinstance(provenance.get("image_id"), str) and
+                re.fullmatch(r"sha256:[0-9a-f]{64}", provenance["image_id"]) and
+                all(isinstance(cid, str) and re.fullmatch(r"[0-9a-f]{64}", cid)
+                    for cid in cids) and len(set(cids)) == len(CONTAINERS) and
+                all(containers[role].get("image") == provenance["image_id"] and
+                    containers[role].get("state") == "running" and
+                    containers[role].get("oom") is False for role in CONTAINERS))
+        else:
+            provenance_identity = "ROOTLESS_PRODUCT_TREE_MATCHED"
+        source_match = (provenance_identity == "ROOTLESS_PRODUCT_TREE_MATCHED"
+                        or release_pending)
+    else:
+        source_match = bool(provenance and provenance.get("deploy_sha") == expected_sha)
+        provenance_identity = "LEGACY_DEPLOY_SHA_MATCHED" if source_match else "LEGACY_DEPLOY_SHA_MISMATCH"
+    result["provenance_identity"] = provenance_identity
+    if release_pending:
+        result["release_status"] = "RELEASE_PENDING"
+    if rootless and source_match:
+        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(
+            root, runtime_source_sha=marker_sha)
+    else:
+        result["performance_evidence_capacity"] = performance_evidence_capacity_stat(root)
     if not provenance_fields_valid:
         add("DEPLOY_PROVENANCE_INVALID", "P0")
+    elif release_pending:
+        add("PRODUCT_RELEASE_PENDING", "P1" if market_freshness_required else "P2")
     elif not source_match:
         add("DEPLOY_PROVENANCE_UNVERIFIED" if
             provenance_identity == "PRIVATE_RUNTIME_INSPECT_UNAVAILABLE"
@@ -1481,16 +1576,22 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
                 "P1" if market_freshness_required else "P2")
 
     perf_path = root / ("data/paper_v17/observer_v17.db.performance.sqlite.latest.json")
-    perf = load_bounded(perf_path, 524288)
-    result["performance"] = {"present": bool(perf), "generated_at": perf.get("generated_at"),
-                             "edge_validated": perf.get("economic_edge_validated"),
-                             "forward_status": (perf.get("forward_signal_evaluation") or {}).get("status")
-                             } if perf else {"present": False}
+    perf, report_file = read_performance_report(perf_path)
+    result["performance"] = {"present": bool(perf), "report_file": report_file}
     if not perf:
         add("PERFORMANCE_REPORT_UNAVAILABLE",
             "P1" if market_freshness_required else "P2")
     else:
-        lag = age_seconds(perf.get("generated_at"), at)
+        generated = timestamp(perf.get("generated_at"))
+        generated_at = generated.isoformat() if generated is not None else None
+        forward = perf.get("forward_signal_evaluation")
+        forward_status = forward.get("status") if isinstance(forward, dict) else None
+        result["performance"].update(
+            generated_at=generated_at,
+            edge_validated=(perf.get("economic_edge_validated")
+                            if type(perf.get("economic_edge_validated")) is bool else None),
+            forward_status=(forward_status if forward_status == "NO_VERIFICADO" else None))
+        lag = age_seconds(generated_at, at)
         result["performance_age_seconds"] = lag
         if lag is None or lag < -30 or lag > 900:
             add("PERFORMANCE_REPORT_STALE",
