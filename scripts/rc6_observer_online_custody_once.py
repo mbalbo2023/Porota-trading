@@ -10,22 +10,28 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 import time
 import urllib.request
+from zoneinfo import ZoneInfo
 
 
 SCHEMA = "rc6.observer-online-custody-once.v1"
 ROOT = Path("/opt/porota-trading/data")
 OBSERVER = ROOT / "paper_v17/observer_v17.db"
 MARKER = ROOT / "deploy/CURRENT_STATE_V2.json"
-CUSTODY = ROOT / "rc6_observer_custody"
+# Root-only host path OUTSIDE the Docker RW data bind and backup retention.
+# Never place a privileged snapshot under /opt/porota-trading/data.
+CUSTODY = Path("/var/lib/porota-rc6-observer-custody")
 EXPECTED_SOURCE_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
 EXPECTED_TREE_SHA = "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0"
+EXPECTED_IMAGE_ID = "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d"
 MAX_DB_BYTES = 5 * 1024**3
 MAX_WAL_BYTES = 512 * 1024**2
 MIN_RESERVE_BYTES = 2 * 1024**3
@@ -35,6 +41,7 @@ OWNER_BRANCH = "mbalbo2023/Porota-trading"
 OWNER_ISSUE = f"https://api.github.com/repos/{OWNER_BRANCH}/issues/980"
 OWNER_PUBLIC = f"https://github.com/{OWNER_BRANCH}/issues/980#issuecomment-"
 BACKUP_TIMEOUT_SECONDS = 600
+ART = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 class Hold(Exception):
@@ -73,21 +80,37 @@ def _safe_file(path: Path, *, maximum: int, expected_owner: int | None = None):
 def _release_marker(path: Path) -> dict:
     info = _safe_file(path, maximum=16 * 1024)
     try:
-        with path.open("rb") as src:
-            raw = src.read(16 * 1024 + 1)
-        if len(raw) > 16 * 1024 or path.lstat().st_ino != info.st_ino:
-            raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED")
+        directory = _anchor_directory(path.parent)
+        try:
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         dir_fd=directory)
+            try:
+                opened = os.fstat(fd)
+                if ((opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino)
+                        or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1):
+                    raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED")
+                raw = os.read(fd, 16 * 1024 + 1)
+                after = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+                if (len(raw) > 16 * 1024
+                        or (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)):
+                    raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED")
+            finally:
+                os.close(fd)
+        finally:
+            os.close(directory)
         marker = json.loads(raw)
     except (OSError, ValueError, TypeError) as exc:
         raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED") from exc
     if (not isinstance(marker, dict)
             or marker.get("candidate_sha") != EXPECTED_SOURCE_SHA
             or marker.get("candidate_tree_sha") != EXPECTED_TREE_SHA
+            or marker.get("image_id") != EXPECTED_IMAGE_ID
             or marker.get("validation_status") != "VALIDATED_RUNTIME"
             or marker.get("mode") != "PRODUCTION_PAPER"
             or type(marker.get("real_orders_sent")) is not int
             or marker["real_orders_sent"] != 0
             or marker.get("real_order_capability") != "BLOCKED"
+            or marker.get("real_order_routes") != "NOT_CALLED"
             or marker.get("deployment_backend") != "ROOTLESS_SPLIT"):
         raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED")
     return marker
@@ -97,7 +120,8 @@ def host_preflight(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                    custody_root: Path = CUSTODY) -> dict:
     """Pure metadata read: never open SQLite or create the custody directory."""
     db_path, marker_path, custody_root = map(Path, (db_path, marker_path, custody_root))
-    _safe_directory(custody_root.parent)
+    with _custody_parent_fd(custody_root):
+        pass
     if custody_root.exists() or custody_root.is_symlink():
         _safe_directory(custody_root)
         info = custody_root.lstat()
@@ -124,7 +148,7 @@ def host_preflight(db_path: Path = OBSERVER, marker_path: Path = MARKER,
     _release_marker(marker_path)
     total = source.st_size + (wal_info.st_size if wal_info else 0)
     required = 3 * total + MIN_RESERVE_BYTES
-    free = shutil.disk_usage(db_path.parent).free
+    free = shutil.disk_usage(custody_root.parent).free
     if free < required:
         raise Hold("CUSTODY_DISK_RESERVE_BLOCKED")
     return {"schema": SCHEMA, "state": "PREFLIGHT_METADATA_PASS",
@@ -151,35 +175,68 @@ def _private_umask():
 
 
 @contextmanager
+def _custody_parent_fd(custody_root: Path):
+    """Destination parent must be immutable to non-root/non-owner actors."""
+    anchor = _anchor_directory(custody_root.parent)
+    try:
+        fd = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=anchor)
+        try:
+            info = os.fstat(fd)
+            if (info.st_uid != os.geteuid() or info.st_mode & 0o022
+                    or not custody_root.name or custody_root.name in {".", ".."}):
+                raise Hold("CUSTODY_DIRECTORY_UNSAFE")
+            yield fd
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise Hold("CUSTODY_DIRECTORY_UNSAFE") from exc
+    finally:
+        os.close(anchor)
+
+
+@contextmanager
 def _custody_lock(custody_root: Path):
     """Only the one-shot handler creates a private host lock."""
-    if not custody_root.exists():
+    with _custody_parent_fd(custody_root) as parent_fd:
         try:
-            custody_root.mkdir(mode=0o700)
+            os.mkdir(custody_root.name, 0o700, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        except FileExistsError:
+            pass
         except OSError as exc:
             raise Hold("CUSTODY_DIRECTORY_UNSAFE") from exc
-    _safe_directory(custody_root)
-    info = custody_root.lstat()
-    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
-        raise Hold("CUSTODY_DIRECTORY_UNSAFE")
-    lock_path = custody_root / "custody.lock"
-    try:
-        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
-                     0o600)
-    except OSError as exc:
-        raise Hold("CUSTODY_LOCK_UNSAFE") from exc
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-                or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600):
-            raise Hold("CUSTODY_LOCK_UNSAFE")
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise Hold("CUSTODY_OWNER_BUSY") from exc
-        yield
-    finally:
-        os.close(fd)
+            custody_fd = os.open(custody_root.name,
+                                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                 dir_fd=parent_fd)
+        except OSError as exc:
+            raise Hold("CUSTODY_DIRECTORY_UNSAFE") from exc
+        try:
+            info = os.fstat(custody_fd)
+            if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                raise Hold("CUSTODY_DIRECTORY_UNSAFE")
+            try:
+                lock_fd = os.open("custody.lock", os.O_RDWR | os.O_CREAT |
+                                  os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
+                                  dir_fd=custody_fd)
+            except OSError as exc:
+                raise Hold("CUSTODY_LOCK_UNSAFE") from exc
+            try:
+                lock_meta = os.fstat(lock_fd)
+                if (not stat.S_ISREG(lock_meta.st_mode) or lock_meta.st_nlink != 1
+                        or lock_meta.st_uid != os.geteuid()
+                        or stat.S_IMODE(lock_meta.st_mode) != 0o600):
+                    raise Hold("CUSTODY_LOCK_UNSAFE")
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise Hold("CUSTODY_OWNER_BUSY") from exc
+                yield custody_fd
+            finally:
+                os.close(lock_fd)
+        finally:
+            os.close(custody_fd)
 
 
 def _live_paper_zero(db: sqlite3.Connection) -> None:
@@ -191,6 +248,359 @@ def _live_paper_zero(db: sqlite3.Connection) -> None:
     if (row is None or row[0] != "PRODUCTION_PAPER"
             or type(row[1]) is not int or row[1] != 0):
         raise Hold("PAPER_ORDERS_UNVERIFIED")
+
+
+def _market_offhours_guard(now: datetime | None = None) -> str:
+    """No WAL reader near live BYMA/EXIT: weekdays only 19:00–08:00 ART."""
+    instant = datetime.now(timezone.utc) if now is None else now
+    if instant.tzinfo is None or instant.utcoffset() is None:
+        raise Hold("CUSTODY_MARKET_WINDOW_UNSAFE")
+    local = instant.astimezone(ART)
+    if (local.date().isoformat() < "2026-11-19" or
+            local.weekday() < 5 and 8 <= local.hour < 19):
+        raise Hold("CUSTODY_MARKET_WINDOW_UNSAFE")
+    return "OFFHOURS_ART_SAFE"
+
+
+def _exit_quiescence(db: sqlite3.Connection) -> str:
+    """Bounded read sample; no inference of continuous worker inactivity."""
+    try:
+        _exit_deadline = time.monotonic() + 2
+        db.set_progress_handler(lambda: int(time.monotonic() > _exit_deadline), 500)
+        observer = db.execute(
+            "SELECT process_state,session_state FROM observer_state WHERE id=1").fetchone()
+        exit_reader = db.execute(
+            "SELECT state FROM paper_exit_reader_state WHERE id=1").fetchone()
+        if (not observer or observer[0] not in {"RUNNING", "WAITING_MARKET", "STOPPED"}
+                or observer[1] not in {"CLOSED", "MARKET_CLOSED"}
+                or not exit_reader or exit_reader[0] not in {"WAITING_MARKET", "STOPPED"}):
+            raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
+        for statement in (
+            "SELECT COUNT(*) FROM paper_positions WHERE status='OPEN'",
+            "SELECT COUNT(*) FROM paper_future_positions WHERE status='ACTIVE'",
+            "SELECT COUNT(*) FROM paper_cauciones WHERE status='OPEN'",
+            "SELECT COUNT(*) FROM paper_family_lifecycle WHERE family='FCI' AND state!='REDEEMED'",
+        ):
+            count = db.execute(statement).fetchone()
+            if not count or type(count[0]) is not int or count[0] != 0:
+                raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
+        return "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED"
+    except sqlite3.Error as exc:
+        raise Hold("EXIT_QUIESCENCE_UNVERIFIED") from exc
+    finally:
+        db.set_progress_handler(None, 0)
+
+
+def _anchor_directory(path: Path) -> int:
+    """Keep every parent directory pinned to an O_NOFOLLOW descriptor."""
+    if not path.is_absolute() or ".." in path.parts:
+        raise Hold("PRIVILEGED_PATH_BINDING_UNVERIFIED")
+    flags = os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = -1
+    try:
+        fd = os.open("/", flags)
+        for part in path.parts[1:]:
+            next_fd = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        return fd
+    except OSError as exc:
+        if fd >= 0:
+            os.close(fd)
+        raise Hold("PRIVILEGED_PATH_BINDING_UNVERIFIED") from exc
+
+
+def _verified_db_inode(path: Path) -> tuple[int, int]:
+    """No root-relative-follow or unchecked path substitution to DB inode."""
+    directory_fd = _anchor_directory(path.parent)
+    try:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=directory_fd)
+        try:
+            info = os.fstat(fd)
+            path_info = os.stat(path.name, dir_fd=directory_fd,
+                                follow_symlinks=False)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or info.st_size < 1 or info.st_size > MAX_DB_BYTES
+                    or (info.st_dev, info.st_ino) !=
+                    (path_info.st_dev, path_info.st_ino)):
+                raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+            return info.st_dev, info.st_ino
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO") from exc
+    finally:
+        os.close(directory_fd)
+
+
+@contextmanager
+def _anchored_source_sqlite(path: Path):
+    """Pin parent+DB inode; resolve WAL next to its anchored directory fd."""
+    descriptor = _anchor_directory(path.parent)
+    try:
+        file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                          dir_fd=descriptor)
+        try:
+            info = os.fstat(file_fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or not 0 < info.st_size <= MAX_DB_BYTES
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]+", path.name)):
+                raise Hold("SOURCE_IDENTITY_CHANGED")
+            expected = info.st_dev, info.st_ino
+            def check():
+                observed = os.stat(path.name, dir_fd=descriptor, follow_symlinks=False)
+                if (not stat.S_ISREG(observed.st_mode)
+                        or (observed.st_dev, observed.st_ino) != expected):
+                    raise Hold("SOURCE_IDENTITY_CHANGED")
+            check()
+            with closing(sqlite3.connect(
+                    f"file:/proc/self/fd/{descriptor}/{path.name}?mode=ro",
+                    uri=True, timeout=2)) as source:
+                # SQLite does not expose its fd. Identity checks bracketing the
+                # open and copy reject ordinary replacement; no stability is
+                # claimed across an adversarial intervening rename/revert.
+                check()
+                yield source
+                check()
+        finally:
+            os.close(file_fd)
+    except OSError as exc:
+        raise Hold("SOURCE_IDENTITY_CHANGED") from exc
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_private_file(directory_fd: int, basename: str) -> None:
+    try:
+        fd = os.open(basename, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=directory_fd)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                    or info.st_uid != os.geteuid()
+                    or stat.S_IMODE(info.st_mode) != 0o600):
+                raise Hold("CUSTODY_DURABILITY_UNVERIFIED")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise Hold("CUSTODY_DURABILITY_UNVERIFIED") from exc
+
+
+def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
+    """Read strictly private UID1000 deploy state with anchored nofollow fd."""
+    try:
+        account = pwd.getpwnam("porotaadmin")
+        home = Path(account.pw_dir)
+        if (os.geteuid() != 0 or account.pw_uid != 1000 or account.pw_gid != 1000
+                or not home.is_absolute() or ".." in home.parts):
+            raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+        state = home / ".local/state/porota-rc6"
+        # This private state is the independent Deploy V2 source of both CIDs.
+        for path in (home, home / ".local", home / ".local/state", state):
+            descriptor = _anchor_directory(path)
+            try:
+                info = os.fstat(descriptor)
+                owner_ok = (info.st_uid == 1000 if path in (home, state)
+                            else info.st_uid in (0, 1000))
+                forbidden = (0o077 if path in (home, state) else 0o022)
+                if not owner_ok or info.st_mode & forbidden:
+                    raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+            finally:
+                os.close(descriptor)
+        descriptor = _anchor_directory(state)
+        try:
+            fd = os.open("current.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         dir_fd=descriptor)
+            try:
+                info = os.fstat(fd)
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != 1000
+                        or info.st_nlink != 1 or info.st_size > 131072
+                        or info.st_mode & 0o077):
+                    raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+                raw = os.read(fd, 131073)
+                if len(raw) > 131072:
+                    raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+                current = json.loads(raw)
+            finally:
+                os.close(fd)
+        finally:
+            os.close(descriptor)
+        return account, current
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO") from exc
+
+
+def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
+    """Fixed UID1000/rootless socket, inspect/info ONLY; never host Docker."""
+    if (not args or args[0] not in {"info", "container"}
+            or args[0] == "container" and (len(args) != 3 or args[1] != "inspect")
+            or args[0] == "info" and args[1:] != ("--format", "{{json .}}")):
+        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+    socket = Path("/run/user/1000/porota-rc6-docker.sock")
+    try:
+        runtime_fd = _anchor_directory(socket.parent)
+        try:
+            runtime = os.fstat(runtime_fd)
+            sock = os.stat(socket.name, dir_fd=runtime_fd, follow_symlinks=False)
+            if (runtime.st_uid != 1000 or runtime.st_mode & 0o022
+                    or not stat.S_ISSOCK(sock.st_mode) or sock.st_uid != 1000
+                    or sock.st_mode & 0o007):
+                raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+        finally:
+            os.close(runtime_fd)
+        home = Path(account.pw_dir)
+        env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
+               "HOME": str(home), "USER": "porotaadmin", "LOGNAME": "porotaadmin",
+               "XDG_RUNTIME_DIR": "/run/user/1000",
+               "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
+               "DOCKER_CLI_HINTS": "false"}
+        result = subprocess.run([
+            "/usr/sbin/runuser", "-u", "porotaadmin", "--", "/usr/bin/docker",
+            "--host", "unix:///run/user/1000/porota-rc6-docker.sock", *args],
+            check=False, input=b"", stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, timeout=9, env=env, cwd="/")
+        if result.returncode != 0 or len(result.stdout) > 131072:
+            raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+        return json.loads(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError) as exc:
+        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO") from exc
+
+
+def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
+                                 marker: dict, db_path: Path, *,
+                                 data_root: Path = ROOT,
+                                 operator_home: Path = Path("/home/porotaadmin")) -> str:
+    """Cross-bind marker ↔ private CIDs ↔ inspect ↔ exact host data inode."""
+    fail = "RUNTIME_DB_BINDING_NO_VERIFICADO"
+    if (not isinstance(current, dict) or not isinstance(daemon, dict)
+            or not isinstance(containers, dict) or not isinstance(marker, dict)):
+        raise Hold(fail)
+    roles = current.get("roles")
+    if (current.get("schema") != "porota.rootless.deploy.v1"
+            or current.get("state") != "VALIDADO_RUNTIME"
+            or current.get("operating_mode") != "PRODUCTION_PAPER"
+            or current.get("execution_mode") != "SIMULATION"
+            or type(current.get("real_orders_sent")) is not int
+            or current["real_orders_sent"] != 0
+            or current.get("source_sha") != EXPECTED_SOURCE_SHA
+            or current.get("source_tree") != EXPECTED_TREE_SHA
+            or current.get("image_id") != EXPECTED_IMAGE_ID
+            or current["source_sha"] != marker.get("candidate_sha")
+            or current["source_tree"] != marker.get("candidate_tree_sha")
+            or current["image_id"] != marker.get("image_id")
+            or not isinstance(current.get("attempt"), str)
+            or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", current["attempt"])
+            or not isinstance(current.get("daemon_id"), str)
+            or not current["daemon_id"]
+            or not isinstance(roles, dict) or set(roles) != {"observer", "dashboard"}
+            or any(not isinstance(cid, str) or not HEX64.fullmatch(cid)
+                   for cid in roles.values())
+            or len(set(roles.values())) != 2
+            or (daemon.get("ID") != current["daemon_id"]
+                or "name=rootless" not in (daemon.get("SecurityOptions") or [])
+                or str(daemon.get("CgroupVersion")) != "2"
+                or daemon.get("CgroupDriver") != "systemd"
+                or daemon.get("DockerRootDir") != str(
+                    operator_home / ".local/share/porota-rc6/docker"))
+            or db_path != data_root / "paper_v17/observer_v17.db"):
+        raise Hold(fail)
+    for role in ("observer", "dashboard"):
+        item = containers.get(role)
+        if not isinstance(item, dict):
+            raise Hold(fail)
+        config = item.get("Config") or {}
+        host = item.get("HostConfig") or {}
+        labels = config.get("Labels") or {}
+        state = item.get("State") or {}
+        if (item.get("Id") != roles[role]
+                or item.get("Name") != f"/porota-rc6-{role}-{current['attempt']}"
+                or item.get("Image") != EXPECTED_IMAGE_ID
+                or config.get("Image") != EXPECTED_IMAGE_ID
+                or state.get("Status") != "running"
+                or state.get("OOMKilled") is True
+                or labels.get("io.porota.project") != "rc6"
+                or labels.get("io.porota.role") != role
+                or labels.get("io.porota.attempt") != current["attempt"]
+                or config.get("User") != "0:0" or config.get("Entrypoint")
+                or config.get("WorkingDir") != "/app"
+                or config.get("Cmd") != ["python", "bv_paper_runtime.py" if role == "observer"
+                                         else "o_dashboard.py"]
+                or host.get("ReadonlyRootfs") is not True
+                or host.get("Privileged") is not False
+                or host.get("CapDrop") != ["ALL"] or host.get("CapAdd")
+                or not any(option in {"no-new-privileges", "no-new-privileges:true"}
+                           for option in (host.get("SecurityOpt") or []))
+                or host.get("NetworkMode") in {"host", "none"}
+                or str(host.get("NetworkMode", "")).startswith("container:")
+                or host.get("PidMode") == "host"):
+            raise Hold(fail)
+        envs = config.get("Env")
+        if not isinstance(envs, list) or any(not isinstance(line, str) for line in envs):
+            raise Hold(fail)
+        env = {}
+        for line in envs:
+            key, separator, value = line.partition("=")
+            if (not separator or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key)
+                    or key in env or "\x00" in value):
+                raise Hold(fail)
+            env[key] = value
+        required = {"POROTA_BUILD_SHA": EXPECTED_SOURCE_SHA,
+                    "POROTA_CANDIDATE_TREE_SHA": EXPECTED_TREE_SHA,
+                    "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
+                    "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
+                    "EXECUTION_MODE": "SIMULATION",
+                    "REAL_ORDER_CAPABILITY": "BLOCKED"}
+        if any(env.get(key) != value for key, value in required.items()):
+            raise Hold(fail)
+        mounts = item.get("Mounts")
+        if not isinstance(mounts, list) or any(not isinstance(m, dict) for m in mounts):
+            raise Hold(fail)
+        expected = {"/app/data": (str(data_root), True),
+                    "/app/operator": (str(operator_home / ".config/porota-rc6/operator"), False)}
+        if role == "observer":
+            expected["/run/secrets/ppi_production.json"] = (
+                str(Path("/opt/porota-trading/.secrets/ppi_production.json")), False)
+        bind = [mount for mount in mounts if mount.get("Type") == "bind"]
+        if (len(bind) != len(expected)
+                or {mount.get("Destination") for mount in bind} != set(expected)
+                or any((mount.get("Source"), mount.get("RW")) !=
+                       expected[mount["Destination"]] for mount in bind)
+                or any(mount.get("Type") not in {"bind", "tmpfs"} for mount in mounts)):
+            raise Hold(fail)
+    # Anchor the actual host data and DB by fd (not a stale marker alone).
+    try:
+        _verified_db_inode(db_path)
+    except Hold as exc:
+        raise Hold(fail) from exc
+    return "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"
+
+
+def _rootless_runtime_binding(marker: dict, db_path: Path) -> str:
+    """No Docker writes, no credential forwarding, no silent rootful fallback."""
+    try:
+        account, current = _rootless_current_state()
+        daemon = _docker_readonly_json(account, "info", "--format", "{{json .}}")
+        roles = current.get("roles") if isinstance(current, dict) else None
+        if not isinstance(roles, dict) or set(roles) != {"observer", "dashboard"}:
+            raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+        containers = {}
+        for role in ("observer", "dashboard"):
+            cid = roles[role]
+            if not isinstance(cid, str) or not HEX64.fullmatch(cid):
+                raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+            items = _docker_readonly_json(account, "container", "inspect", cid)
+            if not isinstance(items, list) or len(items) != 1:
+                raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+            containers[role] = items[0]
+        result = _verify_rootless_attestation(current, daemon, containers, marker,
+                                              db_path, operator_home=Path(account.pw_dir))
+        if _rootless_current_state()[1] != current:
+            raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+        return result
+    except (OSError, KeyError, ValueError, TypeError, subprocess.TimeoutExpired) as exc:
+        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO") from exc
 
 
 def _sha256(path: Path) -> str:
@@ -252,75 +662,113 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
         raise Hold("CUSTODY_RUN_ID_INVALID")
     db_path, marker_path, custody_root = map(Path, (db_path, marker_path, custody_root))
     before = host_preflight(db_path, marker_path, custody_root)
+    offhours = _market_offhours_guard()
+    runtime_binding = _rootless_runtime_binding(_release_marker(marker_path), db_path)
     source_before = source_metadata(db_path)
     deadline = time.monotonic() + BACKUP_TIMEOUT_SECONDS
     # A real WAL reader may briefly affect -shm locking; this path requires
     # the separately attested DEPLOY_OWNER and cannot be run by preflight.
     try:
-        with closing(sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True,
-                                     timeout=2)) as source:
+        with _anchored_source_sqlite(db_path) as source:
             source.execute("PRAGMA busy_timeout=200")
             _live_paper_zero(source)
-            final = custody_root / ("observer_" + run_id)
-            partial = custody_root / (".partial_" + run_id)
+            exit_quiescence = _exit_quiescence(source)
+            final_name, partial_name = "observer_" + run_id, ".partial_" + run_id
+            final = custody_root / final_name
+            partial = custody_root / partial_name
             if final.exists() or final.is_symlink() or partial.exists() or partial.is_symlink():
                 raise Hold("CUSTODY_RUN_ALREADY_EXISTS")
-            with _private_umask(), _custody_lock(custody_root):
-                if final.exists() or partial.exists():
-                    raise Hold("CUSTODY_RUN_ALREADY_EXISTS")
-                partial.mkdir(mode=0o700)
-                snapshot = partial / "snapshot.sqlite"
-                restored = partial / "restore-check.sqlite"
-                with closing(sqlite3.connect(snapshot, timeout=1)) as target:
-                    def progress(status, remaining, total):
-                        if time.monotonic() > deadline:
-                            raise Hold("CUSTODY_BACKUP_TIMEOUT")
-                    source.backup(target, pages=256, sleep=0.1, progress=progress)
-                snapshot.chmod(0o600)
-                _live_paper_zero(source)
-                if time.monotonic() > deadline:
-                    raise Hold("CUSTODY_BACKUP_TIMEOUT")
-                snapshot_digest = _sha256(snapshot)
-                with snapshot.open("rb") as original, restored.open("xb") as copy:
-                    shutil.copyfileobj(original, copy, length=1024 * 1024)
-                restored.chmod(0o600)
-                restore_digest = _sha256(restored)
-                if snapshot_digest != restore_digest:
-                    raise Hold("PRIVATE_RESTORE_DIGEST_MISMATCH")
-                _verify_restore(restored, deadline)
-                if time.monotonic() > deadline:
-                    raise Hold("CUSTODY_BACKUP_TIMEOUT")
-                continuity = source_continuity(source_before, source_metadata(db_path))
-                _release_marker(marker_path)  # Same pinned release after the copy.
-                receipt = {"schema": SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
-                           "read_only": False, "source_sql_writes": 0,
-                           "shm_locking_possible": True,
-                           "paper_zero": "OBSERVED", "run_id": run_id,
-                           "source_bytes": before["source_bytes"],
-                           "wal_bytes_before": before["wal_bytes"],
-                           "source_wal_state": ("PRESENT_RECONCILED_BY_SQLITE_BACKUP"
-                                                if before["wal_bytes"] else "SOURCE_WAL_ABSENT"),
-                           "snapshot_bytes": snapshot.stat().st_size,
-                           "source_identity_continuity": continuity,
-                           "snapshot_sha256": snapshot_digest,
-                           "restore_bytes": restored.stat().st_size,
-                           "restore_sha256": restore_digest,
-                           "restore_quick_check": "ok",
-                           "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-                           "host_mutations": 1,
-                           "ppi_requests": 0, "real_orders_sent_by_action": 0,
-                           "ppi_watch_touched": False}
-                manifest = partial / "manifest.json"
-                with manifest.open("x", encoding="utf-8") as dest:
-                    json.dump(receipt, dest, sort_keys=True)
-                manifest.chmod(0o600)
-                os.rename(partial, final)
-                return receipt
+            with _private_umask(), _custody_lock(custody_root) as custody_fd:
+                try:
+                    os.mkdir(partial_name, 0o700, dir_fd=custody_fd)
+                except FileExistsError as exc:
+                    raise Hold("CUSTODY_RUN_ALREADY_EXISTS") from exc
+                os.fsync(custody_fd)  # Partial creation must survive reboot.
+                part_fd = os.open(partial_name,
+                                  os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW |
+                                  os.O_CLOEXEC, dir_fd=custody_fd)
+                try:
+                    # This private fd path is never under the product's RW
+                    # /app/data bind. No DB base-file/WAL byte copying.
+                    snapshot = Path(f"/proc/self/fd/{part_fd}/snapshot.sqlite")
+                    restored = Path(f"/proc/self/fd/{part_fd}/restore-check.sqlite")
+                    with closing(sqlite3.connect(snapshot, timeout=1)) as target:
+                        def progress(status, remaining, total):
+                            if time.monotonic() > deadline:
+                                raise Hold("CUSTODY_BACKUP_TIMEOUT")
+                        source.backup(target, pages=256, sleep=0.1, progress=progress)
+                    os.chmod("snapshot.sqlite", 0o600, dir_fd=part_fd,
+                             follow_symlinks=False)
+                    _fsync_private_file(part_fd, "snapshot.sqlite")
+                    _live_paper_zero(source)
+                    if _exit_quiescence(source) != exit_quiescence:
+                        raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
+                    _market_offhours_guard()
+                    if (_rootless_runtime_binding(_release_marker(marker_path), db_path)
+                            != runtime_binding):
+                        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+                    if time.monotonic() > deadline:
+                        raise Hold("CUSTODY_BACKUP_TIMEOUT")
+                    snapshot_digest = _sha256(snapshot)
+                    restore_fd = os.open("restore-check.sqlite", os.O_WRONLY | os.O_CREAT |
+                                         os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                         0o600, dir_fd=part_fd)
+                    with snapshot.open("rb") as original, os.fdopen(restore_fd, "wb") as copy:
+                        shutil.copyfileobj(original, copy, length=1024 * 1024)
+                        copy.flush()
+                        os.fsync(copy.fileno())
+                    _fsync_private_file(part_fd, "restore-check.sqlite")
+                    restore_digest = _sha256(restored)
+                    if snapshot_digest != restore_digest:
+                        raise Hold("PRIVATE_RESTORE_DIGEST_MISMATCH")
+                    _verify_restore(restored, deadline)
+                    if time.monotonic() > deadline:
+                        raise Hold("CUSTODY_BACKUP_TIMEOUT")
+                    continuity = source_continuity(source_before, source_metadata(db_path))
+                    _release_marker(marker_path)  # Same pinned release after copy.
+                    receipt = {"schema": SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
+                               "read_only": False, "source_sql_writes": 0,
+                               "shm_locking_possible": True,
+                               "offhours_gate": offhours,
+                               "runtime_db_binding": runtime_binding,
+                               "exit_quiescence": exit_quiescence,
+                               "paper_zero": "OBSERVED", "run_id": run_id,
+                               "source_bytes": before["source_bytes"],
+                               "wal_bytes_before": before["wal_bytes"],
+                               "source_wal_state": ("PRESENT_RECONCILED_BY_SQLITE_BACKUP"
+                                                    if before["wal_bytes"] else "SOURCE_WAL_ABSENT"),
+                               "snapshot_bytes": snapshot.stat().st_size,
+                               "source_identity_continuity": continuity,
+                               "snapshot_sha256": snapshot_digest,
+                               "restore_bytes": restored.stat().st_size,
+                               "restore_sha256": restore_digest,
+                               "restore_quick_check": "ok",
+                               "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                               "host_mutations": 1,
+                               "ppi_requests": 0, "real_orders_sent_by_action": 0,
+                               "ppi_watch_touched": False}
+                    manifest_fd = os.open("manifest.json", os.O_WRONLY | os.O_CREAT |
+                                          os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                          0o600, dir_fd=part_fd)
+                    with os.fdopen(manifest_fd, "w", encoding="utf-8") as manifest:
+                        json.dump(receipt, manifest, sort_keys=True)
+                        manifest.flush()
+                        os.fsync(manifest.fileno())
+                    os.fsync(part_fd)  # Three data files + directory durable.
+                    os.rename(partial_name, final_name,
+                              src_dir_fd=custody_fd, dst_dir_fd=custody_fd)
+                    os.fsync(custody_fd)  # Atomic final-directory rename durable.
+                    return receipt
+                except OSError as exc:
+                    raise Hold("CUSTODY_DURABILITY_UNVERIFIED") from exc
+                finally:
+                    os.close(part_fd)
     except sqlite3.Error as exc:
         raise Hold("CUSTODY_SQLITE_UNAVAILABLE") from exc
 
 
-def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int) -> dict:
+def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
+                     expected_run_id: str | None = None) -> dict:
     """Runner-side allowlist; refuses unexpected content, never echoes raw text."""
     if mode not in {"PREFLIGHT_ONLY", "CUSTODY_ONCE"}:
         raise Hold("MODE_UNSUPPORTED")
@@ -341,7 +789,8 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int) -> dict:
     custody = {"source_sql_writes", "shm_locking_possible", "run_id", "source_bytes", "wal_bytes_before",
                "source_wal_state", "snapshot_bytes", "snapshot_sha256",
                "restore_bytes", "restore_sha256", "restore_quick_check",
-               "generated_at_utc", "host_mutations", "source_identity_continuity"}
+               "generated_at_utc", "host_mutations", "source_identity_continuity",
+               "offhours_gate", "runtime_db_binding", "exit_quiescence"}
     allowed = shared | (preflight if mode == "PREFLIGHT_ONLY" else custody)
     if set(raw) != allowed or raw.get("ppi_requests") != 0 or raw.get("ppi_watch_touched") is not False:
         return fallback
@@ -370,6 +819,9 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int) -> dict:
                 or raw.get("read_only") is not False or raw.get("host_mutations") != 1
                 or raw.get("source_sql_writes") != 0
                 or raw.get("shm_locking_possible") is not True
+                or raw.get("offhours_gate") != "OFFHOURS_ART_SAFE"
+                or raw.get("runtime_db_binding") != "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"
+                or raw.get("exit_quiescence") != "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED"
                 or raw.get("paper_zero") != "OBSERVED"
                 or raw.get("source_wal_state") not in {
                     "PRESENT_RECONCILED_BY_SQLITE_BACKUP", "SOURCE_WAL_ABSENT"}
@@ -380,6 +832,9 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int) -> dict:
                     "DB_IDENTITY_STABLE_WAL_CHANGED_SHM_CHANGED"}
                 or not isinstance(raw.get("run_id"), str)
                 or not RUN_ID.fullmatch(raw["run_id"])
+                or not isinstance(expected_run_id, str)
+                or not RUN_ID.fullmatch(expected_run_id)
+                or raw["run_id"] != expected_run_id
                 or raw.get("restore_quick_check") != "ok"
                 or not all(isinstance(raw.get(k), str) and HEX64.fullmatch(raw[k])
                            for k in ("snapshot_sha256", "restore_sha256"))
@@ -511,7 +966,8 @@ def main(argv: list[str] | None = None) -> int:
                     raw = {}
             else:
                 raw = {}
-            public = sanitize_receipt(mode, raw, remote_rc=int(rc_text))
+            public = sanitize_receipt(mode, raw, remote_rc=int(rc_text),
+                                      expected_run_id=os.environ.get("GITHUB_RUN_ID"))
             with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
                 json.dump(public, target, sort_keys=True)
             print("RC6_CUSTODY_SANITIZED=" + public["state"])

@@ -162,3 +162,20 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "${RC6_CUSTODY_REMOTE_RC:-255}" -eq 0
+          python3 - "$RC6_CUSTODY_PRIVATE/a-custody-public.json" "$REQUEST_MODE" <<'PY'
+          import json
+          import sys
+          expected = {'PREFLIGHT_ONLY': 'PREFLIGHT_METADATA_PASS',
+                      'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK'}
+          try:
+              with open(sys.argv[1], 'rb') as source:
+                  raw = source.read(8193)
+              receipt = json.loads(raw)
+              verified = (len(raw) <= 8192 and
+                          receipt.get('state') == expected.get(sys.argv[2]) and
+                          receipt.get('schema') == 'rc6.observer-online-custody-once.v1')
+          except (OSError, ValueError, TypeError, AttributeError):
+              verified = False
+          if not verified:
+              raise SystemExit('RC6_CUSTODY_SANITIZED_HOLD')
+          PY
