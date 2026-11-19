@@ -40,18 +40,27 @@ from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 SCHEMA = "rc6.ppi.single-market-session.offhost.v1"
 
 
-def load_primary_ppi_catalog_snapshot(database) -> tuple[list[dict], list[tuple], str]:
-    """Only literal PPI-primary five-keys already persisted in PAPER DB.
+def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates=False):
+    """Read PPI-primary identities without equating a GET request to a contract.
 
-    The digest is LOCAL source custody, NOT a PPI signature, provider quota,
-    executable readiness or substitute for a fresh quote. Empty/ambiguous
-    identity stays blocked. Readers use read-only DB mode and no DDL.
+    Default preserves the existing PPI_FIELD-only certified-key contract.
+    Gateway bootstrap may separately include unique REQUEST_CANDIDATE rows
+    whose actual SearchInstrument response attests only the four PPI fields.
+    The fifth coordinate is a local query parameter, NEVER PPI_FIELD/READY.
+    SQLite is read-only, bounded and cannot create a database or permit orders.
+    When diagnostic mode is requested, return (catalog4, query5, digest,
+    provider_attested5); the last two sets remain deliberately distinct.
     """
     from cg_paper_workspace import checked_path, identity_from_connection
-    from bu_instrument_catalog import ppi_full_key_evidence_reason
+    from bu_instrument_catalog import (
+        ppi_full_key_evidence_reason, canonical_family,
+        canonical_market, canonical_settlement, cash_currency,
+    )
 
     path = checked_path(database)
-    accepted = []
+    attested = []
+    diagnostic = []
+    request_aliases = {}
     try:
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
                                      timeout=.15)) as connection:
@@ -63,47 +72,107 @@ def load_primary_ppi_catalog_snapshot(database) -> tuple[list[dict], list[tuple]
             if state != ("PRODUCTION_PAPER", 0):
                 raise ValueError("PPI_PRIMARY_PAPER_ZERO_UNVERIFIED")
             rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
-                settlement,settlement_source,status,metadata_json
+                settlement,settlement_source,status,
+                CASE WHEN length(CAST(metadata_json AS BLOB))<=65536
+                     THEN metadata_json ELSE NULL END
                 FROM financial_instrument_catalog ORDER BY ticker,instrument_type,
                     market,currency,settlement LIMIT 20001""").fetchall()
             if len(rows) > 20000:
                 raise ValueError("PPI_PRIMARY_CATALOG_TOO_LARGE")
             for row in rows:
-                if row[6] != "AVAILABLE":
+                if row[6] not in ("AVAILABLE", "STALE"):
                     continue
+                if any(value in (None, "") or len(str(value)) > 256
+                       for value in row[:5]):
+                    continue
+                key = tuple(str(part).strip().upper() for part in row[:5])
+                if any(part in ("", "UNKNOWN") for part in key):
+                    continue
+                if include_diagnostic_candidates:
+                    request_aliases.setdefault(
+                        (key[0], key[1], key[4]), set()).add(key)
                 record = {"ticker": row[0], "instrument_type": row[1],
                           "market": row[2], "currency": row[3],
                           "settlement": row[4], "settlement_source": row[5],
                           "metadata_json": row[7]}
-                if ppi_full_key_evidence_reason(record):
+                if row[6] == "AVAILABLE" and not ppi_full_key_evidence_reason(record):
+                    attested.append(key)
+                    diagnostic.append(key)
                     continue
-                accepted.append(tuple(str(part).strip().upper() for part in row[:5]))
+                if not include_diagnostic_candidates or row[5] != "REQUEST_CANDIDATE":
+                    continue
+                try:
+                    provider = json.loads(row[7] or "{}")
+                    if (not isinstance(provider, dict)
+                            or provider.get("_discovery_source") != "PPI_PRIMARY"
+                            or provider.get("settlement") not in (None, "")):
+                        continue
+                    observed_four = (
+                        str(provider.get("ticker") or provider.get("symbol") or "").strip().upper(),
+                        canonical_family(provider.get("type") or provider.get("instrumentType")),
+                        canonical_market(provider.get("market")),
+                        cash_currency(provider.get("currency")),
+                    )
+                    stored_four = (
+                        str(row[0]).strip().upper(), canonical_family(row[1]),
+                        canonical_market(row[2]), cash_currency(row[3]),
+                    )
+                    if (observed_four != stored_four or
+                            canonical_settlement(row[4], row[1]) != key[4]):
+                        continue
+                except (ValueError, TypeError, OverflowError, RecursionError):
+                    continue
+                diagnostic.append(key)
     except (sqlite3.Error, OSError, TypeError) as exc:
         raise ValueError("PPI_PRIMARY_CATALOG_UNAVAILABLE") from exc
-    keys = sorted(set(accepted))
+    keys = sorted(set(diagnostic if include_diagnostic_candidates else attested))
+    if include_diagnostic_candidates:
+        # SDK Current/Book requests contain only ticker, class and settlement.
+        # Never select one currency/market from an ambiguous 3-key alias.
+        keys = [key for key in keys if len(
+            request_aliases.get((key[0], key[1], key[4]), ())) == 1]
     if not keys:
         raise ValueError("PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
     four = sorted({key[:4] for key in keys})
     catalog_rows = [{"ticker": key[0], "type": key[1],
                      "market": key[2], "currency": key[3]} for key in four]
-    digest = hashlib.sha256(json.dumps({"source": "LOCAL_PPI_PRIMARY_LITERAL_ONLY",
-                                      "keys": keys}, separators=(",", ":"),
+    provider_attested = sorted(set(attested).intersection(keys))
+    digest_material = (
+        {"source": "LOCAL_PPI_PRIMARY_DIAGNOSTIC_QUERY_ONLY",
+         "query_keys": keys, "provider_attested_keys": provider_attested}
+        if include_diagnostic_candidates else
+        {"source": "LOCAL_PPI_PRIMARY_LITERAL_ONLY", "keys": keys}
+    )
+    digest = hashlib.sha256(json.dumps(digest_material, separators=(",", ":"),
                                      sort_keys=True).encode("utf-8")).hexdigest()
+    if include_diagnostic_candidates:
+        return catalog_rows, keys, digest, provider_attested
     return catalog_rows, keys, digest
 
 
 class PrimaryPPICatalogAuthority:
-    """Allow exact locally verified PPI-primary literal keys, never READY."""
+    """Separate provider-attested contract keys from diagnostic GET identities.
 
-    def __init__(self, five_keys):
+    A query key may contain settlement from an explicit REQUEST, which is not
+    PPI_FIELD evidence. Only the attested set may authorize the stronger
+    PPI_FIVE_KEY_CATALOG_ATTESTED action. Neither action grants PAPER READY.
+    """
+
+    def __init__(self, five_keys, *, query_keys=None):
         self._keys = frozenset(tuple(key) for key in five_keys)
-        if not self._keys:
+        self._query_keys = self._keys | frozenset(
+            tuple(key) for key in (query_keys or ()))
+        if not self._query_keys:
             raise ValueError("PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
 
     def permits(self, action, *, five_key=None):
-        if action != "PPI_FIVE_KEY_CATALOG_ATTESTED":
+        if action == "PPI_FIVE_KEY_CATALOG_ATTESTED":
+            allowed = self._keys
+        elif action == "PPI_NATIVE_QUERY_IDENTITY_UNIQUE":
+            allowed = self._query_keys
+        else:
             return False
-        return bool(self._keys) if five_key is None else tuple(five_key) in self._keys
+        return bool(allowed) if five_key is None else tuple(five_key) in allowed
 
 
 class ObservedPaperCapacityAuthority:
@@ -320,6 +389,21 @@ class PPISharedSessionOwner:
         except Exception:
             return False
 
+    def _permits_native_query(self, identity=None) -> bool:
+        """Allow observe-only GET request identity; never infer a PPI contract.
+
+        Existing injected authorities with only attested keys retain backward
+        compatibility. The concrete runtime authority independently admits
+        unique PPI-primary four-key / requested-settlement candidates.
+        """
+        try:
+            if self._catalog_authority.permits(
+                    "PPI_NATIVE_QUERY_IDENTITY_UNIQUE", five_key=identity) is True:
+                return True
+        except Exception:
+            return False
+        return self._permits_catalog(identity)
+
     def _permits_stream_connect(self) -> bool:
         try:
             return self._composite_stream_authority.permits("CONNECT_MARKET_DATA") is True
@@ -340,7 +424,7 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_SESSION_OWNER_NOT_RESTARTABLE")
             if not self._permits_capacity("OWNER_AUTHENTICATE"):
                 raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
-            if not self._permits_catalog():
+            if not self._permits_native_query():
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             # Bind the process-wide slot to the base class itself.  Assigning
             # through type(self) would create a subclass-local _active_owner:
@@ -430,7 +514,7 @@ class PPISharedSessionOwner:
         """Only owner path to guarded PPI REST; no consumer-facing GET."""
         with self._lock:
             self._require_open()
-            if not self._permits_catalog(five_key):
+            if not self._permits_native_query(five_key):
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             if not self._permits_capacity("REST_NATIVE_ACQUIRE", five_key):
                 raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
