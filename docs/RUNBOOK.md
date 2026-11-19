@@ -6,6 +6,12 @@ estables están en [AGENTS.md](../AGENTS.md) y la
 investigar un problema concreto; sus checkpoints, aprobaciones y pendientes no
 se convierten en puertas automáticas de una tarea nueva.
 
+**Continuidad actual:** [handoff del 19-Nov-2026](RC6_HANDOFF_2026-11-19.md)
+y último comentario de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).
+Incluye el censo físico A385 de fuentes STALE y el inventario A729 con WAL
+no reconciliado, posteriores al corte anterior. No reejecutar el deploy P0
+ya validado: corresponde QA de rueda e históricos con backup/owner independiente.
+
 ## Incidente P0 PPI REST — corte 18-Nov-2026
 
 Partir del [checkpoint #1093/6992170026](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6992170026)

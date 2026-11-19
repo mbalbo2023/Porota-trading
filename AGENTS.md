@@ -5,6 +5,14 @@ Este es el único punto de entrada de trabajo. El procedimiento está en
 [el índice histórico](docs/history/README.md). La documentación describe reglas;
 el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 
+**Handoff más reciente:** [RC6 post-P0, 19-Nov-2026](docs/RC6_HANDOFF_2026-11-19.md).
+Al continuar, leerlo junto al último comentario de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093)
+y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).
+El deploy P0 ya fue validado; sus ocho hijos no acreditan por sí solos
+Current/Book frescos, histórico completo ni todos los timers. A385 halló un
+export STALE y A729 un WAL del observador no reconciliado. No repetir el
+deploy P0 ni habilitar writers históricos antes de la custodia y tests allí.
+
 ## Alcance y autonomía
 
 - Ejecutar la tarea autorizada hasta su resultado verificable. La instrucción

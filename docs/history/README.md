@@ -4,6 +4,9 @@ Estos enlaces fijan versiones de Git anteriores a la consolidación documental.
 Conservan código citado, decisiones, RCA y evidencia de su fecha. No son instrucciones
 vigentes, autorización de operación ni una lista de tareas que deba repetirse.
 Para trabajar, usar [AGENTS.md](../../AGENTS.md) y [RUNBOOK.md](../RUNBOOK.md).
+Para el relevo vigente, leer [handoff 19-Nov-2026](../RC6_HANDOFF_2026-11-19.md)
+y el último checkpoint de #1093: A385/A729 y el RCA histórico son posteriores
+a las versiones archivadas en este índice.
 Antes de crear código se debe buscar aquí sólo el antecedente relevante,
 complementarlo con HEAD, ramas, PRs e issues y recuperar el parche parcial
 sin duplicarlo. Todo PR abierto mantiene owner y disposición verificable;
