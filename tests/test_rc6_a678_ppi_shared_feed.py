@@ -407,6 +407,71 @@ class PPISharedFeedTests(unittest.TestCase):
             release_warm.set()
             server.stop_native_priority_router()
 
+    def test_exit_rpc_deadline_fails_closed_while_sdk_wire_is_still_inflight(self):
+        """The 4s caller timeout is NOT a 5s backend Book SLA.
+
+        A guarded PPI GET may remain in flight for 10s connect + 30s read.
+        The client must receive an UNKNOWN wire-count denial rather than a
+        fake zero, COMPLETE or fresh Book; only the existing owner may finish
+        the original GET after this caller's request has expired.
+        """
+        active_wire = threading.Event()
+        release_wire = threading.Event()
+        wire_finished = threading.Event()
+        invocations = []
+        responses = {}
+
+        def guarded_get(**request):
+            invocations.append(request["priority"])
+            active_wire.set()
+            try:
+                self.assertTrue(release_wire.wait(6))
+                return {"schema": "rc6.ppi.native-acquire-owner.v1",
+                        "state": "OK", "provider_calls_by_rpc": 1}
+            finally:
+                wire_finished.set()
+
+        server = ReadOnlyUnixFeedServer(
+            feed(), socket_path=Path("/not-started.sock"),
+            native_acquirer=guarded_get,
+            owner_status=lambda: {"owner_pid": os.getpid(),
+                                  "session_generation": "a" * 64})
+        server.start_native_priority_router()
+
+        def request(role, priority):
+            responses[role] = server.dispatch({
+                "op": "native_acquire", "consumer": role, "method": "book",
+                "ppi_five_key": list(FIVE), "priority": priority})
+
+        warm = threading.Thread(target=request, args=("scanner", "WARM"))
+        try:
+            warm.start()
+            self.assertTrue(active_wire.wait(1))
+            started = time.monotonic()
+            denied = server.dispatch({
+                "op": "native_acquire", "consumer": "exit_reader",
+                "method": "book", "ppi_five_key": list(FIVE),
+                "priority": "EXIT_CRITICAL"})
+            exit_rpc_seconds = time.monotonic() - started
+
+            self.assertEqual(denied["state"], "PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED")
+            self.assertEqual(denied["provider_calls_by_rpc"], "NO_VERIFICADO")
+            self.assertNotIn("receipt", denied)
+            self.assertNotIn("guard_wire_receipt", denied)
+            self.assertGreaterEqual(exit_rpc_seconds, 3.5)
+            self.assertLess(exit_rpc_seconds, 5.0)
+            self.assertTrue(server.native_router_status()["inflight"])
+            self.assertFalse(wire_finished.is_set())
+            self.assertEqual(invocations, ["WARM"])
+            release_wire.set()
+            warm.join(timeout=2)
+            self.assertFalse(warm.is_alive())
+            self.assertTrue(wire_finished.wait(1))
+            self.assertEqual(invocations, ["WARM"])
+        finally:
+            release_wire.set()
+            server.stop_native_priority_router()
+
     def test_one_event_fans_out_to_two_independent_consumers_without_network(self):
         bus = feed()
         event = bus.publish_native_market_event(
@@ -614,6 +679,93 @@ class PPISharedFeedTests(unittest.TestCase):
             with self.assertRaisesRegex(SharedFeedUnavailable, "EVENT_INVALID"):
                 client.pull("watch", after_sequence=0)
         self.assertEqual(bus.stats()["provider_calls_by_bus"], 0)
+
+    def test_client_ipc_timeout_is_end_to_end_not_renewed_per_socket_phase(self):
+        """Connect+send+recv cannot each spend a fresh five-second budget.
+
+        The caller has no broker fallback. A response arriving after the
+        absolute IPC deadline is not evidence, even if every individual
+        socket operation completed inside its own timeout.
+        """
+        clock = [100.0]
+
+        class PhasedSocket:
+            def __init__(self):
+                self.timeout = None
+                self.timeouts = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def settimeout(self, seconds):
+                self.timeout = seconds
+                self.timeouts.append(seconds)
+
+            def connect(self, _path):
+                clock[0] += 2.7
+
+            def sendall(self, _packet):
+                clock[0] += 1.5
+
+            def recv(self, _bytes):
+                # Only 0.8s of the whole five-second budget remains.
+                if self.timeout < 1.2:
+                    clock[0] += self.timeout
+                    raise socket.timeout("aggregate deadline reached")
+                clock[0] += 1.2
+                return b'{"state":"OK"}\n'
+
+        fake = PhasedSocket()
+        client = ReadOnlyUnixFeedClient(
+            socket_path=Path("/nonrunning.sock"), timeout_seconds=5)
+        with patch("rc6_ppi_shared_feed.socket.socket", return_value=fake), \
+             patch("rc6_ppi_shared_feed.time.monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(SharedFeedUnavailable,
+                                        "PPI_GATEWAY_UNAVAILABLE"):
+                client._request({"op": "owner_status"})
+        self.assertLessEqual(clock[0] - 100, 5)
+        self.assertGreaterEqual(len(fake.timeouts), 3)
+
+    def test_client_rejects_response_if_validation_finishes_after_deadline(self):
+        """No accepted owner evidence after bounded JSON decoding stalls."""
+        clock = [100.0]
+
+        class ImmediateSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def settimeout(self, _seconds):
+                pass
+
+            def connect(self, _path):
+                pass
+
+            def sendall(self, _packet):
+                pass
+
+            def recv(self, _size):
+                return b'{"state":"OK"}\n'
+
+        real_loads = json.loads
+
+        def delayed_decode(payload):
+            clock[0] += 5.1
+            return real_loads(payload)
+
+        client = ReadOnlyUnixFeedClient(
+            socket_path=Path("/nonrunning.sock"), timeout_seconds=5)
+        with patch("rc6_ppi_shared_feed.socket.socket", return_value=ImmediateSocket()), \
+             patch("rc6_ppi_shared_feed.time.monotonic", side_effect=lambda: clock[0]), \
+             patch("rc6_ppi_shared_feed.json.loads", side_effect=delayed_decode):
+            with self.assertRaisesRegex(SharedFeedUnavailable,
+                                        "PPI_GATEWAY_UNAVAILABLE"):
+                client._request({"op": "owner_status"})
 
     def test_queue_overflow_detectable_without_silently_reusing_stale_event(self):
         bus = feed(capacity=2)

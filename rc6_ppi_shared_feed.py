@@ -1268,23 +1268,39 @@ class ReadOnlyUnixFeedClient:
         self._pinned_owner = None
 
     def _request(self, packet: dict, *, require_owner_identity: bool = False) -> dict:
-        """One bounded AF_UNIX request, never broker/provider I/O."""
+        """One end-to-end bounded AF_UNIX request, never broker/provider I/O.
+
+        A socket timeout is otherwise renewed for connect/send/every recv.
+        That could keep a blocked EXIT reader waiting far beyond its nominal
+        five-second caller bound even while the one owner wire is still busy.
+        This deadline limits *IPC caller waiting only*, never the guarded
+        SDK HTTP GET still executing in the owner (up to 10s+30s today).
+        """
         request = _canonical_bytes(packet) + b"\n"
         if len(request) > 4096:
             raise ValueError("PPI_SHARED_CLIENT_REQUEST_UNBOUNDED")
         peer_pid = None
+        deadline = time.monotonic() + self.timeout_seconds
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                connection.settimeout(self.timeout_seconds)
+                def bounded_timeout():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("PPI_GATEWAY_IPC_CALLER_DEADLINE")
+                    connection.settimeout(remaining)
+
+                bounded_timeout()
                 connection.connect(str(self.socket_path))
                 if require_owner_identity:
                     if not hasattr(socket, "SO_PEERCRED"):
                         raise SharedFeedUnavailable("PPI_GATEWAY_PEER_IDENTITY_UNAVAILABLE")
                     peer_pid, _, _ = struct.unpack("3i", connection.getsockopt(
                         socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+                bounded_timeout()
                 connection.sendall(request)
                 response_bytes = bytearray()
                 while len(response_bytes) <= 131_072:
+                    bounded_timeout()
                     chunk = connection.recv(min(4096, 131_073 - len(response_bytes)))
                     if not chunk:
                         break
@@ -1293,6 +1309,10 @@ class ReadOnlyUnixFeedClient:
                         break
         except (OSError, TimeoutError) as exc:
             raise SharedFeedUnavailable("PPI_GATEWAY_UNAVAILABLE") from exc
+        # A response completed just after the deadline is still not valid
+        # evidence. No local retry/login occurs; owner GET may remain active.
+        if time.monotonic() > deadline:
+            raise SharedFeedUnavailable("PPI_GATEWAY_UNAVAILABLE")
         if (len(response_bytes) > 131_072 or not response_bytes.endswith(b"\n")
             or b"\n" in response_bytes[:-1]):
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID")
@@ -1300,6 +1320,8 @@ class ReadOnlyUnixFeedClient:
             result = json.loads(response_bytes)
         except (ValueError, UnicodeError) as exc:
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID") from exc
+        if time.monotonic() > deadline:
+            raise SharedFeedUnavailable("PPI_GATEWAY_UNAVAILABLE")
         if not isinstance(result, dict):
             raise SharedFeedUnavailable("PPI_GATEWAY_PROTOCOL_INVALID")
         if require_owner_identity and result.get("owner_pid") != peer_pid:
