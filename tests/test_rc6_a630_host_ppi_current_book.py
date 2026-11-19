@@ -1533,7 +1533,10 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
     def enqueue(self, **kwargs):
         arguments = {"db": self.db, "now": self.now, "poll_seconds": 0}
         arguments.update(kwargs)
-        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+        with patch.object(engine, "_global_ppi_single_session_custody_verified",
+                          return_value=True), \
+             patch.dict(os.environ, self.environment), \
+             patch.dict(sys.modules, {"_version": self.version}):
             return engine.container_enqueue("2026-11-18", "BONOS", **arguments)
 
     def open_enqueue(self, **kwargs):
@@ -1543,8 +1546,33 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
                        ((when - timedelta(seconds=10)).isoformat(),))
         arguments = {"db": self.db, "now": when, "poll_seconds": 0}
         arguments.update(kwargs)
-        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+        with patch.object(engine, "_global_ppi_single_session_custody_verified",
+                          return_value=True), \
+             patch.dict(os.environ, self.environment), \
+             patch.dict(sys.modules, {"_version": self.version}):
             return engine.container_enqueue_open_batch("2026-11-19", "ALL", **arguments)
+
+    def test_global_ppi_single_session_custody_blocks_both_db_queue_entrypoints(self):
+        # No physical global login-actor receipt yet. Existing scanner auth,
+        # PAPER0, old rootless manifest and any supplied environment flag are
+        # insufficient. Unit tests for downstream SQL use explicit mocking;
+        # production CLI has no externally supplied bypass.
+        with patch.dict(os.environ, {**self.environment,
+                                      "RC6_PPI_SINGLE_SESSION_GLOBAL_ATTESTED": "1"}), \
+             patch.dict(sys.modules, {"_version": self.version}):
+            open_result = engine.container_enqueue_open_batch("2026-11-19", "ALL",
+                db=self.db, now=datetime(2026, 11, 19, 13, 45, tzinfo=timezone.utc),
+                poll_seconds=0)
+            postclose_result = engine.container_enqueue("2026-11-18", "BONOS",
+                db=self.db, now=self.now, poll_seconds=0)
+        for result in (open_result, postclose_result):
+            self.assertEqual((result["state"], result["reason"]),
+                             ("HOLD", "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"))
+            self.assertEqual(result["db_rows_inserted"], 0)
+            self.assertFalse(result["paper_ready"])
+            self.assertFalse(result["order_authority"])
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM observer_commands").fetchone()[0], 0)
 
     def open_summary(self):
         families = ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
@@ -1859,7 +1887,10 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
                     "paper_ready": False, "order_authority": False})
                 c.execute("UPDATE observer_commands SET status='EVIDENCE',result=? WHERE id=?",
                           (result, rowid))
-        with patch.dict(os.environ, self.environment), patch.dict(sys.modules, {"_version": self.version}):
+        with patch.object(engine, "_global_ppi_single_session_custody_verified",
+                          return_value=True), \
+             patch.dict(os.environ, self.environment), \
+             patch.dict(sys.modules, {"_version": self.version}):
             receipt = engine.container_enqueue("2026-11-18", "BONOS",
                 db=self.db, now=self.now, poll_seconds=2,
                 poll_interval=0.001, sleep=observer_completes)

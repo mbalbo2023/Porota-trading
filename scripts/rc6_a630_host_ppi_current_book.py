@@ -76,6 +76,7 @@ COMMAND_HOLD_REASONS = frozenset({
     "OBSERVER_COMMAND_SCANNER_HOLD", "OBSERVER_COMMAND_RECEIPT_INVALID",
     "PPI_OPEN_ALREADY_REQUESTED_NO_RETRY", "OBSERVER_COMMAND_OPEN_RESULT_INVALID",
     "OBSERVER_COMMAND_OPEN_WIRE_UNVERIFIED", "OBSERVER_COMMAND_DB_CUSTODY_DRIFT",
+    "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED",
 })
 # Historical A630 v1 receipts retain this field name for compatibility; the
 # identity is the candidate embedded into the exact already-deployed image.
@@ -1571,6 +1572,19 @@ def _command_session_gate(day, family, at):
         raise ValueError("OBSERVER_COMMAND_SESSION_HOLD")
 
 
+def _global_ppi_single_session_custody_verified():
+    """Never infer *global* PPI login uniqueness from scanner authentication.
+
+    The runtime has independent scanner/exit-reader/scalping login_once actors.
+    No physically verified, authoritative cross-actor session receipt exists.
+    An environment variable, an Actions flag or a scanner heartbeat cannot
+    prove it. Keep BOTH command entrypoints closed until a separately reviewed
+    fix-forward implements evidence-backed global custody (and scanner prewire
+    independently checks that receipt). This function has no runtime bypass.
+    """
+    return False
+
+
 def _command_db_gate(conn, at):
     if not _paper_db_identity(conn):
         raise ValueError("OBSERVER_COMMAND_DB_IDENTITY_HOLD")
@@ -1628,6 +1642,8 @@ def container_enqueue(day, family, *, db=CONTAINER_DB, now=None,
     try:
         at = datetime.now(timezone.utc) if now is None else now
         _command_session_gate(day, family, at)
+        if not _global_ppi_single_session_custody_verified():
+            raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
         db = Path(db)
         _command_runtime_gate(db)
         if (not db.is_absolute() or db.is_symlink() or not db.is_file() or
@@ -1650,6 +1666,8 @@ def container_enqueue(day, family, *, db=CONTAINER_DB, now=None,
                     return _command_receipt(day, family,
                         reason="OBSERVER_COMMAND_ALREADY_REQUESTED",
                         command_id=int(previous[0]))
+                if not _global_ppi_single_session_custody_verified():
+                    raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
                 _command_session_gate(day, family, datetime.now(timezone.utc) if now is None else at)
                 row = conn.execute("INSERT INTO observer_commands(created_at,command,status) "
                                    "VALUES(?,?,'QUEUED')", (at.isoformat(), command))
@@ -2001,6 +2019,8 @@ def container_enqueue_open_batch(day, family, *, db=CONTAINER_DB, now=None,
     try:
         at = datetime.now(timezone.utc) if now is None else now
         _open_session_gate(day, family, at)
+        if not _global_ppi_single_session_custody_verified():
+            raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
         db = Path(db)
         _command_runtime_gate(db)
         if (not db.is_absolute() or db.is_symlink() or not db.is_file()
@@ -2025,6 +2045,8 @@ def container_enqueue_open_batch(day, family, *, db=CONTAINER_DB, now=None,
                     conn.execute("ROLLBACK")
                     return _open_receipt(day, reason="PPI_OPEN_ALREADY_REQUESTED_NO_RETRY",
                                          command_id=int(previous[0]))
+                if not _global_ppi_single_session_custody_verified():
+                    raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
                 event_floor = _open_wire_event_floor(conn)
                 _open_session_gate(day, family, datetime.now(timezone.utc) if now is None else at)
                 row = conn.execute("INSERT INTO observer_commands(created_at,command,status) "
