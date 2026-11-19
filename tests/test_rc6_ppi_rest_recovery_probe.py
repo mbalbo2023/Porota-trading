@@ -154,6 +154,13 @@ def test_current_http200_receipt_survives_subsequent_book_failure(catalog_store)
 
 ART_POSTCLOSE = datetime(2026, 11, 18, 21, 45, tzinfo=ZoneInfo(
     "America/Argentina/Buenos_Aires"))
+ART_OPEN = datetime(2026, 11, 19, 11, 30, tzinfo=ZoneInfo(
+    "America/Argentina/Buenos_Aires"))
+OPEN_BATCH = "PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:ALL"
+TEN_FAMILIES = (
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+)
 
 
 def _queued_command(store, name, *, created_at=None):
@@ -353,3 +360,185 @@ def test_postclose_admin_cancelled_caucion_requires_validated_receipt(
                                now=ART_POSTCLOSE)
     assert tuple(_command_receipt(catalog_store, command_id)) == (
         "HOLD", "PPI_POSTCLOSE_CAUCION_RECEIPT_UNVERIFIED")
+
+
+def _ready_open_scanner(catalog_store, monkeypatch):
+    ensure_initialized(catalog_store)
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    with catalog_store.connect() as c:
+        c.execute("UPDATE observer_state SET ppi_auth='OK',real_orders_sent=0")
+
+    class ExistingScanner:
+        budget_enabled = True
+        metrics = {"authenticated": True, "login_calls": 1}
+
+        def login_once(self):
+            raise AssertionError("SECOND_PPI_LOGIN_FORBIDDEN")
+
+    monkeypatch.setattr(observer, "ProductionMarketReader", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("SECOND_PPI_ACTOR_FORBIDDEN")))
+    return ExistingScanner()
+
+
+def test_open_all_ten_families_same_authenticated_scanner_reader_no_auto_ready(
+        catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    observed = []
+
+    def bounded_probe(existing_reader, store, *, family, command_id, pre_wire):
+        assert existing_reader is reader and store is catalog_store
+        assert command_id > 0 and family in TEN_FAMILIES
+        pre_wire()
+        observed.append(family)
+        if family == "BONOS":
+            return {"status": "FRESH_OBSERVED", "identity": ["AL30", "BONOS", "BYMA", "ARS", "INMEDIATA"],
+                    "paper_ready": False}
+        return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False}
+
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", bounded_probe)
+    assert observer._run_ppi_open_command(catalog_store, reader, command_id,
+                                          OPEN_BATCH, now=ART_OPEN) is reader
+    assert tuple(observed) == TEN_FAMILIES
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "EVIDENCE"
+    assert len(raw) <= 2000 and report["schema"] == "RC6_PPI_OPEN_TEN_FAMILY_V1"
+    assert report["day"] == "2026-11-19"
+    assert report["readiness_reason"] == "FULL_READINESS_NOT_EVIDENCED"
+    assert report["paper_ready"] is False and report["order_authority"] is False
+    assert set(report["statuses"]) == set(TEN_FAMILIES)
+    assert report["statuses"]["BONOS"] == "FRESH_OBSERVED"
+    assert report["coverage"]["BONOS"] == {
+        "enumerated_exact": 1, "attempted": 1, "native_pair_qa_pass": 1,
+        "ready": 0, "hold": 1, "unattempted": 0}
+    assert report["coverage"]["ACCIONES"]["ready"] == 0
+    assert report["coverage"]["ACCIONES"]["attempted"] == 0
+    assert reader.metrics["login_calls"] == 1
+
+
+@pytest.mark.parametrize("reason", [
+    "NO_READER", "UNAUTHENTICATED_READER", "NO_BUDGET",
+    "RUNTIME_FLAG", "REAL_ORDER_SENT", "AUTH_STATE", "OUTSIDE_OPEN",
+])
+def test_open_batch_fail_closed_without_any_provider_wire(
+        catalog_store, monkeypatch, reason):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    now = ART_OPEN
+    if reason == "NO_READER":
+        reader = None
+    elif reason == "UNAUTHENTICATED_READER":
+        reader.metrics = {"authenticated": False, "login_calls": 0}
+    elif reason == "NO_BUDGET":
+        reader.budget_enabled = False
+    elif reason == "RUNTIME_FLAG":
+        monkeypatch.delenv("POROTA_PPI_DIRECT_REST_RECOVERY")
+    elif reason == "REAL_ORDER_SENT":
+        with catalog_store.connect() as c:
+            c.execute("UPDATE observer_state SET real_orders_sent=1")
+    elif reason == "AUTH_STATE":
+        with catalog_store.connect() as c:
+            c.execute("UPDATE observer_state SET ppi_auth='ERROR'")
+    elif reason == "OUTSIDE_OPEN":
+        now = ART_OPEN.replace(hour=17, minute=1)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("WIRE_ON_FAILED_GATE_FORBIDDEN")))
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    assert observer._run_ppi_open_command(catalog_store, reader, command_id,
+                                          OPEN_BATCH, now=now) is reader
+    assert _command_receipt(catalog_store, command_id)[0] == "HOLD"
+
+
+@pytest.mark.parametrize("name,clock", [
+    ("PPI_DIRECT_REST_OPEN_ONCE:2026-11-18:ALL", ART_OPEN),
+    ("PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:BONOS", ART_OPEN),
+    ("PPI_DIRECT_REST_OPEN_ONCE:2026-11-19:UNKNOWN", ART_OPEN),
+    (OPEN_BATCH, ART_OPEN + timedelta(minutes=11)),
+])
+def test_open_batch_expired_or_wrong_format_never_probes(
+        catalog_store, monkeypatch, name, clock):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, name, created_at=ART_OPEN)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("UNAUTHORIZED_GET")))
+    observer._run_ppi_open_command(catalog_store, reader, command_id, name, now=clock)
+    assert _command_receipt(catalog_store, command_id)[0] == "HOLD"
+
+
+def test_open_batch_no_replay_after_first_attempt(catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    earlier = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    later = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(AssertionError("DUPLICATE_GET")))
+    observer._run_ppi_open_command(catalog_store, reader, later, OPEN_BATCH, now=ART_OPEN)
+    assert _command_receipt(catalog_store, earlier)[0] == "RUNNING"
+    assert _command_receipt(catalog_store, later)[0] == "HOLD"
+
+
+def test_open_batch_aborts_remaining_families_after_provider_hold(
+        catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    touched = []
+
+    def held_probe(existing_reader, store, *, family, command_id, pre_wire):
+        pre_wire()
+        touched.append(family)
+        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False}
+
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", held_probe)
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH, now=ART_OPEN)
+    assert touched == ["ACCIONES"]
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "HOLD"
+    assert report["statuses"]["ACCIONES"] == "PROVIDER_OR_CONTRACT_HOLD"
+    assert report["statuses"]["FCI"] == "NOT_ATTEMPTED_ABORTED"
+    assert report["coverage"]["FCI"]["attempted"] == 0
+
+
+def test_open_batch_rechecks_paper_zero_before_book_preserving_current_receipt(
+        catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    stamp = ART_OPEN.astimezone(timezone.utc).isoformat()
+    endpoints = []
+
+    def guarded_capture(endpoint, five_key, *, priority):
+        endpoints.append(endpoint)
+        if endpoint != "current":
+            raise AssertionError("BOOK_AFTER_PAPER_STATE_CHANGE_FORBIDDEN")
+        with catalog_store.connect() as c:
+            c.execute("UPDATE observer_state SET real_orders_sent=1")
+        return {"native_payload": {"date": stamp, "price": 100},
+                "guard_wire_receipt": {
+                    "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
+                    "http_status_code": 200, "http_method": "GET",
+                    "adapter_send_invoked": True, "adapter_response_completed": True,
+                    "request_identity_3key": [five_key[0], five_key[1], five_key[4]],
+                    "claimed_five_key": list(five_key), "received_at_utc": stamp,
+                    "raw_body_sha256": "a" * 64}}
+
+    reader.capture_guarded_native = guarded_capture
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH, now=ART_OPEN)
+    assert endpoints == ["current"]
+    assert _command_receipt(catalog_store, command_id)[0] == "HOLD"
+    with catalog_store.connect() as c:
+        witness = c.execute("SELECT detail FROM paper_events WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'").fetchall()
+        snapshots = c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
+    assert len(witness) == 1 and "endpoint=current" in witness[0][0]
+    assert snapshots == 0
+
+
+def test_open_command_router_never_constructs_reader(catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    observed = []
+
+    def fake_open(store, original_reader, command_id, name):
+        observed.append((store is catalog_store, original_reader is reader, name))
+        return original_reader
+
+    monkeypatch.setattr(observer, "_run_ppi_open_command", fake_open)
+    assert observer._run_command(catalog_store, reader, (123, OPEN_BATCH)) is reader
+    assert observed == [(True, True, OPEN_BATCH)]

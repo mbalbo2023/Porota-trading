@@ -1299,7 +1299,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
         return {"status": "FRESH_OBSERVED", "identity": list(key),
                 "paper_ready": False}
     except ValueError as error:
-        if str(error).startswith("PPI_POSTCLOSE_"):
+        if str(error).startswith(("PPI_POSTCLOSE_", "PPI_OPEN_")):
             store.event("PPI_DIRECT_REST_PROBE_HOLD", str(error))
             return {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
                     "reason": str(error)}
@@ -1313,6 +1313,190 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
 
 
 _PPI_POSTCLOSE_COMMAND_PREFIX = "PPI_DIRECT_REST_POSTCLOSE_ONCE:"
+_PPI_OPEN_COMMAND_PREFIX = "PPI_DIRECT_REST_OPEN_ONCE:"
+_PPI_OPEN_FAMILIES = (
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+)
+
+
+def _ppi_open_catalog_coverage(store):
+    """Count only unambiguous PPI-primary probe identities, not READY rows.
+
+    This is a bounded aggregate over the existing catalog, not a provider
+    search or an attempt to enumerate the full 10k-instrument market by GET.
+    A missing/corrupt catalog is UNKNOWN rather than zero coverage.
+    """
+    try:
+        with store.connect() as c:
+            rows = c.execute("""WITH unique_identity AS (
+                SELECT ticker,instrument_type,settlement
+                  FROM financial_instrument_catalog
+                 GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1
+            )
+            SELECT f.instrument_type, COUNT(*)
+              FROM financial_instrument_catalog f JOIN unique_identity u
+                ON f.ticker=u.ticker AND f.instrument_type=u.instrument_type
+               AND f.settlement=u.settlement
+             WHERE f.status IN ('AVAILABLE','STALE')
+               AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+               AND f.market NOT IN ('','UNKNOWN')
+               AND f.currency NOT IN ('','UNKNOWN')
+               AND json_valid(f.metadata_json)
+               AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
+             GROUP BY f.instrument_type""").fetchall()
+        counts = dict.fromkeys(_PPI_OPEN_FAMILIES, 0)
+        for family, count in rows:
+            if family in counts:
+                counts[family] = int(count)
+        return counts
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return None
+
+
+def _ppi_open_evidence_gate(store, requested_day, *, now=None):
+    """No OPEN diagnostic may compete with EXIT or leave PAPER/0 custody."""
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    minute = local.hour * 60 + local.minute
+    if (requested_day != local.date().isoformat() or
+            not _business_day(local.date()) or _market_phase(local) != "OPEN" or
+            not (10 * 60 + 30 <= minute < 17 * 60)):
+        raise ValueError("PPI_OPEN_COMMAND_EXPIRED_OR_SESSION_INVALID")
+    if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
+        raise ValueError("PPI_OPEN_RUNTIME_FLAG_NOT_ENABLED")
+    with store.connect() as c:
+        state = c.execute("""SELECT mode,real_orders_sent,ppi_auth
+            FROM observer_state WHERE id=1""").fetchone()
+    if (not state or tuple(state) != ("PRODUCTION_PAPER", 0, "OK") or
+            type(state[1]) is not int):
+        raise ValueError("PPI_OPEN_PAPER_ZERO_AUTH_NOT_ATTESTED")
+    opened, invalid = store.exit_positions()
+    if opened or invalid or store.active_future_positions():
+        raise ValueError("PPI_OPEN_EXIT_EXPOSURE_PRESENT")
+    with store.connect() as c:
+        fci_open = c.execute("""SELECT 1 FROM paper_family_lifecycle
+            WHERE family='FCI' AND state!='REDEEMED' LIMIT 1""").fetchone()
+        caucion_open = c.execute("""SELECT 1 FROM paper_cauciones
+            WHERE status NOT IN ('MATURED','CANCELLED_ADMIN')
+               OR (status='MATURED' AND settled_at IS NULL)
+               OR (status='CANCELLED_ADMIN' AND settled_at IS NOT NULL)
+            LIMIT 1""").fetchone()
+    if fci_open or caucion_open:
+        raise ValueError("PPI_OPEN_EXIT_EXPOSURE_PRESENT")
+    try:
+        from bt_caucion_paper import CaucionBook
+        CaucionBook(store).positions()
+    except (ValueError, TypeError, sqlite3.Error, OSError):
+        raise ValueError("PPI_OPEN_CAUCION_RECEIPT_UNVERIFIED") from None
+
+
+def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
+    """One typed ten-family OPEN witness in the already authenticated scanner.
+
+    At most one Current+Book pair per family; neither native HTTP200 nor a
+    fresh quote grants simulation readiness, which requires the independent
+    full PIT/Book1/decision/Book2/costs/EXIT admission evidence.
+    """
+    try:
+        parts = name.split(":")
+        if (len(parts) != 3 or parts[0] != _PPI_OPEN_COMMAND_PREFIX[:-1] or
+                len(parts[1]) != 10 or
+                date.fromisoformat(parts[1]).isoformat() != parts[1] or
+                parts[2] != "ALL"):
+            raise ValueError("PPI_OPEN_COMMAND_FORMAT_INVALID")
+        _, requested_day, _ = parts
+        with store.connect() as c:
+            prior = c.execute("""SELECT 1 FROM observer_commands
+                WHERE id<? AND command=? LIMIT 1""", (command_id, name)).fetchone()
+            row = c.execute("""SELECT created_at,status FROM observer_commands
+                WHERE id=? AND command=?""", (command_id, name)).fetchone()
+        if prior:
+            raise ValueError("PPI_OPEN_ALREADY_REQUESTED_NO_RETRY")
+        if not row or row[1] != "RUNNING":
+            raise ValueError("PPI_OPEN_COMMAND_CUSTODY_INVALID")
+        issued_at = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+        local_now = (now or datetime.now(TZ)).astimezone(TZ)
+        if issued_at.tzinfo is None or issued_at.utcoffset() is None:
+            raise ValueError("PPI_OPEN_COMMAND_ISSUE_CLOCK_UNVERIFIED")
+        if not -5 <= (local_now - issued_at).total_seconds() <= 600:
+            raise ValueError("PPI_OPEN_COMMAND_ISSUE_TTL_EXPIRED")
+        if reader is None:
+            raise ValueError("PPI_OPEN_EXISTING_SCANNER_SESSION_UNAVAILABLE")
+        metrics = getattr(reader, "metrics", None)
+        if not isinstance(metrics, dict) or metrics.get("authenticated") is not True:
+            raise ValueError("PPI_OPEN_EXISTING_SCANNER_AUTH_UNVERIFIED")
+        if getattr(reader, "budget_enabled", False) is not True:
+            raise ValueError("PPI_OPEN_SHARED_READ_BUDGET_UNVERIFIED")
+
+        def pre_wire():
+            wire_now = (now or datetime.now(TZ)).astimezone(TZ)
+            if not -5 <= (wire_now - issued_at).total_seconds() <= 600:
+                raise ValueError("PPI_OPEN_COMMAND_ISSUE_TTL_EXPIRED")
+            current_metrics = getattr(reader, "metrics", None)
+            if (not isinstance(current_metrics, dict) or
+                    current_metrics.get("authenticated") is not True or
+                    getattr(reader, "budget_enabled", False) is not True):
+                raise ValueError("PPI_OPEN_SCANNER_SESSION_OR_BUDGET_LOST")
+            _ppi_open_evidence_gate(store, requested_day, now=now)
+
+        pre_wire()
+        catalog_counts = _ppi_open_catalog_coverage(store)
+        if catalog_counts is None:
+            raise ValueError("PPI_OPEN_CATALOG_UNVERIFIED")
+        statuses = dict.fromkeys(_PPI_OPEN_FAMILIES, "NOT_ATTEMPTED_ABORTED")
+        coverage = {}
+        for family in _PPI_OPEN_FAMILIES:
+            n = catalog_counts[family]
+            coverage[family] = {"enumerated_exact": n, "attempted": 0,
+                                "native_pair_qa_pass": 0, "ready": 0,
+                                "hold": n, "unattempted": n}
+        abort = False
+        witnessed = False
+        for family in _PPI_OPEN_FAMILIES:
+            try:
+                pre_wire()
+            except ValueError:
+                statuses[family] = "PRE_WIRE_GUARD_HOLD"
+                abort = True
+                break
+            result = _ppi_direct_rest_observe_only(
+                reader, store, family=family, command_id=command_id,
+                pre_wire=pre_wire)
+            status = result.get("status")
+            if result.get("paper_ready") is not False:
+                raise ValueError("PPI_OPEN_UNEXPECTED_READINESS")
+            if status not in {"FRESH_OBSERVED", "STALE_OR_INVALID",
+                              "CATALOG_IDENTITY_UNAVAILABLE",
+                              "PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
+                raise ValueError("PPI_OPEN_UNEXPECTED_PROBE_STATUS")
+            statuses[family] = status
+            attempted = int(catalog_counts[family] > 0)
+            coverage[family]["attempted"] = attempted
+            coverage[family]["unattempted"] -= attempted
+            if status == "FRESH_OBSERVED":
+                coverage[family]["native_pair_qa_pass"] = 1
+            if status in {"FRESH_OBSERVED", "STALE_OR_INVALID"}:
+                witnessed = True
+            if status in {"PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
+                abort = True
+                break
+        report = {"schema": "RC6_PPI_OPEN_TEN_FAMILY_V1",
+                  "day": requested_day, "paper_ready": False,
+                  "order_authority": False,
+                  "readiness_reason": "FULL_READINESS_NOT_EVIDENCED",
+                  "unattempted_reason": "BOUNDED_SAMPLE_OR_STOP",
+                  "statuses": statuses, "coverage": coverage}
+        detail = json.dumps(report, separators=(",", ":"), sort_keys=True)
+        if len(detail) > 2000:
+            raise ValueError("PPI_OPEN_COVERAGE_RECEIPT_TOO_LARGE")
+        _finish_command(store, command_id,
+                        "HOLD" if abort or not witnessed else "EVIDENCE", detail)
+    except (ValueError, TypeError, sqlite3.Error, RuntimeError, OSError) as error:
+        reason = (str(error) if type(error) is ValueError and
+                  str(error).startswith("PPI_OPEN_") else
+                  "PPI_OPEN_GUARD_" + type(error).__name__.upper())
+        _finish_command(store, command_id, "HOLD", reason)
+    return reader
 
 
 def _ppi_postclose_evidence_gate(store, requested_day, *, now=None):
@@ -2419,6 +2603,8 @@ def _background_ingest(reader, store, *, force=False):
 
 def _run_command(store, reader, command, gemini_gate=None, login_interlock=None):
     command_id, name = command
+    if name.startswith(_PPI_OPEN_COMMAND_PREFIX):
+        return _run_ppi_open_command(store, reader, command_id, name)
     if name.startswith(_PPI_POSTCLOSE_COMMAND_PREFIX):
         return _run_ppi_postclose_command(store, reader, command_id, name)
     if name == "GEMINI_PREFLIGHT":
