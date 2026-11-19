@@ -382,11 +382,32 @@ class A669GuardTests(unittest.TestCase):
         self.assertTrue(guard.pinned_engine_ok(source),
                         "A670 MUST re-pin reviewed changed A630 source before SSH")
 
+    def test_p0_issuer_release_pins_match_deploy_v2_physical_receipt(self):
+        from scripts.rc6_a630_host_ppi_current_book import (
+            ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID)
+        receipt = {
+            "RC6_P0_EXPECTED_CANDIDATE_SHA": "b3cbe57a5b4b82016a65a0e253b251abbb84a04c",
+            "RC6_P0_EXPECTED_TREE_SHA": "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0",
+            "RC6_P0_EXPECTED_IMAGE_ID": "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d",
+            "RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256": "991eebea372810b7d6ea0fbb9c9295c7504d187d840e30af4c5e70f99845e792",
+        }
+        self.assertEqual(ROOTLESS_CANDIDATE_SHA, receipt["RC6_P0_EXPECTED_CANDIDATE_SHA"])
+        self.assertEqual(ROOTLESS_CANDIDATE_TREE, receipt["RC6_P0_EXPECTED_TREE_SHA"])
+        self.assertEqual(ROOTLESS_IMAGE_ID, receipt["RC6_P0_EXPECTED_IMAGE_ID"])
+        workflow = YAML.read_text()
+        for name, value in receipt.items():
+            self.assertIn(f"{name}: {value}", workflow)
+        with patch.dict(os.environ, receipt):
+            self.assertTrue(guard._issuer_pin_ready())
+        with patch.dict(os.environ, {**receipt,
+                "RC6_P0_EXPECTED_CANDIDATE_SHA": "96c626dc09a045f75f5e743c030e8f8228783a54"}):
+            self.assertFalse(guard._issuer_pin_ready())
+
     def test_rootless_capture_uses_exact_candidate_tree_image_and_no_rootful_docker(self):
         code = YAML.read_text()
-        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: 96c626dc09a045f75f5e743c030e8f8228783a54", code)
-        self.assertIn("RC6_EXPECTED_TREE_SHA: b82e85e8388463d35b6946adcaf3a562c5ad5dfb", code)
-        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563", code)
+        self.assertIn("RC6_EXPECTED_CANDIDATE_SHA: b3cbe57a5b4b82016a65a0e253b251abbb84a04c", code)
+        self.assertIn("RC6_EXPECTED_TREE_SHA: 7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0", code)
+        self.assertIn("RC6_EXPECTED_IMAGE_ID: sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d", code)
         self.assertIn("rootless-capture", code)
         self.assertNotIn("sudo -n docker", code)
         self.assertNotIn("porota_production_observer", code)

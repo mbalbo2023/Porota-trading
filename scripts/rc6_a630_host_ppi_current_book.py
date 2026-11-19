@@ -41,9 +41,9 @@ PER_GET_CLOCK_FIELDS = frozenset({
 })
 # These are exact deployed *candidate* coordinates, NOT the merged product
 # branch SHA and NOT the separately audited BYMA calendar revision.
-ROOTLESS_CANDIDATE_SHA = "96c626dc09a045f75f5e743c030e8f8228783a54"
-ROOTLESS_CANDIDATE_TREE = "b82e85e8388463d35b6946adcaf3a562c5ad5dfb"
-ROOTLESS_IMAGE_ID = "sha256:2f0db4052d4000f7647428591eece1f26168ed173363daa4089f1762032b9563"
+ROOTLESS_CANDIDATE_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
+ROOTLESS_CANDIDATE_TREE = "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0"
+ROOTLESS_IMAGE_ID = "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d"
 ROOTLESS_UID = 1000
 ROOTLESS_SCHEMA = "rc6.a630.rootless.capture.v1"
 COMMAND_CHILD_SCHEMA = "rc6.p0.observer-command.child.v1"

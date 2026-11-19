@@ -31,7 +31,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "f914cdb809be409ed5c0d181548b955eae7765b9"
+ENGINE_GIT_BLOB = "d52ea020e85472d9c0134e7431ff2d2a647b6bdd"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -380,7 +380,7 @@ def _append_observer_command_env(path: Path, command: str, now_utc: datetime) ->
 
 
 def _issuer_pin_ready():
-    """Future P0 artifact coordinates are intentionally UNPINNED until review."""
+    """Require the physical Deploy V2 release pins before any host attempt."""
     from scripts.rc6_a630_host_ppi_current_book import (
         ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID)
     candidate = os.environ.get("RC6_P0_EXPECTED_CANDIDATE_SHA", "")
