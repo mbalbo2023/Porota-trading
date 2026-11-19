@@ -245,6 +245,62 @@ class HistoryWalTransportTests(unittest.TestCase):
         self.assertEqual(hold.exception.code, "BUNDLE_MANIFEST_INVALID")
         self.assertEqual(list(private_root.iterdir()), [])
 
+    def test_runner_rejects_nonempty_wal_that_sqlite_would_ignore(self):
+        # The base already has row1; row2 is a committed WAL-only record.
+        self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        self.connection.execute(
+            "INSERT INTO history_versions_v2 VALUES("
+            "2,'PRIVATE_SYMBOL_102','BONOS','BYMA','A-24HS',"
+            "'2026-11-06','PPI','{}')")
+        self.connection.commit()
+        output, _ = self.capture()
+        output.seek(0)
+        with tarfile.open(fileobj=output, mode="r:") as source_tar:
+            original_parts = [
+                (member.name, source_tar.extractfile(member).read())
+                for member in source_tar
+            ]
+
+        cases = {
+            "zeroed_header": lambda wal: b"\0" * len(wal),
+            "truncated_frame": lambda wal: wal[:-1],
+            "corrupt_frame_checksum": lambda wal: (
+                wal[:80] + bytes([wal[80] ^ 0x01]) + wal[81:]
+            ),
+        }
+        for case, transform in cases.items():
+            with self.subTest(case=case):
+                altered_wal = transform(dict(original_parts)[a511.FILES["-wal"]])
+                self.assertGreater(len(altered_wal), 0)
+                forged = io.BytesIO()
+                with tarfile.open(fileobj=forged, mode="w",
+                                  format=tarfile.PAX_FORMAT) as archive:
+                    for name, original in original_parts:
+                        data = original
+                        if name == a511.FILES["-wal"]:
+                            data = altered_wal
+                        elif name == a511.MANIFEST:
+                            manifest = json.loads(original)
+                            for part in manifest["source_parts"]:
+                                if part["name"] == a511.FILES["-wal"]:
+                                    part["size"] = len(altered_wal)
+                                    part["sha256"] = hashlib.sha256(
+                                        altered_wal).hexdigest()
+                            data = json.dumps(manifest, sort_keys=True).encode()
+                        member = tarfile.TarInfo(name)
+                        member.mode = 0o600
+                        member.mtime = 0
+                        member.size = len(data)
+                        archive.addfile(member, io.BytesIO(data))
+                forged.seek(0)
+                private_root = self.root / "runner-only"
+                private_root.mkdir(mode=0o700, exist_ok=True)
+                with self.assertRaises(a511.HistoryHold) as hold:
+                    a511.verify_private_bundle(forged, private_root,
+                                               time_budget_seconds=20)
+                self.assertEqual(hold.exception.code, "BUNDLE_WAL_INVALID")
+                self.assertEqual(list(private_root.iterdir()), [])
+
     def test_runner_rejects_nonzero_trailing_payload_after_tar_end(self):
         output, _ = self.capture()
         forged = io.BytesIO(output.getvalue() + b"PRIVATE_TRAILING_PAYLOAD")
@@ -299,6 +355,26 @@ class HistoryWalTransportTests(unittest.TestCase):
                     if member.name == a511.FILES[""]:
                         member.uname = "PRIVATE_HEADER_SENTINEL"
                     archive.addfile(member, io.BytesIO(payload))
+        forged.seek(0)
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(forged, private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_canonical_members_in_wrong_tar_order(self):
+        output, _ = self.capture()
+        output.seek(0)
+        forged = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="r:") as original:
+            parts = [(member, original.extractfile(member).read())
+                     for member in original]
+        with tarfile.open(fileobj=forged, mode="w",
+                          format=tarfile.PAX_FORMAT) as archive:
+            for member, payload in reversed(parts):
+                archive.addfile(member, io.BytesIO(payload))
         forged.seek(0)
         private_root = self.root / "runner-only"
         private_root.mkdir(mode=0o700)
