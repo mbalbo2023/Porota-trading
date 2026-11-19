@@ -13,6 +13,7 @@ status/hashes, never provider payload.
 from __future__ import annotations
 
 import base64
+import io
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 import fcntl
@@ -32,6 +33,7 @@ import time
 from urllib.parse import parse_qsl, quote, urlsplit
 import uuid
 from zoneinfo import ZoneInfo
+import zipfile
 
 SCHEMA = "rc6.a630.ppi.current-book.sample.v1"
 # Additive, success-only evidence fields. Historical v1 receipts remain valid;
@@ -90,6 +92,171 @@ MAX_EXIT_ROUND_AGE_MS = 300_000
 SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 CID64 = re.compile(r"[a-f0-9]{64}\Z")
 ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
+
+
+def _promote_json(raw):
+    def unique(pairs):
+        result = {}
+        for name, value in pairs:
+            if name in result:
+                raise ValueError("PROMOTE_ARTIFACT_JSON_DUPLICATE")
+            result[name] = value
+        return result
+
+    def nonfinite(_value):
+        raise ValueError("PROMOTE_ARTIFACT_JSON_NONFINITE")
+
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=unique,
+                      parse_constant=nonfinite)
+
+
+def verified_promote_v2_runtime_artifact(run, artifact, archive_bytes):
+    """Pin immutable GitHub Actions Promote V2 bytes, never an input/HEAD flag.
+
+    This only establishes the *previously attested release claim*. It does not
+    certify current rootless CIDs, gateway session or any PPI instrument.
+    """
+    hold = "PROMOTE_ARTIFACT_CUSTODY_HOLD"
+    try:
+        if (type(run) is not dict or type(artifact) is not dict or
+                type(run.get("id")) is not int or run["id"] <= 0 or
+                type(run.get("run_attempt")) is not int or run["run_attempt"] <= 0 or
+                run.get("status") != "completed" or run.get("conclusion") != "success" or
+                run.get("event") != "workflow_dispatch" or
+                run.get("path") != ".github/workflows/porota-deploy-v2-promote.yml" or
+                run.get("head_branch") != "deploy/rc6-pr69-isolated-20260915" or
+                type(run.get("head_repository")) is not dict or
+                run["head_repository"].get("full_name") !=
+                "mbalbo2023/Porota-trading" or
+                not isinstance(run.get("head_sha"), str) or
+                re.fullmatch(r"[a-f0-9]{40}", run["head_sha"]) is None or
+                type(artifact.get("id")) is not int or artifact["id"] <= 0 or
+                artifact.get("name") !=
+                f"porota-runtime-{run['id']}-{run['run_attempt']}" or
+                artifact.get("expired") is not False or
+                type(artifact.get("size_in_bytes")) is not int or
+                not isinstance(archive_bytes, bytes) or
+                not 0 < len(archive_bytes) <= 65536 or
+                artifact["size_in_bytes"] != len(archive_bytes) or
+                artifact.get("digest") != "sha256:" + sha256(archive_bytes).hexdigest() or
+                type(artifact.get("workflow_run")) is not dict or
+                artifact["workflow_run"].get("id") != run["id"] or
+                artifact["workflow_run"].get("head_sha") != run["head_sha"]):
+            raise ValueError(hold)
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            entries = archive.infolist()
+            if (len(entries) != 2 or {e.filename for e in entries} !=
+                    {"runtime.json", "download.json"} or
+                    any(e.is_dir() or (e.external_attr >> 16) & 0o170000 == 0o120000
+                        or e.file_size <= 0 or e.file_size > 65536 or
+                        e.compress_size <= 0 or e.compress_size > 65536
+                        for e in entries)):
+                raise ValueError(hold)
+            runtime = _promote_json(archive.read("runtime.json"))
+            download = _promote_json(archive.read("download.json"))
+        if (type(runtime) is not dict or type(download) is not dict or
+                runtime.get("schema") != "porota.rootless.deploy.v1" or
+                runtime.get("state") != "VALIDADO_RUNTIME" or
+                runtime.get("phase") != "COMPLETE" or
+                runtime.get("operating_mode") != "PRODUCTION_PAPER" or
+                runtime.get("execution_mode") != "SIMULATION" or
+                type(runtime.get("real_orders_sent")) is not int or
+                runtime["real_orders_sent"] != 0 or
+                runtime.get("ppi_watch_touched") is not False or
+                not isinstance(runtime.get("source_sha"), str) or
+                re.fullmatch(r"[a-f0-9]{40}", runtime["source_sha"]) is None or
+                not isinstance(runtime.get("source_tree"), str) or
+                re.fullmatch(r"[a-f0-9]{40}", runtime["source_tree"]) is None or
+                not isinstance(runtime.get("image_id"), str) or
+                re.fullmatch(r"sha256:[a-f0-9]{64}", runtime["image_id"]) is None or
+                not isinstance(runtime.get("release_manifest_sha256"), str) or
+                SHA256.fullmatch(runtime["release_manifest_sha256"]) is None or
+                not isinstance(runtime.get("roles"), dict) or
+                set(runtime["roles"]) != {"observer", "dashboard"} or
+                any(not isinstance(cid, str) or CID64.fullmatch(cid) is None
+                    for cid in runtime["roles"].values()) or
+                runtime["roles"]["observer"] == runtime["roles"]["dashboard"] or
+                not isinstance(runtime.get("health"), dict) or
+                any(runtime["health"].get(k) != v for k, v in (
+                    ("observer", "running"), ("dashboard", "healthy"),
+                    ("orders_guard", "BLOCKED"))) or
+                download.get("schema") != "porota.release.download.v1" or
+                download.get("deployment_sha") != run["head_sha"] or
+                download.get("source_sha") != runtime["source_sha"] or
+                download.get("source_tree") != runtime["source_tree"] or
+                download.get("image_id") != runtime["image_id"] or
+                type(download.get("run_id")) is not int or download["run_id"] <= 0 or
+                type(download.get("run_attempt")) is not int or
+                download["run_attempt"] <= 0 or
+                type(download.get("artifact_id")) is not int or
+                download["artifact_id"] <= 0 or
+                not isinstance(download.get("artifact_digest"), str) or
+                re.fullmatch(r"sha256:[a-f0-9]{64}", download["artifact_digest"]) is None):
+            raise ValueError(hold)
+        return {"source_sha": runtime["source_sha"],
+                "source_tree": runtime["source_tree"],
+                "image_id": runtime["image_id"],
+                "release_manifest_sha256": runtime["release_manifest_sha256"],
+                "observer_cid": runtime["roles"]["observer"],
+                "dashboard_cid": runtime["roles"]["dashboard"],
+                "promote_run_id": run["id"],
+                "promote_run_attempt": run["run_attempt"],
+                "runtime_artifact_digest": artifact["digest"]}
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError,
+            zipfile.BadZipFile, RuntimeError, OverflowError, RecursionError):
+        raise ValueError(hold) from None
+
+
+def fetch_latest_verified_promote_v2_claim(api):
+    """Read only GitHub Actions metadata+artifact; no provider, host or DB I/O.
+
+    `api` is the authenticated `gh api` byte transport on the Actions runner.
+    A newer malformed/expired success never falls back to the older P0 run.
+    """
+    hold = "PROMOTE_ARTIFACT_CUSTODY_HOLD"
+    prefix = "repos/mbalbo2023/Porota-trading/actions/"
+    try:
+        if not callable(api):
+            raise ValueError(hold)
+        endpoint = (prefix + "workflows/porota-deploy-v2-promote.yml/runs?"
+                    "status=success&branch=deploy%2Frc6-pr69-isolated-20260915&per_page=20")
+        raw = api(endpoint)
+        if not isinstance(raw, bytes) or not 0 < len(raw) <= 262144:
+            raise ValueError(hold)
+        runs = _promote_json(raw)
+        values = runs.get("workflow_runs") if isinstance(runs, dict) else None
+        if (not isinstance(values, list) or not values or len(values) > 20 or
+                any(not isinstance(row, dict) or type(row.get("id")) is not int or
+                    row["id"] <= 0 for row in values)):
+            raise ValueError(hold)
+        latest = max(values, key=lambda row: row["id"])
+        raw = api(prefix + f"runs/{latest['id']}/artifacts?per_page=100")
+        if not isinstance(raw, bytes) or not 0 < len(raw) <= 262144:
+            raise ValueError(hold)
+        listing = _promote_json(raw)
+        artifacts = listing.get("artifacts") if isinstance(listing, dict) else None
+        if not isinstance(artifacts, list) or len(artifacts) > 100:
+            raise ValueError(hold)
+        matches = [item for item in artifacts if isinstance(item, dict) and
+                   item.get("name") ==
+                   f"porota-runtime-{latest['id']}-{latest.get('run_attempt')}"]
+        if len(matches) != 1:
+            raise ValueError(hold)
+        # Bound the *declared* GitHub artifact before opening the ZIP transport.
+        # The separate runner's CLI reader must ALSO cap actual stdout bytes.
+        item = matches[0]
+        if (type(item.get("size_in_bytes")) is not int or
+                not 0 < item["size_in_bytes"] <= 65536 or
+                type(item.get("id")) is not int or item["id"] <= 0 or
+                item.get("expired") is not False or
+                not isinstance(item.get("digest"), str) or
+                re.fullmatch(r"sha256:[a-f0-9]{64}", item["digest"]) is None):
+            raise ValueError(hold)
+        archive = api(prefix + f"artifacts/{matches[0].get('id')}/zip")
+        return verified_promote_v2_runtime_artifact(latest, matches[0], archive)
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError,
+            subprocess.SubprocessError, OverflowError, RecursionError):
+        raise ValueError(hold) from None
 PPI_TYPES = {"ACCIONES": "ACCIONES", "BONOS": "BONOS"}
 # One reviewed target per intraday window. Catalog must prove the FULL 5-key.
 SLOTS = {
@@ -245,14 +412,32 @@ def host_preflight(slot, db=DB, *, enforce_mount=True):
     return report
 
 
-def _attest_rootless_release(current, release, release_raw):
-    """Exact immutable RC6 PAPER release, not a provider identity authority."""
+def _release_pins(expected):
+    """Legacy sample coordinates or a fully shaped physical Promote V2 claim."""
+    if expected is None:  # The historical `sample_main_only` job is disabled.
+        return {"source_sha": ROOTLESS_CANDIDATE_SHA,
+                "source_tree": ROOTLESS_CANDIDATE_TREE,
+                "image_id": ROOTLESS_IMAGE_ID}
+    if (type(expected) is not dict or
+            not all(isinstance(expected.get(k), str) for k in (
+                "source_sha", "source_tree", "image_id", "observer_cid",
+                "dashboard_cid")) or
+            re.fullmatch(r"[a-f0-9]{40}", expected["source_sha"]) is None or
+            re.fullmatch(r"[a-f0-9]{40}", expected["source_tree"]) is None or
+            re.fullmatch(r"sha256:[a-f0-9]{64}", expected["image_id"]) is None or
+            any(CID64.fullmatch(expected[k]) is None for k in (
+                "observer_cid", "dashboard_cid")) or
+            expected["observer_cid"] == expected["dashboard_cid"]):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    return {k: expected[k] for k in ("source_sha", "source_tree", "image_id")}
+
+
+def _attest_rootless_release(current, release, release_raw, *, expected=None):
+    """Exact private PAPER release vs an independently certified GH artifact."""
     if (not isinstance(current, dict) or not isinstance(release, dict) or
             not isinstance(release_raw, bytes) or len(release_raw) > 2 * 1024**2):
         raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
-    pinned = {"source_sha": ROOTLESS_CANDIDATE_SHA,
-              "source_tree": ROOTLESS_CANDIDATE_TREE,
-              "image_id": ROOTLESS_IMAGE_ID}
+    pinned = _release_pins(expected)
     if (any(current.get(k) != v or release.get(k) != v for k, v in pinned.items()) or
             current.get("schema") != "porota.rootless.deploy.v1" or
             current.get("state") != "VALIDADO_RUNTIME" or
@@ -276,10 +461,14 @@ def _attest_rootless_release(current, release, release_raw):
             roles["observer"] == roles["dashboard"] or
             not isinstance(attempt, str) or not ATTEMPT.fullmatch(attempt)):
         raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    if expected is not None and roles != {
+            "observer": expected["observer_cid"],
+            "dashboard": expected["dashboard_cid"]}:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
     return roles["observer"]
 
 
-def _attest_rootless_observer(info, observer, current, *, uid, home):
+def _attest_rootless_observer(info, observer, current, *, uid, home, expected=None):
     """Project only trusted predicates from private Docker JSON; never log Env."""
     expected_store = str(Path(home) / ".local/share/porota-rc6/docker")
     if (not isinstance(info, dict) or not isinstance(observer, dict) or
@@ -295,12 +484,13 @@ def _attest_rootless_observer(info, observer, current, *, uid, home):
     labels = config.get("Labels") or {}
     state = observer.get("State") or {}
     host = observer.get("HostConfig") or {}
-    if (observer.get("Id") != role or observer.get("Image") != ROOTLESS_IMAGE_ID or
+    pins = _release_pins(expected)
+    if (observer.get("Id") != role or observer.get("Image") != pins["image_id"] or
             observer.get("Name") != f"/porota-rc6-observer-{attempt}" or
             labels.get("io.porota.project") != "rc6" or
             labels.get("io.porota.role") != "observer" or
             labels.get("io.porota.attempt") != attempt or
-            config.get("Image") != ROOTLESS_IMAGE_ID or
+            config.get("Image") != pins["image_id"] or
             config.get("User") != "0:0" or config.get("Entrypoint") not in (None, []) or
             config.get("WorkingDir") != "/app" or
             config.get("Cmd") != ["python", "bv_paper_runtime.py"] or
@@ -331,8 +521,8 @@ def _attest_rootless_observer(info, observer, current, *, uid, home):
                    "PAPER_V17_DB_PATH", "DASHBOARD_OPERATION_MODE",
                    "EXECUTION_MODE", "REAL_ORDER_CAPABILITY"}:
             env[key] = value
-    required = {"POROTA_BUILD_SHA": ROOTLESS_CANDIDATE_SHA,
-                "POROTA_CANDIDATE_TREE_SHA": ROOTLESS_CANDIDATE_TREE,
+    required = {"POROTA_BUILD_SHA": pins["source_sha"],
+                "POROTA_CANDIDATE_TREE_SHA": pins["source_tree"],
                 "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
                 "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
                 "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED"}
@@ -371,6 +561,104 @@ def _attest_rootless_observer(info, observer, current, *, uid, home):
             "": 1, "k": 1024, "m": 1024**2, "g": 1024**3}[sizes[0].group(2).lower()]
         if amount != tmpfs_sizes[destination]:
             raise ValueError("ROOTLESS_OBSERVER_HOLD")
+    return True
+
+
+def _attest_rootless_dashboard(dashboard, current, *, uid, home, expected=None):
+    """Reinspect the exact LIVE dashboard CID, not just the private state ID.
+
+    Never read a dashboard response or provider credential. The rootless
+    daemon identity is verified separately with the observer in the caller.
+    """
+    if type(dashboard) is not dict or type(current) is not dict:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    pins = _release_pins(expected)
+    roles = current.get("roles") or {}
+    attempt = current.get("attempt")
+    config = dashboard.get("Config") or {}
+    labels = config.get("Labels") or {}
+    state = dashboard.get("State") or {}
+    host = dashboard.get("HostConfig") or {}
+    if (dashboard.get("Id") != roles.get("dashboard") or
+            dashboard.get("Image") != pins["image_id"] or
+            config.get("Image") != pins["image_id"] or
+            dashboard.get("Name") != f"/porota-rc6-dashboard-{attempt}" or
+            labels.get("io.porota.project") != "rc6" or
+            labels.get("io.porota.role") != "dashboard" or
+            labels.get("io.porota.attempt") != attempt or
+            config.get("User") != "0:0" or config.get("Entrypoint") not in (None, []) or
+            config.get("WorkingDir") != "/app" or
+            config.get("Cmd") != ["python", "o_dashboard.py"] or
+            state.get("Running") is not True or state.get("OOMKilled") is not False or
+            (state.get("Health") or {}).get("Status") != "healthy" or
+            host.get("ReadonlyRootfs") is not True or
+            host.get("Privileged") is not False or
+            host.get("CapDrop") != ["ALL"] or host.get("CapAdd") not in (None, []) or
+            host.get("NetworkMode") in (None, "host", "none") or
+            str(host.get("NetworkMode", "")).startswith("container:") or
+            host.get("PidMode") == "host" or
+            type(host.get("Memory")) is not int or
+            not 0 < host["Memory"] <= 2 * 1024**3 or
+            type(host.get("NanoCpus")) is not int or
+            not 0 < host["NanoCpus"] <= 2_000_000_000 or
+            type(host.get("PidsLimit")) is not int or
+            not 0 < host["PidsLimit"] <= 512 or
+            host.get("PortBindings") != {
+                "8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]} or
+            not any(s in {"no-new-privileges", "no-new-privileges:true"}
+                    for s in host.get("SecurityOpt", []))):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    raw_env = config.get("Env")
+    if type(raw_env) is not list or len(raw_env) > 512:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    environment = {}
+    for row in raw_env:
+        if type(row) is not str or len(row) > 4096:
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+        key, sep, value = row.partition("=")
+        if not sep or key in environment:
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+        environment[key] = value
+    required = {"POROTA_BUILD_SHA": pins["source_sha"],
+                "POROTA_CANDIDATE_TREE_SHA": pins["source_tree"],
+                "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
+                "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
+                "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED"}
+    if any(environment.get(key) != value for key, value in required.items()):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    required_mounts = {"/app/data": ("/opt/porota-trading/data", True),
+        "/app/operator": (str(Path(home) / ".config/porota-rc6/operator"), False)}
+    mounts = dashboard.get("Mounts")
+    tmpfs_sizes = {"/tmp": 128 * 1024**2,
+                   "/home/botuser/.cache": 64 * 1024**2,
+                   "/home/botuser/.config": 16 * 1024**2}
+    if type(mounts) is not list:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    binds = [m for m in mounts if type(m) is dict and m.get("Type") == "bind"]
+    if (len(binds) != len(required_mounts) or
+            {m.get("Destination") for m in binds} != set(required_mounts) or
+            any((m.get("Source"), m.get("RW")) != required_mounts[m["Destination"]]
+                for m in binds) or
+            any(type(m) is not dict or not (m.get("Type") == "bind" or
+                m.get("Type") == "tmpfs" and m.get("Destination") in tmpfs_sizes)
+                for m in mounts)):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    tmpfs = host.get("Tmpfs") or {}
+    if type(tmpfs) is not dict or set(tmpfs) != set(tmpfs_sizes):
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    for destination, options in tmpfs.items():
+        flags = set(str(options).split(","))
+        sizes = [re.fullmatch(r"size=(\d+)([kKmMgG]?)(?:[bB])?", part)
+                 for part in flags if part.startswith("size=")]
+        if ({"rw", "noexec", "nosuid"} - flags or {"exec", "suid"} & flags or
+                len(sizes) != 1 or sizes[0] is None):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+        amount = int(sizes[0].group(1)) * {
+            "": 1, "k": 1024, "m": 1024**2, "g": 1024**3}[sizes[0].group(2).lower()]
+        if amount != tmpfs_sizes[destination]:
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    if not isinstance(uid, int) or uid <= 0:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
     return True
 
 
@@ -414,9 +702,10 @@ def _private_rootless_read(path, uid, size_limit, *, parent_fd=None):
             os.close(handle)
 
 
-def _rootless_state(home, uid):
+def _rootless_state(home, uid, *, expected=None):
     # The dedicated state is UID-private. Historic ~/.local/state may be g+w
     # only under an independently verified private ~/.local parent.
+    pins = _release_pins(expected)
     home = Path(home)
     if not home.is_absolute():
         raise ValueError("ROOTLESS_PRIVATE_PATH_HOLD")
@@ -451,9 +740,9 @@ def _rootless_state(home, uid):
                 current = json.loads(current_raw)
             except (ValueError, UnicodeError):
                 raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD") from None
-            if not isinstance(current, dict) or current.get("source_sha") != ROOTLESS_CANDIDATE_SHA:
+            if not isinstance(current, dict) or current.get("source_sha") != pins["source_sha"]:
                 raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
-            for component in ("releases", ROOTLESS_CANDIDATE_SHA):
+            for component in ("releases", pins["source_sha"]):
                 next_fd = os.open(component, flags, dir_fd=fd)
                 stack.callback(os.close, next_fd)
                 fd = next_fd
@@ -469,7 +758,7 @@ def _rootless_state(home, uid):
         release = json.loads(release_raw)
     except (ValueError, UnicodeError):
         raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD") from None
-    cid = _attest_rootless_release(current, release, release_raw)
+    cid = _attest_rootless_release(current, release, release_raw, expected=expected)
     token = sha256(current_raw + b"\0" + release_raw).hexdigest()
     return current, cid, token
 
@@ -487,7 +776,7 @@ def _rootless_docker_json(command, environment, *, run=subprocess.run):
         raise ValueError("ROOTLESS_DOCKER_TRANSPORT_HOLD") from None
 
 
-def _rootless_context(*, run=subprocess.run, runtime_override=None):
+def _rootless_context(*, run=subprocess.run, runtime_override=None, expected=None):
     """One exact private, running and immutable RC6 observer; zero provider GET."""
     uid = os.getuid()
     if uid != ROOTLESS_UID or os.geteuid() != uid or os.getgid() != os.getegid():
@@ -510,7 +799,7 @@ def _rootless_context(*, run=subprocess.run, runtime_override=None):
             raise ValueError("ROOTLESS_SOCKET_HOLD")
     except (OSError, ValueError):
         raise ValueError("ROOTLESS_SOCKET_HOLD") from None
-    current, cid, state_token = _rootless_state(home, uid)
+    current, cid, state_token = _rootless_state(home, uid, expected=expected)
     # Match the reviewed rootless release helper's environment/explicit socket.
     environment = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
                    "HOME": str(home), "USER": account.pw_name,
@@ -526,12 +815,21 @@ def _rootless_context(*, run=subprocess.run, runtime_override=None):
                                  environment, run=run)
     if not isinstance(item, list) or len(item) != 1:
         raise ValueError("ROOTLESS_OBSERVER_HOLD")
-    _attest_rootless_observer(info, item[0], current, uid=uid, home=home)
+    _attest_rootless_observer(info, item[0], current, uid=uid, home=home,
+                              expected=expected)
+    dashboard_cid = current["roles"]["dashboard"]
+    second = _rootless_docker_json((*docker, "container", "inspect", dashboard_cid),
+                                   environment, run=run)
+    if not isinstance(second, list) or len(second) != 1:
+        raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
+    _attest_rootless_dashboard(second[0], current, uid=uid, home=home,
+                              expected=expected)
     if not isinstance(info.get("ID"), str) or info["ID"] != current.get("daemon_id"):
         raise ValueError("ROOTLESS_DAEMON_HOLD")
     # Never include Docker Config.Env, credentials, raw JSON or host paths in
     # the public receipt. Only internal command/identity values are returned.
     return {"cid": cid, "state_token": state_token, "docker": docker,
+            "roles": dict(current["roles"]),
             "release_manifest_sha256": current["release_manifest_sha256"],
             "environment": environment}
 
@@ -612,7 +910,8 @@ def _open_unknown_receipt(day, reason):
 
 
 def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
-                          source_bytes, *, run=subprocess.run, open_batch=False):
+                          source_bytes, *, run=subprocess.run, open_batch=False,
+                          expected_roles=None, promote_artifact_digest=None):
     """Issue only a SQLite command through the exact attested rootless observer.
 
     The old rootless-capture path remains separate; no PPI SDK/client/login
@@ -625,8 +924,18 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
               "receipt": (_open_unknown_receipt(day, "ROOTLESS_PIN_MISMATCH")
                           if open_batch else
                           _command_unknown_receipt(day, family, "ROOTLESS_PIN_MISMATCH"))}
-    if (candidate != ROOTLESS_CANDIDATE_SHA or tree != ROOTLESS_CANDIDATE_TREE or
-            image != ROOTLESS_IMAGE_ID or not isinstance(manifest_sha, str) or
+    if (not isinstance(candidate, str) or re.fullmatch(r"[0-9a-f]{40}", candidate) is None or
+            not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None or
+            not isinstance(image, str) or re.fullmatch(r"sha256:[0-9a-f]{64}", image) is None or
+            not isinstance(expected_roles, dict) or
+            set(expected_roles) != {"observer", "dashboard"} or
+            not all(isinstance(value, str) and CID64.fullmatch(value)
+                    for value in expected_roles.values()) or
+            expected_roles["observer"] == expected_roles["dashboard"] or
+            not isinstance(promote_artifact_digest, str) or
+            re.fullmatch(r"sha256:[0-9a-f]{64}", promote_artifact_digest) is None or
+            (open_batch and candidate == ROOTLESS_CANDIDATE_SHA) or
+            not isinstance(manifest_sha, str) or
             SHA256.fullmatch(manifest_sha) is None or
             not isinstance(source_bytes, bytes) or not 0 < len(source_bytes) <= 1_000_000 or
             type(day) is not str or re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) is None or
@@ -634,7 +943,14 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
             (family != "ALL" if open_batch else family not in COMMAND_FAMILIES)):
         return result
     try:
-        before = _rootless_context(run=run)
+        expected = {"source_sha": candidate, "source_tree": tree,
+                    "image_id": image,
+                    "observer_cid": expected_roles["observer"],
+                    "dashboard_cid": expected_roles["dashboard"]}
+        before = _rootless_context(run=run, expected=expected)
+        if (before.get("cid") != expected_roles["observer"] or
+                before.get("roles") != expected_roles):
+            raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
         if before.get("release_manifest_sha256") != manifest_sha:
             raise ValueError("ROOTLESS_RELEASE_CUSTODY_HOLD")
         command = (*before["docker"], "exec", "-i",
@@ -667,8 +983,9 @@ def rootless_host_enqueue(day, family, candidate, tree, image, manifest_sha,
                 (captured.returncode == 0 and payload["state"] != "EVIDENCE") or
                 (captured.returncode == 2 and payload["state"] == "EVIDENCE")):
             raise ValueError("ROOTLESS_EXEC_RECEIPT_HOLD")
-        after = _rootless_context(run=run)
+        after = _rootless_context(run=run, expected=expected)
         if (before["cid"] != after["cid"] or
+                after.get("roles") != expected_roles or
                 before["state_token"] != after["state_token"] or
                 after.get("release_manifest_sha256") != manifest_sha):
             raise ValueError("ROOTLESS_STATE_DRIFT_HOLD")
@@ -1615,14 +1932,25 @@ def _command_runtime_gate(db):
         from _version import MODE, EXECUTION, REAL_ORDER_CAPABILITY
     except (ImportError, AttributeError):
         raise ValueError("OBSERVER_COMMAND_PAPER_MODE_HOLD") from None
+    # The host independently matches these coordinates to the immutable
+    # Promote V2 artifact, private release manifest and exact rootless CIDs.
+    # The child still cross-checks the container's own build/tree/mode; these
+    # passed-in values alone never constitute PPI singleton authorization.
+    candidate = os.environ.get("RC6_P0_EXPECTED_PRODUCT_SHA", "")
+    tree = os.environ.get("RC6_P0_EXPECTED_PRODUCT_TREE", "")
+    image = os.environ.get("RC6_P0_EXPECTED_IMAGE_ID", "")
+    if (re.fullmatch(r"[a-f0-9]{40}", candidate) is None or
+            re.fullmatch(r"[a-f0-9]{40}", tree) is None or
+            re.fullmatch(r"sha256:[a-f0-9]{64}", image) is None):
+        raise ValueError("OBSERVER_COMMAND_PAPER_MODE_HOLD")
     expected = {"DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
                 "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED",
-                "POROTA_BUILD_SHA": ROOTLESS_CANDIDATE_SHA,
-                "POROTA_CANDIDATE_TREE_SHA": ROOTLESS_CANDIDATE_TREE,
+                "POROTA_BUILD_SHA": candidate,
+                "POROTA_CANDIDATE_TREE_SHA": tree,
                 "PAPER_V17_DB_PATH": str(db),
-                "RC6_P0_EXPECTED_PRODUCT_SHA": ROOTLESS_CANDIDATE_SHA,
-                "RC6_P0_EXPECTED_PRODUCT_TREE": ROOTLESS_CANDIDATE_TREE,
-                "RC6_P0_EXPECTED_IMAGE_ID": ROOTLESS_IMAGE_ID}
+                "RC6_P0_EXPECTED_PRODUCT_SHA": candidate,
+                "RC6_P0_EXPECTED_PRODUCT_TREE": tree,
+                "RC6_P0_EXPECTED_IMAGE_ID": image}
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY") != "1":
         raise ValueError("OBSERVER_COMMAND_SCHEMA_NOT_READY")
     if (MODE != "PRODUCTION_PAPER" or EXECUTION != "SIMULATED" or
@@ -2166,9 +2494,11 @@ def container_main():
 def main():
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    if sys.argv[1:] and sys.argv[1] == "rootless-enqueue-open" and len(sys.argv) == 8:
+    if sys.argv[1:] and sys.argv[1] == "rootless-enqueue-open" and len(sys.argv) == 11:
         result = rootless_host_enqueue(*sys.argv[2:8],
-            globals().get("__RC6_SOURCE_BYTES__"), open_batch=True)
+            globals().get("__RC6_SOURCE_BYTES__"), open_batch=True,
+            expected_roles={"observer": sys.argv[8], "dashboard": sys.argv[9]},
+            promote_artifact_digest=sys.argv[10])
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "EVIDENCE" else 2
     if sys.argv[1:] == ["container-enqueue-open"]:
@@ -2176,9 +2506,11 @@ def main():
                                                os.environ.get("RC6_P0_FAMILY", ""))
         print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
         return 0 if receipt["state"] == "EVIDENCE" else 2
-    if sys.argv[1:] and sys.argv[1] == "rootless-enqueue" and len(sys.argv) == 8:
+    if sys.argv[1:] and sys.argv[1] == "rootless-enqueue" and len(sys.argv) == 11:
         result = rootless_host_enqueue(*sys.argv[2:8],
-            globals().get("__RC6_SOURCE_BYTES__"))
+            globals().get("__RC6_SOURCE_BYTES__"),
+            expected_roles={"observer": sys.argv[8], "dashboard": sys.argv[9]},
+            promote_artifact_digest=sys.argv[10])
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "EVIDENCE" else 2
     if sys.argv[1:] == ["container-enqueue"]:

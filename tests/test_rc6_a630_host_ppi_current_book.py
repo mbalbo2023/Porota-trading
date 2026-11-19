@@ -16,6 +16,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from unittest.mock import patch
 from scripts import rc6_a630_host_ppi_current_book as engine
 
@@ -33,6 +34,145 @@ from scripts.rc6_a630_host_ppi_current_book import (
 NOW = datetime(2026, 11, 4, 14, 20, 1, tzinfo=timezone.utc)
 PROVIDER = "2026-11-04T14:20:00+00:00"
 TARGET = SLOTS["1120"]
+
+
+class TestA670PromoteArtifactAttestation(unittest.TestCase):
+    """Synthetic Deploy V2 artifact shape; never a caller-supplied flag."""
+
+    def setUp(self):
+        self.run = {"id": 888, "run_attempt": 2, "status": "completed",
+                    "conclusion": "success", "event": "workflow_dispatch",
+                    "path": ".github/workflows/porota-deploy-v2-promote.yml",
+                    "head_branch": "deploy/rc6-pr69-isolated-20260915",
+                    "head_sha": "a" * 40,
+                    "head_repository": {"full_name": "mbalbo2023/Porota-trading"}}
+        self.runtime = {
+            "schema": "porota.rootless.deploy.v1", "state": "VALIDADO_RUNTIME",
+            "phase": "COMPLETE", "source_sha": "d" * 40,
+            "source_tree": "e" * 40, "image_id": "sha256:" + "f" * 64,
+            "release_manifest_sha256": "c" * 64,
+            "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION",
+            "real_orders_sent": 0, "ppi_watch_touched": False,
+            "roles": {"observer": "1" * 64, "dashboard": "2" * 64},
+            "health": {"observer": "running", "dashboard": "healthy",
+                       "orders_guard": "BLOCKED"},
+        }
+        self.download = {
+            "schema": "porota.release.download.v1", "deployment_sha": "a" * 40,
+            "source_sha": "d" * 40, "source_tree": "e" * 40,
+            "image_id": "sha256:" + "f" * 64,
+            "run_id": 777, "run_attempt": 1, "artifact_id": 444,
+            "artifact_digest": "sha256:" + "3" * 64,
+        }
+        self.artifact = {"id": 500, "name": "porota-runtime-888-2",
+                         "expired": False, "size_in_bytes": 0, "digest": "",
+                         "workflow_run": {"id": 888, "head_sha": "a" * 40}}
+
+    def archived(self, *, runtime=None, download=None, add_member=None,
+                 runtime_raw=None):
+        with io.BytesIO() as stream:
+            with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("runtime.json", runtime_raw if runtime_raw is not None
+                                 else json.dumps(runtime if runtime is not None else self.runtime))
+                archive.writestr("download.json", json.dumps(
+                    download if download is not None else self.download))
+                if add_member is not None:
+                    archive.writestr(add_member, "unexpected")
+            return stream.getvalue()
+
+    def evidence(self, payload):
+        meta = {**self.artifact, "size_in_bytes": len(payload),
+                "digest": "sha256:" + sha256(payload).hexdigest()}
+        return engine.verified_promote_v2_runtime_artifact(self.run, meta, payload)
+
+    def test_synthetic_promote_artifact_digest_binds_new_release_without_old_p0_pin(self):
+        result = self.evidence(self.archived())
+        self.assertEqual(result, {"source_sha": "d" * 40,
+                 "source_tree": "e" * 40, "image_id": "sha256:" + "f" * 64,
+                 "release_manifest_sha256": "c" * 64,
+                 "observer_cid": "1" * 64, "dashboard_cid": "2" * 64,
+                 "promote_run_id": 888, "promote_run_attempt": 2,
+                 "runtime_artifact_digest": "sha256:" + sha256(self.archived()).hexdigest()})
+
+    def test_rejects_tampered_provider_metadata_and_paper_receipts(self):
+        payload = self.archived()
+        bad_runs = ({"status": "in_progress"}, {"conclusion": "failure"},
+                    {"path": ".github/workflows/deploy.yml"},
+                    {"head_branch": "main"}, {"event": "schedule"},
+                    {"head_repository": {"full_name": "other/repo"}},
+                    {"head_repository": "not-a-dict"},
+                    {"head_repository": ["other/repo"]})
+        for bad in bad_runs:
+            with self.subTest(run=bad), self.assertRaises(ValueError):
+                engine.verified_promote_v2_runtime_artifact({**self.run, **bad},
+                    {**self.artifact, "size_in_bytes": len(payload),
+                     "digest": "sha256:" + sha256(payload).hexdigest()}, payload)
+        for change in ({"real_orders_sent": 1}, {"state": "NO_VERIFICADO"},
+                       {"ppi_watch_touched": True}, {"source_sha": "b" * 40},
+                       {"execution_mode": "LIVE"},
+                       {"roles": {"observer": "1" * 64}},
+                       {"health": {"observer": "running", "dashboard": "healthy",
+                                   "orders_guard": "OPEN"}}):
+            with self.subTest(runtime=change), self.assertRaises(ValueError):
+                self.evidence(self.archived(runtime={**self.runtime, **change}))
+        for bad in (self.archived(add_member="private.log"),
+                    self.archived(runtime_raw='{"state":"VALIDADO_RUNTIME","state":"HOLD"}')):
+            with self.subTest(extra=True), self.assertRaises(ValueError):
+                self.evidence(bad)
+        with self.assertRaisesRegex(ValueError, "PROMOTE_ARTIFACT_CUSTODY_HOLD"):
+            engine.verified_promote_v2_runtime_artifact(
+                self.run, {**self.artifact,
+                    "size_in_bytes": len(payload),
+                    "digest": "sha256:" + sha256(payload).hexdigest(),
+                    "workflow_run": "not-a-dict"}, payload)
+
+    def test_latest_canonical_promote_is_resolved_by_github_not_user_env_or_p0_head(self):
+        payload = self.archived()
+        artifact = {**self.artifact, "size_in_bytes": len(payload),
+                    "digest": "sha256:" + sha256(payload).hexdigest()}
+        urls = []
+        def api(path):
+            urls.append(path)
+            if "/workflows/porota-deploy-v2-promote.yml/runs?" in path:
+                return json.dumps({"workflow_runs": [{**self.run, "id": 800},
+                                                      self.run]}).encode()
+            if path.endswith("/actions/runs/888/artifacts?per_page=100"):
+                return json.dumps({"artifacts": [artifact]}).encode()
+            if path.endswith("/actions/artifacts/500/zip"):
+                return payload
+            raise AssertionError("UNEXPECTED_GITHUB_ENDPOINT:" + path)
+        expected = self.evidence(payload)
+        self.assertEqual(engine.fetch_latest_verified_promote_v2_claim(api), expected)
+        self.assertEqual(len(urls), 3)
+        self.assertTrue(all(path.startswith("repos/mbalbo2023/Porota-trading/actions/")
+                            for path in urls))
+        self.assertFalse(any("ppi" in path.lower() for path in urls))
+        # No fallback to an older successful run if the most recent artifact
+        # is absent; that must not silently bless a stale release.
+        def missing_new_artifact(path):
+            if "/workflows/porota-deploy-v2-promote.yml/runs?" in path:
+                return json.dumps({"workflow_runs": [self.run, {**self.run,
+                    "id": 800}]}).encode()
+            if "/actions/runs/888/artifacts?" in path:
+                return b'{"artifacts":[]}'
+            raise AssertionError("FALLBACK_TO_OLDER_RUN_FORBIDDEN")
+        with self.assertRaises(ValueError):
+            engine.fetch_latest_verified_promote_v2_claim(missing_new_artifact)
+
+    def test_oversize_promote_zip_metadata_stops_before_any_bytes_download(self):
+        oversized = {**self.artifact, "size_in_bytes": 65537,
+                     "digest": "sha256:" + "0" * 64}
+        endpoints = []
+        def api(path):
+            endpoints.append(path)
+            if "/workflows/porota-deploy-v2-promote.yml/runs?" in path:
+                return json.dumps({"workflow_runs": [self.run]}).encode()
+            if "/actions/runs/888/artifacts?" in path:
+                return json.dumps({"artifacts": [oversized]}).encode()
+            raise AssertionError("ZIP_UNEXPECTEDLY_DOWNLOADED")
+        with self.assertRaises(ValueError):
+            engine.fetch_latest_verified_promote_v2_claim(api)
+        self.assertEqual(len(endpoints), 2)
 
 
 class Shared:
@@ -1075,6 +1215,24 @@ class TestA630RootlessEvidence(unittest.TestCase):
                  "Destination": "/app/operator", "RW": False},
             ],
         }
+        self.dashboard = {
+            "Id": "b" * 64,
+            "Name": f"/porota-rc6-dashboard-{self.attempt}",
+            "Image": ROOTLESS_IMAGE_ID,
+            "State": {"Running": True, "OOMKilled": False,
+                      "Health": {"Status": "healthy"}},
+            "Config": {
+                "Image": ROOTLESS_IMAGE_ID, "User": "0:0", "Entrypoint": None,
+                "WorkingDir": "/app", "Cmd": ["python", "o_dashboard.py"],
+                "Labels": {"io.porota.project": "rc6", "io.porota.role": "dashboard",
+                           "io.porota.attempt": self.attempt},
+                "Env": list(self.observer["Config"]["Env"]),
+            },
+            "HostConfig": {**self.observer["HostConfig"],
+                "PortBindings": {"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}},
+            "Mounts": [m for m in self.observer["Mounts"]
+                       if m["Destination"] != "/run/secrets/ppi_production.json"],
+        }
 
     def test_release_attests_candidate_tree_image_and_paper_zero(self):
         self.assertEqual(_attest_rootless_release(self.current, self.release,
@@ -1089,6 +1247,38 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _attest_rootless_release({**self.current, **updates},
                                              self.release, self.release_raw)
+
+    def test_future_promote_artifact_coordinates_replace_legacy_pin_only_when_entire_release_matches(self):
+        pins = {"source_sha": "d" * 40, "source_tree": "e" * 40,
+                "image_id": "sha256:" + "f" * 64,
+                "observer_cid": self.cid, "dashboard_cid": "b" * 64}
+        new_release = {**self.release, **{k: pins[k] for k in (
+            "source_sha", "source_tree", "image_id")}}
+        new_raw = (json.dumps(new_release, sort_keys=True) + "\n").encode()
+        new_current = {**self.current, **{k: pins[k] for k in (
+            "source_sha", "source_tree", "image_id")},
+                       "release_manifest_sha256": sha256(new_raw).hexdigest()}
+        new_observer = json.loads(json.dumps(self.observer))
+        new_observer["Image"] = pins["image_id"]
+        new_observer["Config"]["Image"] = pins["image_id"]
+        new_observer["Config"]["Env"] = [
+            "POROTA_BUILD_SHA=" + pins["source_sha"],
+            "POROTA_CANDIDATE_TREE_SHA=" + pins["source_tree"],
+            *self.observer["Config"]["Env"][2:]]
+        self.assertEqual(_attest_rootless_release(new_current, new_release,
+                         new_raw, expected=pins), self.cid)
+        self.assertTrue(_attest_rootless_observer(self.info, new_observer,
+                        new_current, uid=1000, home=self.home, expected=pins))
+        with self.assertRaises(ValueError):
+            _attest_rootless_release({**new_current, "roles": {
+                "observer": "9" * 64, "dashboard": "b" * 64}},
+                new_release, new_raw, expected=pins)
+        with self.assertRaises(ValueError):
+            _attest_rootless_release(new_current, {**new_release,
+                "image_id": ROOTLESS_IMAGE_ID}, new_raw, expected=pins)
+        with self.assertRaises(ValueError):
+            _attest_rootless_observer(self.info, self.observer,
+                new_current, uid=1000, home=self.home, expected=pins)
 
     def test_release_requires_real_blocked_capability_and_exact_manifest(self):
         for change in ({"real_order_capability": "ALLOWED"},
@@ -1109,6 +1299,30 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     _attest_rootless_observer({**self.info, **info_update}, self.observer,
                                               self.current, uid=1000, home=self.home)
+
+    def test_dashboard_is_live_inspected_at_exact_pinned_cid_health_image_and_paper(self):
+        self.assertTrue(engine._attest_rootless_dashboard(
+            self.dashboard, self.current, uid=1000, home=self.home))
+        for change in ({"Id": "9" * 64}, {"Image": "sha256:" + "f" * 64},
+                       {"State": {"Running": False}},
+                       {"State": {"Running": True,
+                                  "Health": {"Status": "healthy"}}},
+                       {"State": {"Running": True, "Health": {"Status": "unhealthy"}}},
+                       {"Config": {**self.dashboard["Config"], "Cmd": ["python", "evil.py"]}},
+                       {"Mounts": [*self.dashboard["Mounts"],
+                           {"Type": "bind", "Source": "/opt/porota-trading/.secrets/ppi_production.json",
+                            "Destination": "/run/secrets/ppi_production.json", "RW": False}]},
+                       {"Mounts": [*self.dashboard["Mounts"],
+                           {"Type": "tmpfs", "Destination": "/run/secrets"}]},
+                       {"HostConfig": {**self.dashboard["HostConfig"], "Tmpfs": {
+                           "/tmp": "rw,exec,size=128m"}}}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                engine._attest_rootless_dashboard(
+                    {**self.dashboard, **change}, self.current, uid=1000, home=self.home)
+        with_extra_tmpfs = {**self.dashboard, "Mounts": [*self.dashboard["Mounts"],
+            {"Type": "tmpfs", "Destination": "/tmp", "RW": True}]}
+        self.assertTrue(engine._attest_rootless_dashboard(
+            with_extra_tmpfs, self.current, uid=1000, home=self.home))
 
     def test_rootless_observer_rejects_foreign_label_command_and_secret_rw(self):
         cases = [
@@ -1257,6 +1471,35 @@ class TestA630RootlessEvidence(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _rootless_state(home, os.getuid())
 
+    def test_private_fd_walk_selects_only_artifact_pinned_new_source_and_not_old_p0(self):
+        pins = {"source_sha": "d" * 40, "source_tree": "e" * 40,
+                "image_id": "sha256:" + "f" * 64,
+                "observer_cid": self.cid, "dashboard_cid": "b" * 64}
+        release = {**self.release, **{k: pins[k] for k in (
+            "source_sha", "source_tree", "image_id")}}
+        raw = (json.dumps(release, sort_keys=True) + "\n").encode()
+        current = {**self.current, **{k: pins[k] for k in (
+            "source_sha", "source_tree", "image_id")},
+                   "release_manifest_sha256": sha256(raw).hexdigest()}
+        with tempfile.TemporaryDirectory(prefix="a670-release-fd-") as folder:
+            home = Path(folder) / "account"
+            state = home / ".local/state/porota-rc6"
+            released = state / "releases" / pins["source_sha"]
+            released.mkdir(parents=True, mode=0o700)
+            for directory in (home, home / ".local", home / ".local/state",
+                              state, state / "releases", released):
+                directory.chmod(0o700)
+            (state / "current.json").write_text(json.dumps(current))
+            (released / "release.json").write_bytes(raw)
+            (state / "current.json").chmod(0o600)
+            (released / "release.json").chmod(0o600)
+            self.assertEqual(_rootless_state(home, os.getuid(), expected=pins)[1], self.cid)
+            with self.assertRaises(ValueError):
+                _rootless_state(home, os.getuid())  # previous P0 pin cannot claim new one
+            with self.assertRaises(ValueError):
+                _rootless_state(home, os.getuid(), expected={**pins,
+                    "dashboard_cid": "9" * 64})
+
     def test_rootless_context_socket_and_daemon_identity_fail_closed_offhost(self):
         with tempfile.TemporaryDirectory(prefix="a630-socket-") as temporary:
             home = Path(temporary) / "home"
@@ -1281,11 +1524,12 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 if command[3] == "info":
                     info = {**self.info, "DockerRootDir": str(home / ".local/share/porota-rc6/docker")}
                     return subprocess.CompletedProcess(command, 0, stdout=json.dumps(info))
+                item = (self.dashboard if command[-1] == "b" * 64 else self.observer)
                 return subprocess.CompletedProcess(command, 0, stdout=json.dumps([{
-                    **self.observer,
+                    **item,
                     "Mounts": [({**m, "Source": str(home / ".config/porota-rc6/operator")}
                                 if m["Destination"] == "/app/operator" else m)
-                               for m in self.observer["Mounts"]],
+                               for m in item["Mounts"]],
                 }]))
 
             with patch("scripts.rc6_a630_host_ppi_current_book.ROOTLESS_UID", os.getuid()), \
@@ -1305,13 +1549,24 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 with patch.object(Path, "lstat", synthetic_socket):
                     context = _rootless_context(run=fake_run, runtime_override=runtime)
                     self.assertEqual(context["cid"], self.cid)
-                    self.assertEqual(len(query_calls), 2)
+                    self.assertEqual(len(query_calls), 3)
+                    self.assertEqual(query_calls[-1][-1], "b" * 64)
                     self.assertEqual(query_calls[0][:3],
                                      ("/usr/bin/docker", "--host", f"unix://{socket_path}"))
+                    pins = {"source_sha": ROOTLESS_CANDIDATE_SHA,
+                            "source_tree": ROOTLESS_CANDIDATE_TREE,
+                            "image_id": ROOTLESS_IMAGE_ID,
+                            "observer_cid": self.cid,
+                            "dashboard_cid": "b" * 64}
+                    self.assertEqual(_rootless_context(run=fake_run,
+                        runtime_override=runtime, expected=pins)["cid"], self.cid)
+                    with self.assertRaises(ValueError):
+                        _rootless_context(run=fake_run, runtime_override=runtime,
+                            expected={**pins, "observer_cid": "9" * 64})
                 socket_path.symlink_to(root / "current.json")
                 with self.assertRaises(ValueError):
                     _rootless_context(run=fake_run, runtime_override=runtime)
-                self.assertEqual(len(query_calls), 2)
+                self.assertEqual(len(query_calls), 6)
 
     def test_sanitizer_preserves_only_validated_typed_budget_reason(self):
         token = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()
@@ -1367,8 +1622,10 @@ class TestA630RootlessEvidence(unittest.TestCase):
 
     def test_observer_enqueue_rootless_exec_is_single_sqlite_child_without_ppi_client(self):
         manifest = "c" * 64
+        roles = {"observer": self.cid, "dashboard": "b" * 64}
         context = {"cid": self.cid, "state_token": "d" * 64,
                    "release_manifest_sha256": manifest,
+                   "roles": roles,
                    "docker": ("/usr/bin/docker", "--host",
                               "unix:///run/user/1000/porota-rc6-docker.sock"),
                    "environment": {"LC_ALL": "C"}}
@@ -1386,7 +1643,8 @@ class TestA630RootlessEvidence(unittest.TestCase):
             wrapper = engine.rootless_host_enqueue(
                 "2026-11-18", "BONOS", ROOTLESS_CANDIDATE_SHA,
                 ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID, manifest,
-                b"# source in memory\n", run=run)
+                b"# source in memory\n", run=run,
+                expected_roles=roles, promote_artifact_digest="sha256:" + "1" * 64)
         self.assertEqual(wrapper["state"], "EVIDENCE")
         self.assertTrue(wrapper["runtime_pin_verified"])
         self.assertEqual(wrapper["receipt"], expected)
@@ -1412,6 +1670,7 @@ class TestA630RootlessEvidence(unittest.TestCase):
                  "order_authority": False, "db_rows_inserted": 1}
         before = {"cid": self.cid, "state_token": "d" * 64,
                   "release_manifest_sha256": "c" * 64,
+                  "roles": {"observer": self.cid, "dashboard": "b" * 64},
                   "docker": ("/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock"),
                   "environment": {"LC_ALL": "C"}}
         after = {**before, "state_token": "e" * 64}
@@ -1423,7 +1682,9 @@ class TestA630RootlessEvidence(unittest.TestCase):
         with patch.object(engine, "_rootless_context", side_effect=[before, after]):
             wrapper = engine.rootless_host_enqueue("2026-11-18", "BONOS",
                 ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
-                "c" * 64, b"source", run=run)
+                "c" * 64, b"source", run=run,
+                expected_roles=before["roles"],
+                promote_artifact_digest="sha256:" + "1" * 64)
         self.assertEqual(len(calls), 1)
         self.assertEqual(wrapper["state"], "NO_VERIFICADO")
         self.assertEqual(wrapper["reason"], "ROOTLESS_STATE_DRIFT_HOLD")
@@ -1431,8 +1692,10 @@ class TestA630RootlessEvidence(unittest.TestCase):
 
     def test_open_rootless_enqueues_one_scanner_child_without_new_ppi_client(self):
         manifest = "c" * 64
+        roles = {"observer": self.cid, "dashboard": "b" * 64}
         context = {"cid": self.cid, "state_token": "d" * 64,
                    "release_manifest_sha256": manifest,
+                   "roles": roles,
                    "docker": ("/usr/bin/docker", "--host",
                               "unix:///run/user/1000/porota-rc6-docker.sock"),
                    "environment": {"LC_ALL": "C"}}
@@ -1448,9 +1711,10 @@ class TestA630RootlessEvidence(unittest.TestCase):
                 stdout=json.dumps(child).encode(), stderr=b"")
         with patch.object(engine, "_rootless_context", side_effect=[context, context]):
             wrapper = engine.rootless_host_enqueue("2026-11-19", "ALL",
-                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
-                ROOTLESS_IMAGE_ID, manifest, b"# audited source in memory\n",
-                run=run, open_batch=True)
+                "d" * 40, "e" * 40,
+                "sha256:" + "f" * 64, manifest, b"# audited source in memory\n",
+                run=run, open_batch=True, expected_roles=roles,
+                promote_artifact_digest="sha256:" + "1" * 64)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][-5:], (self.cid, "python", "-B", "-", "container-enqueue-open"))
         self.assertNotIn("container-capture", calls[0])
@@ -1458,6 +1722,23 @@ class TestA630RootlessEvidence(unittest.TestCase):
         self.assertEqual(wrapper["state"], "NO_VERIFICADO")
         self.assertTrue(wrapper["runtime_pin_verified"])
         self.assertEqual(wrapper["receipt"], child)
+
+    def test_open_release_from_artifact_rejects_missing_cid_or_digest_before_docker(self):
+        calls = []
+        def forbidden(*args, **kwargs):
+            calls.append(args)
+            raise AssertionError("DOCKER_MUST_NOT_START")
+        args = ("2026-11-19", "ALL", "d" * 40, "e" * 40,
+                "sha256:" + "f" * 64, "c" * 64, b"# program\n")
+        for roles, digest in ((None, "sha256:" + "a" * 64),
+                              ({"observer": self.cid}, "sha256:" + "a" * 64),
+                              ({"observer": self.cid, "dashboard": "b" * 64}, "UNVERIFIED")):
+            with self.subTest(roles=roles, digest=digest):
+                result = engine.rootless_host_enqueue(*args, open_batch=True,
+                    expected_roles=roles, promote_artifact_digest=digest, run=forbidden)
+                self.assertEqual((result["state"], result["reason"]),
+                                 ("NO_VERIFICADO", "ROOTLESS_PIN_MISMATCH"))
+        self.assertEqual(calls, [])
 
     def test_open_rootless_verifier_does_not_accept_legacy_postclose_receipt(self):
         old = {"schema": "rc6.p0.observer-command.child.v1", "state": "EVIDENCE",
@@ -1573,6 +1854,23 @@ class TestA630ObserverCommandSQLite(unittest.TestCase):
             self.assertFalse(result["order_authority"])
         with sqlite3.connect(self.db) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM observer_commands").fetchone()[0], 0)
+
+    def test_future_release_child_paper_build_identity_is_runtime_pinned_not_old_p0(self):
+        future = dict(self.environment,
+            POROTA_BUILD_SHA="d" * 40,
+            POROTA_CANDIDATE_TREE_SHA="e" * 40,
+            RC6_P0_EXPECTED_PRODUCT_SHA="d" * 40,
+            RC6_P0_EXPECTED_PRODUCT_TREE="e" * 40,
+            RC6_P0_EXPECTED_IMAGE_ID="sha256:" + "f" * 64)
+        with patch.dict(os.environ, future), \
+             patch.dict(sys.modules, {"_version": self.version}):
+            engine._command_runtime_gate(self.db)
+        # A release pin *must* match actual image runtime environment; a
+        # forged SHA cannot be accepted solely because it came from a flag.
+        with patch.dict(os.environ, {**future, "POROTA_BUILD_SHA": "a" * 40}), \
+             patch.dict(sys.modules, {"_version": self.version}):
+            with self.assertRaisesRegex(ValueError, "OBSERVER_COMMAND_PAPER_MODE_HOLD"):
+                engine._command_runtime_gate(self.db)
 
     def open_summary(self):
         families = ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
@@ -1935,7 +2233,8 @@ class TestA630RootlessTail(unittest.TestCase):
                    "reason": "ROOTLESS_SOCKET_HOLD"}
         args = ["-c", "rootless-enqueue-open", "2026-11-19", "ALL",
                 ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
-                ROOTLESS_IMAGE_ID, "c" * 64]
+                ROOTLESS_IMAGE_ID, "c" * 64, "1" * 64, "2" * 64,
+                "sha256:" + "3" * 64]
         with patch.object(engine, "rootless_host_enqueue", return_value=outcome) as issue, \
              patch.object(engine, "rootless_host_capture") as capture, \
              patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}), \
@@ -1943,7 +2242,9 @@ class TestA630RootlessTail(unittest.TestCase):
             self.assertEqual(engine.main(), 2)
         issue.assert_called_once_with("2026-11-19", "ALL",
             ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
-            "c" * 64, b"source", open_batch=True)
+            "c" * 64, b"source", open_batch=True,
+            expected_roles={"observer": "1" * 64, "dashboard": "2" * 64},
+            promote_artifact_digest="sha256:" + "3" * 64)
         capture.assert_not_called()
 
     def test_queue_cli_routes_only_to_rootless_enqueue_not_capture(self):
@@ -1951,7 +2252,8 @@ class TestA630RootlessTail(unittest.TestCase):
                    "reason": "ROOTLESS_SOCKET_HOLD"}
         args = ["-c", "rootless-enqueue", "2026-11-18", "BONOS",
                 ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
-                ROOTLESS_IMAGE_ID, "c" * 64]
+                ROOTLESS_IMAGE_ID, "c" * 64, "1" * 64, "2" * 64,
+                "sha256:" + "3" * 64]
         with patch.object(engine, "rootless_host_enqueue", return_value=outcome) as issue, \
              patch.object(engine, "rootless_host_capture") as capture, \
              patch.dict(engine.__dict__, {"__RC6_SOURCE_BYTES__": b"source"}), \
@@ -1959,8 +2261,22 @@ class TestA630RootlessTail(unittest.TestCase):
             self.assertEqual(engine.main(), 2)
         issue.assert_called_once_with("2026-11-18", "BONOS",
             ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID,
-            "c" * 64, b"source")
+            "c" * 64, b"source",
+            expected_roles={"observer": "1" * 64, "dashboard": "2" * 64},
+            promote_artifact_digest="sha256:" + "3" * 64)
         capture.assert_not_called()
+
+    def test_unattested_legacy_cli_argv_never_invokes_docker(self):
+        outcome = {"schema": engine.COMMAND_ROOTLESS_SCHEMA,
+                   "state": "NO_VERIFICADO", "reason": "ROOTLESS_PIN_MISMATCH"}
+        args = ["-c", "rootless-enqueue-open", "2026-11-19", "ALL",
+                ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE,
+                ROOTLESS_IMAGE_ID, "c" * 64]
+        with patch.object(engine, "rootless_host_enqueue", return_value=outcome) as issue, \
+             patch.object(sys, "argv", args):
+            with self.assertRaisesRegex(SystemExit, "A630_EXPLICIT_MODE_REQUIRED"):
+                engine.main()
+        issue.assert_not_called()
 
     def test_postclose_cli_only_with_exact_manual_pilot_suffix(self):
         target_b64 = base64.b64encode(json.dumps(list(TARGET)).encode()).decode()

@@ -20,9 +20,11 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import select
 import stat
 import subprocess
 import sys
+import time as monotonic_time
 from zoneinfo import ZoneInfo
 
 
@@ -31,7 +33,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "42e1abd731b684caf6b3547b492afe1c8f051d29"
+ENGINE_GIT_BLOB = "08c88dab13ee17d1dff6e2414a242003cc30883f"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -403,15 +405,20 @@ def _append_verified_env(path: Path, slot: str, now_utc: datetime,
 
 
 def _append_observer_command_env(path: Path, command: str, now_utc: datetime,
-                                 market_session: str = SESSION_POSTCLOSE) -> bool:
-    """Release only an allowlisted, non-shell-metacharacter command to SSH."""
+                                 market_session: str = SESSION_POSTCLOSE,
+                                 promote_claim=None) -> bool:
+    """Pass GitHub-artifact pins, not untrusted dispatch/env release values, to SSH.
+
+    A passing OFFHOST gate is only permission to attempt independent *physical*
+    rootless matching on the host. No singleton/PPI claim comes from Actions.
+    """
     fields = command.split(":")
     allowed = ((fields[0] == "PPI_DIRECT_REST_POSTCLOSE_ONCE" and
                 fields[2] in OBSERVER_COMMAND_FAMILIES and
                 market_session == SESSION_POSTCLOSE) or
                (fields[0] == "PPI_DIRECT_REST_OPEN_ONCE" and fields[2] == "ALL" and
                 market_session == SESSION_REGULAR)) if len(fields) == 3 else False
-    if (len(fields) != 3 or not allowed or
+    if (len(fields) != 3 or not allowed or not _safe_promote_claim(promote_claim) or
             not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fields[1]) or
             fields[1] != now_utc.astimezone(ZONE).date().isoformat()):
         return False
@@ -425,7 +432,14 @@ def _append_observer_command_env(path: Path, command: str, now_utc: datetime,
             payload = (f"RC6_A670_OBSERVER_COMMAND={command}\n"
                        f"RC6_A670_ART_DATE={fields[1]}\n"
                        f"RC6_A670_FAMILY={fields[2]}\n"
-                       f"RC6_A670_MARKET_SESSION={market_session}\n").encode("ascii")
+                       f"RC6_A670_MARKET_SESSION={market_session}\n"
+                       f"RC6_P0_EXPECTED_CANDIDATE_SHA={promote_claim['source_sha']}\n"
+                       f"RC6_P0_EXPECTED_TREE_SHA={promote_claim['source_tree']}\n"
+                       f"RC6_P0_EXPECTED_IMAGE_ID={promote_claim['image_id']}\n"
+                       f"RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256={promote_claim['release_manifest_sha256']}\n"
+                       f"RC6_P0_EXPECTED_OBSERVER_CID={promote_claim['observer_cid']}\n"
+                       f"RC6_P0_EXPECTED_DASHBOARD_CID={promote_claim['dashboard_cid']}\n"
+                       f"RC6_A670_PROMOTE_ARTIFACT_DIGEST={promote_claim['runtime_artifact_digest']}\n").encode("ascii")
             return os.write(fd, payload) == len(payload)
         finally:
             os.close(fd)
@@ -433,18 +447,100 @@ def _append_observer_command_env(path: Path, command: str, now_utc: datetime,
         return False
 
 
-def _issuer_pin_ready():
-    """Require the physical Deploy V2 release pins before any host attempt."""
-    from scripts.rc6_a630_host_ppi_current_book import (
-        ROOTLESS_CANDIDATE_SHA, ROOTLESS_CANDIDATE_TREE, ROOTLESS_IMAGE_ID)
-    candidate = os.environ.get("RC6_P0_EXPECTED_CANDIDATE_SHA", "")
-    tree = os.environ.get("RC6_P0_EXPECTED_TREE_SHA", "")
-    image = os.environ.get("RC6_P0_EXPECTED_IMAGE_ID", "")
-    manifest = os.environ.get("RC6_P0_EXPECTED_RELEASE_MANIFEST_SHA256", "")
-    return (candidate == ROOTLESS_CANDIDATE_SHA and
-            candidate != "96c626dc09a045f75f5e743c030e8f8228783a54" and
-            tree == ROOTLESS_CANDIDATE_TREE and image == ROOTLESS_IMAGE_ID and
-            re.fullmatch(r"[0-9a-f]{64}", manifest) is not None)
+def _safe_promote_claim(claim):
+    """Shape-only defense; cryptographic verification lives in the A630 reader."""
+    if type(claim) is not dict or set(claim) != {
+            "source_sha", "source_tree", "image_id", "release_manifest_sha256",
+            "observer_cid", "dashboard_cid", "promote_run_id",
+            "promote_run_attempt", "runtime_artifact_digest"}:
+        return False
+    expressions = {"source_sha": r"[0-9a-f]{40}",
+                   "source_tree": r"[0-9a-f]{40}",
+                   "image_id": r"sha256:[0-9a-f]{64}",
+                   "release_manifest_sha256": r"[0-9a-f]{64}",
+                   "observer_cid": r"[0-9a-f]{64}",
+                   "dashboard_cid": r"[0-9a-f]{64}",
+                   "runtime_artifact_digest": r"sha256:[0-9a-f]{64}"}
+    return (all(type(claim[key]) is str and
+                re.fullmatch(pattern, claim[key]) is not None
+                for key, pattern in expressions.items()) and
+            claim["observer_cid"] != claim["dashboard_cid"] and
+            all(type(claim[key]) is int and claim[key] > 0 for key in
+                ("promote_run_id", "promote_run_attempt")))
+
+
+def _bounded_gh_api(endpoint, *, max_bytes):
+    """Read GH REST without ever buffering more than the reviewed byte cap.
+
+    A malicious server or redirect can exceed GitHub's claimed artifact size:
+    unlike `subprocess.run(capture_output=True)`, this reader stops and kills
+    the child as soon as the cap is exceeded or the wall-clock deadline passes.
+    """
+    hold = "PROMOTE_ARTIFACT_CUSTODY_HOLD"
+    if (type(endpoint) is not str or len(endpoint) > 240 or
+            not endpoint.startswith("repos/mbalbo2023/Porota-trading/actions/") or
+            re.fullmatch(r"[A-Za-z0-9/_%?=&.\-]+", endpoint) is None or
+            type(max_bytes) is not int or not 0 < max_bytes <= 262144):
+        raise ValueError(hold)
+    process = None
+    try:
+        process = subprocess.Popen(
+            ["gh", "api", "-H", "Accept: application/vnd.github+json", endpoint],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        deadline = monotonic_time.monotonic() + 15
+        output = bytearray()
+        while True:
+            remaining = deadline - monotonic_time.monotonic()
+            if remaining <= 0:
+                raise ValueError(hold)
+            readable, _, _ = select.select([process.stdout], [], [], remaining)
+            if not readable:
+                raise ValueError(hold)
+            part = os.read(process.stdout.fileno(), min(8192, max_bytes + 1 - len(output)))
+            if not part:
+                break
+            output.extend(part)
+            if len(output) > max_bytes:
+                raise ValueError(hold)
+        if process.wait(timeout=max(0, deadline - monotonic_time.monotonic())) != 0 or not output:
+            raise ValueError(hold)
+        return bytes(output)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        raise ValueError(hold) from None
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+            if process.stdout is not None:
+                process.stdout.close()
+
+
+def _trusted_promote_claim():
+    """Fetch GitHub's verified immutable runtime receipt over Actions-token API.
+
+    Never accept a workflow input, env pin, bare success flag or old run as
+    authority. The A630 validator parses/downloads both artifact JSON files.
+    """
+    if not os.environ.get("GH_TOKEN") or not pinned_engine_ok(ENGINE_PATH):
+        raise ValueError("PROMOTE_ARTIFACT_CUSTODY_HOLD")
+    # Direct script execution (`python scripts/guard.py`) does not guarantee
+    # that the repository root is on sys.path. Import exactly the blob-pinned
+    # local engine via a file-location spec, never import an unpinned package.
+    spec = importlib.util.spec_from_file_location("rc6_a630_reviewed_engine", ENGINE_PATH)
+    if spec is None or spec.loader is None:
+        raise ValueError("PROMOTE_ARTIFACT_CUSTODY_HOLD")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def read_api(endpoint):
+        return _bounded_gh_api(endpoint,
+                               max_bytes=65536 if endpoint.endswith("/zip") else 262144)
+
+    claim = module.fetch_latest_verified_promote_v2_claim(read_api)
+    if not _safe_promote_claim(claim):
+        raise ValueError("PROMOTE_ARTIFACT_CUSTODY_HOLD")
+    return claim
 
 
 def _append_hold_env(path: Path, reason: str, now_utc: datetime) -> bool:
@@ -504,29 +600,30 @@ def main(now_utc=None) -> int:
                 command, reason = "", session
             elif open_mode and session != SESSION_REGULAR:
                 command, reason = "", "BYMA_LIMITED_NO_SETTLEMENT_OPEN_HOLD"
-            elif open_mode and (
-                    os.environ.get("RC6_P0_EXPECTED_CANDIDATE_SHA") == OPEN_HANDLER_ABSENT_P0_SHA
-                    or os.environ.get("RC6_P0_EXPECTED_TREE_SHA") == OPEN_HANDLER_ABSENT_P0_TREE):
-                command, reason = "", "OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED"
-            elif not _issuer_pin_ready():
-                command, reason = "", "OBSERVER_COMMAND_RELEASE_UNPINNED"
             else:
-                # Authenticated existing scanner != one PPI session globally,
-                # for POSTCLOSE as well as OPEN: both can cause PPI native GET.
-                # Exit-reader/scalping can be separate login actors and PPI
-                # Watch is out of scope. There is NO independently verified
-                # physical actor/authentication custody receipt yet, so the
-                # issuer must remain closed even if calendar/release are good.
-                # A later fix-forward may introduce a reviewed physical proof;
-                # no user-controlled environment value is sufficient.
-                command, reason = "", "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"
+                try:
+                    promote_claim = _trusted_promote_claim()
+                except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+                    command, reason = "", "OBSERVER_COMMAND_RELEASE_UNPINNED"
+                else:
+                    if (promote_claim["source_sha"] == OPEN_HANDLER_ABSENT_P0_SHA or
+                            promote_claim["source_tree"] == OPEN_HANDLER_ABSENT_P0_TREE):
+                        # Historical P0 is VALIDADO_RUNTIME for its own PAPER
+                        # workload; it has neither the new OPEN handler nor
+                        # physically proved three-role Gateway custody.
+                        command, reason = "", ("OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED"
+                                               if open_mode else
+                                               "OBSERVER_COMMAND_RELEASE_UNPINNED")
+                    elif not _safe_promote_claim(promote_claim):
+                        command, reason = "", "OBSERVER_COMMAND_RELEASE_UNPINNED"
         env_path = Path(os.environ.get("GITHUB_ENV", ""))
         if not command:
             _append_hold_env(env_path, reason, now_utc)
             print(f"A670_OBSERVER_COMMAND=HOLD|REASON={reason}|PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
             return 2
         if not _append_observer_command_env(env_path, command, now_utc,
-                                           SESSION_REGULAR if open_mode else SESSION_POSTCLOSE):
+                                           SESSION_REGULAR if open_mode else SESSION_POSTCLOSE,
+                                           promote_claim):
             print("A670_OBSERVER_COMMAND=HOLD|REASON=ENV_WRITE_DENIED|PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
             return 2
         print(f"A670_OBSERVER_COMMAND=PASS|ART_DATE={now_utc.astimezone(ZONE).date()}|"
