@@ -31,7 +31,7 @@ ZONE = ZoneInfo("America/Argentina/Buenos_Aires")
 REPOSITORY = "mbalbo2023/Porota-trading"
 CONTROL_REF = "refs/heads/main"
 ENGINE_PATH = Path("scripts/rc6_a630_host_ppi_current_book.py")
-ENGINE_GIT_BLOB = "d52ea020e85472d9c0134e7431ff2d2a647b6bdd"
+ENGINE_GIT_BLOB = "42e1abd731b684caf6b3547b492afe1c8f051d29"
 PRODUCT_SHA = "7e1e744d6ca9ab30c51b5747dd4467af5ece0145"
 PRODUCT_CALENDAR_ROOT = Path("_audited_product_calendar")
 CALENDAR_GIT_BLOB = "add88988456ba8d327c0a239d1172a9a45b36bc2"
@@ -56,6 +56,12 @@ OBSERVER_COMMAND_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
+# P0 release is valid PAPER runtime but its scanner lacks the new OPEN handler.
+# Only a *new* tested Deploy V2 source/tree/image/manifest repin may remove
+# this NO-GO. The downstream rootless wrapper independently attests the exact
+# physical release both before and after the one queue INSERT.
+OPEN_HANDLER_ABSENT_P0_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
+OPEN_HANDLER_ABSENT_P0_TREE = "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0"
 
 
 def git_blob_sha(contents: bytes) -> str:
@@ -327,6 +333,49 @@ def eligible_observer_command(*, now_utc: datetime, event: str,
             "PASS_MANUAL_POSTCLOSE_OBSERVER_COMMAND_ONLY")
 
 
+def eligible_open_observer_command(*, now_utc: datetime, event: str,
+                                   repository: str, ref: str, checkout_sha: str,
+                                   source_sha: str, art_date: str, family: str,
+                                   pilot_mode: str, postclose_mode: str,
+                                   engine_path: Path,
+                                   expected_engine_blob: str = ENGINE_GIT_BLOB):
+    """One in-scanner, ten-family OPEN QA command; never a GET entitlement."""
+    if event != "workflow_dispatch":
+        return "", "MANUAL_DISPATCH_REQUIRED"
+    if repository != REPOSITORY or ref != CONTROL_REF:
+        return "", "NONCANONICAL_REPOSITORY_OR_REF"
+    if (not isinstance(checkout_sha, str) or not isinstance(source_sha, str)
+            or HEX40.fullmatch(checkout_sha) is None or checkout_sha != source_sha):
+        return "", "EXACT_CHECKOUT_SHA_REQUIRED"
+    if (not isinstance(art_date, str) or
+            re.fullmatch(r"\d{4}-\d{2}-\d{2}", art_date) is None):
+        return "", "OBSERVER_COMMAND_ART_DATE_INVALID"
+    try:
+        if date.fromisoformat(art_date).isoformat() != art_date:
+            return "", "OBSERVER_COMMAND_ART_DATE_INVALID"
+    except ValueError:
+        return "", "OBSERVER_COMMAND_ART_DATE_INVALID"
+    if family != "ALL":
+        return "", "OBSERVER_OPEN_ALL_ONLY"
+    if pilot_mode != "OFF" or postclose_mode != "OFF":
+        return "", "OBSERVER_COMMAND_SAMPLE_MODE_FORBIDDEN"
+    if not isinstance(now_utc, datetime) or now_utc.tzinfo is None:
+        return "", "AWARE_UTC_CLOCK_REQUIRED"
+    try:
+        art = now_utc.astimezone(ZONE)
+    except (ValueError, OverflowError):
+        return "", "AWARE_UTC_CLOCK_REQUIRED"
+    if art.date().isoformat() != art_date:
+        return "", "OBSERVER_COMMAND_ART_DATE_MISMATCH"
+    minute = art.hour * 60 + art.minute
+    if art.weekday() >= 5 or not 10 * 60 + 30 <= minute < 17 * 60:
+        return "", "OUTSIDE_AUDITED_BYMA_SPOT_WINDOW"
+    if not pinned_engine_ok(engine_path, expected_engine_blob):
+        return "", "AUDITED_ENGINE_BLOB_MISMATCH"
+    return (f"PPI_DIRECT_REST_OPEN_ONCE:{art_date}:ALL",
+            "PASS_MANUAL_OPEN_TEN_FAMILY_OBSERVER_COMMAND_ONLY")
+
+
 def _append_verified_env(path: Path, slot: str, now_utc: datetime,
                          market_session: str = SESSION_REGULAR) -> bool:
     """Append only bounded constant-shape values after the immutable gate."""
@@ -353,12 +402,17 @@ def _append_verified_env(path: Path, slot: str, now_utc: datetime,
         return False
 
 
-def _append_observer_command_env(path: Path, command: str, now_utc: datetime) -> bool:
+def _append_observer_command_env(path: Path, command: str, now_utc: datetime,
+                                 market_session: str = SESSION_POSTCLOSE) -> bool:
     """Release only an allowlisted, non-shell-metacharacter command to SSH."""
     fields = command.split(":")
-    if (len(fields) != 3 or fields[0] != "PPI_DIRECT_REST_POSTCLOSE_ONCE" or
+    allowed = ((fields[0] == "PPI_DIRECT_REST_POSTCLOSE_ONCE" and
+                fields[2] in OBSERVER_COMMAND_FAMILIES and
+                market_session == SESSION_POSTCLOSE) or
+               (fields[0] == "PPI_DIRECT_REST_OPEN_ONCE" and fields[2] == "ALL" and
+                market_session == SESSION_REGULAR)) if len(fields) == 3 else False
+    if (len(fields) != 3 or not allowed or
             not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fields[1]) or
-            fields[2] not in OBSERVER_COMMAND_FAMILIES or
             fields[1] != now_utc.astimezone(ZONE).date().isoformat()):
         return False
     try:
@@ -371,7 +425,7 @@ def _append_observer_command_env(path: Path, command: str, now_utc: datetime) ->
             payload = (f"RC6_A670_OBSERVER_COMMAND={command}\n"
                        f"RC6_A670_ART_DATE={fields[1]}\n"
                        f"RC6_A670_FAMILY={fields[2]}\n"
-                       f"RC6_A670_MARKET_SESSION={SESSION_POSTCLOSE}\n").encode("ascii")
+                       f"RC6_A670_MARKET_SESSION={market_session}\n").encode("ascii")
             return os.write(fd, payload) == len(payload)
         finally:
             os.close(fd)
@@ -428,8 +482,11 @@ def main(now_utc=None) -> int:
         # Keep its historical tests, but prohibit its Actions execution.
         print("A670_GUARD=HOLD|REASON=LEGACY_SECOND_PPI_SESSION_FORBIDDEN|PPI_GETS_BY_GUARD=0")
         return 2
-    if issuer_mode == "observer_postclose_command":
-        command, reason = eligible_observer_command(
+    if issuer_mode in {"observer_postclose_command", "observer_open_ten_family_command"}:
+        open_mode = issuer_mode == "observer_open_ten_family_command"
+        issuer_gate = (eligible_open_observer_command if open_mode else
+                       eligible_observer_command)
+        command, reason = issuer_gate(
             now_utc=now_utc, event=os.environ.get("GITHUB_EVENT_NAME", ""),
             repository=os.environ.get("GITHUB_REPOSITORY", ""),
             ref=os.environ.get("GITHUB_REF", ""), checkout_sha=current_sha,
@@ -440,21 +497,41 @@ def main(now_utc=None) -> int:
             postclose_mode=os.environ.get("RC6_A630_POSTCLOSE_MODE", ""),
             engine_path=ENGINE_PATH)
         if command:
-            allowed, session = _official_postclose_check(now_utc, PRODUCT_CALENDAR_ROOT)
+            allowed, session = ((_official_session_check(now_utc, PRODUCT_CALENDAR_ROOT)
+                                 if open_mode else
+                                 _official_postclose_check(now_utc, PRODUCT_CALENDAR_ROOT)))
             if not allowed:
                 command, reason = "", session
+            elif open_mode and session != SESSION_REGULAR:
+                command, reason = "", "BYMA_LIMITED_NO_SETTLEMENT_OPEN_HOLD"
+            elif open_mode and (
+                    os.environ.get("RC6_P0_EXPECTED_CANDIDATE_SHA") == OPEN_HANDLER_ABSENT_P0_SHA
+                    or os.environ.get("RC6_P0_EXPECTED_TREE_SHA") == OPEN_HANDLER_ABSENT_P0_TREE):
+                command, reason = "", "OBSERVER_OPEN_PRODUCT_DEPLOY_UNVERIFIED"
             elif not _issuer_pin_ready():
                 command, reason = "", "OBSERVER_COMMAND_RELEASE_UNPINNED"
+            else:
+                # Authenticated existing scanner != one PPI session globally,
+                # for POSTCLOSE as well as OPEN: both can cause PPI native GET.
+                # Exit-reader/scalping can be separate login actors and PPI
+                # Watch is out of scope. There is NO independently verified
+                # physical actor/authentication custody receipt yet, so the
+                # issuer must remain closed even if calendar/release are good.
+                # A later fix-forward may introduce a reviewed physical proof;
+                # no user-controlled environment value is sufficient.
+                command, reason = "", "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"
         env_path = Path(os.environ.get("GITHUB_ENV", ""))
         if not command:
             _append_hold_env(env_path, reason, now_utc)
             print(f"A670_OBSERVER_COMMAND=HOLD|REASON={reason}|PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
             return 2
-        if not _append_observer_command_env(env_path, command, now_utc):
+        if not _append_observer_command_env(env_path, command, now_utc,
+                                           SESSION_REGULAR if open_mode else SESSION_POSTCLOSE):
             print("A670_OBSERVER_COMMAND=HOLD|REASON=ENV_WRITE_DENIED|PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
             return 2
         print(f"A670_OBSERVER_COMMAND=PASS|ART_DATE={now_utc.astimezone(ZONE).date()}|"
-              "SESSION=POSTCLOSE_DIAGNOSTIC_ONLY|PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
+              f"SESSION={'OPEN_QA_ONLY' if open_mode else 'POSTCLOSE_DIAGNOSTIC_ONLY'}|"
+              "PPI_CLIENT_OR_LOGIN_BY_ACTION=0")
         return 0
     if issuer_mode != "sample":
         print("A670_GUARD=HOLD|REASON=UNKNOWN_ISSUER_MODE|PPI_GETS_BY_GUARD=0")
