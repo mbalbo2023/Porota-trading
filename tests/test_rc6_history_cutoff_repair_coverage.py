@@ -92,6 +92,24 @@ def test_legacy_archive_deduplicates_to_latest_valid_attempt(tmp_path, monkeypat
     assert selected[key][1] == "2026-09-22T10:00:00+00:00"
 
 
+def test_legacy_archive_prefers_latest_observation_time_not_insert_order(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "history.db")
+    _archive_table(store)
+    _archive_attempt(store, body=_ppi_wrapper(close=123), recorded_at="2026-09-23T10:00:00+00:00")
+    # A backfilled older observation can have a larger SQLite id.
+    _archive_attempt(store, body=_ppi_wrapper(close=111), recorded_at="2026-09-22T10:00:00+00:00")
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+    key = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+
+    selected = repair._archive_payloads({key})
+
+    assert selected[key][0] == [{"date": "2026-09-21", "close": 123}]
+    assert selected[key][1] == "2026-09-23T10:00:00+00:00"
+
+
 def test_legacy_archive_scan_budget_refuses_unbounded_payload_sweep(tmp_path, monkeypatch):
     import fb_raw_evidence_exact_v1 as exact
 
@@ -100,6 +118,22 @@ def test_legacy_archive_scan_budget_refuses_unbounded_payload_sweep(tmp_path, mo
     _archive_attempt(store, body=_ppi_wrapper())
     monkeypatch.setattr(repair, "_history_store", lambda: store)
     monkeypatch.setattr(repair, "LEGACY_ARCHIVE_MAX_SCANNED_BYTES", 16, raising=False)
+    monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
+    key = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+
+    assert repair._archive_payloads({key}) == {}
+
+
+def test_legacy_archive_scans_only_latest_physical_ids_not_all_rows_until_match(tmp_path, monkeypatch):
+    import fb_raw_evidence_exact_v1 as exact
+
+    store = _Store(tmp_path / "history.db")
+    _archive_table(store)
+    _archive_attempt(store, body=_ppi_wrapper(close=100))
+    _archive_attempt(store, body=_ppi_wrapper(close=101), origin="IOL_HISTORY")
+    _archive_attempt(store, body=_ppi_wrapper(close=102), origin="BYMA_HISTORY")
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+    monkeypatch.setattr(repair, "LEGACY_ARCHIVE_SCAN_LIMIT", 2)
     monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
     key = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
 

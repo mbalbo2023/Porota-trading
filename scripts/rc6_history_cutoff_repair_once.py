@@ -246,6 +246,7 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
 
     selected = {}
     selected_bytes = 0
+    selected_sizes = {}
     scanned_bytes = 0
     with _history_store().connect() as c:
         c.execute("PRAGMA query_only=ON")
@@ -254,8 +255,10 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
             return {}
         rows = c.execute("""SELECT body_hash,recorded_at,body_json
           FROM historical_raw_archive
-          WHERE origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
-          ORDER BY id DESC LIMIT ?""", (LEGACY_ARCHIVE_SCAN_LIMIT,))
+          WHERE id IN (SELECT id FROM historical_raw_archive
+                       ORDER BY id DESC LIMIT ?)
+            AND origin='PPI_HISTORY' AND quality='VALID_PAYLOAD'
+          ORDER BY id DESC""", (LEGACY_ARCHIVE_SCAN_LIMIT,))
         for expected_hash, recorded_at, raw in rows:
             if not isinstance(raw, str):
                 continue
@@ -290,8 +293,13 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
                     contracts.cash_currency(wrapper.get("currency") or metadata.get("currency")),
                     "RAW", "RAW_NO_ADJUSTMENT",
                 )
-                if identity not in targets or identity in selected:
+                if identity not in targets:
                     continue
+                previous = selected.get(identity)
+                if previous:
+                    previous_at = datetime.fromisoformat(previous[1].replace("Z", "+00:00"))
+                    if attempted <= previous_at:
+                        continue
                 bars = json.loads(wrapper.get("payload_json") or "[]")
                 if not isinstance(bars, list) or len(bars) > 4096:
                     continue
@@ -304,12 +312,14 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
                             continue
                 if not days or max(days) < CUTOFF:
                     continue
-                if selected_bytes + len(encoded) > LEGACY_ARCHIVE_SELECTED_BYTES:
+                previous_size = selected_sizes.get(identity, 0)
+                if selected_bytes - previous_size + len(encoded) > LEGACY_ARCHIVE_SELECTED_BYTES:
                     continue
             except (KeyError, TypeError, ValueError):
                 continue
             selected[identity] = (bars, recorded_at)
-            selected_bytes += len(encoded)
+            selected_bytes += len(encoded) - previous_size
+            selected_sizes[identity] = len(encoded)
     return selected
 
 
