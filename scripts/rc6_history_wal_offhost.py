@@ -303,6 +303,46 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
                 _require((part["size"], part["sha256"]) == found[part["name"]],
                          "BUNDLE_HASH_MISMATCH")
             db_path = directory / FILES[""]
+            wal_path = directory / FILES["-wal"]
+            with wal_path.open("rb") as wal_stream:
+                wal_header = wal_stream.read(32)
+            _require(len(wal_header) == 32 and
+                     int.from_bytes(wal_header[:4], "big") in
+                     (0x377F0682, 0x377F0683) and
+                     int.from_bytes(wal_header[4:8], "big") == 3007000,
+                     "BUNDLE_WAL_INVALID")
+            wal_page_size = int.from_bytes(wal_header[8:12], "big")
+            _require(512 <= wal_page_size <= 65536 and
+                     wal_page_size & (wal_page_size - 1) == 0 and
+                     wal_size >= 32 + 24 + wal_page_size and
+                     (wal_size - 32) % (24 + wal_page_size) == 0,
+                     "BUNDLE_WAL_INVALID")
+            physical_frames = (wal_size - 32) // (24 + wal_page_size)
+
+            # Only the runner-owned temporary cohort is writable. The SQLite
+            # engine verifies WAL salts/checksums and commit frames while
+            # checkpointing; ignored/truncated WAL must NOT silently fall
+            # back to a valid but stale MAIN file.
+            try:
+                replay = sqlite3.connect(db_path.as_uri() + "?mode=rw", uri=True,
+                                         timeout=0.025)
+                try:
+                    replay.execute("PRAGMA trusted_schema=OFF")
+                    replay.set_progress_handler(
+                        lambda: int(time.monotonic() >= deadline), 100)
+                    mode = replay.execute("PRAGMA journal_mode").fetchone()[0]
+                    page_size = replay.execute("PRAGMA page_size").fetchone()[0]
+                    busy, log_frames, applied_frames = replay.execute(
+                        "PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+                    _time(deadline)
+                    _require(mode == "wal" and page_size == wal_page_size and
+                             busy == 0 and log_frames == physical_frames and
+                             applied_frames == log_frames,
+                             "BUNDLE_WAL_INVALID")
+                finally:
+                    replay.close()
+            except sqlite3.Error:
+                raise HistoryHold("BUNDLE_WAL_INVALID") from None
             connection = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True,
                                          timeout=0.025)
             try:
