@@ -634,6 +634,54 @@ class AttributionContracts(unittest.TestCase):
 
 
 class ActionsBoundaryContracts(unittest.TestCase):
+    @staticmethod
+    def _host_steps():
+        workflow_path = SOURCE.parents[1] / ".github/workflows/rc6-observer-online-custody-once.yml"
+        workflow = yaml.load(workflow_path.read_text(), Loader=yaml.BaseLoader)
+        return workflow["jobs"]["host_custody"]["steps"]
+
+    def test_sanitized_receipt_must_be_verified_before_any_cleanup(self):
+        steps = self._host_steps()
+        def find(fragment):
+            return next(i for i, step in enumerate(steps)
+                        if fragment in step.get("name", ""))
+        sanitize = find("Sanitize strictly bounded public receipt")
+        verify = find("Never classify failed host custody as success")
+        upload = find("Upload JSON metadata only")
+        cleanup = find("Destroy only ephemeral runner credentials")
+        # Regress #44522352950: cleanup shredded the receipt before verifier.
+        self.assertLess(sanitize, verify)
+        self.assertLess(verify, upload)
+        self.assertLess(upload, cleanup)
+        self.assertEqual(cleanup, len(steps) - 1)
+        for index in (sanitize, verify, upload, cleanup):
+            self.assertEqual(steps[index].get("if"), "always()")
+        self.assertIn('"$private/a-custody-public.json"', steps[cleanup]["run"])
+
+    def test_failed_receipt_still_runs_runner_only_cleanup_after_check(self):
+        steps = self._host_steps()
+        check = next(s for s in steps if "Never classify failed host custody" in s.get("name", ""))
+        cleanup = next(s for s in steps if "Destroy only ephemeral" in s.get("name", ""))
+        with tempfile.TemporaryDirectory() as parent:
+            private = Path(parent) / "rc6-custody-private-test"
+            private.mkdir(mode=0o700)
+            receipt = private / "a-custody-public.json"
+            receipt.write_text(json.dumps({"schema": custody.SCHEMA,
+                                           "state": "NO_VERIFICADO_RECEIPT_UNSAFE"}))
+            for name in ("id_key", "known_hosts", ".raw.json"):
+                (private / name).write_text("ONLY_SYNTHETIC_TEST_DATA")
+            env = dict(os.environ, RUNNER_TEMP=parent, RC6_CUSTODY_PRIVATE=str(private),
+                       RC6_CUSTODY_REMOTE_RC="0", REQUEST_MODE="PREFLIGHT_ONLY")
+            rejected = subprocess.run(["bash", "-e"], input=check["run"],
+                                      text=True, capture_output=True, env=env, timeout=5)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("RC6_CUSTODY_SANITIZED_HOLD", rejected.stderr)
+            self.assertTrue(receipt.is_file())  # Check precedes cleanup.
+            cleaned = subprocess.run(["bash", "-e"], input=cleanup["run"],
+                                     text=True, capture_output=True, env=env, timeout=5)
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+            self.assertFalse(private.exists())  # Cleanup still always follows failure.
+
     def test_pr_runs_only_tests_and_writer_requires_manual_main_owner(self):
         workflow_path = SOURCE.parents[1] / ".github/workflows/rc6-observer-online-custody-once.yml"
         workflow = yaml.load(workflow_path.read_text(), Loader=yaml.BaseLoader)
