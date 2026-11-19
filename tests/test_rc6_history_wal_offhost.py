@@ -269,6 +269,45 @@ class HistoryWalTransportTests(unittest.TestCase):
         self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
         self.assertEqual(list(private_root.iterdir()), [])
 
+    def test_runner_rejects_nonzero_padding_between_wal_and_manifest(self):
+        output, _ = self.capture()
+        forged = bytearray(output.getvalue())
+        with tarfile.open(fileobj=io.BytesIO(forged), mode="r:") as archive:
+            wal = archive.getmember(a511.FILES["-wal"])
+            padding_start = wal.offset_data + wal.size
+            next_header = ((padding_start + 511) // 512) * 512
+        self.assertLess(padding_start, next_header)
+        self.assertEqual(forged[padding_start], 0)
+        forged[padding_start] = 0x41
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(io.BytesIO(forged), private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
+        self.assertEqual(list(private_root.iterdir()), [])
+
+    def test_runner_rejects_hidden_metadata_in_valid_tar_header(self):
+        output, _ = self.capture()
+        output.seek(0)
+        forged = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="r:") as original:
+            with tarfile.open(fileobj=forged, mode="w",
+                              format=tarfile.PAX_FORMAT) as archive:
+                for member in original:
+                    payload = original.extractfile(member).read()
+                    if member.name == a511.FILES[""]:
+                        member.uname = "PRIVATE_HEADER_SENTINEL"
+                    archive.addfile(member, io.BytesIO(payload))
+        forged.seek(0)
+        private_root = self.root / "runner-only"
+        private_root.mkdir(mode=0o700)
+        with self.assertRaises(a511.HistoryHold) as hold:
+            a511.verify_private_bundle(forged, private_root,
+                                       time_budget_seconds=20)
+        self.assertEqual(hold.exception.code, "BUNDLE_MEMBER_UNSAFE")
+        self.assertEqual(list(private_root.iterdir()), [])
+
     def test_runner_requires_private_directory(self):
         output, _ = self.capture()
         public = self.root / "public"
