@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import yaml
@@ -214,6 +215,8 @@ class OneShotCustodyContracts(LiveWalFixture):
 
     def test_online_snapshot_contains_committed_wal_and_restores_privately(self):
         self.assertNotIn(str(custody.CUSTODY), str(custody.ROOT))
+        self.assertTrue(str(custody.CUSTODY).startswith(
+            "/home/porotaadmin/.local/share/"))
         before_source = [(p.stat().st_size, p.stat().st_mtime_ns, p.read_bytes())
                          for p in (self.db, Path(str(self.db) + "-wal"))]
         receipt = self._custody()
@@ -413,6 +416,37 @@ class RuntimeBindingContracts(LiveWalFixture):
                 operator_home=Path("/home/porotaadmin"))
         self.assertEqual(str(raised.exception), "RUNTIME_DB_BINDING_NO_VERIFICADO")
 
+    def test_root_or_foreign_uid_cannot_run_host_operator_writer(self):
+        operator = SimpleNamespace(pw_name="porotaadmin", pw_uid=1000, pw_gid=1000,
+                                   pw_dir="/home/porotaadmin")
+        with patch.object(custody.pwd, "getpwnam", return_value=operator), \
+             patch.object(custody.os, "getuid", return_value=0), \
+             patch.object(custody.os, "geteuid", return_value=0), \
+             patch.object(custody.os, "getgid", return_value=0), \
+             patch.object(custody.os, "getegid", return_value=0):
+            with self.assertRaises(custody.Hold) as raised:
+                custody._operator_identity_guard()
+        self.assertEqual(str(raised.exception), "ROOTLESS_SSH_IDENTITY_REQUIRED")
+
+    def test_operator_uid_requires_exact_username_home_and_group(self):
+        operator = SimpleNamespace(pw_name="porotaadmin", pw_uid=1000, pw_gid=1000,
+                                   pw_dir="/home/porotaadmin")
+        with patch.object(custody.pwd, "getpwnam", return_value=operator), \
+             patch.object(custody.os, "getuid", return_value=1000), \
+             patch.object(custody.os, "geteuid", return_value=1000), \
+             patch.object(custody.os, "getgid", return_value=1000), \
+             patch.object(custody.os, "getegid", return_value=1000):
+            self.assertEqual(custody._operator_identity_guard().pw_dir,
+                             "/home/porotaadmin")
+        operator.pw_dir = "/tmp/spoofed-home"
+        with patch.object(custody.pwd, "getpwnam", return_value=operator), \
+             patch.object(custody.os, "getuid", return_value=1000), \
+             patch.object(custody.os, "geteuid", return_value=1000), \
+             patch.object(custody.os, "getgid", return_value=1000), \
+             patch.object(custody.os, "getegid", return_value=1000):
+            with self.assertRaises(custody.Hold):
+                custody._operator_identity_guard()
+
 
 class RunnerReceiptAndOwnerContracts(unittest.TestCase):
     def test_preflight_sanitizer_never_emits_raw_secret_or_path(self):
@@ -585,6 +619,19 @@ class AttributionContracts(unittest.TestCase):
         self.assertEqual(custody.source_continuity(before, after),
                          "DB_IDENTITY_STABLE_WAL_UNCHANGED_SHM_CHANGED")
 
+    def test_sidecar_inode_replacement_is_not_merely_labeled_wal_changed(self):
+        before = {"db": (10, 11, 1000, 15), "wal": (10, 17, 100, 15),
+                  "shm": (10, 19, 32768, 15)}
+        for label in ("wal", "shm"):
+            with self.subTest(label=label):
+                after = dict(before)
+                meta = list(before[label])
+                meta[1] += 1
+                after[label] = tuple(meta)
+                with self.assertRaises(custody.Hold) as raised:
+                    custody.source_continuity(before, after)
+                self.assertEqual(str(raised.exception), "SOURCE_IDENTITY_CHANGED")
+
 
 class ActionsBoundaryContracts(unittest.TestCase):
     def test_pr_runs_only_tests_and_writer_requires_manual_main_owner(self):
@@ -609,6 +656,8 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", remote["run"])
         self.assertIn("host-custody", remote["run"])
         self.assertIn("host-preflight", remote["run"])
+        self.assertIn("sudo -n -u porotaadmin", remote["run"])
+        self.assertNotIn("sudo -n timeout", remote["run"])
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact")]
         self.assertEqual(len(uploads), 1)
         self.assertTrue(uploads[0]["with"]["path"].endswith("/a-custody-public.json"))

@@ -26,9 +26,9 @@ SCHEMA = "rc6.observer-online-custody-once.v1"
 ROOT = Path("/opt/porota-trading/data")
 OBSERVER = ROOT / "paper_v17/observer_v17.db"
 MARKER = ROOT / "deploy/CURRENT_STATE_V2.json"
-# Root-only host path OUTSIDE the Docker RW data bind and backup retention.
-# Never place a privileged snapshot under /opt/porota-trading/data.
-CUSTODY = Path("/var/lib/porota-rc6-observer-custody")
+# A UID1000-private host path OUTSIDE both Docker role bind mount allowlists.
+# Source SQLite/WAL/SHM are opened AS UID1000, never as privileged root.
+CUSTODY = Path("/home/porotaadmin/.local/share/rc6-observer-custody")
 EXPECTED_SOURCE_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
 EXPECTED_TREE_SHA = "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0"
 EXPECTED_IMAGE_ID = "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d"
@@ -75,6 +75,20 @@ def _safe_file(path: Path, *, maximum: int, expected_owner: int | None = None):
             or (expected_owner is not None and info.st_uid != expected_owner)):
         raise Hold("SOURCE_FILE_UNSAFE")
     return info
+
+
+def _operator_identity_guard() -> pwd.struct_passwd:
+    """Only the pinned rootless operator, not sudo root, may open WAL/SHM."""
+    try:
+        account = pwd.getpwnam("porotaadmin")
+    except KeyError as exc:
+        raise Hold("ROOTLESS_SSH_IDENTITY_REQUIRED") from exc
+    if (account.pw_name != "porotaadmin" or account.pw_uid != 1000
+            or account.pw_gid != 1000 or account.pw_dir != "/home/porotaadmin"
+            or os.getuid() != 1000 or os.geteuid() != 1000
+            or os.getgid() != 1000 or os.getegid() != 1000):
+        raise Hold("ROOTLESS_SSH_IDENTITY_REQUIRED")
+    return account
 
 
 def _release_marker(path: Path) -> dict:
@@ -391,10 +405,9 @@ def _fsync_private_file(directory_fd: int, basename: str) -> None:
 def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
     """Read strictly private UID1000 deploy state with anchored nofollow fd."""
     try:
-        account = pwd.getpwnam("porotaadmin")
+        account = _operator_identity_guard()
         home = Path(account.pw_dir)
-        if (os.geteuid() != 0 or account.pw_uid != 1000 or account.pw_gid != 1000
-                or not home.is_absolute() or ".." in home.parts):
+        if not home.is_absolute() or ".." in home.parts:
             raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
         state = home / ".local/state/porota-rc6"
         # This private state is the independent Deploy V2 source of both CIDs.
@@ -434,6 +447,7 @@ def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
 
 def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
     """Fixed UID1000/rootless socket, inspect/info ONLY; never host Docker."""
+    _operator_identity_guard()
     if (not args or args[0] not in {"info", "container"}
             or args[0] == "container" and (len(args) != 3 or args[1] != "inspect")
             or args[0] == "info" and args[1:] != ("--format", "{{json .}}")):
@@ -457,7 +471,7 @@ def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
                "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
                "DOCKER_CLI_HINTS": "false"}
         result = subprocess.run([
-            "/usr/sbin/runuser", "-u", "porotaadmin", "--", "/usr/bin/docker",
+            "/usr/bin/docker",
             "--host", "unix:///run/user/1000/porota-rc6-docker.sock", *args],
             check=False, input=b"", stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, timeout=9, env=env, cwd="/")
@@ -641,10 +655,15 @@ def source_metadata(db_path: Path) -> dict:
 
 
 def source_continuity(before: dict, after: dict) -> str:
-    """Require DB file identity; disclose that live WAL may advance."""
+    """Pin all existing inodes; disclose normal WAL/SHM content advancement."""
     if (not before.get("db") or not after.get("db")
             or before["db"][:2] != after["db"][:2]):
         raise Hold("SOURCE_IDENTITY_CHANGED")
+    for label in ("wal", "shm"):
+        if ((before.get(label) is None) != (after.get(label) is None)
+                or before.get(label) is not None
+                and before[label][:2] != after[label][:2]):
+            raise Hold("SOURCE_IDENTITY_CHANGED")
     wal_state = "UNCHANGED" if before.get("wal") == after.get("wal") else "CHANGED"
     shm_state = "UNCHANGED" if before.get("shm") == after.get("shm") else "CHANGED"
     return f"DB_IDENTITY_STABLE_WAL_{wal_state}_SHM_{shm_state}"
@@ -661,6 +680,8 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
     if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
         raise Hold("CUSTODY_RUN_ID_INVALID")
     db_path, marker_path, custody_root = map(Path, (db_path, marker_path, custody_root))
+    if db_path == OBSERVER:
+        _operator_identity_guard()
     before = host_preflight(db_path, marker_path, custody_root)
     offhours = _market_offhours_guard()
     runtime_binding = _rootless_runtime_binding(_release_marker(marker_path), db_path)
@@ -945,9 +966,11 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     try:
         if arguments == ["host-preflight"]:
+            _operator_identity_guard()
             print(json.dumps(host_preflight(), sort_keys=True))
             return 0
         if len(arguments) == 2 and arguments[0] == "host-custody":
+            _operator_identity_guard()
             print(json.dumps(host_custody_once(run_id=arguments[1]), sort_keys=True))
             return 0
         if len(arguments) == 2 and arguments[0] == "verify-owner":
