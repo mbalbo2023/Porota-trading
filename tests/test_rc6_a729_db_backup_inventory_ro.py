@@ -1,12 +1,18 @@
 """A729 negative and positive fixtures: there is NO deletion entry point."""
 from datetime import datetime, timedelta, timezone
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import sqlite3
 import tempfile
+import tracemalloc
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
+import sys
+import time
 
 from scripts import rc6_a729_db_backup_inventory_ro as inv
 
@@ -208,6 +214,336 @@ class DBBackupInventoryTests(unittest.TestCase):
         self.assertNotIn("shutil.rmtree(", script)
         self.assertNotIn("DELETE FROM", script)
         self.assertNotIn("VACUUM", script)
+
+
+class ArchiveProvenanceReadOnlyTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.dbpath = self.root / "market_history.db"
+        self.writer = sqlite3.connect(self.dbpath)
+        self.addCleanup(self.writer.close)
+        self.writer.execute("PRAGMA journal_mode=WAL")
+        self.writer.execute("""CREATE TABLE historical_raw_archive(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL,
+            row_key TEXT NOT NULL, body_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL, quality TEXT NOT NULL,
+            body_json TEXT NOT NULL, UNIQUE(origin,row_key,body_hash))""")
+        self.writer.commit()
+        self.writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    def add_archive(self, row_id, *, origin="PPI_HISTORY", quality="UNVALIDATED",
+                    body=None):
+        body = body if body is not None else '{"fixture":' + str(row_id) + '}'
+        self.writer.execute("""INSERT INTO historical_raw_archive
+            (id,origin,row_key,body_hash,recorded_at,quality,body_json)
+            VALUES(?,?,?,?,?,?,?)""", (row_id, origin, f"fixture-{row_id}",
+            hashlib.sha256(body.encode()).hexdigest(),
+            "2026-11-19T10:43:47+00:00", quality, body))
+        self.writer.commit()
+
+    def secondary_archive(self):
+        """Model the host's DISTINCT HISTORY and OBSERVER source inodes."""
+        path = self.root / "observer_archive.db"
+        destination = sqlite3.connect(path)
+        self.addCleanup(destination.close)
+        self.writer.backup(destination)
+        destination.execute("PRAGMA journal_mode=WAL")
+        return path
+
+    def test_reader_sees_committed_wal_row_without_checkpoint_and_changes_no_base(self):
+        self.add_archive(1)
+        wal_path = Path(str(self.dbpath) + "-wal")
+        self.assertGreater(wal_path.stat().st_size, 0)
+        base_before = self.dbpath.stat().st_mtime_ns
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["wal_scope"], "WAL_SNAPSHOT_CONSISTENT")
+        self.assertEqual(result["sample_rows"], 1)
+        self.assertEqual(result["origin_ppi_history_labeled"], 1)
+        self.assertEqual(result["quality_unvalidated_labeled"], 1)
+        self.assertEqual(result["hash_matched"], 1)
+        self.assertIsNone(result["rows_total"])
+        self.assertEqual(self.dbpath.stat().st_mtime_ns, base_before)
+
+    def test_ro_mount_is_blocking_even_when_sqlite_is_present(self):
+        self.add_archive(1)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=False):
+            result = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["status"], "RO_MOUNT_UNVERIFIED")
+        self.assertEqual(result["sample_rows"], 0)
+
+    def test_latest_64_rows_bounded_no_false_total(self):
+        for idx in range(1, 70):
+            self.add_archive(idx, origin="OTHER_PROVIDER" if idx % 2 else "PPI_HISTORY")
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.archive_provenance_db("OBSERVER", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["sample_rows"], 64)
+        self.assertTrue(result["truncated"])
+        self.assertIsNone(result["rows_total"])
+        self.assertEqual(result["origin_ppi_history_labeled"], 32)
+        self.assertEqual(result["origin_other_labeled"], 32)
+
+    def test_sanitizer_drops_private_values_and_preserves_no_promotion(self):
+        self.add_archive(1)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            raw_db = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        injected = dict(raw_db, secret="PRIVATE_ACCOUNT_TOKEN")
+        raw = {"schema": inv.ARCHIVE_SCHEMA, "state": "ARCHIVE_PROVENANCE_ONLY",
+               "generated_at_utc": "2026-11-19T10:43:47+00:00",
+               "db_inventory": [injected, dict(raw_db, role="OBSERVER")],
+               "read_only": True, "os_ro_mount": True, "host_mutations": 0,
+               "provider_calls": 0, "ppi_watch_touched": False,
+               "real_orders_sent_by_action": 0, "archive_source_selected": False,
+               "ppi_provider_contract_verified": False}
+        clean = inv.archive_public_receipt(raw, 0)
+        self.assertEqual(clean["state"], "ARCHIVE_PROVENANCE_ONLY", clean)
+        self.assertNotIn("PRIVATE_ACCOUNT_TOKEN", json.dumps(clean))
+        self.assertFalse(clean["archive_source_selected"])
+        self.assertFalse(clean["ppi_provider_contract_verified"])
+
+    def test_host_archive_mode_keeps_both_roles_and_never_selects_source(self):
+        self.add_archive(1)
+        second = self.secondary_archive()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "DB_TARGETS", (("HISTORY", self.dbpath, 2 * 1024**2),
+                                                 ("OBSERVER", second, 2 * 1024**2))):
+            raw = inv.host_archive_provenance()
+        self.assertEqual(raw["state"], "ARCHIVE_PROVENANCE_ONLY")
+        self.assertEqual([x["role"] for x in raw["db_inventory"]],
+                         ["HISTORY", "OBSERVER"])
+        self.assertEqual(raw["provider_calls"], 0)
+        self.assertEqual(raw["host_mutations"], 0)
+        self.assertFalse(raw["archive_source_selected"])
+        clean = inv.archive_public_receipt(raw, 0)
+        self.assertEqual(clean["state"], "ARCHIVE_PROVENANCE_ONLY", clean)
+
+    def test_archive_rejects_symlink_and_missing_table(self):
+        db_link = self.root / "symlink.db"
+        db_link.symlink_to(self.dbpath)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            self.assertEqual(inv.archive_provenance_db(
+                "OBSERVER", db_link, 2 * 1024**2)["status"], "FILE_UNSAFE")
+        bad_wal = Path(str(self.dbpath) + "-wal")
+        self.writer.close()
+        if bad_wal.exists():
+            bad_wal.unlink()
+        bad_wal.symlink_to(self.dbpath)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            self.assertEqual(inv.archive_provenance_db(
+                "HISTORY", self.dbpath, 2 * 1024**2)["status"], "FILE_UNSAFE")
+
+    def test_archive_oversize_body_skips_hash_and_invalid_hash_is_counted(self):
+        self.add_archive(1, quality="VALID_PAYLOAD", body="x" * (128 * 1024 + 1))
+        self.add_archive(2, quality="VALID_PAYLOAD")
+        self.writer.execute("UPDATE historical_raw_archive SET body_hash='not-a-sha' WHERE id=2")
+        self.writer.commit()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["quality_valid_payload_labeled"], 2)
+        self.assertEqual(result["oversize_bodies"], 1)
+        self.assertEqual(result["hash_unchecked"], 1)
+        self.assertEqual(result["hash_mismatched"], 1)
+        self.assertEqual(result["hash_matched"], 0)
+
+    def test_archive_oversize_text_columns_do_not_materialize_host_memory(self):
+        # The SQLite row is larger than the probe's total 2 MiB byte budget.
+        # A SELECT returning arbitrary origin/quality/hash strings would copy
+        # multiple MiB into Python before any body limit can run.
+        big_origin = "O" * (8 * 1024 * 1024)
+        self.add_archive(1, origin=big_origin, body="x" * (8 * 1024 * 1024))
+        del big_origin
+        tracemalloc.start()
+        try:
+            with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                result = inv.archive_provenance_db("HISTORY", self.dbpath, 64 * 1024**2)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["status"], "OBSERVED_BOUNDED", result)
+        self.assertEqual(result["origin_other_labeled"], 1)
+        self.assertEqual(result["oversize_bodies"], 1)
+        self.assertLess(peak, 4 * 1024 * 1024)
+
+    def test_archive_schema_ddl_comment_is_never_materialized(self):
+        source = self.root / "oversize_ddl.db"
+        db = sqlite3.connect(source)
+        self.addCleanup(db.close)
+        db.execute("PRAGMA journal_mode=WAL")
+        ddl = """CREATE TABLE historical_raw_archive(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL,
+            row_key TEXT NOT NULL, body_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL, quality TEXT NOT NULL,
+            body_json TEXT NOT NULL, UNIQUE(origin,row_key,body_hash))"""
+        db.execute(ddl.replace("historical_raw_archive(",
+                               "historical_raw_archive /*" +
+                               "Z" * (8 * 1024 * 1024) + "*/ ("))
+        db.commit()
+        self.assertGreater(db.execute("""SELECT length(sql) FROM sqlite_schema
+            WHERE name='historical_raw_archive'""").fetchone()[0], 8 * 1024 * 1024)
+        tracemalloc.start()
+        try:
+            with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                result = inv.archive_provenance_db("HISTORY", source, 64 * 1024**2)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["status"], "SQLITE_UNAVAILABLE", result)
+        self.assertEqual(result["sample_rows"], 0)
+        self.assertLess(peak, 4 * 1024 * 1024)
+
+    def test_archive_schema_oversize_quoted_column_fails_without_allocating(self):
+        source = self.root / "oversize_column.db"
+        db = sqlite3.connect(source)
+        self.addCleanup(db.close)
+        db.execute("PRAGMA journal_mode=WAL")
+        ddl = ("CREATE TABLE historical_raw_archive (id INTEGER PRIMARY KEY, "
+               "origin TEXT, row_key TEXT, body_hash TEXT, recorded_at TEXT, "
+               "quality TEXT, body_json TEXT, \"" + "Q" * (4 * 1024 * 1024) +
+               "\" TEXT)")
+        db.execute(ddl)
+        db.commit()
+        tracemalloc.start()
+        try:
+            with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+                result = inv.archive_provenance_db("HISTORY", source, 64 * 1024**2)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertIn(result["status"], ("SCHEMA_INVALID", "SQLITE_UNAVAILABLE"))
+        self.assertEqual(result["sample_rows"], 0)
+        self.assertLess(peak, 4 * 1024 * 1024)
+
+    def test_archive_deadline_expires_closed_without_partial_counts(self):
+        self.add_archive(1)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "ARCHIVE_SCAN_SECONDS", 0):
+            result = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["status"], "TIME_BUDGET")
+        self.assertEqual(result["sample_rows"], 0)
+
+    def test_archive_connection_must_bind_to_pinned_source_inode(self):
+        # Holding fd A is not enough if SQLite is redirected to B by a path
+        # swap during connect and the original pathname is restored.
+        self.add_archive(1)
+        alternate = self.root / "alternate.db"
+        alternate_writer = sqlite3.connect(alternate)
+        self.addCleanup(alternate_writer.close)
+        alternate_writer.execute("PRAGMA journal_mode=WAL")
+        alternate_writer.execute("""CREATE TABLE historical_raw_archive(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL,
+            row_key TEXT NOT NULL, body_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL, quality TEXT NOT NULL,
+            body_json TEXT NOT NULL, UNIQUE(origin,row_key,body_hash))""")
+        body = '{"fixture":42}'
+        for index in (1, 2):
+            alternate_writer.execute("INSERT INTO historical_raw_archive VALUES(?,?,?,?,?,?,?)",
+                                     (index, "PPI_HISTORY", f"other-{index}",
+                                      hashlib.sha256(body.encode()).hexdigest(),
+                                      "2026-11-19T10:43:47+00:00", "VALID_PAYLOAD", body))
+        alternate_writer.commit()
+        original_connect = sqlite3.connect
+
+        def swapped_connection(path, *args, **kwargs):
+            if isinstance(path, str) and path.endswith("?mode=ro"):
+                return original_connect("file:" + str(alternate) + "?mode=ro",
+                                        *args, **kwargs)
+            return original_connect(path, *args, **kwargs)
+
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv.sqlite3, "connect", side_effect=swapped_connection):
+            result = inv.archive_provenance_db("HISTORY", self.dbpath, 2 * 1024**2)
+        self.assertEqual(result["status"], "SOURCE_BINDING_UNVERIFIED", result)
+        self.assertEqual(result["sample_rows"], 0)
+
+    def test_archive_unsupported_table_list_cannot_claim_table_absent(self):
+        self.add_archive(1)
+
+        class OldSQLitePragma:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def __getattr__(self, name):
+                return getattr(self.conn, name)
+
+            def execute(self, query, *args):
+                if query.startswith("PRAGMA table_list"):
+                    class EmptyPragma:
+                        def fetchall(self):
+                            return []
+                    return EmptyPragma()
+                return self.conn.execute(query, *args)
+
+        result = inv._archive_empty("HISTORY")
+        inv._archive_sample(OldSQLitePragma(self.writer),
+                            time.monotonic() + 2, result)
+        self.assertEqual(result["status"], "SCHEMA_INVALID", result)
+        self.assertEqual(result["sample_rows"], 0)
+
+    def test_archive_physically_absent_table_remains_distinct(self):
+        absent = self.root / "no-archive.db"
+        db = sqlite3.connect(absent)
+        self.addCleanup(db.close)
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("CREATE TABLE other_table(id INTEGER PRIMARY KEY)")
+        db.commit()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True):
+            result = inv.archive_provenance_db("HISTORY", absent, 2 * 1024**2)
+        self.assertEqual(result["status"], "TABLE_ABSENT", result)
+        self.assertEqual(result["sample_rows"], 0)
+
+    def test_archive_sanitizer_fail_closed_on_forged_success_and_counters(self):
+        self.add_archive(1)
+        second = self.secondary_archive()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "DB_TARGETS", (("HISTORY", self.dbpath, 2 * 1024**2),
+                                                 ("OBSERVER", second, 2 * 1024**2))):
+            raw = inv.host_archive_provenance()
+        raw["db_inventory"][0]["sample_rows"] = 65
+        self.assertEqual(inv.archive_public_receipt(raw, 0)["state"], "NO_VERIFICADO")
+        raw["db_inventory"][0]["sample_rows"] = 1
+        raw["ppi_provider_contract_verified"] = True
+        self.assertEqual(inv.archive_public_receipt(raw, 0)["state"], "NO_VERIFICADO")
+
+    def test_archive_cli_separate_mode_and_public_sanitization(self):
+        self.add_archive(1)
+        second = self.secondary_archive()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "DB_TARGETS", (("HISTORY", self.dbpath, 2 * 1024**2),
+                                                 ("OBSERVER", second, 2 * 1024**2))):
+            raw = inv.host_archive_provenance()
+            output = io.StringIO()
+            with patch.object(sys, "argv", ["inventory", "host-archive-provenance"]), \
+                    redirect_stdout(output):
+                self.assertEqual(inv.main(), 0)
+            observed = json.loads(output.getvalue())
+            self.assertEqual(observed["schema"], inv.ARCHIVE_SCHEMA)
+        private = self.root / "private-archive.json"
+        private.write_text(json.dumps(raw))
+        public = self.root / "public-archive.json"
+        with patch.object(sys, "argv", ["inventory", "sanitize-archive", "--raw",
+                                       str(private), "--out", str(public), "--remote-rc", "0"]):
+            self.assertEqual(inv.main(), 0)
+        receipt = json.loads(public.read_text())
+        self.assertEqual(receipt["state"], "ARCHIVE_PROVENANCE_ONLY")
+        self.assertFalse(receipt["archive_source_selected"])
+
+    def test_archive_action_is_opt_in_and_host_data_mount_os_ro(self):
+        workflow = (Path(inv.__file__).resolve().parents[1] / ".github/workflows/"
+                    "rc6-a729-db-backup-inventory-readonly.yml").read_text()
+        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY]", workflow)
+        self.assertIn("inputs.mode == 'INVENTORY_ONLY'", workflow)
+        self.assertIn("inputs.mode == 'ARCHIVE_PROVENANCE_ONLY'", workflow)
+        self.assertIn("group: rc6-unified-paper-deploy", workflow)
+        self.assertIn("unshare --mount --propagation private", workflow)
+        self.assertIn("mount -o remount,bind,ro /opt/porota-trading/data", workflow)
+        self.assertIn("host-archive-provenance", workflow)
+        self.assertIn("sanitize-archive", workflow)
+        self.assertNotIn("docker exec", workflow)
+        self.assertNotIn("PPI_API_KEY", workflow)
 
 
 if __name__ == "__main__":

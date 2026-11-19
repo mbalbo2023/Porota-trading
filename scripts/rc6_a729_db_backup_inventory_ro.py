@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,10 +22,12 @@ import sqlite3
 import stat
 import sys
 import time
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 
 SCHEMA = "rc6.a729.db-backup-inventory-readonly.v1"
+ARCHIVE_SCHEMA = "rc6.a729.archive-provenance-ro.v1"
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 DATA = Path("/opt/porota-trading/data")
 DB_TARGETS = (
@@ -66,10 +69,38 @@ SCHEMA_SCOPES = frozenset({"NO_VERIFICADO", "IMMUTABLE_BASE_STABLE",
                            "BASE_FILE_ONLY_WAL_UNRECONCILED"})
 PRAGMA_MODES = frozenset({"wal", "delete", "truncate", "persist", "memory", "off"})
 MAX_NUMBER = 2**60
+ARCHIVE_MAX_ROWS = 64
+ARCHIVE_SCAN_SECONDS = 2.0
+ARCHIVE_MAX_BODY_BYTES = 128 * 1024
+ARCHIVE_MAX_TOTAL_BODY_BYTES = 2 * 1024 * 1024
+ARCHIVE_COLUMNS = ("id", "origin", "row_key", "body_hash", "recorded_at",
+                   "quality", "body_json")
+ARCHIVE_STATUSES = frozenset({
+    "OBSERVED_BOUNDED", "RO_MOUNT_UNVERIFIED", "MISSING", "PATH_UNSAFE",
+    "FILE_UNSAFE", "SIZE_LIMIT", "SQLITE_UNAVAILABLE", "TABLE_ABSENT",
+    "SCHEMA_INVALID", "TIME_BUDGET", "CHANGED_DURING_SCAN",
+    "SOURCE_BINDING_UNVERIFIED",
+})
+ARCHIVE_WAL_SCOPES = frozenset({"WAL_SNAPSHOT_CONSISTENT", "BASE_NO_WAL",
+                                "NO_VERIFICADO"})
 
 
 class InventoryError(Exception):
     """Expected fail-closed inventory condition (never published verbatim)."""
+
+
+def archive_readonly_mount_attested(path: Path) -> bool:
+    """The caller must have isolated the *host data* in a private OS RO mount.
+
+    SQLite URI mode=ro alone can still write a live WAL -shm sidecar.  Do not
+    open a connection when the kernel has not marked the data mount read-only.
+    """
+    try:
+        return bool(path.is_absolute() and path.is_relative_to(DATA) and
+                    os.statvfs(DATA).f_flag & os.ST_RDONLY and
+                    os.statvfs(path.parent).f_flag & os.ST_RDONLY)
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def _anchored_directory(path: Path) -> int:
@@ -108,6 +139,243 @@ def _file_metadata(parent_fd: int, name: str) -> tuple[str, tuple | None]:
 def _stable_file(parent_fd: int, name: str, before: tuple | None) -> bool:
     status, after = _file_metadata(parent_fd, name)
     return status == "REGULAR" and after == before
+
+
+def _archive_empty(role: str, status: str = "SQLITE_UNAVAILABLE") -> dict:
+    return {"role": role, "status": status, "wal_scope": "NO_VERIFICADO",
+            "schema_exact": False, "sample_rows": 0, "truncated": False,
+            "rows_total": None, "origin_ppi_history_labeled": 0,
+            "origin_other_labeled": 0, "quality_valid_payload_labeled": 0,
+            "quality_unvalidated_labeled": 0, "quality_other_labeled": 0,
+            "hash_matched": 0, "hash_mismatched": 0, "hash_unchecked": 0,
+            "oversize_bodies": 0, "body_bytes_examined": 0,
+            "db_bytes": None, "wal_bytes": None, "shm_bytes": None,
+            "sqlite_ro": False}
+
+
+def _archive_same_identity(old: tuple | None, current: tuple | None) -> bool:
+    """Content may advance within an ACID read snapshot; inode/owner cannot."""
+    if old is None or current is None:
+        return old is None and current is None
+    return (old[0], old[1], *old[5:]) == (current[0], current[1], *current[5:])
+
+
+def _archive_fd_map() -> dict[int, tuple[int, int]]:
+    """Observe our own open regular-file inodes; no /proc paths leave host."""
+    try:
+        names = os.listdir("/proc/self/fd")
+    except OSError as exc:
+        raise InventoryError("SOURCE_BINDING_UNVERIFIED") from exc
+    found = {}
+    for name in names:
+        if not name.isdecimal():
+            continue
+        handle = int(name)
+        try:
+            info = os.fstat(handle)
+        except OSError:
+            continue  # The directory listing's transient fd may have closed.
+        if stat.S_ISREG(info.st_mode):
+            found[handle] = (info.st_dev, info.st_ino)
+    return found
+
+
+def _archive_sqlite_binding(db: sqlite3.Connection, path: Path,
+                            pinned: tuple[int, int],
+                            fds_before: dict[int, tuple[int, int]]) -> None:
+    """Require SQLite to hold its OWN fd to the exact pinned source inode.
+
+    SQLite's WAL VFS cannot use `file:/proc/self/fd/N?mode=ro` (it needs
+    sibling -wal/-shm paths), so compare the newly opened physical fd in
+    /proc rather than trusting the pathname returned by database_list alone.
+    """
+    rows = db.execute("PRAGMA database_list").fetchall()
+    if (len(rows) != 1 or rows[0][1] != "main" or rows[0][2] != str(path)):
+        raise InventoryError("SOURCE_BINDING_UNVERIFIED")
+    after = _archive_fd_map()
+    if not any(fd not in fds_before and inode == pinned
+               for fd, inode in after.items()):
+        raise InventoryError("SOURCE_BINDING_UNVERIFIED")
+
+
+def _archive_blob(db: sqlite3.Connection, column: str, row_id: int,
+                  limit: int) -> tuple[bytes | None, int]:
+    """Read at most the allowance, even for a malicious multi-GiB TEXT value.
+
+    SQLite's incremental blob handle works on TEXT as well.  The SQL SELECT
+    projects only the integer rowid; it never materializes user text in Python
+    or evaluates length(CAST(body_json AS BLOB)) over the whole value.
+    """
+    if not callable(getattr(db, "blobopen", None)):
+        raise InventoryError("SQLITE_UNAVAILABLE")
+    with db.blobopen("historical_raw_archive", column, row_id, readonly=True) as blob:
+        size = len(blob)
+        if size > limit:
+            return None, size
+        return blob.read(size), size
+
+
+def _archive_sample(db: sqlite3.Connection, deadline: float, receipt: dict) -> None:
+    # `sqlite_schema.sql` may include multi-MiB comments or column names.
+    # A bounded type-only SELECT differentiates truly absent from a SQLite
+    # build too old to implement PRAGMA table_list (which returns no rows).
+    known = db.execute("""SELECT type FROM sqlite_schema
+        WHERE name='historical_raw_archive' LIMIT 2""").fetchall()
+    if not known:
+        receipt["status"] = "TABLE_ABSENT"
+        return
+    if len(known) != 1 or known[0][0] != "table":
+        receipt["status"] = "SCHEMA_INVALID"
+        return
+    # PRAGMA table_list returns bounded type metadata without DDL contents.
+    objects = db.execute("PRAGMA table_list('historical_raw_archive')").fetchall()
+    if (len(objects) != 1 or objects[0][0:3] !=
+            ("main", "historical_raw_archive", "table") or objects[0][4] != 0):
+        receipt["status"] = "SCHEMA_INVALID"
+        return
+    columns = db.execute("PRAGMA table_info('historical_raw_archive')").fetchall()
+    if (tuple(col[1] for col in columns) != ARCHIVE_COLUMNS or
+            type(columns[0][5]) is not int or columns[0][5] != 1):
+        receipt["status"] = "SCHEMA_INVALID"
+        return
+    receipt["schema_exact"] = True
+    rows = db.execute("""SELECT id FROM historical_raw_archive
+        ORDER BY id DESC LIMIT ?""", (ARCHIVE_MAX_ROWS + 1,)).fetchall()
+    receipt["truncated"] = len(rows) > ARCHIVE_MAX_ROWS
+    body_budget = ARCHIVE_MAX_TOTAL_BODY_BYTES
+    for (row_id,) in rows[:ARCHIVE_MAX_ROWS]:
+        if time.monotonic() >= deadline:
+            raise InventoryError("TIME_BUDGET")
+        if type(row_id) is not int or row_id < 1:
+            raise InventoryError("SCHEMA_INVALID")
+        origin, _ = _archive_blob(db, "origin", row_id, 64)
+        quality, _ = _archive_blob(db, "quality", row_id, 64)
+        body_hash, _ = _archive_blob(db, "body_hash", row_id, 64)
+        receipt["sample_rows"] += 1
+        receipt["origin_ppi_history_labeled" if origin == b"PPI_HISTORY"
+                else "origin_other_labeled"] += 1
+        if quality == b"VALID_PAYLOAD":
+            receipt["quality_valid_payload_labeled"] += 1
+        elif quality == b"UNVALIDATED":
+            receipt["quality_unvalidated_labeled"] += 1
+        else:
+            receipt["quality_other_labeled"] += 1
+        body, body_bytes = _archive_blob(db, "body_json", row_id,
+                                         min(ARCHIVE_MAX_BODY_BYTES, body_budget))
+        if body is None:
+            if body_bytes > ARCHIVE_MAX_BODY_BYTES:
+                receipt["oversize_bodies"] += 1
+            receipt["hash_unchecked"] += 1
+            continue
+        body_budget -= len(body)
+        receipt["body_bytes_examined"] += len(body)
+        if (body_hash is not None and re.fullmatch(rb"[0-9a-f]{64}", body_hash)
+                and hashlib.sha256(body).hexdigest().encode() == body_hash):
+            receipt["hash_matched"] += 1
+        else:
+            receipt["hash_mismatched"] += 1
+    if time.monotonic() >= deadline:
+        raise InventoryError("TIME_BUDGET")
+    receipt["status"] = "OBSERVED_BOUNDED"
+
+
+def archive_provenance_db(role: str, path: Path, maximum: int) -> dict:
+    """Bounded SQL sample of a live WAL, permitted only on OS-RO data mounts.
+
+    Labels and stored-body SHA are NOT independent economic PPI provenance.
+    No COUNT(*), full-text export, PPI call, or database write is attempted.
+    """
+    receipt = _archive_empty(role)
+    if not archive_readonly_mount_attested(path):
+        receipt["status"] = "RO_MOUNT_UNVERIFIED"
+        return receipt
+    deadline = time.monotonic() + ARCHIVE_SCAN_SECONDS
+    try:
+        parent_fd = _anchored_directory(path.parent)
+    except InventoryError as exc:
+        receipt["status"] = "MISSING" if str(exc) == "MISSING" else "PATH_UNSAFE"
+        return receipt
+    try:
+        status, before = _file_metadata(parent_fd, path.name)
+        if status != "REGULAR":
+            receipt["status"] = status if status == "MISSING" else "FILE_UNSAFE"
+            return receipt
+        assert before is not None
+        if not 4096 <= before[2] <= maximum:
+            receipt["status"] = "SIZE_LIMIT"
+            return receipt
+        sides = {}
+        for suffix in ("-wal", "-shm", "-journal"):
+            side_status, info = _file_metadata(parent_fd, path.name + suffix)
+            if side_status not in ("MISSING", "REGULAR"):
+                receipt["status"] = "FILE_UNSAFE"
+                return receipt
+            sides[suffix] = info
+        if sides["-journal"] is not None:
+            receipt["status"] = "FILE_UNSAFE"
+            return receipt
+        receipt["db_bytes"] = before[2]
+        receipt["wal_bytes"] = sides["-wal"][2] if sides["-wal"] else 0
+        receipt["shm_bytes"] = sides["-shm"][2] if sides["-shm"] else 0
+        opened_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=parent_fd)
+        try:
+            fd_stat = os.fstat(opened_fd)
+            if (fd_stat.st_dev, fd_stat.st_ino) != (before[0], before[1]):
+                receipt["status"] = "CHANGED_DURING_SCAN"
+                return receipt
+            opened_fds = _archive_fd_map()
+            uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True, timeout=.2,
+                                         isolation_level=None)) as db:
+                receipt["sqlite_ro"] = True
+                # Per-connection SQLite limits stop giant schema/text parsing
+                # BEFORE the first SQL statement; they never alter the DB.
+                if (not callable(getattr(db, "setlimit", None)) or
+                        not hasattr(sqlite3, "SQLITE_LIMIT_LENGTH") or
+                        not hasattr(sqlite3, "SQLITE_LIMIT_SQL_LENGTH")):
+                    raise InventoryError("SQLITE_UNAVAILABLE")
+                db.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 256 * 1024)
+                db.setlimit(sqlite3.SQLITE_LIMIT_SQL_LENGTH, 256 * 1024)
+                db.execute("PRAGMA query_only=ON")
+                db.execute("PRAGMA temp_store=MEMORY")
+                db.execute("PRAGMA trusted_schema=OFF")
+                db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 500)
+                try:
+                    mode = db.execute("PRAGMA journal_mode").fetchone()
+                    if not mode or mode[0] != "wal":
+                        raise InventoryError("SCHEMA_INVALID")
+                    db.execute("BEGIN")
+                    _archive_sqlite_binding(db, path, (before[0], before[1]),
+                                            opened_fds)
+                    _archive_sample(db, deadline, receipt)
+                    _archive_sqlite_binding(db, path, (before[0], before[1]),
+                                            opened_fds)
+                    db.rollback()
+                    receipt["wal_scope"] = ("WAL_SNAPSHOT_CONSISTENT"
+                                            if receipt["wal_bytes"] else "BASE_NO_WAL")
+                finally:
+                    db.set_progress_handler(None, 0)
+            after_status, after = _file_metadata(parent_fd, path.name)
+            if after_status != "REGULAR" or not _archive_same_identity(before, after):
+                receipt = _archive_empty(role, "CHANGED_DURING_SCAN")
+            for suffix, old in sides.items():
+                side_status, now = _file_metadata(parent_fd, path.name + suffix)
+                if (side_status not in ("REGULAR", "MISSING") or
+                        not _archive_same_identity(old, now)):
+                    receipt = _archive_empty(role, "CHANGED_DURING_SCAN")
+                    break
+            return receipt
+        finally:
+            os.close(opened_fd)
+    except InventoryError as exc:
+        status = str(exc)
+        return _archive_empty(role, status if status in ARCHIVE_STATUSES else "SQLITE_UNAVAILABLE")
+    except (OSError, sqlite3.Error, ValueError, TypeError, RecursionError) as exc:
+        return _archive_empty(role, "TIME_BUDGET" if time.monotonic() >= deadline
+                              else "SQLITE_UNAVAILABLE")
+    finally:
+        os.close(parent_fd)
 
 
 def _db_public(role: str, status: str, size: int | None = None) -> dict:
@@ -362,6 +630,23 @@ def host_inventory() -> dict:
                             "ROW_COUNTS_NO_VERIFICADO"]}
 
 
+def host_archive_provenance() -> dict:
+    """Two fixed physical locations; never choose a historical repair source."""
+    now = datetime.now(timezone.utc)
+    targets = DB_TARGETS
+    return {"schema": ARCHIVE_SCHEMA, "state": "ARCHIVE_PROVENANCE_ONLY",
+            "generated_at_utc": now.isoformat(),
+            "db_inventory": [archive_provenance_db(role, path, maximum)
+                             for role, path, maximum in targets],
+            "read_only": True,
+            "os_ro_mount": all(archive_readonly_mount_attested(path)
+                               for _, path, _ in targets),
+            "host_mutations": 0, "provider_calls": 0,
+            "ppi_watch_touched": False, "real_orders_sent_by_action": 0,
+            "archive_source_selected": False,
+            "ppi_provider_contract_verified": False}
+
+
 def _int(value: object, maximum: int = MAX_NUMBER) -> int | None:
     return value if type(value) is int and 0 <= value <= maximum else None
 
@@ -479,15 +764,97 @@ def public_receipt(raw: object, remote_rc: int) -> dict:
         return dict(failure, failure_class="MALFORMED_HOST_RECEIPT")
 
 
+def archive_public_receipt(raw: object, remote_rc: int) -> dict:
+    """Publish only known counters; never echo instrument or raw archive body."""
+    failure = {"schema": ARCHIVE_SCHEMA, "state": "NO_VERIFICADO",
+               "failure_class": "HOST_UNAVAILABLE", "read_only": True,
+               "host_mutations": 0, "ppi_watch_touched": False,
+               "provider_calls": 0, "real_orders_sent_by_action": 0,
+               "archive_source_selected": False,
+               "ppi_provider_contract_verified": False}
+    if remote_rc != 0 or not isinstance(raw, dict):
+        return failure
+    require = {"schema": ARCHIVE_SCHEMA, "state": "ARCHIVE_PROVENANCE_ONLY",
+               "read_only": True, "os_ro_mount": True, "host_mutations": 0,
+               "ppi_watch_touched": False, "provider_calls": 0,
+               "real_orders_sent_by_action": 0, "archive_source_selected": False,
+               "ppi_provider_contract_verified": False}
+    if any(raw.get(key) != value or type(raw.get(key)) is not type(value)
+           for key, value in require.items()):
+        return dict(failure, failure_class="INVARIANT_NOT_PROVEN")
+    try:
+        stamp = datetime.fromisoformat(raw["generated_at_utc"])
+        assert stamp.tzinfo is not None
+        dbs = raw["db_inventory"]
+        assert isinstance(dbs, list) and len(dbs) == 2
+        cleaned = []
+        for item, role in zip(dbs, ("HISTORY", "OBSERVER")):
+            assert isinstance(item, dict) and item.get("role") == role
+            status, scope = item.get("status"), item.get("wal_scope")
+            assert status in ARCHIVE_STATUSES and scope in ARCHIVE_WAL_SCOPES
+            booleans = ("schema_exact", "truncated", "sqlite_ro")
+            assert all(type(item.get(name)) is bool for name in booleans)
+            ints = ("sample_rows", "origin_ppi_history_labeled",
+                    "origin_other_labeled", "quality_valid_payload_labeled",
+                    "quality_unvalidated_labeled", "quality_other_labeled",
+                    "hash_matched", "hash_mismatched", "hash_unchecked",
+                    "oversize_bodies", "body_bytes_examined")
+            counts = {k: _int(item.get(k), ARCHIVE_MAX_TOTAL_BODY_BYTES)
+                      for k in ints}
+            assert all(x is not None for x in counts.values())
+            assert counts["sample_rows"] <= ARCHIVE_MAX_ROWS
+            assert counts["origin_ppi_history_labeled"] + counts[
+                "origin_other_labeled"] == counts["sample_rows"]
+            assert (counts["quality_valid_payload_labeled"] + counts[
+                "quality_unvalidated_labeled"] + counts["quality_other_labeled"]
+                == counts["sample_rows"])
+            assert (counts["hash_matched"] + counts["hash_mismatched"] +
+                    counts["hash_unchecked"] == counts["sample_rows"])
+            assert counts["oversize_bodies"] <= counts["hash_unchecked"]
+            assert item.get("rows_total") is None
+            sizes = {key: _int(item.get(key)) for key in
+                     ("db_bytes", "wal_bytes", "shm_bytes")}
+            assert all(item.get(k) is None or sizes[k] is not None for k in sizes)
+            if status == "OBSERVED_BOUNDED":
+                assert item["schema_exact"] is True and item["sqlite_ro"] is True
+                assert scope != "NO_VERIFICADO"
+            else:
+                assert (not item["schema_exact"] or status == "SCHEMA_INVALID")
+                assert all(counts[k] == 0 for k in counts)
+            cleaned.append({"role": role, "status": status,
+                            "wal_scope": scope,
+                            **{k: item[k] for k in booleans},
+                            **counts, **sizes, "rows_total": None})
+        whole_state = ("ARCHIVE_PROVENANCE_ONLY" if all(
+            x["status"] in ("OBSERVED_BOUNDED", "TABLE_ABSENT") for x in cleaned)
+            else "NO_VERIFICADO")
+        return {"schema": ARCHIVE_SCHEMA, "state": whole_state,
+                "generated_at_utc": stamp.isoformat(),
+                "db_inventory": cleaned, "read_only": True,
+                "os_ro_mount": True, "host_mutations": 0, "provider_calls": 0,
+                "real_orders_sent_by_action": 0, "ppi_watch_touched": False,
+                "archive_source_selected": False,
+                "ppi_provider_contract_verified": False,
+                "limitations": ["LATEST_64_ROWS_ONLY", "FULL_COUNTS_NOT_SCANNED",
+                                "LABELS_AND_BODY_SHA_NOT_PPI_PROVIDER_PROVENANCE",
+                                "NO_HISTORY_SOURCE_SELECTION", "NO_DB_RESTORE"]}
+    except (AssertionError, KeyError, TypeError, ValueError, OverflowError):
+        return dict(failure, failure_class="MALFORMED_HOST_RECEIPT")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("host-inventory", "sanitize"))
+    parser.add_argument("mode", choices=("host-inventory", "sanitize",
+                                         "host-archive-provenance", "sanitize-archive"))
     parser.add_argument("--raw", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--remote-rc", type=int, default=255)
     args = parser.parse_args()
     if args.mode == "host-inventory":
         print(json.dumps(host_inventory(), separators=(",", ":"), sort_keys=True))
+        return 0
+    if args.mode == "host-archive-provenance":
+        print(json.dumps(host_archive_provenance(), separators=(",", ":"), sort_keys=True))
         return 0
     if args.out is None or args.raw is None:
         parser.error("sanitize requires --raw and --out")
@@ -497,9 +864,12 @@ def main() -> int:
         raw = json.loads(args.raw.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError, InventoryError):
         raw = None
-    clean = public_receipt(raw, args.remote_rc)
+    clean = (archive_public_receipt(raw, args.remote_rc)
+             if args.mode == "sanitize-archive" else public_receipt(raw, args.remote_rc))
     args.out.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return 0 if clean["state"] == "INVENTORY_ONLY" else 2
+    expected = ("ARCHIVE_PROVENANCE_ONLY" if args.mode == "sanitize-archive"
+                else "INVENTORY_ONLY")
+    return 0 if clean["state"] == expected else 2
 
 
 if __name__ == "__main__":
