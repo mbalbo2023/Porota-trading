@@ -417,6 +417,12 @@ def test_postclose_admin_cancelled_caucion_requires_validated_receipt(
 def _ready_open_scanner(catalog_store, monkeypatch):
     ensure_initialized(catalog_store)
     monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    # Isolate *downstream* bounded-probe/coverage contract tests from the new
+    # production hard HOLD. No such attestation exists or can be toggled via
+    # environment in the deployed scanner; negative admission test below
+    # deliberately does not patch this function.
+    monkeypatch.setattr(observer, "_ppi_open_global_session_evidence_gate",
+                        lambda: None)
     with catalog_store.connect() as c:
         c.execute("UPDATE observer_state SET ppi_auth='OK',real_orders_sent=0")
 
@@ -430,6 +436,47 @@ def _ready_open_scanner(catalog_store, monkeypatch):
     monkeypatch.setattr(observer, "ProductionMarketReader", lambda *args, **kwargs:
                         (_ for _ in ()).throw(AssertionError("SECOND_PPI_ACTOR_FORBIDDEN")))
     return ExistingScanner()
+
+
+def test_open_alternate_queue_writer_cannot_bypass_unverified_global_ppi_session(
+        catalog_store, monkeypatch):
+    """A raw observer_commands row is not proof of one PPI login globally.
+
+    Neither the OPEN issuer's independent checks nor a scanner-local login
+    counter is a trustworthy cross-process singleton attestation. The scanner
+    must refuse its own GET even if another writer inserted the same command.
+    """
+    ensure_initialized(catalog_store)
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    # A new env flag or caller-controlled metrics must not grant authority.
+    monkeypatch.setenv("POROTA_PPI_SINGLE_SESSION_GLOBAL_ATTESTED", "1")
+    with catalog_store.connect() as c:
+        c.execute("UPDATE observer_state SET ppi_auth='OK',real_orders_sent=0")
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+
+    class AlreadyLoggedInScanner:
+        budget_enabled = True
+        metrics = {"authenticated": True, "login_calls": 1,
+                   "global_single_session_attested": True}
+
+        def login_once(self):
+            pytest.fail("SECOND_PPI_LOGIN_FORBIDDEN")
+
+        def capture_guarded_native(self, *args, **kwargs):
+            pytest.fail("PPI_GET_WITHOUT_GLOBAL_SESSION_OWNER_FORBIDDEN")
+
+    reader = AlreadyLoggedInScanner()
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only",
+                        lambda *args, **kwargs: pytest.fail(
+                            "NO_PROBE_BEFORE_GLOBAL_SESSION_ATTESTATION"))
+    assert observer._run_ppi_open_command(
+        catalog_store, reader, command_id, OPEN_BATCH, now=ART_OPEN) is reader
+    assert tuple(_command_receipt(catalog_store, command_id)) == (
+        "HOLD", "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
+    with catalog_store.connect() as c:
+        assert c.execute("""SELECT COUNT(*) FROM paper_events
+            WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'
+              AND detail LIKE ?""", (f"command_id={command_id};%",)).fetchone()[0] == 0
 
 
 def test_open_all_ten_families_same_authenticated_scanner_reader_no_auto_ready(
@@ -597,6 +644,51 @@ def test_open_batch_rechecks_paper_zero_before_book_preserving_current_receipt(
         snapshots = c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0]
     assert len(witness) == 1 and "endpoint=current" in witness[0][0]
     assert snapshots == 0
+
+
+def test_open_global_session_attestation_revoked_after_current_blocks_book(
+        catalog_store, monkeypatch):
+    """A post-Current custody loss cannot be covered by the admission check."""
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    stamp = ART_OPEN.astimezone(timezone.utc).isoformat()
+    attested = {"active": True}
+    endpoints = []
+
+    def physical_single_owner_for_test_only():
+        if not attested["active"]:
+            raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
+
+    monkeypatch.setattr(observer, "_ppi_open_global_session_evidence_gate",
+                        physical_single_owner_for_test_only)
+
+    def guarded_capture(endpoint, five_key, *, priority):
+        endpoints.append(endpoint)
+        assert endpoint == "current" and priority == "DISCOVERY"
+        attested["active"] = False
+        return {"native_payload": {"date": stamp, "price": 100},
+                "guard_wire_receipt": {
+                    "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
+                    "http_status_code": 200, "http_method": "GET",
+                    "adapter_send_invoked": True, "adapter_response_completed": True,
+                    "request_identity_3key": [five_key[0], five_key[1], five_key[4]],
+                    "claimed_five_key": list(five_key), "received_at_utc": stamp,
+                    "raw_body_sha256": "a" * 64}}
+
+    reader.capture_guarded_native = guarded_capture
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH,
+                                   now=ART_OPEN)
+    assert endpoints == ["current"]
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "HOLD"
+    assert report["coverage"]["BONOS"]["attempted"] == 1
+    assert report["coverage"]["BONOS"]["native_pair_qa_pass"] == 0
+    assert report["statuses"]["BONOS"] == "PRE_WIRE_GUARD_HOLD"
+    with catalog_store.connect() as c:
+        events = c.execute("""SELECT detail FROM paper_events
+            WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'""").fetchall()
+    assert len(events) == 1 and "endpoint=current" in events[0][0]
 
 
 def test_open_command_router_never_constructs_reader(catalog_store, monkeypatch):

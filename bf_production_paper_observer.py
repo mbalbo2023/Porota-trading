@@ -1310,7 +1310,8 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
         return {"status": "FRESH_OBSERVED", "identity": list(key),
                 "paper_ready": False, "native_receipts": list(witnessed)}
     except ValueError as error:
-        if str(error).startswith(("PPI_POSTCLOSE_", "PPI_OPEN_")):
+        if (str(error).startswith(("PPI_POSTCLOSE_", "PPI_OPEN_")) or
+                str(error) == "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"):
             store.event("PPI_DIRECT_REST_PROBE_HOLD", str(error))
             return {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
                     "reason": str(error), "native_receipts": list(witnessed)}
@@ -1405,6 +1406,24 @@ def _ppi_open_catalog_coverage(store):
         return None
 
 
+def _ppi_open_global_session_evidence_gate():
+    """Fail closed until *physical* PPI single-session custody is integrated.
+
+    The runtime currently starts scanner and EXIT as distinct processes; each
+    constructs its own ProductionMarketReader and invokes login_once(). The
+    optional scalping process can authenticate a third reader. Scanner-local
+    `metrics`, an environment flag, a DB command, a process-local registry or
+    a shared GET budget lease cannot attest one authenticated PPI session
+    globally. No reliable cross-process owner proof is wired into this process.
+
+    This deliberate hard HOLD is checked at OPEN admission and before every
+    native Current/Book SEND. It may be replaced only alongside a separately
+    reviewed shared-session owner with independent positive evidence; this
+    code must never infer singleton status from the command issuer's JSON.
+    """
+    raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
+
+
 def _ppi_open_evidence_gate(store, requested_day, *, now=None):
     """No OPEN diagnostic may compete with EXIT or leave PAPER/0 custody."""
     local = (now or datetime.now(TZ)).astimezone(TZ)
@@ -1439,6 +1458,9 @@ def _ppi_open_evidence_gate(store, requested_day, *, now=None):
         CaucionBook(store).positions()
     except (ValueError, TypeError, sqlite3.Error, OSError):
         raise ValueError("PPI_OPEN_CAUCION_RECEIPT_UNVERIFIED") from None
+    # A670 issuer is an independent witness, not a capability to bypass the
+    # scanner's own pre-SEND guard: direct observer_commands writers exist.
+    _ppi_open_global_session_evidence_gate()
 
 
 def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
@@ -1559,7 +1581,8 @@ def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
                         "HOLD" if abort or not witnessed else "EVIDENCE", detail)
     except (ValueError, TypeError, sqlite3.Error, RuntimeError, OSError) as error:
         reason = (str(error) if type(error) is ValueError and
-                  str(error).startswith("PPI_OPEN_") else
+                  (str(error).startswith("PPI_OPEN_") or
+                   str(error) == "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED") else
                   "PPI_OPEN_GUARD_" + type(error).__name__.upper())
         _finish_command(store, command_id, "HOLD", reason)
     return reader
