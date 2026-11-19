@@ -197,12 +197,20 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
     _require(stat.S_ISDIR(info.st_mode) and not root.is_symlink() and
              info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700,
              "RUNNER_PRIVATE_DIRECTORY_REQUIRED")
+    # The only supported producer is A511's uncompressed, record-padded TAR.
+    # Size must be inspected independently of tarfile, which silently ignores
+    # covert trailing bytes (and may read them into its private buffer).
+    _require(bundle.seekable(), "BUNDLE_MEMBER_UNSAFE")
+    bundle_start = bundle.tell()
+    bundle.seek(0, os.SEEK_END)
+    bundle_size = bundle.tell() - bundle_start
+    bundle.seek(bundle_start)
     with tempfile.TemporaryDirectory(prefix="rc6-a511-", dir=root) as temporary:
         directory = Path(temporary)
         found = {}
         total = 0
         try:
-            with tarfile.open(fileobj=bundle, mode="r|*") as archive:
+            with tarfile.open(fileobj=bundle, mode="r|") as archive:
                 for member in archive:
                     _time(deadline)
                     _require(member.isfile() and member.name in (*FILES.values(), MANIFEST) and
@@ -226,12 +234,36 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
                             digest.update(piece)
                             remaining -= len(piece)
                     found[member.name] = (member.size, digest.hexdigest())
+            # A511 writes exactly these three short-name members with zero
+            # metadata, two end blocks and 10 KiB TAR record padding.
+            # Reject compressed, PAX-extra, suffix or other noncanonical data.
+            member_bytes = sum(
+                tarfile.BLOCKSIZE +
+                ((part_size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE) *
+                tarfile.BLOCKSIZE
+                for part_size, _ in found.values()
+            )
+            expected_bytes = (
+                (member_bytes + 2 * tarfile.BLOCKSIZE +
+                 tarfile.RECORDSIZE - 1) // tarfile.RECORDSIZE
+            ) * tarfile.RECORDSIZE
+            _require(bundle_size == expected_bytes, "BUNDLE_MEMBER_UNSAFE")
+            bundle.seek(bundle_start + member_bytes)
+            remaining_padding = bundle_size - member_bytes
+            while remaining_padding:
+                _time(deadline)
+                padding = bundle.read(min(8192, remaining_padding))
+                _require(bool(padding) and not any(padding),
+                         "BUNDLE_MEMBER_UNSAFE")
+                remaining_padding -= len(padding)
             _require(set(found) == {*FILES.values(), MANIFEST},
                      "BUNDLE_MEMBER_MISSING")
             manifest_path = directory / MANIFEST
             _require(found[MANIFEST][0] <= 8192, "BUNDLE_MANIFEST_INVALID")
             manifest = json.loads(manifest_path.read_text())
             _require(isinstance(manifest, dict) and manifest.get("schema") == SCHEMA and
+                     manifest.get("writer_exclusion") == "BOUNDED_WITNESS" and
+                     type(manifest.get("shm_observed")) is bool and
                      manifest.get("cohort_scope") == "HISTORY_VERSION_ROWS_ONLY" and
                      manifest.get("global_universe_coverage") == "NO_VERIFICADO" and
                      manifest.get("readiness_implication") == "NONE",
@@ -240,6 +272,16 @@ def verify_private_bundle(bundle: BinaryIO, private_root: Path, *,
             _require(isinstance(parts, list) and len(parts) == 2 and
                      {p.get("name") for p in parts if isinstance(p, dict)} ==
                      set(FILES.values()), "BUNDLE_MANIFEST_INVALID")
+            _require(all(type(p.get("size")) is int and
+                         isinstance(p.get("sha256"), str) and
+                         re.fullmatch(r"[0-9a-f]{64}", p["sha256"])
+                         for p in parts), "BUNDLE_MANIFEST_INVALID")
+            by_name = {p["name"]: p for p in parts}
+            main_size = by_name[FILES[""]]["size"]
+            wal_size = by_name[FILES["-wal"]]["size"]
+            _require(main_size >= 4096 and 0 < wal_size <= MAX_WAL_BYTES and
+                     main_size + wal_size <= max_total_bytes,
+                     "BUNDLE_MANIFEST_INVALID")
             for part in parts:
                 _require((part["size"], part["sha256"]) == found[part["name"]],
                          "BUNDLE_HASH_MISMATCH")
