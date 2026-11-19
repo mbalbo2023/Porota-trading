@@ -305,7 +305,8 @@ def test_guard_failure_between_current_and_book_has_exact_rca_and_current_witnes
         Reader(), catalog_store, family="BONOS", command_id=42,
         pre_wire=pre_wire)
     assert observed == {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
-                        "reason": "PPI_POSTCLOSE_SUPERVISABLE_EXPOSURE_PRESENT"}
+                        "reason": "PPI_POSTCLOSE_SUPERVISABLE_EXPOSURE_PRESENT",
+                        "native_receipts": ["current"]}
     with catalog_store.connect() as c:
         witness = c.execute("""SELECT detail FROM paper_events
             WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'""").fetchall()
@@ -393,13 +394,14 @@ def test_open_all_ten_families_same_authenticated_scanner_reader_no_auto_ready(
         observed.append(family)
         if family == "BONOS":
             return {"status": "FRESH_OBSERVED", "identity": ["AL30", "BONOS", "BYMA", "ARS", "INMEDIATA"],
-                    "paper_ready": False}
-        return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False}
+                    "paper_ready": False, "native_receipts": ["current", "book"]}
+        return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
+                "native_receipts": []}
 
     monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", bounded_probe)
     assert observer._run_ppi_open_command(catalog_store, reader, command_id,
                                           OPEN_BATCH, now=ART_OPEN) is reader
-    assert tuple(observed) == TEN_FAMILIES
+    assert observed == ["ACCIONES", "BONOS"]
     status, raw = _command_receipt(catalog_store, command_id)
     report = json.loads(raw)
     assert status == "EVIDENCE"
@@ -414,6 +416,8 @@ def test_open_all_ten_families_same_authenticated_scanner_reader_no_auto_ready(
         "ready": 0, "hold": 1, "unattempted": 0}
     assert report["coverage"]["ACCIONES"]["ready"] == 0
     assert report["coverage"]["ACCIONES"]["attempted"] == 0
+    assert report["coverage"]["ACCIONES"]["hold"] == 3
+    assert report["unverified"]["ACCIONES"] == 3
     assert reader.metrics["login_calls"] == 1
 
 
@@ -485,15 +489,20 @@ def test_open_batch_aborts_remaining_families_after_provider_hold(
     def held_probe(existing_reader, store, *, family, command_id, pre_wire):
         pre_wire()
         touched.append(family)
-        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False}
+        if family == "ACCIONES":
+            return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
+                    "native_receipts": []}
+        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+                "native_receipts": []}
 
     monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", held_probe)
     observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH, now=ART_OPEN)
-    assert touched == ["ACCIONES"]
+    assert touched == ["ACCIONES", "BONOS"]
     status, raw = _command_receipt(catalog_store, command_id)
     report = json.loads(raw)
     assert status == "HOLD"
-    assert report["statuses"]["ACCIONES"] == "PROVIDER_OR_CONTRACT_HOLD"
+    assert report["statuses"]["ACCIONES"] == "CATALOG_IDENTITY_UNAVAILABLE"
+    assert report["statuses"]["BONOS"] == "PROVIDER_OR_CONTRACT_HOLD"
     assert report["statuses"]["FCI"] == "NOT_ATTEMPTED_ABORTED"
     assert report["coverage"]["FCI"]["attempted"] == 0
 
@@ -542,3 +551,119 @@ def test_open_command_router_never_constructs_reader(catalog_store, monkeypatch)
     monkeypatch.setattr(observer, "_run_ppi_open_command", fake_open)
     assert observer._run_command(catalog_store, reader, (123, OPEN_BATCH)) is reader
     assert observed == [(True, True, OPEN_BATCH)]
+
+
+def test_open_catalog_coverage_excludes_unverified_settlement_and_ambiguous_fivekeys(
+        catalog_store):
+    with catalog_store.connect() as c:
+        c.execute("""UPDATE financial_instrument_catalog
+            SET settlement_source='REQUEST_CANDIDATE'
+            WHERE ticker='AL30' AND instrument_type='BONOS'""")
+        c.execute("""INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  ("F1", "FCI", "BYMA", "ARS", "INMEDIATA", "REQUEST_CANDIDATE",
+                   "OFFHOST", "2026-11-17T17:00:00Z", "OFFHOST", "AVAILABLE",
+                   "NOT_READY", json.dumps({"_discovery_source": "PPI_PRIMARY"})))
+    coverage = observer._ppi_open_catalog_coverage(catalog_store)
+    assert coverage["enumerated_exact"]["BONOS"] == 0
+    assert coverage["enumerated_exact"]["FCI"] == 0
+    assert coverage["enumerated_exact"]["ACCIONES"] == 0
+    assert coverage["unverified"]["BONOS"] == 1
+    assert coverage["unverified"]["FCI"] == 1
+    assert coverage["unverified"]["ACCIONES"] == 3
+
+
+def test_open_current_book_probes_request_candidate_without_granting_settlement_or_ready(
+        catalog_store, monkeypatch):
+    with catalog_store.connect() as c:
+        c.execute("""UPDATE financial_instrument_catalog
+            SET settlement_source='REQUEST_CANDIDATE' WHERE ticker='AL30'""")
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    stamp = datetime.now(timezone.utc).isoformat()
+    calls = []
+
+    def capture(endpoint, five_key, *, priority):
+        calls.append((endpoint, tuple(five_key), priority))
+        payload = ({"date": stamp, "price": 101} if endpoint == "current" else
+                   {"date": stamp,
+                    "bids": [{"position": 1, "price": 100, "quantity": 1}],
+                    "offers": [{"position": 1, "price": 102, "quantity": 1}]})
+        return {"native_payload": payload, "guard_wire_receipt": {
+            "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
+            "http_status_code": 200, "http_method": "GET",
+            "adapter_send_invoked": True, "adapter_response_completed": True,
+            "request_identity_3key": [five_key[0], five_key[1], five_key[4]],
+            "claimed_five_key": list(five_key), "received_at_utc": stamp,
+            "raw_body_sha256": "a" * 64}}
+
+    reader.capture_guarded_native = capture
+    observer._run_ppi_open_command(catalog_store, reader, command_id,
+                                   OPEN_BATCH, now=ART_OPEN)
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "EVIDENCE" and report["statuses"]["BONOS"] == "FRESH_OBSERVED"
+    assert report["coverage"]["BONOS"] == {
+        "enumerated_exact": 0, "attempted": 1, "native_pair_qa_pass": 1,
+        "ready": 0, "hold": 1, "unattempted": 0}
+    assert report["unverified"]["BONOS"] == 1
+    assert [r[0] for r in calls] == ["current", "book"]
+    assert all(r[1] == ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")
+               and r[2] == "DISCOVERY" for r in calls)
+    with catalog_store.connect() as c:
+        catalog = c.execute("""SELECT settlement_source,capability
+            FROM financial_instrument_catalog WHERE ticker='AL30'""").fetchone()
+        quote = c.execute("""SELECT opening_block_reason FROM market_snapshots
+            WHERE symbol='AL30'""").fetchone()
+    assert catalog[0] == "REQUEST_CANDIDATE" and catalog[1] == "NOT_READY"
+    assert quote[0] == "PPI_DIRECT_REST_OBSERVE_ONLY"
+    assert _ppi_direct_rest_probe_candidates(catalog_store, family="BONOS") == [
+        ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
+
+
+def test_open_attempted_is_not_inferred_from_catalog_or_probe_status(
+        catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    observed = []
+
+    def probe(existing_reader, store, *, family, command_id, pre_wire):
+        pre_wire()
+        observed.append(family)
+        return ({"status": "FRESH_OBSERVED", "paper_ready": False,
+                 "native_receipts": []} if family == "BONOS" else
+                {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
+                 "native_receipts": []})
+
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", probe)
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH,
+                                   now=ART_OPEN)
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "HOLD"
+    assert report["coverage"]["BONOS"]["attempted"] == 0
+    assert report["coverage"]["BONOS"]["native_pair_qa_pass"] == 0
+    assert report["statuses"]["BONOS"] == "PROVIDER_OR_CONTRACT_HOLD"
+    assert "FCI" not in observed
+
+
+def test_open_partial_current_receipt_never_claims_book_or_ready(
+        catalog_store, monkeypatch):
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+
+    def probe(existing_reader, store, *, family, command_id, pre_wire):
+        pre_wire()
+        return ({"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+                 "native_receipts": ["current"]} if family == "BONOS" else
+                {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
+                 "native_receipts": []})
+
+    monkeypatch.setattr(observer, "_ppi_direct_rest_observe_only", probe)
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH,
+                                   now=ART_OPEN)
+    status, raw = _command_receipt(catalog_store, command_id)
+    report = json.loads(raw)
+    assert status == "HOLD"
+    assert report["coverage"]["BONOS"] == {
+        "enumerated_exact": 1, "attempted": 1, "native_pair_qa_pass": 0,
+        "ready": 0, "hold": 1, "unattempted": 0}
