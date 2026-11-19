@@ -1597,6 +1597,7 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
 
     CURRENT_SOURCE_SHA = "21b6d6b3882a35f1f5ad0469df739c5b0d6d2f76"
     CANDIDATE_SOURCE_SHA = "494116c1200b1c2914369d1e0ffd186c1906d781"
+    DEPLOYED_P0_SOURCE_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -1746,6 +1747,17 @@ class PerformanceEvidencePeriodContracts(unittest.TestCase):
         self.assertEqual(result["state"], "NO_VERIFICADO_CAPACITY_LIMIT")
         self.assertIsNone(result["default_capacity_bytes"])
         self.assertEqual(result["active_evidence_bytes"], active.stat().st_size)
+
+    def test_deployed_p0_source_uses_verified_capacity_not_unknown_limit(self):
+        # The deployed source and the previously audited 256 MiB source share
+        # the exact rc6_performance/capture.py Git blob, so the bound is known.
+        self.events((1, "2026-11-18T21:00:00Z"))
+        result = monitor.performance_evidence_capacity_stat(
+            self.root, runtime_source_sha=self.DEPLOYED_P0_SOURCE_SHA)
+        self.assertEqual(result["default_capacity_bytes"], 256 * 1024**2)
+        self.assertEqual(result["capacity_limit_source"], "EXACT_RUNTIME_SOURCE_SHA")
+        self.assertEqual(result["state"], "BELOW_DEFAULT_LIMIT_NOT_HEALTH")
+        self.assertEqual(result["recorded_period"]["status"], "OBSERVED")
 
     def test_empty_files_are_explicit_not_evidence_of_fresh_reporting(self):
         stat_result = monitor.performance_evidence_capacity_stat(
