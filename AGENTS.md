@@ -130,3 +130,30 @@ GitHub ni desplegado**; no resuelve por sí solo hijos/controlador. Separar RCA
 físico del fallo, único fix-forward y deploy seguro de QA Current/Book en próxima
 rueda. Consultar #980 para ownership actual y #1093 para la evidencia; este
 corte no prueba estado presente del runtime.
+
+## Actualización verificada del P0 — 18-Nov-2026, posterior al corte
+
+El corte anterior se conserva como RCA histórico, **no como estado vigente**.
+El [PR de producto #1196](https://github.com/mbalbo2023/Porota-trading/pull/1196)
+quedó MERGED, Predeploy V2 [#44440710070](https://github.com/mbalbo2023/Porota-trading/actions/runs/44440710070)
+probó el artefacto y el único Promote V2 [#44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638)
+produjo el recibo físico #14492700787: `state=VALIDADO_RUNTIME`, candidato
+`b3cbe57a5b4b82016a65a0e253b251abbb84a04c`, tree
+`7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0`, imagen
+`sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d`,
+controlador `bv_paper_runtime.py` READY con ocho hijos declarados, observador
+running, `PRODUCTION_PAPER/SIMULATION`, rutas reales BLOCKED y
+`real_orders_sent=0`. El PR de control [#1197](https://github.com/mbalbo2023/Porota-trading/pull/1197)
+se integró a `main` (merge `6ce8db104de923c6915650c146f9460df5dee1b4`)
+para encolar diagnóstico en **la misma sesión PPI autenticada**; el modo que
+podía abrir un segundo login quedó deshabilitado. Ambos leases liberados en #980.
+
+El recibo del deploy **no acredita** Current/Book frescos, READY por familia ni
+completitud histórica. `PPI` es una API HTTP/REST existente, no un cambio
+injustificado de proveedor o protocolo. PPI identifica; IOL, BYMA, A3 y ROFEX
+aportan sólo campos complementarios probados, sin falsificar identidad.
+Históricos requieren RCA propio: `rc6_source_cycle_dispatch.py::_paper_zero`
+mantiene HOLD de identidad SQLite/WAL y el scanner exige el cutoff
+`2026-09-21` COMPLETE, no acreditado. No habilitar writers ni inventar datos
+para eliminar ese HOLD. Registrar owner, causa, defensa y prueba física próxima
+en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).

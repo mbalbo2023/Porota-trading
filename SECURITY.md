@@ -23,3 +23,22 @@ Before changing safety code, inspect and recover existing partial fixes and PRs;
 retain evidence and ownership for every open PR. Refer to
 [#1093 incident evidence](https://github.com/mbalbo2023/Porota-trading/issues/1093)
 and [#980 ownership](https://github.com/mbalbo2023/Porota-trading/issues/980).
+
+## Verified P0 release boundary — 18-Nov-2026
+
+The post-incident Deploy V2 run
+[#44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638)
+produced physical runtime artifact #14492700787. Its sanitized receipt states
+`VALIDADO_RUNTIME`, a pinned source SHA/tree/image, `PRODUCTION_PAPER`,
+`SIMULATION`, a running observer and `real_orders_sent=0` with real routes
+`BLOCKED`. It also reports `ppi_watch_touched=false`. This attests only the
+deployment's measured scope; it does not prove future order state, quote
+freshness or historical database completeness.
+
+Do not purge CI fixtures, historical incident logs or signed receipts to make
+an error disappear. Tests remained in isolated offhost workspaces; **no test
+quotes or synthetic history were written into the live PAPER database** by
+this release. If an actual contaminating row is found, establish its exact
+identity, backup/WAL custody, RCA and removal authorization in GitHub Actions
+before touching it. PPI Current/Book results and financial payloads must stay
+private; publish only bounded sanitised outcome per family/instrument.

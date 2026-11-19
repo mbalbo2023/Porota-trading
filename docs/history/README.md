@@ -15,6 +15,17 @@ no una regla vigente del usuario**: Tincho corrigió esa atribución el
 18-Nov-2026. Consultar ownership #980 y evidencia #1093; conservar recibos
 históricos sin reescribir su contenido.
 
+**Cierre técnico P0 posterior:** el [Promote V2 #44442769638](https://github.com/mbalbo2023/Porota-trading/actions/runs/44442769638)
+entregó artefacto físico #14492700787 `VALIDADO_RUNTIME` y PAPER/0;
+[#1196](https://github.com/mbalbo2023/Porota-trading/pull/1196) producto y
+[#1197](https://github.com/mbalbo2023/Porota-trading/pull/1197) control están
+MERGED. No reabrir el fallo V2 antiguo como si todavía fuera el runtime, ni
+marcar Current/Book o History COMPLETE sin sus pruebas propias. La última
+revisión de complementos históricos y DB/WAL se conserva en
+[#1093/6997492857](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-6997492857).
+Las pruebas de CI no insertaron cotizaciones sintéticas en la base productiva;
+los recibos, tests y RCA históricos **no se borran** para ocultar fallos.
+
 ## Fuentes preservadas
 
 - Candidato anterior: [0e7577fc6112406794ffbc392c902904481f8ca0](https://github.com/mbalbo2023/Porota-trading/tree/0e7577fc6112406794ffbc392c902904481f8ca0).
