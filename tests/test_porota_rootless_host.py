@@ -345,6 +345,38 @@ class RootlessContracts(unittest.TestCase):
         with self.assertRaisesRegex(host.Hold, "RUNTIME_UNCLASSIFIED_DEGRADED"):
             host.classify_runtime(row, now=now, started=now)
 
+    def test_empty_ready_scanner_receipt_classifies_amber_only_when_exact_and_safe(self):
+        """Recovered 4ef52f9: zero eligible means data HOLD, not a dead observer.
+
+        The resulting container health is amber, never instrument admission.
+        """
+        now = datetime.now(timezone.utc)
+        row = {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "OK",
+               "process_state": "DEGRADED", "session_state": "MARKET_OPEN",
+               "heartbeat_at": now.isoformat(), "last_market_data_at": None,
+               "detail": "0/0 instrumentos actualizados de 0 elegibles; rotación activa; operaciones solo simuladas."}
+        self.assertEqual(
+            host.classify_runtime(row, now=now, started=now),
+            {"status": "READY", "source_alert": "AMBER_PPI_NO_READY_INSTRUMENTS"})
+        for detail in (
+            "0/1 instrumentos actualizados de 1 elegibles; rotación activa; operaciones solo simuladas.",
+            "0/0 instrumentos actualizados de 1 elegibles; rotación activa; operaciones solo simuladas.",
+            "CAUCION_LEDGER_INVALID: PAPER admission blocked",
+            "La barrera bloqueo una ruta no permitida.",
+        ):
+            with self.subTest(detail=detail), self.assertRaisesRegex(
+                    host.Hold, "RUNTIME_UNCLASSIFIED_DEGRADED"):
+                host.classify_runtime({**row, "detail": detail}, now=now, started=now)
+        for field, value in (("ppi_auth", "ERROR"), ("session_state", "MARKET_CLOSED")):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    host.Hold, "RUNTIME_UNCLASSIFIED_DEGRADED"):
+                host.classify_runtime({**row, field: value}, now=now, started=now)
+        self.assertEqual(host.classify_runtime(
+            {**row, "heartbeat_at": (now - timedelta(seconds=121)).isoformat()},
+            now=now, started=now - timedelta(seconds=122))["status"], "PENDING")
+        with self.assertRaisesRegex(host.Hold, "PAPER_RUNTIME_SAFETY"):
+            host.classify_runtime({**row, "real_orders_sent": 1}, now=now, started=now)
+
     def test_foreign_container_cannot_be_adopted_by_name_alone(self):
         self.assertTrue(hasattr(host, "validate_container"), "birth guard must exist")
         with self.assertRaisesRegex(host.Hold, "CONTAINER_SCOPE"):
@@ -400,6 +432,62 @@ class RootlessContracts(unittest.TestCase):
                 manager.postflight(document, started, budget=10, sleep=lambda seconds: None,
                                    clock=lambda: next(times))
         self.assertEqual(manager.receipt["state"], "NO_VERIFICADO")
+
+    def test_postflight_zero_eligible_waits_for_delayed_controller_children(self):
+        """Regression: initial controller grace must not turn 0/0 into a fatal deploy.
+
+        This simulates the seven pending children observed in failed Deploy V2.
+        It does not claim that their physical processes actually recovered.
+        """
+        manager = host.Host(self.base, host.Identity(os.getuid(), os.getgid(), "test", self.base))
+        now = datetime.now(timezone.utc)
+        started = now - timedelta(seconds=2)
+        children = {name: {"state": "RUNNING", "pid": number + 100,
+                           "alive": True, "started_at": (now - timedelta(seconds=1)).isoformat()}
+                    for number, name in enumerate(host.CONTROLLER_CHILDREN)}
+        startup_children = copy.deepcopy(children)
+        for name in host.CONTROLLER_CHILDREN:
+            if name != "scanner":
+                startup_children[name] = {"state": "STARTUP_WAIT", "pid": None,
+                                          "alive": False, "started_at": None}
+
+        def scan(controller_children):
+            return {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "OK",
+                    "process_state": "DEGRADED", "session_state": "MARKET_OPEN",
+                    "heartbeat_at": now.isoformat(), "last_market_data_at": None,
+                    "detail": "0/0 instrumentos actualizados de 0 elegibles; rotación activa; operaciones solo simuladas.",
+                    "controller": {"schema": "rc6.runtime-child-health.v1",
+                                   "source_sha": SHA, "candidate_tree_sha": TREE,
+                                   "recorded_at": now.isoformat(), "roles_match": True,
+                                   "children": controller_children}}
+
+        document = {"source_sha": SHA, "source_tree": TREE,
+                    "roles": {"observer": "1" * 64, "dashboard": "2" * 64}}
+        # The seven non-scanner children have a 25-second startup grace.
+        # Keep them PENDING at each five-second poll before the deadline.
+        clock = iter((0, 0, 5, 10, 15, 20, 25))
+        observed_waits = []
+        with patch.object(manager, "check_role", return_value={
+                 "State": {"Running": True, "Health": {"Status": "healthy"}}}), \
+             patch.object(manager.docker, "json", side_effect=[scan(startup_children)] * 5 + [scan(children)]):
+            result = manager.postflight(document, started, budget=30,
+                                        clock=lambda: next(clock), sleep=observed_waits.append)
+        self.assertEqual(observed_waits, [5] * 5)
+        self.assertEqual(result["source_alert"], "AMBER_PPI_NO_READY_INSTRUMENTS")
+        self.assertEqual(result["paper_readiness"], "FAIL_CLOSED_PER_INSTRUMENT")
+        self.assertEqual(manager.receipt["controller"]["status"], "READY")
+
+        # A controller which never starts its children cannot pass just
+        # because the zero-eligible scanner classification is amber.
+        stalled = host.Host(self.base, host.Identity(os.getuid(), os.getgid(), "test", self.base))
+        clock = iter((0, 0, 5, 10, 15, 20, 25, 30))
+        with patch.object(stalled, "check_role", return_value={
+                 "State": {"Running": True, "Health": {"Status": "healthy"}}}), \
+             patch.object(stalled.docker, "json", return_value=scan(startup_children)):
+            with self.assertRaisesRegex(host.Hold, "RUNTIME_STARTUP_TIMEOUT"):
+                stalled.postflight(document, started, budget=30,
+                                   clock=lambda: next(clock), sleep=lambda _: None)
+        self.assertEqual(stalled.receipt["controller"]["reason"], "CONTROLLER_CHILDREN_NOT_RUNNING")
 
     def test_release_marker_is_accepted_only_after_real_postflight_signal(self):
         from scripts.rc6_operator_paper_rearm import _validated_paper_release

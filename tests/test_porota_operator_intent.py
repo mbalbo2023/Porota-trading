@@ -111,6 +111,43 @@ class IntentMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'INTENT_FILE_UNSAFE'):
             intent.read_intent(self.home, now=self.now)
 
+    def test_group_writable_home_rejects_migration_before_creating_config(self):
+        self.home.chmod(0o770)
+        with self.assertRaisesRegex(ValueError, 'INTENT_PARENT_UNTRUSTED'):
+            intent.migrate_intent(self.home, source=self.legacy, now=self.now)
+        self.assertFalse((self.home / '.config').exists())
+
+    def test_group_writable_config_rejects_migration_before_creating_child(self):
+        config = self.home / '.config'
+        config.mkdir(mode=0o777)
+        config.chmod(0o777)
+        with self.assertRaisesRegex(ValueError, 'INTENT_PARENT_UNTRUSTED'):
+            intent.migrate_intent(self.home, source=self.legacy, now=self.now)
+        self.assertFalse((config / 'porota-rc6').exists())
+
+    def test_group_writable_product_parent_preserves_existing_pause_bytes(self):
+        intent.migrate_intent(self.home, source=self.legacy, now=self.now)
+        args = dict(action='pause', candidate_sha='a'*40, source_tree='b'*40,
+                    comment_id=123, run_id=456)
+        intent.change_intent(self.home, **args)
+        receipt = intent.directory(self.home) / 'paper-rearm-v1.json'
+        before = receipt.read_bytes()
+        parent = self.home / '.config/porota-rc6'
+        parent.chmod(0o777)
+        with self.assertRaisesRegex(ValueError, 'INTENT_PARENT_UNTRUSTED'):
+            intent.change_intent(self.home, **{**args, 'comment_id': 999, 'run_id': 999})
+        self.assertEqual(receipt.read_bytes(), before)
+
+    def test_new_config_parents_stay_private_with_group_writable_umask(self):
+        old_umask = os.umask(0o002)
+        try:
+            intent.migrate_intent(self.home, source=self.legacy, now=self.now)
+        finally:
+            os.umask(old_umask)
+        for parent in (self.home / '.config', self.home / '.config/porota-rc6',
+                       intent.directory(self.home)):
+            self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
+
     def test_pause_is_available_without_a_healthy_release(self):
         intent.migrate_intent(self.home, source=self.legacy, now=self.now)
         result = intent.change_intent(self.home, action='pause', candidate_sha='a'*40,

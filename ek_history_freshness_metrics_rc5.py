@@ -14,6 +14,7 @@ import sqlite3
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma_calendar
+from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
 from am_us_equity_calendar_rc6 import us_equity_business_day
 from dd_history_metrics_hf6 import history_db_path, target_universe
 
@@ -30,7 +31,8 @@ def _depth(rows: int) -> str:
     return "GE180"
 
 
-def _business_gap_2026(last_day: date, latest: date, family: str = "ACCIONES") -> int:
+def _business_gap_2026(last_day: date, latest: date, family: str = "ACCIONES",
+                       *, market=None, settlement=None) -> int:
     if last_day >= latest:
         return 0
     if last_day.year not in byma_calendar.ANIOS_AUDITADOS or latest.year not in byma_calendar.ANIOS_AUDITADOS:
@@ -43,6 +45,11 @@ def _business_gap_2026(last_day: date, latest: date, family: str = "ACCIONES") -
         if guard > 400:
             raise RuntimeError("HISTORY_FRESHNESS_GUARD_EXCEEDED")
         byma_open = byma_calendar.es_dia_habil_operativo(d)
+        # The source-only 06-Nov exception requires the exact target's
+        # market/family/settlement. Calls without that context stay conservative.
+        if not byma_open and market == "BYMA":
+            byma_open = estado_negociacion_fuente_byma(d,market=market,
+                family=family,settlement=settlement) == "LIMITED_T1_SOURCE_ONLY"
         underlying_open = str(family or "").upper() not in {"CEDEAR", "CEDEARS"} or us_equity_business_day(d)
         if byma_open and underlying_open:
             count += 1
@@ -50,14 +57,15 @@ def _business_gap_2026(last_day: date, latest: date, family: str = "ACCIONES") -
     return count
 
 
-def _freshness(last_day: date | None, latest: date, family: str = "ACCIONES") -> tuple[str, str]:
+def _freshness(last_day: date | None, latest: date, family: str = "ACCIONES",
+               *, market=None, settlement=None) -> tuple[str, str]:
     if last_day is None:
         return "NO_HISTORY", "NA"
     if last_day > latest:
         return "FUTURE_ANOMALY", "NEGATIVE"
     if last_day.year not in byma_calendar.ANIOS_AUDITADOS:
         return "STALE_UNVERIFIED_CALENDAR", "UNVERIFIED_PRE2026"
-    gap=_business_gap_2026(last_day,latest,family)
+    gap=_business_gap_2026(last_day,latest,family,market=market,settlement=settlement)
     if gap <= 2:
         return "FRESH", str(gap)
     if gap <= 10:
@@ -170,7 +178,7 @@ def freshness_qualified_metrics(observer_connection, path: Path | None = None, f
             rows,first,last=groups.get(key,(0,None,None))
             dep=_depth(rows)
             last_day=date.fromisoformat(str(last)[:10]) if last else None
-            fr,gap=_freshness(last_day,expected,family)
+            fr,gap=_freshness(last_day,expected,family,market=market,settlement=settlement)
             instrument_rows.append({
                 "symbol":symbol,"family":family,"market":market,"currency":currency,
                 "settlement":settlement,"price_basis":basis[0],"adjustment_basis":basis[1],

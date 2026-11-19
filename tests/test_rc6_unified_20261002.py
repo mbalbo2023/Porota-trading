@@ -24,7 +24,8 @@ def ready_store(tmp_path, monkeypatch):
     store = PaperStore(str(tmp_path / "synthetic-unified.db"))
     observer._support_schema(store)
     raw = {"ticker": "PESOS7", "description": "SYNTHETIC PESOS 7", "currency": "Pesos",
-           "type": "CAUCIONES", "market": "BYMA", "nominalInPrice": 1,
+           "type": "CAUCIONES", "market": "BYMA", "settlement": "INMEDIATA",
+           "nominalInPrice": 1,
            "_provider_instrument_type": "CAUCIONES", "_discovery_source": "PPI_PRIMARY"}
     primary = catalog.normalize_record(raw, "INMEDIATA", NOW.isoformat(), "fixture-only")
     with store.connect() as connection:

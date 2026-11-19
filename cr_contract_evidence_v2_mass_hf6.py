@@ -13,7 +13,7 @@ from collections import Counter
 from decimal import Decimal, InvalidOperation
 
 import cp_contract_evidence_v2_hf6 as evidence_v2
-from bu_instrument_catalog import _candidate_has_ppi_primary
+from bu_instrument_catalog import _candidate_has_ppi_primary, ppi_full_key_evidence_reason
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 import rc6_ppi_option_contract_policy as option_policy
 import rc6_ppi_future_contract_policy as future_policy
@@ -79,6 +79,17 @@ def planned_records(rows):
         if not _candidate_has_ppi_primary(row.get("settlement_source"),
                                           json.dumps(raw, ensure_ascii=False)):
             skipped["NOT_PPI_PRIMARY"] += 1
+            continue
+        # Discovery provenance alone cannot promote a requested tenor into an
+        # instrument-specific PPI five-key contract record. Reuse the catalog's
+        # existing native-field guard; leave REQUEST_CANDIDATE available to
+        # SHADOW discovery without publishing executable contract evidence.
+        if str(raw.get("_discovery_source") or "").strip().upper() != "PPI_PRIMARY":
+            skipped["NOT_PPI_PRIMARY"] += 1
+            continue
+        full_key_error = ppi_full_key_evidence_reason({**row, "raw": raw})
+        if full_key_error:
+            skipped[full_key_error] += 1
             continue
         identity = _full_identity(row)
         if any(value in UNKNOWN for value in identity.values()):

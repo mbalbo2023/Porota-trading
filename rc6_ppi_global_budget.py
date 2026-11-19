@@ -2667,6 +2667,197 @@ class RuntimePPIBudget:
                 "reason": "PPI_EXIT_ROUND_STATE_UNAVAILABLE"}
 
 
+class PaperDirectReadBudget:
+    """P0: observational REST arbitration, with *no assumed provider quota*.
+
+    This is an explicit, reversible code-mode recovery path for the ORIGINAL
+    SDK Current/Book/Intraday calls. It grants no order/account route and
+    never claims provider-wide capacity or a fake numeric calls/hour limit.
+    One cross-process file lock spans the actual guarded GET through full
+    response/body completion; only an observed 429 opens a durable breaker.
+    A fresh PAPER DB identity and zero real orders are required at admission
+    AND at the wire edge. This is not dynamic strategy/EXIT READY evidence.
+    """
+
+    SCHEMA = "RC6_PPI_DIRECT_REST_OBSERVED_BREAKER_V1"
+    MAX_STATE_BYTES = 1024
+
+    def __init__(self, database, *, clock=None):
+        from cg_paper_workspace import artifact_root, checked_path
+        self.database = checked_path(database)
+        self.path = artifact_root(self.database) / "ppi-budget/direct-rest-recovery.lock"
+        self.clock = clock or time.time
+        self._lock = threading.RLock()
+        self._pending = {}
+        self._scope = threading.local()
+        self._dataset_id = None
+
+    def _require_paper(self):
+        from cg_paper_workspace import checked_path, identity_from_connection
+        try:
+            if checked_path(self.database) != self.database:
+                raise ValueError("PPI_DIRECT_PAPER_DATABASE_CHANGED")
+            with closing(sqlite3.connect(self.database.as_uri() + "?mode=ro",
+                                         uri=True, timeout=.15)) as c:
+                c.execute("PRAGMA query_only=ON")
+                c.execute("BEGIN")
+                identity = identity_from_connection(c)
+                state = c.execute(
+                    "SELECT mode,real_orders_sent FROM observer_state WHERE id=1"
+                ).fetchone()
+            if state == ("PRODUCTION_PAPER", 0):
+                with self._lock:
+                    if self._dataset_id is None:
+                        self._dataset_id = identity["dataset_id"]
+                    elif self._dataset_id != identity["dataset_id"]:
+                        raise ValueError("PPI_DIRECT_PAPER_DATASET_CHANGED")
+                return
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            pass
+        raise BudgetBackpressure("PPI_DIRECT_PAPER_STATE_UNVERIFIED")
+
+    def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
+        if endpoint not in ENDPOINTS or consumer not in CONSUMERS or priority not in PRIORITIES:
+            raise BudgetBackpressure("PPI_DIRECT_READ_SCOPE_INVALID")
+        self._require_paper()
+        lease = uuid.uuid4().hex
+        with self._lock:
+            # A lease never authenticates a different thread or process.
+            self._pending[lease] = threading.get_ident()
+        return {"allowed": True, "lease": lease}
+
+    @classmethod
+    def _load_breaker(cls, fd):
+        os.lseek(fd, 0, os.SEEK_SET)
+        raw = os.read(fd, cls.MAX_STATE_BYTES + 1)
+        if not raw:
+            # A previously created but truncated state can never silently
+            # revive a previously observed provider 429.
+            raise BudgetBackpressure("PPI_DIRECT_BREAKER_STATE_UNVERIFIED")
+        if len(raw) > cls.MAX_STATE_BYTES:
+            raise BudgetBackpressure("PPI_DIRECT_BREAKER_STATE_UNVERIFIED")
+        try:
+            state = json.loads(raw)
+            if (not isinstance(state, dict)
+                    or set(state) != {"schema", "consecutive_429", "hold_until"}
+                    or state["schema"] != cls.SCHEMA
+                    or type(state["consecutive_429"]) is not int
+                    or not 0 <= state["consecutive_429"] <= 5
+                    or isinstance(state["hold_until"], bool)
+                    or not isinstance(state["hold_until"], (int, float))
+                    or not isfinite(state["hold_until"])
+                    or not 0 <= state["hold_until"] <= 2**40):
+                raise ValueError("BREAKER_SCHEMA")
+            return state
+        except (ValueError, TypeError, UnicodeError):
+            raise BudgetBackpressure("PPI_DIRECT_BREAKER_STATE_UNVERIFIED") from None
+
+    @classmethod
+    def _write_breaker(cls, fd, state):
+        raw = json.dumps(state, sort_keys=True, separators=(",", ":")).encode("ascii")
+        if len(raw) > cls.MAX_STATE_BYTES:
+            raise BudgetBackpressure("PPI_DIRECT_BREAKER_STATE_UNVERIFIED")
+        os.lseek(fd, 0, os.SEEK_SET)
+        os.ftruncate(fd, 0)
+        while raw:
+            raw = raw[os.write(fd, raw):]
+        os.fsync(fd)
+
+    @contextmanager
+    def wire_scope(self, lease):
+        with self._lock:
+            if self._pending.pop(lease, None) != threading.get_ident():
+                raise BudgetBackpressure("PPI_DIRECT_LEASE_UNVERIFIED")
+        # The directory belongs only to this PAPER workspace. Neither the
+        # historic GlobalPPIBudget sidecar nor PPI Watch is modified.
+        parent = self.path.parent
+        if any(part.is_symlink() for part in (parent, *parent.parents)):
+            raise BudgetBackpressure("PPI_DIRECT_BREAKER_PATH_ALIAS")
+        parent.mkdir(parents=True, exist_ok=True)
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC
+        try:
+            fd = os.open(self.path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
+        except FileExistsError:
+            fd = os.open(self.path, flags)
+            created = False
+        try:
+            metadata = os.fstat(fd)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                    or metadata.st_mode & 0o022):
+                raise BudgetBackpressure("PPI_DIRECT_BREAKER_FILE_UNTRUSTED")
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise BudgetBackpressure("PPI_DIRECT_SINGLE_WIRE_BUSY") from None
+            if created:
+                self._write_breaker(fd, {
+                    "schema": self.SCHEMA, "consecutive_429": 0, "hold_until": 0})
+            breaker = self._load_breaker(fd)
+            if self.clock() < breaker["hold_until"]:
+                raise BudgetBackpressure("PPI_DIRECT_PROVIDER_429_BREAKER")
+            self._require_paper()
+            if getattr(self._scope, "active", None) is not None:
+                raise BudgetBackpressure("PPI_DIRECT_NESTED_WIRE_UNVERIFIED")
+            self._scope.active = {"lease": lease, "fd": fd, "breaker": breaker,
+                                  "started": False, "finished": False}
+            failed = True
+            try:
+                yield
+                failed = False
+            finally:
+                incomplete = not self._scope.active["finished"]
+                self._scope.active = None
+                if incomplete and not failed:
+                    raise BudgetBackpressure("PPI_DIRECT_WIRE_FINISH_MISSING")
+        finally:
+            os.close(fd)  # releases the exclusive cross-process lock
+
+    def _active(self, lease):
+        scope = getattr(self._scope, "active", None)
+        if scope is None or scope["lease"] != lease:
+            raise BudgetBackpressure("PPI_DIRECT_LEASE_CUSTODY_UNVERIFIED")
+        return scope
+
+    def start(self, lease):
+        scope = self._active(lease)
+        if scope["started"]:
+            raise BudgetBackpressure("PPI_DIRECT_WIRE_DOUBLE_START")
+        self._require_paper()
+        scope["started"] = True
+
+    def finish(self, lease, *, status_code=None, error_code=None):
+        scope = self._active(lease)
+        if not scope["started"] or scope["finished"]:
+            raise BudgetBackpressure("PPI_DIRECT_WIRE_FINISH_UNVERIFIED")
+        state = dict(scope["breaker"])
+        now = self.clock()
+        if status_code == 429:
+            state["consecutive_429"] = min(5, state["consecutive_429"] + 1)
+            state["hold_until"] = now + min(900, 30 * 2**state["consecutive_429"])
+        elif status_code == 200:
+            state["consecutive_429"] = 0
+            state["hold_until"] = 0
+        else:
+            # A transport/auth/server failure is observed, not mistaken for
+            # a successful data read. Short conservative retry suppression.
+            state["hold_until"] = now + 10
+        self._write_breaker(scope["fd"], state)
+        scope["finished"] = True
+
+    def report_error(self, endpoint, code):
+        # SDK parse diagnosis is already captured by ProductionMarketReader;
+        # a response-finished wire is never reclassified as another GET.
+        return None
+
+    def observe_exit_round(self, **kwargs):
+        # Guarded HTTP success is not a proof of complete EXIT coverage.
+        return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
+
+    def discard_exit_round_scope(self):
+        return None
+
+
 def budget_from_environment(database=None, *, clock=None):
     from rc6_dynamic_universe.promotion import capacity_controller_from_environment
     controller = capacity_controller_from_environment(database)
@@ -2680,6 +2871,13 @@ def budget_from_environment(database=None, *, clock=None):
                 return None
             raise
         controller.database = Path(database)
+    if controller.environ.get("POROTA_PPI_DIRECT_REST_RECOVERY") == "1":
+        # Explicit PAPER recovery does not mix with externally approved
+        # dynamic/static quota policies. There is no Watch deduction claim.
+        if (state.get("status") == "APPROVED_DYNAMIC"
+                or controller.environ.get(STATIC_SHARED_AUTHORITY_ENV)):
+            raise BudgetBackpressure("PPI_DIRECT_REST_APPROVAL_CONFLICT")
+        return PaperDirectReadBudget(database, clock=clock)
     if state.get("mode") != "APPROVED" and controller.environ.get("POROTA_DYNAMIC_CAPACITY_MODE", "").upper() != "APPROVED":
         from cg_paper_workspace import artifact_root
         if not (artifact_root(database) / "ppi-budget/global.sqlite").exists() \

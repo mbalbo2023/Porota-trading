@@ -349,6 +349,7 @@ def run_reader(store, stop):
     # ni comparte cliente HTTP mutable con el escáner.
     from bd_ppi_readonly_guard import ProductionMarketReader, session_invalid
     from bf_production_paper_observer import _secret, _support_schema, _market_phase
+    from rc6_dynamic_universe.promotion import DEFAULT_POLICY
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
         _support_schema(store)
     policy = PaperSessionPolicy()
@@ -383,10 +384,49 @@ def run_reader(store, stop):
             try:
                 round_started=time.monotonic()
                 cadence=exit_reader_cadence(store,now_iso())
-                failures = collect_exit_books(
-                    reader, store, policy, now_iso(), should_stop=stop.is_set,
-                    pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
-                    beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+                budget_round="NOT_OBSERVED"
+                try:
+                    failures = collect_exit_books(
+                        reader, store, policy, now_iso(), should_stop=stop.is_set,
+                        pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
+                        beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+                    elapsed=time.monotonic()-round_started
+                    # A completed producer traversal is the only place that
+                    # may report factual EXIT coverage to the shared budget.
+                    # The budget itself verifies current PAPER ledger identity,
+                    # native leases, failures and deadline before COMPLETE.
+                    # A stop can make collect_exit_books return zero after a
+                    # partial traversal; it must never certify that round.
+                    if not stop.is_set():
+                        try:
+                            observed=reader.observe_exit_round(
+                                elapsed_seconds=elapsed,
+                                deadline_seconds=(cadence if cadence is not None else
+                                    DEFAULT_POLICY["budget"]["critical_book_seconds"]),
+                                failures=failures)
+                            # Only the shared budget may certify a completed
+                            # EXIT observation. Never show READY when it
+                            # explicitly returned DEGRADED/unmeasured.
+                            if isinstance(observed,dict) and observed.get("status") in {
+                                    "COMPLETE","DEGRADED","BASELINE_NOT_MEASURED"}:
+                                budget_round=observed["status"]
+                            else:
+                                budget_round="NO_VERIFICADO"
+                        except Exception as exc:
+                            LOG.warning("EXIT_READER_ROUND_OBSERVATION_UNAVAILABLE:%s",
+                                        type(exc).__name__)
+                finally:
+                    # A partial/failed traversal must not carry a frozen
+                    # admission scope into the next EXIT round. This local
+                    # scope reset performs no PPI GET or sidecar mutation.
+                    # If reset itself fails, stop this reader; reusing its
+                    # unproven scope could authorize a false COMPLETE later.
+                    try:
+                        reader.discard_exit_round_scope()
+                    except Exception as exc:
+                        # A sqlite3.OperationalError here must NOT be caught
+                        # as recoverable book contention by the outer loop.
+                        raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc
             except sqlite3.OperationalError as exc:
                 if not _sqlite_contention(exc):
                     raise
@@ -405,12 +445,12 @@ def run_reader(store, stop):
                 next_login = time.monotonic() + 60
                 stop.wait(5)
                 continue
-            elapsed=time.monotonic()-round_started
             missed=cadence is not None and elapsed>cadence
             detail=f"{failures} errores de lectura de abiertas; round_seconds={elapsed:.6f}; "
             detail+=(f"critical_cadence_seconds={cadence}; deadline_missed={missed}"
                 if cadence is not None else "baseline_cadence=NO_VERIFICADO")
-            status("DEGRADED" if failures or missed else "READY",detail)
+            detail+=f"; budget_round={budget_round}"
+            status("DEGRADED" if failures or missed or budget_round!="COMPLETE" else "READY",detail)
             # Do not add per-position sleeps and a second five-second pause to
             # an approved EXIT round. Slow transport remains observable.
             stop.wait(max(0.0,cadence-elapsed) if cadence is not None else 5)

@@ -34,12 +34,44 @@ def directory(home):
 
 def private_directory(path, *, create=True):
     path = Path(path).absolute()
-    require(not any(p.is_symlink() for p in (path, *path.parents)), 'INTENT_PATH_ALIAS')
-    if create:
-        path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    meta = path.stat()
-    require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == os.getuid()
-            and stat.S_IMODE(meta.st_mode) == 0o700, 'INTENT_DIRECTORY_UNSAFE')
+    require('..' not in path.parts and
+            not any(p.is_symlink() for p in (path, *path.parents)), 'INTENT_PATH_ALIAS')
+    operator = path.parent if path.name == 'history' else path
+    home = operator.parents[2]
+    require(operator == home / '.config/porota-rc6/operator', 'INTENT_CANONICAL_PATH_REQUIRED')
+    components = ('.config', 'porota-rc6', 'operator')
+    if path != operator:
+        components += ('history',)
+
+    # Match the host reader's custody contract before making any directory.
+    # Pin each parent while opening/creating its child; never follow aliases.
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open(home, flags)
+    try:
+        home_meta = os.fstat(fd)
+        require(stat.S_ISDIR(home_meta.st_mode) and home_meta.st_uid == os.getuid()
+                and not home_meta.st_mode & 0o022, 'INTENT_PARENT_UNTRUSTED')
+        for index, child in enumerate(components):
+            if create:
+                try:
+                    os.mkdir(child, mode=0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            next_fd = os.open(child, flags, dir_fd=fd)
+            try:
+                meta = os.fstat(next_fd)
+                final = index >= 2
+                require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == os.getuid() and
+                        (stat.S_IMODE(meta.st_mode) == 0o700 if final else
+                         not meta.st_mode & 0o022),
+                        'INTENT_DIRECTORY_UNSAFE' if final else 'INTENT_PARENT_UNTRUSTED')
+            except BaseException:
+                os.close(next_fd)
+                raise
+            os.close(fd)
+            fd = next_fd
+    finally:
+        os.close(fd)
     return path
 
 

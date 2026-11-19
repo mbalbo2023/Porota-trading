@@ -16,7 +16,7 @@ import statistics
 import sys
 import time
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -1167,6 +1167,539 @@ def _eligible_symbols(store):
     return tuple(core)
 
 
+def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
+    """PPI-primary observation only, independent of simulation readiness.
+
+    A zero-READY bootstrap must still be able to *observe* an unequivocal
+    native PPI catalog identity. PPI's documented SearchInstrument response
+    can omit settlement: REQUEST_CANDIDATE may therefore be attempted only
+    as an untrusted native GET query, never promoted to PPI_FIELD or READY.
+    An old STALE PPI-primary row is likewise eligible only for this probe.
+    This never inserts a candidate into the trading/scanner universe,
+    changes can_simulate or authorizes an opening.
+    """
+    if type(limit) is not int or not 1 <= limit <= 3:
+        raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
+    if family is not None and (type(family) is not str or family not in OPERATIONAL_FAMILIES):
+        raise ValueError("PPI_DIRECT_PROBE_FAMILY_INVALID")
+    try:
+        with store.connect() as c:
+            rows = c.execute("""WITH unique_identity AS (
+                  SELECT ticker,instrument_type,settlement
+                  FROM financial_instrument_catalog
+                  GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1
+                )
+                SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement
+                FROM financial_instrument_catalog f JOIN unique_identity u
+                  ON f.ticker=u.ticker AND f.instrument_type=u.instrument_type
+                 AND f.settlement=u.settlement
+                WHERE f.status IN ('AVAILABLE','STALE')
+                  AND f.settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                  AND f.market NOT IN ('','UNKNOWN') AND f.currency NOT IN ('','UNKNOWN')
+                  AND (? IS NULL OR f.instrument_type=?)
+                  AND json_valid(f.metadata_json)
+                  AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
+                ORDER BY CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                         CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+                         f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement
+                LIMIT ?""", (family, family, limit)).fetchall()
+        return [tuple(str(v).strip().upper() for v in row) for row in rows]
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return []
+
+
+def _safe_ppi_evidence_timestamp(value):
+    """Persist a bounded ISO clock, never an arbitrary provider body field."""
+    if not isinstance(value, str) or not 10 <= len(value) <= 64:
+        return "UNVERIFIED"
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None or stamp.utcoffset() is None or not 2000 <= stamp.year <= 2100:
+            return "UNVERIFIED"
+        return stamp.astimezone(timezone.utc).isoformat(timespec="seconds")
+    except (ValueError, TypeError, OverflowError):
+        return "UNVERIFIED"
+
+
+def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None,
+                                  pre_wire=None):
+    """Try one genuine Current+Book pair without invoking the PAPER broker.
+
+    OPEN zero-READY recovery and strictly gated postclose commands share the
+    existing reader and budget. Even a healthy quote has an opening block and
+    cannot change candidate readiness.
+    """
+    candidates = _ppi_direct_rest_probe_candidates(store, limit=1, family=family)
+    if not candidates:
+        return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
+                "native_receipts": []}
+    key = candidates[0]
+    ticker, family, market, currency, settlement = key
+    witnessed = {}
+    try:
+        # Require the EXISTING native wire receipt contract. An SDK cache,
+        # synthetic Book/Current or pre-send HTTP counter does not establish
+        # freshness. No extra REST retry is made to obtain this evidence.
+        capture = getattr(reader, "capture_guarded_native", None)
+        if not callable(capture):
+            raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_REQUIRED")
+        for endpoint in ("current", "book"):
+            if pre_wire is not None:
+                pre_wire()
+            witness = capture(endpoint, key, priority="DISCOVERY")
+            receipt = witness.get("guard_wire_receipt") if isinstance(witness, dict) else None
+            if (not isinstance(receipt, dict)
+                    or receipt.get("schema") != "RC6_PPI_NATIVE_WIRE_RECEIPT_V1"
+                    or receipt.get("endpoint") != endpoint
+                    or receipt.get("http_method") != "GET"
+                    or receipt.get("http_status_code") != 200
+                    or receipt.get("adapter_send_invoked") is not True
+                    or receipt.get("adapter_response_completed") is not True
+                    or receipt.get("request_identity_3key") != [ticker, family, settlement]
+                    or receipt.get("claimed_five_key") != list(key)
+                    or not isinstance(receipt.get("raw_body_sha256"), str)
+                    or len(receipt["raw_body_sha256"]) != 64
+                    or any(c not in "0123456789abcdef" for c in receipt["raw_body_sha256"])):
+                raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_INVALID")
+            # Evidence of an actual HTTP200 must survive even if the *next*
+            # REST GET fails or the paired quote is stale. Do not attribute
+            # success to a synthetic/current-only Book or imply READY.
+            witnessed[endpoint] = witness
+            payload = witness.get("native_payload")
+            native_time = (payload.get("date") if isinstance(payload, dict)
+                           else None)
+            store.event("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
+                        f"command_id={command_id or 0};{ticker}:{family}:{settlement};"
+                        f"identity5={ticker}:{family}:{market}:{currency}:{settlement};"
+                        f"endpoint={endpoint};http_status=200;"
+                        f"wire_received_at_utc={_safe_ppi_evidence_timestamp(receipt.get('received_at_utc'))};"
+                        f"market_timestamp_utc={_safe_ppi_evidence_timestamp(native_time)};"
+                        f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
+        witnessed_current = witnessed["current"]
+        witnessed_book = witnessed["book"]
+        current = witnessed_current["native_payload"]
+        book = witnessed_book["native_payload"]
+        metadata = financial_catalog.lookup(store, ticker, family, settlement,
+                                              market=market, currency=currency)
+        quote = normalize_quote(ticker, family, settlement, current, book,
+                                metadata=metadata, identity=key)
+        # The exact PPI-primary catalog supplies Market/Currency even when
+        # capability is not READY and lookup returns no tradeable contract.
+        quote = replace(quote, market=market, currency=currency)
+        quote.monetary_identity()  # reject any existing contract contradiction
+        # HTTP200 on both endpoints proves wire reachability, not a usable
+        # Current/Book market-data sample. Require an actual fresh Current
+        # trade and a fresh two-sided Book with strictly positive size and a
+        # non-crossed spread before labeling the *diagnostic* FRESH_OBSERVED.
+        # This is still weaker than PIT/Book1/decision/Book2/costs/EXIT READY.
+        if (quote.time_error(now_iso(), require_trade=True) or
+                quote.last <= 0 or quote.bid <= 0 or quote.ask <= 0 or
+                quote.bid_size <= 0 or quote.ask_size <= 0 or
+                quote.bid > quote.ask):
+            store.event("PPI_DIRECT_REST_PROBE_HOLD", "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID")
+            return {"status": "STALE_OR_INVALID", "paper_ready": False,
+                    "native_receipts": list(witnessed)}
+        quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
+        store.add_quote(quote)
+        # Digest of the *actual* guarded GET body, never its raw JSON, URL
+        # or broker credentials. Useful to reconcile with Deploy V2 evidence.
+        store.event("PPI_DIRECT_REST_PROBE_OBSERVED",
+                    f"{ticker}:{family}:{settlement}:read_only;"
+                    f"current_wire_sha256={witnessed_current['guard_wire_receipt']['raw_body_sha256']};"
+                    f"book_wire_sha256={witnessed_book['guard_wire_receipt']['raw_body_sha256']}")
+        return {"status": "FRESH_OBSERVED", "identity": list(key),
+                "paper_ready": False, "native_receipts": list(witnessed)}
+    except ValueError as error:
+        if (str(error).startswith(("PPI_POSTCLOSE_", "PPI_OPEN_")) or
+                str(error) == "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"):
+            store.event("PPI_DIRECT_REST_PROBE_HOLD", str(error))
+            return {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
+                    "reason": str(error), "native_receipts": list(witnessed)}
+        store.event("PPI_DIRECT_REST_PROBE_HOLD", classify_read_error(error))
+        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+                "reason": classify_read_error(error),
+                "native_receipts": list(witnessed)}
+    except Exception as error:
+        store.event("PPI_DIRECT_REST_PROBE_HOLD", classify_read_error(error))
+        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+                "reason": classify_read_error(error),
+                "native_receipts": list(witnessed)}
+
+
+_PPI_POSTCLOSE_COMMAND_PREFIX = "PPI_DIRECT_REST_POSTCLOSE_ONCE:"
+_PPI_OPEN_COMMAND_PREFIX = "PPI_DIRECT_REST_OPEN_ONCE:"
+_PPI_OPEN_FAMILIES = (
+    "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+    "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+)
+
+
+def _ppi_open_catalog_coverage(store):
+    """Separate authoritative unique PPI identities from unresolved catalog.
+
+    SQL aggregates the whole stored denominator. At most 10k small raw PPI
+    records are then passed to the existing *pure* full five-key proof helper;
+    a PPI_FIELD label alone is never counted as provider attestation. Neither
+    this nor the separate REQUEST_CANDIDATE wire probe performs a provider GET.
+    """
+    try:
+        with store.connect() as c:
+            total = int(c.execute(
+                "SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0])
+            if not 0 <= total <= 1_000_000:
+                return None
+            rows = c.execute("""WITH attributed AS (
+              SELECT f.instrument_type,f.settlement_source,
+                     CASE WHEN json_valid(f.metadata_json)
+                       THEN COALESCE(json_extract(f.metadata_json,'$._discovery_source'),'')
+                       ELSE '' END AS discovery
+                FROM financial_instrument_catalog f
+            )
+            SELECT instrument_type,COUNT(*) FROM attributed
+             WHERE discovery='PPI_PRIMARY'
+                OR (discovery='' AND settlement_source IN
+                    ('PPI_FIELD','REQUEST_CANDIDATE'))
+             GROUP BY instrument_type""").fetchall()
+            candidates = c.execute("""WITH identity_groups AS (
+                SELECT ticker,instrument_type,settlement,COUNT(*) AS rows_in_identity
+                  FROM financial_instrument_catalog
+                 GROUP BY ticker,instrument_type,settlement
+            )
+            SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement,
+                   f.settlement_source,f.metadata_json
+              FROM financial_instrument_catalog f JOIN identity_groups g
+                ON f.ticker=g.ticker AND f.instrument_type=g.instrument_type
+               AND f.settlement=g.settlement
+             WHERE g.rows_in_identity=1
+               AND f.status IN ('AVAILABLE','STALE')
+               AND f.settlement_source='PPI_FIELD'
+               AND f.market NOT IN ('','UNKNOWN')
+               AND f.currency NOT IN ('','UNKNOWN')
+               AND length(f.metadata_json)<=4096
+               AND (CASE WHEN json_valid(f.metadata_json)
+                         THEN json_extract(f.metadata_json,'$._discovery_source')
+                         ELSE '' END)='PPI_PRIMARY'
+             ORDER BY f.instrument_type,f.ticker,f.settlement
+             LIMIT 10001""").fetchall()
+        if len(candidates) > 10000:
+            return None
+        exact = dict.fromkeys(_PPI_OPEN_FAMILIES, 0)
+        unverified = dict.fromkeys(_PPI_OPEN_FAMILIES, 0)
+        counted = 0
+        for family, count in rows:
+            if family in unverified:
+                unverified[family] += int(count)
+                counted += int(count)
+        for ticker, family, market, currency, settlement, source, raw_json in candidates:
+            record = {"ticker": ticker, "instrument_type": family,
+                      "market": market, "currency": currency,
+                      "settlement": settlement, "settlement_source": source,
+                      "metadata_json": raw_json}
+            if (family in exact and
+                    not financial_catalog.ppi_full_key_evidence_reason(record)):
+                exact[family] += 1
+                unverified[family] -= 1
+        return {"enumerated_exact": exact, "unverified": unverified,
+                "catalog_scope": "PPI_CLAIMED_ONLY",
+                "outside_ppi_scope": total - counted}
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return None
+
+
+def _ppi_open_global_session_evidence_gate():
+    """Fail closed until *physical* PPI single-session custody is integrated.
+
+    The runtime currently starts scanner and EXIT as distinct processes; each
+    constructs its own ProductionMarketReader and invokes login_once(). The
+    optional scalping process can authenticate a third reader. Scanner-local
+    `metrics`, an environment flag, a DB command, a process-local registry or
+    a shared GET budget lease cannot attest one authenticated PPI session
+    globally. No reliable cross-process owner proof is wired into this process.
+
+    This deliberate hard HOLD is checked at OPEN admission and before every
+    native Current/Book SEND. It may be replaced only alongside a separately
+    reviewed shared-session owner with independent positive evidence; this
+    code must never infer singleton status from the command issuer's JSON.
+    """
+    raise ValueError("PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED")
+
+
+def _ppi_open_evidence_gate(store, requested_day, *, now=None):
+    """No OPEN diagnostic may compete with EXIT or leave PAPER/0 custody."""
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    minute = local.hour * 60 + local.minute
+    if (requested_day != local.date().isoformat() or
+            not _business_day(local.date()) or _market_phase(local) != "OPEN" or
+            not (10 * 60 + 30 <= minute < 17 * 60)):
+        raise ValueError("PPI_OPEN_COMMAND_EXPIRED_OR_SESSION_INVALID")
+    if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
+        raise ValueError("PPI_OPEN_RUNTIME_FLAG_NOT_ENABLED")
+    with store.connect() as c:
+        state = c.execute("""SELECT mode,real_orders_sent,ppi_auth
+            FROM observer_state WHERE id=1""").fetchone()
+    if (not state or tuple(state) != ("PRODUCTION_PAPER", 0, "OK") or
+            type(state[1]) is not int):
+        raise ValueError("PPI_OPEN_PAPER_ZERO_AUTH_NOT_ATTESTED")
+    opened, invalid = store.exit_positions()
+    if opened or invalid or store.active_future_positions():
+        raise ValueError("PPI_OPEN_EXIT_EXPOSURE_PRESENT")
+    with store.connect() as c:
+        fci_open = c.execute("""SELECT 1 FROM paper_family_lifecycle
+            WHERE family='FCI' AND state!='REDEEMED' LIMIT 1""").fetchone()
+        caucion_open = c.execute("""SELECT 1 FROM paper_cauciones
+            WHERE status NOT IN ('MATURED','CANCELLED_ADMIN')
+               OR (status='MATURED' AND settled_at IS NULL)
+               OR (status='CANCELLED_ADMIN' AND settled_at IS NOT NULL)
+            LIMIT 1""").fetchone()
+    if fci_open or caucion_open:
+        raise ValueError("PPI_OPEN_EXIT_EXPOSURE_PRESENT")
+    try:
+        from bt_caucion_paper import CaucionBook
+        CaucionBook(store).positions()
+    except (ValueError, TypeError, sqlite3.Error, OSError):
+        raise ValueError("PPI_OPEN_CAUCION_RECEIPT_UNVERIFIED") from None
+    # A670 issuer is an independent witness, not a capability to bypass the
+    # scanner's own pre-SEND guard: direct observer_commands writers exist.
+    _ppi_open_global_session_evidence_gate()
+
+
+def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
+    """One typed ten-family OPEN witness in the already authenticated scanner.
+
+    At most one Current+Book pair per family; neither native HTTP200 nor a
+    fresh quote grants simulation readiness, which requires the independent
+    full PIT/Book1/decision/Book2/costs/EXIT admission evidence.
+    """
+    try:
+        parts = name.split(":")
+        if (len(parts) != 3 or parts[0] != _PPI_OPEN_COMMAND_PREFIX[:-1] or
+                len(parts[1]) != 10 or
+                date.fromisoformat(parts[1]).isoformat() != parts[1] or
+                parts[2] != "ALL"):
+            raise ValueError("PPI_OPEN_COMMAND_FORMAT_INVALID")
+        _, requested_day, _ = parts
+        with store.connect() as c:
+            prior = c.execute("""SELECT 1 FROM observer_commands
+                WHERE id<? AND command=? LIMIT 1""", (command_id, name)).fetchone()
+            row = c.execute("""SELECT created_at,status FROM observer_commands
+                WHERE id=? AND command=?""", (command_id, name)).fetchone()
+        if prior:
+            raise ValueError("PPI_OPEN_ALREADY_REQUESTED_NO_RETRY")
+        if not row or row[1] != "RUNNING":
+            raise ValueError("PPI_OPEN_COMMAND_CUSTODY_INVALID")
+        issued_at = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+        local_now = (now or datetime.now(TZ)).astimezone(TZ)
+        if issued_at.tzinfo is None or issued_at.utcoffset() is None:
+            raise ValueError("PPI_OPEN_COMMAND_ISSUE_CLOCK_UNVERIFIED")
+        if not -5 <= (local_now - issued_at).total_seconds() <= 600:
+            raise ValueError("PPI_OPEN_COMMAND_ISSUE_TTL_EXPIRED")
+        if reader is None:
+            raise ValueError("PPI_OPEN_EXISTING_SCANNER_SESSION_UNAVAILABLE")
+        metrics = getattr(reader, "metrics", None)
+        if not isinstance(metrics, dict) or metrics.get("authenticated") is not True:
+            raise ValueError("PPI_OPEN_EXISTING_SCANNER_AUTH_UNVERIFIED")
+        if getattr(reader, "budget_enabled", False) is not True:
+            raise ValueError("PPI_OPEN_SHARED_READ_BUDGET_UNVERIFIED")
+
+        def pre_wire():
+            wire_now = (now or datetime.now(TZ)).astimezone(TZ)
+            if not -5 <= (wire_now - issued_at).total_seconds() <= 600:
+                raise ValueError("PPI_OPEN_COMMAND_ISSUE_TTL_EXPIRED")
+            current_metrics = getattr(reader, "metrics", None)
+            if (not isinstance(current_metrics, dict) or
+                    current_metrics.get("authenticated") is not True or
+                    getattr(reader, "budget_enabled", False) is not True):
+                raise ValueError("PPI_OPEN_SCANNER_SESSION_OR_BUDGET_LOST")
+            _ppi_open_evidence_gate(store, requested_day, now=now)
+
+        pre_wire()
+        catalog_coverage = _ppi_open_catalog_coverage(store)
+        if catalog_coverage is None:
+            raise ValueError("PPI_OPEN_CATALOG_UNVERIFIED")
+        catalog_counts = catalog_coverage["enumerated_exact"]
+        statuses = dict.fromkeys(_PPI_OPEN_FAMILIES, "NOT_ATTEMPTED_ABORTED")
+        coverage = {}
+        for family in _PPI_OPEN_FAMILIES:
+            n = catalog_counts[family] + catalog_coverage["unverified"][family]
+            coverage[family] = {"enumerated_exact": catalog_counts[family],
+                                "attempted": 0,
+                                "native_pair_qa_pass": 0, "ready": 0,
+                                "hold": n, "unattempted": n}
+        abort = False
+        witnessed = False
+        for family in _PPI_OPEN_FAMILIES:
+            try:
+                pre_wire()
+            except ValueError:
+                statuses[family] = "PRE_WIRE_GUARD_HOLD"
+                abort = True
+                break
+            if not (catalog_counts[family] + catalog_coverage["unverified"][family]):
+                statuses[family] = "CATALOG_IDENTITY_UNAVAILABLE"
+                continue
+            result = _ppi_direct_rest_observe_only(
+                reader, store, family=family, command_id=command_id,
+                pre_wire=pre_wire)
+            status = result.get("status")
+            if result.get("paper_ready") is not False:
+                raise ValueError("PPI_OPEN_UNEXPECTED_READINESS")
+            if status not in {"FRESH_OBSERVED", "STALE_OR_INVALID",
+                              "CATALOG_IDENTITY_UNAVAILABLE",
+                              "PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
+                raise ValueError("PPI_OPEN_UNEXPECTED_PROBE_STATUS")
+            receipts = result.get("native_receipts")
+            if receipts not in ([], ["current"], ["current", "book"]):
+                raise ValueError("PPI_OPEN_NATIVE_WIRE_EVIDENCE_INVALID")
+            if status in {"FRESH_OBSERVED", "STALE_OR_INVALID"} and receipts != ["current", "book"]:
+                # An asserted provider outcome with no native SEND+HTTP200
+                # receipts is not a witnessed pair, even in a test adapter.
+                status = "PROVIDER_OR_CONTRACT_HOLD"
+            statuses[family] = status
+            attempted = int("current" in receipts)
+            coverage[family]["attempted"] = attempted
+            coverage[family]["unattempted"] -= attempted
+            if status == "FRESH_OBSERVED" and receipts == ["current", "book"]:
+                coverage[family]["native_pair_qa_pass"] = 1
+            if status in {"FRESH_OBSERVED", "STALE_OR_INVALID"}:
+                witnessed = True
+            if status in {"PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
+                abort = True
+                break
+        report = {"schema": "RC6_PPI_OPEN_TEN_FAMILY_V1",
+                  "day": requested_day, "paper_ready": False,
+                  "order_authority": False,
+                  "readiness_reason": "FULL_READINESS_NOT_EVIDENCED",
+                  "unattempted_reason": "BOUNDED",
+                  "statuses": statuses, "coverage": coverage,
+                  "unverified": catalog_coverage["unverified"],
+                  "catalog_scope": catalog_coverage["catalog_scope"],
+                  "outside_ppi_scope": catalog_coverage["outside_ppi_scope"]}
+        detail = json.dumps(report, separators=(",", ":"), sort_keys=True)
+        if len(detail) > 2000:
+            raise ValueError("PPI_OPEN_COVERAGE_RECEIPT_TOO_LARGE")
+        _finish_command(store, command_id,
+                        "HOLD" if abort or not witnessed else "EVIDENCE", detail)
+    except (ValueError, TypeError, sqlite3.Error, RuntimeError, OSError) as error:
+        reason = (str(error) if type(error) is ValueError and
+                  (str(error).startswith("PPI_OPEN_") or
+                   str(error) == "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED") else
+                  "PPI_OPEN_GUARD_" + type(error).__name__.upper())
+        _finish_command(store, command_id, "HOLD", reason)
+    return reader
+
+
+def _ppi_postclose_evidence_gate(store, requested_day, *, now=None):
+    """Validate only a short observe-only GET window on the scanner's store.
+
+    The scope is checked again before each endpoint; this never pauses the
+    broker, changes a position or claims an EXIT/provider quota. Uncertainty
+    rejects a diagnostic; it does not disable ordinary PAPER simulation.
+    """
+    local = (now or datetime.now(TZ)).astimezone(TZ)
+    minute = local.hour * 60 + local.minute
+    if (requested_day != local.date().isoformat() or
+            not _business_day(local.date()) or _market_phase(local) != "CLOSED" or
+            not 17 * 60 <= minute < 23 * 60):
+        raise ValueError("PPI_POSTCLOSE_COMMAND_EXPIRED_OR_SESSION_INVALID")
+    if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
+        raise ValueError("PPI_DIRECT_REST_RUNTIME_FLAG_NOT_ENABLED")
+    with store.connect() as c:
+        state = c.execute("""SELECT mode,real_orders_sent,ppi_auth
+            FROM observer_state WHERE id=1""").fetchone()
+    if (not state or tuple(state) != ("PRODUCTION_PAPER", 0, "OK") or
+            type(state[1]) is not int):
+        raise ValueError("PPI_POSTCLOSE_PAPER_ZERO_AUTH_NOT_ATTESTED")
+    opened, invalid = store.exit_positions()
+    if opened or invalid or store.active_future_positions():
+        raise ValueError("PPI_POSTCLOSE_SUPERVISABLE_EXPOSURE_PRESENT")
+    # FCI/caucion positions live in independent PAPER ledgers; neither an
+    # empty spot book nor zero futures proves there is no EXIT duty.
+    # Missing schema is not evidence of zero exposure.
+    with store.connect() as c:
+        other_exposure = c.execute("""SELECT 1 FROM paper_family_lifecycle
+            WHERE family='FCI' AND state!='REDEEMED' LIMIT 1""").fetchone()
+        caucion_open = c.execute("""SELECT 1 FROM paper_cauciones
+            WHERE status NOT IN ('MATURED','CANCELLED_ADMIN')
+               OR (status='MATURED' AND settled_at IS NULL)
+               OR (status='CANCELLED_ADMIN' AND settled_at IS NOT NULL)
+            LIMIT 1""").fetchone()
+    if other_exposure:
+        raise ValueError("PPI_POSTCLOSE_FCI_EXPOSURE_PRESENT")
+    if caucion_open:
+        raise ValueError("PPI_POSTCLOSE_CAUCION_EXPOSURE_PRESENT")
+    # Do not treat a raw CANCELLED_ADMIN label as proof of settlement.
+    # The existing ledger projection verifies its immutable cancellation
+    # receipt and all legacy fee restatement seals without any DDL/write.
+    try:
+        from bt_caucion_paper import CaucionBook
+        CaucionBook(store).positions()
+    except (ValueError, TypeError, sqlite3.Error, OSError):
+        raise ValueError("PPI_POSTCLOSE_CAUCION_RECEIPT_UNVERIFIED") from None
+
+
+def _run_ppi_postclose_command(store, reader, command_id, name, *, now=None):
+    """Route one bounded family sample through the ALREADY logged-in reader.
+
+    A crashed RUNNING command must remain a forensic partial/unknown outcome;
+    a later identical request cannot silently repeat a completed Current.
+    """
+    try:
+        parts = name.split(":")
+        if (len(parts) != 3 or parts[0] != _PPI_POSTCLOSE_COMMAND_PREFIX[:-1]
+                or len(parts[1]) != 10 or
+                date.fromisoformat(parts[1]).isoformat() != parts[1]
+                or parts[2] not in OPERATIONAL_FAMILIES):
+            raise ValueError("PPI_POSTCLOSE_COMMAND_FORMAT_INVALID")
+        _, requested_day, family = parts
+        with store.connect() as c:
+            prior = c.execute("""SELECT 1 FROM observer_commands
+                WHERE id<? AND command=? LIMIT 1""", (command_id, name)).fetchone()
+            row = c.execute("""SELECT created_at,status FROM observer_commands
+                WHERE id=? AND command=?""", (command_id, name)).fetchone()
+        if prior:
+            raise ValueError("PPI_POSTCLOSE_ALREADY_REQUESTED_NO_RETRY")
+        if not row or row[1] != "RUNNING":
+            raise ValueError("PPI_POSTCLOSE_COMMAND_CUSTODY_INVALID")
+        issued_at = datetime.fromisoformat(str(row[0]).replace("Z", "+00:00"))
+        local_now = (now or datetime.now(TZ)).astimezone(TZ)
+        if issued_at.tzinfo is None or issued_at.utcoffset() is None:
+            raise ValueError("PPI_POSTCLOSE_COMMAND_ISSUE_CLOCK_UNVERIFIED")
+        age_seconds = (local_now - issued_at).total_seconds()
+        if not -5 <= age_seconds <= 600:
+            raise ValueError("PPI_POSTCLOSE_COMMAND_ISSUE_TTL_EXPIRED")
+        if reader is None:
+            raise ValueError("PPI_POSTCLOSE_EXISTING_AUTH_SESSION_UNAVAILABLE")
+        def pre_wire():
+            wire_now = (now or datetime.now(TZ)).astimezone(TZ)
+            if not -5 <= (wire_now - issued_at).total_seconds() <= 600:
+                raise ValueError("PPI_POSTCLOSE_COMMAND_ISSUE_TTL_EXPIRED")
+            _ppi_postclose_evidence_gate(store, requested_day, now=now)
+        pre_wire()
+        # Existing observe-only function, budget, broker-wire guard and
+        # catalog identities. No ProductionMarketReader() or login_once().
+        result = _ppi_direct_rest_observe_only(
+            reader, store, family=family, command_id=command_id,
+            pre_wire=pre_wire)
+        if result.get("paper_ready") is not False:
+            raise ValueError("PPI_POSTCLOSE_UNEXPECTED_READINESS")
+        status = ("EVIDENCE" if result.get("status") in
+                  {"FRESH_OBSERVED", "STALE_OR_INVALID"} else "HOLD")
+        detail = json.dumps({"command_id": command_id, "family": family,
+                             "provider_status": result.get("status"),
+                             "reason": result.get("reason"),
+                             "paper_ready": False, "order_authority": False},
+                            sort_keys=True)
+        _finish_command(store, command_id, status, detail)
+    except (ValueError, TypeError, sqlite3.Error, RuntimeError, OSError) as error:
+        # A stable reason code is useful operationally; never log a raw SDK
+        # payload or potentially secret-bearing exception to this command.
+        reason = (str(error) if type(error) is ValueError and
+                  str(error).startswith("PPI_") else
+                  "PPI_POSTCLOSE_GUARD_" + type(error).__name__.upper())
+        _finish_command(store, command_id, "HOLD", reason)
+    return reader
+
+
 def _active_symbols(store):
     """Compatibilidad: devuelve el primer lote, no el universo histórico."""
     return _eligible_symbols(store)[:ACTIVE_SYMBOL_LIMIT]
@@ -2159,6 +2692,10 @@ def _background_ingest(reader, store, *, force=False):
 
 def _run_command(store, reader, command, gemini_gate=None, login_interlock=None):
     command_id, name = command
+    if name.startswith(_PPI_OPEN_COMMAND_PREFIX):
+        return _run_ppi_open_command(store, reader, command_id, name)
+    if name.startswith(_PPI_POSTCLOSE_COMMAND_PREFIX):
+        return _run_ppi_postclose_command(store, reader, command_id, name)
     if name == "GEMINI_PREFLIGHT":
         if gemini_gate is None:
             detail = "IA intradiaria desactivada por política; no participa de decisiones PAPER."
@@ -2385,6 +2922,7 @@ def run():
     scanner_primary = ScannerPrimaryRecorder(
         Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
+    last_direct_rest_probe = 0.0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
@@ -2541,6 +3079,19 @@ def run():
                 continue
             (focus, symbols, eligible_total, cursor_before, cursor_after,
              feasibility) = _runtime_readiness(store, record_event=True)
+            if (not symbols and
+                    os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1" and
+                    time.monotonic() - last_direct_rest_probe >= 60):
+                # The existing READY-only basket can be empty even when PPI
+                # catalog identities exist. A separately fenced REST probe
+                # tests one exact native pair; it never calls broker.on_quote,
+                # changes eligibility or asserts PAPER_READY.
+                last_direct_rest_probe = time.monotonic()
+                probe = _ppi_direct_rest_observe_only(reader, store)
+                _health(store, "PPI_DIRECT_REST_RECOVERY",
+                        "VERDE" if probe["status"] == "FRESH_OBSERVED" else "AMARILLO",
+                        "Native REST observe-only: " + probe["status"],
+                        "PPI Producción", success=probe["status"] == "FRESH_OBSERVED")
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
