@@ -90,6 +90,19 @@ class Harness:
                 self.closed = True
 
         monkeypatch.setattr(readonly, "ProductionMarketReader", Reader)
+        # The runtime no longer instantiates a PPI SDK in the scalping child.
+        # Inject the fake at its AF_UNIX gateway boundary instead: the SDK
+        # stand-in below represents the isolated OWNER side, never a second
+        # production login or a fallback to direct HTTP.
+        import rc6_ppi_gateway_reader_adapter as gateway
+        def synthetic_gateway_connect(database, *, consumer):
+            assert database == self.store.path and consumer == "scalping"
+            owner_reader = readonly.ProductionMarketReader(
+                "OFFLINE_FAKE_KEY", "OFFLINE_FAKE_SECRET",
+                audit=self.store.audit_http, consumer="SCALPING")
+            owner_reader.login_once()
+            return owner_reader
+        monkeypatch.setattr(gateway, "connect_paper_gateway_reader", synthetic_gateway_connect)
         monkeypatch.setattr(observer, "_secret", lambda: ("OFFLINE_FAKE_KEY", "OFFLINE_FAKE_SECRET"))
         monkeypatch.setattr(scalping.time, "monotonic", lambda: self.monotonic)
         monkeypatch.setattr(readonly, "retry_read", lambda call, **kwargs: retry_offline(call, **kwargs))
@@ -487,8 +500,10 @@ def test_explicit_session_invalid_reprobe_closes_reader_and_obeys_login_cooldown
         behavior=lambda worker, _r: Exception("Instrument not found") if worker.cycle == 0 else
             Exception("Unauthorized") if worker.cycle == 1 else None).run()
     assert [call[0] for call in h.calls] == [0, 1]
-    assert len(h.readers) == 2
-    assert h.cuts[2]["heartbeat"]["state"] == "LOGIN_COOLDOWN"
+    # Invalid provider session is owned by Gateway. The child reattaches
+    # locally after 60 s instead of attempting another SDK login.
+    assert len(h.readers) == 3
+    assert h.cuts[2]["heartbeat"]["state"] == "GATEWAY_ATTACH_RETRY"
     assert capability(h.cuts[1])["last_result"] == "PPI_SESSION_INVALID"
     assert capability(h.cuts[1])["capability_status"] == "REPROBE_FAILED"
     assert h.cuts[1]["states"][0]["state"] == "INTRADAY_CAPABILITY_REPROBE_FAILED"
