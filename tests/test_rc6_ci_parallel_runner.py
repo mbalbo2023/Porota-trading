@@ -315,6 +315,25 @@ class TestParallelProofRunner(unittest.TestCase):
                 '</testcase></testsuite>', encoding="utf-8")
             self.assertIsNone(runner._failed_module_from_junit(xml, REPO))
 
+    def test_pytest_short_failure_summary_fallback_is_path_only(self):
+        from types import SimpleNamespace
+        source = (
+            "PRIVATE_LOGS\n"
+            "================ short test summary info =================\n"
+            "FAILED tests/test_rc6_ci_parallel_runner.py::test_foo"
+            "[PRIVATE_PARAMETER] - PRIVATE_TRACEBACK\n"
+            "1 failed in 2.00s\n")
+        module = runner._failed_module_from_pytest_summary(
+            SimpleNamespace(stdout=source), REPO)
+        self.assertEqual(module, "tests/test_rc6_ci_parallel_runner.py")
+        self.assertNotIn("PRIVATE", module)
+        self.assertIsNone(runner._failed_module_from_pytest_summary(
+            SimpleNamespace(stdout="FAILED tests/test_rc6_ci_parallel_runner.py"
+                            "::test_foo[PRIVATE]"), REPO))
+        self.assertIsNone(runner._failed_module_from_pytest_summary(
+            SimpleNamespace(stdout="short test summary info\n"
+                            "FAILED ../../PRIVATE_SECRET.py::test\n"), REPO))
+
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
                      dict(mismatched_tree=True), dict(extra_test=True),

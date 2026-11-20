@@ -69,18 +69,25 @@ def _red(reason="UNVERIFIED", *, failure_module=None) -> None:
     raise ParallelRunnerRed(reason, failure_module=failure_module)
 
 
-def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
-    """Report only a validated source module for a failed pytest testcase.
+def _safe_pytest_module(repo: Path, source: str) -> str | None:
+    """Only a real tests/*.py file from the pinned checkout can be disclosed."""
+    if (type(source) is not str
+            or not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source)):
+        return None
+    parts = Path(source).parts
+    if (".." in parts or any(
+            (repo / Path(*parts[:i])).is_symlink()
+            for i in range(1, len(parts) + 1))):
+        return None
+    return source if (repo / source).is_file() else None
 
-    pytest xunit2 commonly emits classname, not file. Never expose testcase
-    names, parameters, traceback text, nodeids, stdout or stderr.
-    """
+
+def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
+    """Read bounded JUnit locally, emit only safe source path, no test names."""
     try:
         metadata = junit_path.lstat()
         if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 64 * 1024 * 1024:
             return None
-        # iterparse + testcase.clear() avoids retaining huge private testcase
-        # names/failure bodies in parent memory.
         for _, case in ET.iterparse(junit_path, events=("end",)):
             if case.tag != "testcase":
                 continue
@@ -92,22 +99,32 @@ def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
             if (len(classname) <= 260 and re.fullmatch(
                     r"tests(?:\.[A-Za-z0-9_]+){1,24}", classname)):
                 parts = classname.split(".")
-                # Strip TestClass/method suffixes until a tracked *.py exists.
                 for count in range(len(parts), 1, -1):
                     sources.append("/".join(parts[:count]) + ".py")
             for source in sources:
-                if (not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source)
-                        or ".." in Path(source).parts):
-                    continue
-                parts = Path(source).parts
-                if any((repo / Path(*parts[:i])).is_symlink()
-                       for i in range(1, len(parts) + 1)):
-                    continue
-                if (repo / source).is_file():
-                    return source
+                safe = _safe_pytest_module(repo, source)
+                if safe is not None:
+                    return safe
             case.clear()
     except (OSError, ValueError, TypeError, ET.ParseError):
         return None
+    return None
+
+
+def _failed_module_from_pytest_summary(result, repo: Path) -> str | None:
+    """Parse only pytest's short failure summary, never stdout/parameters."""
+    tail = str(result.stdout or "")[-262144:]
+    cut = tail.rfind("short test summary info")
+    if cut < 0:
+        return None
+    for line in tail[cut:].splitlines():
+        match = re.match(
+            r"^(?:FAILED|ERROR)\s+(tests/[A-Za-z0-9_./-]{1,220}\.py)(?:::|\s|$)",
+            line)
+        if match:
+            safe = _safe_pytest_module(repo, match.group(1))
+            if safe is not None:
+                return safe
     return None
 
 
@@ -367,8 +384,10 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             # Abort before starting another governed shard on a real pytest
             # failure. Keep private stdout/stderr out of the release receipt.
             if result.returncode != 0:
-                _red("SHARD_PYTEST_NONZERO",
-                     failure_module=_failed_module_from_junit(xml_path, repo))
+                failure_module = (
+                    _failed_module_from_junit(xml_path, repo)
+                    or _failed_module_from_pytest_summary(result, repo))
+                _red("SHARD_PYTEST_NONZERO", failure_module=failure_module)
             with progress_lock:
                 finished_shards += 1
                 notify("SHARD_COMPLETE", i, finished_shards)
