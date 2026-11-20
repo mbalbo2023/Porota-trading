@@ -51,7 +51,9 @@ def _make_ppi_gateway_owner(store):
 
     if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
         raise RuntimeError("PPI_OBSERVED_DIRECT_BUDGET_NOT_ENABLED")
-    rows, five_keys, digest = load_primary_ppi_catalog_snapshot(store.path)
+    rows, query_keys, digest, provider_attested_keys = (
+        load_primary_ppi_catalog_snapshot(
+            store.path, include_diagnostic_candidates=True))
     budget = PaperDirectReadBudget(store.path)
     capacity = ObservedPaperCapacityAuthority(budget)
 
@@ -72,10 +74,12 @@ def _make_ppi_gateway_owner(store):
         reader_factory=reader_factory, instrument_factory=sdk_instrument,
         stream_authority=_NoUnverifiedStreamPermit(),
         external_capacity_authority=capacity,
-        catalog_authority=PrimaryPPICatalogAuthority(five_keys),
-        ppi_catalog_rows=rows, catalog_five_keys=five_keys,
+        # Query-only settlement is never a PPI_FIELD contract or PAPER READY.
+        catalog_authority=PrimaryPPICatalogAuthority(
+            provider_attested_keys, query_keys=query_keys),
+        ppi_catalog_rows=rows, catalog_five_keys=query_keys,
         catalog_source_digest=digest,
-        consumer_five_keys={role: list(five_keys)
+        consumer_five_keys={role: list(query_keys)
                             for role in ("scanner", "exit_reader", "scalping")},
         socket_path=gateway_socket_path(store.path),
     )

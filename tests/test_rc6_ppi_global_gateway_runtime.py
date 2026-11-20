@@ -218,3 +218,45 @@ def test_owner_lifetime_lease_never_deletes_non_socket_or_symlink(tmp_path):
         with runtime.ppi_gateway_lifetime_lease(path):
             pass
     assert path.is_symlink()
+
+
+def test_gateway_factory_uses_diagnostic_keys_without_paper_promotion(
+        tmp_path, monkeypatch):
+    """SQLite-only actual factory: no owner open, SDK login, wire or socket."""
+    import json
+    from be_paper_engine import PaperStore
+    from bu_instrument_catalog import init_schema
+
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    key = ("GGAL", "ACCIONES", "BYMA", "ARS", "INMEDIATA")
+    with store.connect() as connection:
+        connection.execute(
+            "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (*key, "REQUEST_CANDIDATE", "OFFHOST",
+             "2026-11-19T15:00:00Z", "RUN_TEST", "STALE", "NOT_READY",
+             json.dumps({
+                 "_discovery_source": "PPI_PRIMARY", "ticker": key[0],
+                 "type": key[1], "market": key[2], "currency": key[3],
+             })))
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    with patch("rc6_ppi_shared_session_owner.PPISharedSessionOwner") as owner_cls, \
+         patch("bf_production_paper_observer._secret",
+               side_effect=AssertionError("CREDENTIALS_MUST_NOT_BE_READ")):
+        runtime._make_ppi_gateway_owner(store)
+    kwargs = owner_cls.call_args.kwargs
+    assert kwargs["catalog_five_keys"] == [key]
+    assert set(kwargs["consumer_five_keys"]) == {
+        "scanner", "exit_reader", "scalping"}
+    assert all(keys == [key] for keys in kwargs["consumer_five_keys"].values())
+    authority = kwargs["catalog_authority"]
+    assert authority.permits("PPI_NATIVE_QUERY_IDENTITY_UNIQUE", five_key=key)
+    assert authority.permits("PPI_FIVE_KEY_CATALOG_ATTESTED", five_key=key) is False
+    assert authority.permits("PPI_FIVE_KEY_CATALOG_ATTESTED") is False
+    with store.connect() as connection:
+        assert tuple(connection.execute(
+            "SELECT settlement_source,status FROM financial_instrument_catalog"
+            ).fetchone()) == ("REQUEST_CANDIDATE", "STALE")
+        assert connection.execute(
+            "SELECT real_orders_sent FROM observer_state WHERE id=1"
+            ).fetchone()[0] == 0
