@@ -173,10 +173,46 @@ def pytest_configure(config):
             json.loads(os.environ["POROTA_CI_IDENTITY"])), "porota-receipt")
 
 
+def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
+    """Leave a small public FAIL receipt if source preflight or pytest dies early.
+
+    Never interpret absence of pytest_sessionfinish as success, never leak the
+    suppressed pytest output, environment, assertion values or private paths.
+    Completed pytest still atomically supplies its normal authoritative report.
+    """
+    if phase not in {"SOURCE_PRECHECK_PENDING", "PYTEST_PRECHECK_PENDING",
+                     "PYTEST_FINAL_RECEIPT_ABSENT"}:
+        raise ValueError("CI_RECEIPT_PHASE_INVALID")
+    safe = {}
+    for key, pattern in (("source_sha", r"[0-9a-f]{40}"),
+                         ("source_tree", r"[0-9a-f]{40}"),
+                         ("image_id", r"sha256:[0-9a-f]{64}")):
+        value = identity.get(key)
+        safe[key] = value if isinstance(value, str) and re.fullmatch(pattern, value) else "NO_VERIFICADO"
+    receipt = {
+        "schema": "porota.code-tests.v1", **safe, "status": "FAIL",
+        "collected": 0, "executed": 0, "failed": 0, "errors": 1,
+        "skipped": 0, "retired": [],
+        "failure_ids": ["CI_RUNNER_NO_COMPLETION_RECEIPT"],
+        "failure_locations": [], "runner_phase": phase,
+    }
+    if type(process_exit) is int:
+        receipt["process_exit_class"] = (
+            "SIGNAL" if process_exit < 0
+            else "NO_REPORT_ZERO_EXIT" if process_exit == 0
+            else "NO_REPORT_NONZERO_EXIT")
+        if -128 <= process_exit <= 255:
+            receipt["process_exit_code"] = process_exit
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    return receipt
+
+
 def run_code_tests(root, output, identity):
     root, output = Path(root).resolve(), Path(output).resolve()
+    _failclosed_start_receipt(output, identity, "PYTEST_PRECHECK_PENDING")
     arguments, _ = _policy(root)
-    output.unlink(missing_ok=True)
     environment = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                        POROTA_CI_RECEIPT_PATH=str(output), POROTA_CI_IDENTITY=json.dumps(identity),
                        PYTHONDONTWRITEBYTECODE="1")
@@ -189,6 +225,10 @@ def run_code_tests(root, output, identity):
     if not output.is_file():
         raise ValueError("CODE_TEST_RECEIPT_MISSING")
     receipt = json.loads(output.read_text())
+    if receipt.get("runner_phase") == "PYTEST_PRECHECK_PENDING":
+        receipt = _failclosed_start_receipt(
+            output, identity, "PYTEST_FINAL_RECEIPT_ABSENT",
+            process_exit=result.returncode)
     if result.returncode and receipt.get("status") == "PASS":
         raise ValueError("CODE_TEST_EXIT_MISMATCH")
     return receipt
@@ -203,10 +243,12 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
+    identity = {"source_sha": args.source_sha, "source_tree": args.source_tree,
+                "image_id": args.image_id}
+    _failclosed_start_receipt(args.output, identity, "SOURCE_PRECHECK_PENDING")
     from scripts.porota_image_source_identity import verify_source_identity
     verify_source_identity(args.source_sha, args.source_tree)
-    receipt = run_code_tests(root, args.output, {"source_sha": args.source_sha,
-                             "source_tree": args.source_tree, "image_id": args.image_id})
+    receipt = run_code_tests(root, args.output, identity)
     print(json.dumps(receipt, sort_keys=True))
     return 0 if receipt["status"] == "PASS" else 1
 

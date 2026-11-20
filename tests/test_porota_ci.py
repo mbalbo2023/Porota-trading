@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class CodeTestRunnerTests(unittest.TestCase):
@@ -32,6 +33,63 @@ productive_scope:
         self.assertIsNotNone(importlib.util.find_spec("scripts.porota_ci"), "The single code-test runner is missing")
         module = importlib.import_module("scripts.porota_ci")
         return module.run_code_tests(self.root, self.root / "receipt.json", self.identity)
+
+    def test_missing_pytest_final_report_is_sanitized_fail_not_missing_file(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        # Models subprocess exiting before pytest_sessionfinish; raw stderr is
+        # never read or published, and the exit result never becomes PASS.
+        with patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess(
+                args=["synthetic_pytest"], returncode=17)):
+            result = module.run_code_tests(self.root, output, self.identity)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["runner_phase"], "PYTEST_FINAL_RECEIPT_ABSENT")
+        self.assertEqual(result["process_exit_class"], "NO_REPORT_NONZERO_EXIT")
+        self.assertEqual(result["process_exit_code"], 17)
+        self.assertEqual(result["failure_ids"], ["CI_RUNNER_NO_COMPLETION_RECEIPT"])
+        self.assertEqual(json.loads(output.read_text()), result)
+
+    def test_policy_failure_still_leaves_red_receipt(self):
+        module = importlib.import_module("scripts.porota_ci")
+        (self.root / "ops/policy/test-policy.yaml").write_text(
+            "test_governance:\\n  automatic_discovery_required: false\\n"
+            "  manual_test_file_allowlist_as_primary_ci: false\\n"
+            "productive_scope:\\n  roots: ['.']\\n  exclusions: []\\n")
+        output = self.root / "receipt.json"
+        with self.assertRaises(ValueError):
+            module.run_code_tests(self.root, output, self.identity)
+        evidence = json.loads(output.read_text())
+        self.assertEqual(evidence["status"], "FAIL")
+        self.assertEqual(evidence["runner_phase"], "PYTEST_PRECHECK_PENDING")
+        self.assertEqual(evidence["failure_ids"], ["CI_RUNNER_NO_COMPLETION_RECEIPT"])
+
+    def test_image_identity_precheck_writes_fail_receipt_before_test_runner(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "image-preflight.json"
+        args = ["porota_ci.py", "--output", str(output),
+                "--source-sha", self.identity["source_sha"],
+                "--source-tree", self.identity["source_tree"],
+                "--image-id", self.identity["image_id"]]
+        with patch.object(sys, "argv", args), patch.dict(os.environ, {
+                "POROTA_BUILD_SHA": "0" * 40,
+                "POROTA_CANDIDATE_TREE_SHA": self.identity["source_tree"]}):
+            with self.assertRaises(ValueError):
+                module.main()
+        result = json.loads(output.read_text())
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["runner_phase"], "SOURCE_PRECHECK_PENDING")
+        self.assertEqual(result["failure_ids"], ["CI_RUNNER_NO_COMPLETION_RECEIPT"])
+
+    def test_missing_report_after_zero_exit_never_becomes_success(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        with patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess(
+                args=["synthetic_pytest"], returncode=0)):
+            result = module.run_code_tests(self.root, output, self.identity)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["process_exit_class"], "NO_REPORT_ZERO_EXIT")
+        self.assertEqual(result["executed"], 0)
+        self.assertEqual(result["errors"], 1)
 
     def test_newly_added_test_is_automatically_executed(self):
         (self.root / "test_example.py").write_text("def test_example():\n    assert 2 + 2 == 4\n")
