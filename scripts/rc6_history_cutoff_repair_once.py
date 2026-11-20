@@ -141,19 +141,51 @@ def _coverage(db, identity) -> dict[str, Any]:
     Canonical rows from IOL/other sources or with no pinned PPI row contract
     cannot certify an exact PPI series merely because dates are present.
     """
+    def blocked(reason):
+        return {"complete": False, "start": None, "latest": None,
+                "expected": None, "present": 0, "missing": None,
+                "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat(),
+                "reason": reason}
+
     with db.connect() as c:
-        columns = {str(row[1]) for row in c.execute("PRAGMA table_info(history_canonical_v2)")}
-        if not {"date", "source", "metadata_json", "adjusted"}.issubset(columns):
-            return {"complete": False, "start": None, "latest": None,
-                    "expected": None, "present": 0, "missing": None,
-                    "first_missing": None, "reason": "CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED"}
-        rows = c.execute(
-            """SELECT substr(date,1,10),source,metadata_json,adjusted FROM history_canonical_v2
-               WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
-                 AND currency=? AND price_basis=? AND adjustment_basis=?
-                 AND date<=? ORDER BY date""",
-            (*_exact_key(identity), CUTOFF.isoformat()),
-        ).fetchall()
+        try:
+            columns = {str(row[1]) for row in
+                       c.execute("PRAGMA table_info(history_canonical_v2)")}
+            if not {"date", "source", "metadata_json", "adjusted"}.issubset(columns):
+                return blocked("CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED")
+            # Bound SQL work as well as rows and Python heap. Never sort all
+            # historical years just to check the 365-day cutoff.
+            deadline = time.monotonic() + 2.0
+            c.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
+            rows = []
+            metadata_bytes = 0
+            try:
+                cursor = c.execute(
+                    """SELECT substr(date,1,10),source,
+                              CASE WHEN length(CAST(metadata_json AS BLOB))<=?
+                                   THEN metadata_json END,adjusted
+                       FROM history_canonical_v2
+                       WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
+                         AND currency=? AND price_basis=? AND adjustment_basis=?
+                         AND date>=? AND date<=?
+                       LIMIT ?""",
+                    (LEGACY_ARCHIVE_MAX_BODY_BYTES, *_exact_key(identity),
+                     BOOTSTRAP_START.isoformat(), CUTOFF.isoformat(),
+                     LEGACY_ARCHIVE_SCAN_LIMIT + 1))
+                for row in cursor:
+                    if len(rows) >= LEGACY_ARCHIVE_SCAN_LIMIT:
+                        return blocked("CANONICAL_SQL_ROW_BUDGET_EXCEEDED")
+                    if type(row[2]) is not str:
+                        return blocked("CANONICAL_PROVENANCE_UNVERIFIED")
+                    metadata_bytes += len(row[2].encode("utf-8", "surrogatepass"))
+                    if metadata_bytes > LEGACY_ARCHIVE_SELECTED_BYTES:
+                        return blocked("CANONICAL_SQL_BYTE_BUDGET_EXCEEDED")
+                    rows.append(row)
+            finally:
+                c.set_progress_handler(None, 0)
+        except (sqlite3.Error, OSError, TypeError, UnicodeError):
+            return blocked("CANONICAL_SQL_READ_UNVERIFIED")
+    rows.sort(key=lambda row: str(row[0]))
     days = set()
     for row in rows:
         try:
@@ -269,6 +301,41 @@ def _archive_identity(wrapper: dict) -> tuple[str, ...] | None:
     return identity
 
 
+def _safe_physical_archive_order(c, table: str, column: str) -> bool:
+    """Only an unshadowed SQLite rowid or INTEGER PRIMARY KEY can order archives."""
+    if (table, column) not in {
+            ("exact_attempts_v1", "rowid"), ("historical_raw_archive", "id")}:
+        return False
+    try:
+        schema = c.execute(
+            """SELECT type,CASE WHEN length(CAST(sql AS BLOB))<=16384
+                                THEN sql END
+               FROM sqlite_master WHERE name=?""", (table,)).fetchone()
+        if (not schema or schema[0] != "table" or
+                not isinstance(schema[1], str) or
+                "WITHOUT ROWID" in schema[1].upper() or
+                "CREATE VIRTUAL TABLE" in schema[1].upper()):
+            return False
+        info = c.execute(f'PRAGMA table_xinfo("{table}")').fetchall()
+        if not info or len(info) > 128:
+            return False
+        if column == "rowid":
+            if any(str(row[1]).casefold() in ("rowid", "_rowid_", "oid")
+                   for row in info):
+                return False
+        elif not any(str(row[1]).casefold() == "id" and
+                     str(row[2]).upper() == "INTEGER" and row[5] == 1
+                     and row[6] == 0 for row in info):
+            return False
+        plan = c.execute(
+            f'EXPLAIN QUERY PLAN SELECT "{column}" FROM "{table}" '
+            f'ORDER BY "{column}" DESC LIMIT 1').fetchall()
+        return bool(plan) and not any(
+            "TEMP B-TREE" in str(row[3]).upper() for row in plan)
+    except (sqlite3.Error, OSError, TypeError, ValueError):
+        return False
+
+
 def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tuple[list[dict], str]]:
     import fb_raw_evidence_exact_v1 as exact
 
@@ -292,10 +359,20 @@ def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tu
         c.row_factory = sqlite3.Row
         try:
             c.execute("PRAGMA query_only=ON")
-            # Physical recency is assessed before origin/quality filters. A
-            # long succession of rejects cannot become an unbounded sweep.
+            if not _safe_physical_archive_order(c, "exact_attempts_v1", "rowid"):
+                return _legacy_archive_payloads(targets)
+            # Return bounded text metadata, never materialize 8MiB TEXT values.
             rows = c.execute(
-                """SELECT recorded_at,inner_sha256,body_hash,body_sha256,body_bytes,
+                """SELECT
+                          CASE WHEN length(CAST(recorded_at AS BLOB))<=128
+                               THEN recorded_at END AS recorded_at,
+                          CASE WHEN length(CAST(inner_sha256 AS BLOB))<=64
+                               THEN inner_sha256 END AS inner_sha256,
+                          CASE WHEN length(CAST(body_hash AS BLOB))<=64
+                               THEN body_hash END AS body_hash,
+                          CASE WHEN length(CAST(body_sha256 AS BLOB))<=64
+                               THEN body_sha256 END AS body_sha256,
+                          body_bytes,
                           CASE WHEN length(CAST(wrapper_json AS BLOB))<=?
                                THEN wrapper_json END AS wrapper_json
                    FROM exact_attempts_v1
@@ -413,10 +490,13 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
     with closing(c):
         try:
             c.execute("PRAGMA query_only=ON")
-            if not c.execute("""SELECT 1 FROM sqlite_master WHERE type='table'
-                                 AND name='historical_raw_archive'""").fetchone():
+            if not _safe_physical_archive_order(c, "historical_raw_archive", "id"):
                 return {}
-            rows = c.execute("""SELECT body_hash,recorded_at,
+            rows = c.execute("""SELECT
+                  CASE WHEN length(CAST(body_hash AS BLOB))<=64
+                       THEN body_hash END AS body_hash,
+                  CASE WHEN length(CAST(recorded_at AS BLOB))<=128
+                       THEN recorded_at END AS recorded_at,
                   CASE WHEN length(CAST(body_json AS BLOB))<=?
                        THEN body_json END AS body_json
               FROM historical_raw_archive

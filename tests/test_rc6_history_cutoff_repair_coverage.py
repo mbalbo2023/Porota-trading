@@ -635,3 +635,75 @@ def test_quarantine_flag_cannot_turn_unverified_cutoff_into_complete(tmp_path, m
     assert run == ("PARTIAL", 0, 1)
     assert catalog == ("AVAILABLE", "HISTORY")
     assert "BLOCKED_REPEATED_PPI_EVIDENCE_UNVERIFIED" in capsys.readouterr().out
+
+
+def test_external_manifest_refuses_shadowed_rowid_before_payload_read(tmp_path, monkeypatch):
+    manifest = _external_attempt(tmp_path, monkeypatch)
+    with sqlite3.connect(manifest) as db:
+        db.execute("ALTER TABLE exact_attempts_v1 ADD COLUMN rowid TEXT")
+        db.execute("UPDATE exact_attempts_v1 SET rowid='1'")
+    assert repair._archive_payloads({_target()}) == {}
+
+
+def test_external_manifest_bounded_recorded_at_metadata(tmp_path, monkeypatch):
+    manifest = _external_attempt(tmp_path, monkeypatch)
+    with sqlite3.connect(manifest) as db:
+        db.execute("UPDATE exact_attempts_v1 SET recorded_at=zeroblob(?)",
+                   (8 * 1024 * 1024,))
+    tracemalloc.start()
+    try:
+        assert repair._archive_payloads({_target()}) == {}
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024
+
+
+def test_history_coverage_rejects_more_than_bounded_rows(tmp_path):
+    store = _Store(tmp_path / "bounded-coverage.db")
+    _canonical_table(store)
+    record = (*_target(), repair.CUTOFF.isoformat(), "PPI_PRODUCTION_HISTORY",
+              0, '{"history_quality":"FULL_OHLCV"}')
+    with store.connect() as db:
+        db.executemany("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                       [record] * (repair.LEGACY_ARCHIVE_SCAN_LIMIT + 1))
+    coverage = repair._coverage(store, _target())
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "CANONICAL_SQL_ROW_BUDGET_EXCEEDED"
+    assert coverage["repair_start"] == repair.BOOTSTRAP_START.isoformat()
+
+
+def test_history_coverage_restricts_prebootstrap_dates_in_sql(tmp_path):
+    store = _Store(tmp_path / "windowed-coverage.db")
+    _canonical_table(store)
+    past = (*_target(), "2024-01-02", "PPI_PRODUCTION_HISTORY",
+            0, '{"history_quality":"FULL_OHLCV"}')
+    current = (*_target(), repair.CUTOFF.isoformat(), "PPI_PRODUCTION_HISTORY",
+               0, '{"history_quality":"FULL_OHLCV"}')
+    with store.connect() as db:
+        db.executemany("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                       [past] * (repair.LEGACY_ARCHIVE_SCAN_LIMIT + 1) + [current])
+    coverage = repair._coverage(store, _target())
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "BASELINE_CALENDAR_UNAUDITED"
+    assert coverage["start"] == repair.CUTOFF
+
+
+def test_history_coverage_oversized_metadata_is_not_materialized(tmp_path, monkeypatch):
+    store = _Store(tmp_path / "oversized-metadata.db")
+    _canonical_table(store)
+    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,zeroblob(?))",
+            (*_target(), repair.CUTOFF.isoformat(), "PPI_PRODUCTION_HISTORY",
+             0, 8 * 1024 * 1024))
+    tracemalloc.start()
+    try:
+        coverage = repair._coverage(store, _target())
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "CANONICAL_PROVENANCE_UNVERIFIED"
+    assert peak < 4 * 1024 * 1024
