@@ -46,7 +46,8 @@ class ParallelRunnerRed(ValueError):
         "COLLECTION_MANIFEST_INVALID", "COLLECTION_SOURCE_MISMATCH",
         "COLLECTION_PARTITION_INVALID",
         "RETIRED_TEST_NOT_COLLECTED", "SHARD_REPORT_INVALID",
-        "JUNIT_QUORUM_INVALID", "SCRATCH_ROOT_INVALID",
+        "SHARD_PYTEST_NONZERO", "JUNIT_QUORUM_INVALID",
+        "SCRATCH_ROOT_INVALID",
     })
 
     def __init__(self, reason="UNVERIFIED"):
@@ -311,6 +312,10 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                 actual = json.loads(executed.read_text(encoding="utf-8"))
             except (OSError, ValueError, TypeError):
                 _red("SHARD_REPORT_INVALID")
+            # Abort before starting another governed shard on a real pytest
+            # failure. Keep private stdout/stderr out of the release receipt.
+            if result.returncode != 0:
+                _red("SHARD_PYTEST_NONZERO")
             with progress_lock:
                 finished_shards += 1
                 notify("SHARD_COMPLETE", i, finished_shards)
@@ -319,11 +324,19 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
 
         started_parallel = time.monotonic()
         receipts = []
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(run_one, i) for i in range(shard_count)]
-            # Consume every result; a failed shard cannot silently disappear.
-            for future in as_completed(futures):
-                receipts.append(future.result())
+        if max_workers == 1:
+            # A serial CI shard must complete successfully before the next
+            # is launched. Submitting all futures first can mask the initial
+            # error behind ThreadPoolExecutor.shutdown(wait=True) and the
+            # outer 2500-second deadline. Keep identical global JUnit quorum.
+            for i in range(shard_count):
+                receipts.append(run_one(i))
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(run_one, i) for i in range(shard_count)]
+                # All concurrent results must enter the exact JUnit quorum.
+                for future in as_completed(futures):
+                    receipts.append(future.result())
         test_ms = round((time.monotonic() - started_parallel) * 1000)
         started_quorum = time.monotonic()
         notify("JUNIT_QUORUM", -1, finished_shards)

@@ -198,7 +198,7 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertNotIn("sensitive-log-not-public", str(receipt))
 
     def test_progress_callback_reports_only_fixed_phases_and_shard_counters(self):
-        fake = FakePytest()
+        fake = FakePytest(require_parallel=False)
         progress = []
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(runner, "_invoke", fake):
@@ -219,6 +219,56 @@ class TestParallelProofRunner(unittest.TestCase):
             ("JUNIT_QUORUM", -1, 2),
         ])
         self.assertNotIn("test_example", str(progress))
+
+    def test_governed_serial_missing_manifest_stops_before_next_shard(self):
+        # Regress the native failure: a missing manifest must NOT trigger
+        # queued tests 2..16 while an executor waits on unfinished futures.
+        fake = FakePytest(require_parallel=False)
+        progress = []
+
+        def omit_first_manifest(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                Path(env["RC6_CI_MANIFEST_PATH"]).unlink(missing_ok=True)
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            output = Path(directory) / "combined.xml"
+            with patch.object(runner, "_invoke", omit_first_manifest):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(
+                        SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                        output_junit=output,
+                        progress=lambda phase, index, completed:
+                            progress.append((phase, index, completed)))
+            self.assertEqual(caught.exception.reason, "SHARD_REPORT_INVALID")
+            self.assertFalse(output.exists())
+        invoked = [cmd for cmd in fake.calls
+                   if any(arg.startswith("--junitxml=") for arg in cmd)]
+        self.assertEqual(len(invoked), 1)
+        self.assertEqual(progress[-1], ("SHARD_RUNNING", 0, 0))
+        self.assertNotIn("SHARD_COMPLETE", [phase for phase, _, _ in progress])
+
+    def test_governed_serial_nonzero_pytest_stops_before_next_shard(self):
+        fake = FakePytest(require_parallel=False)
+
+        def first_pytest_error(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                return subprocess.CompletedProcess(argv, 1, "PRIVATE_PYTEST", "")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", first_pytest_error):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(
+                        SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                        output_junit=Path(directory) / "combined.xml")
+            self.assertEqual(caught.exception.reason, "SHARD_PYTEST_NONZERO")
+        invoked = [cmd for cmd in fake.calls
+                   if any(arg.startswith("--junitxml=") for arg in cmd)]
+        self.assertEqual(len(invoked), 1)
+        self.assertNotIn("PRIVATE_PYTEST", str(caught.exception))
 
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
