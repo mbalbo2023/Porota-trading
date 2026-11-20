@@ -279,6 +279,11 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                     subprocess.TimeoutExpired):
                 receipt = _failclosed_start_receipt(
                     output, identity, "GOVERNED_SHARD_QUORUM_REJECTED")
+                failure = sys.exc_info()[1]
+                receipt["validation_failure_phase"] = (
+                    failure.reason if isinstance(
+                        failure, shard_runner.ParallelRunnerRed)
+                    else "UNVERIFIED")
                 after = _cgroup_oom_kills()
                 if type(before) is int and type(after) is int and after >= before:
                     receipt["cgroup_oom_kill_delta"] = min(after - before, 100_000)
@@ -306,8 +311,10 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
         and type(proof.get("discovered")) is int
         and proof["discovered"] >= 16
         and proof.get("executed") == proof["discovered"]
+        and type(proof.get("retired_testcases")) is int
+        and proof["retired_testcases"] >= len(retirement)
         and proof.get("globally_discovered") ==
-            proof["discovered"] + len(retirement)
+            proof["discovered"] + proof["retired_testcases"]
         and proof.get("retired") == sorted(retirement)
     )
     if not valid:
@@ -325,6 +332,7 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
         "collection_sha256": proof["collection_sha256"],
         "shards": 16, "execution_workers": 1,
         "globally_discovered": proof["globally_discovered"],
+        "retired_testcases": proof["retired_testcases"],
         "automatic_deploy": False,
     }
     output.write_text(json.dumps(receipt, sort_keys=True) + "\n")

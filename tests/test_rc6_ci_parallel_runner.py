@@ -29,7 +29,9 @@ class FakePytest:
 
     def __init__(self, *, missing=False, skipped=False, fail_status=False,
                  mismatched_tree=False, extra_test=False, duplicate=False,
-                 collection_rc=0, dirty_tree=False, require_parallel=True):
+                 collection_rc=0, dirty_tree=False, require_parallel=True,
+                 nodes=None):
+        self.nodes = list(NODES if nodes is None else nodes)
         self.missing = missing
         self.skipped = skipped
         self.fail_status = fail_status
@@ -57,14 +59,14 @@ class FakePytest:
             root = Path(env["RC6_CI_MANIFEST_PATH"])
             if self.collection_rc == 0:
                 tree = "c" * 40 if self.mismatched_tree else TREE
-                root.write_text(json.dumps(shards.manifest(SHA, tree, NODES)), encoding="utf-8")
+                root.write_text(json.dumps(shards.manifest(SHA, tree, self.nodes)), encoding="utf-8")
             return subprocess.CompletedProcess(argv, self.collection_rc, "not public", "")
         if "--" not in argv:
             raise AssertionError("Pytest shard must use -- end-of-options marker")
         cases = argv[argv.index("--") + 1:]
         if self.barrier:
             self.barrier.wait(timeout=5)
-        is_one = NODES[0] in cases
+        is_one = self.nodes[0] in cases
         actual = cases[:-1] if self.missing and is_one else cases
         if self.duplicate and is_one:
             actual = [*actual, actual[0]]
@@ -208,11 +210,50 @@ class TestParallelProofRunner(unittest.TestCase):
                                    output_junit=output)
                 self.assertFalse(output.exists())
 
+    def test_source_checkout_dirty_has_fixed_failure_phase(self):
+        fake = FakePytest(dirty_tree=True)
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", fake):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               output_junit=Path(directory) / "denied.xml")
+            self.assertEqual(caught.exception.reason, "SOURCE_CHECKOUT_DIRTY")
+
+    def test_generated_native_elf_is_only_allowed_untracked_image_file(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            root = Path(directory)
+            native = root / "rc6_shadow_runtime" / "_rc6_json_bound.so"
+            native.parent.mkdir()
+            native.write_bytes(b"\x7fELF" + b"native-synthetic" * 5)
+            native.chmod(0o600)
+            exact = "?? rc6_shadow_runtime/_rc6_json_bound.so\n"
+            self.assertTrue(runner._allow_image_generated_native_status(root, exact))
+            self.assertTrue(runner._allow_image_generated_native_status(root, ""))
+            self.assertFalse(runner._allow_image_generated_native_status(
+                root, exact + "?? tests/test_new.py\n"))
+            self.assertFalse(runner._allow_image_generated_native_status(
+                root, " M scripts/porota_ci.py\n" + exact))
+            native.write_bytes(b"NOT_A_NATIVE_ELF" + b"x" * 50)
+            self.assertFalse(runner._allow_image_generated_native_status(root, exact))
+            native.write_bytes(b"\x7fELF" + b"native-synthetic" * 5)
+            other = root / "extra-hardlink"
+            other.hardlink_to(native)
+            self.assertFalse(runner._allow_image_generated_native_status(root, exact))
+            other.unlink()
+            native.unlink()
+            native.symlink_to(root / "foreign")
+            self.assertFalse(runner._allow_image_generated_native_status(root, exact))
+
     def test_serial_existing_quorum_checks_all_retirements_exactly(self):
         with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
             path = Path(directory) / "combined.xml"
-            fake = FakePytest(require_parallel=False)
-            retired = [NODES[0], NODES[3]]
+            nodes = (["tests/test_ci_stub.py::test_retired",
+                      "tests/test_ci_stub.py::test_param[0]",
+                      "tests/test_ci_stub.py::test_param[1]"]
+                     + [f"tests/test_ci_stub.py::test_keep_{i}" for i in range(9)])
+            fake = FakePytest(require_parallel=False, nodes=nodes)
+            retired = ["tests/test_ci_stub.py::test_retired",
+                       "tests/test_ci_stub.py::test_param"]
             with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
                  patch.object(runner, "_invoke", fake):
                 receipt = runner.run(
@@ -220,12 +261,13 @@ class TestParallelProofRunner(unittest.TestCase):
                     retired_nodeids=retired, output_junit=path)
             self.assertEqual(receipt["status"], "GREEN_QUORUM_OFFLINE_ONLY")
             self.assertEqual((receipt["globally_discovered"], receipt["discovered"],
-                              receipt["executed"]), (12, 10, 10))
-            self.assertEqual(receipt["retired"], retired)
+                              receipt["executed"], receipt["retired_testcases"]),
+                             (12, 9, 9, 3))
+            self.assertEqual(receipt["retired"], sorted(retired))
             self.assertEqual(receipt["execution_workers"], 1)
             self.assertFalse(receipt["ci_activated"])
             self.assertTrue(path.is_file())
-            bad = FakePytest(require_parallel=False)
+            bad = FakePytest(require_parallel=False, nodes=nodes)
             with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
                  patch.object(runner, "_invoke", bad):
                 with self.assertRaises(runner.ParallelRunnerRed):
