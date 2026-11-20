@@ -52,6 +52,65 @@ def pytest_runtest_logstart(nodeid, location):
     sys.__stdout__.flush()
 
 
+
+def pytest_internalerror(excrepr, excinfo):
+    """Persist a PRIVATE sanitized pytest INTERNAL_ERROR cause, fail-closed.
+
+    Never copy raw traceback, credentials, parameters or node IDs. The hook
+    itself must not create another Python exception during emergency handling.
+    """
+    target = os.environ.get("RC6_CI_INTERNAL_ERROR_PATH", "")
+    if not (_enabled() and target):
+        return
+    staged = None
+    try:
+        name = getattr(getattr(excinfo, "type", None), "__name__", "")
+        if (type(name) is not str or
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", name)):
+            name = "UNVERIFIED"
+        receipt = {"schema": "rc6.pytest.internalerror.v1",
+                   "exception_type": name}
+        root = Path.cwd().resolve(strict=True)
+        tb = getattr(getattr(excinfo, "value", None), "__traceback__", None)
+        for _ in range(128):
+            if tb is None:
+                break
+            filename = Path(tb.tb_frame.f_code.co_filename)
+            if filename.is_absolute():
+                try:
+                    relative = filename.resolve(strict=True).relative_to(root).as_posix()
+                    parts = Path(relative).parts
+                    if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", relative)
+                            and ".." not in parts and (root / relative).is_file()
+                            and not any((root / Path(*parts[:i])).is_symlink()
+                                        for i in range(1, len(parts) + 1))
+                            and 1 <= tb.tb_lineno <= 10000000):
+                        receipt["source_file"] = relative
+                        receipt["source_line"] = tb.tb_lineno
+                except (OSError, ValueError, RuntimeError):
+                    pass
+            tb = tb.tb_next
+        path = Path(target)
+        if path.is_symlink() or path.parent.is_symlink() or not path.parent.is_dir():
+            return
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=".rc6-internalerror-", delete=False) as output:
+            staged = Path(output.name)
+            os.chmod(staged, 0o600)
+            json.dump(receipt, output, sort_keys=True, separators=(",", ":"))
+            output.write("\n")
+        os.replace(staged, path)
+        staged = None
+    except Exception:
+        pass
+    finally:
+        if staged is not None:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
+
 def pytest_collection_modifyitems(session, config, items):
     if not _enabled():
         return

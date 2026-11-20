@@ -550,3 +550,86 @@ class TestParallelProofRunner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_pytest_internalerror_hook_writes_private_typed_receipt(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            target = Path(directory) / "internalerror.json"
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_INTERNAL_ERROR_PATH": str(target)}):
+                try:
+                    raise RuntimeError("PRIVATE_CREDENTIAL_TOKEN")
+                except RuntimeError as error:
+                    identity.pytest_internalerror(
+                        None, SimpleNamespace(type=type(error), value=error))
+            receipt = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(receipt["schema"], "rc6.pytest.internalerror.v1")
+            self.assertEqual(receipt["exception_type"], "RuntimeError")
+            self.assertEqual(receipt["source_file"],
+                             "tests/test_rc6_ci_parallel_runner.py")
+            self.assertGreater(receipt["source_line"], 0)
+            self.assertEqual(target.stat().st_mode & 0o077, 0)
+            self.assertNotIn("PRIVATE_CREDENTIAL_TOKEN", target.read_text())
+            self.assertEqual(runner._verified_internalerror_sidecar(target, REPO), {
+                "exception_type": "RuntimeError",
+                "source_file": "tests/test_rc6_ci_parallel_runner.py",
+                "source_line": receipt["source_line"]})
+
+    def test_pytest_internalerror_exit3_stops_before_next_shard(self):
+        fake = FakePytest(require_parallel=False)
+
+        def internalerror(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                path = Path(env["RC6_CI_INTERNAL_ERROR_PATH"])
+                path.write_text(json.dumps({
+                    "schema": "rc6.pytest.internalerror.v1",
+                    "exception_type": "ValueError",
+                    "source_file": "tests/test_rc6_ci_parallel_runner.py",
+                    "source_line": 300}))
+                path.chmod(0o600)
+                return subprocess.CompletedProcess(
+                    argv, 3, "PRIVATE_PARAMETER_SECRET", "PRIVATE_TRACE")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", internalerror):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               max_workers=1,
+                               output_junit=Path(directory) / "combined.xml")
+        error = caught.exception
+        self.assertEqual(error.reason, "SHARD_PYTEST_INTERNAL_ERROR")
+        self.assertEqual(error.process_exit_code, 3)
+        self.assertEqual(error.internal_error, {
+            "exception_type": "ValueError",
+            "source_file": "tests/test_rc6_ci_parallel_runner.py",
+            "source_line": 300})
+        self.assertNotIn("PRIVATE", str(error))
+        self.assertEqual(len([cmd for cmd in fake.calls
+                              if any(arg.startswith("--junitxml=") for arg in cmd)]), 1)
+
+    def test_internalerror_sidecar_disallows_private_forgery_and_symlink(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "internalerror.json"
+            invalid = (
+                '{"schema":"rc6.pytest.internalerror.v1",'
+                '"exception_type":"PRIVATE SECRET"}',
+                '{"schema":"rc6.pytest.internalerror.v1",'
+                '"exception_type":"NameError","source_file":"../secret.py",'
+                '"source_line":7}',
+                '{"schema":"rc6.pytest.internalerror.v1",'
+                '"exception_type":"NameError","extra":"PRIVATE"}',
+            )
+            for document in invalid:
+                path.write_text(document, encoding="utf-8")
+                path.chmod(0o600)
+                parsed = runner._verified_internalerror_sidecar(path, REPO)
+                self.assertTrue(parsed is None or "source_file" not in parsed)
+                self.assertNotIn("PRIVATE", str(parsed))
+            path.unlink()
+            path.symlink_to(Path(directory) / "missing")
+            self.assertIsNone(
+                runner._verified_internalerror_sidecar(path, REPO))

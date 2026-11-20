@@ -332,6 +332,15 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                         receipt["last_active_test_module"] = failure.last_active_module
                     if failure.process_exit_code is not None:
                         receipt["shard_process_exit_code"] = failure.process_exit_code
+                    if (failure.reason == "SHARD_PYTEST_INTERNAL_ERROR" and
+                            failure.internal_error):
+                        receipt["pytest_internal_exception_type"] = (
+                            failure.internal_error["exception_type"])
+                        if "source_file" in failure.internal_error:
+                            receipt["pytest_internal_source_file"] = (
+                                failure.internal_error["source_file"])
+                            receipt["pytest_internal_source_line"] = (
+                                failure.internal_error["source_line"])
                 after = _cgroup_oom_kills()
                 if type(before) is int and type(after) is int and after >= before:
                     receipt["cgroup_oom_kill_delta"] = min(after - before, 100_000)
