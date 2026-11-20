@@ -156,7 +156,7 @@ def test_instrument_not_found_is_explicit_strategy_unavailability():
 
 
 def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeypatch, store):
-    import bf_production_paper_observer as observer
+    import rc6_ppi_gateway_reader_adapter as gateway
 
     class FakeStop:
         stopped = False
@@ -171,7 +171,7 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
         def __init__(self, *args, **kwargs):
             pass
         def login_once(self):
-            pass
+            raise AssertionError("SCALPING_CHILD_SECOND_SDK_LOGIN_FORBIDDEN")
         def intraday(self, ticker, instrument_type, settlement):
             if ticker == "BAES":
                 raise Exception("Instrument not found")
@@ -199,11 +199,16 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
     monkeypatch.setattr(scalping, "evaluate_candidate", lambda store, record, at: "HOLD")
     monkeypatch.setattr(scalping, "_heartbeat",
                         lambda store, **kwargs: heartbeats.append(kwargs))
-    monkeypatch.setattr(readonly, "ProductionMarketReader", FakeReader)
-    monkeypatch.setattr(observer, "_secret", lambda: ("key", "secret"))
+    attached = []
+    def fake_gateway_connect(database, *, consumer):
+        assert database == store.path and consumer == "scalping"
+        attached.append(consumer)
+        return FakeReader()
+    monkeypatch.setattr(gateway, "connect_paper_gateway_reader", fake_gateway_connect)
     monkeypatch.setenv("PAPER_INTRADAY_SCAN_SECONDS", "60")
 
     scalping.run_worker(store, FakeStop(), clock_fn=lambda: START)
+    assert attached == ["scalping"]
 
     running = [row for row in heartbeats if row["state"] == "RUNNING"]
     assert running and running[0]["successful"] == 1 and running[0]["failed"] == 0
