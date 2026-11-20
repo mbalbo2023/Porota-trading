@@ -52,9 +52,9 @@ productive_scope:
     def test_policy_failure_still_leaves_red_receipt(self):
         module = importlib.import_module("scripts.porota_ci")
         (self.root / "ops/policy/test-policy.yaml").write_text(
-            "test_governance:\\n  automatic_discovery_required: false\\n"
-            "  manual_test_file_allowlist_as_primary_ci: false\\n"
-            "productive_scope:\\n  roots: ['.']\\n  exclusions: []\\n")
+            "test_governance:\n  automatic_discovery_required: false\n"
+            "  manual_test_file_allowlist_as_primary_ci: false\n"
+            "productive_scope:\n  roots: ['.']\n  exclusions: []\n")
         output = self.root / "receipt.json"
         with self.assertRaises(ValueError):
             module.run_code_tests(self.root, output, self.identity)
