@@ -107,7 +107,7 @@ class TestShardQuorum(unittest.TestCase):
             ([""], "NODEID_EMPTY"),
             (["a" * 2049], "NODEID_CHAR_LENGTH"),
             (["x\ud800"], "NODEID_UTF8_ENCODING"),
-            (["é" * 2048], "NODEID_UTF8_BYTES"),
+            (["€" * 2048], "NODEID_UTF8_BYTES"),
             (["PRIVATE_PARAM\nline"], "NODEID_NONPRINTABLE"),
             (["private", "private"], "NODEID_DUPLICATE"),
         )
