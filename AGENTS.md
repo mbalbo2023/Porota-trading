@@ -1,5 +1,16 @@
 # Porota Trading RC6 — instrucciones para agentes
 
+> **Corte vigente 20-Nov-2026, Gateway/familias:** leer primero [handoff actualizado](docs/RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md), últimos comentarios [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). Este corte desplaza las afirmaciones históricas inferiores donde discrepen; sólo GitHub/Actions/runtime actualizados acreditan estados posteriores.
+>
+> Producto `63ba3de6` sigue siendo último código productivo observado; **candidato único [#1213](https://github.com/mbalbo2023/Porota-trading/pull/1213) HEAD `36740582`**, Predeploy [#44783447120](https://github.com/mbalbo2023/Porota-trading/actions/runs/44783447120) **EN_EJECUCION al corte**, build completo, suite en curso, sin artifact/digest/runtime certificado. No inferir que el run siga activo ni que terminó GREEN: releer el job.
+>
+> **Disposición de PRs:** #1216 ETF DRAFT ya incorporado byte-exacto a #1213, **SUPERSEDIDO_CON_REFERENCIA**, NO re-mergear; #1203 históricos DRAFT/HOLD con guardas de código, fuente/custodia/contrato físico pendiente, **COMPLETAR aparte**; #1166 Performance DRAFT **FUERA de release, mantener OFF**. No convertir DRAFT en READY para fabricar un Predeploy o ejecutar otra imagen.
+>
+> **P0 actuales:** B02 dueño global PPI/legacy no atestado; B03 EXIT ante GET en vuelo sin plazo físico garantizado; B04 A670 aún exige testigo independiente; B05 all-GET y rotación observe-only diez familias en GitHub, runtime sin verificar. Fuente IOL complementaria no valida Book/PIT PPI ni READY; FCI NAV/cutoff, cauciones TNA, futuros A3, opciones y VN de renta fija tienen contratos separados. PPI `SearchInstrument` documenta cuatro campos; `REQUEST_CANDIDATE` no es `PPI_FIELD`. PAPER/SHADOW, órdenes reales bloqueadas, **PPI Watch NO TOCAR** según orden actual, incluso si una nota del 18-Nov inferior dice lo contrario. Sólo Deploy V2 único con paquete exacto y postflight directo; mercado cerrado no es veto técnico per se, pero falta de datos deja HOLD por instrumento.
+>
+> **Regla de confianza:** alta sólo con fuente+SHA+test+recibo del nivel afirmado; ante duda `NO_VERIFICADO`, con dueño, evidencia faltante y siguiente acción. Documentar cambios en el mismo handoff/#1093, no duplicar código/PR ni repetir runs sin nueva RCA.
+
+
 Este es el único punto de entrada de trabajo. El procedimiento está en
 [docs/RUNBOOK.md](docs/RUNBOOK.md); los documentos retirados se consultan desde
 [el índice histórico](docs/history/README.md). La documentación describe reglas;

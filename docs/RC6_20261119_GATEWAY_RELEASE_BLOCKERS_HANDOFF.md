@@ -1,4 +1,44 @@
 # POROTA RC6 — Handoff integral de bloqueantes y camino al siguiente Deploy V2
+
+> **ADENDA VIGENTE 20-Nov-2026, después del checkpoint #1093/7046132218.** Esta actualización prevalece sobre los SHAs y estados de PR del corte 19-Nov que se conservan abajo. La fuente viva de run, estado y ownership son [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y [#980](https://github.com/mbalbo2023/Porota-trading/issues/980); el presente texto no certifica resultados futuros del pipeline.
+
+### Estado exacto de código y release al corte
+- Control `main=53b718bc911121939528af749da61a5856dd348a`; rama producto `deploy/rc6-pr69-isolated-20260915=63ba3de63ce74398709013982032415496d07f98`. Último [Promote V2 #44599806451](https://github.com/mbalbo2023/Porota-trading/actions/runs/44599806451) es **VALIDADO_RUNTIME para su propia imagen**, sin Performance ingestion y sin prueba de frescura de PPI/familias; no volver a ejecutarlo.
+- **Único candidato producto [PR #1213](https://github.com/mbalbo2023/Porota-trading/pull/1213)** OPEN y `draft=false` para ejecutar Predeploy, base producto intacta, HEAD `36740582ddaee4f57781fb58c7aeedb45fe6af10`, tree `9a1a03b77ddcebcb94a12a5ce7276b519c1a36b9`. Disposición `COMPLETAR`, no merge ni Deploy hasta pruebas+preflight+ownership. Integra Gateway único/AF_UNIX, ALL-GET bajo presupuesto compartido, filtro ETF opcional y rotación observe-only de diez familias, sin READY masivo.
+- [Predeploy V2 #44783447120](https://github.com/mbalbo2023/Porota-trading/actions/runs/44783447120), job `136451919376`: **EN_EJECUCION**; build once COMPLETADO, paso de tests/HTTP PAPER aún EN_EJECUCION, export/upload de artefacto PENDIENTES, **0 artefactos listados al corte**. Este hecho NO autoriza `ARTEFACTO_VALIDADO`, merge ni Deploy V2.
+- RCA CI anterior: [run #44782643252](https://github.com/mbalbo2023/Porota-trading/actions/runs/44782643252) `COLLECTION_NODEID_CHAR_LENGTH` bajo límite 2048; FIX/GUARD/TEST de 65535 chars y bytes más cota global 64 MiB `36740582` **EN_GITHUB**, resultado CI exacto PENDIENTE. Antes hubo OOM de cgroup acreditado bajo pytest monolítico [#44759492505](https://github.com/mbalbo2023/Porota-trading/actions/runs/44759492505); se reutilizó el runner de shards/quorum existente. No abrir un segundo runner ni repetir la suite sin nueva causa.
+- [#1216 ETF](https://github.com/mbalbo2023/Porota-trading/pull/1216): **DRAFT, SUPERSEDIDO_CON_REFERENCIA**, sus dos blobs ya integrados byte-idénticos al #1213 por commit `577be54cdb8a12832a749d598e8febe5b2edfe86`, owner liberado [#980/7042070306](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7042070306). No pasar a READY/mergear de nuevo; conservar PR y evidencia.
+- [#1203 históricos](https://github.com/mbalbo2023/Porota-trading/pull/1203): **DRAFT, RETENER_CON_CAUSA / COMPLETAR scope propio**; HEAD `cc726fbca66327616f64f57435f29e82bc32e4e9`, dos rutas, guardas de manifest/gzip/RAW/archivo EN_GITHUB. Sin prueba física de origen PPI, contrato FULL_OHLC, calendario histórico 2025, base HISTORY↔OBSERVER con su WAL, ni cutoff COMPLETE. No convertir a READY sólo para iniciar Predeploy o importar. Priorizar inventario read-only y TDD de cobertura; no modificar esa rama desde otros workstreams.
+- [#1166 Performance](https://github.com/mbalbo2023/Porota-trading/pull/1166): **DRAFT, RETENER_CON_CAUSA / FUERA DE RELEASE**. Ingesta Performance OFF, sin activar workers, borrar historial ni integrar cambios.
+- `DEPLOY_OWNER` global para este nuevo release: **NO_ADQUIRIDO en último checkpoint disponible**; volver a consultar #980 antes de cualquier mutación runtime. Gateway, B05 y CI tienen WRITE_OWNER propios; no invadir sus rutas. Este workstream documental `RC6_20261120_GATEWAY_FAMILY_STATUS_DOCS` actúa exclusivamente en `AGENTS.md` y este handoff.
+
+### Diez familias: lo observado no es admisión PAPER
+
+| Familia | Evidencia secundaria existente, sólo referencial | Prueba independiente que falta |
+|---|---|---|
+| ACCIONES | IOL GGAL, precio y puntas bid/ask | PPI Current+Book nativos frescos, 5-key y aceptación/EXIT |
+| CEDEARS | IOL AAPL, puntas; base y mercado deben preservarse | PPI 5-key, contrato/mercado/plazo/FX y PIT |
+| ETFS | IOL SPY BYMA, 5+5; veto global removido del screening | Fuente nativa PPI, filtros completos, sin READY automático |
+| BONOS | IOL AL30, lote nominal 100 | VN/costos/precio y contrato económico nativo, profundidad/EXIT |
+| LETRAS | IOL D30N6, lote 100 y libro | Vencimiento, liquidación, VN, reloj y salida |
+| OBLIGACIONES | IOL YMCJO, lote 100 y libro | Contrato emisor/unidades, identity PPI sin alias |
+| OPCIONES | IOL GGAL cadena 142; algunas puntas/Greeks nulas, contrato GFGV5400NO sin asks | Identidad de serie, multiplicador, margen/riesgo, precio ejecutable, EXIT |
+| FUTUROS | Conector IOL consultado no soporta A3/ROFEX | Fuente nativa y contrato/margen/tenor, sin inferir |
+| CAUCIONES | IOL ARS 1/2/3 días `rate=null`, mínimo 100000 | TNA/plazo/costos/ventana; Current-only referencia NO equivale a tasa |
+| FCI | IOL 21 fondos listados, sin NAV/cutoff por clase | NAV/corte/rescate por clase y sesión propia, no exigir Book spot |
+
+Fuente de observaciones secundarias: [#1093/7045901935](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7045901935). No están medidas en este documento ni sustituyen PPI. `SearchInstrument` oficial documenta 4 campos sin settlement en respuesta; GET nativo pide settlement. **`REQUEST_CANDIDATE` es sólo consulta, no `PPI_FIELD`, `can_simulate` ni PAPER_READY**. Rotación de una familia por ventana de observación de al menos 60s sin posiciones abiertas, FCI/cauciones Current-only de referencia; no fabrica NAV/TNA/Book ni consume 10 familias a la vez. Próximo recibo físico debe desglosar `familia → identidad literal → consulta/lease/native clock → quote/contrato/costos → riesgo/señal → EXIT → estado`, con NO_VERIFICADO por campo ausente.
+
+### Camino crítico y paralelo sin duplicación
+1. Finalizar **este** run #44783447120 y leer cada job: ante RED recuperar causa y corregir exactamente en mismo PR, sin saltar tests, inventar PASS ni iniciar Deploy. Ante GREEN verificar artifact/manifest/digest/SHA/tree exactos, además de required checks.
+2. **P0 producto**: B02 demostrar singleton físico global de sesión PPI frente a SDK/legacy y credenciales; B03 medir prioridad EXIT ante GET en vuelo y plazo Book crítico; B04 sustituir A670 veto universal **sólo** mediante testigo positivo independiente; B05 cubrir GET de todos los endpoints y 429 en wire (EN_GITHUB, runtime pendiente). Fuera de rueda no inventar cotizaciones, pero el mercado cerrado **por sí solo** no veta el deploy técnico seguro.
+3. **QA diez familias**: revisar observación PPI, separación discovery/READY, Book/PIT y economía por familia; validar en rueda sólo los instrumentos realmente observados. IOL/BYMA/A3/ROFEX complementan sin sobrescribir identidad PPI. Estado actual de frescura y READY runtime del nuevo Gateway: **NO_VERIFICADO**.
+4. **P1 paralelo**: #1203 inventario/custodia SQLite y archivos históricos sin importación; jobs/servicios/timers, rootless/roles, DB/WAL y rutas dashboard READ_ONLY, con dueño y evidencia; Performance #1166 permanece OFF y fuera del candidato.
+5. **Sólo una vez** que el SHA exacto tenga puertas técnicas GO y `DEPLOY_OWNER` global libre: Deploy V2 único `rc6-unified-paper-deploy` build-once/artefacto inmutable, validación directa contenedores/roles/health/DB/PAPER `real_orders_sent=0`, REAL routes BLOCKED, PPI Watch intacto, cleanup selectivo medido. El resultado del job no equivale a `VALIDADO_RUNTIME`.
+
+**Confianza:** ALTA únicamente sobre refs, estados, archivos y evidencia de GH/IOL ya enlazados. Live PPI/droplet posterior al run, singleton global y READY por instrumento **NO_VERIFICADO**, no construir conclusiones desde un workflow aún activo. Próxima actualización aquí y en #1093 al disponer de un recibo nuevo, sin reescribir los cortes forenses.
+
+---
 **Corte documental:** 19-Nov-2026, noche ART. **Workstream documental:** RC6_GATEWAY_DEPLOY_HANDOFF_20261119. **Estado:** DOCUMENTADO EN GITHUB; ninguna etapa de desarrollo o runtime pendiente se declara completada por este documento.
 
 ## 1. Mandato del operador (prevalece sobre planes antiguos)
