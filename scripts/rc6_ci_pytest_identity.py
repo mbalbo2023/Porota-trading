@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 import tempfile
 
-from scripts.rc6_ci_shard_quorum import manifest
+from scripts.rc6_ci_shard_quorum import manifest, ShardQuorumRed, _NODEID_REASON_CODES
 
 
 PROPERTY = "rc6_nodeid_sha256"
@@ -70,6 +70,16 @@ def pytest_internalerror(excrepr, excinfo):
             name = "UNVERIFIED"
         receipt = {"schema": "rc6.pytest.internalerror.v1",
                    "exception_type": name}
+        # Reuse an existing fixed reason identifier, not arbitrary exception
+        # text or private nodeid values. Do not relax any length/UTF8 rule.
+        error = getattr(excinfo, "value", None)
+        if isinstance(error, ShardQuorumRed):
+            marker = "RC6_SHARD_QUORUM_RED:"
+            msg = str(error)
+            if msg.startswith(marker):
+                code = msg[len(marker):]
+                if code in _NODEID_REASON_CODES:
+                    receipt["quorum_reason"] = code
         root = Path.cwd().resolve(strict=True)
         tb = getattr(getattr(excinfo, "value", None), "__traceback__", None)
         for _ in range(128):

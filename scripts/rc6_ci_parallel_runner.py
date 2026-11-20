@@ -114,7 +114,7 @@ def _verified_internalerror_sidecar(path: Path, repo: Path) -> dict | None:
         record = json.loads(path.read_text(encoding="utf-8"))
         if (type(record) is not dict or
                 record.get("schema") != "rc6.pytest.internalerror.v1" or
-                set(record) - {"schema", "exception_type",
+                set(record) - {"schema", "exception_type", "quorum_reason",
                                "source_file", "source_line"}):
             return None
         kind = record.get("exception_type")
@@ -122,6 +122,13 @@ def _verified_internalerror_sidecar(path: Path, repo: Path) -> dict | None:
                 not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", kind)):
             return None
         result = {"exception_type": kind}
+        subtype = record.get("quorum_reason")
+        if subtype is not None:
+            if (kind != "ShardQuorumRed" or
+                    type(subtype) is not str or
+                    subtype not in shards._NODEID_REASON_CODES):
+                return None
+            result["quorum_reason"] = subtype
         source = record.get("source_file")
         line = record.get("source_line")
         if source is None and line is None:

@@ -338,6 +338,9 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                             failure.internal_error):
                         receipt["pytest_internal_exception_type"] = (
                             failure.internal_error["exception_type"])
+                        if "quorum_reason" in failure.internal_error:
+                            receipt["pytest_internal_quorum_reason"] = (
+                                failure.internal_error["quorum_reason"])
                         if "source_file" in failure.internal_error:
                             receipt["pytest_internal_source_file"] = (
                                 failure.internal_error["source_file"])

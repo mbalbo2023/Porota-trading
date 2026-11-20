@@ -548,10 +548,6 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertFalse(output.exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_pytest_internalerror_hook_writes_private_typed_receipt(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
@@ -689,3 +685,53 @@ if __name__ == "__main__":
         self.assertNotIn("PRIVATE", str(caught.exception))
         self.assertEqual(len([x for x in fake.calls
                               if any(a.startswith("--junitxml=") for a in x)]), 1)
+
+    def test_pytest_internalerror_quorum_reason_is_allowlisted(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "internalerror.json"
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_INTERNAL_ERROR_PATH": str(path)}):
+                try:
+                    shards._red("NODEID_DUPLICATE")
+                except shards.ShardQuorumRed as error:
+                    identity.pytest_internalerror(
+                        None, SimpleNamespace(type=type(error), value=error))
+            receipt = json.loads(path.read_text())
+            self.assertEqual(receipt["exception_type"], "ShardQuorumRed")
+            self.assertEqual(receipt["quorum_reason"], "NODEID_DUPLICATE")
+            self.assertNotIn("PRIVATE", path.read_text())
+            parsed = runner._verified_internalerror_sidecar(path, REPO)
+            self.assertEqual(parsed["quorum_reason"], "NODEID_DUPLICATE")
+            self.assertEqual(parsed["exception_type"], "ShardQuorumRed")
+
+    def test_internalerror_unknown_quorum_code_is_not_trusted(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "internalerror.json"
+            for invalid in [
+                    {"schema": "rc6.pytest.internalerror.v1",
+                     "exception_type": "ShardQuorumRed",
+                     "quorum_reason": "PRIVATE_NODEID"},
+                    {"schema": "rc6.pytest.internalerror.v1",
+                     "exception_type": "RuntimeError",
+                     "quorum_reason": "NODEID_DUPLICATE"}]:
+                path.write_text(json.dumps(invalid), encoding="utf-8")
+                path.chmod(0o600)
+                self.assertIsNone(runner._verified_internalerror_sidecar(path, REPO))
+
+    def test_new_diagnostic_regressions_are_real_unittest_members(self):
+        required = ("test_pytest_internalerror_hook_writes_private_typed_receipt",
+                    "test_pytest_internalerror_exit3_stops_before_next_shard",
+                    "test_internalerror_sidecar_disallows_private_forgery_and_symlink",
+                    "test_xunit2_exact_failure_name_without_params",
+                    "test_nonzero_shard_propagates_only_sanitized_static_test_base",
+                    "test_pytest_internalerror_quorum_reason_is_allowlisted",
+                    "test_internalerror_unknown_quorum_code_is_not_trusted")
+        for name in required:
+            self.assertTrue(callable(getattr(TestParallelProofRunner, name, None)),
+                            name + "_NOT_COLLECTED")
+
+
+if __name__ == "__main__":
+    unittest.main()
