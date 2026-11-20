@@ -199,7 +199,7 @@ def pytest_configure(config):
             json.loads(os.environ["POROTA_CI_IDENTITY"])), "porota-receipt")
 
 
-def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
+def _failclosed_start_receipt(output, identity, phase, *, process_exit=None, progress=None):
     """Leave a small public FAIL receipt if source preflight or pytest dies early.
 
     Never interpret absence of pytest_sessionfinish as success, never leak the
@@ -208,7 +208,8 @@ def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
     """
     if phase not in {"SOURCE_PRECHECK_PENDING", "PYTEST_PRECHECK_PENDING",
                      "PYTEST_FINAL_RECEIPT_ABSENT", "PYTEST_IN_PROGRESS",
-                     "GOVERNED_SHARD_QUORUM_REJECTED"}:
+                     "GOVERNED_SHARD_QUORUM_REJECTED",
+                     "GOVERNED_SHARD_IN_PROGRESS"}:
         raise ValueError("CI_RECEIPT_PHASE_INVALID")
     safe = {}
     for key, pattern in (("source_sha", r"[0-9a-f]{40}"),
@@ -230,9 +231,38 @@ def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
             else "NO_REPORT_NONZERO_EXIT")
         if -128 <= process_exit <= 255:
             receipt["process_exit_code"] = process_exit
+    if progress is not None:
+        if (type(progress) is not dict or set(progress) != {"stage", "index", "completed"}
+                or progress["stage"] not in {
+                    "SOURCE_CHECKOUT", "COLLECTION", "COLLECTION_COMPLETE",
+                    "SHARD_RUNNING", "SHARD_COMPLETE", "JUNIT_QUORUM"}
+                or type(progress["index"]) is not int
+                or type(progress["completed"]) is not int
+                or not -1 <= progress["index"] < 16
+                or not 0 <= progress["completed"] <= 16
+                or (progress["stage"] in {"SHARD_RUNNING", "SHARD_COMPLETE"}
+                    and progress["index"] < 0)
+                or (progress["stage"] not in {"SHARD_RUNNING", "SHARD_COMPLETE"}
+                    and progress["index"] != -1)):
+            raise ValueError("CI_PROGRESS_METADATA_INVALID")
+        receipt["progress_stage"] = progress["stage"]
+        receipt["progress_shard_index"] = progress["index"]
+        receipt["progress_completed_shards"] = progress["completed"]
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    # Atomic replacement retains the previous valid FAIL envelope if the
+    # outer Docker/Actions deadline kills a writer mid-checkpoint.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=str(output.parent),
+                prefix=".porota-ci-receipt-", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(json.dumps(receipt, sort_keys=True) + "\n")
+        os.replace(temporary, output)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return receipt
 
 
@@ -267,6 +297,15 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
     # fail closed otherwise. Docker image checkout /app must remain untouched.
     os.environ["RUNNER_TEMP"] = "/var/tmp"
     before = _cgroup_oom_kills()
+    latest_progress = None
+
+    def on_progress(stage, index, completed):
+        nonlocal latest_progress
+        latest_progress = {"stage": stage, "index": index, "completed": completed}
+        _failclosed_start_receipt(
+            output, identity, "GOVERNED_SHARD_IN_PROGRESS",
+            progress=latest_progress)
+
     try:
         with tempfile.TemporaryDirectory(prefix="porota-ci-quorum-", dir="/var/tmp") as temp:
             try:
@@ -274,11 +313,13 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                     identity["source_sha"], identity["source_tree"], repo=root,
                     shard_count=16, max_workers=1,
                     retired_nodeids=sorted(retirement),
-                    output_junit=Path(temp) / "governed-tests.xml")
+                    output_junit=Path(temp) / "governed-tests.xml",
+                    progress=on_progress)
             except (shard_runner.ParallelRunnerRed, OSError, ValueError,
                     subprocess.TimeoutExpired):
                 receipt = _failclosed_start_receipt(
-                    output, identity, "GOVERNED_SHARD_QUORUM_REJECTED")
+                    output, identity, "GOVERNED_SHARD_QUORUM_REJECTED",
+                    progress=latest_progress)
                 failure = sys.exc_info()[1]
                 receipt["validation_failure_phase"] = (
                     failure.reason if isinstance(
@@ -319,7 +360,8 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
     )
     if not valid:
         return _failclosed_start_receipt(
-            output, identity, "GOVERNED_SHARD_QUORUM_REJECTED")
+            output, identity, "GOVERNED_SHARD_QUORUM_REJECTED",
+            progress=latest_progress)
     # This receipt is issued by the governing Predeploy runner only AFTER
     # exact JUnit/nodeid/exit quorum. It is not deploy or PAPER entry authority.
     receipt = {

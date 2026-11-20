@@ -61,6 +61,42 @@ productive_scope:
         self.assertEqual(report["active_test_module"], "test_example.py")
         self.assertNotIn("PRIVATE_PARAMETER", json.dumps(report))
 
+    def test_governed_interrupted_shard_keeps_sanitized_fail_progress(self):
+        module = importlib.import_module("scripts.porota_ci")
+        from scripts.rc6_ci_parallel_runner import ParallelRunnerRed
+        output = self.root / "receipt.json"
+
+        def interrupted(*args, **kwargs):
+            report = kwargs["progress"]
+            report("COLLECTION", -1, 0)
+            report("SHARD_RUNNING", 3, 2)
+            snapshot = json.loads(output.read_text())
+            self.assertEqual(snapshot["status"], "FAIL")
+            self.assertEqual(snapshot["runner_phase"], "GOVERNED_SHARD_IN_PROGRESS")
+            self.assertEqual(snapshot["progress_shard_index"], 3)
+            raise ParallelRunnerRed("SUBPROCESS_INVALID")
+
+        with patch("scripts.rc6_ci_parallel_runner.run", side_effect=interrupted):
+            result = module._governed_serial_shard_tests(
+                self.root, output, self.identity, {})
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["runner_phase"], "GOVERNED_SHARD_QUORUM_REJECTED")
+        self.assertEqual(result["progress_stage"], "SHARD_RUNNING")
+        self.assertEqual(result["progress_completed_shards"], 2)
+        self.assertNotIn("PRIVATE_PARAMETER", json.dumps(result))
+        self.assertEqual(json.loads(output.read_text()), result)
+
+    def test_progress_receipt_rejects_untrusted_text_without_losing_previous(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        before = module._failclosed_start_receipt(
+            output, self.identity, "PYTEST_PRECHECK_PENDING")
+        with self.assertRaisesRegex(ValueError, "CI_PROGRESS_METADATA_INVALID"):
+            module._failclosed_start_receipt(
+                output, self.identity, "GOVERNED_SHARD_IN_PROGRESS",
+                progress={"stage": "PRIVATE_PARAMETER", "index": 0, "completed": 0})
+        self.assertEqual(json.loads(output.read_text()), before)
+
     def test_governed_wrapper_rejects_pilot_without_complete_retired_quorum(self):
         module = importlib.import_module("scripts.porota_ci")
         output = self.root / "receipt.json"

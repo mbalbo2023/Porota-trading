@@ -18,6 +18,7 @@ import subprocess
 import stat
 import sys
 import tempfile
+import threading
 import time
 
 import yaml
@@ -199,7 +200,8 @@ def _disk_backed_temp_parent(repo: Path) -> Path:
 def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         shard_count: int, output_junit: Path,
         max_workers: int | None = None,
-        retired_nodeids: list[str] | tuple[str, ...] = ()) -> dict:
+        retired_nodeids: list[str] | tuple[str, ...] = (),
+        progress=None) -> dict:
     """Discover globally, execute exact IDs concurrently, attest actual XML."""
     repo = Path(repo).resolve(strict=True)
     output_junit = Path(output_junit)
@@ -215,6 +217,15 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             not isinstance(item, str) or "[" in item
             for item in retired):
         _red()
+    if progress is not None and not callable(progress):
+        _red("SUBPROCESS_INVALID")
+
+    def notify(stage: str, index: int = -1, completed: int = 0) -> None:
+        # Fixed public phase + bounded counters only; never test IDs or logs.
+        if progress is not None:
+            progress(stage, index, completed)
+
+    notify("SOURCE_CHECKOUT")
     _verify_checkout(repo, candidate_sha, source_tree_sha)
     args = _test_args(repo)
     env_base = os.environ.copy()
@@ -231,6 +242,7 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
     disk_parent = _disk_backed_temp_parent(repo)
     with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir=disk_parent) as temp:
         temp_dir = Path(temp)
+        notify("COLLECTION")
         collected = temp_dir / "collected.json"
         collect_env = {**env_base, "RC6_CI_MANIFEST_PATH": str(collected)}
         collect = _invoke([python, "-m", "pytest", *plugin,
@@ -275,8 +287,14 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         except (ValueError, OSError, TypeError, shards.ShardQuorumRed):
             _red("COLLECTION_PARTITION_INVALID")
         collection_ms = round((time.monotonic() - start) * 1000)
+        notify("COLLECTION_COMPLETE")
+        progress_lock = threading.Lock()
+        finished_shards = 0
 
         def run_one(i: int) -> dict:
+            nonlocal finished_shards
+            with progress_lock:
+                notify("SHARD_RUNNING", i, finished_shards)
             runner_dir = temp_dir / f"shard-{i}"
             runner_dir.mkdir(mode=0o700)
             executed = runner_dir / "executed.json"
@@ -293,6 +311,9 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                 actual = json.loads(executed.read_text(encoding="utf-8"))
             except (OSError, ValueError, TypeError):
                 _red("SHARD_REPORT_INVALID")
+            with progress_lock:
+                finished_shards += 1
+                notify("SHARD_COMPLETE", i, finished_shards)
             return {"shard_index": i, "manifest": actual, "junit_file": xml_path,
                     "pytest_exit_code": result.returncode}
 
@@ -305,6 +326,7 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                 receipts.append(future.result())
         test_ms = round((time.monotonic() - started_parallel) * 1000)
         started_quorum = time.monotonic()
+        notify("JUNIT_QUORUM", -1, finished_shards)
         try:
             receipt = verify_parallel(parsed, receipts, shard_count, output_junit)
         except (ValueError, OSError, JunitQuorumRed, shards.ShardQuorumRed):

@@ -197,6 +197,29 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertEqual(len([c for c in fake.calls if c[:2] == ["git", "rev-parse"]]), 2)
             self.assertNotIn("sensitive-log-not-public", str(receipt))
 
+    def test_progress_callback_reports_only_fixed_phases_and_shard_counters(self):
+        fake = FakePytest()
+        progress = []
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(runner, "_invoke", fake):
+                proof = runner.run(
+                    SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                    output_junit=Path(directory) / "combined.xml",
+                    progress=lambda phase, index, completed:
+                        progress.append((phase, index, completed)))
+        self.assertEqual(proof["status"], "GREEN_QUORUM_OFFLINE_ONLY")
+        self.assertEqual(progress, [
+            ("SOURCE_CHECKOUT", -1, 0),
+            ("COLLECTION", -1, 0),
+            ("COLLECTION_COMPLETE", -1, 0),
+            ("SHARD_RUNNING", 0, 0),
+            ("SHARD_COMPLETE", 0, 1),
+            ("SHARD_RUNNING", 1, 1),
+            ("SHARD_COMPLETE", 1, 2),
+            ("JUNIT_QUORUM", -1, 2),
+        ])
+        self.assertNotIn("test_example", str(progress))
+
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
                      dict(mismatched_tree=True), dict(extra_test=True),
