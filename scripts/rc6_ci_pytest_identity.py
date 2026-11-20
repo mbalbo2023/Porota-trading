@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import sys
 from pathlib import Path
 import tempfile
 
@@ -21,6 +23,7 @@ from scripts.rc6_ci_shard_quorum import manifest
 
 
 PROPERTY = "rc6_nodeid_sha256"
+_LAST_ACTIVE_MODULE = None
 
 
 def _enabled() -> bool:
@@ -29,6 +32,24 @@ def _enabled() -> bool:
 
 def nodeid_digest(nodeid: str) -> str:
     return hashlib.sha256(nodeid.encode("utf-8")).hexdigest()
+
+
+def pytest_runtest_logstart(nodeid, location):
+    """Private, opt-in per-module heartbeat; no parameter or nodeid bytes."""
+    global _LAST_ACTIVE_MODULE
+    if (not _enabled() or os.environ.get("RC6_CI_MODULE_TRACE") != "1"
+            or not isinstance(location, tuple) or not location):
+        return
+    module = location[0]
+    if (type(module) is not str
+            or not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", module)
+            or ".." in Path(module).parts or module == _LAST_ACTIVE_MODULE):
+        return
+    _LAST_ACTIVE_MODULE = module
+    # The runner captures this stdout privately and publishes only a verified
+    # source module path if pytest was killed or returned nonzero.
+    sys.__stdout__.write("RC6_CI_ACTIVE_MODULE:" + module + "\n")
+    sys.__stdout__.flush()
 
 
 def pytest_collection_modifyitems(session, config, items):

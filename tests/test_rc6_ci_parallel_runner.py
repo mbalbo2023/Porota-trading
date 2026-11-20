@@ -334,6 +334,52 @@ class TestParallelProofRunner(unittest.TestCase):
             SimpleNamespace(stdout="short test summary info\n"
                             "FAILED ../../PRIVATE_SECRET.py::test\n"), REPO))
 
+    def test_opt_in_pytest_module_trace_never_exposes_nodeid_parameters(self):
+        from scripts import rc6_ci_pytest_identity as plugin
+        output = io.StringIO()
+        plugin._LAST_ACTIVE_MODULE = None
+        with patch.dict(os.environ, {
+                "RC6_CI_IDENTITY_PROOF": "1", "RC6_CI_MODULE_TRACE": "1"}), \
+             patch.object(plugin.sys, "__stdout__", output):
+            for _ in range(2):
+                plugin.pytest_runtest_logstart(
+                    "tests/test_rc6_ci_parallel_runner.py::test[PRIVATE_PARAMETER]",
+                    ("tests/test_rc6_ci_parallel_runner.py", 7, "PRIVATE_NAME"))
+            plugin.pytest_runtest_logstart(
+                "../PRIVATE_SECRET.py::test",
+                ("../PRIVATE_SECRET.py", 7, "PRIVATE_NAME"))
+        self.assertEqual(output.getvalue(),
+                         "RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n")
+        plugin._LAST_ACTIVE_MODULE = None
+
+    def test_serial_signal_carries_last_source_and_exit_without_next_shard(self):
+        fake = FakePytest(require_parallel=False)
+
+        def synthetic_signal(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                self.assertEqual(env.get("RC6_CI_MODULE_TRACE"), "1")
+                return subprocess.CompletedProcess(
+                    argv, -9,
+                    "RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n",
+                    "")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", synthetic_signal):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(
+                        SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                        output_junit=Path(directory) / "combined.xml")
+        error = caught.exception
+        self.assertEqual(error.reason, "SHARD_PROCESS_SIGNAL")
+        self.assertEqual(error.process_exit_code, -9)
+        self.assertEqual(error.last_active_module,
+                         "tests/test_rc6_ci_parallel_runner.py")
+        self.assertEqual(len([
+            cmd for cmd in fake.calls
+            if any(arg.startswith("--junitxml=") for arg in cmd)]), 1)
+
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
                      dict(mismatched_tree=True), dict(extra_test=True),

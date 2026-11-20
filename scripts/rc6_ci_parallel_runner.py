@@ -48,25 +48,34 @@ class ParallelRunnerRed(ValueError):
         "COLLECTION_MANIFEST_INVALID", "COLLECTION_SOURCE_MISMATCH",
         "COLLECTION_PARTITION_INVALID",
         "RETIRED_TEST_NOT_COLLECTED", "SHARD_REPORT_INVALID",
-        "SHARD_PYTEST_NONZERO", "JUNIT_QUORUM_INVALID",
+        "SHARD_PYTEST_NONZERO", "SHARD_PROCESS_SIGNAL",
+        "JUNIT_QUORUM_INVALID",
         "SCRATCH_ROOT_INVALID",
     })
 
-    def __init__(self, reason="UNVERIFIED", *, failure_module=None):
+    def __init__(self, reason="UNVERIFIED", *, failure_module=None,
+                 last_active_module=None, process_exit_code=None):
         self.reason = reason if reason in self.REASONS else "UNVERIFIED"
-        # Never promote private pytest nodeids/parameter values into the
-        # public CI receipt. Only a source module path is allowlisted.
-        self.failure_module = (
-            failure_module if type(failure_module) is str
-            and re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py",
-                             failure_module)
-            and ".." not in Path(failure_module).parts else None
-        )
+        # No pytest nodeids/parameters, output, paths outside tracked tests.
+        def safe(module):
+            return (module if type(module) is str
+                    and re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py",
+                                     module)
+                    and ".." not in Path(module).parts else None)
+        self.failure_module = safe(failure_module)
+        self.last_active_module = safe(last_active_module)
+        self.process_exit_code = (
+            process_exit_code if type(process_exit_code) is int
+            and -255 <= process_exit_code <= 255 else None)
         super().__init__("RC6_PARALLEL_RUNNER_RED")
 
 
-def _red(reason="UNVERIFIED", *, failure_module=None) -> None:
-    raise ParallelRunnerRed(reason, failure_module=failure_module)
+def _red(reason="UNVERIFIED", *, failure_module=None,
+         last_active_module=None, process_exit_code=None) -> None:
+    raise ParallelRunnerRed(
+        reason, failure_module=failure_module,
+        last_active_module=last_active_module,
+        process_exit_code=process_exit_code)
 
 
 def _safe_pytest_module(repo: Path, source: str) -> str | None:
@@ -123,6 +132,18 @@ def _failed_module_from_pytest_summary(result, repo: Path) -> str | None:
             line)
         if match:
             safe = _safe_pytest_module(repo, match.group(1))
+            if safe is not None:
+                return safe
+    return None
+
+
+def _last_active_module_from_output(result, repo: Path) -> str | None:
+    """Recover the final opt-in source-only heartbeat after a SIGKILL."""
+    tail = str(result.stdout or "")[-262144:]
+    prefix = "RC6_CI_ACTIVE_MODULE:"
+    for line in reversed(tail.splitlines()):
+        if line.startswith(prefix):
+            safe = _safe_pytest_module(repo, line[len(prefix):])
             if safe is not None:
                 return safe
     return None
@@ -301,6 +322,7 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
     env_base = os.environ.copy()
     env_base.pop("PYTEST_ADDOPTS", None)
     env_base.pop("PYTEST_PLUGINS", None)
+    env_base.pop("RC6_CI_MODULE_TRACE", None)
     env_base["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     env_base["RC6_CI_IDENTITY_PROOF"] = "1"
     env_base["RC6_CI_SOURCE_SHA"] = candidate_sha
@@ -370,7 +392,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             executed = runner_dir / "executed.json"
             xml_path = runner_dir / "junit.xml"
             isolated_base = runner_dir / "basetemp"
-            env = {**env_base, "RC6_CI_MANIFEST_PATH": str(executed)}
+            env = {**env_base, "RC6_CI_MANIFEST_PATH": str(executed),
+                   "RC6_CI_MODULE_TRACE": "1"}
             result = _invoke([python, "-m", "pytest", *plugin, "-q",
                               "-o", "xfail_strict=true",
                               f"--junitxml={xml_path}", f"--basetemp={isolated_base}",
@@ -387,7 +410,11 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                 failure_module = (
                     _failed_module_from_junit(xml_path, repo)
                     or _failed_module_from_pytest_summary(result, repo))
-                _red("SHARD_PYTEST_NONZERO", failure_module=failure_module)
+                reason = ("SHARD_PROCESS_SIGNAL" if type(result.returncode) is int
+                          and result.returncode < 0 else "SHARD_PYTEST_NONZERO")
+                _red(reason, failure_module=failure_module,
+                     last_active_module=_last_active_module_from_output(result, repo),
+                     process_exit_code=result.returncode)
             with progress_lock:
                 finished_shards += 1
                 notify("SHARD_COMPLETE", i, finished_shards)

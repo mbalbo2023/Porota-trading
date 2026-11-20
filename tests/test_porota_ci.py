@@ -120,6 +120,32 @@ productive_scope:
         self.assertNotIn("PRIVATE_PARAMETER", json.dumps(receipt))
         self.assertEqual(json.loads(output.read_text()), receipt)
 
+    def test_governed_signal_with_oom_preserves_last_module_not_approval(self):
+        module = importlib.import_module("scripts.porota_ci")
+        from scripts.rc6_ci_parallel_runner import ParallelRunnerRed
+        output = self.root / "receipt.json"
+
+        def sigkill(*args, **kwargs):
+            kwargs["progress"]("SHARD_RUNNING", 0, 0)
+            raise ParallelRunnerRed(
+                "SHARD_PROCESS_SIGNAL",
+                last_active_module="tests/test_rc6_ci_parallel_runner.py",
+                process_exit_code=-9)
+
+        with patch("scripts.rc6_ci_parallel_runner.run", side_effect=sigkill), \
+             patch.object(module, "_cgroup_oom_kills", side_effect=[12, 13]):
+            receipt = module._governed_serial_shard_tests(
+                self.root, output, self.identity, {})
+        self.assertEqual(receipt["status"], "FAIL")
+        self.assertEqual(receipt["validation_failure_phase"],
+                         "SHARD_PROCESS_SIGNAL")
+        self.assertEqual(receipt["shard_process_exit_code"], -9)
+        self.assertEqual(receipt["last_active_test_module"],
+                         "tests/test_rc6_ci_parallel_runner.py")
+        self.assertEqual(receipt["cgroup_oom_kill_delta"], 1)
+        self.assertNotIn("failed_test_module", receipt)
+        self.assertEqual(json.loads(output.read_text()), receipt)
+
     def test_governed_wrapper_rejects_pilot_without_complete_retired_quorum(self):
         module = importlib.import_module("scripts.porota_ci")
         output = self.root / "receipt.json"
