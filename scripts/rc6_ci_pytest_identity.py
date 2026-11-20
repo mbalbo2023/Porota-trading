@@ -48,7 +48,7 @@ def pytest_runtest_logstart(nodeid, location):
     _LAST_ACTIVE_MODULE = module
     # The runner captures this stdout privately and publishes only a verified
     # source module path if pytest was killed or returned nonzero.
-    sys.__stdout__.write("RC6_CI_ACTIVE_MODULE:" + module + "\n")
+    sys.__stdout__.write("\nRC6_CI_ACTIVE_MODULE:" + module + "\n")
     sys.__stdout__.flush()
 
 

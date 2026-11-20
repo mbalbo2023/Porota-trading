@@ -142,10 +142,18 @@ def _last_active_module_from_output(result, repo: Path) -> str | None:
     tail = str(result.stdout or "")[-262144:]
     prefix = "RC6_CI_ACTIVE_MODULE:"
     for line in reversed(tail.splitlines()):
-        if line.startswith(prefix):
-            safe = _safe_pytest_module(repo, line[len(prefix):])
-            if safe is not None:
-                return safe
+        # pytest -q may write a progress glyph immediately before the hook's
+        # module marker, e.g. '.RC6_CI_ACTIVE_MODULE:tests/test_a.py'.
+        offset = line.rfind(prefix)
+        if offset < 0:
+            continue
+        preceding = line[:offset]
+        if preceding and (len(preceding) > 64
+                          or not re.fullmatch(r"[.FsxXE]{1,64}", preceding)):
+            continue
+        safe = _safe_pytest_module(repo, line[offset + len(prefix):])
+        if safe is not None:
+            return safe
     return None
 
 

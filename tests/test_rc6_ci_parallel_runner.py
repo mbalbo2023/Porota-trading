@@ -349,8 +349,26 @@ class TestParallelProofRunner(unittest.TestCase):
                 "../PRIVATE_SECRET.py::test",
                 ("../PRIVATE_SECRET.py", 7, "PRIVATE_NAME"))
         self.assertEqual(output.getvalue(),
-                         "RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n")
+                         "\nRC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n")
         plugin._LAST_ACTIVE_MODULE = None
+
+    def test_pytest_progress_prefixed_marker_prefers_newest_safe_module(self):
+        from types import SimpleNamespace
+        # pytest -q can place its progress '.' directly before the hook
+        # marker, which used to hide the final active test module on SIGKILL.
+        output = (
+            "RC6_CI_ACTIVE_MODULE:tests/test_porota_ci.py\n"
+            ".RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n")
+        self.assertEqual(
+            runner._last_active_module_from_output(
+                SimpleNamespace(stdout=output), REPO),
+            "tests/test_rc6_ci_parallel_runner.py")
+        self.assertIsNone(
+            runner._last_active_module_from_output(
+                SimpleNamespace(stdout="PRIVATE_OUTPUT:"
+                                "RC6_CI_ACTIVE_MODULE:"
+                                "tests/test_rc6_ci_parallel_runner.py\n"),
+                REPO))
 
     def test_serial_signal_carries_last_source_and_exit_without_next_shard(self):
         fake = FakePytest(require_parallel=False)
@@ -361,7 +379,7 @@ class TestParallelProofRunner(unittest.TestCase):
                 self.assertEqual(env.get("RC6_CI_MODULE_TRACE"), "1")
                 return subprocess.CompletedProcess(
                     argv, -9,
-                    "RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n",
+                    ".RC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n",
                     "")
             return result
 
