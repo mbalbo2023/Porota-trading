@@ -296,6 +296,25 @@ class TestParallelProofRunner(unittest.TestCase):
             xml.symlink_to(Path(directory) / "nonexistent.xml")
             self.assertIsNone(runner._failed_module_from_junit(xml, REPO))
 
+    def test_junit_xunit2_classname_reports_module_without_parameters(self):
+        # Real pytest xunit2 XML has classname+name but may have no file attr.
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            xml = Path(directory) / "xunit2.xml"
+            xml.write_text(
+                '<testsuites><testsuite>'
+                '<testcase classname="tests.test_rc6_ci_parallel_runner'
+                '.TestParallelProofRunner" name="test_foo[PRIVATE_PARAMETER]">'
+                '<failure>PRIVATE_TRACEBACK</failure></testcase>'
+                '</testsuite></testsuites>', encoding="utf-8")
+            result = runner._failed_module_from_junit(xml, REPO)
+            self.assertEqual(result, "tests/test_rc6_ci_parallel_runner.py")
+            self.assertNotIn("PRIVATE", result)
+            xml.write_text(
+                '<testsuite><testcase classname="tests...PRIVATE"'
+                ' name="anything[SECRET]"><failure>SECRET</failure>'
+                '</testcase></testsuite>', encoding="utf-8")
+            self.assertIsNone(runner._failed_module_from_junit(xml, REPO))
+
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
                      dict(mismatched_tree=True), dict(extra_test=True),

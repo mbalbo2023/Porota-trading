@@ -70,29 +70,42 @@ def _red(reason="UNVERIFIED", *, failure_module=None) -> None:
 
 
 def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
-    """Read an owned JUnit locally; publish only a validated source file path.
+    """Report only a validated source module for a failed pytest testcase.
 
-    No testcase name, nodeid, failure text, stdout/stderr, or parameter leaves
-    this process. A missing/oversize/invalid JUnit yields NO module evidence.
+    pytest xunit2 commonly emits classname, not file. Never expose testcase
+    names, parameters, traceback text, nodeids, stdout or stderr.
     """
     try:
         metadata = junit_path.lstat()
-        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 8 * 1024 * 1024:
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 64 * 1024 * 1024:
             return None
-        root = ET.parse(junit_path).getroot()
-        for case in root.iter("testcase"):
+        # iterparse + testcase.clear() avoids retaining huge private testcase
+        # names/failure bodies in parent memory.
+        for _, case in ET.iterparse(junit_path, events=("end",)):
+            if case.tag != "testcase":
+                continue
             if case.find("failure") is None and case.find("error") is None:
+                case.clear()
                 continue
-            source = case.attrib.get("file", "")
-            if not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source):
-                continue
-            parts = Path(source).parts
-            if ".." in parts or any(
-                    (repo / Path(*parts[:i])).is_symlink()
-                    for i in range(1, len(parts) + 1)):
-                continue
-            if (repo / source).is_file():
-                return source
+            sources = [case.attrib.get("file", "")]
+            classname = case.attrib.get("classname", "")
+            if (len(classname) <= 260 and re.fullmatch(
+                    r"tests(?:\.[A-Za-z0-9_]+){1,24}", classname)):
+                parts = classname.split(".")
+                # Strip TestClass/method suffixes until a tracked *.py exists.
+                for count in range(len(parts), 1, -1):
+                    sources.append("/".join(parts[:count]) + ".py")
+            for source in sources:
+                if (not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source)
+                        or ".." in Path(source).parts):
+                    continue
+                parts = Path(source).parts
+                if any((repo / Path(*parts[:i])).is_symlink()
+                       for i in range(1, len(parts) + 1)):
+                    continue
+                if (repo / source).is_file():
+                    return source
+            case.clear()
     except (OSError, ValueError, TypeError, ET.ParseError):
         return None
     return None
