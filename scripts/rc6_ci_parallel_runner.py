@@ -33,6 +33,11 @@ class ParallelRunnerRed(ValueError):
     REASONS = frozenset({
         "UNVERIFIED", "SOURCE_CHECKOUT_DIRTY", "SOURCE_REVISION_MISMATCH",
         "TEST_POLICY_INVALID", "SUBPROCESS_INVALID", "COLLECTION_INVALID",
+        "COLLECTION_PYTEST_NONZERO", "COLLECTION_PLUGIN_IDENTITY_RED",
+        "COLLECTION_IMPORT_ERROR", "COLLECTION_PYTEST_COLLECT_ERROR",
+        "COLLECTION_MANIFEST_MISSING", "COLLECTION_MANIFEST_ALIAS",
+        "COLLECTION_MANIFEST_INVALID", "COLLECTION_SOURCE_MISMATCH",
+        "COLLECTION_PARTITION_INVALID",
         "RETIRED_TEST_NOT_COLLECTED", "SHARD_REPORT_INVALID",
         "JUNIT_QUORUM_INVALID", "SCRATCH_ROOT_INVALID",
     })
@@ -55,6 +60,21 @@ def _invoke(argv: list[str], *, cwd: Path, env: dict,
                               text=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired):
         _red("SUBPROCESS_INVALID")
+
+
+def _collection_failure_reason(result) -> str:
+    """Classify only fixed error categories, never export raw pytest output."""
+    if result.returncode == 0:
+        return "UNVERIFIED"
+    # Captured by existing runner; no log content is copied to public receipt.
+    detail = (str(result.stderr or "") + str(result.stdout or ""))[:131072]
+    if "RC6_SHARD_QUORUM_RED" in detail:
+        return "COLLECTION_PLUGIN_IDENTITY_RED"
+    if "ModuleNotFoundError" in detail or "ImportError" in detail:
+        return "COLLECTION_IMPORT_ERROR"
+    if "ERROR collecting" in detail:
+        return "COLLECTION_PYTEST_COLLECT_ERROR"
+    return "COLLECTION_PYTEST_NONZERO"
 
 
 def _allow_image_generated_native_status(repo: Path, status: str) -> bool:
@@ -202,14 +222,21 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         collect = _invoke([python, "-m", "pytest", *plugin,
                            "--collect-only", "-q", *args],
                           cwd=repo, env=collect_env)
-        if collect.returncode != 0 or not collected.is_file() or collected.is_symlink():
-            _red("COLLECTION_INVALID")
+        if collect.returncode != 0:
+            _red(_collection_failure_reason(collect))
+        if collected.is_symlink():
+            _red("COLLECTION_MANIFEST_ALIAS")
+        if not collected.is_file():
+            _red("COLLECTION_MANIFEST_MISSING")
         try:
             manifest = json.loads(collected.read_text(encoding="utf-8"))
             parsed = shards._validate_manifest(manifest)
-            if (parsed["source_sha"] != candidate_sha or
-                    parsed["source_tree_sha"] != source_tree_sha):
-                _red()
+        except (ValueError, OSError, TypeError, shards.ShardQuorumRed):
+            _red("COLLECTION_MANIFEST_INVALID")
+        if (parsed["source_sha"] != candidate_sha or
+                parsed["source_tree_sha"] != source_tree_sha):
+            _red("COLLECTION_SOURCE_MISMATCH")
+        try:
             discovered_total = parsed["discovered"]
             # Verify every explicitly retired test exists in global
             # automatic discovery before excluding it from execution.
@@ -232,7 +259,7 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         except ParallelRunnerRed:
             raise
         except (ValueError, OSError, TypeError, shards.ShardQuorumRed):
-            _red("COLLECTION_INVALID")
+            _red("COLLECTION_PARTITION_INVALID")
         collection_ms = round((time.monotonic() - start) * 1000)
 
         def run_one(i: int) -> dict:

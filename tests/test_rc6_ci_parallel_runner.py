@@ -210,6 +210,25 @@ class TestParallelProofRunner(unittest.TestCase):
                                    output_junit=output)
                 self.assertFalse(output.exists())
 
+    def test_collection_phase_reports_specific_fixed_codes_without_leaking_output(self):
+        from types import SimpleNamespace
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=2,
+                            stderr="ModuleNotFoundError: secret_value",
+                            stdout="")), "COLLECTION_IMPORT_ERROR")
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=1,
+                            stderr="RC6_SHARD_QUORUM_RED\nprivate nodeid",
+                            stdout="")), "COLLECTION_PLUGIN_IDENTITY_RED")
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=2, stderr="ERROR collecting tests",
+                            stdout="")), "COLLECTION_PYTEST_COLLECT_ERROR")
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=5, stderr="private-path",
+                            stdout="")), "COLLECTION_PYTEST_NONZERO")
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=0, stderr="", stdout="")), "UNVERIFIED")
+
     def test_source_checkout_dirty_has_fixed_failure_phase(self):
         fake = FakePytest(dirty_tree=True)
         with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
