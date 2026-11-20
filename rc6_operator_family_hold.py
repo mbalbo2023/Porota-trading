@@ -1,13 +1,18 @@
 """Versioned operator PAPER entry holds, independent of catalogue readiness.
 
-Observation and EXIT remain available.  A contract, a READY capability, the
-global operational scope or a scanner mode cannot lift an operator HOLD.
+Observation and EXIT remain available. A contract, a READY capability, the
+global operational scope or a scanner mode cannot lift a currently set operator HOLD.
+An empty hold list does not itself authorize an entry.
 """
 
 from bs_instrument_contracts import family_name
 
 
-OPERATOR_PAPER_ENTRY_HOLDS = frozenset({"ETFS"})
+# Operator instruction 2026-11-19: every supported family, including ETFS,
+# enters normal PAPER evaluation. This removes only the blanket family veto;
+# exact identity, source, session, signal, contract, economics and risk still gate
+# individual simulated entries. The operator pause hook remains available.
+OPERATOR_PAPER_ENTRY_HOLDS = frozenset()
 
 
 def paper_entry_hold_reason(family):
