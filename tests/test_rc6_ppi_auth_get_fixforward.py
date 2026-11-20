@@ -14,6 +14,8 @@ from bd_ppi_readonly_guard import (
     ReadOnlyTransportGuard,
 )
 
+from ppi_synthetic_budget_fixtures import SyntheticWireLease
+
 
 BASE = "https://clientapi.portfoliopersonal.com/api/1.0/"
 
@@ -64,13 +66,18 @@ def test_production_reader_reaches_one_login_wire_and_reuses_session(monkeypatch
     "MarketData/SearchInstrument",
     "MarketData/Search",
 ])
-def test_legacy_allowlisted_catalog_and_history_get_reach_fake_wire_without_market_lease(fake_wire, path):
-    guard = ReadOnlyTransportGuard(budget=None).install()
+def test_allowlisted_catalog_and_history_get_reuses_shared_test_wire_lease(fake_wire, path):
+    # Reuse the existing test-only lease, not a second budget implementation.
+    # All PPI GETs, including catalog/history, must be denied without a lease.
+    budget = SyntheticWireLease()
+    guard = ReadOnlyTransportGuard(budget=budget).install()
     try:
         response = requests.Session().get(BASE + path)
         assert response.status_code == 200
         assert fake_wire == [("GET", BASE + path)]
         assert guard.calls_allowed == 1
+        assert budget.requests == [
+            (path.lower(), "UNSCOPED", "DISCOVERY", "SYNTHETIC_TEST_ONLY_1")]
     finally:
         guard.restore()
 
