@@ -502,7 +502,9 @@ def test_explicit_session_invalid_reprobe_closes_reader_and_obeys_login_cooldown
     assert [call[0] for call in h.calls] == [0, 1]
     # Invalid provider session is owned by Gateway. The child reattaches
     # locally after 60 s instead of attempting another SDK login.
-    assert len(h.readers) == 3
+    # Cycle 0 attaches once; cycle 1 invalidates; cycle 2 waits; cycle 3 reattaches.
+    # No third owner-side reader/login is created by the child.
+    assert len(h.readers) == 2
     assert h.cuts[2]["heartbeat"]["state"] == "GATEWAY_ATTACH_RETRY"
     assert capability(h.cuts[1])["last_result"] == "PPI_SESSION_INVALID"
     assert capability(h.cuts[1])["capability_status"] == "REPROBE_FAILED"
