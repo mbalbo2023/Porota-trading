@@ -25,8 +25,19 @@ class ShardQuorumRed(ValueError):
     """Incomplete, contradictory or unsafe test evidence."""
 
 
-def _red() -> None:
-    raise ShardQuorumRed("RC6_SHARD_QUORUM_RED")
+_NODEID_REASON_CODES = frozenset({
+    "NODEID_COLLECTION_INVALID", "NODEID_EMPTY_OR_UNBOUNDED",
+    "NODEID_NOT_STRING", "NODEID_EMPTY", "NODEID_CHAR_LENGTH",
+    "NODEID_UTF8_ENCODING", "NODEID_UTF8_BYTES",
+    "NODEID_NONPRINTABLE", "NODEID_CONTROL_OR_BIDI",
+    "NODEID_DUPLICATE",
+})
+
+
+def _red(reason=None) -> None:
+    # Reasons are controlled literals only; never disclose parameter values.
+    code = ":" + reason if reason in _NODEID_REASON_CODES else ""
+    raise ShardQuorumRed("RC6_SHARD_QUORUM_RED" + code)
 
 
 def _sha(value: object, length: int = 40) -> str:
@@ -36,25 +47,34 @@ def _sha(value: object, length: int = 40) -> str:
 
 
 def _nodeids(items: object) -> list[str]:
-    if not isinstance(items, list) or not items or len(items) > 100_000:
-        _red()
+    if not isinstance(items, list):
+        _red("NODEID_COLLECTION_INVALID")
+    if not items or len(items) > 100_000:
+        _red("NODEID_EMPTY_OR_UNBOUNDED")
     for name in items:
-        if not isinstance(name, str) or not 1 <= len(name) <= MAX_NODEID_CHARS:
-            _red()
+        if not isinstance(name, str):
+            _red("NODEID_NOT_STRING")
+        if not name:
+            _red("NODEID_EMPTY")
+        if len(name) > MAX_NODEID_CHARS:
+            _red("NODEID_CHAR_LENGTH")
         # Real pytest param IDs may contain printable UTF-8 (e.g. "á").
         # Keep exact Unicode codepoints for digest and quorum identity: no
         # normalization, lossy ASCII folding, or hidden control characters.
         try:
             encoded = name.encode("utf-8", errors="strict")
         except UnicodeEncodeError:
-            _red()  # Unpaired surrogate: not a valid UTF-8 node ID.
-        if (len(encoded) > MAX_NODEID_UTF8_BYTES or not name.isprintable() or
-                any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
-                    unicodedata.bidirectional(char) in _BIDI_CONTROLS
-                    for char in name)):
-            _red()
+            _red("NODEID_UTF8_ENCODING")  # Unpaired surrogate.
+        if len(encoded) > MAX_NODEID_UTF8_BYTES:
+            _red("NODEID_UTF8_BYTES")
+        if not name.isprintable():
+            _red("NODEID_NONPRINTABLE")
+        if any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
+               unicodedata.bidirectional(char) in _BIDI_CONTROLS
+               for char in name):
+            _red("NODEID_CONTROL_OR_BIDI")
     if len(set(items)) != len(items):
-        _red()
+        _red("NODEID_DUPLICATE")
     return sorted(items)
 
 

@@ -214,6 +214,10 @@ class TestParallelProofRunner(unittest.TestCase):
         from types import SimpleNamespace
         self.assertEqual(runner._collection_failure_reason(
             SimpleNamespace(returncode=2,
+                            stderr="RC6_SHARD_QUORUM_RED:NODEID_UTF8_BYTES secret-param",
+                            stdout="")), "COLLECTION_NODEID_UTF8_BYTES")
+        self.assertEqual(runner._collection_failure_reason(
+            SimpleNamespace(returncode=2,
                             stderr="ModuleNotFoundError: secret_value",
                             stdout="")), "COLLECTION_IMPORT_ERROR")
         self.assertEqual(runner._collection_failure_reason(

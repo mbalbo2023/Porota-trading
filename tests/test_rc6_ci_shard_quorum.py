@@ -99,6 +99,26 @@ class TestShardQuorum(unittest.TestCase):
             with self.assertRaises(shards.ShardQuorumRed):
                 shards.quorum(m, 3, results)
 
+    def test_nodeid_rejection_reason_is_fixed_and_never_echoes_private_values(self):
+        cases = (
+            (None, "NODEID_COLLECTION_INVALID"),
+            ([], "NODEID_EMPTY_OR_UNBOUNDED"),
+            ([2], "NODEID_NOT_STRING"),
+            ([""], "NODEID_EMPTY"),
+            (["a" * 2049], "NODEID_CHAR_LENGTH"),
+            (["x\ud800"], "NODEID_UTF8_ENCODING"),
+            (["é" * 2048], "NODEID_UTF8_BYTES"),
+            (["PRIVATE_PARAM\nline"], "NODEID_NONPRINTABLE"),
+            (["private", "private"], "NODEID_DUPLICATE"),
+        )
+        for nodeids, reason in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaises(shards.ShardQuorumRed) as caught:
+                    shards.manifest(SHA, TREE, nodeids)
+                error = str(caught.exception)
+                self.assertEqual(error, "RC6_SHARD_QUORUM_RED:" + reason)
+                self.assertNotIn("PRIVATE_PARAM", error)
+
     def test_collection_duplicates_and_unsafe_nodeids_block(self):
         for ids in (["x", "x"], ["test\nleak"], [], ["\x1b[31m"]):
             with self.subTest(ids=ids):
