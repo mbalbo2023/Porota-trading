@@ -34,6 +34,33 @@ productive_scope:
         module = importlib.import_module("scripts.porota_ci")
         return module.run_code_tests(self.root, self.root / "receipt.json", self.identity)
 
+    def test_cgroup_event_is_measured_without_false_oom_inference(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        with patch.object(module, "_cgroup_oom_kills", side_effect=[10, 11]), \
+             patch.object(module.subprocess, "run", return_value=subprocess.CompletedProcess(
+                 args=["synthetic_pytest"], returncode=-9)):
+            result = module.run_code_tests(self.root, output, self.identity)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["process_exit_code"], -9)
+        self.assertEqual(result["cgroup_oom_kill_delta"], 1)
+        self.assertEqual(result["cgroup_oom_status"], "OOM_KILL_EVENT_OBSERVED")
+        self.assertNotIn("PASS", result["status"])
+
+    def test_progress_checkpoint_names_only_module_and_remains_red(self):
+        module = importlib.import_module("scripts.porota_ci")
+        source = self.root / "test_example.py"
+        source.write_text("def test_example():\\n    assert True\\n")
+        plugin = module._Receipt(self.root, self.root / "receipt.json", self.identity)
+        plugin.collected = 7
+        plugin.pytest_runtest_logstart(
+            "test_example.py::test_example[PRIVATE_PARAMETER]", ("test_example.py", 1, "test_example"))
+        report = json.loads((self.root / "receipt.json").read_text())
+        self.assertEqual(report["status"], "FAIL")
+        self.assertEqual(report["runner_phase"], "PYTEST_IN_PROGRESS")
+        self.assertEqual(report["active_test_module"], "test_example.py")
+        self.assertNotIn("PRIVATE_PARAMETER", json.dumps(report))
+
     def test_missing_pytest_final_report_is_sanitized_fail_not_missing_file(self):
         module = importlib.import_module("scripts.porota_ci")
         output = self.root / "receipt.json"

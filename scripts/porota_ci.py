@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 
 def _policy(root):
@@ -80,6 +81,8 @@ class _Receipt:
         self.failure_ids = set()
         self.failure_locations = {}
         self.failed = self.errors = self.skipped = 0
+        self._last_progress_module = None
+        self._last_progress_at = 0.0
 
     def _report_location(self, report, phase):
         location = getattr(report, 'location', None)
@@ -131,6 +134,28 @@ class _Receipt:
         if retired:
             config.hook.pytest_deselected(items=retired)
         items[:] = kept
+        # Fail-closed progress snapshot survives SIGKILL before sessionfinish.
+        self._checkpoint_progress(None)
+
+    def _checkpoint_progress(self, module):
+        receipt = _failclosed_start_receipt(
+            self.output, self.identity, "PYTEST_IN_PROGRESS")
+        receipt["collected"] = self.collected
+        receipt["executed"] = len(self.executed)
+        if module is not None:
+            receipt["active_test_module"] = module
+        self.output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+        self._last_progress_at = time.monotonic()
+        self._last_progress_module = module
+
+    def pytest_runtest_logstart(self, nodeid, location):
+        # File-only allowlisted identity, never parameter values/assertions.
+        module = _python_path(self.root, nodeid.split("::", 1)[0])
+        now = time.monotonic()
+        if module is not None and (
+                module != self._last_progress_module or
+                now - self._last_progress_at >= 20):
+            self._checkpoint_progress(module)
 
     def pytest_runtest_logreport(self, report):
         if report.when == "call":
@@ -181,7 +206,7 @@ def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
     Completed pytest still atomically supplies its normal authoritative report.
     """
     if phase not in {"SOURCE_PRECHECK_PENDING", "PYTEST_PRECHECK_PENDING",
-                     "PYTEST_FINAL_RECEIPT_ABSENT"}:
+                     "PYTEST_FINAL_RECEIPT_ABSENT", "PYTEST_IN_PROGRESS"}:
         raise ValueError("CI_RECEIPT_PHASE_INVALID")
     safe = {}
     for key, pattern in (("source_sha", r"[0-9a-f]{40}"),
@@ -209,6 +234,23 @@ def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
     return receipt
 
 
+def _cgroup_oom_kills():
+    """Read only the cgroup-v2 oom_kill counter; no paths or raw logs exported."""
+    try:
+        with open("/sys/fs/cgroup/memory.events", encoding="ascii") as handle:
+            raw = handle.read(4097)
+        if len(raw) > 4096:
+            return None
+        fields = [line.split() for line in raw.splitlines()]
+        matches = [value for field, value in fields if field == "oom_kill"]
+        if len(matches) != 1 or not matches[0].isdigit():
+            return None
+        count = int(matches[0])
+        return count if 0 <= count <= 2**50 else None
+    except (OSError, UnicodeError, ValueError, TypeError):
+        return None
+
+
 def run_code_tests(root, output, identity):
     root, output = Path(root).resolve(), Path(output).resolve()
     _failclosed_start_receipt(output, identity, "PYTEST_PRECHECK_PENDING")
@@ -218,6 +260,7 @@ def run_code_tests(root, output, identity):
                        PYTHONDONTWRITEBYTECODE="1")
     # Explicit plugin source is the tested image; .git/docs mounts are metadata.
     environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    oom_kills_before = _cgroup_oom_kills()
     result = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
                              "-p", "scripts.porota_ci", "-o", "xfail_strict=true", ".", *arguments],
                             cwd=root, env=environment, timeout=2400, check=False,
@@ -225,10 +268,28 @@ def run_code_tests(root, output, identity):
     if not output.is_file():
         raise ValueError("CODE_TEST_RECEIPT_MISSING")
     receipt = json.loads(output.read_text())
-    if receipt.get("runner_phase") == "PYTEST_PRECHECK_PENDING":
+    if receipt.get("runner_phase") in {"PYTEST_PRECHECK_PENDING", "PYTEST_IN_PROGRESS"}:
+        prior = receipt
         receipt = _failclosed_start_receipt(
             output, identity, "PYTEST_FINAL_RECEIPT_ABSENT",
             process_exit=result.returncode)
+        # These are progress counters only, not a proof of completed tests.
+        for field in ("collected", "executed"):
+            value = prior.get(field)
+            if type(value) is int and 0 <= value <= 100_000:
+                receipt[field] = value
+        module = prior.get("active_test_module")
+        if isinstance(module, str) and _python_path(root, module) == module:
+            receipt["active_test_module_before_interrupt"] = module
+        after = _cgroup_oom_kills()
+        if type(oom_kills_before) is int and type(after) is int and after >= oom_kills_before:
+            delta = after - oom_kills_before
+            receipt["cgroup_oom_kill_delta"] = min(delta, 100_000)
+            receipt["cgroup_oom_status"] = (
+                "OOM_KILL_EVENT_OBSERVED" if delta > 0 else "NO_OOM_KILL_EVENT_OBSERVED")
+        else:
+            receipt["cgroup_oom_status"] = "NO_VERIFICADO"
+        output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
     if result.returncode and receipt.get("status") == "PASS":
         raise ValueError("CODE_TEST_EXIT_MISMATCH")
     return receipt
