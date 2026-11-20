@@ -48,15 +48,30 @@ _GET_PATHS = {
     "/api/1.0/marketdata/bonds/estimate",
 }
 
-# Current/Book/Intraday retain their existing global-rate-budget wire lease.
-# Historical/Configuration/Discovery GETs are existing read-only SDK routes;
-# they do not borrow a Current/Book/Intraday lease. The observer's business-
-# day sync and PPI login interlock regulate their scheduling separately.
+# Keep the three native Current/Book/Intraday endpoint aliases stable for
+# signed shared quotas and native wire receipts. All other allowlisted PPI GETs
+# must use the SAME observed per-wire lease when the direct PAPER budget is in
+# use, never an independent SDK bypass or an invented hourly provider quota.
 _BUDGETED_MARKET_GET_PATHS = frozenset({
     "/api/1.0/marketdata/current",
     "/api/1.0/marketdata/book",
     "/api/1.0/marketdata/intraday",
 })
+
+
+def _ppi_get_budget_endpoint(checked_method: str, checked_path: str):
+    """Map every whitelisted PPI GET to one shared wire lease endpoint.
+
+    The original three names remain unchanged for the historical budget
+    contract; auxiliary endpoints are namespaced to prevent collisions.
+    This is a route classifier, not quota authorization or broker provenance.
+    """
+    if checked_method != "GET" or checked_path not in _GET_PATHS:
+        return None
+    if checked_path in _BUDGETED_MARKET_GET_PATHS:
+        return checked_path.rsplit("/", 1)[-1]
+    return checked_path[len("/api/1.0/"):]
+
 
 # Optional per-read native wire witness. Keep this independent of budget
 # admission: it *observes* a completed, guarded GET, never grants a lease.
@@ -472,7 +487,8 @@ class ReadOnlyTransportGuard:
                 )
                 raise
             endpoint = checked_path.rsplit("/", 1)[-1] if checked_path.startswith("/api/1.0/marketdata/") else None
-            budget = guard.budget if endpoint in {"current", "book", "intraday"} else None
+            budget_endpoint = _ppi_get_budget_endpoint(checked_method, checked_path)
+            budget = guard.budget if budget_endpoint is not None else None
             lease = None
             observed = getattr(guard._scope, "native_wire_receipts", None)
             attempt_id = secrets.token_hex(16) if observed is not None else None
@@ -486,14 +502,14 @@ class ReadOnlyTransportGuard:
                 # Never attribute a later SDK JSON parse failure to an older
                 # login response from the same thread.
                 guard._scope.login_http_metadata = None
-            if endpoint in {"current", "book", "intraday"}:
+            if budget_endpoint is not None:
                 from rc6_ppi_global_budget import BudgetBackpressure
                 if budget is None:
                     guard._read_error("PPI_SHARED_BUDGET_UNAVAILABLE")
                     guard._record(checked_method, checked_path, "BACKPRESSURE")
                     raise BudgetBackpressure("PPI_SHARED_BUDGET_UNAVAILABLE")
                 try:
-                    admitted = budget.acquire(endpoint, consumer=guard.consumer,
+                    admitted = budget.acquire(budget_endpoint, consumer=guard.consumer,
                         priority=getattr(guard._scope, "priority", None) or guard.priority)
                 except BudgetBackpressure as error:
                     guard._read_error(str(error))

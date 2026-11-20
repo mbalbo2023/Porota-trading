@@ -30,6 +30,24 @@ from rc6_multisource_discovery import canonical_family, canonical_market, canoni
 
 SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
 ENDPOINTS = ("current", "book", "intraday")
+# Keep signed/shared GlobalPPIBudget authority limited to its established
+# three endpoints. PAPER direct read-only recovery serializes ALL allowlisted
+# HTTP GETs through the same cross-process flock and observed 429 breaker.
+# This list is matched against ReadOnlyTransportGuard._GET_PATHS by regression.
+PAPER_DIRECT_GET_ENDPOINTS = frozenset(ENDPOINTS) | frozenset({
+    "marketdata/searchinstrument",
+    "marketdata/search",
+    "marketdata/bonds/estimate",
+    "configuration/instrumenttypes",
+    "configuration/markets",
+    "configuration/settlements",
+    "configuration/quantitytypes",
+    "configuration/operationterms",
+    "configuration/operationtypes",
+    "configuration/operations",
+    "configuration/holidays",
+    "configuration/islocalholiday",
+})
 PRIORITIES = ("EXIT_CRITICAL", "OPENED_CRITICAL", "SCALPING_HOT", "STRATEGY_HOT", "WARM", "DISCOVERY")
 CONSUMERS = ("SCANNER", "SCALPING", "EXIT_READER", "TREASURY", "UNSCOPED")
 WINDOW_FIELDS = ("requested", "admitted", "used", "dropped", "borrowed_in", "borrowed_out", "coalesced")
@@ -2717,7 +2735,7 @@ class PaperDirectReadBudget:
         raise BudgetBackpressure("PPI_DIRECT_PAPER_STATE_UNVERIFIED")
 
     def acquire(self, endpoint, *, consumer="UNSCOPED", priority="DISCOVERY"):
-        if endpoint not in ENDPOINTS or consumer not in CONSUMERS or priority not in PRIORITIES:
+        if endpoint not in PAPER_DIRECT_GET_ENDPOINTS or consumer not in CONSUMERS or priority not in PRIORITIES:
             raise BudgetBackpressure("PPI_DIRECT_READ_SCOPE_INVALID")
         self._require_paper()
         lease = uuid.uuid4().hex
