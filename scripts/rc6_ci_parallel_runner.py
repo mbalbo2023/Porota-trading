@@ -13,6 +13,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import stat
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+from xml.etree import ElementTree as ET
 
 import yaml
 
@@ -50,13 +52,50 @@ class ParallelRunnerRed(ValueError):
         "SCRATCH_ROOT_INVALID",
     })
 
-    def __init__(self, reason="UNVERIFIED"):
+    def __init__(self, reason="UNVERIFIED", *, failure_module=None):
         self.reason = reason if reason in self.REASONS else "UNVERIFIED"
+        # Never promote private pytest nodeids/parameter values into the
+        # public CI receipt. Only a source module path is allowlisted.
+        self.failure_module = (
+            failure_module if type(failure_module) is str
+            and re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py",
+                             failure_module)
+            and ".." not in Path(failure_module).parts else None
+        )
         super().__init__("RC6_PARALLEL_RUNNER_RED")
 
 
-def _red(reason="UNVERIFIED") -> None:
-    raise ParallelRunnerRed(reason)
+def _red(reason="UNVERIFIED", *, failure_module=None) -> None:
+    raise ParallelRunnerRed(reason, failure_module=failure_module)
+
+
+def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
+    """Read an owned JUnit locally; publish only a validated source file path.
+
+    No testcase name, nodeid, failure text, stdout/stderr, or parameter leaves
+    this process. A missing/oversize/invalid JUnit yields NO module evidence.
+    """
+    try:
+        metadata = junit_path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 8 * 1024 * 1024:
+            return None
+        root = ET.parse(junit_path).getroot()
+        for case in root.iter("testcase"):
+            if case.find("failure") is None and case.find("error") is None:
+                continue
+            source = case.attrib.get("file", "")
+            if not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source):
+                continue
+            parts = Path(source).parts
+            if ".." in parts or any(
+                    (repo / Path(*parts[:i])).is_symlink()
+                    for i in range(1, len(parts) + 1)):
+                continue
+            if (repo / source).is_file():
+                return source
+    except (OSError, ValueError, TypeError, ET.ParseError):
+        return None
+    return None
 
 
 def _invoke(argv: list[str], *, cwd: Path, env: dict,
@@ -315,7 +354,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             # Abort before starting another governed shard on a real pytest
             # failure. Keep private stdout/stderr out of the release receipt.
             if result.returncode != 0:
-                _red("SHARD_PYTEST_NONZERO")
+                _red("SHARD_PYTEST_NONZERO",
+                     failure_module=_failed_module_from_junit(xml_path, repo))
             with progress_lock:
                 finished_shards += 1
                 notify("SHARD_COMPLETE", i, finished_shards)

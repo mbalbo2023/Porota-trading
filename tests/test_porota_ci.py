@@ -97,6 +97,29 @@ productive_scope:
                 progress={"stage": "PRIVATE_PARAMETER", "index": 0, "completed": 0})
         self.assertEqual(json.loads(output.read_text()), before)
 
+
+    def test_governed_nonzero_carries_only_sanitized_source_module(self):
+        module = importlib.import_module("scripts.porota_ci")
+        from scripts.rc6_ci_parallel_runner import ParallelRunnerRed
+        output = self.root / "receipt.json"
+
+        def failed(*args, **kwargs):
+            kwargs["progress"]("SHARD_RUNNING", 0, 0)
+            raise ParallelRunnerRed(
+                "SHARD_PYTEST_NONZERO",
+                failure_module="tests/test_rc6_ci_parallel_runner.py")
+
+        with patch("scripts.rc6_ci_parallel_runner.run", side_effect=failed):
+            receipt = module._governed_serial_shard_tests(
+                self.root, output, self.identity, {})
+        self.assertEqual(receipt["status"], "FAIL")
+        self.assertEqual(receipt["validation_failure_phase"],
+                         "SHARD_PYTEST_NONZERO")
+        self.assertEqual(receipt["failed_test_module"],
+                         "tests/test_rc6_ci_parallel_runner.py")
+        self.assertNotIn("PRIVATE_PARAMETER", json.dumps(receipt))
+        self.assertEqual(json.loads(output.read_text()), receipt)
+
     def test_governed_wrapper_rejects_pilot_without_complete_retired_quorum(self):
         module = importlib.import_module("scripts.porota_ci")
         output = self.root / "receipt.json"

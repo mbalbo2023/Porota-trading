@@ -325,6 +325,9 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                     failure.reason if isinstance(
                         failure, shard_runner.ParallelRunnerRed)
                     else "UNVERIFIED")
+                if (isinstance(failure, shard_runner.ParallelRunnerRed)
+                        and failure.failure_module is not None):
+                    receipt["failed_test_module"] = failure.failure_module
                 after = _cgroup_oom_kills()
                 if type(before) is int and type(after) is int and after >= before:
                     receipt["cgroup_oom_kill_delta"] = min(after - before, 100_000)

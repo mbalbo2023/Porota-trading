@@ -270,6 +270,32 @@ class TestParallelProofRunner(unittest.TestCase):
         self.assertEqual(len(invoked), 1)
         self.assertNotIn("PRIVATE_PYTEST", str(caught.exception))
 
+
+    def test_failed_junit_reports_only_safe_existing_module(self):
+        # A private parameter/failure body never reaches the public receipt.
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            xml = Path(directory) / "failure.xml"
+            xml.write_text(
+                '<testsuite><testcase file="tests/test_rc6_ci_parallel_runner.py"'
+                ' name="case[PRIVATE_PARAMETER]"><failure>PRIVATE_MESSAGE'
+                '</failure></testcase></testsuite>', encoding="utf-8")
+            self.assertEqual(runner._failed_module_from_junit(xml, REPO),
+                             "tests/test_rc6_ci_parallel_runner.py")
+            self.assertNotIn("PRIVATE_", str(runner.ParallelRunnerRed(
+                "SHARD_PYTEST_NONZERO",
+                failure_module=runner._failed_module_from_junit(xml, REPO))))
+            xml.write_text(
+                '<testsuite><testcase file="../PRIVATE_SECRET.py">'
+                '<error>PRIVATE_MESSAGE</error></testcase></testsuite>',
+                encoding="utf-8")
+            self.assertIsNone(runner._failed_module_from_junit(xml, REPO))
+            self.assertIsNone(runner.ParallelRunnerRed(
+                "SHARD_PYTEST_NONZERO",
+                failure_module="../PRIVATE_SECRET.py").failure_module)
+            xml.unlink()
+            xml.symlink_to(Path(directory) / "nonexistent.xml")
+            self.assertIsNone(runner._failed_module_from_junit(xml, REPO))
+
     def test_synthetic_failures_or_missing_evidence_cannot_be_green(self):
         scenarios = [dict(missing=True), dict(skipped=True), dict(fail_status=True),
                      dict(mismatched_tree=True), dict(extra_test=True),
