@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -206,7 +207,8 @@ def _failclosed_start_receipt(output, identity, phase, *, process_exit=None):
     Completed pytest still atomically supplies its normal authoritative report.
     """
     if phase not in {"SOURCE_PRECHECK_PENDING", "PYTEST_PRECHECK_PENDING",
-                     "PYTEST_FINAL_RECEIPT_ABSENT", "PYTEST_IN_PROGRESS"}:
+                     "PYTEST_FINAL_RECEIPT_ABSENT", "PYTEST_IN_PROGRESS",
+                     "GOVERNED_SHARD_QUORUM_REJECTED"}:
         raise ValueError("CI_RECEIPT_PHASE_INVALID")
     safe = {}
     for key, pattern in (("source_sha", r"[0-9a-f]{40}"),
@@ -251,10 +253,95 @@ def _cgroup_oom_kills():
         return None
 
 
+def _governed_serial_shard_tests(root, output, identity, retirement):
+    """Elevate an EXACT image JUnit quorum, never a pilot label by itself.
+
+    Existing runner auto-collects all nodeids, verifies each retirement against
+    global collection, then runs disjoint shards with only one pytest child at
+    a time. No second production test suite, no missing/xfail/skip exemption.
+    """
+    from scripts import rc6_ci_parallel_runner as shard_runner
+
+    previous_temp = os.environ.get("RUNNER_TEMP")
+    # /var/tmp is disk-backed only if the existing scratch guard verifies it;
+    # fail closed otherwise. Docker image checkout /app must remain untouched.
+    os.environ["RUNNER_TEMP"] = "/var/tmp"
+    before = _cgroup_oom_kills()
+    try:
+        with tempfile.TemporaryDirectory(prefix="porota-ci-quorum-", dir="/var/tmp") as temp:
+            try:
+                proof = shard_runner.run(
+                    identity["source_sha"], identity["source_tree"], repo=root,
+                    shard_count=16, max_workers=1,
+                    retired_nodeids=sorted(retirement),
+                    output_junit=Path(temp) / "governed-tests.xml")
+            except (shard_runner.ParallelRunnerRed, OSError, ValueError,
+                    subprocess.TimeoutExpired):
+                receipt = _failclosed_start_receipt(
+                    output, identity, "GOVERNED_SHARD_QUORUM_REJECTED")
+                after = _cgroup_oom_kills()
+                if type(before) is int and type(after) is int and after >= before:
+                    receipt["cgroup_oom_kill_delta"] = min(after - before, 100_000)
+                    receipt["cgroup_oom_status"] = (
+                        "OOM_KILL_EVENT_OBSERVED" if after > before
+                        else "NO_OOM_KILL_EVENT_OBSERVED")
+                else:
+                    receipt["cgroup_oom_status"] = "NO_VERIFICADO"
+                output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+                return receipt
+    finally:
+        if previous_temp is None:
+            os.environ.pop("RUNNER_TEMP", None)
+        else:
+            os.environ["RUNNER_TEMP"] = previous_temp
+
+    valid = (
+        proof.get("status") == "GREEN_QUORUM_OFFLINE_ONLY"
+        and proof.get("source_sha") == identity["source_sha"]
+        and proof.get("source_tree_sha") == identity["source_tree"]
+        and proof.get("shards") == 16 and proof.get("execution_workers") == 1
+        and proof.get("ci_activated") is False
+        and proof.get("automatic_go") is False
+        and proof.get("runtime_authority") is False
+        and type(proof.get("discovered")) is int
+        and proof["discovered"] >= 16
+        and proof.get("executed") == proof["discovered"]
+        and proof.get("globally_discovered") ==
+            proof["discovered"] + len(retirement)
+        and proof.get("retired") == sorted(retirement)
+    )
+    if not valid:
+        return _failclosed_start_receipt(
+            output, identity, "GOVERNED_SHARD_QUORUM_REJECTED")
+    # This receipt is issued by the governing Predeploy runner only AFTER
+    # exact JUnit/nodeid/exit quorum. It is not deploy or PAPER entry authority.
+    receipt = {
+        "schema": "porota.code-tests.v1", **identity,
+        "status": "PASS", "collected": proof["discovered"],
+        "executed": proof["executed"], "failed": 0, "errors": 0,
+        "skipped": 0, "retired": sorted(retirement),
+        "failure_ids": [], "failure_locations": [],
+        "runner_mode": "GOVERNED_EXACT_SERIAL_SHARDS",
+        "collection_sha256": proof["collection_sha256"],
+        "shards": 16, "execution_workers": 1,
+        "globally_discovered": proof["globally_discovered"],
+        "automatic_deploy": False,
+    }
+    output.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    return receipt
+
+
 def run_code_tests(root, output, identity):
     root, output = Path(root).resolve(), Path(output).resolve()
     _failclosed_start_receipt(output, identity, "PYTEST_PRECHECK_PENDING")
-    arguments, _ = _policy(root)
+    arguments, retirement = _policy(root)
+    # The source identity was already verified by main(). Miniature fixture
+    # roots still use the historical single-process test harness unchanged.
+    if (root == Path(__file__).resolve().parents[1]
+            and os.environ.get("POROTA_BUILD_SHA") == identity.get("source_sha")
+            and os.environ.get("POROTA_CANDIDATE_TREE_SHA") ==
+                identity.get("source_tree")):
+        return _governed_serial_shard_tests(root, output, identity, retirement)
     environment = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                        POROTA_CI_RECEIPT_PATH=str(output), POROTA_CI_IDENTITY=json.dumps(identity),
                        PYTHONDONTWRITEBYTECODE="1")

@@ -115,10 +115,24 @@ def _disk_backed_temp_parent(repo: Path) -> Path:
 
 
 def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
-        shard_count: int, output_junit: Path) -> dict:
+        shard_count: int, output_junit: Path,
+        max_workers: int | None = None,
+        retired_nodeids: list[str] | tuple[str, ...] = ()) -> dict:
     """Discover globally, execute exact IDs concurrently, attest actual XML."""
     repo = Path(repo).resolve(strict=True)
     output_junit = Path(output_junit)
+    if max_workers is None:
+        max_workers = shard_count
+    if (type(max_workers) is not int or type(shard_count) is not int
+            or not 1 <= max_workers <= shard_count <= 16):
+        _red()
+    if not isinstance(retired_nodeids, (tuple, list)):
+        _red()
+    retired = list(retired_nodeids)
+    if len(set(retired)) != len(retired) or any(
+            not isinstance(item, str) or "[" in item
+            for item in retired):
+        _red()
     _verify_checkout(repo, candidate_sha, source_tree_sha)
     args = _test_args(repo)
     env_base = os.environ.copy()
@@ -129,7 +143,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
     env_base["RC6_CI_SOURCE_SHA"] = candidate_sha
     env_base["RC6_CI_SOURCE_TREE_SHA"] = source_tree_sha
     python = sys.executable
-    plugin = ["-p", "scripts.rc6_ci_pytest_identity"]
+    plugin = ["-p", "scripts.rc6_ci_pytest_identity",
+              "-p", "no:cacheprovider"]
     start = time.monotonic()
     disk_parent = _disk_backed_temp_parent(repo)
     with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir=disk_parent) as temp:
@@ -147,6 +162,16 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             if (parsed["source_sha"] != candidate_sha or
                     parsed["source_tree_sha"] != source_tree_sha):
                 _red()
+            discovered_total = parsed["discovered"]
+            # Verify every explicitly retired test exists in global
+            # automatic discovery before excluding it from execution.
+            all_nodes = set(parsed["nodeids"])
+            if set(retired) - all_nodes:
+                _red()
+            if retired:
+                parsed = shards.manifest(
+                    candidate_sha, source_tree_sha,
+                    [item for item in parsed["nodeids"] if item not in set(retired)])
             groups = shards.partition(parsed, shard_count)
         except (ValueError, OSError, TypeError, shards.ShardQuorumRed):
             _red()
@@ -174,7 +199,7 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
 
         started_parallel = time.monotonic()
         receipts = []
-        with ThreadPoolExecutor(max_workers=shard_count) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(run_one, i) for i in range(shard_count)]
             # Consume every result; a failed shard cannot silently disappear.
             for future in as_completed(futures):
@@ -188,7 +213,10 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
         receipt["phase_elapsed_ms"] = {"collect": collection_ms,
                                        "parallel_test": test_ms,
                                        "quorum": round((time.monotonic() - started_quorum) * 1000)}
-        receipt["ci_activated"] = False  # Pilot cannot certify any existing workflow.
+        receipt["ci_activated"] = False  # The pilot alone cannot certify release.
+        receipt["globally_discovered"] = discovered_total
+        receipt["retired"] = sorted(retired)
+        receipt["execution_workers"] = max_workers
         return receipt
 
 

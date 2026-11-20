@@ -208,6 +208,32 @@ class TestParallelProofRunner(unittest.TestCase):
                                    output_junit=output)
                 self.assertFalse(output.exists())
 
+    def test_serial_existing_quorum_checks_all_retirements_exactly(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "combined.xml"
+            fake = FakePytest(require_parallel=False)
+            retired = [NODES[0], NODES[3]]
+            with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                 patch.object(runner, "_invoke", fake):
+                receipt = runner.run(
+                    SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                    retired_nodeids=retired, output_junit=path)
+            self.assertEqual(receipt["status"], "GREEN_QUORUM_OFFLINE_ONLY")
+            self.assertEqual((receipt["globally_discovered"], receipt["discovered"],
+                              receipt["executed"]), (12, 10, 10))
+            self.assertEqual(receipt["retired"], retired)
+            self.assertEqual(receipt["execution_workers"], 1)
+            self.assertFalse(receipt["ci_activated"])
+            self.assertTrue(path.is_file())
+            bad = FakePytest(require_parallel=False)
+            with patch.dict(os.environ, {"RUNNER_TEMP": directory}), \
+                 patch.object(runner, "_invoke", bad):
+                with self.assertRaises(runner.ParallelRunnerRed):
+                    runner.run(
+                        SHA, TREE, repo=REPO, shard_count=2, max_workers=1,
+                        retired_nodeids=["test_missing.py::test_uncollected"],
+                        output_junit=Path(directory) / "reject.xml")
+
     def test_wrong_sha_tree_shard_count_policy_or_symlink_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "combined.xml"

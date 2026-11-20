@@ -61,6 +61,45 @@ productive_scope:
         self.assertEqual(report["active_test_module"], "test_example.py")
         self.assertNotIn("PRIVATE_PARAMETER", json.dumps(report))
 
+    def test_governed_wrapper_rejects_pilot_without_complete_retired_quorum(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        proof = {"status": "GREEN_QUORUM_OFFLINE_ONLY",
+                 "source_sha": self.identity["source_sha"],
+                 "source_tree_sha": self.identity["source_tree"],
+                 "shards": 16, "execution_workers": 1,
+                 "ci_activated": False, "automatic_go": False,
+                 "runtime_authority": False, "discovered": 16, "executed": 15,
+                 "globally_discovered": 17, "retired": ["test_retired.py::test_old"],
+                 "collection_sha256": "a" * 64}
+        with patch("scripts.rc6_ci_parallel_runner.run", return_value=proof):
+            result = module._governed_serial_shard_tests(
+                self.root, output, self.identity,
+                {"test_retired.py::test_old": {"reason": "fixture"}})
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["runner_phase"], "GOVERNED_SHARD_QUORUM_REJECTED")
+
+    def test_governed_wrapper_only_promotes_exact_serial_quorum_to_code_pass(self):
+        module = importlib.import_module("scripts.porota_ci")
+        output = self.root / "receipt.json"
+        proof = {"status": "GREEN_QUORUM_OFFLINE_ONLY",
+                 "source_sha": self.identity["source_sha"],
+                 "source_tree_sha": self.identity["source_tree"],
+                 "shards": 16, "execution_workers": 1,
+                 "ci_activated": False, "automatic_go": False,
+                 "runtime_authority": False, "discovered": 16, "executed": 16,
+                 "globally_discovered": 16, "retired": [],
+                 "collection_sha256": "a" * 64}
+        with patch("scripts.rc6_ci_parallel_runner.run", return_value=proof) as pilot:
+            result = module._governed_serial_shard_tests(
+                self.root, output, self.identity, {})
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["runner_mode"], "GOVERNED_EXACT_SERIAL_SHARDS")
+        self.assertEqual((result["collected"], result["executed"]), (16, 16))
+        self.assertFalse(result["automatic_deploy"])
+        self.assertEqual(pilot.call_args.kwargs["max_workers"], 1)
+        self.assertEqual(pilot.call_args.kwargs["shard_count"], 16)
+
     def test_missing_pytest_final_report_is_sanitized_fail_not_missing_file(self):
         module = importlib.import_module("scripts.porota_ci")
         output = self.root / "receipt.json"
