@@ -99,15 +99,31 @@ class TestShardQuorum(unittest.TestCase):
             with self.assertRaises(shards.ShardQuorumRed):
                 shards.quorum(m, 3, results)
 
+    def test_long_real_pytest_identity_within_arg_bound_is_accepted(self):
+        # Prior 2,048-char nodeid cap rejected a real 8,802-test collection
+        # BEFORE execution. No test is dropped; exact name remains intact.
+        name = "tests/test_long.py::test_case[" + "x" * 8100 + "]"
+        proof = shards.manifest(SHA, TREE, [name])
+        self.assertEqual(proof["nodeids"], [name])
+        self.assertEqual(proof["discovered"], 1)
+        # Catch a large manifest without allocating 64 MiB in a test.
+        from unittest.mock import patch
+        with patch.object(shards, "MAX_COLLECTION_NODEID_BYTES", 15):
+            with self.assertRaises(shards.ShardQuorumRed) as caught:
+                shards.manifest(SHA, TREE, ["one-identity", "another-identity"])
+        self.assertEqual(
+            str(caught.exception),
+            "RC6_SHARD_QUORUM_RED:NODEID_TOTAL_BYTES_UNBOUNDED")
+
     def test_nodeid_rejection_reason_is_fixed_and_never_echoes_private_values(self):
         cases = (
             (None, "NODEID_COLLECTION_INVALID"),
             ([], "NODEID_EMPTY_OR_UNBOUNDED"),
             ([2], "NODEID_NOT_STRING"),
             ([""], "NODEID_EMPTY"),
-            (["a" * 2049], "NODEID_CHAR_LENGTH"),
+            (["a" * (shards.MAX_NODEID_CHARS + 1)], "NODEID_CHAR_LENGTH"),
             (["x\ud800"], "NODEID_UTF8_ENCODING"),
-            (["€" * 2048], "NODEID_UTF8_BYTES"),
+            (["€" * (shards.MAX_NODEID_UTF8_BYTES // 3 + 1)], "NODEID_UTF8_BYTES"),
             (["PRIVATE_PARAM\nline"], "NODEID_NONPRINTABLE"),
             (["private", "private"], "NODEID_DUPLICATE"),
         )
@@ -167,8 +183,8 @@ class TestShardQuorum(unittest.TestCase):
                        'test\u2066isolate','test\u200fmark',
                        'test\u200djoiner','test\ufeffbom','test\u2028separator',
                        'test\ud800surrogate','test\U0010ffffnoncharacter',
-                       '界'*1400,  # 4,200 UTF-8 bytes even though <2,048 chars.
-                       'a'*2049):
+                       '界'*(shards.MAX_NODEID_UTF8_BYTES // 3 + 1),
+                       'a'*(shards.MAX_NODEID_CHARS + 1)):
             with self.subTest(unsafe=repr(unsafe)[:60]):
                 with self.assertRaises(shards.ShardQuorumRed):
                     shards.manifest(SHA,TREE,[unsafe])

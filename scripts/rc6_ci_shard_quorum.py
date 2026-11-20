@@ -15,8 +15,12 @@ import re
 import unicodedata
 
 
-MAX_NODEID_CHARS = 2048
-MAX_NODEID_UTF8_BYTES = 4096
+# Pytest parameter IDs are source identities, not a provider-size limit.
+# Each ID must still fit one Linux argv entry (<128 KiB), and the aggregate
+# private collection is bounded to avoid cgroup OOM from adversarial IDs.
+MAX_NODEID_CHARS = 65535
+MAX_NODEID_UTF8_BYTES = 65535
+MAX_COLLECTION_NODEID_BYTES = 64 * 1024 * 1024
 _BIDI_CONTROLS = frozenset({"LRE", "RLE", "LRO", "RLO", "PDF",
                             "LRI", "RLI", "FSI", "PDI"})
 
@@ -30,7 +34,7 @@ _NODEID_REASON_CODES = frozenset({
     "NODEID_NOT_STRING", "NODEID_EMPTY", "NODEID_CHAR_LENGTH",
     "NODEID_UTF8_ENCODING", "NODEID_UTF8_BYTES",
     "NODEID_NONPRINTABLE", "NODEID_CONTROL_OR_BIDI",
-    "NODEID_DUPLICATE",
+    "NODEID_DUPLICATE", "NODEID_TOTAL_BYTES_UNBOUNDED",
 })
 
 
@@ -51,6 +55,7 @@ def _nodeids(items: object) -> list[str]:
         _red("NODEID_COLLECTION_INVALID")
     if not items or len(items) > 100_000:
         _red("NODEID_EMPTY_OR_UNBOUNDED")
+    total_bytes = 0
     for name in items:
         if not isinstance(name, str):
             _red("NODEID_NOT_STRING")
@@ -67,6 +72,9 @@ def _nodeids(items: object) -> list[str]:
             _red("NODEID_UTF8_ENCODING")  # Unpaired surrogate.
         if len(encoded) > MAX_NODEID_UTF8_BYTES:
             _red("NODEID_UTF8_BYTES")
+        total_bytes += len(encoded)
+        if total_bytes > MAX_COLLECTION_NODEID_BYTES:
+            _red("NODEID_TOTAL_BYTES_UNBOUNDED")
         if not name.isprintable():
             _red("NODEID_NONPRINTABLE")
         if any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
