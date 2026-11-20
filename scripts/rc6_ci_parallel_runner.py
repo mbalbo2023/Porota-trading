@@ -56,7 +56,7 @@ class ParallelRunnerRed(ValueError):
 
     def __init__(self, reason="UNVERIFIED", *, failure_module=None,
                  last_active_module=None, process_exit_code=None,
-                 internal_error=None):
+                 internal_error=None, failed_test_base=None):
         self.reason = reason if reason in self.REASONS else "UNVERIFIED"
         # No pytest nodeids/parameters, output, paths outside tracked tests.
         def safe(module):
@@ -70,17 +70,24 @@ class ParallelRunnerRed(ValueError):
             process_exit_code if type(process_exit_code) is int
             and -255 <= process_exit_code <= 255 else None)
         self.internal_error = internal_error if isinstance(internal_error, dict) else None
+        self.failed_test_base = (
+            failed_test_base if type(failed_test_base) is str
+            and re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py::test_[A-Za-z0-9_]{1,120}",
+                             failed_test_base)
+            and ".." not in Path(failed_test_base.split("::", 1)[0]).parts
+            else None)
         super().__init__("RC6_PARALLEL_RUNNER_RED")
 
 
 def _red(reason="UNVERIFIED", *, failure_module=None,
          last_active_module=None, process_exit_code=None,
-         internal_error=None) -> None:
+         internal_error=None, failed_test_base=None) -> None:
     raise ParallelRunnerRed(
         reason, failure_module=failure_module,
         last_active_module=last_active_module,
         process_exit_code=process_exit_code,
-        internal_error=internal_error)
+        internal_error=internal_error,
+        failed_test_base=failed_test_base)
 
 
 def _safe_pytest_module(repo: Path, source: str) -> str | None:
@@ -133,6 +140,41 @@ def _verified_internalerror_sidecar(path: Path, repo: Path) -> dict | None:
         return result
     except (OSError, ValueError, TypeError, UnicodeError):
         return None
+
+
+def _failed_test_base_from_junit(junit_path: Path, repo: Path) -> str | None:
+    """Return only a tracked static test function name, NEVER parameter IDs."""
+    try:
+        info = junit_path.lstat()
+        if (not stat.S_ISREG(info.st_mode)
+                or not 0 < info.st_size <= 64 * 1024 * 1024):
+            return None
+        for _, case in ET.iterparse(junit_path, events=("end",)):
+            if case.tag != "testcase":
+                continue
+            if case.find("failure") is None and case.find("error") is None:
+                case.clear()
+                continue
+            test_name = str(case.attrib.get("name", "")).split("[", 1)[0]
+            if not re.fullmatch(r"test_[A-Za-z0-9_]{1,120}", test_name):
+                case.clear()
+                continue
+            sources = [case.attrib.get("file", "")]
+            classname = case.attrib.get("classname", "")
+            if (type(classname) is str and len(classname) <= 260
+                    and re.fullmatch(r"tests(?:\.[A-Za-z0-9_]+){1,24}",
+                                     classname)):
+                parts = classname.split(".")
+                for count in range(len(parts), 1, -1):
+                    sources.append("/".join(parts[:count]) + ".py")
+            for source in sources:
+                safe = _safe_pytest_module(repo, source)
+                if safe is not None:
+                    return safe + "::" + test_name
+            case.clear()
+    except (OSError, ValueError, TypeError, ET.ParseError):
+        return None
+    return None
 
 def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
     """Read bounded JUnit locally, emit only safe source path, no test names."""
@@ -466,7 +508,8 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                           if result.returncode == 3 else None)
                 _red(reason, failure_module=failure_module,
                      last_active_module=_last_active_module_from_output(result, repo),
-                     process_exit_code=result.returncode, internal_error=detail)
+                     process_exit_code=result.returncode, internal_error=detail,
+                     failed_test_base=_failed_test_base_from_junit(xml_path, repo))
             if not executed.is_file() or executed.is_symlink():
                 _red("SHARD_REPORT_INVALID",
                      last_active_module=_last_active_module_from_output(result, repo),

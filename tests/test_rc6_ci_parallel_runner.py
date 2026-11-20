@@ -633,3 +633,59 @@ if __name__ == "__main__":
             path.symlink_to(Path(directory) / "missing")
             self.assertIsNone(
                 runner._verified_internalerror_sidecar(path, REPO))
+
+
+    def test_xunit2_exact_failure_name_without_params(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "junit.xml"
+            path.write_text(
+                '<testsuite><testcase classname="tests.test_rc6_ci_parallel_runner.'
+                'TestParallelProofRunner" name="test_synthetic_case[PRIVATE_ACCOUNT]">'
+                '<failure>PRIVATE_TRACEBACK</failure></testcase></testsuite>',
+                encoding="utf-8")
+            self.assertEqual(
+                runner._failed_test_base_from_junit(path, REPO),
+                "tests/test_rc6_ci_parallel_runner.py::test_synthetic_case")
+            self.assertNotIn(
+                "PRIVATE", runner._failed_test_base_from_junit(path, REPO))
+            path.write_text(
+                '<testsuite><testcase classname="tests...PRIVATE"'
+                ' name="test_secret[PRIVATE]"><error>PRIVATE</error>'
+                '</testcase></testsuite>', encoding="utf-8")
+            self.assertIsNone(runner._failed_test_base_from_junit(path, REPO))
+            path.write_text(
+                '<testsuite><testcase file="../../private.py"'
+                ' name="test_secret"><failure>PRIVATE</failure></testcase>'
+                '</testsuite>', encoding="utf-8")
+            self.assertIsNone(runner._failed_test_base_from_junit(path, REPO))
+
+    def test_nonzero_shard_propagates_only_sanitized_static_test_base(self):
+        fake = FakePytest(require_parallel=False)
+
+        def failing_case(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                path = Path(next(arg.split("=", 1)[1] for arg in argv
+                                 if arg.startswith("--junitxml=")))
+                path.write_text(
+                    '<testsuite><testcase classname="tests.test_rc6_ci_parallel_runner"'
+                    ' name="test_known_issue[PRIVATE_ACCOUNT_NUMBER]">'
+                    '<failure>PRIVATE_ASSERTION</failure></testcase></testsuite>',
+                    encoding="utf-8")
+                return subprocess.CompletedProcess(
+                    argv, 1, "PRIVATE_OUTPUT", "PRIVATE_STDERR")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", failing_case):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               max_workers=1,
+                               output_junit=Path(directory) / "combined.xml")
+        self.assertEqual(caught.exception.reason, "SHARD_PYTEST_NONZERO")
+        self.assertEqual(
+            caught.exception.failed_test_base,
+            "tests/test_rc6_ci_parallel_runner.py::test_known_issue")
+        self.assertNotIn("PRIVATE", str(caught.exception))
+        self.assertEqual(len([x for x in fake.calls
+                              if any(a.startswith("--junitxml=") for a in x)]), 1)

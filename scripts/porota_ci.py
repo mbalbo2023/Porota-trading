@@ -328,6 +328,8 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                 if isinstance(failure, shard_runner.ParallelRunnerRed):
                     if failure.failure_module is not None:
                         receipt["failed_test_module"] = failure.failure_module
+                    if failure.failed_test_base is not None:
+                        receipt["failed_test_base"] = failure.failed_test_base
                     if failure.last_active_module is not None:
                         receipt["last_active_test_module"] = failure.last_active_module
                     if failure.process_exit_code is not None:
