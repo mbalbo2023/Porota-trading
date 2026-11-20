@@ -249,6 +249,35 @@ class TestParallelProofRunner(unittest.TestCase):
         self.assertEqual(progress[-1], ("SHARD_RUNNING", 0, 0))
         self.assertNotIn("SHARD_COMPLETE", [phase for phase, _, _ in progress])
 
+    def test_missing_shard_manifest_must_not_hide_sigkill_or_last_module(self):
+        fake = FakePytest(require_parallel=False)
+
+        def missing_manifest_after_signal(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                Path(env["RC6_CI_MANIFEST_PATH"]).unlink(missing_ok=True)
+                return subprocess.CompletedProcess(
+                    argv, -9,
+                    "\nRC6_CI_ACTIVE_MODULE:tests/test_rc6_ci_parallel_runner.py\n",
+                    "PRIVATE_STDERR")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            output = Path(directory) / "combined.xml"
+            with patch.object(runner, "_invoke", missing_manifest_after_signal):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               max_workers=1, output_junit=output)
+            self.assertFalse(output.exists())
+        error = caught.exception
+        self.assertEqual(error.reason, "SHARD_PROCESS_SIGNAL")
+        self.assertEqual(error.process_exit_code, -9)
+        self.assertEqual(error.last_active_module,
+                         "tests/test_rc6_ci_parallel_runner.py")
+        self.assertEqual(len([cmd for cmd in fake.calls
+                              if any(a.startswith("--junitxml=") for a in cmd)]), 1)
+        self.assertNotIn("PRIVATE_STDERR", str(error))
+
     def test_governed_serial_nonzero_pytest_stops_before_next_shard(self):
         fake = FakePytest(require_parallel=False)
 

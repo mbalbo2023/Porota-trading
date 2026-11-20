@@ -406,14 +406,9 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                               "-o", "xfail_strict=true",
                               f"--junitxml={xml_path}", f"--basetemp={isolated_base}",
                               "--", *groups[i]], cwd=repo, env=env)
-            if not executed.is_file() or executed.is_symlink():
-                _red("SHARD_REPORT_INVALID")
-            try:
-                actual = json.loads(executed.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError):
-                _red("SHARD_REPORT_INVALID")
-            # Abort before starting another governed shard on a real pytest
-            # failure. Keep private stdout/stderr out of the release receipt.
+            # Inspect the actual process outcome FIRST. A missing collection
+            # receipt after SIGKILL or pytest failure must not hide the signal
+            # or nonzero exit behind SHARD_REPORT_INVALID.
             if result.returncode != 0:
                 failure_module = (
                     _failed_module_from_junit(xml_path, repo)
@@ -421,6 +416,16 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
                 reason = ("SHARD_PROCESS_SIGNAL" if type(result.returncode) is int
                           and result.returncode < 0 else "SHARD_PYTEST_NONZERO")
                 _red(reason, failure_module=failure_module,
+                     last_active_module=_last_active_module_from_output(result, repo),
+                     process_exit_code=result.returncode)
+            if not executed.is_file() or executed.is_symlink():
+                _red("SHARD_REPORT_INVALID",
+                     last_active_module=_last_active_module_from_output(result, repo),
+                     process_exit_code=result.returncode)
+            try:
+                actual = json.loads(executed.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                _red("SHARD_REPORT_INVALID",
                      last_active_module=_last_active_module_from_output(result, repo),
                      process_exit_code=result.returncode)
             with progress_lock:
