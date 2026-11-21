@@ -696,6 +696,41 @@ class HistoricalSourceLocatorTests(unittest.TestCase):
         self.assertEqual(inv.source_locator_public_receipt(raw, 255)["state"],
                          "NO_VERIFICADO")
 
+    def test_locator_reports_sqlite_phase_without_exporting_db_errors(self):
+        class JournalModeFailure(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                if sql == "PRAGMA journal_mode":
+                    error = sqlite3.OperationalError("PRIVATE_DB_PATH")
+                    error.sqlite_errorname = "SQLITE_READONLY_CANTLOCK"
+                    error.sqlite_errorcode = sqlite3.SQLITE_READONLY_CANTLOCK
+                    raise error
+                return super().execute(sql, parameters)
+
+        connect = sqlite3.connect
+        targets = tuple((role, self.history if role == "HISTORY" else self.root / role,
+                         2 * 1024**2) for role in inv.LOCATOR_TABLES)
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv, "LOCATOR_TARGETS", targets), \
+                patch.object(inv.sqlite3, "connect",
+                             side_effect=lambda *args, **kwargs: connect(
+                                 *args, factory=JournalModeFailure, **kwargs)):
+            raw = inv.host_source_locator()
+        history = raw["source_inventory"][0]
+        self.assertEqual(history["status"], "SQLITE_UNAVAILABLE")
+        self.assertEqual(history["sqlite_failure"], {
+            "phase": "READ_JOURNAL_MODE", "wal_file": "EMPTY", "shm_present": True,
+            "error_code": sqlite3.SQLITE_READONLY_CANTLOCK, "error_name": "SQLITE_READONLY_CANTLOCK",
+        })
+        history["sqlite_failure"]["debug"] = "PRIVATE_DB_PATH"
+        clean = inv.source_locator_public_receipt(raw, 0)
+        self.assertEqual(clean["state"], "NO_VERIFICADO")
+        self.assertFalse(clean["history_source_selected"])
+        self.assertNotIn("PRIVATE_DB_PATH", json.dumps(clean))
+        self.assertEqual(clean["source_inventory"][0]["sqlite_failure"]["phase"], "READ_JOURNAL_MODE")
+        history["sqlite_failure"]["error_name"] = "SQLITE_UNKNOWN_PRIVATE_LABEL"
+        unverified = inv.source_locator_public_receipt(raw, 0)
+        self.assertNotIn("error_name", unverified["source_inventory"][0]["sqlite_failure"])
+
     def test_external_manifest_latest_64_rowids_and_long_text_memory_budget(self):
         manifest, writer = self.external_manifest()
         writer.executemany("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?)", [

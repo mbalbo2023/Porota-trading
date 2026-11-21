@@ -110,6 +110,11 @@ LOCATOR_TABLE_STATUSES = frozenset({"NO_VERIFICADO", "TABLE_ABSENT",
                                   "SCHEMA_INVALID", "COLUMNS_MISSING",
                                   "PRESENT_COLUMNS_OK"})
 LOCATOR_SAMPLE_ROWS = 64
+LOCATOR_SQLITE_PHASES = frozenset({
+    "OPEN_CONNECTION", "SET_READ_LIMITS", "READ_JOURNAL_MODE", "BEGIN_READ",
+    "VERIFY_SOURCE_BINDING", "SCAN_TABLES", "RECHECK_SOURCE_BINDING", "END_READ",
+})
+LOCATOR_WAL_FILE_STATES = frozenset({"MISSING", "EMPTY", "NONEMPTY"})
 
 
 class InventoryError(Exception):
@@ -539,6 +544,8 @@ def source_locator_db(role: str, path: Path, maximum: int,
         parent_fd = _anchored_directory(path.parent)
     except InventoryError as exc:
         return _locator_empty(role, "MISSING" if str(exc) == "MISSING" else "PATH_UNSAFE")
+    phase = "OPEN_CONNECTION"
+    sides = {}
     try:
         status, before = _file_metadata(parent_fd, path.name)
         if status != "REGULAR":
@@ -546,7 +553,6 @@ def source_locator_db(role: str, path: Path, maximum: int,
         assert before is not None
         if not 4096 <= before[2] <= maximum:
             return _locator_empty(role, "SIZE_LIMIT")
-        sides = {}
         for suffix in ("-wal", "-shm", "-journal"):
             side_status, info = _file_metadata(parent_fd, path.name + suffix)
             if side_status not in ("MISSING", "REGULAR"):
@@ -567,6 +573,7 @@ def source_locator_db(role: str, path: Path, maximum: int,
             uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
             with closing(sqlite3.connect(uri, uri=True, timeout=.2,
                                          isolation_level=None)) as db:
+                phase = "SET_READ_LIMITS"
                 receipt["sqlite_ro"] = True
                 if (not callable(getattr(db, "setlimit", None)) or
                         not hasattr(sqlite3, "SQLITE_LIMIT_LENGTH") or
@@ -579,13 +586,19 @@ def source_locator_db(role: str, path: Path, maximum: int,
                 db.execute("PRAGMA trusted_schema=OFF")
                 db.set_progress_handler(lambda: int(time.monotonic() >= deadline), 500)
                 try:
+                    phase = "READ_JOURNAL_MODE"
                     mode = db.execute("PRAGMA journal_mode").fetchone()
                     if not mode or mode[0] != "wal":
                         raise InventoryError("SCHEMA_INVALID")
+                    phase = "BEGIN_READ"
                     db.execute("BEGIN")
+                    phase = "VERIFY_SOURCE_BINDING"
                     _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
+                    phase = "SCAN_TABLES"
                     _locator_scan(db, role, deadline, receipt)
+                    phase = "RECHECK_SOURCE_BINDING"
                     _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
+                    phase = "END_READ"
                     db.rollback()
                     receipt["wal_scope"] = ("WAL_SNAPSHOT_CONSISTENT" if
                                             receipt["wal_bytes"] else "BASE_NO_WAL")
@@ -609,11 +622,30 @@ def source_locator_db(role: str, path: Path, maximum: int,
         status = str(exc)
         return _locator_empty(role, status if status in LOCATOR_STATUSES
                               else "SQLITE_UNAVAILABLE")
-    except (OSError, sqlite3.Error, ValueError, TypeError, RecursionError):
+    except sqlite3.Error as exc:
+        failure = _locator_empty(role, "TIME_BUDGET" if time.monotonic() >= deadline
+                                 else "SQLITE_UNAVAILABLE")
+        wal = sides.get("-wal")
+        observation = {"phase": phase,
+                       "wal_file": "MISSING" if wal is None else ("EMPTY" if wal[2] == 0 else "NONEMPTY"),
+                       "shm_present": sides.get("-shm") is not None}
+        error_code = getattr(exc, "sqlite_errorcode", None)
+        error_name = getattr(exc, "sqlite_errorname", None)
+        if _known_sqlite_error(error_name, error_code):
+            observation.update(error_code=error_code, error_name=error_name)
+        failure["sqlite_failure"] = observation
+        return failure
+    except (OSError, ValueError, TypeError, RecursionError):
         return _locator_empty(role, "TIME_BUDGET" if time.monotonic() >= deadline
                               else "SQLITE_UNAVAILABLE")
     finally:
         os.close(parent_fd)
+
+
+def _known_sqlite_error(name, code):
+    return (type(code) is int and 0 < code <= 65535 and isinstance(name, str)
+            and re.fullmatch(r"SQLITE_[A-Z0-9_]{1,40}", name) is not None
+            and getattr(sqlite3, name, None) == code)
 
 
 def _db_public(role: str, status: str, size: int | None = None) -> dict:
@@ -1189,6 +1221,16 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
             cleaned.append({"role": role, "status": status,
                             "wal_scope": scope, "sqlite_ro": source["sqlite_ro"],
                             **sizes, "tables": clean_tables})
+            if "sqlite_failure" in source:
+                error = source["sqlite_failure"]
+                assert status in {"SQLITE_UNAVAILABLE", "TIME_BUDGET"} and isinstance(error, dict)
+                assert (error.get("phase") in LOCATOR_SQLITE_PHASES
+                        and error.get("wal_file") in LOCATOR_WAL_FILE_STATES
+                        and type(error.get("shm_present")) is bool)
+                clean_error = {key: error[key] for key in ("phase", "wal_file", "shm_present")}
+                if _known_sqlite_error(error.get("error_name"), error.get("error_code")):
+                    clean_error.update(error_code=error["error_code"], error_name=error["error_name"])
+                cleaned[-1]["sqlite_failure"] = clean_error
         okay = (all(x["status"] in ("OBSERVED_BOUNDED", "MISSING") for x in cleaned)
                 and objects_state in ("PRESENT", "MISSING"))
         return {"schema": LOCATOR_SCHEMA,
