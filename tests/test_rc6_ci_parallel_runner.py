@@ -873,5 +873,54 @@ class TestParallelProofRunner(unittest.TestCase):
                 self.assertNotIn("PRIVATE", str(parsed))
 
 
+    def test_empty_shard_selection_does_not_hide_real_pytest_exit4(self):
+        # With one wrong explicit -k/nodeid selector, actual pytest reports
+        # "ERROR: not found" and zero selected. A collection hook must NOT
+        # turn this into ShardQuorumRed/exit3 before pytest emits its error.
+        from types import SimpleNamespace
+        from scripts import rc6_ci_pytest_identity as plugin
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            manifest_path = Path(directory) / "empty.json"
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_MANIFEST_PATH": str(manifest_path)}):
+                plugin.pytest_collection_finish(SimpleNamespace(items=[]))
+            self.assertFalse(manifest_path.exists())
+        self.assertEqual(
+            runner._missing_selected_nodeid_module(
+                SimpleNamespace(stderr="ERROR: not found: " +
+                    str(REPO / "tests/test_rc6_ci_parallel_runner.py") +
+                    "::test_not_collected[PRIVATE_ID]\n"), REPO),
+            "tests/test_rc6_ci_parallel_runner.py")
+        self.assertIsNone(runner._missing_selected_nodeid_module(
+            SimpleNamespace(stderr="ERROR: not found: /etc/PRIVATE.py"
+                            "::test_foo[SECRET]\n"), REPO))
+
+    def test_missing_exact_nodeid_is_fail_closed_without_next_shard(self):
+        fake = FakePytest(require_parallel=False)
+        def missing(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(a.startswith("--junitxml=") for a in argv):
+                return subprocess.CompletedProcess(argv, 4, "",
+                    "ERROR: not found: " +
+                    str(REPO / "tests/test_rc6_ci_parallel_runner.py") +
+                    "::test_private[PRIVATE_SECRET]\n")
+            return result
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", missing):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               max_workers=1,
+                               output_junit=Path(directory) / "combined.xml")
+        self.assertEqual(caught.exception.reason,
+                         "SHARD_PYTEST_NODEID_NOT_FOUND")
+        self.assertEqual(caught.exception.failure_module,
+                         "tests/test_rc6_ci_parallel_runner.py")
+        self.assertEqual(caught.exception.process_exit_code, 4)
+        self.assertNotIn("PRIVATE", str(caught.exception))
+        self.assertEqual(len([cmd for cmd in fake.calls
+                              if any(a.startswith("--junitxml=") for a in cmd)]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

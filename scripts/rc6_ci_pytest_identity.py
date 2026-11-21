@@ -236,6 +236,13 @@ def pytest_collection_finish(session):
     path_text = os.environ.get("RC6_CI_MANIFEST_PATH")
     if not path_text:
         raise RuntimeError("RC6_PYTEST_MANIFEST_PATH_REQUIRED")
+    # An explicit pytest shard with one unmatched nodeid can have ZERO items.
+    # Pytest then reports a usage error (exit=4); trying to generate a strict
+    # nonempty manifest here would incorrectly convert that into INTERNAL_ERROR
+    # exit=3 and hide the original "not found" source. Never create an empty
+    # report: the runner still requires all exact requested nodeids and JUnit.
+    if not session.items:
+        return
     candidate = os.environ.get("RC6_CI_SOURCE_SHA", "")
     tree = os.environ.get("RC6_CI_SOURCE_TREE_SHA", "")
     proof = manifest(candidate, tree, [item.nodeid for item in session.items])

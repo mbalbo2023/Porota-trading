@@ -48,7 +48,8 @@ class ParallelRunnerRed(ValueError):
         "COLLECTION_MANIFEST_INVALID", "COLLECTION_SOURCE_MISMATCH",
         "COLLECTION_PARTITION_INVALID",
         "RETIRED_TEST_NOT_COLLECTED", "SHARD_REPORT_INVALID",
-        "SHARD_PYTEST_NONZERO", "SHARD_PYTEST_INTERNAL_ERROR",
+        "SHARD_PYTEST_NONZERO", "SHARD_PYTEST_NODEID_NOT_FOUND",
+        "SHARD_PYTEST_INTERNAL_ERROR",
         "SHARD_PROCESS_SIGNAL",
         "JUNIT_QUORUM_INVALID",
         "SCRATCH_ROOT_INVALID",
@@ -269,6 +270,30 @@ def _failed_module_from_junit(junit_path: Path, repo: Path) -> str | None:
         return None
     return None
 
+
+
+def _missing_selected_nodeid_module(result, repo: Path) -> str | None:
+    """Parse pytest's real 'not found' usage error without revealing nodeids.
+
+    A single unmatched explicit selector aborts the ENTIRE shard before
+    execution. Export only an allowlisted tracked module, never parameter IDs.
+    """
+    tail = str(result.stderr or "")[-262144:]
+    for line in tail.splitlines():
+        match = re.fullmatch(r"ERROR: not found: ([^\x00-\x1f]{1,65535})", line)
+        if match is None:
+            continue
+        raw_path = match.group(1).split("::", 1)[0]
+        try:
+            selected = Path(raw_path)
+            relative = (selected.relative_to(repo).as_posix()
+                        if selected.is_absolute() else selected.as_posix())
+        except ValueError:
+            continue
+        safe = _safe_pytest_module(repo, relative)
+        if safe is not None:
+            return safe
+    return None
 
 def _failed_module_from_pytest_summary(result, repo: Path) -> str | None:
     """Parse only pytest's short failure summary, never stdout/parameters."""
@@ -564,12 +589,15 @@ def run(candidate_sha: str, source_tree_sha: str, *, repo: Path,
             # receipt after SIGKILL or pytest failure must not hide the signal
             # or nonzero exit behind SHARD_REPORT_INVALID.
             if result.returncode != 0:
-                failure_module = (
+                missing_module = (_missing_selected_nodeid_module(result, repo)
+                                  if result.returncode == 4 else None)
+                failure_module = (missing_module or
                     _failed_module_from_junit(xml_path, repo)
                     or _failed_module_from_pytest_summary(result, repo))
                 reason = ("SHARD_PROCESS_SIGNAL" if type(result.returncode) is int
                           and result.returncode < 0 else
-                          "SHARD_PYTEST_INTERNAL_ERROR" if result.returncode == 3
+                          "SHARD_PYTEST_NODEID_NOT_FOUND" if missing_module
+                          else "SHARD_PYTEST_INTERNAL_ERROR" if result.returncode == 3
                           else "SHARD_PYTEST_NONZERO")
                 detail = (_verified_internalerror_sidecar(internal_error_file, repo)
                           if result.returncode == 3 else None)
