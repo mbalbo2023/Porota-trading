@@ -138,11 +138,12 @@ def test_ingesta_background_bloqueada_o_fallida_no_reintenta_cada_poll(
                                 "2026-09-25T20:00:00+00:00", None, 0,
                                 "history migration deferred"))
         if failure:
-            def blocked(_reader, _store):
+            def blocked(_reader, _store, *, session_only):
+                assert session_only
                 raise RuntimeError("HISTORY_COPY_MIGRATION_REQUIRED")
             monkeypatch.setattr(observer, "_download_histories", blocked)
         else:
-            monkeypatch.setattr(observer, "_download_histories", lambda *_: 0)
+            monkeypatch.setattr(observer, "_download_histories", lambda *_, session_only: 0)
         assert observer._background_ingest(None, store) == (None if failure else 0)
         with store.connect() as connection:
             checked = connection.execute("""SELECT checked_at FROM api_health
@@ -174,8 +175,8 @@ def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypat
     monkeypatch.setattr(
         observer,
         "_download_histories",
-        lambda received, received_store: (
-            calls.append(("history", received, received_store)) or 1
+        lambda received, received_store, *, session_only: (
+            calls.append(("history", received, received_store, session_only)) or 1
         ),
     )
     monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: False)
@@ -184,7 +185,7 @@ def test_ingesta_background_usa_history_y_nunca_current_book(tmp_path, monkeypat
 
     monkeypatch.setattr(observer, "_background_ingest_due", lambda _store: True)
     assert observer._background_ingest(reader, store, force=True) == 1
-    assert calls == [("history", reader, store)]
+    assert calls == [("history", reader, store, True)]
 
 
 def test_dashboard_expone_binding_y_guardas_hf3(tmp_path, monkeypatch):

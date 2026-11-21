@@ -85,8 +85,8 @@ def test_external_manifest_selects_only_exact_verified_raw_object(tmp_path, monk
 
     selected = repair._archive_payloads({_target()})
 
-    assert selected == {_target(): ([{"date": "2026-09-21", "close": 109}],
-                                    "2026-09-22T10:00:00+00:00")}
+    assert selected == {_target(): [repair.ArchiveFragment(
+        [{"date": "2026-09-21", "close": 109}], "2026-09-22T10:00:00+00:00", None)]}
 
 
 @pytest.mark.parametrize("field,replacement", [
@@ -182,8 +182,57 @@ def test_external_manifest_uses_actual_utc_observation_time_not_string_order(
 
     selected = repair._archive_payloads({_target()})
 
-    assert selected[_target()][0] == [{"date": "2026-09-21", "close": 401}]
-    assert selected[_target()][1] == "2026-09-23T00:00:00-04:00"
+    fragment, = selected[_target()]
+    assert fragment.rows == [{"date": "2026-09-21", "close": 401}]
+    assert fragment.recorded_at == "2026-09-23T00:00:00-04:00"
+
+
+def test_archive_repair_replays_partial_fragments_without_replacing_attested_days(
+        tmp_path, monkeypatch):
+    import cg_paper_workspace as workspace
+    import ct_ppi_history_salvage_hf6 as salvage
+    import cu_history_store_v2_hf6 as history_v2
+    from cv_history_store_adapter_hf6 import HistoricalStore
+
+    contract = "SYNTHETIC_TEST_CONTRACT"
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", {contract})
+
+    def bar(day, close):
+        return {"date": day, "openingPrice": 100, "max": 120, "min": 90,
+                "price": close, "volume": 25, "currency": "ARS", "priceBasis": "RAW",
+                "adjustmentBasis": "RAW_NO_ADJUSTMENT", "adjusted": False}
+
+    for key, observed, rows in (
+            ("older", "2026-09-18T13:00:00+00:00",
+             [bar("2026-09-15", 102), bar("2026-09-17", 103)]),
+            ("newer", "2026-09-19T13:00:00+00:00",
+             [bar("2026-09-17", 110), bar("2026-09-18", 115)])):
+        _external_attempt(tmp_path, monkeypatch, row_key=key, recorded_at=observed,
+                          changes={"provider_contract_id": contract,
+                                   "payload_json": json.dumps(rows)})
+
+    history = HistoricalStore(str(tmp_path / "history.sqlite"))
+    observer = HistoricalStore(str(tmp_path / "observer.sqlite"))
+    history_v2.init_schema(history)
+    monkeypatch.setattr(repair, "LOCK_PATH", tmp_path / "repair.lock")
+    monkeypatch.setattr(repair, "_history_store", lambda: history)
+    monkeypatch.setattr(repair, "_targets", lambda _: [_target()])
+    monkeypatch.setattr(workspace, "runtime_store", lambda: observer)
+    monkeypatch.delenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", raising=False)
+
+    for expected_imports in (1, 0):
+        assert repair.main() == 1  # A valid fragment does not prove a complete baseline.
+        with history.connect() as db:
+            assert [tuple(row) for row in db.execute(
+                "SELECT date,close FROM history_canonical_v2 ORDER BY date")] == [
+                ("2026-09-15", 102), ("2026-09-17", 110), ("2026-09-18", 115)]
+            assert db.execute("SELECT count(*) FROM history_versions_v2").fetchone()[0] == 3
+            assert tuple(db.execute("""SELECT state,archive_imports,ppi_queries,complete
+                                       FROM rc6_history_cutoff_repair_runs""").fetchone()) == (
+                                     "PARTIAL", expected_imports, 0, 0)
+        coverage = repair._coverage(history, _target())
+        assert coverage["attested_days"] == {
+            date(2026, 9, 15), date(2026, 9, 17), date(2026, 9, 18)}
 
 
 def test_legacy_raw_archive_recovers_exact_ppi_identity_when_external_manifest_absent(tmp_path, monkeypatch):
@@ -202,8 +251,9 @@ def test_legacy_raw_archive_recovers_exact_ppi_identity_when_external_manifest_a
     selected = repair._archive_payloads({key})
 
     assert set(selected) == {key}
-    assert selected[key][0] == [{"date": "2026-09-21", "close": 101}]
-    assert selected[key][1] == "2026-09-22T10:00:00+00:00"
+    fragment, = selected[key]
+    assert fragment.rows == [{"date": "2026-09-21", "close": 101}]
+    assert fragment.recorded_at == "2026-09-22T10:00:00+00:00"
     assert store.path.read_bytes() == before
 
 
@@ -306,8 +356,9 @@ def test_legacy_archive_deduplicates_to_latest_valid_attempt(tmp_path, monkeypat
 
     selected = repair._archive_payloads({key})
 
-    assert selected[key][0] == [{"date": "2026-09-21", "close": 102}]
-    assert selected[key][1] == "2026-09-22T10:00:00+00:00"
+    fragment, = selected[key]
+    assert fragment.rows == [{"date": "2026-09-21", "close": 102}]
+    assert fragment.recorded_at == "2026-09-22T10:00:00+00:00"
 
 
 def test_legacy_archive_prefers_latest_observation_time_not_insert_order(tmp_path, monkeypatch):
@@ -324,8 +375,9 @@ def test_legacy_archive_prefers_latest_observation_time_not_insert_order(tmp_pat
 
     selected = repair._archive_payloads({key})
 
-    assert selected[key][0] == [{"date": "2026-09-21", "close": 123}]
-    assert selected[key][1] == "2026-09-23T10:00:00+00:00"
+    fragment, = selected[key]
+    assert fragment.rows == [{"date": "2026-09-21", "close": 123}]
+    assert fragment.recorded_at == "2026-09-23T10:00:00+00:00"
 
 
 def test_legacy_archive_scan_budget_refuses_unbounded_payload_sweep(tmp_path, monkeypatch):
@@ -390,7 +442,10 @@ def test_main_replays_legacy_archive_without_login_and_records_archive_provenanc
     monkeypatch.setattr(repair, "_targets", lambda _: [identity])
     calls = []
 
-    def ingest(_, __, key, payload, start, *, source, observed_at):
+    def ingest(_, __, key, payload, start, *, source, observed_at,
+               provider_contract_id, already_attested):
+        assert provider_contract_id is None
+        assert already_attested == frozenset()
         calls.append((key, payload, start.isoformat(), source, observed_at))
         _canonical_row(store, key)
         return (1, "2026-09-21")
@@ -463,9 +518,16 @@ def test_cutoff_calendar_reproduces_the_audited_byma_market_dates():
     assert len(trading_dates) == 245
     digest = hashlib.sha256("".join(f"{day.isoformat()}\n" for day in trading_dates).encode())
     assert digest.hexdigest() == "8997163de5795c13743af4a0ce44f55b16c7402985c56f9313e6832bf431e7ba"
+    assert sessions[date(2025, 11, 21)] == "LIMITED_T1_SOURCE_ONLY"
     assert sessions[date(2025, 12, 24)] == "LIMITED_T1_SOURCE_ONLY"
     assert sessions[date(2026, 3, 23)] == "LIMITED_SETTLEMENT_UNVERIFIED"
-    assert sum(value == "LIMITED_SETTLEMENT_UNVERIFIED" for value in sessions.values()) == 4
+    assert sum(value == "LIMITED_SETTLEMENT_UNVERIFIED" for value in sessions.values()) == 3
+    assert estado_negociacion_historica_byma(
+        date(2025, 11, 21), **{**lookup, "family": "ACCIONES", "settlement": "T+1"}
+    ) == "LIMITED_T1_SOURCE_ONLY"
+    assert estado_negociacion_historica_byma(
+        date(2025, 11, 21), **{**lookup, "settlement": "CI"}
+    ) == "LIMITED_SETTLEMENT_UNVERIFIED"
     assert estado_negociacion_historica_byma(date(2025, 9, 19), **lookup) == "UNVERIFIED"
     assert estado_negociacion_historica_byma(repair.CUTOFF, **{**lookup, "family": "BONOS"}) == "UNVERIFIED"
     assert not es_dia_habil_operativo(date(2026, 3, 23))
@@ -540,7 +602,8 @@ def test_live_ppi_rows_with_interior_gap_remain_partial(tmp_path, monkeypatch):
     monkeypatch.setattr(repair, "_latest", lambda *_: "2026-09-21")
     monkeypatch.setattr(repair, "_coverage", lambda *_: {
         "complete": False, "first_missing": "2026-09-18", "present": 2,
-        "latest": "2026-09-21", "missing": 1, "reason": "MISSING_BYMA_SESSIONS"})
+        "latest": "2026-09-21", "missing": 1, "attested_days": frozenset(),
+        "reason": "MISSING_BYMA_SESSIONS"})
     monkeypatch.setattr(repair, "_record_exact", lambda *a: None)
     monkeypatch.setattr(repair, "_ingest", lambda *a, **k: (1, "2026-09-21"))
     monkeypatch.setattr(repair.time, "sleep", lambda _: None)
@@ -600,7 +663,8 @@ def test_gap_flag_without_scanner_reader_cannot_authenticate_or_use_ppi(tmp_path
     monkeypatch.setattr(repair, "_latest", lambda *_: None)
     monkeypatch.setattr(repair, "_coverage", lambda *_: {
         "complete": False, "first_missing": None, "present": 0,
-        "latest": None, "missing": 0, "reason": "NO_VALID_HISTORY"})
+        "latest": None, "missing": 0, "attested_days": frozenset(),
+        "reason": "NO_VALID_HISTORY"})
     monkeypatch.setattr(guard, "ProductionMarketReader", lambda *_: (_ for _ in ()).throw(
         AssertionError("SECOND_PPI_CLIENT_FORBIDDEN")))
     monkeypatch.setenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "APPROVED")
@@ -626,7 +690,8 @@ def test_shared_reader_never_performs_unreserved_history_get(tmp_path, monkeypat
     monkeypatch.setattr(repair, "_latest", lambda *_: "2026-09-20")
     monkeypatch.setattr(repair, "_coverage", lambda *_: {
         "complete": False, "first_missing": "2026-09-21", "present": 1,
-        "latest": "2026-09-20", "missing": 1, "reason": "CUTOFF_NOT_REACHED"})
+        "latest": "2026-09-20", "missing": 1, "attested_days": frozenset(),
+        "reason": "CUTOFF_NOT_REACHED"})
     monkeypatch.setenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", "APPROVED")
     monkeypatch.delenv("RC6_HISTORY_QUARANTINE_REPEATED_PPI", raising=False)
 
@@ -666,7 +731,8 @@ def test_quarantine_flag_cannot_turn_unverified_cutoff_into_complete(tmp_path, m
     monkeypatch.setattr(repair, "_latest", lambda *_: None)
     monkeypatch.setattr(repair, "_coverage", lambda *_: {
         "complete": False, "first_missing": None, "present": 0,
-        "latest": None, "missing": 0, "reason": "NO_VALID_HISTORY"})
+        "latest": None, "missing": 0, "attested_days": frozenset(),
+        "reason": "NO_VALID_HISTORY"})
     monkeypatch.delenv("RC6_HISTORY_ALLOW_PPI_GAP_REPAIR", raising=False)
     monkeypatch.setenv("RC6_HISTORY_QUARANTINE_REPEATED_PPI", "APPROVED")
 

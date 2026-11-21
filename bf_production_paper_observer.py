@@ -36,6 +36,7 @@ from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
 from rc6_ppi_global_budget import assert_native_ppi_response_identity
 from co_market_sessions_hf6 import byma_eod_publication_floor
+from scripts.rc6_history_cutoff_repair_once import CUTOFF as HISTORY_CUTOFF
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -2319,7 +2320,8 @@ def _history_cutoff_repair_complete() -> bool:
             if not exists:
                 return False
             row = c.execute(
-                "SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'"
+                "SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff=?",
+                (HISTORY_CUTOFF.isoformat(),),
             ).fetchone()
             return bool(row and str(row[0]).upper() == "COMPLETE")
     except (sqlite3.Error, OSError):
@@ -2340,6 +2342,13 @@ def _history_end_date(now=None):
     return day if day.year == BYMA_CALENDAR_AUDITED_YEAR else None
 
 
+def _history_daily_session(now):
+    day = _history_end_date(now)
+    if day is not None and day > HISTORY_CUTOFF and day == now.astimezone(TZ).date():
+        return day
+    return None
+
+
 def _history_repair_lock_path(history_store):
     return Path(history_store.path).parent / ".rc6-history-cutoff-repair.lock"
 
@@ -2353,11 +2362,9 @@ def _history_migration_blocked(store, reason):
     return 0
 
 
-def _download_histories(reader, store, *, incremental_only=False):
-    # The one-time cutoff repair must finish before scheduled PPI history writes.
-    # This prevents startup/manual sync from repeating an annual request or racing
-    # the resumable importer.
-    if not _history_cutoff_repair_complete():
+def _download_histories(reader, store, *, incremental_only=False, session_only=False):
+    """Keep date-range recovery behind the annual cutoff and share its write lock."""
+    if not session_only and not _history_cutoff_repair_complete():
         return 0
     from cv_history_store_adapter_hf6 import default_history_store
     history_store = default_history_store()
@@ -2379,7 +2386,8 @@ def _download_histories(reader, store, *, incremental_only=False):
             # limit for smaller sources; fail closed on the actual schema.
             try:
                 return _download_histories_locked(reader, store, history_store,
-                                                  incremental_only=incremental_only)
+                                                  incremental_only=incremental_only,
+                                                  session_only=session_only)
             except ValueError as exc:
                 if str(exc) in {"HISTORY_COPY_MIGRATION_REQUIRED",
                                 "HISTORY_CLOSE_COPY_MIGRATION_REQUIRED",
@@ -2438,55 +2446,77 @@ def _history_covered_target_count(connection, targets):
 
 
 def _verified_ppi_eod_keys(history_store, exact_keys, session, at):
-    """Count only genuine same-session, five-key PPI RAW EOD publications.
+    """Find genuine same-session, five-key PPI RAW EOD publications.
 
     Request dates and historical coverage cannot substitute for the actual
     stored source, RAW basis and postclose version-known timestamp.
     """
     if at.tzinfo is None or at.utcoffset() is None:
-        return 0
+        return set()
     now = at.astimezone(TZ)
     if now.date() != session:
-        return 0
+        return set()
     floor = byma_eod_publication_floor(now)
     if now < floor:
-        return 0
-    verified = 0
+        return set()
+    from ct_ppi_history_salvage_hf6 import VERIFIED_PPI_HISTORY_CONTRACTS
+
+    verified = set()
     with history_store.connect() as conn:
         for identity in dict.fromkeys(exact_keys):
             if len(identity) != 5:
                 continue
-            rows = conn.execute("""SELECT source,version_known_at
+            rows = conn.execute("""SELECT source,version_known_at,metadata_json
               FROM history_canonical_v2 WHERE symbol=? AND instrument_type=?
                 AND market=? AND currency=? AND settlement=? AND date=?
-                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT'""",
+                AND price_basis='RAW' AND adjustment_basis='RAW_NO_ADJUSTMENT' AND adjusted=0""",
                 (*identity, session.isoformat())).fetchall()
             # Canonical full-key+date RAW identity is unique in the actual
             # schema. Any duplicate or missing record means no source proof.
             if len(rows) != 1 or rows[0][0] != "PPI_PRODUCTION_HISTORY":
                 continue
             try:
+                metadata = json.loads(rows[0][2])
+                if (not isinstance(metadata, dict)
+                        or metadata.get("history_quality") not in {"FULL_OHLC", "FULL_OHLCV"}
+                        or metadata.get("provider_contract_id") not in VERIFIED_PPI_HISTORY_CONTRACTS):
+                    continue
                 known = datetime.fromisoformat(str(rows[0][1]).replace("Z", "+00:00"))
                 if known.tzinfo and known.utcoffset() is not None and floor <= known <= now:
-                    verified += 1
+                    verified.add(identity)
             except (TypeError, ValueError):
                 continue
     return verified
 
 
-def _download_histories_locked(reader, store, history_store, *, incremental_only=False):
-    end = _history_end_date()
+def _download_histories_locked(reader, store, history_store, *,
+                               incremental_only=False, session_only=False):
+    retention_now = datetime.now(TZ)
+    end = _history_daily_session(retention_now) if session_only else _history_end_date()
     if end is None:
         return 0
-    from rc6_data_retention import bounded_daily_start
-    retention_now = datetime.now(TZ)
-    import cu_history_store_v2_hf6 as history_v2
     import ct_ppi_history_salvage_hf6 as history_salvage
+
+    if session_only:
+        # The shared cutoff lock is held here. Persist the existing per-day
+        # attempt before a GET so a restarted scanner cannot repeat the batch.
+        if not _source_sync_due(store, "PPI_PRODUCTION_HISTORY", retention_now):
+            return 0
+        if not history_salvage.VERIFIED_PPI_HISTORY_CONTRACTS:
+            detail = f"session_requested={end.isoformat()}; HISTORY_PROVENANCE_UNVERIFIED"
+            _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0, detail)
+            _health(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", detail, "PPI Producción")
+            return 0
+        _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0,
+                    f"session_requested={end.isoformat()}; HISTORY_SESSION_ATTEMPT_STARTED")
+    from rc6_data_retention import bounded_daily_start
+    import cu_history_store_v2_hf6 as history_v2
     import cq_history_attempt_ledger_hf6 as history_ledger
     history_v2.init_schema(history_store)
     history_ledger.init_schema(store)
     total, batch_statuses = 0, []
     exact_targets, requests = [], []
+    already_verified = 0
     for target in _historical_targets(store):
         resolved=_exact_history_target(store,target)
         if resolved is None:
@@ -2497,6 +2527,9 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
         if identity in exact_targets:
             continue
         exact_targets.append(identity)
+        if session_only:
+            requests.append((identity, end, end, metadata))
+            continue
         symbol,family,market,currency,settlement=identity
         with history_store.connect() as c:
             row=c.execute("""SELECT MAX(date) FROM history_canonical_v2
@@ -2514,6 +2547,11 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
         if start<=end:
             request_end=min(end,start+timedelta(days=29)) if incremental_only else end
             requests.append((identity,start,request_end,metadata))
+    if session_only:
+        verified = _verified_ppi_eod_keys(history_store, exact_targets, end, retention_now)
+        requests = [request for request in requests if request[0] not in verified]
+        already_verified = len(verified)
+
     from bl_candle_engine import canonical
     from fb_raw_evidence_exact_v1 import enabled as exact_enabled, archive_wrapper as archive_exact
     for identity,start,request_end,metadata in requests[:HISTORY_BATCH_LIMIT]:
@@ -2577,13 +2615,14 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
                 metadata={'market':market,'currency':currency,'identity':list(identity),
                           'guard_reason':reason,'readiness_implication':'NONE'}))
             store.event('HISTORY_V2_ERROR',f'{symbol}: {reason}')
-    with history_store.connect() as c:
-        coverage=history_v2.coverage_inventory(c,exact_targets,as_of=now_iso(),
-            consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
     # Certify only the bounded exact-key batch requested in this cycle.
     # Neither a requested end date nor global historical coverage proves EOD.
     batch_keys=[identity for identity,_,_,_ in requests[:HISTORY_BATCH_LIMIT]]
-    exact_eod=_verified_ppi_eod_keys(history_store,batch_keys,end,datetime.now(TZ))
+    with history_store.connect() as c:
+        coverage=history_v2.coverage_inventory(
+            c, batch_keys if session_only else exact_targets, as_of=now_iso(),
+            consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
+    exact_eod=len(_verified_ppi_eod_keys(history_store,batch_keys,end,datetime.now(TZ)))
     exact_required=len(batch_keys)
     current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
@@ -2601,6 +2640,7 @@ def _download_histories_locked(reader, store, history_store, *, incremental_only
         f"suficientes30={coverage['sufficient']}; faltantes={coverage['missing']}; "
         f"cohort={coverage['cohort_sha256']}; consumer={coverage['consumer']}; "
         f"cut={coverage['as_of']}; session_requested={coverage['session']}; readiness=NONE; "
+        f"same_session_already_verified={already_verified}; "
         f"by_currency={json.dumps(coverage['by_currency'],sort_keys=True)}; "
         f"{total} filas FULL_OHLC válidas hasta {end.isoformat()}.")
     usable=bool(semantics['usable'] and current_session_verified and state=='VERDE')
@@ -2646,17 +2686,10 @@ def _source_sync_due(store, source, now=None):
 
 
 def _history_daily_sync_due(store, now=None):
-    """History is due only when it is actually eligible to advance.
-
-    Before market close (or while the one-time cutoff repair is incomplete),
-    stale history metadata must not force another full PPI catalog download.
-    """
+    """The current session can advance independently of prior data gaps."""
     now = now or datetime.now(TZ)
-    if _history_end_date(now) is None:
-        return False
-    if not _history_cutoff_repair_complete():
-        return False
-    return _source_sync_due(store, "PPI_PRODUCTION_HISTORY", now)
+    return (_history_daily_session(now) is not None
+            and _source_sync_due(store, "PPI_PRODUCTION_HISTORY", now))
 
 
 def _daily_sync_needed(store, now=None):
@@ -2689,7 +2722,7 @@ def _daily_sync(reader, store, now=None):
         return
     try:
         catalog = _download_catalog(reader, store) if catalog_due else 0
-        histories = _download_histories(reader, store) if history_due else 0
+        histories = _download_histories(reader, store, session_only=True) if history_due else 0
         store.event(
             "DAILY_READONLY_SYNC",
             f"{catalog} instrumentos; {histories} filas históricas; "
@@ -2737,7 +2770,7 @@ def _background_ingest(reader, store, *, force=False):
     if not _background_ingest_due(store):
         return None
     try:
-        rows = _download_histories(reader, store)
+        rows = _download_histories(reader, store, session_only=True)
         with store.connect() as connection:
             source = connection.execute("""SELECT status,detail FROM source_sync
               WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()

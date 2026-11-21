@@ -33,6 +33,11 @@ _HISTORY_TRADING_WITHOUT_SETTLEMENT = frozenset({
     date(2025, 11, 6), date(2025, 11, 21), date(2025, 12, 24),
     date(2026, 3, 23), date(2026, 7, 10),
 })
+# BYMA published T+1 trades of Nov 21 settling on Nov 25, and
+# communiqué 18897 documents Contado 24 h on Dec 24.
+_HISTORY_ATTESTED_T1_WITHOUT_SAME_DAY_SETTLEMENT = frozenset({
+    date(2025, 11, 21), date(2025, 12, 24),
+})
 
 
 def estado_negociacion_fuente_byma(dia: date, *, market: str,
@@ -63,8 +68,8 @@ def estado_negociacion_historica_byma(dia: date, *, market: str,
             or market != "BYMA" or family not in {"ACCIONES", "CEDEARS"}):
         return "UNVERIFIED"
     if dia in _HISTORY_TRADING_WITHOUT_SETTLEMENT:
-        # BYMA 18897 explicitly documents Contado 24 h on 24-Dec-2025.
-        if dia == date(2025, 12, 24) and settlement in BYMA_T1_EXACT_SETTLEMENTS:
+        if (dia in _HISTORY_ATTESTED_T1_WITHOUT_SAME_DAY_SETTLEMENT
+                and settlement in BYMA_T1_EXACT_SETTLEMENTS):
             return "LIMITED_T1_SOURCE_ONLY"
         return "LIMITED_SETTLEMENT_UNVERIFIED"
     if dia.year == 2025:
