@@ -370,9 +370,9 @@ def test_missing_legacy_archive_db_is_never_created_by_readonly_fallback(tmp_pat
     assert not store.path.exists()
 
 
-@pytest.mark.parametrize("preexisting_cutoff_row", [False, True])
+@pytest.mark.parametrize("preexisting_day", [None, "2026-09-21", "2026-09-22"])
 def test_main_replays_legacy_archive_without_login_and_records_archive_provenance(
-        tmp_path, monkeypatch, preexisting_cutoff_row):
+        tmp_path, monkeypatch, preexisting_day):
     import cg_paper_workspace as workspace
     import fb_raw_evidence_exact_v1 as exact
 
@@ -381,14 +381,13 @@ def test_main_replays_legacy_archive_without_login_and_records_archive_provenanc
     _archive_table(store)
     _archive_attempt(store, body=_ppi_wrapper(close=105))
     _canonical_table(store)
-    if preexisting_cutoff_row:
-        _canonical_row(store, identity)
+    if preexisting_day:
+        _canonical_row(store, identity, day=preexisting_day)
     monkeypatch.setattr(repair, "LOCK_PATH", tmp_path / "repair.lock")
     monkeypatch.setattr(repair, "_history_store", lambda: store)
     monkeypatch.setattr(workspace, "runtime_store", lambda: store)
     monkeypatch.setattr(exact, "manifest_path", lambda: tmp_path / "external-missing.db")
     monkeypatch.setattr(repair, "_targets", lambda _: [identity])
-    monkeypatch.setattr(repair, "_latest", lambda *_: "2026-09-21" if preexisting_cutoff_row else None)
     calls = []
 
     def ingest(_, __, key, payload, start, *, source, observed_at):
@@ -402,13 +401,14 @@ def test_main_replays_legacy_archive_without_login_and_records_archive_provenanc
 
     assert repair.main() == 1
     assert calls == [(identity, [{"date": "2026-09-21", "close": 105}],
-                      (repair.BOOTSTRAP_START.isoformat() if preexisting_cutoff_row else "2026-09-21"),
+                      (repair.BOOTSTRAP_START.isoformat() if preexisting_day == "2026-09-21" else "2026-09-21"),
                       "PPI_ARCHIVE", "2026-09-22T10:00:00+00:00")]
     with store.connect() as db:
         run = db.execute("SELECT state,archive_imports,ppi_queries,complete,failed FROM rc6_history_cutoff_repair_runs").fetchone()
         exact_state = db.execute("SELECT state,source FROM rc6_history_cutoff_repair_exact_v2").fetchone()
     assert run == ("PARTIAL", 1, 0, 0, 1)
     assert exact_state == ("ARCHIVE_PARTIAL_COVERAGE", "PPI_ARCHIVE")
+    assert repair._latest(store, identity) == "2026-09-21"
 
 
 def test_one_cutoff_day_does_not_prove_required_history_baseline(tmp_path):

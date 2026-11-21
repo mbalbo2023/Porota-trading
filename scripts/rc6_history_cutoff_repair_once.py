@@ -114,13 +114,14 @@ def _live_identity_unambiguous(targets, identity):
 
 
 def _latest(db, identity) -> str | None:
-    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
+    key = _exact_key(identity)
     with db.connect() as c:
         row = c.execute(
             """SELECT MAX(date) FROM history_canonical_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
-                 AND currency=? AND price_basis=? AND adjustment_basis=?""",
-            _exact_key(identity),
+                 AND currency=? AND price_basis=? AND adjustment_basis=?
+                 AND date BETWEEN ? AND ?""",
+            (*key, BOOTSTRAP_START.isoformat(), CUTOFF.isoformat()),
         ).fetchone()
     return str(row[0])[:10] if row and row[0] else None
 
