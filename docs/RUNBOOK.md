@@ -1,5 +1,10 @@
 # Porota RC6 — procedimiento de trabajo y release
 
+
+**Actualización de continuidad 20-Nov-2026 22:25 ART (21-Nov UTC):** el punto de entrada de release es la [ADENDA PRIORITARIA A678 y camino G0–G8 del handoff existente](RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md), luego últimos comentarios de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). [Predeploy #44849786845](https://github.com/mbalbo2023/Porota-trading/actions/runs/44849786845) del SHA 20c91228 de #1213 **FAILED** en la primera lectura AF_UNIX A678 (AssertionError, línea813, OOM0), sin artifact. No es una nueva autorización de promover un SHA rojo; usar el MISMO #1213 y owner existente para RCA/fix-forward. No abrir otro runner, Gateway, reparador ni PR producto. Documentos anteriores al corte mantienen evidencia histórica, no estado vivo.
+
+
+
 Este procedimiento aplica al alcance autorizado por el usuario. Las reglas
 estables están en [AGENTS.md](../AGENTS.md) y la
 [política estructurada](../ops/policy/porota-policy.yaml). El historial sirve para
