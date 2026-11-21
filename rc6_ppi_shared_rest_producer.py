@@ -235,6 +235,10 @@ class MarketOnlyRESTProducer:
                 "real_orders_sent_by_producer": 0,
                 "extra_provider_calls_outside_guard": 0,
                 "native_receipt": result,
+                # Observed HTTPAdapter.send witness from the SAME source
+                # call, never reconstructed from a cached quote. Consumers
+                # need it for P0 native wire provenance; not PPI-signed.
+                "guard_wire_receipt": json.loads(_canonical_bytes(source["guard_wire_receipt"])),
                 "raw_sha256": raw_sha, "catalog_source_digest": self._catalog_digest}
 
 

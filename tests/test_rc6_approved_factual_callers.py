@@ -173,6 +173,8 @@ def test_self_hash_approval_cannot_promote_native_scanner_or_scalping(wire, tmp_
 
 
 def test_actual_scalping_worker_denies_fake_budget_and_cold_hypothesis_cannot_open(wire, tmp_path, monkeypatch):
+    import rc6_ppi_gateway_reader_adapter as gateway
+
     values = approved(wire)
     warm, assets, at = shadow_selection(values)
     store = native_store(tmp_path, assets, at)
@@ -188,33 +190,45 @@ def test_actual_scalping_worker_denies_fake_budget_and_cold_hypothesis_cannot_op
     clock, calls, _ = wire
     clock.advance((at - clock.now()).total_seconds())
     arbiter = RuntimePPIBudget(store.path, ctl, clock=clock.now)
-    actual_reader = readonly.ProductionMarketReader
-    readers = []
-    def factory(*args, **kwargs):
-        reader = actual_reader(*args, **kwargs, budget=arbiter)
-        readers.append(reader)
-        return reader
+    owner_reader = readonly.ProductionMarketReader(
+        "LOCAL_FAKE_KEY", "LOCAL_FAKE_SECRET", budget=arbiter, consumer="SCALPING")
+    attachments = []
+
+    def fake_gateway_connect(database, *, consumer):
+        attachments.append((database, consumer))
+        return owner_reader
+
     class Stop:
-        stopped = False
-        waits = []
+        def __init__(self):
+            self.stopped = False
+            self.waits = []
+
         def is_set(self):
             return self.stopped
+
         def wait(self, seconds):
             self.waits.append(seconds)
-            if seconds >= 30:
+            if seconds >= 20 or len(self.waits) > scalping.DEFAULT_INTRADAY_BATCH_LIMIT:
                 self.stopped = True
+
     stop = Stop()
     monkeypatch.setattr(promotion, "capacity_controller_from_environment", lambda database=None: ctl)
-    monkeypatch.setattr(readonly, "ProductionMarketReader", factory)
-    monkeypatch.setattr(observer, "_secret", lambda: ("LOCAL_FAKE_KEY", "LOCAL_FAKE_SECRET"))
+    monkeypatch.setattr(gateway, "connect_paper_gateway_reader", fake_gateway_connect)
     monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
     def forbidden_broker(*args, **kwargs):
         raise AssertionError("cold promoted basket invoked the PAPER broker")
     import bv_paper_runtime
     monkeypatch.setattr(bv_paper_runtime, "broker_from_environment", forbidden_broker)
     before = len(calls)
-    scalping.run_worker(store, stop, clock_fn=clock.now)
-    assert len(readers) == 1 and stop.waits[-1] >= 30
+    try:
+        # Authenticate the fixture owner before running its consumer.
+        owner_reader.login_once()
+        before_worker = len(calls)
+        scalping.run_worker(store, stop, clock_fn=clock.now)
+    finally:
+        owner_reader.close()
+    assert attachments == [(store.path, "scalping")] and stop.waits[-1] >= 30
+    assert len(calls) == before_worker
     native_wire = calls[before:]
     # Authentication is not a GET lease; no synthetic proof may trigger a
     # provider market-data read or create a dynamic-budget sidecar.

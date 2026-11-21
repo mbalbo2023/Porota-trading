@@ -19,26 +19,142 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import copy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
+import os
+from pathlib import Path
 import re
 import threading
+import time
 from typing import Any, Callable
 
-from rc6_ppi_shared_feed import SCHEMA, SharedFeedUnavailable
+from rc6_ppi_shared_feed import (
+    SCHEMA, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer,
+    SharedFeedUnavailable,
+)
 
 
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _WORD = re.compile(r"[A-Z0-9][A-Z0-9./_-]{0,63}\Z")
 _PRIORITIES = frozenset((
-    "DISCOVERY", "WARM", "HOT", "OPENED_CRITICAL", "EXIT_CRITICAL", "WATCH_CRITICAL"
+    "DISCOVERY", "WARM", "HOT", "STRATEGY_HOT", "SCALPING_HOT",
+    "OPENED_CRITICAL", "EXIT_CRITICAL", "WATCH_CRITICAL"
 ))
 _CONSUMERS = frozenset(("scanner", "exit_reader", "scalping", "watch"))
 
 
 class GatewayEvidenceRejected(RuntimeError):
     """A source/data-method precondition is missing; no alternate PPI GET."""
+
+
+_REATTACH_ONLY_CODES = frozenset({
+    "PPI_GATEWAY_OWNER_CHANGED", "PPI_GATEWAY_UNAVAILABLE",
+    "PPI_GATEWAY_OWNER_UNVERIFIED", "PPI_GATEWAY_PEER_IDENTITY_UNAVAILABLE",
+    "PPI_GATEWAY_PEER_IDENTITY_MISMATCH", "PPI_GATEWAY_PROTOCOL_INVALID",
+    "PPI_NATIVE_ACQUIRE_ENVELOPE_INVALID", "PPI_AUX_RPC_ENVELOPE_INVALID",
+    "PPI_GATEWAY_OWNER_NOT_PINNED", "PPI_NATIVE_HTTP_401", "PPI_NATIVE_HTTP_403",
+    "PPI_AUX_HTTP_401", "PPI_AUX_HTTP_403",
+})
+
+
+def gateway_reader_needs_reattach(error: BaseException) -> bool:
+    """Only a lost owner/authorization causes a local reconnect, never login.
+
+    A 429 or an unknown in-flight GET must not trigger immediate provider
+    retry. Reattachment only constructs a new AF_UNIX adapter after bounded
+    cooldown; the child still owns no SDK/credentials.
+    """
+    return (isinstance(error, (SharedFeedUnavailable, GatewayEvidenceRejected))
+            and str(error).split(":", 1)[0] in _REATTACH_ONLY_CODES)
+
+
+def gateway_socket_path(database) -> Path:
+    """Same private PAPER workspace location for all sibling processes."""
+    from cg_paper_workspace import artifact_root
+    return artifact_root(database) / "ppi-gateway" / "market.sock"
+
+
+def local_gateway_owner_custody(status: dict) -> dict:
+    """Sanitized local evidence, EXPLICITLY NOT global/session authority.
+
+    Only `ReadOnlyUnixFeedClient.owner_status()` is allowed to supply live
+    status in production, after SO_PEERCRED kernel PID comparison. This pure
+    validator never substitutes for provider-side login inventory or physical
+    secret isolation across rootless observer children and legacy scripts.
+    """
+    if (not isinstance(status, dict) or status.get("state") != "OPEN"
+            or type(status.get("owner_pid")) is not int
+            or status["owner_pid"] <= 0
+            or not _SHA.fullmatch(str(status.get("session_generation")))
+            or status.get("login_invocations_by_owner") != 1
+            or status.get("guard_login_wire_attempts") != 1):
+        raise SharedFeedUnavailable("PPI_GATEWAY_LOCAL_CUSTODY_UNVERIFIED")
+    roles = status.get("registered_clients")
+    if not isinstance(roles, dict) or set(roles) - {
+            "scanner", "exit_reader", "scalping"}:
+        raise SharedFeedUnavailable("PPI_GATEWAY_ROLE_CENSUS_UNVERIFIED")
+    for role, data in roles.items():
+        if (not isinstance(data, dict) or set(data) != {"pid", "proc_starttime"}
+                or ReadOnlyUnixFeedServer.process_starttime(data.get("pid"))
+                != data.get("proc_starttime")):
+            raise SharedFeedUnavailable("PPI_GATEWAY_ROLE_CENSUS_UNVERIFIED")
+    child_pids = {data["pid"] for data in roles.values()}
+    distinct_three_children = (
+        set(roles) == {"scanner", "exit_reader", "scalping"}
+        and len(child_pids) == 3 and status["owner_pid"] not in child_pids)
+    return {"schema": "rc6.ppi.local-owner-custody.v1",
+            "state": "LOCAL_OWNER_OBSERVED",
+            "owner_pid": status["owner_pid"],
+            "session_generation": status["session_generation"],
+            "login_invocations_by_owner": 1,
+            "guard_login_wire_attempts": 1,
+            "guard_http_allowed": status.get("guard_http_allowed"),
+            "guard_http_blocked": status.get("guard_http_blocked"),
+            "registered_roles": tuple(sorted(roles)),
+            "role_processes": {role: dict(data) for role, data in roles.items()},
+            "three_roles_registered_locally": distinct_three_children,
+            "global_single_session_custody": "NO_VERIFICADO",
+            "other_ppi_login_processes": "NO_VERIFICADO",
+            "credential_isolation": "NO_VERIFICADO",
+            "provider_signed_session": False,
+            "provider_quota": "UNKNOWN", "paper_ready": False,
+            "real_order_routes_exposed": False}
+
+
+def gateway_owner_custody(database) -> dict:
+    """Host/child read-only live probe; no SDK, secrets, or role registration."""
+    client = ReadOnlyUnixFeedClient(
+        socket_path=gateway_socket_path(database), timeout_seconds=2)
+    return local_gateway_owner_custody(client.owner_status())
+
+
+def connect_paper_gateway_reader(database, *, consumer: str):
+    """Connect to the existing peer-PID owner, never read PPI credentials."""
+    client = ReadOnlyUnixFeedClient(
+        socket_path=gateway_socket_path(database), timeout_seconds=5)
+    pid = os.getpid()
+    starttime = ReadOnlyUnixFeedServer.process_starttime(pid)
+    if starttime is None:
+        raise SharedFeedUnavailable("PPI_GATEWAY_CLIENT_PID_STARTTIME_UNVERIFIED")
+    # The parent may still be registering a newly spawned child. Bounded
+    # wait, zero SDK/login/GET; unregistered or changed PID always HOLD.
+    deadline = time.monotonic() + 5
+    while True:
+        status = client.owner_status()  # kernel SO_PEERCRED pins server PID
+        registered = (status.get("registered_clients") or {}).get(consumer)
+        if registered == {"pid": pid, "proc_starttime": starttime}:
+            break
+        if time.monotonic() >= deadline:
+            raise SharedFeedUnavailable("PPI_GATEWAY_CLIENT_ROLE_NOT_REGISTERED")
+        time.sleep(.2)
+    if status.get("guard_login_wire_attempts") != 1:
+        raise SharedFeedUnavailable("PPI_GATEWAY_SINGLE_LOGIN_WIRE_UNVERIFIED")
+    reader = SharedPPIReaderAdapter(
+        client=client, consumer=consumer,
+        catalog_source_digest=status.get("catalog_source_digest"))
+    reader.login_once()  # second identity query must preserve PID/generation
+    return reader
 
 
 def _sha256(value: Any) -> str:
@@ -108,12 +224,25 @@ class SharedPPIReaderAdapter:
         self._state = "NO_VERIFICADO"
         self._last_error = None
         self._closed = False
+        self._gateway_pinned = False
+        self._owner_identity = None
         self._lock = threading.RLock()
         self._scope = threading.local()
 
     @property
     def metrics(self) -> dict:
         with self._lock:
+            guard_allowed = guard_blocked = 0
+            if self._gateway_pinned:
+                status = self._client.owner_status()
+                if ((status.get("owner_pid"), status.get("session_generation"))
+                        != self._owner_identity):
+                    raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
+                guard_allowed = status.get("guard_http_allowed")
+                guard_blocked = status.get("guard_http_blocked")
+                if (type(guard_allowed) is not int or guard_allowed < 0
+                        or type(guard_blocked) is not int or guard_blocked < 0):
+                    raise SharedFeedUnavailable("PPI_GATEWAY_GUARD_METRICS_UNVERIFIED")
             return {
                 "schema": SCHEMA,
                 "consumer": self._consumer,
@@ -121,18 +250,27 @@ class SharedPPIReaderAdapter:
                 "cursor": self._cursor,
                 "retained": len(self._events),
                 "paper_authority": "NO_VERIFICADO",
-                "authenticated": False,
-                "budget_enabled": False,
-                "provider_requests": 0,
+                "authenticated": self._gateway_pinned,
+                "authentication_witness": "LOCAL_OWNER_PID_GENERATION_ONLY",
+                "budget_enabled": self._gateway_pinned,
+                "provider_requests": "UNKNOWN" if self._gateway_pinned else 0,
+                "consumer_direct_http": 0,
+                "http_allowed": guard_allowed,
+                "http_blocked": guard_blocked,
             }
 
     @property
     def budget_enabled(self) -> bool:
-        return False
+        return self._gateway_pinned
 
     @property
     def last_read_error_code(self):
         return self._last_error
+
+    def gateway_owner_custody(self) -> dict:
+        if not isinstance(self._client, ReadOnlyUnixFeedClient):
+            raise GatewayEvidenceRejected("PPI_GATEWAY_PEERCRED_NOT_VERIFIED")
+        return local_gateway_owner_custody(self._client.owner_status())
 
     @contextmanager
     def read_scope(self, *, priority: str | None = None, identity=None):
@@ -165,37 +303,178 @@ class SharedPPIReaderAdapter:
         raise GatewayEvidenceRejected(self._last_error + ":" + method)
 
     def login_once(self) -> None:
-        """A responsive Unix socket is NOT authenticated producer evidence."""
-        self._last_error = "PPI_GATEWAY_AUTH_ATTESTATION_MISSING"
-        raise GatewayEvidenceRejected(self._last_error)
+        """Pin the one authenticated owner; never import SDK or log in here."""
+        if self._closed:
+            raise GatewayEvidenceRejected("PPI_GATEWAY_ADAPTER_CLOSED")
+        if self._gateway_pinned:
+            return
+        witness = getattr(self._client, "owner_status", None)
+        if not callable(witness):
+            self._last_error = "PPI_GATEWAY_AUTH_ATTESTATION_MISSING"
+            raise GatewayEvidenceRejected(self._last_error)
+        try:
+            result = witness()
+        except SharedFeedUnavailable as exc:
+            self._last_error = str(exc)
+            raise
+        if (not isinstance(result, dict) or result.get("state") != "OPEN"
+                or result.get("catalog_source_digest") != self._source_digest
+                or type(result.get("owner_pid")) is not int
+                or result["owner_pid"] <= 0
+                or not _SHA.fullmatch(str(result.get("session_generation")))
+                or result.get("login_invocations_by_owner") != 1
+                or result.get("guard_login_wire_attempts") != 1):
+            self._last_error = "PPI_GATEWAY_AUTH_ATTESTATION_MISSING"
+            raise GatewayEvidenceRejected(self._last_error)
+        self._owner_identity = (result["owner_pid"], result["session_generation"])
+        self._gateway_pinned = True
+        self._state = "OWNER_PINNED_OBSERVE_ONLY"
+
+    def _native(self, method: str, ticker: str, instrument_type: str,
+                settlement: str, *, include_guard=False):
+        if not self._gateway_pinned:
+            return self._native_unavailable(method.upper(), (ticker, instrument_type, settlement))
+        if self._closed:
+            self._last_error = "PPI_GATEWAY_ADAPTER_CLOSED"
+            raise GatewayEvidenceRejected(self._last_error)
+        scope = getattr(self._scope, "request", None)
+        if (scope is None or scope[0] is None
+                or scope[1] is None):
+            self._last_error = "PPI_GATEWAY_EXACT_IDENTITY_REQUIRED"
+            raise GatewayEvidenceRejected(self._last_error)
+        key, priority = scope
+        if (ticker, instrument_type, settlement) != (key[0], key[1], key[4]):
+            self._last_error = "PPI_GATEWAY_IDENTITY_MISMATCH"
+            raise GatewayEvidenceRejected(self._last_error)
+        try:
+            response = self._client.acquire_native(
+                self._consumer, method=method, five_key=key, priority=priority)
+        except SharedFeedUnavailable as exc:
+            self._state = "HOLD"
+            self._last_error = str(exc)
+            raise
+        if (not isinstance(response, dict) or response.get("state") != "OK"
+                or not isinstance(response.get("receipt"), dict)
+                or "raw_payload" not in response["receipt"]):
+            self._last_error = (response.get("state") if isinstance(response, dict)
+                                else "PPI_NATIVE_ACQUIRE_RESPONSE_INVALID")
+            self._state = "HOLD"
+            raise GatewayEvidenceRejected(self._last_error)
+        self._last_error = None
+        if include_guard:
+            if not isinstance(response.get("guard_wire_receipt"), dict):
+                self._last_error = "PPI_GATEWAY_GUARD_WITNESS_MISSING"
+                raise GatewayEvidenceRejected(self._last_error)
+            return copy.deepcopy(response)
+        return copy.deepcopy(response["receipt"]["raw_payload"])
 
     def current(self, ticker: str, instrument_type: str, settlement: str):
-        return self._native_unavailable("CURRENT", (ticker, instrument_type, settlement))
+        return self._native("current", ticker, instrument_type, settlement)
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
-        return self._native_unavailable("NATIVE_BOOK", (ticker, instrument_type, settlement))
+        return self._native("book", ticker, instrument_type, settlement)
 
     def intraday(self, ticker: str, instrument_type: str, settlement: str):
-        return self._native_unavailable("INTRADAY", (ticker, instrument_type, settlement))
+        return self._native("intraday", ticker, instrument_type, settlement)
+
+    def capture_guarded_native(self, endpoint: str, five_key, *, priority="HOT"):
+        """P0 original RAW SDK and observed adapter-send witness, never forged."""
+        if endpoint not in {"current", "book", "intraday"}:
+            raise GatewayEvidenceRejected("PPI_GATEWAY_NATIVE_ENDPOINT_DENIED")
+        key = _five_key(five_key)
+        with self.read_scope(priority=priority, identity=key):
+            response = self._native(endpoint, key[0], key[1], key[4],
+                                    include_guard=True)
+        return {"native_payload": copy.deepcopy(response["receipt"]["raw_payload"]),
+                "guard_wire_receipt": copy.deepcopy(response["guard_wire_receipt"])}
+
+    def _auxiliary(self, method: str, args: dict):
+        if not self._gateway_pinned:
+            return self._native_unavailable(method.upper())
+        if self._closed:
+            self._last_error = "PPI_GATEWAY_ADAPTER_CLOSED"
+            raise GatewayEvidenceRejected(self._last_error)
+        try:
+            response = self._client.acquire_auxiliary(
+                self._consumer, method=method, args=args)
+        except SharedFeedUnavailable as exc:
+            self._state = "HOLD"
+            self._last_error = str(exc)
+            raise
+        if not isinstance(response, dict) or response.get("state") != "OK":
+            self._state = "HOLD"
+            self._last_error = (response.get("state") if isinstance(response, dict)
+                                else "PPI_AUX_ACQUIRE_RESPONSE_INVALID")
+            raise GatewayEvidenceRejected(self._last_error)
+        self._last_error = None
+        return copy.deepcopy(response["result"])
 
     def history(self, ticker: str, instrument_type: str, settlement: str, date_from, date_to):
-        return self._native_unavailable("HISTORY", (ticker, instrument_type, settlement))
+        return self._auxiliary("history", {"ticker": ticker,
+            "instrument_type": instrument_type, "settlement": settlement,
+            "date_from": date_from.isoformat() if isinstance(date_from, date) else date_from,
+            "date_to": date_to.isoformat() if isinstance(date_to, date) else date_to})
 
     def search_instruments(self, ticker: str, instrument_type: str,
                            name: str | None = None, market: str = "BYMA"):
-        return self._native_unavailable("SEARCH")
+        if (str(ticker).strip().upper() == "CAUCION"
+                and str(instrument_type).strip().upper() == "CAUCIONES"
+                and str(name or ticker).strip().upper() == "CAUCION"):
+            # Existing ProductionMarketReader expands this legacy alias into
+            # 2 x N SDK GETs *inside one call*. One long RPC would monopolize
+            # the owner wire executor and prevent queued EXIT from overtaking.
+            # Split into exact one-search-per-RPC calls, so EXIT can run
+            # between them; this still uses the same owner SDK and no fallback.
+            from bd_ppi_readonly_guard import caucion_discovery_days
+            records, seen = [], set()
+            for days in caucion_discovery_days():
+                for currency in ("PESOS", "DOLAR"):
+                    result = self._auxiliary("search_instruments", {
+                        "ticker": f"{currency}{days}",
+                        "instrument_type": "CAUCIONES", "name": str(days),
+                        "market": market})
+                    if not isinstance(result, list):
+                        raise GatewayEvidenceRejected("PPI_AUX_CAUCION_SEARCH_SHAPE_INVALID")
+                    for row in result:
+                        if not isinstance(row, dict):
+                            raise GatewayEvidenceRejected("PPI_AUX_CAUCION_SEARCH_ROW_INVALID")
+                        key = tuple(str(row.get(field) or "").upper()
+                                    for field in ("ticker", "type", "market", "currency"))
+                        if key not in seen:
+                            seen.add(key)
+                            records.append(row)
+            return records
+        return self._auxiliary("search_instruments", {
+            "ticker": ticker, "instrument_type": instrument_type,
+            "name": name or ticker, "market": market})
 
     def market_configuration(self):
-        return self._native_unavailable("CONFIGURATION")
+        return self._auxiliary("market_configuration", {})
 
     def estimate_bonds(self, parameters):
         return self._native_unavailable("ESTIMATE_BONDS")
 
     def observe_exit_round(self, *, elapsed_seconds, deadline_seconds, failures=0):
-        return {"status": "BASELINE_NOT_MEASURED", "lower_suspended": None}
+        if self._consumer != "exit_reader" or not self._gateway_pinned:
+            raise GatewayEvidenceRejected("PPI_EXIT_ROUND_OWNER_NOT_PINNED")
+        observe = getattr(self._client, "observe_exit_round", None)
+        if not callable(observe):
+            raise GatewayEvidenceRejected("PPI_EXIT_ROUND_BUDGET_RPC_UNAVAILABLE")
+        result = observe(self._consumer, elapsed_seconds=elapsed_seconds,
+                         deadline_seconds=deadline_seconds, failures=failures)
+        if (not isinstance(result, dict)
+                or result.get("status") not in {
+                    "COMPLETE", "DEGRADED", "BASELINE_NOT_MEASURED"}):
+            raise GatewayEvidenceRejected("PPI_EXIT_ROUND_VERDICT_UNVERIFIED")
+        return copy.deepcopy(result)
 
     def discard_exit_round_scope(self):
-        return None
+        if self._consumer != "exit_reader" or not self._gateway_pinned:
+            raise GatewayEvidenceRejected("PPI_EXIT_ROUND_OWNER_NOT_PINNED")
+        discard = getattr(self._client, "discard_exit_round_scope", None)
+        if not callable(discard):
+            raise GatewayEvidenceRejected("PPI_EXIT_ROUND_BUDGET_RPC_UNAVAILABLE")
+        discard(self._consumer)
 
     def _validate_event(self, event: Any, *, after_cursor: int, producer_cursor: int,
                         now: datetime) -> int:

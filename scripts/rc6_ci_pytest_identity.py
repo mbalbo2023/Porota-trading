@@ -14,13 +14,16 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import sys
 from pathlib import Path
 import tempfile
 
-from scripts.rc6_ci_shard_quorum import manifest
+from scripts.rc6_ci_shard_quorum import manifest, ShardQuorumRed, _NODEID_REASON_CODES
 
 
 PROPERTY = "rc6_nodeid_sha256"
+_LAST_ACTIVE_MODULE = None
 
 
 def _enabled() -> bool:
@@ -30,6 +33,189 @@ def _enabled() -> bool:
 def nodeid_digest(nodeid: str) -> str:
     return hashlib.sha256(nodeid.encode("utf-8")).hexdigest()
 
+
+def pytest_runtest_logstart(nodeid, location):
+    """Private, opt-in per-module heartbeat; no parameter or nodeid bytes."""
+    global _LAST_ACTIVE_MODULE
+    if (not _enabled() or os.environ.get("RC6_CI_MODULE_TRACE") != "1"
+            or not isinstance(location, tuple) or not location):
+        return
+    module = location[0]
+    if (type(module) is not str
+            or not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", module)
+            or ".." in Path(module).parts or module == _LAST_ACTIVE_MODULE):
+        return
+    _LAST_ACTIVE_MODULE = module
+    # The runner captures this stdout privately and publishes only a verified
+    # source module path if pytest was killed or returned nonzero.
+    sys.__stdout__.write("\nRC6_CI_ACTIVE_MODULE:" + module + "\n")
+    sys.__stdout__.flush()
+
+
+
+
+def pytest_exception_interact(node, call, report):
+    """Keep only first failed pytest phase, exception type, and safe coordinate.
+
+    This is source-only evidence, not an authority to skip any failing nodeid.
+    Neither traceback strings nor assertion values enter the sidecar.
+    """
+    target = os.environ.get("RC6_CI_FAILURE_PATH", "")
+    if not (_enabled() and target and getattr(report, "failed", False)):
+        return
+    staged = None
+    try:
+        failure = getattr(call, "excinfo", None)
+        if failure is None:
+            return
+        kind = getattr(getattr(failure, "type", None), "__name__", "")
+        phase = getattr(report, "when", "")
+        if (type(kind) is not str or
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", kind) or
+                phase not in ("setup", "call", "teardown", "collect")):
+            return
+        receipt = {"schema": "rc6.pytest.failure.v1",
+                   "exception_type": kind, "phase": phase}
+        root = Path.cwd().resolve(strict=True)
+        trace = getattr(getattr(failure, "value", None), "__traceback__", None)
+        for _ in range(128):
+            if trace is None:
+                break
+            filename = Path(trace.tb_frame.f_code.co_filename)
+            if filename.is_absolute():
+                try:
+                    rel = filename.resolve(strict=True).relative_to(root).as_posix()
+                    parts = Path(rel).parts
+                    if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", rel)
+                            and ".." not in parts and (root / rel).is_file()
+                            and not any((root / Path(*parts[:i])).is_symlink()
+                                        for i in range(1, len(parts) + 1))
+                            and 1 <= trace.tb_lineno <= 10000000):
+                        # Separate the test assertion callsite from the deepest
+                        # repository frame where a failure was raised.
+                        prefix = "source" if rel.startswith("tests/") else "origin"
+                        receipt[prefix + "_file"] = rel
+                        receipt[prefix + "_line"] = trace.tb_lineno
+                except (OSError, ValueError, RuntimeError):
+                    pass
+            trace = trace.tb_next
+        # The first exception is often a safe wrapper (e.g. BudgetBackpressure
+        # from ValueError). Its actual causal guard must be identifiable
+        # WITHOUT exposing the cause message or private traceback values.
+        cause = getattr(getattr(failure, "value", None), "__cause__", None)
+        if isinstance(cause, BaseException):
+            cause_type = type(cause).__name__
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", cause_type):
+                receipt["cause_exception_type"] = cause_type
+                cause_tb = getattr(cause, "__traceback__", None)
+                for _ in range(128):
+                    if cause_tb is None:
+                        break
+                    filename = Path(cause_tb.tb_frame.f_code.co_filename)
+                    if filename.is_absolute():
+                        try:
+                            relative = filename.resolve(strict=True).relative_to(root).as_posix()
+                            parts = Path(relative).parts
+                            if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", relative)
+                                    and ".." not in parts and
+                                    (root / relative).is_file() and
+                                    not any((root / Path(*parts[:i])).is_symlink()
+                                            for i in range(1, len(parts) + 1)) and
+                                    1 <= cause_tb.tb_lineno <= 10000000):
+                                receipt["cause_origin_file"] = relative
+                                receipt["cause_origin_line"] = cause_tb.tb_lineno
+                        except (OSError, ValueError, RuntimeError):
+                            pass
+                    cause_tb = cause_tb.tb_next
+        path = Path(target)
+        if path.is_symlink() or path.parent.is_symlink() or not path.parent.is_dir():
+            return
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=".rc6-failure-", delete=False) as output:
+            staged = Path(output.name)
+            os.chmod(staged, 0o600)
+            json.dump(receipt, output, sort_keys=True, separators=(",", ":"))
+            output.write("\n")
+        # First failure wins; later failures cannot overwrite attribution.
+        os.link(staged, path)
+    except (FileExistsError, Exception):
+        # This hook cannot cause an additional CI failure or print private data.
+        pass
+    finally:
+        if staged is not None:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+def pytest_internalerror(excrepr, excinfo):
+    """Persist a PRIVATE sanitized pytest INTERNAL_ERROR cause, fail-closed.
+
+    Never copy raw traceback, credentials, parameters or node IDs. The hook
+    itself must not create another Python exception during emergency handling.
+    """
+    target = os.environ.get("RC6_CI_INTERNAL_ERROR_PATH", "")
+    if not (_enabled() and target):
+        return
+    staged = None
+    try:
+        name = getattr(getattr(excinfo, "type", None), "__name__", "")
+        if (type(name) is not str or
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", name)):
+            name = "UNVERIFIED"
+        receipt = {"schema": "rc6.pytest.internalerror.v1",
+                   "exception_type": name}
+        # Reuse an existing fixed reason identifier, not arbitrary exception
+        # text or private nodeid values. Do not relax any length/UTF8 rule.
+        error = getattr(excinfo, "value", None)
+        if isinstance(error, ShardQuorumRed):
+            marker = "RC6_SHARD_QUORUM_RED:"
+            msg = str(error)
+            if msg.startswith(marker):
+                code = msg[len(marker):]
+                if code in _NODEID_REASON_CODES:
+                    receipt["quorum_reason"] = code
+        root = Path.cwd().resolve(strict=True)
+        tb = getattr(getattr(excinfo, "value", None), "__traceback__", None)
+        for _ in range(128):
+            if tb is None:
+                break
+            filename = Path(tb.tb_frame.f_code.co_filename)
+            if filename.is_absolute():
+                try:
+                    relative = filename.resolve(strict=True).relative_to(root).as_posix()
+                    parts = Path(relative).parts
+                    if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", relative)
+                            and ".." not in parts and (root / relative).is_file()
+                            and not any((root / Path(*parts[:i])).is_symlink()
+                                        for i in range(1, len(parts) + 1))
+                            and 1 <= tb.tb_lineno <= 10000000):
+                        receipt["source_file"] = relative
+                        receipt["source_line"] = tb.tb_lineno
+                except (OSError, ValueError, RuntimeError):
+                    pass
+            tb = tb.tb_next
+        path = Path(target)
+        if path.is_symlink() or path.parent.is_symlink() or not path.parent.is_dir():
+            return
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=".rc6-internalerror-", delete=False) as output:
+            staged = Path(output.name)
+            os.chmod(staged, 0o600)
+            json.dump(receipt, output, sort_keys=True, separators=(",", ":"))
+            output.write("\n")
+        os.replace(staged, path)
+        staged = None
+    except Exception:
+        pass
+    finally:
+        if staged is not None:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 def pytest_collection_modifyitems(session, config, items):
     if not _enabled():
@@ -50,6 +236,13 @@ def pytest_collection_finish(session):
     path_text = os.environ.get("RC6_CI_MANIFEST_PATH")
     if not path_text:
         raise RuntimeError("RC6_PYTEST_MANIFEST_PATH_REQUIRED")
+    # An explicit pytest shard with one unmatched nodeid can have ZERO items.
+    # Pytest then reports a usage error (exit=4); trying to generate a strict
+    # nonempty manifest here would incorrectly convert that into INTERNAL_ERROR
+    # exit=3 and hide the original "not found" source. Never create an empty
+    # report: the runner still requires all exact requested nodeids and JUnit.
+    if not session.items:
+        return
     candidate = os.environ.get("RC6_CI_SOURCE_SHA", "")
     tree = os.environ.get("RC6_CI_SOURCE_TREE_SHA", "")
     proof = manifest(candidate, tree, [item.nodeid for item in session.items])

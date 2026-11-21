@@ -256,11 +256,12 @@ def test_legacy_catalog_without_metadata_fails_closed(tmp_path):
     assert importer.candidates(importer.Store(str(path))).get("GGAL", []) == []
 
 
+# Shard workers recollect these cases in separate processes.
 @pytest.mark.parametrize("seen", [
     (datetime.now(timezone.utc) - timedelta(days=15)).isoformat(),
     (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     "invalid", "",
-])
+], ids=["stale", "future", "invalid", "empty"])
 def test_available_identity_with_untrustworthy_timestamp_cannot_record(tmp_path, monkeypatch, seen):
     store = _store(tmp_path, [_row(seen=seen)])
     result, calls = _run(monkeypatch, store, _capture(tmp_path, rows=[{"ticker": "GGAL"}]))
