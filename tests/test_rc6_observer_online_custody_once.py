@@ -35,9 +35,9 @@ class LiveWalFixture(unittest.TestCase):
         self.marker.parent.mkdir(parents=True)
         self.custody_root = self.root / "data/rc6_observer_custody"
         self.marker.write_text(json.dumps({
-            "candidate_sha": "b3cbe57a5b4b82016a65a0e253b251abbb84a04c",
-            "candidate_tree_sha": "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0",
-            "image_id": "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d",
+            "candidate_sha": custody.EXPECTED_SOURCE_SHA,
+            "candidate_tree_sha": custody.EXPECTED_TREE_SHA,
+            "image_id": custody.EXPECTED_IMAGE_ID,
             "validation_status": "VALIDATED_RUNTIME", "mode": "PRODUCTION_PAPER",
             "real_orders_sent": 0, "real_order_capability": "BLOCKED",
             "real_order_routes": "NOT_CALLED",
@@ -252,6 +252,49 @@ class OneShotCustodyContracts(LiveWalFixture):
                          [(p.stat().st_size, p.stat().st_mtime_ns, p.read_bytes())
                           for p in (self.db, Path(str(self.db) + "-wal"))])
 
+    def test_history_uses_same_wal_restore_and_independent_paper_witness(self):
+        path = self.db.parent.parent / "market_history.db"
+        with sqlite3.connect(path) as writer:
+            writer.execute("PRAGMA journal_mode=WAL")
+            writer.execute("PRAGMA wal_autocheckpoint=0")
+            writer.executescript(
+                "CREATE TABLE history_versions_v2(id INTEGER PRIMARY KEY);"
+                "CREATE TABLE history_canonical_v2(id INTEGER PRIMARY KEY);"
+                "CREATE TABLE market_historical_ohlcv(id INTEGER PRIMARY KEY);"
+                "INSERT INTO history_canonical_v2 VALUES(1);"
+            )
+            writer.commit()
+            wal = Path(str(path) + "-wal")
+            self.assertGreater(wal.stat().st_size, 0)
+            before = (path.read_bytes(), wal.read_bytes())
+            with patch.object(custody, "_rootless_runtime_binding",
+                              return_value="BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"):
+                self.writer.execute("UPDATE observer_state SET real_orders_sent=1 WHERE id=1")
+                self.writer.commit()
+                with self.assertRaisesRegex(custody.Hold, "PAPER_ORDERS_UNVERIFIED"):
+                    custody.host_custody_once(path, self.marker, self.custody_root,
+                                              run_id=self.RUN_ID, paper_db_path=self.db)
+                self.assertFalse(self.custody_root.exists())
+                self.writer.execute("UPDATE observer_state SET real_orders_sent=0 WHERE id=1")
+                self.writer.commit()
+                receipt = custody.host_custody_once(path, self.marker, self.custody_root,
+                                                    run_id=self.RUN_ID, paper_db_path=self.db)
+            self.assertEqual(receipt["state"], "PRIVATE_SNAPSHOT_RESTORE_OK")
+            self.assertEqual(receipt["database_role"], "HISTORY")
+            self.assertEqual(receipt["snapshot_sha256"], receipt["restore_sha256"])
+            self.assertEqual(receipt["source_wal_state"], "PRESENT_RECONCILED_BY_SQLITE_BACKUP")
+            restored = self.custody_root / ("history_" + self.RUN_ID) / "restore-check.sqlite"
+            with sqlite3.connect(restored.as_uri() + "?mode=ro&immutable=1", uri=True) as db:
+                self.assertEqual(db.execute("SELECT id FROM history_canonical_v2").fetchall(), [(1,)])
+                self.assertEqual(db.execute("PRAGMA quick_check").fetchone(), ("ok",))
+            self.assertEqual((path.read_bytes(), wal.read_bytes()), before)
+            self.assertEqual(custody.sanitize_receipt(
+                "CUSTODY_ONCE", receipt, remote_rc=0, expected_run_id=self.RUN_ID,
+                database_role="HISTORY"), receipt)
+            self.assertNotEqual(custody.sanitize_receipt(
+                "CUSTODY_ONCE", receipt, remote_rc=0, expected_run_id=self.RUN_ID)["state"],
+                "PRIVATE_SNAPSHOT_RESTORE_OK")
+
     def test_exit_revoked_after_backup_still_blocks_final_custody(self):
         original_sync = custody._fsync_private_file
         observed = []
@@ -423,6 +466,17 @@ class RuntimeBindingContracts(LiveWalFixture):
             current, daemon, containers, marker, self.db,
             data_root=self.root / "data", operator_home=Path("/home/porotaadmin")),
             "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED")
+
+        history = self.root / "data/market_history.db"
+        with sqlite3.connect(history) as db:
+            db.execute("CREATE TABLE history_canonical_v2(id INTEGER)")
+        self.assertEqual(custody._verify_rootless_attestation(
+            current, daemon, containers, marker, history, data_root=self.root / "data"),
+            "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED")
+        containers["observer"]["Config"]["Env"].append("HIST_DB_PATH=/app/data/another.db")
+        with self.assertRaisesRegex(custody.Hold, "RUNTIME_DB_BINDING_NO_VERIFICADO"):
+            custody._verify_rootless_attestation(
+                current, daemon, containers, marker, history, data_root=self.root / "data")
 
     def test_spoofed_current_or_container_cid_mount_or_image_refuses_binding(self):
         for field in ("source_sha", "source_tree", "image_id", "daemon_id"):
@@ -740,6 +794,9 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertNotIn("schedule", workflow["on"])
         options = workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"]
         self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE"])
+        roles = workflow["on"]["workflow_dispatch"]["inputs"]["database_role"]
+        self.assertEqual(roles["options"], ["OBSERVER", "HISTORY"])
+        self.assertEqual(roles["default"], "OBSERVER")
         host = workflow["jobs"]["host_custody"]
         gate = host["if"]
         self.assertIn("github.event_name == 'workflow_dispatch'", gate)
