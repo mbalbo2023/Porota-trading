@@ -108,14 +108,17 @@ def validate_daily_values(*, date, open, high, low, close, volume, known_at, mar
     if day.weekday()>=5:raise ValueError('HISTORY_SESSION_WEEKEND')
     if market=='BYMA':
         from ak_byma_calendar import ANIOS_AUDITADOS,motivo_no_operativo
-        if day.year in ANIOS_AUDITADOS and motivo_no_operativo(day):
-            # BYMA 06-Nov traded without settlement. A777 permits observing
-            # only exact T+1 contracts; a generic market/day has no authority
-            # to override the byte-frozen PAPER calendar.
-            from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
-            if estado_negociacion_fuente_byma(day,market=market,family=family,
-                                              settlement=settlement)!='LIMITED_T1_SOURCE_ONLY':
-                raise ValueError('HISTORY_SESSION_NOT_OPERATIONAL')
+        from ak_byma_t1_source_clock import (estado_negociacion_fuente_byma,
+                                             estado_negociacion_historica_byma)
+        historical = estado_negociacion_historica_byma(
+            day, market=market, family=family, settlement=settlement)
+        if historical in {'CLOSED', 'LIMITED_SETTLEMENT_UNVERIFIED'}:
+            raise ValueError('HISTORY_SESSION_NOT_OPERATIONAL')
+        if (historical == 'UNVERIFIED' and day.year in ANIOS_AUDITADOS
+                and motivo_no_operativo(day)
+                and estado_negociacion_fuente_byma(day, market=market, family=family,
+                                                   settlement=settlement) != 'LIMITED_T1_SOURCE_ONLY'):
+            raise ValueError('HISTORY_SESSION_NOT_OPERATIONAL')
     values={}
     for name,raw in (('open',open),('high',high),('low',low),('close',close),('volume',volume)):
         if isinstance(raw,bool):raise ValueError('HISTORY_NUMBER_BOOLEAN')
