@@ -13,10 +13,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Preflight, owned custody, or read-only restored history inventory'
+        description: 'Preflight, custody, restored inventory, or offhost migration rehearsal'
         required: true
         type: choice
-        options: [PREFLIGHT_ONLY, CUSTODY_ONCE, RESTORED_HISTORY_READ_ONLY]
+        options: [PREFLIGHT_ONLY, CUSTODY_ONCE, RESTORED_HISTORY_READ_ONLY, RESTORED_HISTORY_MIGRATION_REHEARSAL]
       deploy_owner_receipt_id:
         description: 'Current ACTIVE global DEPLOY_OWNER issue #980 comment ID; required only for CUSTODY_ONCE'
         required: false
@@ -33,10 +33,15 @@ on:
         type: string
         default: '44918906718'
       history_restore_run_id:
-        description: 'Successful HISTORY custody run, for restored history inventory'
+        description: 'Successful HISTORY custody run for inventory or migration rehearsal'
         required: false
         type: string
         default: '44917242971'
+      history_restore_sha256:
+        description: 'HISTORY restore digest from the successful custody receipt'
+        required: false
+        type: string
+        default: '07089adfa8f70e69fa36c0bcc61aa3953d4c7bbcd0fc8d0a7ed3e1724821e16a'
 
 permissions:
   contents: read
@@ -45,6 +50,10 @@ permissions:
 concurrency:
   group: rc6-unified-paper-deploy
   cancel-in-progress: false
+
+env:
+  REVIEWED_HISTORY_SHA: eba5c82785ac6ccda932dd3f52ce15bf59d38f6c
+  REVIEWED_HISTORY_TREE: 60567bbf6d7df03ad045ad846509df96472e2b7c
 
 jobs:
   contracts:
@@ -70,7 +79,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'RESTORED_HISTORY_READ_ONLY'
         uses: actions/checkout@v4
         with:
-          ref: 10eb45ab2611b95034ecb37d01a21b77ef6939cf
+          ref: ${{ env.REVIEWED_HISTORY_SHA }}
           path: reviewed-history
           persist-credentials: false
       - name: Export only the scoped date states for the restored snapshot join
@@ -80,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^{tree})" = 2759ffaf3d22fac33f878bf8b1dd8442faf0dea9
+          test "$(git rev-parse HEAD^{tree})" = "$REVIEWED_HISTORY_TREE"
           python3 -B - <<'PY'
           import os
           from datetime import timedelta
@@ -109,20 +118,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 16
     env:
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       REQUEST_MODE: ${{ inputs.mode }}
       REQUEST_DATABASE_ROLE: ${{ inputs.database_role }}
       DEPLOY_OWNER_RECEIPT_ID: ${{ inputs.deploy_owner_receipt_id }}
       OBSERVER_RESTORE_RUN: ${{ inputs.observer_restore_run_id }}
       HISTORY_RESTORE_RUN: ${{ inputs.history_restore_run_id }}
+      HISTORY_RESTORE_SHA256: ${{ inputs.history_restore_sha256 }}
       HISTORY_CALENDAR: ${{ needs.contracts.outputs.restored_history_calendar }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Check out the existing migrator at the reviewed candidate
+        if: inputs.mode == 'RESTORED_HISTORY_MIGRATION_REHEARSAL'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REVIEWED_HISTORY_SHA }}
+          path: reviewed-history
+          persist-credentials: false
+      - name: Verify the migrator source tree
+        if: inputs.mode == 'RESTORED_HISTORY_MIGRATION_REHEARSAL'
+        working-directory: reviewed-history
+        run: test "$(git rev-parse HEAD^{tree})" = "$REVIEWED_HISTORY_TREE"
       - name: Allocate private runner credentials and receipt
         shell: bash
         run: |
@@ -144,6 +161,11 @@ jobs:
       - name: Execute only bounded host metadata or private one-shot custody
         id: remote
         shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           set -Eeuo pipefail
           umask 077
@@ -154,6 +176,8 @@ jobs:
               exit 2
             }
           case "$REQUEST_DATABASE_ROLE" in OBSERVER|HISTORY) ;; *) exit 2 ;; esac
+          response="$private/.raw.json"
+          max_blocks=128
           case "$REQUEST_MODE" in
             PREFLIGHT_ONLY) remote_command="timeout 790 python3 -B - host-preflight $REQUEST_DATABASE_ROLE" ;;
             CUSTODY_ONCE)
@@ -164,12 +188,18 @@ jobs:
               [[ "$HISTORY_RESTORE_RUN" =~ ^[1-9][0-9]{7,14}$ ]]
               [[ "$HISTORY_CALENDAR" =~ ^[012]{366}$ ]]
               remote_command="timeout 155 python3 -B - host-restored-inventory $OBSERVER_RESTORE_RUN $HISTORY_RESTORE_RUN $HISTORY_CALENDAR" ;;
+            RESTORED_HISTORY_MIGRATION_REHEARSAL)
+              [[ "$HISTORY_RESTORE_RUN" =~ ^[1-9][0-9]{7,14}$ ]]
+              [[ "$HISTORY_RESTORE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+              remote_command="timeout 185 nice -n 19 ionice -c 3 python3 -B - host-restored-history-export $HISTORY_RESTORE_RUN $HISTORY_RESTORE_SHA256"
+              response="$private/.restored-history.sqlite"
+              max_blocks=2097152 ;;
             *) exit 2 ;;
           esac
           printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
           chmod 600 "$private/id_key" "$private/known_hosts"
-          ulimit -f 128
+          ulimit -f "$max_blocks"
           set +e
           timeout 820 ssh -i "$private/id_key" \
             -o BatchMode=yes -o IdentitiesOnly=yes \
@@ -177,7 +207,7 @@ jobs:
             -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" "$remote_command" \
             < scripts/rc6_observer_online_custody_once.py \
-            > "$private/.raw.json" 2>/dev/null
+            > "$response" 2>/dev/null
           remote_rc=$?
           set -e
           echo "RC6_CUSTODY_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
@@ -189,9 +219,17 @@ jobs:
           set -Eeuo pipefail
           private="${RC6_CUSTODY_PRIVATE:-}"
           test -n "$private" && test -d "$private" || exit 2
-          python3 -B scripts/rc6_observer_online_custody_once.py sanitize \
-            "$REQUEST_MODE" "$private/.raw.json" "$private/a-custody-public.json" \
-            "${RC6_CUSTODY_REMOTE_RC:-255}"
+          if [[ "$REQUEST_MODE" == RESTORED_HISTORY_MIGRATION_REHEARSAL ]]; then
+            rm -f -- "$private/id_key" "$private/known_hosts"
+            python3 -B scripts/rc6_observer_online_custody_once.py rehearse-restored \
+              "$private/.restored-history.sqlite" "$GITHUB_WORKSPACE/reviewed-history" \
+              "$HISTORY_RESTORE_RUN" "$HISTORY_RESTORE_SHA256" \
+              "${RC6_CUSTODY_REMOTE_RC:-255}" "$private/a-custody-public.json"
+          else
+            python3 -B scripts/rc6_observer_online_custody_once.py sanitize \
+              "$REQUEST_MODE" "$private/.raw.json" "$private/a-custody-public.json" \
+              "${RC6_CUSTODY_REMOTE_RC:-255}"
+          fi
       - name: Never classify failed host custody as success
         if: always()
         shell: bash
@@ -204,19 +242,24 @@ jobs:
           import sys
           expected = {'PREFLIGHT_ONLY': 'PREFLIGHT_METADATA_PASS',
                       'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK',
-                      'RESTORED_HISTORY_READ_ONLY': 'RESTORED_HISTORY_INVENTORY_OK'}
-          inventory = sys.argv[2] == 'RESTORED_HISTORY_READ_ONLY'
-          schema = ('rc6.restored-history-inventory.v1' if inventory else
-                    'rc6.observer-online-custody-once.v1')
+                      'RESTORED_HISTORY_READ_ONLY': 'RESTORED_HISTORY_INVENTORY_OK',
+                      'RESTORED_HISTORY_MIGRATION_REHEARSAL': 'RESTORED_HISTORY_MIGRATION_REHEARSED'}
+          schemas = {'RESTORED_HISTORY_READ_ONLY': 'rc6.restored-history-inventory.v1',
+                     'RESTORED_HISTORY_MIGRATION_REHEARSAL': 'RC6_OFFHOST_MIGRATION_REHEARSAL_V1'}
+          mode = sys.argv[2]
+          schema = schemas.get(mode, 'rc6.observer-online-custody-once.v1')
           try:
               with open(sys.argv[1], 'rb') as source:
                   raw = source.read(8193)
               receipt = json.loads(raw)
               verified = (len(raw) <= 8192 and
-                          receipt.get('state') == expected.get(sys.argv[2]) and
-                          (inventory or receipt.get('database_role', 'OBSERVER') ==
+                          receipt.get('state') == expected.get(mode) and
+                          (mode in schemas or receipt.get('database_role', 'OBSERVER') ==
                            os.environ.get('REQUEST_DATABASE_ROLE', 'OBSERVER')) and
                           receipt.get('schema') == schema)
+              if mode == 'RESTORED_HISTORY_MIGRATION_REHEARSAL':
+                  verified = (verified and receipt.get('history_run') == os.environ['HISTORY_RESTORE_RUN']
+                              and receipt.get('source_sha256') == os.environ['HISTORY_RESTORE_SHA256'])
           except (OSError, ValueError, TypeError, AttributeError):
               verified = False
           if not verified:
@@ -245,5 +288,6 @@ jobs:
                 shred -u -- "$file"
               fi
             done
+            rm -f -- "$private/.restored-history.sqlite" "$private/migration-capture.json"
             rmdir "$private"
           fi
