@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+import gzip
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -24,6 +26,7 @@ import sys
 import time
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
+import zlib
 
 
 SCHEMA = "rc6.a729.db-backup-inventory-readonly.v1"
@@ -110,6 +113,16 @@ LOCATOR_TABLE_STATUSES = frozenset({"NO_VERIFICADO", "TABLE_ABSENT",
                                   "SCHEMA_INVALID", "COLUMNS_MISSING",
                                   "PRESENT_COLUMNS_OK"})
 LOCATOR_SAMPLE_ROWS = 64
+EXACT_INTEGRITY_MODE = "EXTERNAL_EXACT_INTEGRITY_ONLY"
+EXACT_INTEGRITY_COLUMNS = frozenset({"body_hash", "body_sha256", "body_bytes"})
+# Match the existing cutoff reader's per-body and total external archive limits.
+EXACT_MAX_BODY_BYTES = 2 * 1024**2
+EXACT_MAX_TOTAL_BODY_BYTES = 128 * 1024**2
+EXACT_INTEGRITY_RESULTS = (
+    "matched", "invalid_manifest", "unreadable_object", "inner_hash_mismatch",
+    "body_hash_mismatch", "byte_budget_exceeded",
+)
+HEX_SHA256 = re.compile(rb"[0-9a-f]{64}\Z")
 LOCATOR_SQLITE_PHASES = frozenset({
     "OPEN_CONNECTION", "SET_READ_LIMITS", "READ_JOURNAL_MODE", "BEGIN_READ",
     "VERIFY_SOURCE_BINDING", "SCAN_TABLES", "RECHECK_SOURCE_BINDING", "END_READ",
@@ -424,9 +437,87 @@ def _locator_empty(role: str, status: str = "SQLITE_UNAVAILABLE") -> dict:
                        for name in LOCATOR_TABLES[role]]}
 
 
+def _exact_gzip_bytes(objects_root: Path, digest: str, allowance: int) -> bytes:
+    """Read only a fixed digest path on the private read-only mount."""
+    parent_fd = _anchored_directory(objects_root / digest[:2])
+    try:
+        name = f"{digest}.json.gz"
+        status, before = _file_metadata(parent_fd, name)
+        if status != "REGULAR" or not before or not 0 < before[2] <= EXACT_MAX_BODY_BYTES:
+            raise InventoryError("FILE_UNSAFE")
+        if not os.fstatvfs(parent_fd).f_flag & os.ST_RDONLY:
+            raise InventoryError("RO_MOUNT_UNVERIFIED")
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                     dir_fd=parent_fd)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+                    (info.st_dev, info.st_ino, info.st_size,
+                     info.st_mtime_ns, info.st_ctime_ns) != before[:5]):
+                raise InventoryError("CHANGED_DURING_SCAN")
+            if not os.fstatvfs(source.fileno()).f_flag & os.ST_RDONLY:
+                raise InventoryError("RO_MOUNT_UNVERIFIED")
+            compressed = source.read(before[2] + 1)
+            if len(compressed) != before[2] or not _stable_file(parent_fd, name, before):
+                raise InventoryError("CHANGED_DURING_SCAN")
+        with gzip.GzipFile(fileobj=BytesIO(compressed)) as packed:
+            return packed.read(allowance + 1)
+    finally:
+        os.close(parent_fd)
+
+
+def _exact_integrity(db: sqlite3.Connection, row_id: int, objects_root: Path,
+                     budget: int) -> tuple[str, int]:
+    table = "exact_attempts_v1"
+    row = db.execute("""SELECT CASE WHEN typeof(body_bytes)='integer' THEN body_bytes END
+                        FROM exact_attempts_v1 WHERE rowid=?""", (row_id,)).fetchone()
+    if not row or type(row[0]) is not int or row[0] <= 0:
+        return "invalid_manifest", 0
+    expected_bytes = row[0]
+    if expected_bytes > min(EXACT_MAX_BODY_BYTES, budget):
+        return "byte_budget_exceeded", 0
+    # Reuse A729 incremental reads on the pinned WAL snapshot; do not project
+    # the wrapper or digest columns as unbounded SQLite TEXT fields.
+    try:
+        inner_hash, _ = _archive_blob(db, "inner_sha256", row_id, 64, table)
+        body_hash, _ = _archive_blob(db, "body_hash", row_id, 64, table)
+        body_sha, _ = _archive_blob(db, "body_sha256", row_id, 64, table)
+        wrapper, wrapper_bytes = _archive_blob(db, "wrapper_json", row_id, expected_bytes, table)
+    except sqlite3.OperationalError as exc:
+        if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR:
+            return "invalid_manifest", expected_bytes
+        raise
+    if (wrapper is None or wrapper_bytes >= expected_bytes or
+            any(digest is None or not HEX_SHA256.fullmatch(digest)
+                for digest in (inner_hash, body_hash, body_sha))):
+        return "invalid_manifest", expected_bytes
+    try:
+        inner = _exact_gzip_bytes(objects_root, inner_hash.decode("ascii"),
+                                  expected_bytes - wrapper_bytes)
+    except (InventoryError, OSError, EOFError, zlib.error):
+        return "unreadable_object", expected_bytes
+    if (len(inner) > expected_bytes - wrapper_bytes or
+            hashlib.sha256(inner).hexdigest().encode("ascii") != inner_hash):
+        return "inner_hash_mismatch", expected_bytes
+    try:
+        body = json.loads(wrapper.decode("utf-8", "surrogatepass"))
+        if not isinstance(body, dict) or "payload_json" in body:
+            return "invalid_manifest", expected_bytes
+        body["payload_json"] = inner.decode("utf-8", "surrogatepass")
+        # The reviewed fb_raw_evidence_exact_v1 writer hashes this format.
+        encoded = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+                             allow_nan=False).encode("utf-8", "surrogatepass")
+    except (UnicodeError, ValueError, TypeError, RecursionError):
+        return "invalid_manifest", expected_bytes
+    observed = hashlib.sha256(encoded).hexdigest().encode("ascii")
+    if len(encoded) != expected_bytes or observed != body_hash or observed != body_sha:
+        return "body_hash_mismatch", expected_bytes
+    return "matched", expected_bytes
+
+
 def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
-                  receipt: dict) -> None:
-    """Inspect only predeclared physical tables; neither payload nor COUNT(*)."""
+                  receipt: dict, objects_root: Path | None = None) -> None:
+    """Inspect fixed tables and optionally verify bounded EXTERNAL_EXACT objects."""
     for part in receipt["tables"]:
         if time.monotonic() >= deadline:
             raise InventoryError("TIME_BUDGET")
@@ -460,8 +551,11 @@ def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
         if column_names & {"rowid", "_rowid_", "oid"}:
             part["status"] = "SCHEMA_INVALID"
             continue
+        required = LOCATOR_REQUIRED_COLUMNS[name]
+        if objects_root is not None:
+            required |= EXACT_INTEGRITY_COLUMNS
         if (any(type(c[6]) is not int or c[6] != 0 for c in cols) or
-                not LOCATOR_REQUIRED_COLUMNS[name].issubset(column_names)):
+                not required.issubset(column_names)):
             part["status"] = "COLUMNS_MISSING"
             continue
         part["status"] = "PRESENT_COLUMNS_OK"
@@ -473,6 +567,11 @@ def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
         part["sample_rows"] = min(len(rows), LOCATOR_SAMPLE_ROWS)
         part["truncated"] = len(rows) > LOCATOR_SAMPLE_ROWS
         if role == "EXTERNAL_EXACT":
+            if objects_root is not None:
+                integrity = dict.fromkeys(EXACT_INTEGRITY_RESULTS, 0)
+                integrity["eligible_rows"] = 0
+                part["exact_integrity"] = integrity
+            budget = EXACT_MAX_TOTAL_BODY_BYTES
             for (row_id,) in rows[:LOCATOR_SAMPLE_ROWS]:
                 if time.monotonic() >= deadline:
                     raise InventoryError("TIME_BUDGET")
@@ -488,6 +587,12 @@ def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
                     part["quality_unvalidated_labeled"] += 1
                 else:
                     part["quality_other_labeled"] += 1
+                if (objects_root is not None and origin == b"PPI_HISTORY" and
+                        quality == b"VALID_PAYLOAD"):
+                    outcome, reserved = _exact_integrity(db, row_id, objects_root, budget)
+                    budget -= reserved
+                    integrity["eligible_rows"] += 1
+                    integrity[outcome] += 1
 
 
 def _locator_readonly_mount_attested(path: Path) -> bool:
@@ -529,13 +634,16 @@ def _locator_readonly_mount_attested(path: Path) -> bool:
 
 
 def source_locator_db(role: str, path: Path, maximum: int,
-                      table_names: tuple[str, ...]) -> dict:
+                      table_names: tuple[str, ...], *, verify_external_exact: bool = False) -> dict:
     """WAL-consistent OS-ro table presence, never source promotion.
 
     External manifest labels are local assertions, not PPI economic proof.
     """
     if role not in LOCATOR_TABLES or tuple(table_names) != LOCATOR_TABLES[role]:
         raise InventoryError("SCHEMA_INVALID")
+    if verify_external_exact and role != "EXTERNAL_EXACT":
+        raise InventoryError("SCHEMA_INVALID")
+    objects_root = path.parent / "objects" / "sha256" if verify_external_exact else None
     receipt = _locator_empty(role)
     if not _locator_readonly_mount_attested(path):
         return _locator_empty(role, "RO_MOUNT_UNVERIFIED")
@@ -595,7 +703,7 @@ def source_locator_db(role: str, path: Path, maximum: int,
                     phase = "VERIFY_SOURCE_BINDING"
                     _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
                     phase = "SCAN_TABLES"
-                    _locator_scan(db, role, deadline, receipt)
+                    _locator_scan(db, role, deadline, receipt, objects_root)
                     phase = "RECHECK_SOURCE_BINDING"
                     _archive_sqlite_binding(db, path, (before[0], before[1]), previous)
                     phase = "END_READ"
@@ -933,18 +1041,21 @@ def _locator_objects_root_state(path: Path) -> str:
         os.close(fd)
 
 
-def host_source_locator() -> dict:
-    """Three code-derived SQLite paths only; no raw/archive reconstruction."""
+def host_source_locator(*, verify_external_exact: bool = False) -> dict:
+    """Locate the three sources or verify EXTERNAL_EXACT alone in RO."""
     now = datetime.now(timezone.utc)
-    return {"schema": LOCATOR_SCHEMA, "state": "SOURCE_LOCATOR_ONLY",
+    targets = LOCATOR_TARGETS[-1:] if verify_external_exact else LOCATOR_TARGETS
+    state = EXACT_INTEGRITY_MODE if verify_external_exact else "SOURCE_LOCATOR_ONLY"
+    return {"schema": LOCATOR_SCHEMA, "state": state,
             "generated_at_utc": now.isoformat(),
             "source_inventory": [source_locator_db(role, path, maximum,
-                                                       LOCATOR_TABLES[role])
-                                 for role, path, maximum in LOCATOR_TARGETS],
+                                                   LOCATOR_TABLES[role],
+                                                   verify_external_exact=verify_external_exact)
+                                 for role, path, maximum in targets],
             "objects_root_state": _locator_objects_root_state(LOCATOR_OBJECTS_ROOT),
             "read_only": True,
             "os_ro_mount": all(_locator_readonly_mount_attested(path)
-                               for _, path, _ in LOCATOR_TARGETS),
+                               for _, path, _ in targets),
             "host_mutations": 0, "provider_calls": 0,
             "ppi_watch_touched": False, "real_orders_sent_by_action": 0,
             "history_source_selected": False,
@@ -1146,7 +1257,8 @@ def archive_public_receipt(raw: object, remote_rc: int) -> dict:
         return dict(failure, failure_class="MALFORMED_HOST_RECEIPT")
 
 
-def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
+def source_locator_public_receipt(raw: object, remote_rc: int, *,
+                                 verify_external_exact: bool = False) -> dict:
     """Allowlisted diagnostic only; no row-level material or source promotion."""
     failure = {"schema": LOCATOR_SCHEMA, "state": "NO_VERIFICADO",
                "failure_class": "HOST_UNAVAILABLE", "read_only": True,
@@ -1156,7 +1268,9 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
                "ppi_provider_contract_verified": False}
     if remote_rc != 0 or not isinstance(raw, dict):
         return failure
-    require = {"schema": LOCATOR_SCHEMA, "state": "SOURCE_LOCATOR_ONLY",
+    expected = EXACT_INTEGRITY_MODE if verify_external_exact else "SOURCE_LOCATOR_ONLY"
+    targets = LOCATOR_TARGETS[-1:] if verify_external_exact else LOCATOR_TARGETS
+    require = {"schema": LOCATOR_SCHEMA, "state": expected,
                "read_only": True, "os_ro_mount": True,
                "host_mutations": 0, "ppi_watch_touched": False,
                "provider_calls": 0, "real_orders_sent_by_action": 0,
@@ -1172,9 +1286,10 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
         assert objects_state in {"PRESENT", "MISSING", "PATH_UNSAFE",
                                  "RO_MOUNT_UNVERIFIED"}
         sources = raw["source_inventory"]
-        assert isinstance(sources, list) and len(sources) == len(LOCATOR_TARGETS)
+        assert isinstance(sources, list) and len(sources) == len(targets)
         cleaned = []
-        for source, (role, _, _) in zip(sources, LOCATOR_TARGETS):
+        integrity = None
+        for source, (role, _, _) in zip(sources, targets):
             assert isinstance(source, dict) and source.get("role") == role
             status, scope = source.get("status"), source.get("wal_scope")
             assert status in LOCATOR_STATUSES and scope in ARCHIVE_WAL_SCOPES
@@ -1218,6 +1333,19 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
                                      "sample_rows": sample,
                                      "truncated": part["truncated"],
                                      "rows_total": None, **counters})
+                if verify_external_exact and part["status"] == "PRESENT_COLUMNS_OK":
+                    results = part["exact_integrity"]
+                    names = ("eligible_rows", *EXACT_INTEGRITY_RESULTS)
+                    assert isinstance(results, dict)
+                    integrity = {key: _int(results.get(key), LOCATOR_SAMPLE_ROWS) for key in names}
+                    assert all(n is not None for n in integrity.values())
+                    eligible = integrity["eligible_rows"]
+                    ppi_labels = counters["origin_ppi_history_labeled"]
+                    valid_labels = counters["quality_valid_payload_labeled"]
+                    assert max(0, ppi_labels + valid_labels - sample) <= eligible <= min(
+                        ppi_labels, valid_labels)
+                    assert eligible == sum(integrity[k] for k in EXACT_INTEGRITY_RESULTS)
+                    clean_tables[-1]["exact_integrity"] = integrity
             cleaned.append({"role": role, "status": status,
                             "wal_scope": scope, "sqlite_ro": source["sqlite_ro"],
                             **sizes, "tables": clean_tables})
@@ -1233,8 +1361,13 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
                 cleaned[-1]["sqlite_failure"] = clean_error
         okay = (all(x["status"] in ("OBSERVED_BOUNDED", "MISSING") for x in cleaned)
                 and objects_state in ("PRESENT", "MISSING"))
+        if verify_external_exact:
+            okay = (objects_state == "PRESENT" and cleaned[0]["status"] == "OBSERVED_BOUNDED"
+                    and integrity is not None and integrity["eligible_rows"] > 0)
+        objects_limit = ("EXTERNAL_BYTES_CHECKED_ONLY_FOR_ELIGIBLE_ROWS" if verify_external_exact
+                         else "EXTERNAL_OBJECTS_NOT_OPENED_OR_HASH_VERIFIED")
         return {"schema": LOCATOR_SCHEMA,
-                "state": "SOURCE_LOCATOR_ONLY" if okay else "NO_VERIFICADO",
+                "state": expected if okay else "NO_VERIFICADO",
                 "generated_at_utc": stamp.isoformat(),
                 "source_inventory": cleaned, "objects_root_state": objects_state,
                 "read_only": True, "os_ro_mount": True, "host_mutations": 0,
@@ -1244,7 +1377,7 @@ def source_locator_public_receipt(raw: object, remote_rc: int) -> dict:
                 "ppi_provider_contract_verified": False,
                 "limitations": ["LATEST_64_ROWIDS_ONLY", "FULL_COUNTS_NOT_SCANNED",
                                 "EXTERNAL_LABELS_NOT_PROVIDER_CONTRACT",
-                                "EXTERNAL_OBJECTS_NOT_OPENED_OR_HASH_VERIFIED",
+                                objects_limit,
                                 "NO_BACKUP_EXPANSION_OR_DB_RESTORE",
                                 "NO_HISTORY_SOURCE_SELECTION"]}
     except (AssertionError, KeyError, TypeError, ValueError, OverflowError):
@@ -1255,7 +1388,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("host-inventory", "sanitize",
                                          "host-archive-provenance", "sanitize-archive",
-                                         "host-source-locator", "sanitize-source"))
+                                         "host-source-locator", "sanitize-source",
+                                         "host-exact-integrity", "sanitize-exact-integrity"))
     parser.add_argument("--raw", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--remote-rc", type=int, default=255)
@@ -1266,8 +1400,9 @@ def main() -> int:
     if args.mode == "host-archive-provenance":
         print(json.dumps(host_archive_provenance(), separators=(",", ":"), sort_keys=True))
         return 0
-    if args.mode == "host-source-locator":
-        print(json.dumps(host_source_locator(), separators=(",", ":"), sort_keys=True))
+    if args.mode in ("host-source-locator", "host-exact-integrity"):
+        result = host_source_locator(verify_external_exact=args.mode == "host-exact-integrity")
+        print(json.dumps(result, separators=(",", ":"), sort_keys=True))
         return 0
     if args.out is None or args.raw is None:
         parser.error("sanitize requires --raw and --out")
@@ -1277,12 +1412,14 @@ def main() -> int:
         raw = json.loads(args.raw.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError, InventoryError):
         raw = None
-    clean = (source_locator_public_receipt(raw, args.remote_rc)
-             if args.mode == "sanitize-source" else
+    clean = (source_locator_public_receipt(raw, args.remote_rc,
+                                          verify_external_exact=args.mode == "sanitize-exact-integrity")
+             if args.mode in ("sanitize-source", "sanitize-exact-integrity") else
              archive_public_receipt(raw, args.remote_rc)
              if args.mode == "sanitize-archive" else public_receipt(raw, args.remote_rc))
     args.out.write_text(json.dumps(clean, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    expected = ("SOURCE_LOCATOR_ONLY" if args.mode == "sanitize-source" else
+    expected = (EXACT_INTEGRITY_MODE if args.mode == "sanitize-exact-integrity" else
+                "SOURCE_LOCATOR_ONLY" if args.mode == "sanitize-source" else
                 "ARCHIVE_PROVENANCE_ONLY" if args.mode == "sanitize-archive" else
                 "INVENTORY_ONLY")
     return 0 if clean["state"] == expected else 2

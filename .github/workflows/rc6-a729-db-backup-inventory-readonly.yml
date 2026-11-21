@@ -14,10 +14,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Select base metadata, bounded WAL archive labels, or historical source locator; no writes'
+        description: 'Select read-only inventory, historical source locator, or EXTERNAL_EXACT integrity'
         required: true
         type: choice
-        options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]
+        options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY, EXTERNAL_EXACT_INTEGRITY_ONLY]
 
 permissions:
   contents: read
@@ -240,10 +240,11 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.actor == 'mbalbo2023' &&
       github.triggering_actor == 'mbalbo2023' &&
-      inputs.mode == 'SOURCE_LOCATOR_ONLY'
+      (inputs.mode == 'SOURCE_LOCATOR_ONLY' || inputs.mode == 'EXTERNAL_EXACT_INTEGRITY_ONLY')
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     env:
+      A729_EXACT_INTEGRITY: ${{ inputs.mode == 'EXTERNAL_EXACT_INTEGRITY_ONLY' }}
       DO_HOST: ${{ secrets.DO_HOST }}
       DO_USER: ${{ secrets.DO_USER }}
       DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
@@ -274,6 +275,10 @@ jobs:
           printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
           printf '%s\n' "$DO_KNOWN_HOSTS" > "$private/known_hosts"
           chmod 600 "$private/id_key" "$private/known_hosts"
+          host_mode=host-source-locator
+          if test "$A729_EXACT_INTEGRITY" = true; then
+            host_mode=host-exact-integrity
+          fi
           ulimit -f 64
           set +e
           timeout 95 ssh -i "$private/id_key" \
@@ -281,14 +286,14 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$private/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=8 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            'sudo -n timeout 70 unshare --mount --propagation private -- /bin/sh -eu -c "mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - host-source-locator"' \
+            "sudo -n timeout 70 unshare --mount --propagation private -- /bin/sh -eu -c 'mount --bind /opt/porota-trading/data /opt/porota-trading/data && mount -o remount,bind,ro /opt/porota-trading/data && exec python3 -B - $host_mode'" \
             < scripts/rc6_a729_db_backup_inventory_ro.py \
             > "$private/.source-raw.json" 2>/dev/null
           remote_rc=$?
           set -e
           echo "RC6_A729_SOURCE_REMOTE_RC=$remote_rc" >> "$GITHUB_ENV"
           test "$remote_rc" -eq 0 || echo '::warning::A729_SOURCE_HOST_HOLD_SANITIZED'
-      - name: Sanitize ONLY fixed source roles, metadata, and bounded label counters
+      - name: Sanitize source metadata and bounded integrity counts
         if: always()
         shell: bash
         run: |
@@ -298,7 +303,11 @@ jobs:
             echo '::error::A729_SOURCE_PRIVATE_DIR_UNAVAILABLE'
             exit 2
           fi
-          python3 -B scripts/rc6_a729_db_backup_inventory_ro.py sanitize-source \
+          sanitize_mode=sanitize-source
+          if test "$A729_EXACT_INTEGRITY" = true; then
+            sanitize_mode=sanitize-exact-integrity
+          fi
+          python3 -B scripts/rc6_a729_db_backup_inventory_ro.py "$sanitize_mode" \
             --raw "$private/.source-raw.json" \
             --out "$private/a729-source-public.json" \
             --remote-rc "${RC6_A729_SOURCE_REMOTE_RC:-255}"
@@ -306,7 +315,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-a729-source-locator-${{ github.run_id }}
+          name: rc6-a729-${{ inputs.mode == 'EXTERNAL_EXACT_INTEGRITY_ONLY' && 'exact-integrity' || 'source-locator' }}-${{ github.run_id }}
           path: ${{ env.RC6_A729_SOURCE_DIR }}/a729-source-public.json
           if-no-files-found: warn
           retention-days: 7
