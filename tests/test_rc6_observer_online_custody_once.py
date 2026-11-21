@@ -898,10 +898,13 @@ class RestoredHistoryInventoryContracts(unittest.TestCase):
                     (1,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0),
                     (2,'TEST_A','ACCIONES','BYMA','USD','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0),
                     (3,'TEST_C','CEDEARS','BYMA','ARS','T1','2026-09-18','RAW','RAW_NO_ADJUSTMENT',0),
-                    (4,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0);
+                    (4,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0),
+                    (5,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21T18:00:00Z','RAW','RAW_NO_ADJUSTMENT',0);
                 CREATE TABLE history_canonical_v2 AS
                     SELECT id AS version_id,symbol,instrument_type,market,currency,settlement,
                            date,price_basis,adjustment_basis,adjusted FROM history_versions_v2 WHERE id<>4;
+                INSERT INTO history_canonical_v2 VALUES
+                    (99,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-19','RAW','RAW_NO_ADJUSTMENT',0);
                 CREATE TABLE history_source_conflicts_v2(current_version_id,contender_version_id);
                 INSERT INTO history_source_conflicts_v2 VALUES (1,4);
             """)
@@ -912,9 +915,10 @@ class RestoredHistoryInventoryContracts(unittest.TestCase):
             self.assertEqual(hashlib.sha256(observer.read_bytes()).hexdigest(), observer_sha)
             self.assertEqual(hashlib.sha256(history.read_bytes()).hexdigest(), history_sha)
             self.assertEqual(raw["cohorts"]["ACCIONES"], dict(zip(custody.INVENTORY_METRICS,
-                (1, 1, 3, 1, 2, 0, 0, 2, 1))))
+                (1, 1, 3, 1, 2, 0, 0, 3, 1, 2, 1))))
             self.assertEqual(raw["cohorts"]["CEDEARS"], dict(zip(custody.INVENTORY_METRICS,
-                (1, 1, 3, 0, 3, 1, 0, 1, 0))))
+                (1, 1, 3, 0, 3, 1, 0, 1, 0, 0, 0))))
+            self.assertTrue(raw["conflict_ledger_present"])
             clean = custody.sanitize_restored_inventory(raw, remote_rc=0, observer_run=args[0],
                                                         history_run=args[1], mask=args[2])
             self.assertEqual(clean, raw)

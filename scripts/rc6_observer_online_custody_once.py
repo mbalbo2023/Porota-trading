@@ -54,7 +54,10 @@ INVENTORY_IDENTITY_LIMIT = 4096
 INVENTORY_METRICS = ("identities", "with_canonical", "regular_or_certified_slots",
                      "canonical_on_certified_slots", "absent_on_certified_slots",
                      "canonical_on_uncertain_slots", "canonical_outside_market_days",
-                     "version_rows", "conflicted_candidate_slots")
+                     "version_rows", "conflicted_candidate_slots", "invalid_date_rows",
+                     "canonical_without_exact_version")
+INVENTORY_SQL_PHASES = frozenset({"OPEN_RESTORE", "OBSERVER_PAPER_WITNESS", "OBSERVER_CATALOG",
+                                  "HISTORY_SCHEMA", "HISTORY_CANONICAL", "HISTORY_VERSIONS"})
 PUBLIC_HOLD_REASONS = frozenset({
     "CUSTODY_BACKUP_TIMEOUT", "CUSTODY_DIRECTORY_UNSAFE", "CUSTODY_DISK_RESERVE_BLOCKED",
     "CUSTODY_DURABILITY_UNVERIFIED", "CUSTODY_LOCK_UNSAFE", "CUSTODY_OWNER_BUSY",
@@ -76,6 +79,21 @@ PUBLIC_HOLD_REASONS = frozenset({
 
 class Hold(Exception):
     """Fail-closed expected condition; never publish the triggering raw path."""
+
+
+class InventorySqlHold(Hold):
+    def __init__(self, phase: str, error: sqlite3.Error):
+        super().__init__("RESTORED_INVENTORY_SQL_UNVERIFIED")
+        self.phase = phase
+        self.code = getattr(error, "sqlite_errorcode", 0)
+
+
+@contextmanager
+def _inventory_sql(phase: str):
+    try:
+        yield
+    except sqlite3.Error as exc:
+        raise InventorySqlHold(phase, exc) from exc
 
 
 def _safe_directory(path: Path) -> None:
@@ -764,67 +782,80 @@ def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline:
 
 
 def _restored_history_counts(observer, history, days):
-    _live_paper_zero(observer)
-    identities = observer.execute(
-        """SELECT DISTINCT ticker,instrument_type,market,currency,settlement
-             FROM financial_instrument_catalog
-            WHERE status='AVAILABLE' AND market='BYMA' AND currency='ARS'
-              AND instrument_type IN ('ACCIONES','CEDEARS')
-              AND settlement IN ('A-24HS','24HS','T1','T+1')
-              AND length(ticker) BETWEEN 1 AND 80 AND ticker=upper(trim(ticker))
-            ORDER BY ticker,instrument_type,market,currency,settlement LIMIT ?""",
-        (INVENTORY_IDENTITY_LIMIT + 1,)).fetchall()
+    with _inventory_sql("OBSERVER_PAPER_WITNESS"):
+        _live_paper_zero(observer)
+    with _inventory_sql("OBSERVER_CATALOG"):
+        identities = observer.execute(
+            """SELECT DISTINCT ticker,instrument_type,market,currency,settlement
+                 FROM financial_instrument_catalog
+                WHERE status='AVAILABLE' AND market='BYMA' AND currency='ARS'
+                  AND instrument_type IN ('ACCIONES','CEDEARS')
+                  AND settlement IN ('A-24HS','24HS','T1','T+1')
+                  AND length(ticker) BETWEEN 1 AND 80 AND ticker=upper(trim(ticker))
+                ORDER BY ticker,instrument_type,market,currency,settlement LIMIT ?""",
+            (INVENTORY_IDENTITY_LIMIT + 1,)).fetchall()
     if not 0 < len(identities) <= INVENTORY_IDENTITY_LIMIT:
         raise Hold("RESTORED_INVENTORY_SCOPE_UNVERIFIED")
+    with _inventory_sql("HISTORY_SCHEMA"):
+        conflict_table = history.execute("SELECT 1 FROM sqlite_schema WHERE type='table' "
+                                         "AND name='history_source_conflicts_v2'").fetchone() is not None
     # Both date range queries use the financial identity prefix of the existing
     # canonical and version indexes. Conflict lookup uses its leading version ID.
     where = """symbol=? AND instrument_type=? AND market=? AND currency=? AND settlement=?
-               AND date BETWEEN ? AND ? AND price_basis='RAW'
+               AND date>=? AND date<? AND price_basis='RAW'
                AND adjustment_basis='RAW_NO_ADJUSTMENT' AND adjusted=0"""
+    conflict_count = ("SUM(EXISTS(SELECT 1 FROM history_source_conflicts_v2 AS c "
+                      "WHERE c.current_version_id=v.id))" if conflict_table else "0")
     cohorts = {family: dict.fromkeys(INVENTORY_METRICS, 0) for family in INVENTORY_FAMILIES}
     digest = hashlib.sha256()
     certified = sum(status == "1" for status in days.values())
     for identity in identities:
-        args = (*identity, INVENTORY_FROM.isoformat(), INVENTORY_TO.isoformat())
-        canonical = dict(history.execute(
-            "SELECT date,version_id FROM history_canonical_v2 WHERE " + where, args))
-        versions = {day: (count, conflicts) for day, count, conflicts in history.execute(
-            """SELECT date,COUNT(*),SUM(EXISTS(
-                   SELECT 1 FROM history_source_conflicts_v2 AS c WHERE c.current_version_id=v.id))
-               FROM history_versions_v2 AS v WHERE """ + where + " GROUP BY date", args)}
-        if (canonical.keys() - days.keys() or versions.keys() - days.keys()
-                or canonical.keys() - versions.keys()):
-            raise Hold("RESTORED_INVENTORY_SQL_UNVERIFIED")
+        args = (*identity, INVENTORY_FROM.isoformat(), (INVENTORY_TO + timedelta(days=1)).isoformat())
+        with _inventory_sql("HISTORY_CANONICAL"):
+            canonical = {day: (version_id, exact) for day, version_id, exact in history.execute(
+                """SELECT c.date,c.version_id,EXISTS(SELECT 1 FROM history_versions_v2 AS v
+                        WHERE v.id=c.version_id AND v.date=c.date AND v.symbol=c.symbol
+                          AND v.instrument_type=c.instrument_type AND v.market=c.market
+                          AND v.currency=c.currency AND v.settlement=c.settlement
+                          AND v.price_basis=c.price_basis AND v.adjustment_basis=c.adjustment_basis
+                          AND v.adjusted=c.adjusted)
+                     FROM history_canonical_v2 AS c WHERE """ + where, args)}
+        with _inventory_sql("HISTORY_VERSIONS"):
+            versions = {day: (count, conflicts) for day, count, conflicts in history.execute(
+                "SELECT date,COUNT(*)," + conflict_count +
+                " FROM history_versions_v2 AS v WHERE " + where + " GROUP BY date", args)}
         counts = cohorts[identity[1]]
         counts["identities"] += 1
-        counts["with_canonical"] += bool(canonical)
+        counts["with_canonical"] += any(exact and day in days for day, (_, exact) in canonical.items())
         counts["regular_or_certified_slots"] += certified
+        counts["invalid_date_rows"] += len(canonical.keys() - days.keys()) + sum(
+            versions[day][0] for day in versions.keys() - days.keys())
+        counts["canonical_without_exact_version"] += sum(not exact for _, exact in canonical.values())
+        counts["version_rows"] += sum(count for count, _ in versions.values())
         for day, status in days.items():
-            version_id = canonical.get(day)
+            version_id, exact = canonical.get(day, (None, 0))
+            present = bool(exact)
             version_count, conflicted = versions.get(day, (0, 0))
             if status == "1":
-                counts["canonical_on_certified_slots"] += version_id is not None
-                counts["absent_on_certified_slots"] += version_id is None
-            elif version_id is not None:
+                counts["canonical_on_certified_slots"] += present
+                counts["absent_on_certified_slots"] += not present
+            elif present:
                 field = "canonical_on_uncertain_slots" if status == "2" else "canonical_outside_market_days"
                 counts[field] += 1
-            counts["version_rows"] += version_count
             counts["conflicted_candidate_slots"] += bool(conflicted)
-            digest.update((json.dumps([identity, day, status, version_id, version_count, conflicted],
+            digest.update((json.dumps([identity, day, status, version_id, exact, version_count, conflicted],
                                       separators=(",", ":")) + "\n").encode())
-    return cohorts, digest.hexdigest()
+    return cohorts, digest.hexdigest(), conflict_table
 
 
 def host_restored_history_inventory(observer_run: str, history_run: str, mask: str, *,
                                     custody_root: Path = CUSTODY) -> dict:
     days = _inventory_days(mask)
     deadline = time.monotonic() + 145
-    try:
+    with _inventory_sql("OPEN_RESTORE"):
         with _restored_inventory_db(custody_root, "OBSERVER", observer_run, deadline) as observer:
             with _restored_inventory_db(custody_root, "HISTORY", history_run, deadline) as history:
-                cohorts, digest = _restored_history_counts(observer[0], history[0], days)
-    except sqlite3.Error as exc:
-        raise Hold("RESTORED_INVENTORY_SQL_UNVERIFIED") from exc
+                cohorts, digest, conflict_table = _restored_history_counts(observer[0], history[0], days)
     if time.monotonic() > deadline:
         raise Hold("RESTORED_INVENTORY_TIMEOUT")
     return {"schema": INVENTORY_SCHEMA, "state": "RESTORED_HISTORY_INVENTORY_OK",
@@ -833,7 +864,7 @@ def host_restored_history_inventory(observer_run: str, history_run: str, mask: s
             "observer_run": observer_run, "history_run": history_run,
             "observer_restore_sha256": observer[1], "history_restore_sha256": history[1],
             "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest(),
-            "inventory_sha256": digest, "cohorts": cohorts,
+            "inventory_sha256": digest, "cohorts": cohorts, "conflict_ledger_present": conflict_table,
             "generated_at_utc": datetime.now(timezone.utc).isoformat()}
 
 
@@ -843,6 +874,11 @@ def sanitize_restored_inventory(raw, *, remote_rc, observer_run, history_run, ma
         reason = raw.get("failure_reason") if isinstance(raw, dict) else None
         if isinstance(reason, str) and reason in PUBLIC_HOLD_REASONS:
             fallback["failure_reason"] = reason
+        phase = raw.get("sql_phase") if isinstance(raw, dict) else None
+        code = raw.get("sqlite_errorcode") if isinstance(raw, dict) else None
+        if (isinstance(phase, str) and phase in INVENTORY_SQL_PHASES
+                and type(code) is int and 0 <= code <= 65535):
+            fallback.update(sql_phase=phase, sqlite_errorcode=code)
         return fallback
     days = _inventory_days(mask)
     fixed = {"schema": INVENTORY_SCHEMA, "state": "RESTORED_HISTORY_INVENTORY_OK",
@@ -851,9 +887,11 @@ def sanitize_restored_inventory(raw, *, remote_rc, observer_run, history_run, ma
              "observer_run": observer_run, "history_run": history_run,
              "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest()}
     extras = {"observer_restore_sha256", "history_restore_sha256", "inventory_sha256"}
-    if (not isinstance(raw, dict) or set(raw) != fixed.keys() | extras | {"cohorts", "generated_at_utc"}
+    if (not isinstance(raw, dict) or set(raw) != fixed.keys() | extras | {
+                "cohorts", "generated_at_utc", "conflict_ledger_present"}
             or any(type(raw[key]) is not type(value) or raw[key] != value for key, value in fixed.items())
             or any(not isinstance(raw[key], str) or not HEX64.fullmatch(raw[key]) for key in extras)
+            or type(raw["conflict_ledger_present"]) is not bool
             or not isinstance(raw["cohorts"], dict) or set(raw["cohorts"]) != set(INVENTORY_FAMILIES)):
         return fallback
     try:
@@ -1288,8 +1326,11 @@ def main(argv: list[str] | None = None) -> int:
         if arguments[:1] in (["host-preflight"], ["host-custody"], ["host-restored-inventory"]):
             reason = str(exc) if isinstance(exc, Hold) else "CUSTODY_UNCLASSIFIED"
             schema = INVENTORY_SCHEMA if arguments[0] == "host-restored-inventory" else SCHEMA
-            print(json.dumps({"schema": schema, "failure_reason":
-                              reason if reason in PUBLIC_HOLD_REASONS else "CUSTODY_UNCLASSIFIED"}))
+            failure = {"schema": schema, "failure_reason":
+                       reason if reason in PUBLIC_HOLD_REASONS else "CUSTODY_UNCLASSIFIED"}
+            if isinstance(exc, InventorySqlHold):
+                failure.update(sql_phase=exc.phase, sqlite_errorcode=exc.code)
+            print(json.dumps(failure))
         print("RC6_CUSTODY_FAIL_CLOSED", file=sys.stderr)
         return 2
 
