@@ -1,5 +1,6 @@
 """A729 negative and positive fixtures: there is NO deletion entry point."""
 from datetime import datetime, timedelta, timezone
+import gzip
 import hashlib
 import io
 import json
@@ -10,6 +11,7 @@ import tempfile
 import tracemalloc
 import unittest
 from contextlib import redirect_stdout
+from types import SimpleNamespace
 from unittest.mock import patch
 import sys
 import time
@@ -534,7 +536,8 @@ class ArchiveProvenanceReadOnlyTests(unittest.TestCase):
     def test_archive_action_is_opt_in_and_host_data_mount_os_ro(self):
         workflow = (Path(inv.__file__).resolve().parents[1] / ".github/workflows/"
                     "rc6-a729-db-backup-inventory-readonly.yml").read_text()
-        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]", workflow)
+        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, "
+                      "SOURCE_LOCATOR_ONLY, EXTERNAL_EXACT_INTEGRITY_ONLY]", workflow)
         self.assertIn("inputs.mode == 'INVENTORY_ONLY'", workflow)
         self.assertIn("inputs.mode == 'ARCHIVE_PROVENANCE_ONLY'", workflow)
         self.assertIn("group: rc6-unified-paper-deploy", workflow)
@@ -615,6 +618,57 @@ class HistoricalSourceLocatorTests(unittest.TestCase):
         self.assertEqual(table["quality_valid_payload_labeled"], 1)
         self.assertIsNone(table["rows_total"])
         self.assertNotIn("PRIVATE_TICKER", json.dumps(result))
+
+    def test_external_integrity_checks_inner_and_rebuilt_body_with_no_raw_export(self):
+        path, writer = self.external_manifest()
+        writer.executescript("""ALTER TABLE exact_attempts_v1 ADD COLUMN body_bytes INTEGER;
+            ALTER TABLE exact_attempts_v1 ADD COLUMN body_sha256 TEXT;
+            ALTER TABLE exact_attempts_v1 ADD COLUMN body_hash TEXT;""")
+        objects = path.parent / "objects/sha256"
+        for variant in ("match", "wrong_body", "wrong_inner", "symlink", "oversize",
+                        "bad_digest", "unvalidated", "other_source"):
+            payload = f'["PRIVATE_TICKER_{variant}"]'.encode("utf-8")
+            digest = hashlib.sha256(payload).hexdigest()
+            wrapper = '{"symbol":"PRIVATE_TICKER_Ñ"}'
+            body = json.dumps({"symbol": "PRIVATE_TICKER_Ñ", "payload_json": payload.decode()},
+                              sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+            body_sha = hashlib.sha256(body).hexdigest()
+            obj = objects / digest[:2] / f"{digest}.json.gz"
+            obj.parent.mkdir(parents=True, exist_ok=True)
+            if variant == "symlink":
+                obj.symlink_to(self.history)
+            else:
+                obj.write_bytes(gzip.compress(payload if variant != "wrong_inner" else b"x" * 4096))
+            writer.execute("INSERT INTO exact_attempts_v1 VALUES(?,?,?,?,?,?,?)", (
+                "OTHER" if variant == "other_source" else "PPI_HISTORY",
+                "UNVALIDATED" if variant == "unvalidated" else "VALID_PAYLOAD",
+                "../invalid" if variant == "bad_digest" else digest, wrapper,
+                inv.EXACT_MAX_BODY_BYTES + 1 if variant == "oversize" else len(body),
+                body_sha, "a" * 64 if variant == "wrong_body" else body_sha,
+            ))
+        writer.commit()
+        with patch.object(inv, "archive_readonly_mount_attested", return_value=True), \
+                patch.object(inv.os, "fstatvfs", return_value=SimpleNamespace(f_flag=os.ST_RDONLY)), \
+                patch.object(inv, "LOCATOR_OBJECTS_ROOT", objects), \
+                patch.object(inv, "LOCATOR_TARGETS",
+                             (("EXTERNAL_EXACT", path, 2 * 1024**2),)):
+            raw = inv.host_source_locator(verify_external_exact=True)
+            part = raw["source_inventory"][0]["tables"][0]
+            counters = part["exact_integrity"]
+            self.assertEqual(part["sample_rows"], 8)
+            self.assertEqual(counters, {
+                "eligible_rows": 6, "matched": 1, "invalid_manifest": 1, "unreadable_object": 1,
+                "inner_hash_mismatch": 1, "body_hash_mismatch": 1, "byte_budget_exceeded": 1,
+            })
+            counters["secret"] = "PRIVATE_CREDENTIAL"
+            clean = inv.source_locator_public_receipt(raw, 0, verify_external_exact=True)
+            self.assertEqual(clean["state"], inv.EXACT_INTEGRITY_MODE)
+            self.assertFalse(clean["ppi_provider_contract_verified"])
+            self.assertFalse(clean["history_source_selected"])
+            self.assertNotIn("PRIVATE_", json.dumps(clean))
+            counters["matched"] = 6
+            self.assertEqual(inv.source_locator_public_receipt(
+                raw, 0, verify_external_exact=True)["state"], "NO_VERIFICADO")
 
     def test_absent_manifest_is_not_falsely_reported_empty_table(self):
         missing = self.root / "not-created/manifest_exact_v1.db"
@@ -896,11 +950,13 @@ class HistoricalSourceLocatorTests(unittest.TestCase):
     def test_source_locator_workflow_manual_ro_and_two_existing_modes_stable(self):
         workflow = (Path(inv.__file__).resolve().parents[1] / ".github/workflows/"
                     "rc6-a729-db-backup-inventory-readonly.yml").read_text()
-        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, SOURCE_LOCATOR_ONLY]",
-                      workflow)
+        self.assertIn("options: [INVENTORY_ONLY, ARCHIVE_PROVENANCE_ONLY, "
+                      "SOURCE_LOCATOR_ONLY, EXTERNAL_EXACT_INTEGRITY_ONLY]", workflow)
         self.assertIn("inputs.mode == 'SOURCE_LOCATOR_ONLY'", workflow)
         self.assertIn("host-source-locator", workflow)
         self.assertIn("sanitize-source", workflow)
+        self.assertIn("host_mode=host-exact-integrity", workflow)
+        self.assertIn("sanitize_mode=sanitize-exact-integrity", workflow)
         self.assertIn("unshare --mount --propagation private", workflow)
         self.assertIn("mount -o remount,bind,ro /opt/porota-trading/data", workflow)
         self.assertIn("group: rc6-unified-paper-deploy", workflow)
