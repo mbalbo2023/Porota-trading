@@ -847,6 +847,87 @@ class AttributionContracts(unittest.TestCase):
                 self.assertEqual(str(raised.exception), "SOURCE_IDENTITY_CHANGED")
 
 
+class RestoredHistoryInventoryContracts(unittest.TestCase):
+    OBSERVER_RUN = "44918906718"
+    HISTORY_RUN = "44917242971"
+    MASK = "0" * (custody.INVENTORY_LENGTH - 4) + "2111"
+
+    def restore(self, root, role, run_id, sql):
+        slot = root / f"{role.lower()}_{run_id}"
+        slot.mkdir(mode=0o700)
+        restored = slot / "restore-check.sqlite"
+        with sqlite3.connect(restored) as db:
+            db.executescript(sql)
+        restored.chmod(0o600)
+        size = restored.stat().st_size
+        sha = hashlib.sha256(restored.read_bytes()).hexdigest()
+        receipt = {"schema": custody.SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
+                   "read_only": False, "source_sql_writes": 0, "shm_locking_possible": True,
+                   "runtime_db_binding": "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED",
+                   "exit_quiescence": "EXIT_WAITING_MARKET_CLOSED_FOUR_LEDGERS_FLAT_SAMPLED",
+                   "paper_zero": "OBSERVED", "run_id": run_id, "source_bytes": size,
+                   "wal_bytes_before": 0, "source_wal_state": "SOURCE_WAL_ABSENT",
+                   "source_identity_continuity": "DB_IDENTITY_STABLE_WAL_UNCHANGED_SHM_UNCHANGED",
+                   "snapshot_bytes": size, "snapshot_sha256": sha, "restore_bytes": size,
+                   "restore_sha256": sha, "restore_quick_check": "ok",
+                   "generated_at_utc": "2026-11-21T15:05:51+00:00", "host_mutations": 1,
+                   "ppi_requests": 0, "real_orders_sent_by_action": 0, "ppi_watch_touched": False}
+        if role == "HISTORY":
+            receipt["database_role"] = role
+        manifest = slot / "manifest.json"
+        manifest.write_text(json.dumps(receipt))
+        manifest.chmod(0o600)
+        return restored, sha
+
+    def test_exact_identity_join_reports_only_counts_and_refuses_changed_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            observer, observer_sha = self.restore(root, "OBSERVER", self.OBSERVER_RUN, """
+                CREATE TABLE observer_state(id,mode,real_orders_sent);
+                INSERT INTO observer_state VALUES (1,'PRODUCTION_PAPER',0);
+                CREATE TABLE financial_instrument_catalog(ticker,instrument_type,market,currency,settlement,status);
+                INSERT INTO financial_instrument_catalog VALUES
+                    ('TEST_A','ACCIONES','BYMA','ARS','A-24HS','AVAILABLE'),
+                    ('TEST_C','CEDEARS','BYMA','ARS','T1','AVAILABLE'),
+                    ('TEST_A','ACCIONES','BYMA','USD','A-24HS','AVAILABLE');
+            """)
+            history, history_sha = self.restore(root, "HISTORY", self.HISTORY_RUN, """
+                CREATE TABLE history_versions_v2(id,symbol,instrument_type,market,currency,settlement,
+                                                  date,price_basis,adjustment_basis,adjusted);
+                INSERT INTO history_versions_v2 VALUES
+                    (1,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0),
+                    (2,'TEST_A','ACCIONES','BYMA','USD','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0),
+                    (3,'TEST_C','CEDEARS','BYMA','ARS','T1','2026-09-18','RAW','RAW_NO_ADJUSTMENT',0),
+                    (4,'TEST_A','ACCIONES','BYMA','ARS','A-24HS','2026-09-21','RAW','RAW_NO_ADJUSTMENT',0);
+                CREATE TABLE history_canonical_v2 AS
+                    SELECT id AS version_id,symbol,instrument_type,market,currency,settlement,
+                           date,price_basis,adjustment_basis,adjusted FROM history_versions_v2 WHERE id<>4;
+                CREATE TABLE history_source_conflicts_v2(current_version_id,contender_version_id);
+                INSERT INTO history_source_conflicts_v2 VALUES (1,4);
+            """)
+            args = (self.OBSERVER_RUN, self.HISTORY_RUN, self.MASK)
+            raw = custody.host_restored_history_inventory(*args, custody_root=root)
+            self.assertEqual(raw["observer_restore_sha256"], observer_sha)
+            self.assertEqual(raw["history_restore_sha256"], history_sha)
+            self.assertEqual(hashlib.sha256(observer.read_bytes()).hexdigest(), observer_sha)
+            self.assertEqual(hashlib.sha256(history.read_bytes()).hexdigest(), history_sha)
+            self.assertEqual(raw["cohorts"]["ACCIONES"], dict(zip(custody.INVENTORY_METRICS,
+                (1, 1, 3, 1, 2, 0, 0, 2, 1))))
+            self.assertEqual(raw["cohorts"]["CEDEARS"], dict(zip(custody.INVENTORY_METRICS,
+                (1, 1, 3, 0, 3, 1, 0, 1, 0))))
+            clean = custody.sanitize_restored_inventory(raw, remote_rc=0, observer_run=args[0],
+                                                        history_run=args[1], mask=args[2])
+            self.assertEqual(clean, raw)
+            self.assertNotIn("TEST_", json.dumps(clean))
+            contaminated = dict(raw, ticker="TEST_A")
+            self.assertEqual(custody.sanitize_restored_inventory(contaminated, remote_rc=0,
+                observer_run=args[0], history_run=args[1], mask=args[2])["state"], "NO_VERIFICADO")
+            with history.open("r+b") as target:
+                target.write(b"changed")
+            with self.assertRaisesRegex(custody.Hold, "RESTORED_INVENTORY_DIGEST_MISMATCH"):
+                custody.host_restored_history_inventory(*args, custody_root=root)
+
+
 class ActionsBoundaryContracts(unittest.TestCase):
     @staticmethod
     def _host_steps():
@@ -904,7 +985,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertNotIn("push", workflow["on"])
         self.assertNotIn("schedule", workflow["on"])
         options = workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"]
-        self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE"])
+        self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE", custody.INVENTORY_MODE])
         roles = workflow["on"]["workflow_dispatch"]["inputs"]["database_role"]
         self.assertEqual(roles["options"], ["OBSERVER", "HISTORY"])
         self.assertEqual(roles["default"], "OBSERVER")
@@ -923,6 +1004,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("host-preflight", remote["run"])
         self.assertIn("timeout 790 python3 -B - host-preflight", remote["run"])
         self.assertIn("timeout 790 python3 -B - host-custody", remote["run"])
+        self.assertIn("timeout 155 python3 -B - host-restored-inventory", remote["run"])
         self.assertNotIn("sudo", remote["run"])
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact")]
         self.assertEqual(len(uploads), 1)

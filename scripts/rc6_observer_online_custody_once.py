@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, closing, contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import errno
 import fcntl
 import grp
@@ -44,6 +44,17 @@ OWNER_BRANCH = "mbalbo2023/Porota-trading"
 OWNER_ISSUE = f"https://api.github.com/repos/{OWNER_BRANCH}/issues/980"
 OWNER_PUBLIC = f"https://github.com/{OWNER_BRANCH}/issues/980#issuecomment-"
 BACKUP_TIMEOUT_SECONDS = 600
+INVENTORY_MODE = "RESTORED_HISTORY_READ_ONLY"
+INVENTORY_SCHEMA = "rc6.restored-history-inventory.v1"
+INVENTORY_FROM = date(2025, 9, 21)
+INVENTORY_TO = date(2026, 9, 21)
+INVENTORY_LENGTH = (INVENTORY_TO - INVENTORY_FROM).days + 1
+INVENTORY_FAMILIES = ("ACCIONES", "CEDEARS")
+INVENTORY_IDENTITY_LIMIT = 4096
+INVENTORY_METRICS = ("identities", "with_canonical", "regular_or_certified_slots",
+                     "canonical_on_certified_slots", "absent_on_certified_slots",
+                     "canonical_on_uncertain_slots", "canonical_outside_market_days",
+                     "version_rows", "conflicted_candidate_slots")
 PUBLIC_HOLD_REASONS = frozenset({
     "CUSTODY_BACKUP_TIMEOUT", "CUSTODY_DIRECTORY_UNSAFE", "CUSTODY_DISK_RESERVE_BLOCKED",
     "CUSTODY_DURABILITY_UNVERIFIED", "CUSTODY_LOCK_UNSAFE", "CUSTODY_OWNER_BUSY",
@@ -57,6 +68,9 @@ PUBLIC_HOLD_REASONS = frozenset({
     "ROOTLESS_STATE_PARENT_UNSAFE", "ROOTLESS_STATE_PRIVATE_GROUP_UNVERIFIED",
     "SOURCE_FILE_UNAVAILABLE", "SOURCE_FILE_UNSAFE", "SOURCE_IDENTITY_CHANGED",
     "SQLITE_SIDECAR_UNSAFE",
+    "RESTORED_INVENTORY_BINDING_UNVERIFIED", "RESTORED_INVENTORY_DIGEST_MISMATCH",
+    "RESTORED_INVENTORY_SQL_UNVERIFIED", "RESTORED_INVENTORY_SCOPE_UNVERIFIED",
+    "RESTORED_INVENTORY_CALENDAR_UNVERIFIED", "RESTORED_INVENTORY_TIMEOUT",
 })
 
 
@@ -689,6 +703,178 @@ def _verify_restore(path: Path, deadline: float, *, database_role="OBSERVER") ->
                 raise Hold("PRIVATE_HISTORY_RESTORE_SCHEMA_UNVERIFIED")
 
 
+def _inventory_days(mask: str) -> dict[str, str]:
+    if (len(mask) != INVENTORY_LENGTH or not re.fullmatch(r"[012]+", mask)
+            or "1" not in mask or "0" not in mask):
+        raise Hold("RESTORED_INVENTORY_CALENDAR_UNVERIFIED")
+    return {(INVENTORY_FROM + timedelta(days=offset)).isoformat(): status
+            for offset, status in enumerate(mask)}
+
+
+def _open_private_restore_member(directory: int, name: str, maximum: int):
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                 dir_fd=directory)
+    info = os.fstat(fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_mode & 0o077
+            or info.st_uid != os.geteuid() or not 0 < info.st_size <= maximum):
+        os.close(fd)
+        raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+    return os.fdopen(fd, "rb"), info
+
+
+@contextmanager
+def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline: float):
+    if not RUN_ID.fullmatch(run_id):
+        raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+    directory = _anchor_directory(custody_root / f"{role.lower()}_{run_id}")
+    try:
+        folder = os.fstat(directory)
+        if folder.st_mode & 0o077 or folder.st_uid != os.geteuid():
+            raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+        manifest, _ = _open_private_restore_member(directory, "manifest.json", 16 * 1024)
+        with manifest:
+            receipt = sanitize_receipt("CUSTODY_ONCE", json.load(manifest), remote_rc=0,
+                                       expected_run_id=run_id, database_role=role)
+        if receipt["state"] != "PRIVATE_SNAPSHOT_RESTORE_OK":
+            raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+        restored, info = _open_private_restore_member(directory, "restore-check.sqlite", MAX_DB_BYTES)
+        with restored:
+            if info.st_size != receipt["restore_bytes"]:
+                raise Hold("RESTORED_INVENTORY_DIGEST_MISMATCH")
+            digest = hashlib.sha256()
+            while block := restored.read(1024 * 1024):
+                if time.monotonic() > deadline:
+                    raise Hold("RESTORED_INVENTORY_TIMEOUT")
+                digest.update(block)
+            if digest.hexdigest() != receipt["restore_sha256"]:
+                raise Hold("RESTORED_INVENTORY_DIGEST_MISMATCH")
+            uri = f"file:/proc/self/fd/{restored.fileno()}?mode=ro&immutable=1"
+            with closing(sqlite3.connect(uri, uri=True, timeout=1)) as db:
+                db.execute("PRAGMA trusted_schema=OFF")
+                db.execute("PRAGMA query_only=ON")
+                db.execute("PRAGMA temp_store=MEMORY")
+                db.set_progress_handler(lambda: int(time.monotonic() > deadline), 5000)
+                yield db, receipt["restore_sha256"]
+            after = os.fstat(restored.fileno())
+            if (after.st_mtime_ns, after.st_ctime_ns, after.st_size) != (
+                    info.st_mtime_ns, info.st_ctime_ns, info.st_size):
+                raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+    finally:
+        os.close(directory)
+
+
+def _restored_history_counts(observer, history, days):
+    _live_paper_zero(observer)
+    identities = observer.execute(
+        """SELECT DISTINCT ticker,instrument_type,market,currency,settlement
+             FROM financial_instrument_catalog
+            WHERE status='AVAILABLE' AND market='BYMA' AND currency='ARS'
+              AND instrument_type IN ('ACCIONES','CEDEARS')
+              AND settlement IN ('A-24HS','24HS','T1','T+1')
+              AND length(ticker) BETWEEN 1 AND 80 AND ticker=upper(trim(ticker))
+            ORDER BY ticker,instrument_type,market,currency,settlement LIMIT ?""",
+        (INVENTORY_IDENTITY_LIMIT + 1,)).fetchall()
+    if not 0 < len(identities) <= INVENTORY_IDENTITY_LIMIT:
+        raise Hold("RESTORED_INVENTORY_SCOPE_UNVERIFIED")
+    # Both date range queries use the financial identity prefix of the existing
+    # canonical and version indexes. Conflict lookup uses its leading version ID.
+    where = """symbol=? AND instrument_type=? AND market=? AND currency=? AND settlement=?
+               AND date BETWEEN ? AND ? AND price_basis='RAW'
+               AND adjustment_basis='RAW_NO_ADJUSTMENT' AND adjusted=0"""
+    cohorts = {family: dict.fromkeys(INVENTORY_METRICS, 0) for family in INVENTORY_FAMILIES}
+    digest = hashlib.sha256()
+    certified = sum(status == "1" for status in days.values())
+    for identity in identities:
+        args = (*identity, INVENTORY_FROM.isoformat(), INVENTORY_TO.isoformat())
+        canonical = dict(history.execute(
+            "SELECT date,version_id FROM history_canonical_v2 WHERE " + where, args))
+        versions = {day: (count, conflicts) for day, count, conflicts in history.execute(
+            """SELECT date,COUNT(*),SUM(EXISTS(
+                   SELECT 1 FROM history_source_conflicts_v2 AS c WHERE c.current_version_id=v.id))
+               FROM history_versions_v2 AS v WHERE """ + where + " GROUP BY date", args)}
+        if (canonical.keys() - days.keys() or versions.keys() - days.keys()
+                or canonical.keys() - versions.keys()):
+            raise Hold("RESTORED_INVENTORY_SQL_UNVERIFIED")
+        counts = cohorts[identity[1]]
+        counts["identities"] += 1
+        counts["with_canonical"] += bool(canonical)
+        counts["regular_or_certified_slots"] += certified
+        for day, status in days.items():
+            version_id = canonical.get(day)
+            version_count, conflicted = versions.get(day, (0, 0))
+            if status == "1":
+                counts["canonical_on_certified_slots"] += version_id is not None
+                counts["absent_on_certified_slots"] += version_id is None
+            elif version_id is not None:
+                field = "canonical_on_uncertain_slots" if status == "2" else "canonical_outside_market_days"
+                counts[field] += 1
+            counts["version_rows"] += version_count
+            counts["conflicted_candidate_slots"] += bool(conflicted)
+            digest.update((json.dumps([identity, day, status, version_id, version_count, conflicted],
+                                      separators=(",", ":")) + "\n").encode())
+    return cohorts, digest.hexdigest()
+
+
+def host_restored_history_inventory(observer_run: str, history_run: str, mask: str, *,
+                                    custody_root: Path = CUSTODY) -> dict:
+    days = _inventory_days(mask)
+    deadline = time.monotonic() + 145
+    try:
+        with _restored_inventory_db(custody_root, "OBSERVER", observer_run, deadline) as observer:
+            with _restored_inventory_db(custody_root, "HISTORY", history_run, deadline) as history:
+                cohorts, digest = _restored_history_counts(observer[0], history[0], days)
+    except sqlite3.Error as exc:
+        raise Hold("RESTORED_INVENTORY_SQL_UNVERIFIED") from exc
+    if time.monotonic() > deadline:
+        raise Hold("RESTORED_INVENTORY_TIMEOUT")
+    return {"schema": INVENTORY_SCHEMA, "state": "RESTORED_HISTORY_INVENTORY_OK",
+            "read_only": True, "source_sql_writes": 0, "ppi_requests": 0,
+            "real_orders_sent_by_action": 0, "ppi_watch_touched": False,
+            "observer_run": observer_run, "history_run": history_run,
+            "observer_restore_sha256": observer[1], "history_restore_sha256": history[1],
+            "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest(),
+            "inventory_sha256": digest, "cohorts": cohorts,
+            "generated_at_utc": datetime.now(timezone.utc).isoformat()}
+
+
+def sanitize_restored_inventory(raw, *, remote_rc, observer_run, history_run, mask):
+    fallback = {"schema": INVENTORY_SCHEMA, "state": "NO_VERIFICADO", "read_only": True}
+    if remote_rc:
+        reason = raw.get("failure_reason") if isinstance(raw, dict) else None
+        if isinstance(reason, str) and reason in PUBLIC_HOLD_REASONS:
+            fallback["failure_reason"] = reason
+        return fallback
+    days = _inventory_days(mask)
+    fixed = {"schema": INVENTORY_SCHEMA, "state": "RESTORED_HISTORY_INVENTORY_OK",
+             "read_only": True, "source_sql_writes": 0, "ppi_requests": 0,
+             "real_orders_sent_by_action": 0, "ppi_watch_touched": False,
+             "observer_run": observer_run, "history_run": history_run,
+             "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest()}
+    extras = {"observer_restore_sha256", "history_restore_sha256", "inventory_sha256"}
+    if (not isinstance(raw, dict) or set(raw) != fixed.keys() | extras | {"cohorts", "generated_at_utc"}
+            or any(type(raw[key]) is not type(value) or raw[key] != value for key, value in fixed.items())
+            or any(not isinstance(raw[key], str) or not HEX64.fullmatch(raw[key]) for key in extras)
+            or not isinstance(raw["cohorts"], dict) or set(raw["cohorts"]) != set(INVENTORY_FAMILIES)):
+        return fallback
+    try:
+        stamp = datetime.fromisoformat(raw["generated_at_utc"])
+        if stamp.tzinfo is None or stamp.utcoffset() != timedelta(0):
+            return fallback
+    except (TypeError, ValueError):
+        return fallback
+    for counts in raw["cohorts"].values():
+        if (not isinstance(counts, dict) or set(counts) != set(INVENTORY_METRICS)
+                or any(type(value) is not int or not 0 <= value <= 2**32 for value in counts.values())
+                or not 0 <= counts["with_canonical"] <= counts["identities"] <= INVENTORY_IDENTITY_LIMIT
+                or counts["regular_or_certified_slots"] != counts["identities"] * sum(s == "1" for s in days.values())
+                or counts["canonical_on_certified_slots"] + counts["absent_on_certified_slots"]
+                != counts["regular_or_certified_slots"]):
+            return fallback
+    if not 0 < sum(counts["identities"] for counts in raw["cohorts"].values()) <= INVENTORY_IDENTITY_LIMIT:
+        return fallback
+    return raw
+
+
 def source_metadata(db_path: Path) -> dict:
     """Metadata-only identity samples; WAL growth never implies no writers."""
     result = {}
@@ -1064,6 +1250,10 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(host_custody_once(DATABASES[role], run_id=arguments[1],
                                                paper_db_path=paper_db), sort_keys=True))
             return 0
+        if arguments[:1] == ["host-restored-inventory"] and len(arguments) == 4:
+            _operator_identity_guard()
+            print(json.dumps(host_restored_history_inventory(*arguments[1:]), sort_keys=True))
+            return 0
         if len(arguments) == 2 and arguments[0] == "verify-owner":
             workstream = verify_owner_from_github(arguments[1],
                 database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
@@ -1081,18 +1271,24 @@ def main(argv: list[str] | None = None) -> int:
                     raw = {}
             else:
                 raw = {}
-            public = sanitize_receipt(mode, raw, remote_rc=int(rc_text),
-                                      expected_run_id=os.environ.get("GITHUB_RUN_ID"),
-                                      database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
+            if mode == INVENTORY_MODE:
+                public = sanitize_restored_inventory(
+                    raw, remote_rc=int(rc_text), observer_run=os.getenv("OBSERVER_RESTORE_RUN", ""),
+                    history_run=os.getenv("HISTORY_RESTORE_RUN", ""), mask=os.getenv("HISTORY_CALENDAR", ""))
+            else:
+                public = sanitize_receipt(mode, raw, remote_rc=int(rc_text),
+                                          expected_run_id=os.environ.get("GITHUB_RUN_ID"),
+                                          database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
             with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
                 json.dump(public, target, sort_keys=True)
             print("RC6_CUSTODY_SANITIZED=" + public["state"])
             return 0
         raise Hold("ACTION_UNSUPPORTED")
     except (Hold, OSError, sqlite3.Error, ValueError, TypeError) as exc:
-        if arguments[:1] in (["host-preflight"], ["host-custody"]):
+        if arguments[:1] in (["host-preflight"], ["host-custody"], ["host-restored-inventory"]):
             reason = str(exc) if isinstance(exc, Hold) else "CUSTODY_UNCLASSIFIED"
-            print(json.dumps({"schema": SCHEMA, "failure_reason":
+            schema = INVENTORY_SCHEMA if arguments[0] == "host-restored-inventory" else SCHEMA
+            print(json.dumps({"schema": schema, "failure_reason":
                               reason if reason in PUBLIC_HOLD_REASONS else "CUSTODY_UNCLASSIFIED"}))
         print("RC6_CUSTODY_FAIL_CLOSED", file=sys.stderr)
         return 2

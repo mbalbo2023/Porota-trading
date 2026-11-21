@@ -13,10 +13,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Metadata-only PREFLIGHT or explicitly owned one-shot private custody'
+        description: 'Preflight, owned custody, or read-only restored history inventory'
         required: true
         type: choice
-        options: [PREFLIGHT_ONLY, CUSTODY_ONCE]
+        options: [PREFLIGHT_ONLY, CUSTODY_ONCE, RESTORED_HISTORY_READ_ONLY]
       deploy_owner_receipt_id:
         description: 'Current ACTIVE global DEPLOY_OWNER issue #980 comment ID; required only for CUSTODY_ONCE'
         required: false
@@ -27,6 +27,16 @@ on:
         options: [OBSERVER, HISTORY]
         default: OBSERVER
         required: true
+      observer_restore_run_id:
+        description: 'Successful OBSERVER custody run, for restored history inventory'
+        required: false
+        type: string
+        default: '44918906718'
+      history_restore_run_id:
+        description: 'Successful HISTORY custody run, for restored history inventory'
+        required: false
+        type: string
+        default: '44917242971'
 
 permissions:
   contents: read
@@ -40,6 +50,8 @@ jobs:
   contracts:
     runs-on: ubuntu-24.04
     timeout-minutes: 6
+    outputs:
+      restored_history_calendar: ${{ steps.history_calendar.outputs.calendar }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +66,39 @@ jobs:
             tests/test_rc6_observer_online_custody_once.py
           python3 -m unittest discover -s tests -p 'test_rc6_observer_online_custody_once.py' -v
           git diff --check
+      - name: Check out the reviewed historical calendar from the exact candidate
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'RESTORED_HISTORY_READ_ONLY'
+        uses: actions/checkout@v4
+        with:
+          ref: 8b73250af5d121a53e3ba3306f5c0873bbdf3e48
+          path: reviewed-history
+          persist-credentials: false
+      - name: Export only the scoped date states for the restored snapshot join
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'RESTORED_HISTORY_READ_ONLY'
+        id: history_calendar
+        working-directory: reviewed-history
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD^{tree})" = 4f28dc2cbbd54c8108e3e96a8689f42c23a61746
+          python3 -B - <<'PY'
+          import os
+          from datetime import timedelta
+          from ak_byma_t1_source_clock import (BYMA_HISTORY_CUTOFF_FROM, BYMA_HISTORY_CUTOFF_TO,
+                                               estado_negociacion_historica_byma)
+          encoding = {'CLOSED': '0', 'REGULAR': '1', 'LIMITED_T1_SOURCE_ONLY': '1',
+                      'LIMITED_SETTLEMENT_UNVERIFIED': '2'}
+          calendars = set()
+          for family in ('ACCIONES', 'CEDEARS'):
+              for settlement in ('A-24HS', '24HS', 'T1', 'T+1'):
+                  days = (BYMA_HISTORY_CUTOFF_FROM + timedelta(days=i) for i in range(
+                      (BYMA_HISTORY_CUTOFF_TO - BYMA_HISTORY_CUTOFF_FROM).days + 1))
+                  calendars.add(''.join(encoding[estado_negociacion_historica_byma(
+                      day, market='BYMA', family=family, settlement=settlement)] for day in days))
+          calendar, = calendars
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('calendar=' + calendar + '\n')
+          PY
 
   host_custody:
     needs: contracts
@@ -71,6 +116,9 @@ jobs:
       REQUEST_MODE: ${{ inputs.mode }}
       REQUEST_DATABASE_ROLE: ${{ inputs.database_role }}
       DEPLOY_OWNER_RECEIPT_ID: ${{ inputs.deploy_owner_receipt_id }}
+      OBSERVER_RESTORE_RUN: ${{ inputs.observer_restore_run_id }}
+      HISTORY_RESTORE_RUN: ${{ inputs.history_restore_run_id }}
+      HISTORY_CALENDAR: ${{ needs.contracts.outputs.restored_history_calendar }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -111,6 +159,11 @@ jobs:
             CUSTODY_ONCE)
               case "$GITHUB_RUN_ID" in ''|*[!0-9]*) exit 2 ;; esac
               remote_command="timeout 790 python3 -B - host-custody $GITHUB_RUN_ID $REQUEST_DATABASE_ROLE" ;;
+            RESTORED_HISTORY_READ_ONLY)
+              [[ "$OBSERVER_RESTORE_RUN" =~ ^[1-9][0-9]{7,14}$ ]]
+              [[ "$HISTORY_RESTORE_RUN" =~ ^[1-9][0-9]{7,14}$ ]]
+              [[ "$HISTORY_CALENDAR" =~ ^[012]{366}$ ]]
+              remote_command="timeout 155 python3 -B - host-restored-inventory $OBSERVER_RESTORE_RUN $HISTORY_RESTORE_RUN $HISTORY_CALENDAR" ;;
             *) exit 2 ;;
           esac
           printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
@@ -150,16 +203,20 @@ jobs:
           import os
           import sys
           expected = {'PREFLIGHT_ONLY': 'PREFLIGHT_METADATA_PASS',
-                      'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK'}
+                      'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK',
+                      'RESTORED_HISTORY_READ_ONLY': 'RESTORED_HISTORY_INVENTORY_OK'}
+          inventory = sys.argv[2] == 'RESTORED_HISTORY_READ_ONLY'
+          schema = ('rc6.restored-history-inventory.v1' if inventory else
+                    'rc6.observer-online-custody-once.v1')
           try:
               with open(sys.argv[1], 'rb') as source:
                   raw = source.read(8193)
               receipt = json.loads(raw)
               verified = (len(raw) <= 8192 and
                           receipt.get('state') == expected.get(sys.argv[2]) and
-                          receipt.get('database_role', 'OBSERVER') ==
-                          os.environ.get('REQUEST_DATABASE_ROLE', 'OBSERVER') and
-                          receipt.get('schema') == 'rc6.observer-online-custody-once.v1')
+                          (inventory or receipt.get('database_role', 'OBSERVER') ==
+                           os.environ.get('REQUEST_DATABASE_ROLE', 'OBSERVER')) and
+                          receipt.get('schema') == schema)
           except (OSError, ValueError, TypeError, AttributeError):
               verified = False
           if not verified:
