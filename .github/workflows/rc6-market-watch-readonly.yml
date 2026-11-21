@@ -181,6 +181,27 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
           fi
+      - name: Observe the exact PPI Gateway and local catalog without provider requests
+        if: github.event_name == 'workflow_dispatch' && inputs.notification_mode == 'read_only' && steps.window.outputs.active == '1'
+        shell: bash
+        env:
+          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 15 python3 - ppi-gateway-diagnostic-host --expected-tree-sha '$EXPECTED_TREE_SHA'" \
+            < scripts/rc6_market_watch_readonly.py > evidence/ppi_gateway.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/ppi_gateway.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.ppi-gateway-diagnostic-readonly.v1","read_only":true,"status":"NO_VERIFICADO","reason":"REMOTE_PROBE_UNAVAILABLE"}' > evidence/ppi_gateway.json
+          fi
       - name: Diagnose SHADOW SQLite stages on manual runs only
         if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
@@ -373,6 +394,7 @@ jobs:
             evidence/schedule_api.json
             evidence/observer_lifecycle.json
             evidence/recent_critical.json
+            evidence/ppi_gateway.json
             evidence/dashboard_audit.json
             evidence/delivery.json
             evidence/previous/source.json

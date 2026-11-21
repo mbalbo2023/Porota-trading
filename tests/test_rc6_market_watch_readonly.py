@@ -373,11 +373,76 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(http["reason"], "HTTP_ERROR_STATUS_ONLY")
         self.assertNotIn("DO_NOT_LEAK", json.dumps(http))
         with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE api_health SET detail=? WHERE component=?", (
+                "SharedFeedUnavailable: PPI_GATEWAY_UNAVAILABLE", "PPI_PRODUCTION_AUTH"))
+        local = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(local["reason"], "LOCAL_GATEWAY_ATTACH_FAILURE")
+        self.assertEqual(local["gateway_attach_reason"], "PPI_GATEWAY_UNAVAILABLE")
+        self.assertIsNone(local["http_status"])
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE api_health SET detail=? WHERE component=?", (
+                "ProductionAuthResponseError: PPI_PRODUCTION_AUTH_PROVIDER_ERROR: "
+                "HTTP=429; Content-Type=APPLICATION_JSON; Content-Length=42 DO_NOT_LEAK",
+                "PPI_PRODUCTION_AUTH"))
+        provider = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
+        self.assertEqual(provider["reason"], "PROVIDER_ERROR_HTTP_METADATA")
+        self.assertEqual(provider["http_status"], 429)
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(provider))
+        with sqlite3.connect(self.db) as connection:
             connection.execute("UPDATE api_health SET state='VERDE', detail='Login correcto' "
                                "WHERE component='PPI_PRODUCTION_AUTH'")
         recovered = monitor._db_snapshot(self.db)["ppi_auth_last_attempt"]
         self.assertEqual(recovered["status"], "LAST_AUTH_SUCCESS_RECORDED")
         self.assertIsNone(recovered["http_status"])
+
+    def test_gateway_last_events_keep_local_owner_and_scanner_clocks_separate(self):
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("DROP TABLE paper_events")
+            connection.execute("""CREATE TABLE paper_events(
+                id INTEGER PRIMARY KEY, event_type TEXT, event_at TEXT, detail TEXT)""")
+            connection.execute("""CREATE INDEX idx_shadow_event_type_at_jd
+                ON paper_events(event_type, julianday(event_at))""")
+            connection.executemany("INSERT INTO paper_events VALUES(NULL,?,?,?)", [
+                ("PPI_GATEWAY_HOLD", NOW.isoformat(), "ProductionAuthResponseError"),
+                ("PPI_GATEWAY_HOLD", (NOW - timedelta(seconds=1)).isoformat(), "TimeIsOlder"),
+                ("PPI_GATEWAY_OWNER_OPEN", NOW.isoformat(), "DO_NOT_LEAK"),
+                ("PPI_GATEWAY_ATTACHED", (NOW + timedelta(seconds=2)).isoformat(), "DO_NOT_LEAK"),
+            ])
+        events = monitor._db_snapshot(self.db)["ppi_gateway_last_events"]
+        self.assertEqual(events["PPI_GATEWAY_HOLD"], {
+            "error_class": "ProductionAuthResponseError", "observed_at_utc": NOW.isoformat()})
+        self.assertEqual(events["PPI_GATEWAY_ATTACHED"]["observed_at_utc"],
+                         (NOW + timedelta(seconds=2)).isoformat())
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(events))
+
+    def test_gateway_probe_requires_product_tree_and_exports_only_local_evidence(self):
+        docker = Mock()
+        context = SimpleNamespace(host=SimpleNamespace(docker=docker),
+                                  current={"source_tree": SHA, "source_sha": "b" * 40},
+                                  roles={"observer": "c" * 64})
+        with patch.object(monitor, "_rootless_context", return_value=context):
+            self.assertEqual(monitor.ppi_gateway_diagnostic_host("f" * 40)["reason"],
+                             "PRODUCT_TREE_MISMATCH")
+            docker.command_result.assert_not_called()
+            docker.command_result.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({
+                "owner": "LOCAL_OWNER_OBSERVED", "guard_login_wire_attempts": 1,
+                "registered_roles": ["scalping", "scanner", "exit_reader"],
+                "catalog": "QUERY_KEYS_OBSERVED", "query_keys": 5,
+                "provider_attested_keys": 2, "untrusted": "DO_NOT_LEAK",
+            }))
+            ready = monitor.ppi_gateway_diagnostic_host(SHA)
+            self.assertEqual(ready["registered_roles"], ["exit_reader", "scalping", "scanner"])
+            self.assertEqual(ready["source_sha"], "b" * 40)
+            self.assertEqual(ready["global_single_session_custody"], "NO_VERIFICADO")
+            self.assertEqual(ready["provider_requests_by_probe"], 0)
+            self.assertNotIn("DO_NOT_LEAK", json.dumps(ready))
+            docker.command_result.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({
+                "owner": "PPI_GATEWAY_UNAVAILABLE",
+                "catalog": "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED",
+            }))
+            blocked = monitor.ppi_gateway_diagnostic_host(SHA)
+            self.assertEqual(blocked["owner"], "PPI_GATEWAY_UNAVAILABLE")
+            self.assertEqual(blocked["catalog"], "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
 
     def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
         current = json.loads(self.provenance_path.read_text())
@@ -1005,7 +1070,12 @@ class MonitorContracts(unittest.TestCase):
     def test_actions_monitor_drops_sudo_and_push_is_non_delivering(self):
         workflow = (SOURCE.parents[1] / ".github/workflows/rc6-market-watch-readonly.yml").read_text()
         self.assertNotIn("sudo -n timeout", workflow)
-        self.assertEqual(workflow.count('"timeout '), 7)
+        self.assertEqual(workflow.count('"timeout '), 8)
+        gateway = workflow.split("- name: Observe the exact PPI Gateway", 1)[1].split(
+            "- name: Diagnose SHADOW", 1)[0]
+        self.assertIn("github.event_name == 'workflow_dispatch'", gateway)
+        self.assertIn("inputs.notification_mode == 'read_only'", gateway)
+        self.assertIn("timeout 15 python3 - ppi-gateway-diagnostic-host", gateway)
         self.assertIn("github.event_name == 'schedule' && 'normal'", workflow)
         self.assertIn("inputs.notification_mode || 'read_only'", workflow)
         self.assertIn("for name in ('observer','dashboard')", workflow)

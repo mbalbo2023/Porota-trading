@@ -903,6 +903,23 @@ def _scalping_recent_error_codes(db, tables):
     return receipt
 
 
+_GATEWAY_ATTACH_REASONS = frozenset({
+    "PPI_GATEWAY_UNAVAILABLE", "PPI_GATEWAY_OWNER_UNVERIFIED",
+    "PPI_GATEWAY_OWNER_CHANGED", "PPI_GATEWAY_PROTOCOL_INVALID",
+    "PPI_GATEWAY_PEER_IDENTITY_UNAVAILABLE", "PPI_GATEWAY_PEER_IDENTITY_MISMATCH",
+    "PPI_GATEWAY_CLIENT_PID_STARTTIME_UNVERIFIED", "PPI_GATEWAY_CLIENT_ROLE_NOT_REGISTERED",
+    "PPI_GATEWAY_SINGLE_LOGIN_WIRE_UNVERIFIED", "PPI_GATEWAY_OWNER_NOT_PINNED",
+    "PPI_GATEWAY_LOCAL_CUSTODY_UNVERIFIED", "PPI_GATEWAY_ROLE_CENSUS_UNVERIFIED",
+})
+_GATEWAY_OWNER_ERROR_CLASSES = frozenset({
+    "SessionOwnerBlocked", "ProductionAuthResponseError", "ReadOnlyPolicyViolation",
+    "ValueError", "RuntimeError", "OperationalError", "PermissionError",
+    "FileNotFoundError", "ImportError", "ModuleNotFoundError",
+    "AttributeError", "TypeError", "OSError", "Timeout", "ConnectionError",
+    "JSONDecodeError",
+})
+
+
 def _ppi_auth_last_attempt(db, tables):
     """Classify a persisted login result; never export detail or call PPI.
 
@@ -956,25 +973,55 @@ def _ppi_auth_last_attempt(db, tables):
                        "RuntimeError", "ValueError", "ConnectionError", "Timeout",
                        "ReadOnlyPolicyViolation", "BudgetBackpressure", "OSError",
                        "PermissionError", "FileNotFoundError", "ImportError",
-                       "ModuleNotFoundError", "AttributeError", "TypeError"}
+                       "ModuleNotFoundError", "AttributeError", "TypeError",
+                       "SharedFeedUnavailable", "GatewayEvidenceRejected"}
     if prefix and prefix.group(1) in allowed_classes:
         result["error_class"] = prefix.group(1)
     metadata = re.match(
-        r"^ProductionAuthResponseError: PPI_PRODUCTION_AUTH_NON_JSON_RESPONSE: "
+        r"^ProductionAuthResponseError: PPI_PRODUCTION_AUTH_(?P<kind>NON_JSON_RESPONSE|PROVIDER_ERROR): "
         r"HTTP=([1-5][0-9]{2}|UNKNOWN); Content-Type="
         r"(APPLICATION_JSON|APPLICATION_PROBLEM_JSON|TEXT_HTML|TEXT_PLAIN|OTHER|ABSENT|UNKNOWN); "
         r"Content-Length=([0-9]{1,9}|UNKNOWN)(?:\b|$)", detail)
     if metadata:
-        result["http_status"] = (int(metadata.group(1)) if metadata.group(1) != "UNKNOWN" else None)
-        result["response_media_type"] = metadata.group(2)
-        result["response_bytes"] = (int(metadata.group(3)) if metadata.group(3) != "UNKNOWN" else None)
-        result["reason"] = "NON_JSON_LOGIN_RESPONSE_HTTP_METADATA"
+        http, media, length = metadata.groups()[1:]
+        result["http_status"] = int(http) if http != "UNKNOWN" else None
+        result["response_media_type"] = media
+        result["response_bytes"] = int(length) if length != "UNKNOWN" else None
+        result["reason"] = ("NON_JSON_LOGIN_RESPONSE_HTTP_METADATA" if
+                            metadata.group("kind") == "NON_JSON_RESPONSE" else "PROVIDER_ERROR_HTTP_METADATA")
     else:
         sdk_error = re.match(r"^HTTPError: ([1-5][0-9]{2}) Client Error:", detail)
         if sdk_error:
             result["http_status"] = int(sdk_error.group(1))
             result["reason"] = "HTTP_ERROR_STATUS_ONLY"
+        if result["error_class"] in {"SharedFeedUnavailable", "GatewayEvidenceRejected"}:
+            code = detail.split(": ", 1)[-1]
+            if code in _GATEWAY_ATTACH_REASONS:
+                result.update(reason="LOCAL_GATEWAY_ATTACH_FAILURE", gateway_attach_reason=code)
     return result
+
+
+def _ppi_gateway_last_events(db, tables):
+    """Read the owner's last outcomes separately from scanner attachment."""
+    if "paper_events" not in tables:
+        return {}
+    events = {}
+    for event in ("PPI_GATEWAY_HOLD", "PPI_GATEWAY_OWNER_OPEN", "PPI_GATEWAY_ATTACHED"):
+        try:
+            row = db.execute("""SELECT event_at,substr(detail,1,180) AS detail_prefix
+                FROM paper_events INDEXED BY idx_shadow_event_type_at_jd WHERE event_type=?
+                ORDER BY julianday(event_at) DESC LIMIT 1""", (event,)).fetchone()
+        except sqlite3.Error:
+            return events
+        if row:
+            observed = timestamp(row["event_at"])
+            record = {"observed_at_utc": observed.astimezone(timezone.utc).isoformat()
+                      if observed is not None else None}
+            detail = row["detail_prefix"]
+            if event == "PPI_GATEWAY_HOLD":
+                record["error_class"] = detail if detail in _GATEWAY_OWNER_ERROR_CLASSES else None
+            events[event] = record
+    return events
 
 
 def _db_snapshot(path):
@@ -1087,6 +1134,7 @@ def _db_snapshot(path):
         return {"observer": observer, "workers": workers,
                 "cursors": cursors, "readiness": readiness, "sqlite_ops": sqlite_ops,
                 "ppi_auth_last_attempt": _ppi_auth_last_attempt(db, tables),
+                "ppi_gateway_last_events": _ppi_gateway_last_events(db, tables),
                 "scalping_recent_error_codes": scalping_codes,
                 'paper_open_contracts':activity}
 
@@ -1805,6 +1853,86 @@ print(json.dumps(result,separators=(",",":")))'''
             "status": status, "read_only": True}
 
 
+_GATEWAY_CATALOG_REASONS = frozenset({
+    "PPI_PRIMARY_PAPER_ZERO_UNVERIFIED", "PPI_PRIMARY_CATALOG_TOO_LARGE",
+    "PPI_PRIMARY_CATALOG_UNAVAILABLE", "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED",
+})
+_GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
+_GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
+
+_GATEWAY_DIAGNOSTIC_CHILD = '''
+import json
+from cg_paper_workspace import database_path
+from rc6_ppi_gateway_reader_adapter import gateway_owner_custody
+from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
+
+database = database_path()
+result = {}
+try:
+    owner = gateway_owner_custody(database)
+    result["owner"] = owner["state"]
+    result["registered_roles"] = list(owner["registered_roles"])
+    result["guard_login_wire_attempts"] = owner["guard_login_wire_attempts"]
+except Exception as error:
+    result["owner"] = str(error)
+
+try:
+    _, query_keys, _, attested = load_primary_ppi_catalog_snapshot(
+        database, include_diagnostic_candidates=True)
+    result["catalog"] = "QUERY_KEYS_OBSERVED"
+    result["query_keys"] = len(query_keys)
+    result["provider_attested_keys"] = len(attested)
+except Exception as error:
+    result["catalog"] = str(error)
+print(json.dumps(result))
+'''
+
+
+def ppi_gateway_diagnostic_host(expected_tree_sha):
+    """Read only the verified image's local IPC identity and catalog precheck."""
+    receipt = {"schema": _GATEWAY_PROBE_SCHEMA, "read_only": True,
+               "provider_requests_by_probe": 0, "status": "NO_VERIFICADO",
+               "global_single_session_custody": "NO_VERIFICADO"}
+    try:
+        context = _rootless_context()
+        if context.current["source_tree"] != expected_tree_sha:
+            return {**receipt, "reason": "PRODUCT_TREE_MISMATCH"}
+        result = context.host.docker.command_result(
+            "container", "exec", context.roles["observer"], "python", "-B", "-c",
+            _GATEWAY_DIAGNOSTIC_CHILD, timeout=9)
+        if result.returncode != 0 or len(result.stdout) > 4096:
+            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
+        values = json.loads(result.stdout)
+        if not isinstance(values, dict):
+            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+        return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
+
+    receipt.update(source_sha=context.current["source_sha"],
+                   source_tree=expected_tree_sha, owner="NO_VERIFICADO",
+                   catalog="NO_VERIFICADO")
+    owner = values.get("owner")
+    if isinstance(owner, str) and owner in _GATEWAY_ATTACH_REASONS:
+        receipt["owner"] = owner
+    roles = values.get("registered_roles")
+    if (owner == "LOCAL_OWNER_OBSERVED" and type(values.get("guard_login_wire_attempts")) is int
+            and values["guard_login_wire_attempts"] == 1 and isinstance(roles, list)
+            and len(roles) <= len(_GATEWAY_LOCAL_ROLES)
+            and all(isinstance(role, str) and role in _GATEWAY_LOCAL_ROLES for role in roles)
+            and len(roles) == len(set(roles))):
+        receipt.update(owner=owner, registered_roles=sorted(roles), guard_login_wire_attempts=1)
+    catalog = values.get("catalog")
+    if isinstance(catalog, str) and catalog in _GATEWAY_CATALOG_REASONS:
+        receipt["catalog"] = catalog
+    query_keys, attested = values.get("query_keys"), values.get("provider_attested_keys")
+    if (catalog == "QUERY_KEYS_OBSERVED" and type(query_keys) is int and type(attested) is int
+            and 0 <= attested <= query_keys <= 20000 and query_keys > 0):
+        receipt.update(catalog=catalog, query_keys=query_keys, provider_attested_keys=attested)
+    if receipt["owner"] != "NO_VERIFICADO" or receipt["catalog"] != "NO_VERIFICADO":
+        receipt["status"] = "OBSERVED"
+    return receipt
+
+
 def schedule_api_host():
     """Manual-only connectivity proof from the PAPER container, no credentials."""
     child = '''import json,urllib.request
@@ -2254,6 +2382,8 @@ def main(argv=None):
     transport.add_argument('--stderr',required=True,type=Path)
     actions.add_parser("shadow-diagnostic")
     actions.add_parser("shadow-diagnostic-host")
+    gateway = actions.add_parser("ppi-gateway-diagnostic-host")
+    gateway.add_argument("--expected-tree-sha", required=True)
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
@@ -2301,6 +2431,10 @@ def main(argv=None):
         data = shadow_diagnostic()
     elif args.action == "shadow-diagnostic-host":
         data = shadow_diagnostic_host()
+    elif args.action == "ppi-gateway-diagnostic-host":
+        if not re.fullmatch(r"[0-9a-f]{40}", args.expected_tree_sha):
+            raise SystemExit("INVALID_EXPECTED_TREE_SHA")
+        data = ppi_gateway_diagnostic_host(args.expected_tree_sha)
     elif args.action == "schedule-api-host":
         data = schedule_api_host()
     elif args.action == "observer-lifecycle-host":
