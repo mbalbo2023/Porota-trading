@@ -5,6 +5,7 @@ import errno
 import importlib.util
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -879,6 +880,45 @@ class RestoredHistoryInventoryContracts(unittest.TestCase):
         manifest.chmod(0o600)
         return restored, sha
 
+    def test_exports_only_the_bound_history_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            history, digest = self.restore(root, "HISTORY", self.HISTORY_RUN,
+                                           "CREATE TABLE history_versions_v2(id);")
+            original = history.read_bytes()
+            output = io.BytesIO()
+            custody.stream_restored_history(self.HISTORY_RUN, digest, output, custody_root=root)
+            self.assertEqual(output.getvalue(), original)
+            self.assertEqual(history.read_bytes(), original)
+            with self.assertRaisesRegex(custody.Hold, "RESTORED_INVENTORY_DIGEST_MISMATCH"):
+                custody.stream_restored_history(self.HISTORY_RUN, "f" * 64, output, custody_root=root)
+            self.assertEqual(output.getvalue(), original)
+
+    def test_runner_wires_expected_restore_digest_into_existing_migrator(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            history, digest = self.restore(root, "HISTORY", self.HISTORY_RUN,
+                                           "CREATE TABLE history_versions_v2(id);")
+            proof = {"schema": custody.MIGRATION_SCHEMA, "source_sha256": digest,
+                     "source_bytes": history.stat().st_size,
+                     "migrated_copy_sha256": "b" * 64, "legacy_versions": 4,
+                     "mapped_versions": 1, "quarantined_versions": 3,
+                     "original_source_mutated": False, "temporary_copy_removed": True,
+                     "host_promotion_allowed": False, "physical_purge_allowed": False,
+                     "private_path": "/private/not-public"}
+            result = subprocess.CompletedProcess([], 0, json.dumps(proof), "")
+            with patch.dict(os.environ, GITHUB_ACTIONS="true", RUNNER_TEMP=directory), \
+                    patch.object(custody.subprocess, "run", return_value=result) as run:
+                public = custody.rehearse_restored_history(history, root, self.HISTORY_RUN, digest)
+            self.assertEqual(public["state"], "RESTORED_HISTORY_MIGRATION_REHEARSED")
+            self.assertEqual(public["max_source_bytes"], 2 * 1024**3)
+            self.assertNotIn("private_path", public)
+            command = run.call_args.args[0]
+            self.assertIn("scripts.rc6_history_offhost_migration_rehearsal", command)
+            capture = Path(command[command.index("--capture-report") + 1])
+            self.assertEqual(json.loads(capture.read_text()),
+                             {"source_sha256": digest, "source_bytes": history.stat().st_size})
+
     def test_exact_identity_join_reports_only_counts_and_refuses_changed_restore(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1014,7 +1054,8 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertNotIn("push", workflow["on"])
         self.assertNotIn("schedule", workflow["on"])
         options = workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"]
-        self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE", custody.INVENTORY_MODE])
+        self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE", custody.INVENTORY_MODE,
+                                   "RESTORED_HISTORY_MIGRATION_REHEARSAL"])
         roles = workflow["on"]["workflow_dispatch"]["inputs"]["database_role"]
         self.assertEqual(roles["options"], ["OBSERVER", "HISTORY"])
         self.assertEqual(roles["default"], "OBSERVER")
@@ -1034,6 +1075,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("timeout 790 python3 -B - host-preflight", remote["run"])
         self.assertIn("timeout 790 python3 -B - host-custody", remote["run"])
         self.assertIn("timeout 155 python3 -B - host-restored-inventory", remote["run"])
+        self.assertIn("host-restored-history-export", remote["run"])
         self.assertNotIn("sudo", remote["run"])
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact")]
         self.assertEqual(len(uploads), 1)

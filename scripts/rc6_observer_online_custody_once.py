@@ -46,6 +46,8 @@ OWNER_PUBLIC = f"https://github.com/{OWNER_BRANCH}/issues/980#issuecomment-"
 BACKUP_TIMEOUT_SECONDS = 600
 INVENTORY_MODE = "RESTORED_HISTORY_READ_ONLY"
 INVENTORY_SCHEMA = "rc6.restored-history-inventory.v1"
+MIGRATION_SCHEMA = "RC6_OFFHOST_MIGRATION_REHEARSAL_V1"
+MIGRATION_MAX_BYTES = 2 * 1024**3
 INVENTORY_FROM = date(2025, 9, 21)
 INVENTORY_TO = date(2026, 9, 21)
 INVENTORY_LENGTH = (INVENTORY_TO - INVENTORY_FROM).days + 1
@@ -750,7 +752,8 @@ def _open_private_restore_member(directory: int, name: str, maximum: int):
 
 
 @contextmanager
-def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline: float):
+def _verified_restore(custody_root: Path, role: str, run_id: str, deadline: float, *,
+                      maximum=MAX_DB_BYTES, expected_sha=None):
     if not RUN_ID.fullmatch(run_id):
         raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
     directory = _anchor_directory(custody_root / f"{role.lower()}_{run_id}")
@@ -764,9 +767,10 @@ def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline:
                                        expected_run_id=run_id, database_role=role)
         if receipt["state"] != "PRIVATE_SNAPSHOT_RESTORE_OK":
             raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
-        restored, info = _open_private_restore_member(directory, "restore-check.sqlite", MAX_DB_BYTES)
+        restored, info = _open_private_restore_member(directory, "restore-check.sqlite", maximum)
         with restored:
-            if info.st_size != receipt["restore_bytes"]:
+            if (info.st_size != receipt["restore_bytes"] or
+                    (expected_sha is not None and expected_sha != receipt["restore_sha256"])):
                 raise Hold("RESTORED_INVENTORY_DIGEST_MISMATCH")
             digest = hashlib.sha256()
             while block := restored.read(1024 * 1024):
@@ -775,19 +779,44 @@ def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline:
                 digest.update(block)
             if digest.hexdigest() != receipt["restore_sha256"]:
                 raise Hold("RESTORED_INVENTORY_DIGEST_MISMATCH")
-            uri = f"file:/proc/self/fd/{restored.fileno()}?mode=ro&immutable=1"
-            with closing(sqlite3.connect(uri, uri=True, timeout=1)) as db:
-                db.execute("PRAGMA trusted_schema=OFF")
-                db.execute("PRAGMA query_only=ON")
-                db.execute("PRAGMA temp_store=MEMORY")
-                db.set_progress_handler(lambda: int(time.monotonic() > deadline), 5000)
-                yield db, receipt["restore_sha256"]
+            yield restored, receipt["restore_sha256"], info.st_size
             after = os.fstat(restored.fileno())
             if (after.st_mtime_ns, after.st_ctime_ns, after.st_size) != (
                     info.st_mtime_ns, info.st_ctime_ns, info.st_size):
                 raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
     finally:
         os.close(directory)
+
+
+@contextmanager
+def _restored_inventory_db(custody_root: Path, role: str, run_id: str, deadline: float):
+    with _verified_restore(custody_root, role, run_id, deadline) as (restored, digest, _):
+        uri = f"file:/proc/self/fd/{restored.fileno()}?mode=ro&immutable=1"
+        with closing(sqlite3.connect(uri, uri=True, timeout=1)) as db:
+            db.execute("PRAGMA trusted_schema=OFF")
+            db.execute("PRAGMA query_only=ON")
+            db.execute("PRAGMA temp_store=MEMORY")
+            db.set_progress_handler(lambda: int(time.monotonic() > deadline), 5000)
+            yield db, digest
+
+
+def stream_restored_history(run_id: str, expected_sha: str, output, *, custody_root: Path = CUSTODY):
+    """Stream only the attested private HISTORY restore into runner scratch."""
+    if not HEX64.fullmatch(expected_sha):
+        raise Hold("RESTORED_INVENTORY_DIGEST_MISMATCH")
+    deadline = time.monotonic() + 165
+    with _verified_restore(custody_root, "HISTORY", run_id, deadline,
+                           maximum=MIGRATION_MAX_BYTES, expected_sha=expected_sha) as (source, _, size):
+        source.seek(0)
+        remaining = size
+        while remaining:
+            if time.monotonic() > deadline:
+                raise Hold("RESTORED_INVENTORY_TIMEOUT")
+            data = source.read(min(remaining, 1024 * 1024))
+            if not data:
+                raise Hold("RESTORED_INVENTORY_BINDING_UNVERIFIED")
+            output.write(data)
+            remaining -= len(data)
 
 
 def _restored_history_counts(observer, history, days):
@@ -1335,6 +1364,48 @@ def verify_owner_from_github(receipt_id: str, *, database_role="OBSERVER") -> st
     return validate_deploy_owner(receipt, comments, database_role=database_role)
 
 
+def rehearse_restored_history(database: Path, product: Path, run_id: str, expected_sha: str) -> dict:
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or not os.environ.get("RUNNER_TEMP")
+            or not RUN_ID.fullmatch(run_id) or not HEX64.fullmatch(expected_sha)):
+        raise Hold("OFFHOST_RESTORE_BINDING_UNVERIFIED")
+    runner_root = Path(os.environ["RUNNER_TEMP"]).resolve()
+    if (not database.is_file() or database.is_symlink()
+            or not database.resolve().is_relative_to(runner_root)):
+        raise Hold("OFFHOST_RESTORE_BINDING_UNVERIFIED")
+    size = database.stat().st_size
+    if not 4096 <= size <= MIGRATION_MAX_BYTES:
+        raise Hold("OFFHOST_RESTORE_SIZE_UNVERIFIED")
+    with _private_umask(), (database.parent / "migration-capture.json").open("x") as capture:
+        json.dump({"source_sha256": expected_sha, "source_bytes": size}, capture)
+    result = subprocess.run(
+        [sys.executable, "-B", "-m", "scripts.rc6_history_offhost_migration_rehearsal",
+         "--database", str(database), "--capture-report", str(database.parent / "migration-capture.json"),
+         "--runner-root", str(runner_root), "--seconds", "650"],
+        cwd=product, capture_output=True, text=True, timeout=670, check=False)
+    if result.returncode:
+        reason = re.search(r"(?m)^[\w.]+(?:Error|Exception): ((?:OFFHOST|HISTORY|SCRATCH|SOURCE)_[A-Z0-9_]{1,90})\s*$",
+                           result.stderr)
+        raise Hold(reason[1] if reason else "OFFHOST_REHEARSAL_FAILED")
+    report = json.loads(result.stdout) if len(result.stdout) <= 8192 else {}
+    counts = [report.get(key) for key in ("legacy_versions", "mapped_versions", "quarantined_versions")]
+    if (report.get("schema") != MIGRATION_SCHEMA or report.get("source_sha256") != expected_sha
+            or report.get("source_bytes") != size
+            or any(type(value) is not int or value < 0 for value in counts)
+            or counts[0] != counts[1] + counts[2]
+            or not HEX64.fullmatch(str(report.get("migrated_copy_sha256", "")))
+            or report.get("original_source_mutated") is not False
+            or report.get("temporary_copy_removed") is not True
+            or report.get("host_promotion_allowed") is not False
+            or report.get("physical_purge_allowed") is not False):
+        raise Hold("OFFHOST_REHEARSAL_RECEIPT_UNVERIFIED")
+    return {"schema": MIGRATION_SCHEMA, "state": "RESTORED_HISTORY_MIGRATION_REHEARSED",
+            "history_run": run_id, "source_bytes": size, "source_sha256": expected_sha,
+            "migrated_copy_sha256": report["migrated_copy_sha256"], "max_source_bytes": MIGRATION_MAX_BYTES,
+            "legacy_versions": counts[0], "mapped_versions": counts[1], "quarantined_versions": counts[2],
+            "source_sql_writes": 0, "host_promotion_allowed": False, "physical_purge_allowed": False,
+            "cross_database_pins": "NO_VERIFICADO"}
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     try:
@@ -1361,6 +1432,10 @@ def main(argv: list[str] | None = None) -> int:
             _operator_identity_guard()
             print(json.dumps(host_restored_history_inventory(*arguments[1:]), sort_keys=True))
             return 0
+        if arguments[:1] == ["host-restored-history-export"] and len(arguments) == 3:
+            _operator_identity_guard()
+            stream_restored_history(arguments[1], arguments[2], sys.stdout.buffer)
+            return 0
         if len(arguments) == 2 and arguments[0] == "verify-owner":
             workstream = verify_owner_from_github(arguments[1],
                 database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
@@ -1386,6 +1461,21 @@ def main(argv: list[str] | None = None) -> int:
                 public = sanitize_receipt(mode, raw, remote_rc=int(rc_text),
                                           expected_run_id=os.environ.get("GITHUB_RUN_ID"),
                                           database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
+            with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
+                json.dump(public, target, sort_keys=True)
+            print("RC6_CUSTODY_SANITIZED=" + public["state"])
+            return 0
+        if len(arguments) == 7 and arguments[0] == "rehearse-restored":
+            _, database, product, run_id, expected_sha, rc_text, public_path = arguments
+            try:
+                if rc_text != "0":
+                    raise Hold("OFFHOST_RESTORE_TRANSFER_FAILED")
+                public = rehearse_restored_history(Path(database), Path(product), run_id, expected_sha)
+            except (Hold, OSError, ValueError, TypeError, AttributeError, subprocess.TimeoutExpired) as exc:
+                reason = str(exc) if isinstance(exc, Hold) else "OFFHOST_REHEARSAL_FAILED"
+                if isinstance(exc, subprocess.TimeoutExpired):
+                    reason = "OFFHOST_REHEARSAL_TIME_BUDGET_EXHAUSTED"
+                public = {"schema": MIGRATION_SCHEMA, "state": "NO_VERIFICADO", "failure_reason": reason}
             with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
                 json.dump(public, target, sort_keys=True)
             print("RC6_CUSTODY_SANITIZED=" + public["state"])
