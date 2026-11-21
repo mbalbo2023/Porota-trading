@@ -122,6 +122,8 @@ EXACT_INTEGRITY_RESULTS = (
     "matched", "invalid_manifest", "unreadable_object", "inner_hash_mismatch",
     "body_hash_mismatch", "byte_budget_exceeded",
 )
+EXACT_PAYLOAD_FIELDS = ("nonempty_bar_lists", "all_bars_have_currency",
+                        "all_bars_have_raw_basis", "all_bars_have_both")
 HEX_SHA256 = re.compile(rb"[0-9a-f]{64}\Z")
 LOCATOR_SQLITE_PHASES = frozenset({
     "OPEN_CONNECTION", "SET_READ_LIMITS", "READ_JOURNAL_MODE", "BEGIN_READ",
@@ -466,8 +468,29 @@ def _exact_gzip_bytes(objects_root: Path, digest: str, allowance: int) -> bytes:
         os.close(parent_fd)
 
 
+def _count_exact_payload_fields(inner: bytes, counts: dict) -> None:
+    """Report provider fields from matched objects, never from the local wrapper."""
+    try:
+        bars = json.loads(inner)
+    except (UnicodeError, ValueError, RecursionError):
+        return
+    if (not isinstance(bars, list) or not 1 <= len(bars) <= 4096
+            or not all(isinstance(row, dict) for row in bars)):
+        return
+    currency = all(any(isinstance(row.get(name), str) and row[name].strip()
+                       for name in ("currency", "quoteCurrency", "moneda"))
+                   for row in bars)
+    raw_basis = all(row.get("priceBasis") == "RAW"
+                    and row.get("adjustmentBasis") == "RAW_NO_ADJUSTMENT"
+                    and row.get("adjusted") is False for row in bars)
+    counts["nonempty_bar_lists"] += 1
+    counts["all_bars_have_currency"] += int(currency)
+    counts["all_bars_have_raw_basis"] += int(raw_basis)
+    counts["all_bars_have_both"] += int(currency and raw_basis)
+
+
 def _exact_integrity(db: sqlite3.Connection, row_id: int, objects_root: Path,
-                     budget: int) -> tuple[str, int]:
+                     budget: int, fields: dict) -> tuple[str, int]:
     table = "exact_attempts_v1"
     row = db.execute("""SELECT CASE WHEN typeof(body_bytes)='integer' THEN body_bytes END
                         FROM exact_attempts_v1 WHERE rowid=?""", (row_id,)).fetchone()
@@ -512,6 +535,7 @@ def _exact_integrity(db: sqlite3.Connection, row_id: int, objects_root: Path,
     observed = hashlib.sha256(encoded).hexdigest().encode("ascii")
     if len(encoded) != expected_bytes or observed != body_hash or observed != body_sha:
         return "body_hash_mismatch", expected_bytes
+    _count_exact_payload_fields(inner, fields)
     return "matched", expected_bytes
 
 
@@ -571,6 +595,8 @@ def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
                 integrity = dict.fromkeys(EXACT_INTEGRITY_RESULTS, 0)
                 integrity["eligible_rows"] = 0
                 part["exact_integrity"] = integrity
+                fields = dict.fromkeys(EXACT_PAYLOAD_FIELDS, 0)
+                part["exact_payload_fields"] = fields
             budget = EXACT_MAX_TOTAL_BODY_BYTES
             for (row_id,) in rows[:LOCATOR_SAMPLE_ROWS]:
                 if time.monotonic() >= deadline:
@@ -589,7 +615,7 @@ def _locator_scan(db: sqlite3.Connection, role: str, deadline: float,
                     part["quality_other_labeled"] += 1
                 if (objects_root is not None and origin == b"PPI_HISTORY" and
                         quality == b"VALID_PAYLOAD"):
-                    outcome, reserved = _exact_integrity(db, row_id, objects_root, budget)
+                    outcome, reserved = _exact_integrity(db, row_id, objects_root, budget, fields)
                     budget -= reserved
                     integrity["eligible_rows"] += 1
                     integrity[outcome] += 1
@@ -1346,6 +1372,15 @@ def source_locator_public_receipt(raw: object, remote_rc: int, *,
                         ppi_labels, valid_labels)
                     assert eligible == sum(integrity[k] for k in EXACT_INTEGRITY_RESULTS)
                     clean_tables[-1]["exact_integrity"] = integrity
+                    reported_fields = part["exact_payload_fields"]
+                    assert isinstance(reported_fields, dict)
+                    fields = {key: _int(reported_fields.get(key), integrity["matched"])
+                              for key in EXACT_PAYLOAD_FIELDS}
+                    assert all(n is not None for n in fields.values())
+                    total, currency, raw_basis, both = (fields[key] for key in EXACT_PAYLOAD_FIELDS)
+                    assert max(0, currency + raw_basis - total) <= both <= min(currency, raw_basis)
+                    assert max(currency, raw_basis) <= total
+                    clean_tables[-1]["exact_payload_fields"] = fields
             cleaned.append({"role": role, "status": status,
                             "wal_scope": scope, "sqlite_ro": source["sqlite_ro"],
                             **sizes, "tables": clean_tables})
