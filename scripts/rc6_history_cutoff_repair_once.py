@@ -515,11 +515,11 @@ def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], li
             selected_bytes = _remember_fragment(
                 selected, (identity, days, fragment.provider_contract_id), fragment,
                 attempted, body_bytes, selected_bytes)
-    # The byte-exact external manifest can be incomplete while the original
-    # history DB still retains a valid archive. Never overwrite its selected
-    # identities with lower-priority legacy rows.
+    # Replay external fragments first. The legacy archive may cover a date
+    # missing from those fragments for the same exact series.
     grouped = _fragments_by_identity(selected)
-    grouped.update(_legacy_archive_payloads(targets - grouped.keys()))
+    for identity, fragments in _legacy_archive_payloads(targets).items():
+        grouped.setdefault(identity, []).extend(fragments)
     return grouped
 
 

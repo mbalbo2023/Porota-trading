@@ -257,6 +257,22 @@ def test_legacy_raw_archive_recovers_exact_ppi_identity_when_external_manifest_a
     assert store.path.read_bytes() == before
 
 
+def test_external_partial_archive_preserves_legacy_fragment_for_same_series(tmp_path, monkeypatch):
+    _external_attempt(tmp_path, monkeypatch, changes={
+        "payload_json": json.dumps([{"date": "2026-09-15", "close": 105}])})
+    store = _Store(tmp_path / "history.db")
+    _archive_table(store)
+    _archive_attempt(store, body=_ppi_wrapper(close=109))
+    monkeypatch.setattr(repair, "_history_store", lambda: store)
+
+    selected = repair._archive_payloads({_target()})
+
+    assert [fragment.rows for fragment in selected[_target()]] == [
+        [{"date": "2026-09-15", "close": 105}],
+        [{"date": "2026-09-21", "close": 109}],
+    ]
+
+
 def test_legacy_archive_rejects_wrong_hash_non_ppi_origin_and_unknown_identity(tmp_path, monkeypatch):
     import fb_raw_evidence_exact_v1 as exact
 
