@@ -2495,16 +2495,22 @@ def _download_histories_locked(reader, store, history_store, *,
     end = _history_daily_session(retention_now) if session_only else _history_end_date()
     if end is None:
         return 0
+    import ct_ppi_history_salvage_hf6 as history_salvage
+
     if session_only:
         # The shared cutoff lock is held here. Persist the existing per-day
         # attempt before a GET so a restarted scanner cannot repeat the batch.
         if not _source_sync_due(store, "PPI_PRODUCTION_HISTORY", retention_now):
             return 0
+        if not history_salvage.VERIFIED_PPI_HISTORY_CONTRACTS:
+            detail = f"session_requested={end.isoformat()}; HISTORY_PROVENANCE_UNVERIFIED"
+            _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0, detail)
+            _health(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", detail, "PPI Producción")
+            return 0
         _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0,
                     f"session_requested={end.isoformat()}; HISTORY_SESSION_ATTEMPT_STARTED")
     from rc6_data_retention import bounded_daily_start
     import cu_history_store_v2_hf6 as history_v2
-    import ct_ppi_history_salvage_hf6 as history_salvage
     import cq_history_attempt_ledger_hf6 as history_ledger
     history_v2.init_schema(history_store)
     history_ledger.init_schema(store)

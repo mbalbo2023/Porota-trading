@@ -126,7 +126,7 @@ def _fake_module(monkeypatch, name, **functions):
 def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HISTORY",
                    publish=True, targets=True, ambiguous=False,
                    provider_ambiguous=False, large_currency_detail=False,
-                   session_only=False, already_published=False):
+                   session_only=False, already_published=False, contract_available=True):
     """Exercise the actual locked producer without opening any PPI connection."""
     observer_db = tmp_path / "observer.db"
     with sqlite3.connect(observer_db) as conn:
@@ -166,7 +166,8 @@ def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HIS
                 "rejected_rows": 0}
 
     _fake_module(monkeypatch, "ct_ppi_history_salvage_hf6",
-                 ingest_ppi_payload=ingest, VERIFIED_PPI_HISTORY_CONTRACTS={TEST_CONTRACT})
+                 ingest_ppi_payload=ingest,
+                 VERIFIED_PPI_HISTORY_CONTRACTS={TEST_CONTRACT} if contract_available else set())
 
     class _FixedClock(datetime):
         @classmethod
@@ -240,6 +241,15 @@ def test_new_closure_does_not_repeat_verified_publication(monkeypatch, history, 
     amount, _row_receipt, calls, _events = _history_cycle(
         monkeypatch, history, tmp_path, session_only=True, already_published=True)
     assert amount == 0 and calls == []
+
+
+def test_new_closure_records_missing_source_contract_without_provider_get(
+        monkeypatch, history, tmp_path):
+    amount, row, calls, _events = _history_cycle(
+        monkeypatch, history, tmp_path, session_only=True, contract_available=False)
+    assert amount == 0 and calls == []
+    assert row == ("AMARILLO", None,
+                   "session_requested=2026-11-02; HISTORY_PROVENANCE_UNVERIFIED")
 
 
 @pytest.mark.parametrize("published_day", [CUTOFF, date(2026, 11, 1)])
