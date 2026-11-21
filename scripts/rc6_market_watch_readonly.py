@@ -913,6 +913,7 @@ _GATEWAY_ATTACH_REASONS = frozenset({
 })
 _GATEWAY_OWNER_ERROR_CLASSES = frozenset({
     "SessionOwnerBlocked", "ProductionAuthResponseError", "ReadOnlyPolicyViolation",
+    "CatalogIdentityError", "RESTProducerBlocked", "BudgetBackpressure",
     "ValueError", "RuntimeError", "OperationalError", "PermissionError",
     "FileNotFoundError", "ImportError", "ModuleNotFoundError",
     "AttributeError", "TypeError", "OSError", "Timeout", "ConnectionError",
@@ -1857,11 +1858,18 @@ _GATEWAY_CATALOG_REASONS = frozenset({
     "PPI_PRIMARY_PAPER_ZERO_UNVERIFIED", "PPI_PRIMARY_CATALOG_TOO_LARGE",
     "PPI_PRIMARY_CATALOG_UNAVAILABLE", "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED",
 })
+_GATEWAY_CONSTRUCTION_REASONS = _GATEWAY_CATALOG_REASONS | frozenset({
+    "PPI_IDENTITY_TICKER_INVALID", "PPI_IDENTITY_TYPE_INVALID",
+    "PPI_IDENTITY_MARKET_INVALID", "PPI_IDENTITY_CURRENCY_INVALID",
+    "PPI_IDENTITY_COMPONENT_INVALID", "PPI_CATALOG_ROWS_MISSING_OR_UNBOUNDED",
+    "PPI_CATALOG_SOURCE_DIGEST_INVALID", "PPI_OBSERVED_DIRECT_BUDGET_NOT_ENABLED",
+})
 _GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
 _GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
 
 _GATEWAY_DIAGNOSTIC_CHILD = '''
 import json
+from types import SimpleNamespace
 from cg_paper_workspace import database_path
 from rc6_ppi_gateway_reader_adapter import gateway_owner_custody
 from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
@@ -1884,6 +1892,16 @@ try:
     result["provider_attested_keys"] = len(attested)
 except Exception as error:
     result["catalog"] = str(error)
+
+def deny_audit(*args, **kwargs):
+    raise RuntimeError("PPI_DIAGNOSTIC_WRITE_UNEXPECTED")
+
+try:
+    from bv_paper_runtime import _make_ppi_gateway_owner
+    _make_ppi_gateway_owner(SimpleNamespace(path=database, audit_http=deny_audit))
+    result["construction"] = "CONSTRUCTED_WITHOUT_LOGIN"
+except Exception as error:
+    result["construction"] = str(error)
 print(json.dumps(result))
 '''
 
@@ -1910,7 +1928,7 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
 
     receipt.update(source_sha=context.current["source_sha"],
                    source_tree=expected_tree_sha, owner="NO_VERIFICADO",
-                   catalog="NO_VERIFICADO")
+                   catalog="NO_VERIFICADO", construction="NO_VERIFICADO")
     owner = values.get("owner")
     if isinstance(owner, str) and owner in _GATEWAY_ATTACH_REASONS:
         receipt["owner"] = owner
@@ -1928,7 +1946,11 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
     if (catalog == "QUERY_KEYS_OBSERVED" and type(query_keys) is int and type(attested) is int
             and 0 <= attested <= query_keys <= 20000 and query_keys > 0):
         receipt.update(catalog=catalog, query_keys=query_keys, provider_attested_keys=attested)
-    if receipt["owner"] != "NO_VERIFICADO" or receipt["catalog"] != "NO_VERIFICADO":
+    construction = values.get("construction")
+    if (construction == "CONSTRUCTED_WITHOUT_LOGIN" or
+            isinstance(construction, str) and construction in _GATEWAY_CONSTRUCTION_REASONS):
+        receipt["construction"] = construction
+    if any(receipt[key] != "NO_VERIFICADO" for key in ("owner", "catalog", "construction")):
         receipt["status"] = "OBSERVED"
     return receipt
 
