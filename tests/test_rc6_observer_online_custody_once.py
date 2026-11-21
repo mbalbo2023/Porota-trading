@@ -1,6 +1,7 @@
 """Real SQLite/WAL and fail-closed contracts for one-shot OBSERVER custody."""
 from __future__ import annotations
 
+import errno
 import importlib.util
 from datetime import datetime, timezone
 import hashlib
@@ -548,6 +549,63 @@ class RuntimeBindingContracts(LiveWalFixture):
             with self.assertRaises(custody.Hold):
                 custody._operator_identity_guard()
 
+    def test_legacy_group_write_is_allowed_only_for_the_private_operator_group(self):
+        operator = SimpleNamespace(pw_name="porotaadmin", pw_uid=1000, pw_gid=1000)
+        group = SimpleNamespace(gr_name=operator.pw_name, gr_mem=[operator.pw_name])
+        info = SimpleNamespace(st_uid=1000, st_gid=1000)
+        with patch.object(custody.grp, "getgrgid", return_value=group), \
+             patch.object(custody.pwd, "getpwall", return_value=[operator]), \
+             patch.object(custody.os, "getxattr", side_effect=OSError(errno.ENODATA, "no ACL")) as acl:
+            custody._verify_private_state_group(7, info, operator)
+        acl.assert_called_once_with(7, "system.posix_acl_access")
+
+    def test_rootless_state_opens_acl_on_pinned_readable_descriptor(self):
+        home = self.root / "home"
+        state = home / ".local/state/porota-rc6"
+        state.mkdir(parents=True)
+        home.chmod(0o755)
+        state.parent.chmod(0o770)
+        state.chmod(0o700)
+        current = state / "current.json"
+        current.write_text("{}")
+        current.chmod(0o600)
+        operator = SimpleNamespace(pw_name="porotaadmin", pw_uid=1000, pw_gid=1000,
+                                   pw_dir=str(home))
+        group = SimpleNamespace(gr_name=operator.pw_name, gr_mem=[])
+        fstat = os.fstat
+
+        def owned_fstat(fd):
+            info = fstat(fd)
+            return SimpleNamespace(st_uid=1000, st_gid=1000, st_mode=info.st_mode,
+                                   st_size=info.st_size, st_nlink=info.st_nlink)
+
+        with patch.object(custody, "_operator_identity_guard", return_value=operator), \
+             patch.object(custody.os, "fstat", side_effect=owned_fstat), \
+             patch.object(custody.grp, "getgrgid", return_value=group), \
+             patch.object(custody.pwd, "getpwall", return_value=[operator]):
+            self.assertEqual(custody._rootless_current_state(), (operator, {}))
+            state.parent.chmod(0o772)
+            with self.assertRaisesRegex(custody.Hold, "^ROOTLESS_STATE_PARENT_UNSAFE$"):
+                custody._rootless_current_state()
+
+    def test_group_membership_primary_group_and_extended_acl_are_each_fail_closed(self):
+        operator = SimpleNamespace(pw_name="porotaadmin", pw_uid=1000, pw_gid=1000)
+        foreign = SimpleNamespace(pw_name="foreign", pw_uid=1001, pw_gid=1000)
+        for members, users, acl_value, gid in (
+            (["foreign"], [operator], None, 1000),
+            ([], [operator, foreign], None, 1000),
+            ([], [operator], b"extended ACL", 1000),
+            ([], [operator], None, 1001),
+        ):
+            with self.subTest(members=members, users=users, acl_value=acl_value, gid=gid):
+                info = SimpleNamespace(st_uid=1000, st_gid=gid)
+                group = SimpleNamespace(gr_name=operator.pw_name, gr_mem=members)
+                with patch.object(custody.grp, "getgrgid", return_value=group), \
+                     patch.object(custody.pwd, "getpwall", return_value=users), \
+                     patch.object(custody.os, "getxattr", return_value=acl_value), \
+                     self.assertRaisesRegex(custody.Hold, "^ROOTLESS_STATE_PRIVATE_GROUP_UNVERIFIED$"):
+                    custody._verify_private_state_group(7, info, operator)
+
 
 class RunnerReceiptAndOwnerContracts(unittest.TestCase):
     def test_preflight_sanitizer_never_emits_raw_secret_or_path(self):
@@ -640,6 +698,19 @@ class RunnerReceiptAndOwnerContracts(unittest.TestCase):
         receipt = custody.sanitize_receipt("CUSTODY_ONCE", {}, remote_rc=255)
         self.assertEqual(receipt["state"], "NO_VERIFICADO_HOST_COMMAND")
         self.assertIsNone(receipt.get("snapshot_sha256"))
+
+    def test_failed_host_receipt_discloses_only_a_whitelisted_reason(self):
+        reason = "ROOTLESS_STATE_PRIVATE_GROUP_UNVERIFIED"
+        raw = {"schema": custody.SCHEMA, "failure_reason": reason}
+        receipt = custody.sanitize_receipt("CUSTODY_ONCE", raw, remote_rc=2,
+                                          database_role="HISTORY")
+        self.assertEqual(receipt["state"], "NO_VERIFICADO_HOST_COMMAND")
+        self.assertEqual(receipt["failure_reason"], reason)
+        self.assertIsNone(receipt.get("snapshot_sha256"))
+        for unsafe in ({**raw, "secret_path": "/private/path"},
+                       {**raw, "failure_reason": "/private/path"}):
+            receipt = custody.sanitize_receipt("CUSTODY_ONCE", unsafe, remote_rc=2)
+            self.assertNotIn("failure_reason", receipt)
 
     def test_deploy_owner_receipt_must_be_current_and_exclusive(self):
         body = ("DEPLOY_OWNER — RC6 observer one-shot custody\n"

@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timezone
+import errno
 import fcntl
+import grp
 import hashlib
 import json
 import os
@@ -42,6 +44,19 @@ OWNER_BRANCH = "mbalbo2023/Porota-trading"
 OWNER_ISSUE = f"https://api.github.com/repos/{OWNER_BRANCH}/issues/980"
 OWNER_PUBLIC = f"https://github.com/{OWNER_BRANCH}/issues/980#issuecomment-"
 BACKUP_TIMEOUT_SECONDS = 600
+PUBLIC_HOLD_REASONS = frozenset({
+    "CUSTODY_BACKUP_TIMEOUT", "CUSTODY_DIRECTORY_UNSAFE", "CUSTODY_DISK_RESERVE_BLOCKED",
+    "CUSTODY_DURABILITY_UNVERIFIED", "CUSTODY_LOCK_UNSAFE", "CUSTODY_OWNER_BUSY",
+    "CUSTODY_RUN_ALREADY_EXISTS", "CUSTODY_SQLITE_UNAVAILABLE", "CUSTODY_UNCLASSIFIED",
+    "EXIT_QUIESCENCE_UNVERIFIED", "PAPER_ORDERS_UNVERIFIED",
+    "PARENT_PATH_UNAVAILABLE", "PARENT_PATH_UNSAFE", "PRIVILEGED_PATH_BINDING_UNVERIFIED",
+    "PRIVATE_HISTORY_RESTORE_SCHEMA_UNVERIFIED", "PRIVATE_RESTORE_DIGEST_MISMATCH",
+    "PRIVATE_RESTORE_QUICK_CHECK_FAILED", "RELEASE_PAPER_IDENTITY_UNVERIFIED",
+    "ROOTLESS_SSH_IDENTITY_REQUIRED", "RUNTIME_DB_BINDING_NO_VERIFICADO",
+    "ROOTLESS_STATE_PARENT_UNSAFE", "ROOTLESS_STATE_PRIVATE_GROUP_UNVERIFIED",
+    "SOURCE_FILE_UNAVAILABLE", "SOURCE_FILE_UNSAFE", "SOURCE_IDENTITY_CHANGED",
+    "SQLITE_SIDECAR_UNSAFE",
+})
 
 
 class Hold(Exception):
@@ -390,6 +405,31 @@ def _fsync_private_file(directory_fd: int, basename: str) -> None:
         raise Hold("CUSTODY_DURABILITY_UNVERIFIED") from exc
 
 
+def _verify_private_state_group(descriptor: int, info, account: pwd.struct_passwd) -> None:
+    """Reuse the dedicated-GID check from the rootless config-parent repair."""
+    fail = "ROOTLESS_STATE_PRIVATE_GROUP_UNVERIFIED"
+    if (info.st_uid, info.st_gid) != (account.pw_uid, account.pw_gid):
+        raise Hold(fail)
+    try:
+        primary_group = grp.getgrgid(account.pw_gid)
+        others = any(name != account.pw_name for name in primary_group.gr_mem)
+        other_accounts = any(user.pw_uid != account.pw_uid and user.pw_gid == account.pw_gid
+                             for user in pwd.getpwall())
+    except (KeyError, OSError) as exc:
+        raise Hold(fail) from exc
+    if primary_group.gr_name != account.pw_name or others or other_accounts:
+        raise Hold(fail)
+    # An extended ACL can make the group-mode write bit apply to a named
+    # foreign account. Keep that case fail-closed even for a dedicated GID.
+    try:
+        os.getxattr(descriptor, "system.posix_acl_access")
+    except OSError as exc:
+        if exc.errno in (errno.ENODATA, errno.ENOTSUP):
+            return
+        raise Hold(fail) from exc
+    raise Hold(fail)
+
+
 def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
     """Read strictly private UID1000 deploy state with anchored nofollow fd."""
     try:
@@ -397,17 +437,25 @@ def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
         home = Path(account.pw_dir)
         if not home.is_absolute() or ".." in home.parts:
             raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
-        state = home / ".local/state/porota-rc6"
+        local_state = home / ".local/state"
+        state = local_state / "porota-rc6"
         # This private state is the independent Deploy V2 source of both CIDs.
-        for path in (home, home / ".local", home / ".local/state", state):
+        for path in (home, home / ".local", local_state, state):
             descriptor = _anchor_directory(path)
             try:
                 info = os.fstat(descriptor)
                 owner_ok = (info.st_uid == 1000 if path in (home, state)
                             else info.st_uid in (0, 1000))
-                forbidden = (0o077 if path in (home, state) else 0o022)
+                forbidden = 0o077 if path == state else (0o002 if path == local_state else 0o022)
                 if not owner_ok or info.st_mode & forbidden:
-                    raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+                    raise Hold("ROOTLESS_STATE_PARENT_UNSAFE")
+                if path == local_state and info.st_mode & 0o020:
+                    readable = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                       dir_fd=descriptor)
+                    try:
+                        _verify_private_state_group(readable, info, account)
+                    finally:
+                        os.close(readable)
             finally:
                 os.close(descriptor)
         descriptor = _anchor_directory(state)
@@ -808,6 +856,10 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
                 "source_sql_writes": None, "paper_zero": "NO_VERIFICADO",
                 "ppi_requests": 0, "ppi_watch_touched": False}
     if remote_rc != 0:
+        if (isinstance(raw, dict) and set(raw) == {"schema", "failure_reason"}
+                and raw["schema"] == SCHEMA and isinstance(raw["failure_reason"], str)
+                and raw["failure_reason"] in PUBLIC_HOLD_REASONS):
+            fallback["failure_reason"] = raw["failure_reason"]
         return fallback
     if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:
         return fallback
@@ -1022,7 +1074,11 @@ def main(argv: list[str] | None = None) -> int:
             print("RC6_CUSTODY_SANITIZED=" + public["state"])
             return 0
         raise Hold("ACTION_UNSUPPORTED")
-    except (Hold, OSError, sqlite3.Error, ValueError, TypeError):
+    except (Hold, OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        if arguments[:1] in (["host-preflight"], ["host-custody"]):
+            reason = str(exc) if isinstance(exc, Hold) else "CUSTODY_UNCLASSIFIED"
+            print(json.dumps({"schema": SCHEMA, "failure_reason":
+                              reason if reason in PUBLIC_HOLD_REASONS else "CUSTODY_UNCLASSIFIED"}))
         print("RC6_CUSTODY_FAIL_CLOSED", file=sys.stderr)
         return 2
 
