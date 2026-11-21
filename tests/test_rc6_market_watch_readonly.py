@@ -428,21 +428,25 @@ class MonitorContracts(unittest.TestCase):
                 "owner": "LOCAL_OWNER_OBSERVED", "guard_login_wire_attempts": 1,
                 "registered_roles": ["scalping", "scanner", "exit_reader"],
                 "catalog": "QUERY_KEYS_OBSERVED", "query_keys": 5,
-                "provider_attested_keys": 2, "untrusted": "DO_NOT_LEAK",
+                "provider_attested_keys": 2, "construction": "CONSTRUCTED_WITHOUT_LOGIN",
+                "untrusted": "DO_NOT_LEAK",
             }))
             ready = monitor.ppi_gateway_diagnostic_host(SHA)
             self.assertEqual(ready["registered_roles"], ["exit_reader", "scalping", "scanner"])
             self.assertEqual(ready["source_sha"], "b" * 40)
             self.assertEqual(ready["global_single_session_custody"], "NO_VERIFICADO")
             self.assertEqual(ready["provider_requests_by_probe"], 0)
+            self.assertEqual(ready["construction"], "CONSTRUCTED_WITHOUT_LOGIN")
             self.assertNotIn("DO_NOT_LEAK", json.dumps(ready))
             docker.command_result.return_value = SimpleNamespace(returncode=0, stdout=json.dumps({
                 "owner": "PPI_GATEWAY_UNAVAILABLE",
-                "catalog": "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED",
+                "catalog": "QUERY_KEYS_OBSERVED", "query_keys": 9977,
+                "provider_attested_keys": 0, "construction": "PPI_IDENTITY_COMPONENT_INVALID",
             }))
             blocked = monitor.ppi_gateway_diagnostic_host(SHA)
             self.assertEqual(blocked["owner"], "PPI_GATEWAY_UNAVAILABLE")
-            self.assertEqual(blocked["catalog"], "PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
+            self.assertEqual(blocked["catalog"], "QUERY_KEYS_OBSERVED")
+            self.assertEqual(blocked["construction"], "PPI_IDENTITY_COMPONENT_INVALID")
 
     def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
         current = json.loads(self.provenance_path.read_text())
