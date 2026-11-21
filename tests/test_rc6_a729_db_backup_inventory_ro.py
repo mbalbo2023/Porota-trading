@@ -625,12 +625,19 @@ class HistoricalSourceLocatorTests(unittest.TestCase):
             ALTER TABLE exact_attempts_v1 ADD COLUMN body_sha256 TEXT;
             ALTER TABLE exact_attempts_v1 ADD COLUMN body_hash TEXT;""")
         objects = path.parent / "objects/sha256"
-        for variant in ("match", "wrong_body", "wrong_inner", "symlink", "oversize",
+        for variant in ("match", "full_fields", "empty", "mixed", "wrong_body", "wrong_inner", "symlink", "oversize",
                         "bad_digest", "unvalidated", "other_source"):
-            payload = f'["PRIVATE_TICKER_{variant}"]'.encode("utf-8")
+            bar = {"price": 1, "symbol": f"PRIVATE_TICKER_{variant}"}
+            full = {**bar, "quoteCurrency": "ARS", "priceBasis": "RAW",
+                    "adjustmentBasis": "RAW_NO_ADJUSTMENT", "adjusted": False}
+            bars = {"full_fields": [full], "wrong_body": [full], "empty": [],
+                    "mixed": [full, bar]}.get(variant, [bar])
+            payload = json.dumps(bars).encode("utf-8")
             digest = hashlib.sha256(payload).hexdigest()
-            wrapper = '{"symbol":"PRIVATE_TICKER_Ñ"}'
-            body = json.dumps({"symbol": "PRIVATE_TICKER_Ñ", "payload_json": payload.decode()},
+            wrapper = json.dumps({"symbol": "PRIVATE_TICKER_Ñ", "currency": "ARS",
+                                  "priceBasis": "RAW", "adjustmentBasis": "RAW_NO_ADJUSTMENT",
+                                  "adjusted": False}, ensure_ascii=False)
+            body = json.dumps({**json.loads(wrapper), "payload_json": payload.decode()},
                               sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
             body_sha = hashlib.sha256(body).hexdigest()
             obj = objects / digest[:2] / f"{digest}.json.gz"
@@ -655,17 +662,24 @@ class HistoricalSourceLocatorTests(unittest.TestCase):
             raw = inv.host_source_locator(verify_external_exact=True)
             part = raw["source_inventory"][0]["tables"][0]
             counters = part["exact_integrity"]
-            self.assertEqual(part["sample_rows"], 8)
+            self.assertEqual(part["sample_rows"], 11)
             self.assertEqual(counters, {
-                "eligible_rows": 6, "matched": 1, "invalid_manifest": 1, "unreadable_object": 1,
+                "eligible_rows": 9, "matched": 4, "invalid_manifest": 1, "unreadable_object": 1,
                 "inner_hash_mismatch": 1, "body_hash_mismatch": 1, "byte_budget_exceeded": 1,
             })
+            fields = part["exact_payload_fields"]
+            self.assertEqual(fields, dict(zip(inv.EXACT_PAYLOAD_FIELDS, (3, 1, 1, 1))))
             counters["secret"] = "PRIVATE_CREDENTIAL"
+            fields["secret"] = "PRIVATE_CREDENTIAL"
             clean = inv.source_locator_public_receipt(raw, 0, verify_external_exact=True)
             self.assertEqual(clean["state"], inv.EXACT_INTEGRITY_MODE)
             self.assertFalse(clean["ppi_provider_contract_verified"])
             self.assertFalse(clean["history_source_selected"])
             self.assertNotIn("PRIVATE_", json.dumps(clean))
+            fields["all_bars_have_both"] = 2
+            self.assertEqual(inv.source_locator_public_receipt(
+                raw, 0, verify_external_exact=True)["state"], "NO_VERIFICADO")
+            fields["all_bars_have_both"] = 1
             counters["matched"] = 6
             self.assertEqual(inv.source_locator_public_receipt(
                 raw, 0, verify_external_exact=True)["state"], "NO_VERIFICADO")
