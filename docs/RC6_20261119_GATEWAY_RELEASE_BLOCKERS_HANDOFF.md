@@ -1,5 +1,19 @@
 # POROTA RC6 — Handoff integral de bloqueantes y camino al siguiente Deploy V2
 
+## Cierres nuevos y huecos del corte — 21-Nov-2026
+
+### Cierres diarios de la rueda vigente
+
+El scanner y el job en cuarentena exigían cutoff anual COMPLETE. El día nuevo quedaba detenido mientras faltara una fecha de años anteriores. [#1234](https://github.com/mbalbo2023/Porota-trading/pull/1234) DRAFT, fuente `4751c7a746b879a33268e065b843f3e95ce45a01`, reutiliza la ruta History del Gateway del scanner en el modo de una sola rueda. Fecha posterior al corte, publicación EOD alcanzada, candado compartido con #1203 y recibo diario durable antes del GET. Verifica las velas persistidas por identidad y contrato admitido. Omite las ya verificadas en esa rueda. Las pruebas no cambian la cuarentena ni los timers. 360 pruebas focalizadas y 89 adicionales fuera del host. El contenedor desplegado continúa en `6209ddc80447490a3eea5fc49e9366f6549d6e14`. [Predeploy #44933223650](https://github.com/mbalbo2023/Porota-trading/actions/runs/44933223650) omitió el artefacto al estar DRAFT.
+
+### Evidencia económica y límite del corte
+
+- [#1233](https://github.com/mbalbo2023/Porota-trading/pull/1233), integrado en `main@6f87691142ccad7042e7adc5c02c674c0cc3b621), reutiliza A729 para medir los campos de origen sólo tras verificar los dos hashes. [A729 #44933422745, artefacto 14718885522](https://github.com/mbalbo2023/Porota-trading/actions/runs/44933422745/artifacts/14718885522), `2026-11-21T18:04:03.977366+00:00` / 15:04:03 ART. ZIP SHA-256 `f56f4ad154c7c969dd40d4e943926ec06c1fc2c8cc80da8b1c588a6b2806987d`. 64 filas de manifiesto, 55 elegibles, 55 coincidentes y con listas de velas. En 0/55 objetos todas las velas originales traían moneda. En 0/55 todas traían la base RAW sin ajuste. Montaje RO, cero mutaciones de datos y cero consultas a proveedores por la acción. Queda `ppi_provider_contract_verified=false`; los campos de la envoltura conservan su autoridad de custodia.
+- [#1203](https://github.com/mbalbo2023/Porota-trading/pull/1203), DRAFT en `244a3aa320920d5d0ab5e0e4ad8c230545eb570b`, limita `_latest` a su propia ventana. La regresión fallaba ante una primera vela del 22/09/2026: la fecha posterior desplazaba el inicio y omitía un archivo elegible del 21/09. Con la consulta acotada se evalúa el archivo y el estado sigue PARTIAL si la cobertura es incompleta. 88 pruebas focalizadas. [Evidencia de procedencia en el PR](https://github.com/mbalbo2023/Porota-trading/pull/1203#issuecomment-7067012709).
+- BYMA [confirmó T+1 del 21/11/2025](https://es.linkedin.com/posts/byma-bolsas-y-mercados-argentinos-s.a_calendariodeoperaciones-mercadodecapitales-activity-7396563198855790593-sonm), con liquidación el 25/11. El día de negociación ya integra las 245 ruedas. El plazo y familia siguen por acreditar donde corresponda. El validador de History v2 rechaza actualmente el 23/03/2026 y el 10/07/2026 por su calendario operativo. [OpenAPI de IOL](https://developers.iolinversiones.com/api/llms) documenta barras por símbolo y mercado sin seleccionar ni declarar plazo, moneda y ajustes en el histórico. Usarlo como contraste de fechas; la admisión canónica requiere registros ejecutados íntegros con identidad o OHLCV con procedencia económica acreditada.
+
+Conservar #1203/A729 separados y la importación en HOLD. La vía #1234 está desarrollada y probada fuera del host. La primera publicación verificable necesita contrato de origen válido o una fuente alternativa con identidad completa, y luego evidencia por rueda en el candidato exacto. El recibo del archivo y su restauración no certifican actualización del histórico en runtime.
+
 ## Evidencia histórica y custodia — 21-Nov-2026
 
 ### Calendario de negociación del corte #1203
