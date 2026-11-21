@@ -96,7 +96,7 @@ def _init_rejections(store) -> None:
 
 
 def _v2_candles(*, symbol, instrument_type, market,currency, settlement,
-                rows, observed_at):
+                rows, observed_at, provider_contract_id):
     return [
         history_v2.Candle(
             symbol=str(symbol).upper(),
@@ -115,7 +115,8 @@ def _v2_candles(*, symbol, instrument_type, market,currency, settlement,
             adjusted=False,
             observed_at=observed_at,
             provider_at=policy._dt(row['date']).isoformat(),
-            metadata={"ready_paper_implication":"NONE","history_quality":"FULL_OHLC"},
+            metadata={"ready_paper_implication":"NONE","history_quality":"FULL_OHLC",
+                      "provider_contract_id":provider_contract_id},
         )
         for row in rows
     ]
@@ -202,6 +203,7 @@ def _ingest_ppi_payload(store, *, symbol: str, instrument_type: str,
             settlement=settlement,
             rows=result.valid_rows,
             observed_at=attempted_iso,
+            provider_contract_id=provider_contract_id,
         ),attempt_key=ingest_key+':FULL',
     ) if result.valid_rows else {
         "versions_appended":0,"canonical_updates":0,"protected_by_precedence":0

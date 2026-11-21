@@ -341,6 +341,14 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                         if "origin_file" in detail:
                             receipt["pytest_failure_origin_file"] = detail["origin_file"]
                             receipt["pytest_failure_origin_line"] = detail["origin_line"]
+                        if "cause_exception_type" in detail:
+                            receipt["pytest_failure_cause_exception_type"] = (
+                                detail["cause_exception_type"])
+                        if "cause_origin_file" in detail:
+                            receipt["pytest_failure_cause_origin_file"] = (
+                                detail["cause_origin_file"])
+                            receipt["pytest_failure_cause_origin_line"] = (
+                                detail["cause_origin_line"])
                     if failure.last_active_module is not None:
                         receipt["last_active_test_module"] = failure.last_active_module
                     if failure.process_exit_code is not None:

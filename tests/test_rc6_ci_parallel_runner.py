@@ -788,6 +788,28 @@ class TestParallelProofRunner(unittest.TestCase):
             self.assertEqual(
                 runner._verified_test_failure_sidecar(target, REPO)["origin_file"],
                 "scripts/rc6_ci_shard_quorum.py")
+            # Cause of a wrapped exception gets a separate sanitized source,
+            # never the private message used to instantiate ValueError.
+            target.unlink()
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_FAILURE_PATH": str(target)}):
+                try:
+                    try:
+                        raise ValueError("PRIVATE_PROVIDER_ACCOUNT_INFORMATION")
+                    except ValueError as private:
+                        raise RuntimeError("PRIVATE_WRAPPER") from private
+                except RuntimeError as error:
+                    call = SimpleNamespace(
+                        excinfo=SimpleNamespace(type=type(error), value=error))
+                    identity.pytest_exception_interact(
+                        None, call, SimpleNamespace(failed=True, when="call"))
+            clean = runner._verified_test_failure_sidecar(target, REPO)
+            self.assertEqual(clean["cause_exception_type"], "ValueError")
+            self.assertEqual(clean["cause_origin_file"],
+                             "tests/test_rc6_ci_parallel_runner.py")
+            self.assertGreater(clean["cause_origin_line"], 0)
+            self.assertNotIn("PRIVATE", target.read_text(encoding="utf-8"))
 
     def test_failed_pytest_shard_retains_sanitized_first_exception(self):
         fake = FakePytest(require_parallel=False)
@@ -837,6 +859,11 @@ class TestParallelProofRunner(unittest.TestCase):
                 {"schema": "rc6.pytest.failure.v1",
                  "exception_type": "AssertionError", "phase": "call",
                  "origin_file": "../PRIVATE_TOKEN.py", "origin_line": 7},
+                {"schema": "rc6.pytest.failure.v1",
+                 "exception_type": "AssertionError", "phase": "call",
+                 "cause_exception_type": "PRIVATE TOKEN",
+                 "cause_origin_file": "tests/test_rc6_ci_parallel_runner.py",
+                 "cause_origin_line": 7},
             )
             for record in cases:
                 path.write_text(json.dumps(record))

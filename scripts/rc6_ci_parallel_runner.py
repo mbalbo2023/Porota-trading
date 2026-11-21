@@ -200,7 +200,9 @@ def _verified_test_failure_sidecar(path: Path, repo: Path) -> dict | None:
                 or record.get("schema") != "rc6.pytest.failure.v1"
                 or set(record) - {"schema", "exception_type", "phase",
                                  "source_file", "source_line",
-                                 "origin_file", "origin_line"}):
+                                 "origin_file", "origin_line",
+                                 "cause_exception_type",
+                                 "cause_origin_file", "cause_origin_line"}):
             return None
         kind = record.get("exception_type")
         phase = record.get("phase")
@@ -209,7 +211,13 @@ def _verified_test_failure_sidecar(path: Path, repo: Path) -> dict | None:
                 or phase not in ("setup", "call", "teardown", "collect")):
             return None
         result = {"exception_type": kind, "phase": phase}
-        for prefix in ("source", "origin"):
+        cause_type = record.get("cause_exception_type")
+        if cause_type is not None:
+            if (type(cause_type) is not str or
+                    not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", cause_type)):
+                return None
+            result["cause_exception_type"] = cause_type
+        for prefix in ("source", "origin", "cause_origin"):
             source = record.get(prefix + "_file")
             line = record.get(prefix + "_line")
             if source is None and line is None:
@@ -220,7 +228,8 @@ def _verified_test_failure_sidecar(path: Path, repo: Path) -> dict | None:
                     or not 1 <= line <= 10000000):
                 continue
             if (prefix == "source" and not source.startswith("tests/")) or (
-                    prefix == "origin" and source.startswith("tests/")):
+                    prefix == "origin" and source.startswith("tests/")) or (
+                    prefix == "cause_origin" and cause_type is None):
                 continue
             parts = Path(source).parts
             if (repo / source).is_file() and not any(

@@ -99,6 +99,34 @@ def pytest_exception_interact(node, call, report):
                 except (OSError, ValueError, RuntimeError):
                     pass
             trace = trace.tb_next
+        # The first exception is often a safe wrapper (e.g. BudgetBackpressure
+        # from ValueError). Its actual causal guard must be identifiable
+        # WITHOUT exposing the cause message or private traceback values.
+        cause = getattr(getattr(failure, "value", None), "__cause__", None)
+        if isinstance(cause, BaseException):
+            cause_type = type(cause).__name__
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", cause_type):
+                receipt["cause_exception_type"] = cause_type
+                cause_tb = getattr(cause, "__traceback__", None)
+                for _ in range(128):
+                    if cause_tb is None:
+                        break
+                    filename = Path(cause_tb.tb_frame.f_code.co_filename)
+                    if filename.is_absolute():
+                        try:
+                            relative = filename.resolve(strict=True).relative_to(root).as_posix()
+                            parts = Path(relative).parts
+                            if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", relative)
+                                    and ".." not in parts and
+                                    (root / relative).is_file() and
+                                    not any((root / Path(*parts[:i])).is_symlink()
+                                            for i in range(1, len(parts) + 1)) and
+                                    1 <= cause_tb.tb_lineno <= 10000000):
+                                receipt["cause_origin_file"] = relative
+                                receipt["cause_origin_line"] = cause_tb.tb_lineno
+                        except (OSError, ValueError, RuntimeError):
+                            pass
+                    cause_tb = cause_tb.tb_next
         path = Path(target)
         if path.is_symlink() or path.parent.is_symlink() or not path.parent.is_dir():
             return
