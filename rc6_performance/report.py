@@ -12,22 +12,49 @@ from .common import stamp
 from .metrics import decision_funnel, exit_latencies, trade_metrics
 from .costs import realized_round_trip_cost
 from .scanner import ScanBudget
+from .segments import evidence_paths
 
 
 def evidence_report(path, *, event_limit=10000):
     if not 1 <= event_limit <= 10000:
         raise ValueError("BOUNDED_REPORT_REQUIRED")
     path = Path(path).resolve()
-    with closing(sqlite3.connect(path.as_uri()+"?mode=ro", uri=True, timeout=.005)) as c:
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA query_only=ON")
-        c.execute("PRAGMA busy_timeout=5")
-        c.execute("BEGIN")
-        total = c.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-        rows = c.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (event_limit,)).fetchall()
-        probes = [dict(r) for r in c.execute("SELECT * FROM exit_probes ORDER BY at DESC LIMIT 1000")]
-        state = c.execute("SELECT value_json FROM state WHERE key='last_capture'").fetchone()
-        c.rollback()
+    segments = evidence_paths(path)
+    total, rows, state = 0, [], None
+    segment_probes = {}
+    probe_duplicates = 0
+    # Every segment remains readable.  Newest capture events are selected first
+    # from the newest shard; immutable original rows are never reimported.
+    for shard in reversed(segments):
+        with closing(sqlite3.connect(shard.as_uri()+"?mode=ro", uri=True, timeout=.005)) as c:
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA query_only=ON")
+            c.execute("PRAGMA busy_timeout=5")
+            c.execute("BEGIN")
+            total += c.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            remaining = event_limit-len(rows)
+            if remaining:
+                rows.extend(c.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?",
+                                      (remaining,)).fetchall())
+            local_probes = [dict(r) for r in c.execute(
+                "SELECT * FROM exit_probes ORDER BY at DESC LIMIT 1000")]
+            for probe in local_probes:
+                key = (probe["paper_id"], probe["stage"])
+                if key in segment_probes:
+                    probe_duplicates += 1
+                # Walk newest->oldest: the original evidence of a repeated
+                # stage wins, but both physical originals remain intact.
+                segment_probes[key] = probe
+            if state is None:
+                state = c.execute("SELECT value_json FROM state WHERE key='last_capture'").fetchone()
+            c.rollback()
+    if evidence_paths(path) != segments:
+        raise ValueError("EVIDENCE_SEGMENTS_CHANGED_DURING_REPORT")
+    keys = [row["event_key"] for row in rows]
+    if len(set(keys)) != len(keys):
+        raise ValueError("EVIDENCE_CROSS_SEGMENT_DUPLICATE_EVENT_KEY")
+    probes = sorted(segment_probes.values(), key=lambda p: stamp(p["at"]),
+                    reverse=True)[:1000]
     snapshots, fills, cycles = [], [], []
     for row in reversed(rows):
         if hashlib.sha256(row["payload_json"].encode()).hexdigest() != row["payload_sha256"]:
@@ -111,7 +138,9 @@ def evidence_report(path, *, event_limit=10000):
     return {"schema": "rc6.performance-report.v1", "mode": "SHADOW", "decision_effect": "NONE",
             "real_order_routes": [], "generated_at": datetime.now(timezone.utc).isoformat(),
             "selection": {"captured_events": total, "selected_events": len(rows), "limit": event_limit,
-                          "truncated": total > event_limit, "legacy_history_backfill": False},
+                          "truncated": total > event_limit, "legacy_history_backfill": False,
+                          "evidence_segments": len(segments),
+                          "cross_segment_probe_duplicates": probe_duplicates},
             "last_capture": json.loads(state[0]) if state else None,
             "funnel": funnel, "scanner": scanner,
             "exit_latency": exit_latencies(probes, fills),
