@@ -319,8 +319,11 @@ class ChildProcesses:
             "restarts": 0, "spawn_failures": 0, "started_at": None,
             "last_exit_at": None, "last_error": None} for name in commands}
         first = "ppi_gateway" if "ppi_gateway" in commands else "scanner"
+        # Gateway owns the session first; scanner must still precede the
+        # read-only shadow workload to avoid simultaneous startup SQLite IO.
         self.next_start = {
-            name: (started if name == first else started + startup_grace_seconds)
+            name: (started if name == first else started + startup_grace_seconds * (
+                2 if name == "dynamic_shadow" and "ppi_gateway" in commands else 1))
             for name in commands
         }
 
