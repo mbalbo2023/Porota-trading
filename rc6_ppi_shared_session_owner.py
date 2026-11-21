@@ -29,8 +29,6 @@ from typing import Any, Callable
 from rc6_ppi_shared_feed import (
     NATIVE_ACQUIRE_SCHEMA,
     _canonical_bytes,
-    _five,
-    CatalogIdentityError,
     PPIReadOnlyNativeReceiptStore,
     PPISharedMarketFeed,
     ReadOnlyUnixFeedServer,
@@ -58,6 +56,7 @@ def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates
         ppi_full_key_evidence_reason, canonical_family,
         canonical_market, canonical_settlement, cash_currency,
     )
+    from rc6_ppi_shared_feed import CatalogIdentityError, _five
 
     path = checked_path(database)
     attested = []
