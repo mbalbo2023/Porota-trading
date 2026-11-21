@@ -536,8 +536,9 @@ def test_cutoff_calendar_reproduces_the_audited_byma_market_dates():
     assert digest.hexdigest() == "8997163de5795c13743af4a0ce44f55b16c7402985c56f9313e6832bf431e7ba"
     assert sessions[date(2025, 11, 21)] == "LIMITED_T1_SOURCE_ONLY"
     assert sessions[date(2025, 12, 24)] == "LIMITED_T1_SOURCE_ONLY"
+    assert sessions[date(2026, 7, 10)] == "LIMITED_T1_SOURCE_ONLY"
     assert sessions[date(2026, 3, 23)] == "LIMITED_SETTLEMENT_UNVERIFIED"
-    assert sum(value == "LIMITED_SETTLEMENT_UNVERIFIED" for value in sessions.values()) == 3
+    assert sum(value == "LIMITED_SETTLEMENT_UNVERIFIED" for value in sessions.values()) == 2
     assert estado_negociacion_historica_byma(
         date(2025, 11, 21), **{**lookup, "family": "ACCIONES", "settlement": "T+1"}
     ) == "LIMITED_T1_SOURCE_ONLY"
@@ -547,6 +548,7 @@ def test_cutoff_calendar_reproduces_the_audited_byma_market_dates():
     assert estado_negociacion_historica_byma(date(2025, 9, 19), **lookup) == "UNVERIFIED"
     assert estado_negociacion_historica_byma(repair.CUTOFF, **{**lookup, "family": "BONOS"}) == "UNVERIFIED"
     assert not es_dia_habil_operativo(date(2026, 3, 23))
+    assert not es_dia_habil_operativo(date(2026, 7, 10))
 
 
 def test_cutoff_contract_cannot_waive_limited_settlement_evidence(tmp_path, monkeypatch):
@@ -560,10 +562,26 @@ def test_cutoff_contract_cannot_waive_limited_settlement_evidence(tmp_path, monk
     coverage = repair._coverage(store, identity)
     assert coverage["complete"] is False
     assert coverage["reason"] == "BASELINE_SETTLEMENT_CALENDAR_UNVERIFIED"
-
     _canonical_row(store, identity, provider_contract_id="fixture-pinned", day="2025-12-31")
     assert repair._coverage(store, identity)["reason"] == "CANONICAL_OUTSIDE_BYMA_SESSION"
 
+
+def test_history_store_uses_the_same_audited_session_as_cutoff_repair():
+    from cu_history_store_v2_hf6 import validate_daily_values
+
+    def validate(day, settlement):
+        validate_daily_values(date=day, open=100, high=110, low=95, close=101, volume=50,
+                              known_at="2026-09-22T10:00:00+00:00", market="BYMA",
+                              family="ACCIONES", settlement=settlement)
+
+    validate("2025-11-21", "A-24HS")
+    validate("2025-12-24", "T+1")
+    validate("2026-07-10", "T+1")
+    for day, settlement in (("2025-11-21", "CI"), ("2025-11-06", "T1"),
+                            ("2025-11-24", "T1"), ("2026-03-23", "T1"),
+                            ("2026-07-10", "CI")):
+        with pytest.raises(ValueError, match="HISTORY_SESSION_NOT_OPERATIONAL"):
+            validate(day, settlement)
 
 def test_cutoff_coverage_requires_every_audited_day_and_pinned_ppi_contract(tmp_path, monkeypatch):
     import ct_ppi_history_salvage_hf6 as salvage
