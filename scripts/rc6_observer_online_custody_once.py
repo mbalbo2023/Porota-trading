@@ -55,7 +55,16 @@ INVENTORY_METRICS = ("identities", "with_canonical", "regular_or_certified_slots
                      "canonical_on_certified_slots", "absent_on_certified_slots",
                      "canonical_on_uncertain_slots", "canonical_outside_market_days",
                      "version_rows", "conflicted_candidate_slots", "invalid_date_rows",
-                     "canonical_without_exact_version")
+                     "canonical_without_exact_version", "legacy_candidates_on_certified_slots")
+INVENTORY_JOIN_FIELDS = ("symbol", "instrument_type", "market", "settlement", "date")
+INVENTORY_EXACT_FIELDS = frozenset((*INVENTORY_JOIN_FIELDS, "currency", "price_basis",
+                                    "adjustment_basis", "adjusted"))
+INVENTORY_TABLE_FIELDS = {
+    "history_canonical_v2": INVENTORY_EXACT_FIELDS | {"version_id"},
+    "history_versions_v2": INVENTORY_EXACT_FIELDS | {"id"},
+}
+INVENTORY_EXACT_METRICS = frozenset(INVENTORY_METRICS) - {
+    "identities", "regular_or_certified_slots", "legacy_candidates_on_certified_slots"}
 INVENTORY_SQL_PHASES = frozenset({"OPEN_RESTORE", "OBSERVER_PAPER_WITNESS", "OBSERVER_CATALOG",
                                   "HISTORY_SCHEMA", "HISTORY_CANONICAL", "HISTORY_VERSIONS"})
 PUBLIC_HOLD_REASONS = frozenset({
@@ -797,8 +806,15 @@ def _restored_history_counts(observer, history, days):
     if not 0 < len(identities) <= INVENTORY_IDENTITY_LIMIT:
         raise Hold("RESTORED_INVENTORY_SCOPE_UNVERIFIED")
     with _inventory_sql("HISTORY_SCHEMA"):
+        fields = {table: set(row[1] for row in history.execute(f"PRAGMA table_info({table})")) & expected
+                  for table, expected in INVENTORY_TABLE_FIELDS.items()}
+        missing = {table: sorted(expected - fields[table])
+                   for table, expected in INVENTORY_TABLE_FIELDS.items()}
         conflict_table = history.execute("SELECT 1 FROM sqlite_schema WHERE type='table' "
                                          "AND name='history_source_conflicts_v2'").fetchone() is not None
+    if any(missing.values()):
+        cohorts, digest = _legacy_restored_history_counts(history, identities, days, fields)
+        return cohorts, digest, conflict_table, missing
     # Both date range queries use the financial identity prefix of the existing
     # canonical and version indexes. Conflict lookup uses its leading version ID.
     where = """symbol=? AND instrument_type=? AND market=? AND currency=? AND settlement=?
@@ -845,7 +861,41 @@ def _restored_history_counts(observer, history, days):
             counts["conflicted_candidate_slots"] += bool(conflicted)
             digest.update((json.dumps([identity, day, status, version_id, exact, version_count, conflicted],
                                       separators=(",", ":")) + "\n").encode())
-    return cohorts, digest.hexdigest(), conflict_table
+    return cohorts, digest.hexdigest(), conflict_table, missing
+
+
+def _legacy_restored_history_counts(history, identities, days, fields):
+    """Report broad dated matches; an incomplete key cannot certify coverage."""
+    physical = fields["history_canonical_v2"]
+    joinable = set(INVENTORY_JOIN_FIELDS).issubset(physical)
+    cohorts = {family: dict.fromkeys(INVENTORY_METRICS) for family in INVENTORY_FAMILIES}
+    for counts in cohorts.values():
+        counts.update(identities=0, regular_or_certified_slots=0,
+                      legacy_candidates_on_certified_slots=0 if joinable else None)
+    digest = hashlib.sha256()
+    certified = {day for day, status in days.items() if status == "1"}
+    if joinable:
+        clauses = ["symbol=?", "instrument_type=?", "market=?", "settlement=?", "date>=?", "date<?"]
+        for field, fixed in (("currency", "ARS"), ("price_basis", "RAW"),
+                             ("adjustment_basis", "RAW_NO_ADJUSTMENT"), ("adjusted", 0)):
+            if field in physical:
+                literal = "'" + fixed + "'" if isinstance(fixed, str) else str(fixed)
+                clauses.append(f"{field}={literal}")
+        query = "SELECT DISTINCT date FROM history_canonical_v2 WHERE " + " AND ".join(clauses)
+    for symbol, family, market, currency, settlement in identities:
+        counts = cohorts[family]
+        counts["identities"] += 1
+        counts["regular_or_certified_slots"] += len(certified)
+        matches = set()
+        if joinable:
+            args = (symbol, family, market, settlement, INVENTORY_FROM.isoformat(),
+                    (INVENTORY_TO + timedelta(days=1)).isoformat())
+            with _inventory_sql("HISTORY_CANONICAL"):
+                matches = {row[0] for row in history.execute(query, args)} & certified
+            counts["legacy_candidates_on_certified_slots"] += len(matches)
+        digest.update((json.dumps([symbol, family, market, currency, settlement, sorted(matches)],
+                                  separators=(",", ":")) + "\n").encode())
+    return cohorts, digest.hexdigest()
 
 
 def host_restored_history_inventory(observer_run: str, history_run: str, mask: str, *,
@@ -855,7 +905,7 @@ def host_restored_history_inventory(observer_run: str, history_run: str, mask: s
     with _inventory_sql("OPEN_RESTORE"):
         with _restored_inventory_db(custody_root, "OBSERVER", observer_run, deadline) as observer:
             with _restored_inventory_db(custody_root, "HISTORY", history_run, deadline) as history:
-                cohorts, digest, conflict_table = _restored_history_counts(observer[0], history[0], days)
+                cohorts, digest, conflict_table, missing = _restored_history_counts(observer[0], history[0], days)
     if time.monotonic() > deadline:
         raise Hold("RESTORED_INVENTORY_TIMEOUT")
     return {"schema": INVENTORY_SCHEMA, "state": "RESTORED_HISTORY_INVENTORY_OK",
@@ -865,6 +915,7 @@ def host_restored_history_inventory(observer_run: str, history_run: str, mask: s
             "observer_restore_sha256": observer[1], "history_restore_sha256": history[1],
             "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest(),
             "inventory_sha256": digest, "cohorts": cohorts, "conflict_ledger_present": conflict_table,
+            "missing_exact_columns": missing,
             "generated_at_utc": datetime.now(timezone.utc).isoformat()}
 
 
@@ -888,7 +939,7 @@ def sanitize_restored_inventory(raw, *, remote_rc, observer_run, history_run, ma
              "calendar_sha256": hashlib.sha256(mask.encode()).hexdigest()}
     extras = {"observer_restore_sha256", "history_restore_sha256", "inventory_sha256"}
     if (not isinstance(raw, dict) or set(raw) != fixed.keys() | extras | {
-                "cohorts", "generated_at_utc", "conflict_ledger_present"}
+                "cohorts", "generated_at_utc", "conflict_ledger_present", "missing_exact_columns"}
             or any(type(raw[key]) is not type(value) or raw[key] != value for key, value in fixed.items())
             or any(not isinstance(raw[key], str) or not HEX64.fullmatch(raw[key]) for key in extras)
             or type(raw["conflict_ledger_present"]) is not bool
@@ -900,13 +951,31 @@ def sanitize_restored_inventory(raw, *, remote_rc, observer_run, history_run, ma
             return fallback
     except (TypeError, ValueError):
         return fallback
+    missing = raw["missing_exact_columns"]
+    if (not isinstance(missing, dict) or set(missing) != set(INVENTORY_TABLE_FIELDS)
+            or any(not isinstance(cols, list) or not all(isinstance(col, str) and col in INVENTORY_TABLE_FIELDS[table]
+                                                         for col in cols) or cols != sorted(set(cols))
+                   for table, cols in missing.items())):
+        return fallback
+    exact = not any(missing.values())
+    legacy_unjoinable = not exact and bool(set(INVENTORY_JOIN_FIELDS) & set(missing["history_canonical_v2"]))
     for counts in raw["cohorts"].values():
         if (not isinstance(counts, dict) or set(counts) != set(INVENTORY_METRICS)
-                or any(type(value) is not int or not 0 <= value <= 2**32 for value in counts.values())
-                or not 0 <= counts["with_canonical"] <= counts["identities"] <= INVENTORY_IDENTITY_LIMIT
-                or counts["regular_or_certified_slots"] != counts["identities"] * sum(s == "1" for s in days.values())
-                or counts["canonical_on_certified_slots"] + counts["absent_on_certified_slots"]
-                != counts["regular_or_certified_slots"]):
+                or any(type(value) is not int or not 0 <= value <= 2**32
+                       for key, value in counts.items() if exact or key not in INVENTORY_EXACT_METRICS
+                       if key != "legacy_candidates_on_certified_slots" or not legacy_unjoinable)
+                or not 0 <= counts["identities"] <= INVENTORY_IDENTITY_LIMIT
+                or counts["regular_or_certified_slots"] != counts["identities"] * sum(s == "1" for s in days.values())):
+            return fallback
+        legacy_count = counts["legacy_candidates_on_certified_slots"]
+        if exact:
+            if (legacy_count != 0 or counts["with_canonical"] > counts["identities"]
+                    or counts["canonical_on_certified_slots"] + counts["absent_on_certified_slots"]
+                    != counts["regular_or_certified_slots"]):
+                return fallback
+        elif (any(counts[key] is not None for key in INVENTORY_EXACT_METRICS)
+              or legacy_unjoinable and legacy_count is not None
+              or not legacy_unjoinable and legacy_count > counts["regular_or_certified_slots"]):
             return fallback
     if not 0 < sum(counts["identities"] for counts in raw["cohorts"].values()) <= INVENTORY_IDENTITY_LIMIT:
         return fallback

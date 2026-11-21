@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       execution_mode:
-        description: Existing PPI credential boundary; no new GitHub secrets
+        description: PPI credential boundary or the public BYMA historical probe
         required: true
         default: DROPLET_EXISTING_CREDENTIALS
         type: choice
@@ -31,6 +31,7 @@ on:
           - RUNNER_EXISTING
           - DROPLET_ATOMIC_BOOK
           - DROPLET_BUDGET_METADATA
+          - RUNNER_BYMA_PUBLIC_PILOT
       from_day:
         description: History-only first ART day; ignored for Book
         required: true
@@ -106,6 +107,96 @@ jobs:
           python3 -m pip install --disable-pip-version-check pytest==9.1.1
           python3 -m pytest -q tests/test_rc6_history_fresh_sidecar.py
           echo RC6_A327_OFFHOST_ONLY_CONTRACT=GREEN
+
+  byma-public-pilot:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'RUNNER_BYMA_PUBLIC_PILOT' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Capture two public BYMA 24HS response digests and dated observations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          python3 -B - <<'PY'
+          import hashlib, json, math, os, urllib.error, urllib.parse, urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          base = 'https://open.bymadata.com.ar/vanoms-be-core/rest/api/bymadata/free/chart/historical-series/history'
+          utc = timezone.utc
+          art = ZoneInfo('America/Argentina/Buenos_Aires')
+          start = int(datetime(2025, 9, 20, tzinfo=utc).timestamp())
+          end = int(datetime(2026, 9, 23, tzinfo=utc).timestamp())
+          watch_days = ('2025-11-06', '2025-11-21', '2025-12-24', '2026-03-23', '2026-07-10')
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+
+          def capture(symbol):
+              params = dict(symbol=symbol + ' 24HS', resolution='D', **{'from': start, 'to': end})
+              result = {'request': params, 'source': 'BYMA_PUBLIC', 'state': 'NO_VERIFICADO'}
+              request = urllib.request.Request(base + '?' + urllib.parse.urlencode(params),
+                                               headers={'Accept': 'application/json'})
+              try:
+                  with urllib.request.build_opener(NoRedirect()).open(request, timeout=18) as response:
+                      raw = response.read(262145)
+                      result['http_status'] = response.status
+              except urllib.error.HTTPError as error:
+                  return dict(result, http_status=error.code, reason='BYMA_HTTP_ERROR')
+              except (OSError, urllib.error.URLError):
+                  return dict(result, reason='BYMA_TRANSPORT_UNAVAILABLE')
+              if len(raw) > 262144:
+                  return dict(result, reason='BYMA_RESPONSE_BUDGET_EXCEEDED')
+              result['response_sha256'] = hashlib.sha256(raw).hexdigest()
+              try:
+                  data = json.loads(raw)
+                  if data.get('s') != 'ok':
+                      return dict(result, reason='BYMA_SERIES_UNAVAILABLE')
+                  columns = tuple(data[key] for key in 'tohlcv')
+                  if any(not isinstance(col, list) for col in columns) or len({len(col) for col in columns}) != 1:
+                      raise ValueError('columns')
+                  if not 0 < len(columns[0]) <= 370:
+                      raise ValueError('rows')
+                  days_utc, days_art = set(), set()
+                  for stamp, opening, high, low, close, volume in zip(*columns, strict=True):
+                      if (type(stamp) is not int or not start <= stamp <= end
+                              or any(type(x) not in (int, float) or not math.isfinite(x)
+                                     for x in (opening, high, low, close, volume))
+                              or not 0 < low <= min(opening, close) <= max(opening, close) <= high
+                              or volume < 0):
+                          raise ValueError('invalid bar')
+                      if volume > 0:
+                          clock = datetime.fromtimestamp(stamp, tz=utc)
+                          days_utc.add(clock.date().isoformat())
+                          days_art.add(clock.astimezone(art).date().isoformat())
+              except (AttributeError, KeyError, TypeError, ValueError, OverflowError, RecursionError):
+                  return dict(result, reason='BYMA_RESPONSE_SHAPE_UNVERIFIED')
+              return dict(result, state='BYMA_24HS_OBSERVED', rows=len(columns[0]),
+                          dated_utc={day: day in days_utc for day in watch_days},
+                          dated_art={day: day in days_art for day in watch_days},
+                          declared_fields={key: key in data for key in ('currency', 'moneda',
+                              'settlement', 'priceBasis', 'adjusted', 'adjustmentBasis')})
+
+          results = [capture(symbol) for symbol in ('GGAL', 'AAPL')]
+          receipt = {'schema': 'rc6.byma-public-history-pilot.v1', 'observed_at_utc': datetime.now(utc).isoformat(),
+                     'results': results, 'droplet_access': False, 'ppi_requests': 0, 'canonical_writes': 0}
+          output = Path(os.environ['RUNNER_TEMP']) / 'rc6-byma-public-history.json'
+          output.write_text(json.dumps(receipt, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps([r.get('reason', r['state']) for r in results]))
+          if any(r['state'] != 'BYMA_24HS_OBSERVED' for r in results):
+              raise SystemExit(2)
+          PY
+      - name: Preserve only the public-source receipt and response digests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-byma-public-history-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-byma-public-history.json
+          if-no-files-found: error
+          retention-days: 7
 
   capture:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'mbalbo2023/Porota-trading' && inputs.execution_mode == 'RUNNER_EXISTING' }}

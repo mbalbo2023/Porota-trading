@@ -915,9 +915,9 @@ class RestoredHistoryInventoryContracts(unittest.TestCase):
             self.assertEqual(hashlib.sha256(observer.read_bytes()).hexdigest(), observer_sha)
             self.assertEqual(hashlib.sha256(history.read_bytes()).hexdigest(), history_sha)
             self.assertEqual(raw["cohorts"]["ACCIONES"], dict(zip(custody.INVENTORY_METRICS,
-                (1, 1, 3, 1, 2, 0, 0, 3, 1, 2, 1))))
+                (1, 1, 3, 1, 2, 0, 0, 3, 1, 2, 1, 0))))
             self.assertEqual(raw["cohorts"]["CEDEARS"], dict(zip(custody.INVENTORY_METRICS,
-                (1, 1, 3, 0, 3, 1, 0, 1, 0, 0, 0))))
+                (1, 1, 3, 0, 3, 1, 0, 1, 0, 0, 0, 0))))
             self.assertTrue(raw["conflict_ledger_present"])
             clean = custody.sanitize_restored_inventory(raw, remote_rc=0, observer_run=args[0],
                                                         history_run=args[1], mask=args[2])
@@ -930,6 +930,31 @@ class RestoredHistoryInventoryContracts(unittest.TestCase):
                 target.write(b"changed")
             with self.assertRaisesRegex(custody.Hold, "RESTORED_INVENTORY_DIGEST_MISMATCH"):
                 custody.host_restored_history_inventory(*args, custody_root=root)
+
+    def test_legacy_restore_with_incomplete_identity_reports_unresolved_exact_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.restore(root, "OBSERVER", self.OBSERVER_RUN, """
+                CREATE TABLE observer_state(id,mode,real_orders_sent);
+                INSERT INTO observer_state VALUES (1,'PRODUCTION_PAPER',0);
+                CREATE TABLE financial_instrument_catalog(ticker,instrument_type,market,currency,settlement,status);
+                INSERT INTO financial_instrument_catalog VALUES
+                    ('TEST_A','ACCIONES','BYMA','ARS','A-24HS','AVAILABLE');
+            """)
+            self.restore(root, "HISTORY", self.HISTORY_RUN, """
+                CREATE TABLE history_versions_v2(id,symbol,instrument_type,market,settlement,date);
+                CREATE TABLE history_canonical_v2(symbol,instrument_type,market,settlement,date);
+                INSERT INTO history_canonical_v2 VALUES ('TEST_A','ACCIONES','BYMA','A-24HS','2026-09-21');
+            """)
+            raw = custody.host_restored_history_inventory(self.OBSERVER_RUN, self.HISTORY_RUN,
+                                                          self.MASK, custody_root=root)
+            self.assertIn('currency', raw['missing_exact_columns']['history_canonical_v2'])
+            counts = raw['cohorts']['ACCIONES']
+            self.assertEqual(counts['legacy_candidates_on_certified_slots'], 1)
+            self.assertIsNone(counts['canonical_on_certified_slots'])
+            self.assertIsNone(counts['absent_on_certified_slots'])
+            self.assertEqual(custody.sanitize_restored_inventory(raw, remote_rc=0,
+                observer_run=self.OBSERVER_RUN, history_run=self.HISTORY_RUN, mask=self.MASK), raw)
 
 
 class ActionsBoundaryContracts(unittest.TestCase):
