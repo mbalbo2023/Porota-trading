@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from co_market_sessions_hf6 import byma_eod_publication_floor
+from scripts.rc6_history_cutoff_repair_once import CUTOFF
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "bf_production_paper_observer.py"
@@ -24,12 +25,14 @@ SESSION = date(2026, 11, 2)
 NOW = datetime.fromisoformat("2026-11-02T18:45:00-03:00")
 GGAL = ("GGAL", "ACCIONES", "BYMA", "ARS", "CI")
 GGAL_USD = ("GGAL", "ACCIONES", "BYMA", "USD_MEP", "CI")
+TEST_CONTRACT = "TEST_ONLY_HISTORY_EOD"
 
 
 def _functions(*names):
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
     found = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
-    namespace = {"TZ": TZ, "datetime": datetime,
+    namespace = {"TZ": TZ, "datetime": datetime, "json": json,
+                 "HISTORY_CUTOFF": CUTOFF,
                  "byma_eod_publication_floor": byma_eod_publication_floor}
     exec(compile(ast.Module(body=[found[name] for name in names], type_ignores=[]),
                  str(SOURCE), "exec"), namespace)
@@ -45,31 +48,36 @@ class _History:
 
 
 @pytest.fixture
-def history(tmp_path):
+def history(tmp_path, monkeypatch):
+    import ct_ppi_history_salvage_hf6 as salvage
+
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", {TEST_CONTRACT})
     storage = _History(tmp_path / "raw-history.db")
     with storage.connect() as conn:
         conn.execute("""CREATE TABLE history_canonical_v2(
             symbol TEXT, instrument_type TEXT, market TEXT, currency TEXT,
             settlement TEXT, date TEXT, price_basis TEXT, adjustment_basis TEXT,
-            source TEXT, version_known_at TEXT)""")
+            source TEXT, version_known_at TEXT, adjusted INTEGER, metadata_json TEXT)""")
     return storage
 
 
 def _row(history, identity=GGAL, *, day="2026-11-02",
          basis="RAW", adjustment="RAW_NO_ADJUSTMENT",
-         source="PPI_PRODUCTION_HISTORY", known="2026-11-02T18:20:00-03:00"):
+         source="PPI_PRODUCTION_HISTORY", known="2026-11-02T18:20:00-03:00",
+         adjusted=0, contract=TEST_CONTRACT, quality="FULL_OHLC"):
+    metadata = json.dumps({"provider_contract_id": contract, "history_quality": quality})
     with history.connect() as conn:
-        conn.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?)",
-                     (*identity, day, basis, adjustment, source, known))
+        conn.execute("INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (*identity, day, basis, adjustment, source, known, adjusted, metadata))
 
 
 def test_eod_helper_certifies_only_persisted_exact_full_key_raw_at_floor(history):
     _row(history)
     verified = _functions("_verified_ppi_eod_keys")["_verified_ppi_eod_keys"]
-    assert verified(history, [GGAL, GGAL_USD], SESSION, NOW) == 1
+    assert verified(history, [GGAL, GGAL_USD], SESSION, NOW) == {GGAL}
     _row(history, GGAL_USD)
-    assert verified(history, [GGAL, GGAL_USD], SESSION, NOW) == 2
-    assert verified(history, [GGAL, GGAL, GGAL_USD], SESSION, NOW) == 2
+    assert verified(history, [GGAL, GGAL_USD], SESSION, NOW) == {GGAL, GGAL_USD}
+    assert verified(history, [GGAL, GGAL, GGAL_USD], SESSION, NOW) == {GGAL, GGAL_USD}
 
 
 @pytest.mark.parametrize("override", [
@@ -77,6 +85,10 @@ def test_eod_helper_certifies_only_persisted_exact_full_key_raw_at_floor(history
     {"source": "IOL"},
     {"basis": "ADJUSTED"},
     {"adjustment": "SPLIT_ADJUSTED"},
+    {"adjusted": 1},
+    {"contract": None},
+    {"contract": "UNKNOWN_CONTRACT"},
+    {"quality": "CLOSE_ONLY"},
     {"known": "2026-11-02T18:14:59-03:00"},
     {"known": "2026-11-02T18:46:00-03:00"},
     {"known": "2026-11-02T18:22:00"},
@@ -85,24 +97,24 @@ def test_eod_helper_certifies_only_persisted_exact_full_key_raw_at_floor(history
 def test_eod_helper_rejects_noncanonical_or_unpublished_row(history, override):
     _row(history, **override)
     verified = _functions("_verified_ppi_eod_keys")["_verified_ppi_eod_keys"]
-    assert verified(history, [GGAL], SESSION, NOW) == 0
+    assert verified(history, [GGAL], SESSION, NOW) == set()
 
 
 def test_eod_helper_rejects_wrong_session_and_early_or_naive_clock(history):
     _row(history)
     verified = _functions("_verified_ppi_eod_keys")["_verified_ppi_eod_keys"]
-    assert verified(history, [GGAL], date(2026, 11, 3), NOW) == 0
+    assert verified(history, [GGAL], date(2026, 11, 3), NOW) == set()
     assert verified(history, [GGAL], SESSION,
-                    datetime.fromisoformat("2026-11-02T18:08:00-03:00")) == 0
+                    datetime.fromisoformat("2026-11-02T18:08:00-03:00")) == set()
     assert verified(history, [GGAL], SESSION,
-                    datetime.fromisoformat("2026-11-02T18:45:00")) == 0
+                    datetime.fromisoformat("2026-11-02T18:45:00")) == set()
 
 
 def test_eod_helper_rejects_ambiguous_canonical_matches(history):
     _row(history)
     _row(history, source="IOL")
     verified = _functions("_verified_ppi_eod_keys")["_verified_ppi_eod_keys"]
-    assert verified(history, [GGAL], SESSION, NOW) == 0
+    assert verified(history, [GGAL], SESSION, NOW) == set()
 
 
 def _fake_module(monkeypatch, name, **functions):
@@ -113,7 +125,8 @@ def _fake_module(monkeypatch, name, **functions):
 
 def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HISTORY",
                    publish=True, targets=True, ambiguous=False,
-                   provider_ambiguous=False, large_currency_detail=False):
+                   provider_ambiguous=False, large_currency_detail=False,
+                   session_only=False, already_published=False):
     """Exercise the actual locked producer without opening any PPI connection."""
     observer_db = tmp_path / "observer.db"
     with sqlite3.connect(observer_db) as conn:
@@ -123,6 +136,8 @@ def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HIS
         conn.execute("""CREATE TABLE financial_instrument_catalog(
           ticker TEXT,instrument_type TEXT,settlement TEXT,status TEXT)""")
     _row(history, day="2026-10-30", known="2026-10-30T18:20:00-03:00")
+    if already_published:
+        _row(history)
 
     coverage = {"denominator": 1, "covered": 1, "sufficient": 1, "missing": 0,
                 "cohort_sha256": "test", "consumer": "PPI_HISTORY_INGEST_MONITOR",
@@ -151,7 +166,7 @@ def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HIS
                 "rejected_rows": 0}
 
     _fake_module(monkeypatch, "ct_ppi_history_salvage_hf6",
-                 ingest_ppi_payload=ingest)
+                 ingest_ppi_payload=ingest, VERIFIED_PPI_HISTORY_CONTRACTS={TEST_CONTRACT})
 
     class _FixedClock(datetime):
         @classmethod
@@ -172,23 +187,33 @@ def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HIS
     calls = []
 
     def read_history(*args):
+        if session_only:
+            with store.connect() as conn:
+                pending = conn.execute(
+                    "SELECT status,detail FROM source_sync WHERE source='PPI_PRODUCTION_HISTORY'"
+                ).fetchone()
+            assert pending == ("AMARILLO", "session_requested=2026-11-02; HISTORY_SESSION_ATTEMPT_STARTED")
         calls.append(args)
         return {"rows": [{"date": "2026-11-02", "close": 10}]}
 
     env = _functions("_history_batch_semantics", "_verified_ppi_eod_keys",
-                     "_sync_state", "_download_histories_locked")
+                     "_sync_state", "_source_sync_due", "_history_daily_session",
+                     "_download_histories_locked")
     env.update(date=date, datetime=_FixedClock, json=json,
                timedelta=__import__("datetime").timedelta,
                HISTORY_BATCH_LIMIT=5, now_iso=lambda: NOW.isoformat(),
-               _history_end_date=lambda: SESSION,
+               _history_end_date=lambda _now=None: SESSION,
                _historical_targets=lambda _store: [GGAL] if targets else [],
                _exact_history_target=lambda _store, target: None if ambiguous else
                    (target, {"raw": {"_provider_instrument_type": "ACCIONES"}}),
                _history_provider_instrument_type=lambda *_a: "ACCIONES",
                _ppi_history_request_is_ambiguous=lambda *_a: provider_ambiguous,
                _health=lambda *_a, **_kw: None)
-    result = env["_download_histories_locked"](
-        SimpleNamespace(history=read_history), store, history)
+    reader = SimpleNamespace(history=read_history)
+    result = env["_download_histories_locked"](reader, store, history,
+                                              session_only=session_only)
+    if session_only:
+        assert env["_download_histories_locked"](reader, store, history, session_only=True) == 0
     with store.connect() as conn:
         row = conn.execute("SELECT status,last_success_at,detail FROM source_sync "
                            "WHERE source='PPI_PRODUCTION_HISTORY'").fetchone()
@@ -200,6 +225,28 @@ def test_real_producer_marks_verified_only_after_full_key_publication(monkeypatc
     assert amount == 1 and len(calls) == 1
     assert row[0] == "VERDE" and row[1] == NOW.isoformat()
     assert "source_session_verified=2026-11-02:1/1" in row[2]
+
+
+def test_new_closure_requests_only_today_and_leaves_older_gap_to_repair(
+        monkeypatch, history, tmp_path):
+    amount, row, calls, _events = _history_cycle(
+        monkeypatch, history, tmp_path, session_only=True)
+    assert amount == 1
+    assert calls == [("GGAL", "ACCIONES", "CI", SESSION, SESSION)]
+    assert row[0] == "VERDE" and "source_session_verified=2026-11-02:1/1" in row[2]
+
+
+def test_new_closure_does_not_repeat_verified_publication(monkeypatch, history, tmp_path):
+    amount, _row_receipt, calls, _events = _history_cycle(
+        monkeypatch, history, tmp_path, session_only=True, already_published=True)
+    assert amount == 0 and calls == []
+
+
+@pytest.mark.parametrize("published_day", [CUTOFF, date(2026, 11, 1)])
+def test_daily_history_session_leaves_cutoff_and_previous_days_to_repair(published_day):
+    gate = _functions("_history_daily_session")
+    gate["_history_end_date"] = lambda _now: published_day
+    assert gate["_history_daily_session"](NOW) is None
 
 
 def test_bounded_source_detail_retains_consumer_contract_before_large_currency_data(
@@ -331,16 +378,16 @@ def test_background_ingest_restart_same_day_does_not_reissue_attempt(tmp_path):
 
 
 def test_daily_catalog_still_runs_at_spot_close_without_early_history_get():
-    gate = _functions("_history_end_date", "_history_daily_sync_due", "_daily_sync")
+    gate = _functions("_history_end_date", "_history_daily_session", "_history_daily_sync_due",
+                      "_daily_sync")
     calls = []
     gate.update(date=date, timedelta=timedelta,
                 MARKET_CLOSE_HOUR=17, MARKET_CLOSE_MINUTE=0,
                 BYMA_CALENDAR_AUDITED_YEAR=2026,
                 _business_day=lambda day: day.weekday() < 5,
-                _history_cutoff_repair_complete=lambda: True,
                 _source_sync_due=lambda _store, source, _now: True,
                 _download_catalog=lambda *_args: calls.append("CATALOG") or 1,
-                _download_histories=lambda *_args: calls.append("HISTORY") or 1,
+                _download_histories=lambda *_args, **_options: calls.append("HISTORY") or 1,
                 _sync_state=lambda *_args: None)
     class _Store:
         def event(self, *_args):
@@ -354,12 +401,11 @@ def test_daily_catalog_still_runs_at_spot_close_without_early_history_get():
 def test_daily_and_background_paths_share_one_durable_history_attempt(tmp_path):
     database = _background_database(tmp_path)
     gate = _functions("_history_end_date", "_source_sync_due",
-                      "_history_daily_sync_due", "_background_ingest_due",
+                      "_history_daily_session", "_history_daily_sync_due", "_background_ingest_due",
                       "_daily_sync")
     gate.update(date=date, timedelta=timedelta,
                 BYMA_CALENDAR_AUDITED_YEAR=2026,
                 _business_day=lambda day: day.weekday() < 5,
-                _history_cutoff_repair_complete=lambda: True,
                 _sync_state=lambda *_args: None)
     events = []
 
@@ -380,7 +426,7 @@ def test_daily_and_background_paths_share_one_durable_history_attempt(tmp_path):
 
     gate.update(_download_catalog=lambda *_args: _capture(
                     "PPI_PRODUCTION_CATALOG", "CATALOG"),
-                _download_histories=lambda *_args: _capture(
+                _download_histories=lambda *_args, session_only: _capture(
                     "PPI_PRODUCTION_HISTORY", "HISTORY"))
     sync = gate["_daily_sync"]
     background = gate["_background_ingest_due"]
