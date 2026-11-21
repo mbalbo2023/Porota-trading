@@ -70,7 +70,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'RESTORED_HISTORY_READ_ONLY'
         uses: actions/checkout@v4
         with:
-          ref: 8b73250af5d121a53e3ba3306f5c0873bbdf3e48
+          ref: 10eb45ab2611b95034ecb37d01a21b77ef6939cf
           path: reviewed-history
           persist-credentials: false
       - name: Export only the scoped date states for the restored snapshot join
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD^{tree})" = 4f28dc2cbbd54c8108e3e96a8689f42c23a61746
+          test "$(git rev-parse HEAD^{tree})" = 2759ffaf3d22fac33f878bf8b1dd8442faf0dea9
           python3 -B - <<'PY'
           import os
           from datetime import timedelta
