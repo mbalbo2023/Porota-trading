@@ -126,14 +126,17 @@ def partition(data: dict, count: int) -> list[list[str]]:
     m = _validate_manifest(data)
     if type(count) is not int or not 1 <= count <= min(16, m["discovered"]):
         _red()
-    # Stable hashing spreads expensive files while round-robin guarantees no
-    # empty shard.  Nodeid test costs are unknown until measured in Actions.
-    ordered = sorted(m["nodeids"], key=lambda item:
-                     (hashlib.sha256(item.encode("utf-8")).digest(), item))
-    groups = [[] for _ in range(count)]
-    for index, item in enumerate(ordered):
-        groups[index % count].append(item)
-    return [sorted(part) for part in groups]
+    # The manifest is already sorted, so tests of each module are adjacent.
+    # Balanced contiguous slices minimize repeated module collection and
+    # module-scoped fixture setup across the serial pytest processes.
+    size, extra = divmod(m["discovered"], count)
+    groups = []
+    start = 0
+    for index in range(count):
+        end = start + size + (index < extra)
+        groups.append(m["nodeids"][start:end])
+        start = end
+    return groups
 
 
 def quorum(data: dict, count: int, reports: object) -> dict:

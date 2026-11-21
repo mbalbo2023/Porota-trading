@@ -36,12 +36,19 @@ class TestShardQuorum(unittest.TestCase):
         self.assertIs(receipt["runtime_authority"], False)
 
     def test_partition_stable_across_input_order_and_balanced(self):
-        a = shards.manifest(SHA, TREE, NODEIDS)
-        b = shards.manifest(SHA, TREE, list(reversed(NODEIDS)))
+        sizes = [3, 3, 2, 2, 2]
+        modules = [
+            [f"tests/test_module_{module}.py::test_case[{case}]" for case in range(size)]
+            for module, size in enumerate(sizes)
+        ]
+        nodeids = [case for module in modules for case in module]
+        a = shards.manifest(SHA, TREE, nodeids)
+        b = shards.manifest(SHA, TREE, list(reversed(nodeids)))
         self.assertEqual(a, b)
         self.assertEqual(shards.partition(a, 5), shards.partition(b, 5))
-        self.assertEqual(sorted(sum(shards.partition(a, 5), [])), sorted(NODEIDS))
-        self.assertEqual([len(x) for x in shards.partition(a, 5)], [3, 3, 2, 2, 2])
+        self.assertEqual(sorted(sum(shards.partition(a, 5), [])), sorted(nodeids))
+        self.assertEqual([len(x) for x in shards.partition(a, 5)], sizes)
+        self.assertEqual(shards.partition(a, 5), modules)
 
     def test_source_tree_change_invalidates_collection_digest(self):
         a = shards.manifest(SHA, TREE, NODEIDS)
