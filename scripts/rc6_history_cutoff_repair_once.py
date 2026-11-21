@@ -19,7 +19,7 @@ import sqlite3
 import stat
 import sys
 import time
-from typing import Any
+from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
 # The one-shot runner is invoked by absolute path from the container.  Keep the
@@ -28,7 +28,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-import ak_byma_calendar as byma
+from ak_byma_t1_source_clock import estado_negociacion_historica_byma
 
 CUTOFF = date(2026, 9, 21)
 # First-history repair is explicitly bounded: it is never an unbounded query.
@@ -42,6 +42,13 @@ LEGACY_ARCHIVE_SCAN_LIMIT = 4096
 LEGACY_ARCHIVE_MAX_BODY_BYTES = 2 * 1024 * 1024
 LEGACY_ARCHIVE_MAX_SCANNED_BYTES = 128 * 1024 * 1024
 LEGACY_ARCHIVE_SELECTED_BYTES = 64 * 1024 * 1024
+MARKET_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+class ArchiveFragment(NamedTuple):
+    rows: list[dict]
+    recorded_at: str
+    provider_contract_id: str | None
 
 
 def _stamp() -> str:
@@ -114,13 +121,14 @@ def _live_identity_unambiguous(targets, identity):
 
 
 def _latest(db, identity) -> str | None:
-    symbol, family, market, settlement, currency, price_basis, adjustment_basis = _exact_key(identity)
+    key = _exact_key(identity)
     with db.connect() as c:
         row = c.execute(
             """SELECT MAX(date) FROM history_canonical_v2
                WHERE symbol=? AND instrument_type=? AND market=? AND settlement=?
-                 AND currency=? AND price_basis=? AND adjustment_basis=?""",
-            _exact_key(identity),
+                 AND currency=? AND price_basis=? AND adjustment_basis=?
+                 AND date BETWEEN ? AND ?""",
+            (*key, BOOTSTRAP_START.isoformat(), CUTOFF.isoformat()),
         ).fetchone()
     return str(row[0])[:10] if row and row[0] else None
 
@@ -133,25 +141,50 @@ def _resume_start(coverage: dict[str, Any], latest: str) -> date:
     return date.fromisoformat(latest) + timedelta(days=1)
 
 
+def _canonical_issue(row, provider_contracts) -> str | None:
+    if row[1] != "PPI_PRODUCTION_HISTORY":
+        return "NON_PPI_CANONICAL_HISTORY"
+    if row[3] != 0:
+        return "CANONICAL_RAW_BASIS_UNVERIFIED"
+    try:
+        metadata = json.loads(row[2])
+    except (TypeError, ValueError):
+        return "CANONICAL_PROVENANCE_UNVERIFIED"
+    if not isinstance(metadata, dict) or metadata.get("history_quality") not in (
+            "FULL_OHLC", "FULL_OHLCV"):
+        return "CANONICAL_FULL_OHLC_UNVERIFIED"
+    contract_id = metadata.get("provider_contract_id")
+    if not isinstance(contract_id, str) or contract_id not in provider_contracts:
+        return "PPI_PROVIDER_CONTRACT_UNVERIFIED"
+    return None
+
+
+def _canonical_schema_verified(connection) -> bool:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(history_canonical_v2)")}
+    return {"symbol", "instrument_type", "market", "settlement", "currency", "price_basis",
+            "adjustment_basis", "date", "source", "metadata_json", "adjusted"} <= columns
+
+
 def _coverage(db, identity) -> dict[str, Any]:
     """Fail closed unless a full, attested baseline through cutoff is proven.
 
     The first stored candle is NOT evidence of a historical inception date.
-    An unaudited calendar year must never be mistaken for a year of holidays.
+    An unaudited day or limited settlement must never be counted as a holiday.
     Canonical rows from IOL/other sources or with no pinned PPI row contract
     cannot certify an exact PPI series merely because dates are present.
     """
+    import ct_ppi_history_salvage_hf6 as salvage
+
     def blocked(reason):
         return {"complete": False, "start": None, "latest": None,
                 "expected": None, "present": 0, "missing": None,
                 "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat(),
+                "attested_days": frozenset(),
                 "reason": reason}
 
     with db.connect() as c:
         try:
-            columns = {str(row[1]) for row in
-                       c.execute("PRAGMA table_info(history_canonical_v2)")}
-            if not {"date", "source", "metadata_json", "adjusted"}.issubset(columns):
+            if not _canonical_schema_verified(c):
                 return blocked("CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED")
             # Bound SQL work as well as rows and Python heap. Never sort all
             # historical years just to check the 365-day cutoff.
@@ -187,51 +220,55 @@ def _coverage(db, identity) -> dict[str, Any]:
             return blocked("CANONICAL_SQL_READ_UNVERIFIED")
     rows.sort(key=lambda row: str(row[0]))
     days = set()
+    attested_days = set()
+    issues = []
     for row in rows:
         try:
-            days.add(date.fromisoformat(str(row[0])[:10]))
+            day = date.fromisoformat(str(row[0])[:10])
         except (TypeError, ValueError):
             continue
+        days.add(day)
+        issue = _canonical_issue(row, salvage.VERIFIED_PPI_HISTORY_CONTRACTS)
+        if issue is not None:
+            issues.append(issue)
+        else:
+            attested_days.add(day)
     if not days:
         return {"complete": False, "start": None, "latest": None, "expected": 0,
-                "present": 0, "missing": 0, "reason": "NO_VALID_HISTORY"}
+                "present": 0, "missing": 0, "attested_days": frozenset(),
+                "reason": "NO_VALID_HISTORY"}
     start, latest = min(days), max(days)
     partial = {"complete": False, "start": start, "latest": latest,
                "expected": None, "present": len(days), "missing": None,
-               "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat()}
-    baseline_years = set(range(BOOTSTRAP_START.year, CUTOFF.year + 1))
-    if not baseline_years.issubset(byma.ANIOS_AUDITADOS):
-        return {**partial, "reason": "BASELINE_CALENDAR_UNAUDITED"}
-    if any(row[1] != "PPI_PRODUCTION_HISTORY" for row in rows):
-        return {**partial, "reason": "NON_PPI_CANONICAL_HISTORY"}
-    if any(row[3] != 0 for row in rows):
-        return {**partial, "reason": "CANONICAL_RAW_BASIS_UNVERIFIED"}
-
-    import ct_ppi_history_salvage_hf6 as salvage
-    for row in rows:
-        try:
-            metadata = json.loads(row[2])
-            if not isinstance(metadata, dict) or metadata.get("history_quality") not in {
-                    "FULL_OHLC", "FULL_OHLCV"}:
-                return {**partial, "reason": "CANONICAL_FULL_OHLC_UNVERIFIED"}
-            if metadata.get("provider_contract_id") not in salvage.VERIFIED_PPI_HISTORY_CONTRACTS:
-                return {**partial, "reason": "PPI_PROVIDER_CONTRACT_UNVERIFIED"}
-        except (TypeError, ValueError):
-            return {**partial, "reason": "CANONICAL_PROVENANCE_UNVERIFIED"}
-
-    expected_days = []
-    # Explicit 365-day target, not min(days); prior behavior certified a single
-    # cutoff-day row as a complete one-day series.
+               "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat(),
+               "attested_days": frozenset(attested_days)}
+    _, family, market, settlement, _, _, _ = _exact_key(identity)
+    sessions = {}
+    # Always use the explicit cutoff window, independent of the first candle.
     current = BOOTSTRAP_START
     while current <= CUTOFF:
-        if byma.es_dia_habil_operativo(current):
-            expected_days.append(current)
+        sessions[current] = estado_negociacion_historica_byma(
+            current, market=market, family=family, settlement=settlement)
         current += timedelta(days=1)
+    if "UNVERIFIED" in sessions.values():
+        return {**partial, "reason": "BASELINE_CALENDAR_UNAUDITED"}
+    if issues:
+        for reason in ("NON_PPI_CANONICAL_HISTORY", "CANONICAL_RAW_BASIS_UNVERIFIED"):
+            if reason in issues:
+                return {**partial, "reason": reason}
+        return {**partial, "reason": issues[0]}
+
+    if any(sessions.get(day) == "CLOSED" for day in days):
+        return {**partial, "reason": "CANONICAL_OUTSIDE_BYMA_SESSION"}
+    if "LIMITED_SETTLEMENT_UNVERIFIED" in sessions.values():
+        return {**partial, "reason": "BASELINE_SETTLEMENT_CALENDAR_UNVERIFIED"}
+    expected_days = [day for day, status in sessions.items()
+                     if status in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}]
     missing = [day for day in expected_days if day not in days]
     complete = latest >= CUTOFF and not missing
     return {"complete": complete, "start": start, "latest": latest,
             "expected": len(expected_days), "present": len(days),
-            "missing": len(missing),
+            "missing": len(missing), "attested_days": frozenset(attested_days),
             "first_missing": min(missing).isoformat() if missing else None,
             "reason": "COVERAGE_COMPLETE" if complete else
                       ("CUTOFF_NOT_REACHED" if latest < CUTOFF else "MISSING_BYMA_SESSIONS")}
@@ -336,7 +373,48 @@ def _safe_physical_archive_order(c, table: str, column: str) -> bool:
         return False
 
 
-def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tuple[list[dict], str]]:
+def _archive_candidate(wrapper, bars, recorded_at, attempted):
+    """Select a fragment by the sessions its original bytes can cover."""
+    if not isinstance(bars, list) or len(bars) > LEGACY_ARCHIVE_SCAN_LIMIT:
+        return None
+    observed_day = attempted.astimezone(MARKET_TZ).date()
+    days = set()
+    for row in bars:
+        day = _market_day(row)
+        if day is None:
+            continue
+        if day > observed_day:
+            return None
+        if BOOTSTRAP_START <= day <= CUTOFF:
+            days.add(day)
+    if not days:
+        return None
+    contract_id = wrapper.get("provider_contract_id")
+    if not isinstance(contract_id, str):
+        contract_id = None
+    return frozenset(days), ArchiveFragment(bars, recorded_at, contract_id)
+
+
+def _remember_fragment(selected, key, item, attempted, size, total_bytes):
+    previous = selected.get(key)
+    if previous is not None and previous[0] >= attempted:
+        return total_bytes
+    projected = total_bytes - (previous[2] if previous is not None else 0) + size
+    if projected > LEGACY_ARCHIVE_SELECTED_BYTES:
+        return total_bytes
+    selected[key] = attempted, item, size
+    return projected
+
+
+def _fragments_by_identity(selected):
+    result = {}
+    for (identity, _, _), (_, fragment, _) in sorted(
+            selected.items(), key=lambda entry: entry[1][0], reverse=True):
+        result.setdefault(identity, []).append(fragment)
+    return result
+
+
+def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], list[ArchiveFragment]]:
     import fb_raw_evidence_exact_v1 as exact
 
     path = exact.manifest_path()
@@ -351,9 +429,7 @@ def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tu
     except (OSError, sqlite3.Error):
         return _legacy_archive_payloads(targets)
 
-    selected: dict[tuple[str, ...], tuple[list[dict], str]] = {}
-    selected_at: dict[tuple[str, ...], datetime] = {}
-    selected_sizes: dict[tuple[str, ...], int] = {}
+    selected = {}
     scanned_bytes = selected_bytes = 0
     with closing(c):
         c.row_factory = sqlite3.Row
@@ -432,37 +508,26 @@ def _archive_payloads(targets: set[tuple[str, ...]]) -> dict[tuple[str, ...], tu
                 identity = _archive_identity(wrapper)
                 if identity not in targets:
                     continue
-                if identity in selected_at and attempted <= selected_at[identity]:
-                    continue
                 bars = json.loads(wrapper["payload_json"])
-                if not isinstance(bars, list) or len(bars) > 4096:
-                    continue
-                dates = [date.fromisoformat(x["date"][:10])
-                         for x in bars if isinstance(x, dict)
-                         and isinstance(x.get("date"), str)
-                         and len(x["date"]) >= 10]
-                if (not dates or max(dates) < CUTOFF or
-                        max(dates) > attempted.astimezone(
-                            ZoneInfo("America/Argentina/Buenos_Aires")).date()):
-                    continue
-                previous_size = selected_sizes.get(identity, 0)
-                if selected_bytes - previous_size + body_bytes > LEGACY_ARCHIVE_SELECTED_BYTES:
+                candidate = _archive_candidate(wrapper, bars, row["recorded_at"], attempted)
+                if candidate is None:
                     continue
             except (OSError, EOFError, KeyError, TypeError, ValueError,
                     UnicodeDecodeError, RecursionError):
                 continue
-            selected[identity] = (bars, row["recorded_at"])
-            selected_at[identity] = attempted
-            selected_bytes += body_bytes - previous_size
-            selected_sizes[identity] = body_bytes
-    # The byte-exact external manifest can be incomplete while the original
-    # history DB still retains a valid archive. Never overwrite its selected
-    # identities with lower-priority legacy rows.
-    selected.update(_legacy_archive_payloads(targets - selected.keys()))
-    return selected
+            days, fragment = candidate
+            selected_bytes = _remember_fragment(
+                selected, (identity, days, fragment.provider_contract_id), fragment,
+                attempted, body_bytes, selected_bytes)
+    # Replay external fragments first. The legacy archive may cover a date
+    # missing from those fragments for the same exact series.
+    grouped = _fragments_by_identity(selected)
+    for identity, fragments in _legacy_archive_payloads(targets).items():
+        grouped.setdefault(identity, []).extend(fragments)
+    return grouped
 
 
-def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict], str]]:
+def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], list[ArchiveFragment]]:
     """Bounded, hash-verified fallback to existing historical_raw_archive.
 
     The external manifest may be absent before legacy migration. Reuse already
@@ -485,7 +550,6 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
 
     selected = {}
     selected_bytes = 0
-    selected_sizes = {}
     scanned_bytes = 0
     with closing(c):
         try:
@@ -533,51 +597,36 @@ def _legacy_archive_payloads(targets) -> dict[tuple[str, ...], tuple[list[dict],
                 identity = _archive_identity(wrapper)
                 if identity not in targets:
                     continue
-                previous = selected.get(identity)
-                if previous:
-                    previous_at = datetime.fromisoformat(previous[1].replace("Z", "+00:00"))
-                    if attempted <= previous_at:
-                        continue
                 bars = json.loads(wrapper.get("payload_json") or "[]")
-                if not isinstance(bars, list) or len(bars) > 4096:
-                    continue
-                days = []
-                for bar in bars:
-                    if isinstance(bar, dict) and isinstance(bar.get("date"), str):
-                        try:
-                            days.append(date.fromisoformat(bar["date"][:10]))
-                        except ValueError:
-                            continue
-                if (not days or max(days) < CUTOFF or
-                        max(days) > attempted.astimezone(
-                            ZoneInfo("America/Argentina/Buenos_Aires")).date()):
-                    continue
-                previous_size = selected_sizes.get(identity, 0)
-                if selected_bytes - previous_size + len(encoded) > LEGACY_ARCHIVE_SELECTED_BYTES:
+                candidate = _archive_candidate(wrapper, bars, recorded_at, attempted)
+                if candidate is None:
                     continue
             except (KeyError, TypeError, ValueError, RecursionError):
                 continue
-            selected[identity] = (bars, recorded_at)
-            selected_bytes += len(encoded) - previous_size
-            selected_sizes[identity] = len(encoded)
-    return selected
+            days, fragment = candidate
+            selected_bytes = _remember_fragment(
+                selected, (identity, days, fragment.provider_contract_id), fragment,
+                attempted, len(encoded), selected_bytes)
+    return _fragments_by_identity(selected)
 
 
-def _filtered(payload: Any, start: date) -> list[dict]:
+def _market_day(row) -> date | None:
+    from cp_history_ingest_policy_hf6 import _dt
+
+    if not isinstance(row, dict):
+        return None
+    try:
+        return _dt(row.get("date")).astimezone(MARKET_TZ).date()
+    except (ValueError, OverflowError):
+        return None
+
+
+def _filtered(payload: Any, start: date, *, already_attested=frozenset()) -> list[dict]:
     if not isinstance(payload, list):
         return []
-    result = []
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        try:
-            raw = str(row.get("date") or "")
-            day = datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
-        except (TypeError, ValueError):
-            continue
-        if start <= day <= CUTOFF:
-            result.append(row)
-    return result
+    return [row for row in payload
+            if (day := _market_day(row)) is not None and start <= day <= CUTOFF
+            and day not in already_attested]
 
 
 def _record_exact(observer_store, identity, payload, start: date, attempted_at: str) -> None:
@@ -606,15 +655,18 @@ def _record_exact(observer_store, identity, payload, start: date, attempted_at: 
 
 
 def _ingest(observer_store, history_store, identity, payload, start: date, *, source: str,
-            observed_at: str) -> tuple[int, str | None]:
+            observed_at: str, provider_contract_id: str | None = None,
+            already_attested=frozenset()) -> tuple[int, str | None]:
     import ct_ppi_history_salvage_hf6 as salvage
 
-    bounded = _filtered(payload, start)
+    bounded = _filtered(payload, start, already_attested=already_attested)
+    if not bounded:
+        return 0, None
     result = salvage.ingest_ppi_payload(
         observer_store, symbol=identity[0], instrument_type=identity[1],
         market=identity[2], settlement=identity[3], currency=_exact_key(identity)[4], payload=bounded,
         requested_from=start, requested_to=CUTOFF, attempted_at=observed_at,
-        history_store=history_store,
+        history_store=history_store, provider_contract_id=provider_contract_id,
     )
     return int(result.get("valid_rows") or 0), result.get("last_date")
 
@@ -643,6 +695,17 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
     import bf_production_paper_observer as observer
 
     history_store = _history_store()
+    # The one-shot writer requires the exact financial identity columns. The
+    # physically restored legacy store lacks them and belongs to copy migration.
+    try:
+        with history_store.connect() as connection:
+            schema_verified = _canonical_schema_verified(connection)
+    except (sqlite3.Error, OSError, ValueError):
+        print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_CANONICAL_SQL_READ_UNVERIFIED")
+        return 2
+    if not schema_verified:
+        print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED")
+        return 2
     observer_store = runtime_store()
     targets_list = _targets(observer_store)
     if not targets_list:
@@ -678,7 +741,7 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                       source="PPI_CANONICAL", rows=coverage["present"], latest=latest)
                 completed.add(identity)
                 continue
-            archived = archives.get(identity)
+            archived = archives.get(identity, ())
             if latest:
                 # An unaudited baseline has no known first missing *session*.
                 # Retry archived evidence from the bounded bootstrap target,
@@ -686,14 +749,9 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                 # Otherwise resume from the earliest proven missing session.
                 start = _resume_start(coverage, latest)
             elif archived:
-                archive_rows = _filtered(archived[0], date.min)
-                archive_days = []
-                for row in archive_rows:
-                    try:
-                        archive_days.append(date.fromisoformat(str(row.get("date") or "")[:10]))
-                    except ValueError:
-                        continue
-                start = min(archive_days) if archive_days else None
+                start = min((_market_day(row) for fragment in archived
+                             for row in _filtered(fragment.rows, BOOTSTRAP_START)),
+                            default=None)
             else:
                 start = None
             if start is None:
@@ -708,17 +766,23 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                 failed += 1
                 continue
             if archived:
-                payload, recorded_at = archived
+                imported = False
                 try:
-                    rows, last = _ingest(observer_store, history_store, identity, payload, start,
-                                         source="PPI_ARCHIVE", observed_at=recorded_at)
-                    if rows:
-                        # Count staged archive ingestion even when the complete
-                        # historical series still fails the cutoff proof.
-                        archive_count += 1
+                    for fragment in archived:
+                        rows, _ = _ingest(
+                            observer_store, history_store, identity, fragment.rows, start,
+                            source="PPI_ARCHIVE", observed_at=fragment.recorded_at,
+                            provider_contract_id=fragment.provider_contract_id,
+                            already_attested=coverage["attested_days"])
+                        if rows:
+                            if not imported:
+                                archive_count += 1
+                                imported = True
+                            coverage = _coverage(history_store, identity)
+                            if coverage["complete"]:
+                                break
                     latest = _latest(history_store, identity)
-                    coverage = _coverage(history_store, identity)
-                    if rows and coverage["complete"]:
+                    if imported and coverage["complete"]:
                         _save(history_store, identity, state="COMPLETE", source="PPI_ARCHIVE",
                               requested_from=start.isoformat(), rows=coverage["present"], latest=latest)
                         completed.add(identity)
@@ -750,12 +814,12 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                         failed+=1
                         continue
                     latest = _latest(history_store, identity)
+                    coverage = _coverage(history_store, identity)
                     if not latest:
                         # The caller explicitly approved this one-time, bounded
                         # bootstrap through the cutoff; it cannot expand beyond 365 days.
                         start = BOOTSTRAP_START
                     else:
-                        coverage = _coverage(history_store, identity)
                         start = _resume_start(coverage, latest)
                     if start > CUTOFF:
                         coverage = _coverage(history_store, identity)
@@ -786,8 +850,9 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
                                     raise
                                 time.sleep(2 ** json_attempt)
                         _record_exact(observer_store, identity, payload, start, attempted_at)
-                        rows, last = _ingest(observer_store, history_store, identity, payload, start,
-                                             source="PPI", observed_at=attempted_at)
+                        rows, _ = _ingest(observer_store, history_store, identity, payload, start,
+                                          source="PPI", observed_at=attempted_at,
+                                          already_attested=coverage["attested_days"])
                         latest = _latest(history_store, identity)
                         coverage = _coverage(history_store, identity)
                         if rows and coverage["complete"]:
