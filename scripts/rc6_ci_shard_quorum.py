@@ -15,8 +15,12 @@ import re
 import unicodedata
 
 
-MAX_NODEID_CHARS = 2048
-MAX_NODEID_UTF8_BYTES = 4096
+# Pytest parameter IDs are source identities, not a provider-size limit.
+# Each ID must still fit one Linux argv entry (<128 KiB), and the aggregate
+# private collection is bounded to avoid cgroup OOM from adversarial IDs.
+MAX_NODEID_CHARS = 65535
+MAX_NODEID_UTF8_BYTES = 65535
+MAX_COLLECTION_NODEID_BYTES = 64 * 1024 * 1024
 _BIDI_CONTROLS = frozenset({"LRE", "RLE", "LRO", "RLO", "PDF",
                             "LRI", "RLI", "FSI", "PDI"})
 
@@ -25,8 +29,19 @@ class ShardQuorumRed(ValueError):
     """Incomplete, contradictory or unsafe test evidence."""
 
 
-def _red() -> None:
-    raise ShardQuorumRed("RC6_SHARD_QUORUM_RED")
+_NODEID_REASON_CODES = frozenset({
+    "NODEID_COLLECTION_INVALID", "NODEID_EMPTY_OR_UNBOUNDED",
+    "NODEID_NOT_STRING", "NODEID_EMPTY", "NODEID_CHAR_LENGTH",
+    "NODEID_UTF8_ENCODING", "NODEID_UTF8_BYTES",
+    "NODEID_NONPRINTABLE", "NODEID_CONTROL_OR_BIDI",
+    "NODEID_DUPLICATE", "NODEID_TOTAL_BYTES_UNBOUNDED",
+})
+
+
+def _red(reason=None) -> None:
+    # Reasons are controlled literals only; never disclose parameter values.
+    code = ":" + reason if reason in _NODEID_REASON_CODES else ""
+    raise ShardQuorumRed("RC6_SHARD_QUORUM_RED" + code)
 
 
 def _sha(value: object, length: int = 40) -> str:
@@ -36,25 +51,38 @@ def _sha(value: object, length: int = 40) -> str:
 
 
 def _nodeids(items: object) -> list[str]:
-    if not isinstance(items, list) or not items or len(items) > 100_000:
-        _red()
+    if not isinstance(items, list):
+        _red("NODEID_COLLECTION_INVALID")
+    if not items or len(items) > 100_000:
+        _red("NODEID_EMPTY_OR_UNBOUNDED")
+    total_bytes = 0
     for name in items:
-        if not isinstance(name, str) or not 1 <= len(name) <= MAX_NODEID_CHARS:
-            _red()
+        if not isinstance(name, str):
+            _red("NODEID_NOT_STRING")
+        if not name:
+            _red("NODEID_EMPTY")
+        if len(name) > MAX_NODEID_CHARS:
+            _red("NODEID_CHAR_LENGTH")
         # Real pytest param IDs may contain printable UTF-8 (e.g. "á").
         # Keep exact Unicode codepoints for digest and quorum identity: no
         # normalization, lossy ASCII folding, or hidden control characters.
         try:
             encoded = name.encode("utf-8", errors="strict")
         except UnicodeEncodeError:
-            _red()  # Unpaired surrogate: not a valid UTF-8 node ID.
-        if (len(encoded) > MAX_NODEID_UTF8_BYTES or not name.isprintable() or
-                any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
-                    unicodedata.bidirectional(char) in _BIDI_CONTROLS
-                    for char in name)):
-            _red()
+            _red("NODEID_UTF8_ENCODING")  # Unpaired surrogate.
+        if len(encoded) > MAX_NODEID_UTF8_BYTES:
+            _red("NODEID_UTF8_BYTES")
+        total_bytes += len(encoded)
+        if total_bytes > MAX_COLLECTION_NODEID_BYTES:
+            _red("NODEID_TOTAL_BYTES_UNBOUNDED")
+        if not name.isprintable():
+            _red("NODEID_NONPRINTABLE")
+        if any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} or
+               unicodedata.bidirectional(char) in _BIDI_CONTROLS
+               for char in name):
+            _red("NODEID_CONTROL_OR_BIDI")
     if len(set(items)) != len(items):
-        _red()
+        _red("NODEID_DUPLICATE")
     return sorted(items)
 
 
@@ -98,14 +126,17 @@ def partition(data: dict, count: int) -> list[list[str]]:
     m = _validate_manifest(data)
     if type(count) is not int or not 1 <= count <= min(16, m["discovered"]):
         _red()
-    # Stable hashing spreads expensive files while round-robin guarantees no
-    # empty shard.  Nodeid test costs are unknown until measured in Actions.
-    ordered = sorted(m["nodeids"], key=lambda item:
-                     (hashlib.sha256(item.encode("utf-8")).digest(), item))
-    groups = [[] for _ in range(count)]
-    for index, item in enumerate(ordered):
-        groups[index % count].append(item)
-    return [sorted(part) for part in groups]
+    # The manifest is already sorted, so tests of each module are adjacent.
+    # Balanced contiguous slices minimize repeated module collection and
+    # module-scoped fixture setup across the serial pytest processes.
+    size, extra = divmod(m["discovered"], count)
+    groups = []
+    start = 0
+    for index in range(count):
+        end = start + size + (index < extra)
+        groups.append(m["nodeids"][start:end])
+        start = end
+    return groups
 
 
 def quorum(data: dict, count: int, reports: object) -> dict:

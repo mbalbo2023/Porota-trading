@@ -87,3 +87,28 @@ def test_even_synthetic_reviewed_contract_rejects_incomplete_row(
     assert result['full_ohlc_rows'] == result['close_only_rows'] == 0
     assert rows(history, 'history_canonical_v2') == []
     assert rows(observer, 'history_row_rejections_v2')[0]['reason'] == reason
+
+
+def test_verified_synthetic_contract_survives_into_canonical_candle(tmp_path, monkeypatch):
+    # Synthetic attestation models the *format*, not a real PPI contract. A
+    # verified ingest must preserve its proof on every canonical candle;
+    # storing it only on the attempt ledger cannot certify cutoff coverage.
+    monkeypatch.setattr(salvage, 'VERIFIED_PPI_HISTORY_CONTRACTS',
+                        frozenset({'SYNTHETIC_TEST_CONTRACT'}))
+    row = bar(currency='ARS', priceBasis='RAW',
+              adjustmentBasis='RAW_NO_ADJUSTMENT', adjusted=False)
+    observer, history, args = ingest(
+        tmp_path, [row], contract='SYNTHETIC_TEST_CONTRACT')
+    result = salvage.ingest_ppi_payload(observer, **args)
+    assert result['full_ohlc_rows'] == 1
+    assert result['rejected_rows'] == 0
+    canonical = rows(history, 'history_canonical_v2')
+    assert len(canonical) == 1
+    metadata = __import__('json').loads(canonical[0]['metadata_json'])
+    assert metadata['history_quality'] in {'FULL_OHLC', 'FULL_OHLCV'}
+    assert metadata['provider_contract_id'] == 'SYNTHETIC_TEST_CONTRACT'
+    assert metadata['ready_paper_implication'] == 'NONE'
+    # A repeat must remain idempotent and must never fake a new candle.
+    retry = salvage.ingest_ppi_payload(observer, **args)
+    assert retry['versions_appended'] == 0
+    assert len(rows(history, 'history_canonical_v2')) == 1

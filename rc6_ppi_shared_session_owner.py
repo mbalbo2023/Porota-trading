@@ -1,12 +1,12 @@
 """OFFHOST composition contract for one authenticated PPI market-data owner.
 
-This module deliberately never imports/creates the PPI SDK, starts a socket,
-reads a provider, or grants quota. A future isolated worker injects exactly
-one ProductionMarketReader factory. External Watch/account capacity authority
-is required for any actual REST acquisition or stream start; no default grant.
+Importing this module never imports/creates a PPI SDK, starts a socket, reads
+a provider or grants quota. The isolated PAPER gateway injects exactly one
+ProductionMarketReader and existing observed-budget/canonical-catalog guards.
+There is no inferred PPI Watch entitlement or provider quota.
 
-Only the guarded acquisition owner can GET. All consumer requests dispatch to
-bounded, read-only cached receipts/events. The SDK's documented realtime
+Only the guarded acquisition owner can GET. Consumers dispatch bounded native
+and auxiliary requests to the one prioritized owner wire worker. The SDK's
 unsubscribe/stop lifecycle is NOT proven; after starting a socket, this owner
 cannot claim to release its process-wide HTTP guard safely.
 """
@@ -14,12 +14,21 @@ cannot claim to release its process-wide HTTP guard safely.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import secrets
+import sqlite3
 import threading
+import time
+from datetime import date, datetime, timezone
+from email.utils import parsedate_to_datetime
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable
 
 from rc6_ppi_shared_feed import (
+    NATIVE_ACQUIRE_SCHEMA,
+    _canonical_bytes,
     PPIReadOnlyNativeReceiptStore,
     PPISharedMarketFeed,
     ReadOnlyUnixFeedServer,
@@ -29,6 +38,191 @@ from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 
 
 SCHEMA = "rc6.ppi.single-market-session.offhost.v1"
+
+
+def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates=False):
+    """Read PPI-primary identities without equating a GET request to a contract.
+
+    Default preserves the existing PPI_FIELD-only certified-key contract.
+    Gateway bootstrap may separately include unique REQUEST_CANDIDATE rows
+    whose actual SearchInstrument response attests only the four PPI fields.
+    The fifth coordinate is a local query parameter, NEVER PPI_FIELD/READY.
+    SQLite is read-only, bounded and cannot create a database or permit orders.
+    When diagnostic mode is requested, return (catalog4, query5, digest,
+    provider_attested5); the last two sets remain deliberately distinct.
+    """
+    from cg_paper_workspace import checked_path, identity_from_connection
+    from bu_instrument_catalog import (
+        ppi_full_key_evidence_reason, canonical_family,
+        canonical_market, canonical_settlement, cash_currency,
+    )
+    from rc6_ppi_shared_feed import CatalogIdentityError, _five
+
+    path = checked_path(database)
+    attested = []
+    diagnostic = []
+    request_aliases = {}
+    try:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
+                                     timeout=.15)) as connection:
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("BEGIN")
+            identity_from_connection(connection)
+            state = connection.execute(
+                "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            if state != ("PRODUCTION_PAPER", 0):
+                raise ValueError("PPI_PRIMARY_PAPER_ZERO_UNVERIFIED")
+            rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
+                settlement,settlement_source,status,
+                CASE WHEN length(CAST(metadata_json AS BLOB))<=65536
+                     THEN metadata_json ELSE NULL END
+                FROM financial_instrument_catalog ORDER BY ticker,instrument_type,
+                    market,currency,settlement LIMIT 20001""").fetchall()
+            if len(rows) > 20000:
+                raise ValueError("PPI_PRIMARY_CATALOG_TOO_LARGE")
+            for row in rows:
+                if row[6] not in ("AVAILABLE", "STALE"):
+                    continue
+                if any(value in (None, "") or len(str(value)) > 256
+                       for value in row[:5]):
+                    continue
+                key = tuple(str(part).strip().upper() for part in row[:5])
+                if any(part in ("", "UNKNOWN") for part in key):
+                    continue
+                if include_diagnostic_candidates:
+                    request_aliases.setdefault(
+                        (key[0], key[1], key[4]), set()).add(key)
+                # Match the existing feed and wire contract before constructing
+                # the single owner. Keep rejected rows in the alias census so
+                # a collision cannot become a superficially unique request.
+                try:
+                    _five(key)
+                except CatalogIdentityError:
+                    continue
+                record = {"ticker": row[0], "instrument_type": row[1],
+                          "market": row[2], "currency": row[3],
+                          "settlement": row[4], "settlement_source": row[5],
+                          "metadata_json": row[7]}
+                if row[6] == "AVAILABLE" and not ppi_full_key_evidence_reason(record):
+                    attested.append(key)
+                    diagnostic.append(key)
+                    continue
+                if not include_diagnostic_candidates or row[5] != "REQUEST_CANDIDATE":
+                    continue
+                try:
+                    provider = json.loads(row[7] or "{}")
+                    if (not isinstance(provider, dict)
+                            or provider.get("_discovery_source") != "PPI_PRIMARY"
+                            or provider.get("settlement") not in (None, "")):
+                        continue
+                    observed_four = (
+                        str(provider.get("ticker") or provider.get("symbol") or "").strip().upper(),
+                        canonical_family(provider.get("type") or provider.get("instrumentType")),
+                        canonical_market(provider.get("market")),
+                        cash_currency(provider.get("currency")),
+                    )
+                    stored_four = (
+                        str(row[0]).strip().upper(), canonical_family(row[1]),
+                        canonical_market(row[2]), cash_currency(row[3]),
+                    )
+                    if (observed_four != stored_four or
+                            canonical_settlement(row[4], row[1]) != key[4]):
+                        continue
+                except (ValueError, TypeError, OverflowError, RecursionError):
+                    continue
+                diagnostic.append(key)
+    except (sqlite3.Error, OSError, TypeError) as exc:
+        raise ValueError("PPI_PRIMARY_CATALOG_UNAVAILABLE") from exc
+    keys = sorted(set(diagnostic if include_diagnostic_candidates else attested))
+    if include_diagnostic_candidates:
+        # SDK Current/Book requests contain only ticker, class and settlement.
+        # Never select one currency/market from an ambiguous 3-key alias.
+        keys = [key for key in keys if len(
+            request_aliases.get((key[0], key[1], key[4]), ())) == 1]
+    if not keys:
+        raise ValueError("PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
+    four = sorted({key[:4] for key in keys})
+    catalog_rows = [{"ticker": key[0], "type": key[1],
+                     "market": key[2], "currency": key[3]} for key in four]
+    provider_attested = sorted(set(attested).intersection(keys))
+    digest_material = (
+        {"source": "LOCAL_PPI_PRIMARY_DIAGNOSTIC_QUERY_ONLY",
+         "query_keys": keys, "provider_attested_keys": provider_attested}
+        if include_diagnostic_candidates else
+        {"source": "LOCAL_PPI_PRIMARY_LITERAL_ONLY", "keys": keys}
+    )
+    digest = hashlib.sha256(json.dumps(digest_material, separators=(",", ":"),
+                                     sort_keys=True).encode("utf-8")).hexdigest()
+    if include_diagnostic_candidates:
+        return catalog_rows, keys, digest, provider_attested
+    return catalog_rows, keys, digest
+
+
+class PrimaryPPICatalogAuthority:
+    """Separate provider-attested contract keys from diagnostic GET identities.
+
+    A query key may contain settlement from an explicit REQUEST, which is not
+    PPI_FIELD evidence. Only the attested set may authorize the stronger
+    PPI_FIVE_KEY_CATALOG_ATTESTED action. Neither action grants PAPER READY.
+    """
+
+    def __init__(self, five_keys, *, query_keys=None):
+        self._keys = frozenset(tuple(key) for key in five_keys)
+        self._query_keys = self._keys | frozenset(
+            tuple(key) for key in (query_keys or ()))
+        if not self._query_keys:
+            raise ValueError("PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED")
+
+    def permits(self, action, *, five_key=None):
+        if action == "PPI_FIVE_KEY_CATALOG_ATTESTED":
+            allowed = self._keys
+        elif action == "PPI_NATIVE_QUERY_IDENTITY_UNIQUE":
+            allowed = self._query_keys
+        else:
+            return False
+        return bool(allowed) if five_key is None else tuple(five_key) in allowed
+
+
+class ObservedPaperCapacityAuthority:
+    """Existing guarded PAPER-zero budget, never guessed PPI/Watch capacity.
+
+    Login consumes the SDK's guarded authentication path. Each native GET is
+    independently admitted by PaperDirectReadBudget.acquire/wire_scope/start/
+    finish, whose real HTTP status (including 429) drives the breaker. This
+    gate only confirms PAPER-zero and the correct existing guarded budget.
+    """
+
+    provider_quota = "UNKNOWN"
+
+    def __init__(self, budget):
+        from rc6_ppi_global_budget import PaperDirectReadBudget
+        if not isinstance(budget, PaperDirectReadBudget):
+            raise ValueError("PPI_OBSERVED_PAPER_BUDGET_REQUIRED")
+        self.budget = budget
+
+    def permits(self, action, *, five_key=None):
+        if action not in {"OWNER_AUTHENTICATE", "REST_NATIVE_ACQUIRE",
+                          "REST_AUXILIARY_ACQUIRE"}:
+            return False  # STREAM entitlement must be separately established
+        if action == "REST_NATIVE_ACQUIRE" and (
+                not isinstance(five_key, (list, tuple)) or len(five_key) != 5):
+            return False
+        try:
+            self.budget._require_paper()
+            return True
+        except Exception:
+            return False
+
+# A consumer role is not a permission to self-promote a wire request to EXIT.
+# The owner, not the consumer, enforces the method/priority pair before GET.
+_NATIVE_DEMAND_POLICY = {
+    "scanner": {
+        "current": frozenset({"OPENED_CRITICAL", "STRATEGY_HOT", "HOT", "WARM", "DISCOVERY"}),
+        "book": frozenset({"OPENED_CRITICAL", "STRATEGY_HOT", "HOT", "WARM", "DISCOVERY"}),
+    },
+    "exit_reader": {"book": frozenset({"EXIT_CRITICAL"})},
+    "scalping": {"intraday": frozenset({"OPENED_CRITICAL", "SCALPING_HOT", "WARM", "DISCOVERY"})},
+}
 
 
 class SessionOwnerBlocked(RuntimeError):
@@ -109,12 +303,12 @@ class _CapacityCheckedStreamFeed:
 
 
 class PPISharedSessionOwner:
-    """Process-local owner; does not claim account-wide/Watch uniqueness.
+    """Process-local owner; account-wide uniqueness remains NO_VERIFICADO.
 
-    `external_capacity_authority.permits(action, five_key=...) is True` is an
-    EXTERNAL decision, not a guessed broker rate limit. The mandatory adapter
-    is not implemented in this module. Until the real Watch/capacity witness
-    and entitlement exist, the live product must not instantiate this owner.
+    `external_capacity_authority.permits` is a strict PAPER admission and
+    guarded wire budget decision, never a claimed broker rate limit. Streaming
+    retains an independent entitlement gate; the concrete PAPER budget only
+    enables guarded REST. No PPI Watch account is consulted or modified.
     """
 
     _registry_lock = threading.Lock()
@@ -161,6 +355,11 @@ class PPISharedSessionOwner:
             self._feed.register_consumer(consumer, watched_five_keys=keys)
         self._rpc = ReadOnlyUnixFeedServer(
             self._feed, socket_path=Path(socket_path), native_receipts=self._native,
+            native_acquirer=self.dispatch_native_acquire, owner_status=self.status,
+            auxiliary_acquirer=self.dispatch_auxiliary_acquire,
+            exit_round_observer=self.observe_exit_round,
+            exit_round_discarder=self.discard_exit_round_scope,
+            supervisor_pid=os.getppid(),
         )
         self._catalog_five_keys = catalog_five_keys
         self._catalog_source_digest = catalog_source_digest
@@ -169,9 +368,21 @@ class PPISharedSessionOwner:
         self._stream = None
         self._local_generation = None
         self._login_invocations = 0
+        self._aux_hold_until = 0.0
+        self._aux_retry_after = None
+        self._aux_last_http_status = None
+        self._native_hold_until = 0.0
+        self._native_retry_after = None
+        self._native_last_http_status = None
         self._stream_invoked = False
         self._state = "NOT_OPEN"
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _aux_word(value):
+        return (type(value) is str and 1 <= len(value) <= 64
+                and all(32 <= ord(ch) <= 126 for ch in value)
+                and not any(ch in value for ch in ("?", "&", "=", "\\")))
 
     def _permits_capacity(self, action: str, identity=None) -> bool:
         try:
@@ -185,6 +396,21 @@ class PPISharedSessionOwner:
                 "PPI_FIVE_KEY_CATALOG_ATTESTED", five_key=identity) is True
         except Exception:
             return False
+
+    def _permits_native_query(self, identity=None) -> bool:
+        """Allow observe-only GET request identity; never infer a PPI contract.
+
+        Existing injected authorities with only attested keys retain backward
+        compatibility. The concrete runtime authority independently admits
+        unique PPI-primary four-key / requested-settlement candidates.
+        """
+        try:
+            if self._catalog_authority.permits(
+                    "PPI_NATIVE_QUERY_IDENTITY_UNIQUE", five_key=identity) is True:
+                return True
+        except Exception:
+            return False
+        return self._permits_catalog(identity)
 
     def _permits_stream_connect(self) -> bool:
         try:
@@ -205,8 +431,8 @@ class PPISharedSessionOwner:
             if self._state != "NOT_OPEN":
                 raise SessionOwnerBlocked("PPI_SESSION_OWNER_NOT_RESTARTABLE")
             if not self._permits_capacity("OWNER_AUTHENTICATE"):
-                raise SessionOwnerBlocked("PPI_ACCOUNT_WATCH_CAPACITY_UNVERIFIED")
-            if not self._permits_catalog():
+                raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
+            if not self._permits_native_query():
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             # Bind the process-wide slot to the base class itself.  Assigning
             # through type(self) would create a subclass-local _active_owner:
@@ -264,15 +490,227 @@ class PPISharedSessionOwner:
         if self._state != "OPEN" or self._reader is None:
             raise SessionOwnerBlocked("PPI_SINGLE_SESSION_NOT_OPEN")
 
+    @staticmethod
+    def _observed_http_error(error):
+        """Extract only status+bounded Retry-After; never return SDK body."""
+        current = error
+        for _ in range(6):
+            response = getattr(current, "response", None)
+            status = getattr(response, "status_code", None)
+            if type(status) is int and 100 <= status <= 599:
+                raw = getattr(response, "headers", {}).get("Retry-After")
+                seconds = None
+                if isinstance(raw, str) and 1 <= len(raw) <= 64:
+                    if raw.isascii() and raw.isdigit():
+                        seconds = int(raw)
+                    else:
+                        try:
+                            until = parsedate_to_datetime(raw)
+                            if until.tzinfo is not None:
+                                seconds = max(0, int((until - datetime.now(timezone.utc)).total_seconds()))
+                        except (TypeError, ValueError, OverflowError):
+                            pass
+                if seconds is not None and not 0 <= seconds <= 86400:
+                    seconds = None  # unsafe/unbounded upstream header
+                return status, seconds
+            current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+            if current is None:
+                break
+        return None, None
+
     def capture_native(self, method: str, five_key: Any, *, priority: str):
         """Only owner path to guarded PPI REST; no consumer-facing GET."""
         with self._lock:
             self._require_open()
-            if not self._permits_catalog(five_key):
+            if not self._permits_native_query(five_key):
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             if not self._permits_capacity("REST_NATIVE_ACQUIRE", five_key):
-                raise SessionOwnerBlocked("PPI_ACCOUNT_WATCH_CAPACITY_UNVERIFIED")
-            return self._rest.capture(method, five_key, priority=priority)
+                raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
+            if time.monotonic() < self._native_hold_until:
+                raise SessionOwnerBlocked("PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE")
+            try:
+                return self._rest.capture(method, five_key, priority=priority)
+            except Exception as exc:
+                status, retry_after = self._observed_http_error(exc)
+                if status in {401, 403, 429}:
+                    self._native_last_http_status = status
+                    self._native_retry_after = retry_after if status == 429 else None
+                    self._native_hold_until = time.monotonic() + max(
+                        900 if status in {401, 403} else 60, retry_after or 0)
+                    raise SessionOwnerBlocked(f"PPI_NATIVE_HTTP_{status}") from None
+                raise
+
+    def dispatch_native_acquire(self, *, consumer: str, method: str,
+                                five_key: Any, priority: str) -> dict:
+        """One explicitly authorized native demand, executed in this owner.
+
+        The existing native_read/pull RPCs remain strictly cache-only. This
+        method is the acquisition side of a future authenticated AF_UNIX
+        boundary; it never trusts a claimed consumer priority or invents
+        provider quota. An absent/revoked independent capacity gate denies
+        before touching the guarded PPI SDK.
+        """
+        with self._lock:
+            self._require_open()
+            policy = _NATIVE_DEMAND_POLICY.get(consumer) if type(consumer) is str else None
+            if policy is None or method not in policy:
+                raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_METHOD_DENIED")
+            if type(priority) is not str or priority not in policy[method]:
+                raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_ROLE_DENIED")
+            if (not isinstance(five_key, (list, tuple)) or len(five_key) != 5
+                    or any(type(part) is not str for part in five_key)):
+                raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_INVALID")
+            identity = tuple(five_key)
+            allowed = self._feed._consumers.get(consumer, False)
+            if allowed is False or (allowed is not None and identity not in allowed):
+                raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_DENIED")
+            response = self.capture_native(method, identity, priority=priority)
+            return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                    "state": "OK", "receipt": response["native_receipt"],
+                    "guard_wire_receipt": response["guard_wire_receipt"],
+                    "owner_pid": os.getpid(),
+                    "session_generation": self._local_generation,
+                    "catalog_source_digest": self._catalog_source_digest,
+                    "provider_calls_by_rpc": 1,
+                    "paper_ready": False, "order_route": "NOT_PRESENT"}
+
+    def dispatch_auxiliary_acquire(self, *, consumer: str, method: str,
+                                   args: Any) -> dict:
+        """Guard-listed Search/History/Configuration on the SAME SDK owner.
+
+        These legacy read-only endpoints do not borrow native REST wire
+        receipts or a numeric provider allowance. Results are bounded local
+        observations and never PAPER-ready; only scanner can demand them.
+        """
+        with self._lock:
+            self._require_open()
+            if consumer != "scanner":
+                raise SessionOwnerBlocked("PPI_AUX_ROLE_DENIED")
+            if method not in {"search_instruments", "history", "market_configuration"}:
+                raise SessionOwnerBlocked("PPI_AUX_METHOD_DENIED")
+            if not isinstance(args, dict):
+                raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
+            if method == "market_configuration":
+                if args:
+                    raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
+                identity = None
+            elif method == "search_instruments":
+                if (set(args) != {"ticker", "instrument_type", "name", "market"}
+                        or any(not self._aux_word(value) for value in args.values())):
+                    raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
+                if (args["ticker"].strip().upper() == "CAUCION"
+                        and args["instrument_type"].strip().upper() == "CAUCIONES"
+                        and args["name"].strip().upper() == "CAUCION"):
+                    # ProductionMarketReader expands this legacy alias to
+                    # 2 x N provider GETs. A single queued RPC must never
+                    # hide that batch from EXIT priority arbitration; the
+                    # scanner adapter splits it into unit search RPCs.
+                    raise SessionOwnerBlocked("PPI_AUX_CAUCION_BULK_DENIED")
+                identity = None  # discovery never certifies a five-key
+            else:
+                if set(args) != {"ticker", "instrument_type", "settlement", "date_from", "date_to"}:
+                    raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
+                if any(not self._aux_word(args[key]) for key in (
+                        "ticker", "instrument_type", "settlement")):
+                    raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
+                try:
+                    first = date.fromisoformat(args["date_from"])
+                    last = date.fromisoformat(args["date_to"])
+                except (ValueError, TypeError):
+                    raise SessionOwnerBlocked("PPI_AUX_HISTORY_DATES_INVALID") from None
+                if not 0 <= (last - first).days <= 366:
+                    raise SessionOwnerBlocked("PPI_AUX_HISTORY_RANGE_UNBOUNDED")
+                candidates = [key for key in self._catalog_five_keys
+                              if (key[0], key[1], key[4]) == (
+                                  args["ticker"], args["instrument_type"],
+                                  args["settlement"])]
+                if len(candidates) != 1 or not self._permits_catalog(candidates[0]):
+                    raise SessionOwnerBlocked("PPI_AUX_HISTORY_IDENTITY_AMBIGUOUS")
+                identity = candidates[0]
+            if not self._permits_capacity("REST_AUXILIARY_ACQUIRE", identity):
+                raise SessionOwnerBlocked("PPI_AUX_PAPER_CAPACITY_UNVERIFIED")
+            if time.monotonic() < self._aux_hold_until:
+                raise SessionOwnerBlocked("PPI_AUX_PROVIDER_BACKOFF_ACTIVE")
+            try:
+                if method == "market_configuration":
+                    result = self._reader.market_configuration()
+                elif method == "search_instruments":
+                    result = self._reader.search_instruments(
+                        args["ticker"], args["instrument_type"],
+                        name=args["name"], market=args["market"])
+                else:
+                    result = self._reader.history(
+                        args["ticker"], args["instrument_type"],
+                        args["settlement"], first, last)
+            except Exception as exc:
+                status, retry_after = self._observed_http_error(exc)
+                if status in {401, 403, 429}:
+                    self._aux_last_http_status = status
+                    self._aux_retry_after = retry_after if status == 429 else None
+                    self._aux_hold_until = time.monotonic() + max(
+                        900 if status in {401, 403} else 60, retry_after or 0)
+                    raise SessionOwnerBlocked(f"PPI_AUX_HTTP_{status}") from None
+                # SDK exceptions can embed provider text/credentials.
+                raise SessionOwnerBlocked("PPI_AUX_PROVIDER_FAILURE_UNVERIFIED") from None
+            try:
+                body = _canonical_bytes(result)
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise SessionOwnerBlocked("PPI_AUX_RESPONSE_INVALID") from exc
+            if not 1 <= len(body) <= 100_000:
+                raise SessionOwnerBlocked("PPI_AUX_RESPONSE_UNBOUNDED")
+            return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "OK",
+                    "method": method, "result": json.loads(body),
+                    "result_sha256": hashlib.sha256(body).hexdigest(),
+                    "owner_pid": os.getpid(),
+                    "session_generation": self._local_generation,
+                    "provider_calls_by_rpc": "UNKNOWN",
+                    "provider_quota": "UNKNOWN", "paper_ready": False,
+                    "order_route": "NOT_PRESENT"}
+
+    def start_gateway(self) -> None:
+        """Bind a private data-only Unix socket after one authenticated login."""
+        with self._lock:
+            self._require_open()
+            self._rpc.start()
+
+    def observe_exit_round(self, *, consumer, elapsed_seconds, deadline_seconds,
+                           failures=0) -> dict:
+        """Same SDK reader + same router thread as EXIT Book's budget scope.
+
+        `PaperDirectReadBudget` owns the COMPLETE/DEGRADED verdict. No local
+        fake COMPLETE, second budget, account query or provider GET occurs.
+        """
+        with self._lock:
+            self._require_open()
+            if consumer != "exit_reader":
+                raise SessionOwnerBlocked("PPI_EXIT_ROUND_ROLE_DENIED")
+            if not self._permits_capacity("OWNER_AUTHENTICATE"):
+                raise SessionOwnerBlocked("PPI_EXIT_ROUND_PAPER_ZERO_UNVERIFIED")
+            report = getattr(self._reader, "observe_exit_round", None)
+            if not callable(report):
+                raise SessionOwnerBlocked("PPI_EXIT_ROUND_BUDGET_UNAVAILABLE")
+            return report(elapsed_seconds=elapsed_seconds,
+                          deadline_seconds=deadline_seconds, failures=failures)
+
+    def discard_exit_round_scope(self, *, consumer) -> None:
+        """Reset owner's temporal EXIT budget scope on its GET worker thread."""
+        with self._lock:
+            self._require_open()
+            if consumer != "exit_reader":
+                raise SessionOwnerBlocked("PPI_EXIT_ROUND_ROLE_DENIED")
+            discard = getattr(self._reader, "discard_exit_round_scope", None)
+            if not callable(discard):
+                raise SessionOwnerBlocked("PPI_EXIT_ROUND_BUDGET_UNAVAILABLE")
+            discard()
+
+    def serve_gateway_forever(self) -> None:
+        self._rpc.serve_forever()
+
+    def shutdown_gateway(self) -> None:
+        self._rpc.shutdown()
+
+    def close_gateway(self) -> None:
+        self._rpc.close()
 
     def dispatch_read_only(self, request: Any) -> dict:
         """Pure cached reader/EXIT/scalping RPC dispatch; zero PPI I/O."""
@@ -290,7 +728,7 @@ class PPISharedSessionOwner:
             if not self._permits_catalog(five_key):
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             if not self._permits_capacity("STREAM_SUBSCRIPTION", five_key):
-                raise SessionOwnerBlocked("PPI_ACCOUNT_WATCH_CAPACITY_UNVERIFIED")
+                raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
             return self._stream.plan(five_key, priority=priority)
 
     def run_market_stream(self) -> None:
@@ -319,17 +757,52 @@ class PPISharedSessionOwner:
         self._stream.run_market_only()
 
     def status(self) -> dict:
-        with self._lock:
-            return {"schema": SCHEMA, "state": self._state,
-                    "login_invocations_by_owner": self._login_invocations,
-                    "stream_invoked": self._stream_invoked,
-                    "stream_state": self._stream.status() if self._stream else "NOT_BOUND",
-                    "provider_quota": "NO_VERIFICADO",
-                    "watch_usage": "NO_VERIFICADO",
-                    "catalog_independent_attestation": "EXTERNAL_GATE_ONLY_UNVERIFIED",
-                    "same_reader_rest_stream_binding": self._state == "OPEN",
-                    "provider_signed_session": False,
-                    "paper_ready": False, "real_order_routes_exposed": False}
+        # Status is telemetry, not admission. It must not acquire the owner
+        # RLock held through an SDK GET (connect/read timeout can be 40s), or
+        # the parent 400ms registration probe and child PID census will fail
+        # while the only owner is healthy. Snapshot immutable references under
+        # the GIL and detect a concurrent lifecycle transition fail-closed.
+        state = self._state
+        reader = self._reader
+        stream = self._stream
+        generation = self._local_generation
+        try:
+            guard_metrics = getattr(reader, "metrics", None) if reader else None
+        except Exception:
+            guard_metrics = None
+        guard_metrics = guard_metrics if isinstance(guard_metrics, dict) else {}
+
+        def observed_count(name):
+            value = guard_metrics.get(name)
+            return value if type(value) is int and value >= 0 else None
+
+        stable = (state == self._state and reader is self._reader
+                  and stream is self._stream and generation == self._local_generation)
+        if not stable:
+            state = "TRANSITION_UNVERIFIED"
+        return {"schema": SCHEMA, "state": state,
+                "owner_pid": os.getpid(),
+                "session_generation": generation if stable else None,
+                "catalog_source_digest": self._catalog_source_digest,
+                "aux_retry_after_seconds_observed": self._aux_retry_after,
+                "aux_last_http_status": self._aux_last_http_status,
+                "native_retry_after_seconds_observed": self._native_retry_after,
+                "native_last_http_status": self._native_last_http_status,
+                "login_invocations_by_owner": self._login_invocations,
+                # Guard counts come from the single real HTTP transport,
+                # not one-per-RPC guesses or consumer-local zeros. The
+                # login counter denotes HTTPAdapter.send observations.
+                "guard_login_wire_attempts": observed_count("login_calls") if stable else None,
+                "guard_http_allowed": observed_count("http_allowed") if stable else None,
+                "guard_http_blocked": observed_count("http_blocked") if stable else None,
+                "stream_invoked": self._stream_invoked,
+                "stream_state": stream.status() if stream else "NOT_BOUND",
+                "provider_quota": "UNKNOWN",
+                "watch_usage": "NO_VERIFICADO",
+                "catalog_independent_attestation": "EXTERNAL_GATE_ONLY_UNVERIFIED",
+                "same_reader_rest_stream_binding": stable and state == "OPEN",
+                "provider_signed_session": False,
+                "paper_ready": False, "real_order_routes_exposed": False}
 
     def close(self) -> None:
         with self._lock:

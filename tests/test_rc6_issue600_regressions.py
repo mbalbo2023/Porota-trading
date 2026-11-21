@@ -213,17 +213,35 @@ def test_local_rejects_future_revision_and_excess_cold_file(source,tmp_path):
     assert consolidate(source.path,huge,as_of=NOW,free_bytes=RESERVE)['reason']=='COLD_ARCHIVE_PHYSICAL_BUDGET'
 
 
-def test_repair_never_unions_currency_or_price_basis(tmp_path):
-    store=HistoricalStore(str(tmp_path/'history.db'))
+def test_repair_never_unions_currency_or_price_basis(tmp_path, monkeypatch):
+    import ct_ppi_history_salvage_hf6 as salvage
+
+    # A short, audited window isolates identity from the annual coverage guard.
+    monkeypatch.setattr(repair, "BOOTSTRAP_START", repair.CUTOFF - timedelta(days=4))
+    contract_id = "issue600-synthetic"
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", frozenset({contract_id}))
+    metadata = json.dumps({"history_quality": "FULL_OHLC", "provider_contract_id": contract_id})
+    store = HistoricalStore(str(tmp_path / "history.db"))
     with store.connect() as c:
-        c.execute('CREATE TABLE history_canonical_v2(symbol TEXT,instrument_type TEXT,market TEXT,settlement TEXT,currency TEXT,price_basis TEXT,adjustment_basis TEXT,date TEXT)')
-        rows=[('ARS','RAW','RAW_NO_ADJUSTMENT','2026-09-17'),('ARS','RAW','RAW_NO_ADJUSTMENT','2026-09-21'),
-              ('USD','RAW','RAW_NO_ADJUSTMENT','2026-09-18'),('ARS','SPLIT','SPLIT_SOURCE','2026-09-18')]
-        c.executemany('INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?)',
-            [('GGAL','ACCIONES','BYMA','CI',*r) for r in rows])
+        c.execute("""CREATE TABLE history_canonical_v2(
+            symbol TEXT, instrument_type TEXT, market TEXT, settlement TEXT,
+            currency TEXT, price_basis TEXT, adjustment_basis TEXT, date TEXT,
+            adjusted INTEGER, source TEXT, metadata_json TEXT)""")
+        rows = [
+            ("ARS", "RAW", "RAW_NO_ADJUSTMENT", "2026-09-17", 0),
+            ("ARS", "RAW", "RAW_NO_ADJUSTMENT", "2026-09-21", 0),
+            ("USD", "RAW", "RAW_NO_ADJUSTMENT", "2026-09-18", 0),
+            ("ARS", "SPLIT", "SPLIT_SOURCE", "2026-09-18", 1),
+        ]
+        c.executemany(
+            "INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            [("GGAL", "ACCIONES", "BYMA", "CI", *row, "PPI_PRODUCTION_HISTORY", metadata)
+             for row in rows],
+        )
     key=('GGAL','ACCIONES','BYMA','CI','ARS','RAW','RAW_NO_ADJUSTMENT')
     result=repair._coverage(store,key)
     assert not result['complete'] and result['missing']==1
+    assert result["first_missing"] == "2026-09-18"
     with pytest.raises(ValueError,match='FULL_SERIES'):
         repair._latest(store,key[:4])
     assert repair._live_identity_unambiguous([key],key)

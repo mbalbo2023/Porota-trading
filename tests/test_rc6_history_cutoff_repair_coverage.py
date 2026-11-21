@@ -3,7 +3,7 @@ import hashlib
 import json
 import sqlite3
 import tracemalloc
-from datetime import timedelta
+from datetime import date, timedelta
 import pytest
 
 from scripts import rc6_history_cutoff_repair_once as repair
@@ -421,17 +421,16 @@ def test_one_cutoff_day_does_not_prove_required_history_baseline(tmp_path):
 
     assert coverage["complete"] is False
     assert coverage["latest"].isoformat() == "2026-09-21"
-    assert coverage["reason"] == "BASELINE_CALENDAR_UNAUDITED"
-    assert coverage["first_missing"] is None  # Unknown, not an invented 2025 BYMA session.
+    assert coverage["reason"] == "PPI_PROVIDER_CONTRACT_UNVERIFIED"
+    assert coverage["first_missing"] is None
     assert coverage["repair_start"] == repair.BOOTSTRAP_START.isoformat()
 
 
-def test_untrusted_iol_canonical_rows_cannot_certify_ppi_cutoff(tmp_path, monkeypatch):
+def test_untrusted_iol_canonical_rows_cannot_certify_ppi_cutoff(tmp_path):
     identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
     store = _Store(tmp_path / "history.db")
     _canonical_table(store)
     _canonical_row(store, identity, source="IOL_HISTORY", provider_contract_id="test-contract")
-    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
 
     coverage = repair._coverage(store, identity)
 
@@ -439,12 +438,11 @@ def test_untrusted_iol_canonical_rows_cannot_certify_ppi_cutoff(tmp_path, monkey
     assert coverage["reason"] == "NON_PPI_CANONICAL_HISTORY"
 
 
-def test_unattested_ppi_canonical_rows_cannot_certify_cutoff(tmp_path, monkeypatch):
+def test_unattested_ppi_canonical_rows_cannot_certify_cutoff(tmp_path):
     identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
     store = _Store(tmp_path / "history.db")
     _canonical_table(store)
     _canonical_row(store, identity)
-    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
 
     coverage = repair._coverage(store, identity)
 
@@ -452,19 +450,63 @@ def test_unattested_ppi_canonical_rows_cannot_certify_cutoff(tmp_path, monkeypat
     assert coverage["reason"] == "PPI_PROVIDER_CONTRACT_UNVERIFIED"
 
 
+def test_cutoff_calendar_reproduces_the_audited_byma_market_dates():
+    from ak_byma_calendar import es_dia_habil_operativo
+    from ak_byma_t1_source_clock import estado_negociacion_historica_byma
+
+    lookup = {"family": "CEDEARS", "market": "BYMA", "settlement": "A-24HS"}
+    dates = [repair.BOOTSTRAP_START + timedelta(days=i)
+             for i in range((repair.CUTOFF - repair.BOOTSTRAP_START).days + 1)]
+    sessions = {day: estado_negociacion_historica_byma(day, **lookup) for day in dates}
+    trading_dates = [day for day, session in sessions.items() if session != "CLOSED"]
+    assert "UNVERIFIED" not in sessions.values()
+    assert len(trading_dates) == 245
+    digest = hashlib.sha256("".join(f"{day.isoformat()}\n" for day in trading_dates).encode())
+    assert digest.hexdigest() == "8997163de5795c13743af4a0ce44f55b16c7402985c56f9313e6832bf431e7ba"
+    assert sessions[date(2025, 12, 24)] == "LIMITED_T1_SOURCE_ONLY"
+    assert sessions[date(2026, 3, 23)] == "LIMITED_SETTLEMENT_UNVERIFIED"
+    assert sum(value == "LIMITED_SETTLEMENT_UNVERIFIED" for value in sessions.values()) == 4
+    assert estado_negociacion_historica_byma(date(2025, 9, 19), **lookup) == "UNVERIFIED"
+    assert estado_negociacion_historica_byma(repair.CUTOFF, **{**lookup, "family": "BONOS"}) == "UNVERIFIED"
+    assert not es_dia_habil_operativo(date(2026, 3, 23))
+
+
+def test_cutoff_contract_cannot_waive_limited_settlement_evidence(tmp_path, monkeypatch):
+    import ct_ppi_history_salvage_hf6 as salvage
+
+    identity = ("TEST", "ACCIONES", "BYMA", "A-24HS", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    store = _Store(tmp_path / "history.db")
+    _canonical_table(store)
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", frozenset({"fixture-pinned"}))
+    _canonical_row(store, identity, provider_contract_id="fixture-pinned")
+    coverage = repair._coverage(store, identity)
+    assert coverage["complete"] is False
+    assert coverage["reason"] == "BASELINE_SETTLEMENT_CALENDAR_UNVERIFIED"
+
+    _canonical_row(store, identity, provider_contract_id="fixture-pinned", day="2025-12-31")
+    assert repair._coverage(store, identity)["reason"] == "CANONICAL_OUTSIDE_BYMA_SESSION"
+
+
 def test_cutoff_coverage_requires_every_audited_day_and_pinned_ppi_contract(tmp_path, monkeypatch):
     import ct_ppi_history_salvage_hf6 as salvage
 
-    identity = ("TEST", "ACCIONES", "BYMA", "CI", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
+    identity = ("TEST", "ACCIONES", "BYMA", "A-24HS", "ARS", "RAW", "RAW_NO_ADJUSTMENT")
     store = _Store(tmp_path / "history.db")
     _canonical_table(store)
-    # Hypothetical future audit + contract; NOT today's physical provenance.
-    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
+    # Synthetic disposition of the four pending dates, only for this fixture.
+    real_calendar = repair.estado_negociacion_historica_byma
+
+    def fixture_calendar(day, **identity_parts):
+        result = real_calendar(day, **identity_parts)
+        return "LIMITED_T1_SOURCE_ONLY" if result == "LIMITED_SETTLEMENT_UNVERIFIED" else result
+
+    monkeypatch.setattr(repair, "estado_negociacion_historica_byma", fixture_calendar)
     monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", frozenset({"fixture-pinned"}))
     current = repair.BOOTSTRAP_START
     expected = []
     while current <= repair.CUTOFF:
-        if repair.byma.es_dia_habil_operativo(current):
+        if fixture_calendar(current, family=identity[1], market=identity[2],
+                            settlement=identity[3]) in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}:
             _canonical_row(store, identity, provider_contract_id="fixture-pinned",
                            day=current.isoformat())
             expected.append(current)
@@ -685,14 +727,13 @@ def test_history_coverage_restricts_prebootstrap_dates_in_sql(tmp_path):
                        [past] * (repair.LEGACY_ARCHIVE_SCAN_LIMIT + 1) + [current])
     coverage = repair._coverage(store, _target())
     assert coverage["complete"] is False
-    assert coverage["reason"] == "BASELINE_CALENDAR_UNAUDITED"
+    assert coverage["reason"] == "PPI_PROVIDER_CONTRACT_UNVERIFIED"
     assert coverage["start"] == repair.CUTOFF
 
 
 def test_history_coverage_oversized_metadata_is_not_materialized(tmp_path, monkeypatch):
     store = _Store(tmp_path / "oversized-metadata.db")
     _canonical_table(store)
-    monkeypatch.setattr(repair.byma, "ANIOS_AUDITADOS", frozenset({2025, 2026}))
     with store.connect() as db:
         db.execute(
             "INSERT INTO history_canonical_v2 VALUES(?,?,?,?,?,?,?,?,?,?,zeroblob(?))",

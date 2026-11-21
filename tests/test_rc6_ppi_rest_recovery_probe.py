@@ -881,3 +881,117 @@ def test_open_partial_current_receipt_never_claims_book_or_ready(
     assert report["coverage"]["BONOS"] == {
         "enumerated_exact": 1, "attempted": 1, "native_pair_qa_pass": 0,
         "ready": 0, "hold": 1, "unattempted": 0}
+
+
+def test_ppi_diagnostic_rotation_covers_missing_families_even_with_ready_spot():
+    assert set(observer.PPI_DIAGNOSTIC_FAMILY_ROTATION) == observer.OPERATIONAL_FAMILIES
+    assert observer.PPI_DIAGNOSTIC_FAMILY_ROTATION[-1] == "ETFS"
+    only_ready = [("GGAL", "ACCIONES", "INMEDIATA")]
+    cursor, observed = 0, []
+    for _ in range(9):
+        family, cursor = observer._next_ppi_diagnostic_family(only_ready, cursor)
+        observed.append(family)
+    assert len(set(observed)) == 9
+    assert "ACCIONES" not in observed
+    assert "FCI" in observed and "CAUCIONES" in observed
+    assert "ETFS" in observed
+    all_ready = [(family + "SYM", family, "INMEDIATA")
+                 for family in observer.PPI_DIAGNOSTIC_FAMILY_ROTATION]
+    assert observer._next_ppi_diagnostic_family(all_ready, 0) == (None, 0)
+    with pytest.raises(ValueError, match="PPI_DIAGNOSTIC_CURSOR_INVALID"):
+        observer._next_ppi_diagnostic_family([], -1)
+
+
+def test_complementary_duplicate_does_not_suppress_unique_primary_ppi_probe(catalog_store):
+    # Same native request 3-key but only ONE PPI-primary identity. An IOL
+    # complementary alias is not an independently authenticated PPI collision.
+    with catalog_store.connect() as c:
+        c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  ("AL30", "BONOS", "BYMA", "USD", "INMEDIATA",
+                   "IOL_COMPLEMENTARY", "OFFHOST", "2026-11-20T15:00:00Z",
+                   "RUN_TEST", "AVAILABLE", "NOT_READY",
+                   json.dumps({"_discovery_source": "IOL_COMPLEMENTARY"})))
+    assert _ppi_direct_rest_probe_candidates(catalog_store, limit=3) == [
+        ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
+    # Two genuinely distinct PPI-PRIMARY keys sharing the request would be
+    # blocked by the existing GGAL/ARS versus GGAL/USD fixture.
+
+
+@pytest.mark.parametrize("family,ticker,expected", [
+    ("FCI", "FUNDX", "FCI_CURRENT_REFERENCE_OBSERVED"),
+    ("CAUCIONES", "PESOS1", "CAUCION_CURRENT_REFERENCE_OBSERVED"),
+])
+def test_native_reference_family_never_requires_spot_book_or_marks_ready(
+        tmp_path, family, ticker, expected):
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    key = (ticker, family, "BYMA", "ARS", "INMEDIATA")
+    with store.connect() as c:
+        c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (*key, "REQUEST_CANDIDATE", "OFFHOST",
+                   datetime.now(timezone.utc).isoformat(), "RUN_TEST",
+                   "STALE", "NOT_READY", json.dumps({
+                       "_discovery_source": "PPI_PRIMARY", "ticker": ticker,
+                       "type": family, "market": "BYMA", "currency": "ARS"})))
+    stamp = datetime.now(timezone.utc).isoformat()
+
+    class NativeReferenceReader:
+        def __init__(self):
+            self.methods = []
+
+        def capture_guarded_native(self, endpoint, five_key, *, priority):
+            self.methods.append(endpoint)
+            assert endpoint == "current" and priority == "DISCOVERY"
+            assert tuple(five_key) == key
+            return {"native_payload": {"date": stamp, "price": 123.4},
+                    "guard_wire_receipt": {
+                        "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1",
+                        "endpoint": "current", "http_status_code": 200,
+                        "http_method": "GET", "adapter_send_invoked": True,
+                        "adapter_response_completed": True,
+                        "request_identity_3key": [ticker, family, "INMEDIATA"],
+                        "claimed_five_key": list(key), "received_at_utc": stamp,
+                        "raw_body_sha256": "a" * 64}}
+
+    reader = NativeReferenceReader()
+    result = observer._ppi_direct_rest_observe_only(reader, store, family=family)
+    assert reader.methods == ["current"]
+    assert result["status"] == expected and result["paper_ready"] is False
+    assert result["native_receipts"] == ["current"]
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0] == 0
+        assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM paper_events WHERE event_type='PPI_DIRECT_REST_REFERENCE_OBSERVED'").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("bad_price", [0, -1, None])
+def test_native_reference_unusable_never_becomes_fresh_or_ready(tmp_path, bad_price):
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    key = ("FUNDX", "FCI", "BYMA", "ARS", "INMEDIATA")
+    with store.connect() as c:
+        c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (*key, "REQUEST_CANDIDATE", "OFFHOST",
+                   datetime.now(timezone.utc).isoformat(), "RUN_TEST",
+                   "STALE", "NOT_READY", json.dumps({
+                       "_discovery_source": "PPI_PRIMARY", "ticker": key[0],
+                       "type": "FCI", "market": "BYMA", "currency": "ARS"})))
+    stamp = datetime.now(timezone.utc).isoformat()
+
+    class Ref:
+        def capture_guarded_native(self, endpoint, five_key, *, priority):
+            assert endpoint == "current"
+            return {"native_payload": {"date": stamp, "price": bad_price},
+                    "guard_wire_receipt": {
+                        "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1",
+                        "endpoint": "current", "http_status_code": 200,
+                        "http_method": "GET", "adapter_send_invoked": True,
+                        "adapter_response_completed": True,
+                        "request_identity_3key": [key[0], key[1], key[4]],
+                        "claimed_five_key": list(key),
+                        "raw_body_sha256": "f" * 64}}
+    observed = observer._ppi_direct_rest_observe_only(Ref(), store, family="FCI")
+    assert observed["status"] == "REFERENCE_UNUSABLE"
+    assert observed["paper_ready"] is False
+    with store.connect() as c:
+        assert c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0] == 0

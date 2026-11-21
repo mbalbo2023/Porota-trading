@@ -7,6 +7,8 @@ to reject Current/Book/Intraday when its signed shared budget is unavailable.
 
 from __future__ import annotations
 
+from rc6_ppi_global_budget import PAPER_DIRECT_GET_ENDPOINTS
+
 
 class SyntheticWireLease:
     """Allow only synthetic, monkeypatched HTTP reads in fixture-owned tests."""
@@ -16,7 +18,7 @@ class SyntheticWireLease:
         self._sequence = 0
 
     def acquire(self, endpoint, *, consumer=None, priority=None, **kwargs):
-        if endpoint not in {"current", "book", "intraday"}:
+        if endpoint not in PAPER_DIRECT_GET_ENDPOINTS:
             raise AssertionError(f"UNREVIEWED_TEST_ENDPOINT:{endpoint}")
         self._sequence += 1
         lease = f"SYNTHETIC_TEST_ONLY_{self._sequence}"

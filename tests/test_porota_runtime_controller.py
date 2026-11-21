@@ -19,7 +19,7 @@ from scripts import porota_rootless_host as host
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA, TREE = "a" * 40, "b" * 40
-CHILDREN = ("scanner", "performance", "dynamic_shadow", "exit_reader", "notifications",
+CHILDREN = ("ppi_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
             "candles", "intraday_scalping", "caucion_cash_sweep")
 NOW = datetime(2026, 11, 15, 18, 0, tzinfo=timezone.utc)
 STARTED = NOW - timedelta(seconds=30)
@@ -56,8 +56,8 @@ def test_compose_observer_plans_all_workers_under_the_exit_clock(tmp_path, monke
     assert len(clocks) == 1 and clocks[0][0] is store
     children = clocks[0][1]
     assert children.commands == {
+        "ppi_gateway": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--ppi-gateway-worker"],
         "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
-        "performance": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--performance-worker"],
         "dynamic_shadow": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--dynamic-shadow-worker"],
         "exit_reader": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--exit-reader"],
         "notifications": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--notification-worker"],
@@ -66,6 +66,68 @@ def test_compose_observer_plans_all_workers_under_the_exit_clock(tmp_path, monke
         "caucion_cash_sweep": [sys.executable, str(ROOT / "bv_paper_runtime.py"), "--caucion-cash-sweep-worker"],
     }
     assert not children.processes  # A plan test never claims actual child startup.
+
+
+def test_performance_capture_cli_is_disabled_before_any_evidence_writer(tmp_path, monkeypatch):
+    """No legacy/manual argument may revive the dedicated SQLite copier."""
+    from unittest.mock import patch
+
+    entry = importlib.import_module("bv_paper_runtime")
+    monkeypatch.setattr(entry, "database_path", lambda: tmp_path / "observer.db")
+    monkeypatch.setattr(signal, "signal", lambda *_: None)
+    with patch("rc6_performance.capture.run_worker", side_effect=AssertionError("writer was reached")):
+        with pytest.raises(ValueError, match="Argumentos desconocidos"):
+            entry.main(["--performance-worker"])
+    assert not list(tmp_path.glob("*performance*"))
+
+
+def test_exit_clock_keeps_supervisor_but_never_opens_performance_telemetry(tmp_path, monkeypatch):
+    """Optional exit_probes are OFF; EXIT heartbeat and child lifecycle remain ON."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    entry = importlib.import_module("bv_paper_runtime")
+    observed = {"heartbeat": [], "closed": False, "ticks": 0, "child_polls": 0,
+                "future_rounds": 0, "health_rounds": 0}
+    broker = SimpleNamespace(session_policy=object(),
+        supervise_futures=lambda *_: observed.update(future_rounds=observed["future_rounds"] + 1),
+        mark_equity=lambda *_args, **_kw: None)
+    monkeypatch.setattr(entry, "broker_from_environment", lambda *_args, **_kw: broker)
+
+    class Supervisor:
+        def heartbeat(self, *args):
+            observed["heartbeat"].append(args)
+
+        def tick(self):
+            observed["ticks"] += 1
+
+    def make_supervisor(*_args, **kwargs):
+        assert kwargs["telemetry"] is None
+        return Supervisor()
+
+    monkeypatch.setattr(entry, "PositionExitSupervisor", make_supervisor)
+    monkeypatch.setattr(entry, "publish_child_health", lambda *_args, **_kw:
+                        observed.update(health_rounds=observed["health_rounds"] + 1))
+    children = SimpleNamespace(
+        poll=lambda: observed.update(child_polls=observed["child_polls"] + 1),
+        close=lambda: observed.update(closed=True))
+
+    class OneTickStop:
+        done = False
+
+        def is_set(self):
+            return self.done
+
+        def wait(self, _interval):
+            self.done = True
+
+    with patch("rc6_performance.capture.ExitTelemetry", side_effect=AssertionError("telemetry writer was reached")):
+        entry.run_clock(SimpleNamespace(path=str(tmp_path / "observer.db")), children, OneTickStop(),
+                        clock_fn=lambda: NOW.isoformat())
+    assert observed["closed"] is True
+    assert observed["ticks"] == observed["child_polls"] == observed["future_rounds"] == observed["health_rounds"] == 1
+    assert observed["heartbeat"] and observed["heartbeat"][-1][1] == "STOPPED"
+    assert not list(tmp_path.glob("*performance*"))
 
 
 def classify(health):
@@ -81,6 +143,23 @@ def test_controller_accepts_only_current_live_topology():
     assert result["children"] == sorted(CHILDREN)
     assert result["source_sha"] == SHA and result["source_tree"] == TREE
     assert "real_orders_sent" not in result  # The database remains the counter authority.
+
+
+def test_controller_rejects_legacy_performance_child_even_when_reported_running():
+    old = controller_snapshot()
+    old["children"]["performance"] = {"state": "RUNNING", "pid": 909,
+        "started_at": (STARTED + timedelta(seconds=1)).isoformat(), "alive": True}
+    result = classify(old)
+    assert result["status"] == "PENDING"
+    assert result["reason"] == "CONTROLLER_CHILD_ROLES_MISMATCH"
+
+
+def test_controller_blocks_missing_single_ppi_gateway_child():
+    without_owner = controller_snapshot()
+    without_owner["children"].pop("ppi_gateway", None)
+    result = classify(without_owner)
+    assert result["status"] == "PENDING"
+    assert result["reason"] == "CONTROLLER_CHILD_ROLES_MISMATCH"
 
 
 @pytest.mark.parametrize("change", [

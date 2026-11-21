@@ -28,7 +28,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-import ak_byma_calendar as byma
+from ak_byma_t1_source_clock import estado_negociacion_historica_byma
 
 CUTOFF = date(2026, 9, 21)
 # First-history repair is explicitly bounded: it is never an unbounded query.
@@ -137,7 +137,7 @@ def _coverage(db, identity) -> dict[str, Any]:
     """Fail closed unless a full, attested baseline through cutoff is proven.
 
     The first stored candle is NOT evidence of a historical inception date.
-    An unaudited calendar year must never be mistaken for a year of holidays.
+    An unaudited day or limited settlement must never be counted as a holiday.
     Canonical rows from IOL/other sources or with no pinned PPI row contract
     cannot certify an exact PPI series merely because dates are present.
     """
@@ -199,8 +199,15 @@ def _coverage(db, identity) -> dict[str, Any]:
     partial = {"complete": False, "start": start, "latest": latest,
                "expected": None, "present": len(days), "missing": None,
                "first_missing": None, "repair_start": BOOTSTRAP_START.isoformat()}
-    baseline_years = set(range(BOOTSTRAP_START.year, CUTOFF.year + 1))
-    if not baseline_years.issubset(byma.ANIOS_AUDITADOS):
+    _, family, market, settlement, _, _, _ = _exact_key(identity)
+    sessions = {}
+    # Always use the explicit cutoff window, independent of the first candle.
+    current = BOOTSTRAP_START
+    while current <= CUTOFF:
+        sessions[current] = estado_negociacion_historica_byma(
+            current, market=market, family=family, settlement=settlement)
+        current += timedelta(days=1)
+    if "UNVERIFIED" in sessions.values():
         return {**partial, "reason": "BASELINE_CALENDAR_UNAUDITED"}
     if any(row[1] != "PPI_PRODUCTION_HISTORY" for row in rows):
         return {**partial, "reason": "NON_PPI_CANONICAL_HISTORY"}
@@ -219,14 +226,12 @@ def _coverage(db, identity) -> dict[str, Any]:
         except (TypeError, ValueError):
             return {**partial, "reason": "CANONICAL_PROVENANCE_UNVERIFIED"}
 
-    expected_days = []
-    # Explicit 365-day target, not min(days); prior behavior certified a single
-    # cutoff-day row as a complete one-day series.
-    current = BOOTSTRAP_START
-    while current <= CUTOFF:
-        if byma.es_dia_habil_operativo(current):
-            expected_days.append(current)
-        current += timedelta(days=1)
+    if any(sessions.get(day) == "CLOSED" for day in days):
+        return {**partial, "reason": "CANONICAL_OUTSIDE_BYMA_SESSION"}
+    if "LIMITED_SETTLEMENT_UNVERIFIED" in sessions.values():
+        return {**partial, "reason": "BASELINE_SETTLEMENT_CALENDAR_UNVERIFIED"}
+    expected_days = [day for day, status in sessions.items()
+                     if status in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}]
     missing = [day for day in expected_days if day not in days]
     complete = latest >= CUTOFF and not missing
     return {"complete": complete, "start": start, "latest": latest,

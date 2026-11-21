@@ -323,6 +323,9 @@ def _intraday_read_error_code(reader, error, classify_read_error):
     vendor body says Instrument not found. Other exact native classifications,
     including a legitimate 404 capability gap, remain request-scoped.
     """
+    from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
+    if gateway_reader_needs_reattach(error):
+        return "PPI_GATEWAY_REATTACH_REQUIRED"
     native = classify_read_error(error)
     transport = getattr(reader, "last_read_error_code", None)
     transport = transport if isinstance(transport, str) else None
@@ -1164,10 +1167,9 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
-    from bd_ppi_readonly_guard import (ProductionMarketReader, retry_read,
-                                       classify_read_error,
+    from bd_ppi_readonly_guard import (retry_read, classify_read_error,
                                        instrument_not_found)
-    from bf_production_paper_observer import _secret
+    from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
     init_schema(store)
     cursor = 0
     reader = None
@@ -1194,18 +1196,17 @@ def run_worker(store, stop, *, clock_fn):
                 continue
             if reader is None:
                 if time.monotonic() < next_login:
-                    _heartbeat(store,at=at,state="LOGIN_COOLDOWN",cursor=cursor)
+                    _heartbeat(store,at=at,state="GATEWAY_ATTACH_RETRY",cursor=cursor)
                     stop.wait(20)
                     continue
                 try:
-                    reader = ProductionMarketReader(*_secret(), audit=store.audit_http, consumer="SCALPING")
-                    reader.login_once()
-                    store.event("PPI_LOGIN", "owner=scalping")
+                    reader = connect_paper_gateway_reader(store.path, consumer="scalping")
+                    store.event("PPI_GATEWAY_ATTACHED", "consumer=scalping;no_sdk_login")
                 except Exception as exc:
                     if reader:
                         reader.close()
                     reader = None
-                    next_login = time.monotonic() + 900
+                    next_login = time.monotonic() + 15  # local AF_UNIX only; owner controls PPI login
                     _heartbeat(store,at=at,state="LOGIN_ERROR",cursor=cursor,failed=1,
                                detail=type(exc).__name__)
                     stop.wait(20)
@@ -1333,11 +1334,18 @@ def run_worker(store, stop, *, clock_fn):
                         store.event("INTRADAY_SCALPING_ERROR",
                                     f"{record['ticker']}: {error_code};shadow_identity=" +
                                     json.dumps(_identity(record), separators=(",", ":")))
-                        if error_code == "PPI_SESSION_INVALID":
+                        if error_code in {"PPI_SESSION_INVALID", "PPI_GATEWAY_REATTACH_REQUIRED"}:
                             invalid_session = True
                             break
                 stop.wait(0.75)
-            metrics = reader.metrics if reader else {"http_blocked": 0}
+            try:
+                metrics = reader.metrics if reader else {}
+            except Exception as exc:
+                from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
+                if not gateway_reader_needs_reattach(exc):
+                    raise
+                invalid_session = True
+                metrics = {}  # no invented owner HTTP counters on disconnect
             state = "SECURITY_BLOCK" if metrics.get("http_blocked") or False else \
                     "DEGRADED" if failed and successful else "ERROR" if failed else "RUNNING"
             _heartbeat(store,at=clock_fn(),state=state,cursor=cursor,selected=len(selected),

@@ -1,11 +1,12 @@
 
 """Bounded dynamic PPI caucion book collector for PAPER EOD.
 
-Uses an already-authenticated read-only ProductionMarketReader supplied by
+Uses the scanner's existing pinned single-owner PPI reader supplied by
 the observer. Dynamic rate/depth are deliberately NOT written to Contract
 Evidence v2: normal market movement must never become contract-change review.
 """
 from __future__ import annotations
+from contextlib import nullcontext
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -74,7 +75,15 @@ def _catalog(store):
 def _book_row(reader,item,observed_at,now,clock_fn):
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
     try:
-        book=retry_read(lambda: reader.book(item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+        # The shared PPI gateway requires a real catalog-bound five-key,
+        # including Market/Currency; never infer it from the 3-key SDK call.
+        scope = getattr(reader, "read_scope", None)
+        identity = (item["ticker"], "CAUCIONES", item["market"],
+                    item["currency"], item["settlement"])
+        with (scope(priority="WARM", identity=identity)
+              if callable(scope) else nullcontext()):
+            book=retry_read(lambda: reader.book(
+                item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
         # Reconcile the native Book with the exact PPI catalog identity before
         # its depth can be projected as PAPER participation authority.
         assert_native_ppi_response_identity(

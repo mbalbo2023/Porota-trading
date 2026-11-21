@@ -15,6 +15,7 @@ from rc6_ppi_shared_feed import PPISharedMarketFeed, SharedFeedUnavailable
 from rc6_ppi_gateway_reader_adapter import (
     GatewayEvidenceRejected,
     SharedPPIReaderAdapter,
+    gateway_reader_needs_reattach,
 )
 
 
@@ -67,6 +68,211 @@ class FakeClient:
 
 
 class SharedPPIReaderAdapterTests(unittest.TestCase):
+    def test_exit_round_adaptor_forwards_real_owner_verdict_and_scope_reset(self):
+        class ExitRoundOwner(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1}
+
+            def observe_exit_round(self, consumer, *, elapsed_seconds,
+                                   deadline_seconds, failures):
+                self.calls.append((consumer, elapsed_seconds,
+                                   deadline_seconds, failures))
+                return {"status": "DEGRADED", "lower_suspended": True}
+
+            def discard_exit_round_scope(self, consumer):
+                self.calls.append((consumer, "DISCARD"))
+
+        client = ExitRoundOwner(bus())
+        exit_reader = SharedPPIReaderAdapter(
+            client=client, consumer="exit_reader", catalog_source_digest=DIGEST)
+        exit_reader.login_once()
+        reported = exit_reader.observe_exit_round(
+            elapsed_seconds=3.25, deadline_seconds=5.0, failures=1)
+        assert reported == {"status": "DEGRADED", "lower_suspended": True}
+        exit_reader.discard_exit_round_scope()
+        assert client.calls == [("exit_reader", 3.25, 5.0, 1),
+                                ("exit_reader", "DISCARD")]
+
+    def test_gateway_rotation_and_auth_need_reattach_but_429_never_does(self):
+        for code in ("PPI_GATEWAY_OWNER_CHANGED", "PPI_GATEWAY_UNAVAILABLE",
+                     "PPI_GATEWAY_PEER_IDENTITY_MISMATCH",
+                     "PPI_NATIVE_ACQUIRE_ENVELOPE_INVALID",
+                     "PPI_AUX_RPC_ENVELOPE_INVALID", "PPI_NATIVE_HTTP_401",
+                     "PPI_NATIVE_HTTP_403", "PPI_AUX_HTTP_401"):
+            with self.subTest(code=code):
+                assert gateway_reader_needs_reattach(
+                    SharedFeedUnavailable(code))
+        for code in ("PPI_NATIVE_HTTP_429", "PPI_AUX_HTTP_429",
+                     "PPI_GATEWAY_EXACT_IDENTITY_REQUIRED",
+                     "PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED"):
+            with self.subTest(code=code):
+                assert not gateway_reader_needs_reattach(
+                    GatewayEvidenceRejected(code))
+        assert not gateway_reader_needs_reattach(ValueError("PPI_GATEWAY_OWNER_CHANGED"))
+
+    def test_direct_adapter_pin_requires_real_guard_login_send_witness(self):
+        class MethodOnlyClient(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 0}
+
+        reader = SharedPPIReaderAdapter(
+            client=MethodOnlyClient(bus()), consumer="scanner",
+            catalog_source_digest=DIGEST)
+        with self.assertRaisesRegex(GatewayEvidenceRejected,
+                                    "AUTH_ATTESTATION_MISSING"):
+            reader.login_once()
+        self.assertFalse(reader.budget_enabled)
+
+    def test_metrics_report_live_guard_send_counts_not_false_consumer_zero(self):
+        class ObservedCountsClient(FakeClient):
+            broken = False
+
+            def owner_status(self):
+                if self.broken:
+                    raise SharedFeedUnavailable("OWNER_DISCONNECTED")
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1,
+                        "guard_http_allowed": 7,
+                        "guard_http_blocked": 2}
+
+        client = ObservedCountsClient(bus())
+        reader = SharedPPIReaderAdapter(client=client, consumer="scanner",
+                                        catalog_source_digest=DIGEST)
+        reader.login_once()
+        metrics = reader.metrics
+        assert metrics["http_allowed"] == 7
+        assert metrics["http_blocked"] == 2
+        assert metrics["provider_requests"] == "UNKNOWN"
+        assert metrics["consumer_direct_http"] == 0
+        client.broken = True
+        with self.assertRaisesRegex(SharedFeedUnavailable, "OWNER_DISCONNECTED"):
+            _ = reader.metrics
+
+    def test_pinned_owner_native_methods_delegate_without_reader_login_or_get(self):
+        class AuthenticatedOwnerClient(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1,
+                        "guard_http_allowed": 1, "guard_http_blocked": 0}
+
+            def acquire_native(self, consumer, *, method, five_key, priority):
+                self.calls.append((consumer, method, tuple(five_key), priority))
+                return {"state": "OK", "receipt": {
+                    "raw_payload": {"date": "2026-11-04T15:00:00Z", "price": 100}},
+                    "provider_calls_by_rpc": 1}
+
+        client = AuthenticatedOwnerClient(bus())
+        reader = SharedPPIReaderAdapter(
+            client=client, consumer="scanner", catalog_source_digest=DIGEST)
+        reader.login_once()
+        self.assertTrue(reader.budget_enabled)
+        with reader.read_scope(priority="OPENED_CRITICAL", identity=KEY):
+            value = reader.current("GGAL", "ACCIONES", "A-48HS")
+        self.assertEqual(value["price"], 100)
+        self.assertEqual(client.calls, [
+            ("scanner", "current", KEY, "OPENED_CRITICAL")])
+        self.assertEqual(reader.metrics["provider_requests"], "UNKNOWN")
+
+    def test_catalog_history_configuration_use_same_pinned_owner(self):
+        class AuxiliaryOwnerClient(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1}
+
+            def acquire_auxiliary(self, consumer, *, method, args):
+                self.calls.append((consumer, method, args))
+                return {"state": "OK", "result":
+                        [{"date": "2026-11-04", "close": 100}] if method == "history"
+                        else [{"ticker": "GGAL"}] if method == "search_instruments"
+                        else {"instrument_types": ["ACCIONES"]}}
+
+        client = AuxiliaryOwnerClient(bus())
+        reader = SharedPPIReaderAdapter(
+            client=client, consumer="scanner", catalog_source_digest=DIGEST)
+        reader.login_once()
+        assert reader.search_instruments("GGAL", "ACCIONES", market="BYMA") == [
+            {"ticker": "GGAL"}]
+        assert reader.history("GGAL", "ACCIONES", "A-48HS",
+                              "2026-11-03", "2026-11-04")[0]["close"] == 100
+        assert reader.market_configuration()["instrument_types"] == ["ACCIONES"]
+        self.assertEqual([item[1] for item in client.calls], [
+            "search_instruments", "history", "market_configuration"])
+
+    def test_caucion_discovery_splits_sdk_multi_get_into_exit_interruptible_rpc(self):
+        class OneSearchPerPacketClient(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1}
+
+            def acquire_auxiliary(self, consumer, *, method, args):
+                self.calls.append((consumer, method, args))
+                assert not (args["ticker"] == "CAUCION"
+                            and args["instrument_type"] == "CAUCIONES")
+                return {"state": "OK", "result": [{"ticker": args["ticker"],
+                    "type": "CAUCIONES", "market": "BYMA",
+                    "currency": "ARS" if args["ticker"].startswith("PESOS") else "USD"}]}
+
+        client = OneSearchPerPacketClient(bus())
+        reader = SharedPPIReaderAdapter(
+            client=client, consumer="scanner", catalog_source_digest=DIGEST)
+        reader.login_once()
+        with patch("bd_ppi_readonly_guard.caucion_discovery_days", return_value=(1, 2)):
+            result = reader.search_instruments("CAUCION", "CAUCIONES",
+                                               name="CAUCION", market="BYMA")
+        assert {row["ticker"] for row in result} == {
+            "PESOS1", "DOLAR1", "PESOS2", "DOLAR2"}
+        assert [(call[2]["ticker"], call[2]["name"]) for call in client.calls] == [
+            ("PESOS1", "1"), ("DOLAR1", "1"),
+            ("PESOS2", "2"), ("DOLAR2", "2")]
+
+    def test_native_p0_wire_witness_is_relayed_not_fabricated_from_stream(self):
+        raw = {"date": "2026-11-04T15:00:00Z", "price": 100}
+        native_wire = {"schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1",
+                       "adapter_send_invoked": True,
+                       "adapter_response_completed": True,
+                       "wire_attempt_id": "original-not-a-fabricated-receipt"}
+
+        class OriginalWireClient(FakeClient):
+            def owner_status(self):
+                return {"state": "OPEN", "owner_pid": 123,
+                        "session_generation": "c" * 64,
+                        "catalog_source_digest": DIGEST,
+                        "login_invocations_by_owner": 1,
+                        "guard_login_wire_attempts": 1}
+
+            def acquire_native(self, consumer, *, method, five_key, priority):
+                return {"state": "OK", "receipt": {"raw_payload": raw},
+                        "guard_wire_receipt": native_wire}
+
+        reader = SharedPPIReaderAdapter(
+            client=OriginalWireClient(bus()), consumer="scanner",
+            catalog_source_digest=DIGEST)
+        reader.login_once()
+        result = reader.capture_guarded_native("current", KEY, priority="DISCOVERY")
+        assert result == {"native_payload": raw, "guard_wire_receipt": native_wire}
+        result["guard_wire_receipt"]["wire_attempt_id"] = "tampered"
+        assert native_wire["wire_attempt_id"] == "original-not-a-fabricated-receipt"
+
     def reader(self, source=None, *, clock=T0, digest=DIGEST, consumer="scanner", batch=2):
         source = source or bus()
         client = FakeClient(source)

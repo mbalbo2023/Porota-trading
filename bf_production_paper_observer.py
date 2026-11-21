@@ -56,6 +56,7 @@ PUBLIC_CAPTURE_PATH = Path(os.getenv(
 PUBLIC_CAPTURE_MAX_BYTES = 16 * 1024 * 1024
 PUBLIC_CAPTURE_MAX_AGE_SECONDS = max(1800, 3 * PUBLIC_STRUCTURED_CAPTURE_SECONDS)
 LOGIN_COOLDOWN_SECONDS = max(300, int(os.getenv("PPI_LOGIN_COOLDOWN_SECONDS", "900")))
+GATEWAY_LOCAL_ATTACH_RETRY_SECONDS = 15  # socket IPC only, never another broker login
 BACKGROUND_INGEST_SECONDS = max(
     3600, int(os.getenv("PPI_BACKGROUND_INGEST_SECONDS", "21600"))
 )
@@ -94,6 +95,26 @@ OPERATIONAL_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
+
+# A diagnostic sweep is not the PAPER admission universe. One PPI-native
+# observation at most per due interval, with ETFs deliberately last.
+PPI_DIAGNOSTIC_FAMILY_ROTATION = (
+    "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
+    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI", "ETFS",
+)
+
+
+def _next_ppi_diagnostic_family(symbols, cursor):
+    """Choose an unobserved-by-the-READY-basket family; never grant READY."""
+    if type(cursor) is not int or cursor < 0:
+        raise ValueError("PPI_DIAGNOSTIC_CURSOR_INVALID")
+    covered = {str(kind).upper() for _, kind, _ in symbols}
+    for offset in range(len(PPI_DIAGNOSTIC_FAMILY_ROTATION)):
+        index = (cursor + offset) % len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
+        family = PPI_DIAGNOSTIC_FAMILY_ROTATION[index]
+        if family not in covered:
+            return family, (index + 1) % len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
+    return None, cursor
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
@@ -157,6 +178,12 @@ def _secret():
     if not key or not secret:
         raise RuntimeError("El archivo secreto productivo esta incompleto.")
     return key, secret
+
+
+def _scanner_gateway_reader_lost(error):
+    """Only a dead/rotated owner or auth loss needs a new local AF_UNIX pin."""
+    from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
+    return gateway_reader_needs_reattach(error)
 
 
 # Calendario BYMA RC6, fuente auditada: https://www.byma.com.ar/mercado/calendario-bursatil
@@ -1187,6 +1214,10 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
             rows = c.execute("""WITH unique_identity AS (
                   SELECT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
+                  WHERE status IN ('AVAILABLE','STALE')
+                    AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
+                    AND json_valid(metadata_json)
+                    AND json_extract(metadata_json,'$._discovery_source')='PPI_PRIMARY'
                   GROUP BY ticker,instrument_type,settlement HAVING COUNT(*)=1
                 )
                 SELECT f.ticker,f.instrument_type,f.market,f.currency,f.settlement
@@ -1223,11 +1254,12 @@ def _safe_ppi_evidence_timestamp(value):
 
 def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None,
                                   pre_wire=None):
-    """Try one genuine Current+Book pair without invoking the PAPER broker.
+    """Read genuine native evidence without inventing provider-side fields.
 
-    OPEN zero-READY recovery and strictly gated postclose commands share the
-    existing reader and budget. Even a healthy quote has an opening block and
-    cannot change candidate readiness.
+    Spot/market-book families need Current+Book to claim a fresh executable
+    *diagnostic* quote. FCI NAV and CAUCIONES rates are class-specific: a
+    guarded Current is only a REFERENCE, never a PPI-signed NAV/TNA, Book,
+    economic terms, PAPER_READY or an order. No second reader/login.
     """
     candidates = _ppi_direct_rest_probe_candidates(store, limit=1, family=family)
     if not candidates:
@@ -1243,7 +1275,9 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
         capture = getattr(reader, "capture_guarded_native", None)
         if not callable(capture):
             raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_REQUIRED")
-        for endpoint in ("current", "book"):
+        endpoints = (("current",) if family in {"FCI", "CAUCIONES"}
+                     else ("current", "book"))
+        for endpoint in endpoints:
             if pre_wire is not None:
                 pre_wire()
             witness = capture(endpoint, key, priority="DISCOVERY")
@@ -1275,6 +1309,40 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                         f"wire_received_at_utc={_safe_ppi_evidence_timestamp(receipt.get('received_at_utc'))};"
                         f"market_timestamp_utc={_safe_ppi_evidence_timestamp(native_time)};"
                         f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
+        if family in {"FCI", "CAUCIONES"}:
+            # PPI SearchInstrument does not promise settlement, and funds/
+            # money-market rates are not an equity two-sided order book.
+            # Preserve the *actual* native Current receipt but do not insert
+            # an executable Quote or infer NAV, TNA or a fund cutoff.
+            payload = witnessed["current"].get("native_payload")
+            try:
+                if not isinstance(payload, dict):
+                    raise ValueError("PPI_REFERENCE_CURRENT_PAYLOAD_INVALID")
+                raw_at = payload.get("date")
+                if not isinstance(raw_at, str) or not 10 <= len(raw_at) <= 60:
+                    raise ValueError("PPI_REFERENCE_SOURCE_CLOCK_MISSING")
+                mark_at = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+                if mark_at.tzinfo is None or mark_at.utcoffset() is None:
+                    raise ValueError("PPI_REFERENCE_SOURCE_CLOCK_UNVERIFIED")
+                age = (datetime.now(timezone.utc) - mark_at.astimezone(
+                    timezone.utc)).total_seconds()
+                price = Decimal(str(payload.get("price")))
+                if (not 0 <= age <= 7 * 86400 or
+                        not price.is_finite() or price <= 0):
+                    raise ValueError("PPI_REFERENCE_SOURCE_STALE_OR_UNUSABLE")
+            except (ValueError, TypeError, KeyError, OverflowError, ArithmeticError):
+                store.event("PPI_DIRECT_REST_REFERENCE_HOLD",
+                            "family=" + family + ";reason=REFERENCE_UNUSABLE")
+                return {"status": "REFERENCE_UNUSABLE", "paper_ready": False,
+                        "native_receipts": list(witnessed)}
+            status = ("FCI_CURRENT_REFERENCE_OBSERVED" if family == "FCI"
+                      else "CAUCION_CURRENT_REFERENCE_OBSERVED")
+            store.event("PPI_DIRECT_REST_REFERENCE_OBSERVED",
+                        f"family={family};identity5={':'.join(key)};"
+                        f"wire_sha256={witnessed['current']['guard_wire_receipt']['raw_body_sha256']};"
+                        "basis=PPI_NATIVE_CURRENT_ONLY;paper_ready=false")
+            return {"status": status, "identity": list(key),
+                    "paper_ready": False, "native_receipts": list(witnessed)}
         witnessed_current = witnessed["current"]
         witnessed_book = witnessed["book"]
         current = witnessed_current["native_payload"]
@@ -1409,12 +1477,14 @@ def _ppi_open_catalog_coverage(store):
 def _ppi_open_global_session_evidence_gate():
     """Fail closed until *physical* PPI single-session custody is integrated.
 
-    The runtime currently starts scanner and EXIT as distinct processes; each
-    constructs its own ProductionMarketReader and invokes login_once(). The
-    optional scalping process can authenticate a third reader. Scanner-local
-    `metrics`, an environment flag, a DB command, a process-local registry or
-    a shared GET budget lease cannot attest one authenticated PPI session
-    globally. No reliable cross-process owner proof is wired into this process.
+    In the proposed PAPER Gateway code path scanner, EXIT and scalping attach
+    to the single owner over AF_UNIX rather than creating their own reader.
+    This is local custody evidence ONLY: compose still shares UID0/bound
+    credentials and legacy entrypoints may authenticate independently.
+    Scanner-local `metrics`, socket owner PID/generation, an environment flag,
+    a DB command, or process-local budget lease cannot attest account-global
+    exclusivity without independent host/process inventory and a physical
+    owner-login witness. Neither is certified here.
 
     This deliberate hard HOLD is checked at OPEN admission and before every
     native Current/Book SEND. It may be replaced only alongside a separately
@@ -2707,23 +2777,24 @@ def _run_command(store, reader, command, gemini_gate=None, login_interlock=None)
     if name != "LOGIN_AND_SYNC":
         _finish_command(store, command_id, "ERROR", "Comando no permitido.")
         return reader
-    if reader is None:
-        gate = login_interlock or ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
-        decision = gate.reserve()
+    if reader is None and login_interlock is not None:
+        # A caller-supplied manual interlock still gates diagnostic commands.
+        # Normal scanner startup delegates the actual login reservation to
+        # the gateway owner and passes no second scanner-local reservation.
+        decision = login_interlock.reserve()
         if decision != "ALLOWED":
             _finish_command(store, command_id,
                             "COOLDOWN" if decision == "COOLDOWN" else "ERROR",
                             "PPI_LOGIN_INTERLOCK_" + decision)
             store.state(process_state="DEGRADED",
                         ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
-                        real_orders_sent=0, detail="Login local bloqueado por interlock.")
+                        real_orders_sent=0, detail="Comando manual bloqueado por interlock.")
             return None
     try:
         if reader is None:
-            key, secret = _secret()
-            reader = ProductionMarketReader(key, secret, audit=store.audit_http, consumer="SCANNER")
-            reader.login_once()
-            store.event("PPI_LOGIN", "owner=scanner_manual")
+            from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
+            reader = connect_paper_gateway_reader(store.path, consumer="scanner")
+            store.event("PPI_GATEWAY_ATTACHED", "consumer=scanner_manual;no_sdk_login")
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _health(store, "PPI_PRODUCTION_AUTH", "ROJO", detail, "PPI Producción")
@@ -2915,7 +2986,7 @@ def run():
     # BOOT_COMMAND/BOOT_CALENDAR. Así un calendario lento nunca deja al
     # operador con STARTING/CHECKING sin evidencia del punto de arranque.
     reader = None
-    login_interlock = ScannerLoginInterlock(store.path, LOGIN_COOLDOWN_SECONDS)
+    login_interlock = None  # only gateway reserves the physical PPI login
     quotes = {}
     # Diagnostic evidence only: reuse the scanner's existing current+book
     # result. PRODUCTION_PAPER remains an execution mode, not PPI provenance.
@@ -2923,6 +2994,7 @@ def run():
         Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
     last_direct_rest_probe = 0.0
+    direct_probe_family_cursor = 0
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
@@ -2984,31 +3056,18 @@ def run():
                                 detail="PPI en espera de reintento; no se abre una tormenta de logins.")
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
-                decision = login_interlock.reserve()
-                if decision != "ALLOWED":
-                    store.state(process_state="DEGRADED",
-                                ppi_auth="COOLDOWN" if decision == "COOLDOWN" else "ERROR",
-                                session_state=_cooldown_session_state(phase),
-                                heartbeat_at=now_iso(), real_orders_sent=0,
-                                detail="Login local bloqueado por interlock persistente.")
-                    time.sleep(COMMAND_POLL_SECONDS)
-                    continue
-                store.state(session_state="BOOT_PPI_SECRET", ppi_auth="NOT_ATTEMPTED",
+                store.state(session_state="BOOT_PPI_GATEWAY", ppi_auth="NOT_ATTEMPTED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Arranque: leyendo secreto PPI local.")
-                key, secret = _secret()
-                store.state(session_state="BOOT_PPI_CLIENT", ppi_auth="NOT_ATTEMPTED",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Arranque: creando cliente PPI de solo lectura.")
-                reader = ProductionMarketReader(key, secret, audit=store.audit_http, consumer="SCANNER")
+                            detail="Arranque: conectando al gateway PPI propietario.")
                 try:
-                    store.state(session_state="BOOT_PPI_LOGIN", ppi_auth="NOT_ATTEMPTED",
+                    store.state(session_state="BOOT_PPI_GATEWAY_IDENTITY", ppi_auth="NOT_ATTEMPTED",
                                 heartbeat_at=now_iso(), real_orders_sent=0,
-                                detail="Arranque: autenticando PPI de solo lectura.")
-                    reader.login_once()
-                    store.event("PPI_LOGIN", "owner=scanner")
+                                detail="Arranque: comprobando PID/generación del propietario.")
+                    from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
+                    reader = connect_paper_gateway_reader(store.path, consumer="scanner")
+                    store.event("PPI_GATEWAY_ATTACHED", "consumer=scanner;no_sdk_login")
                     _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
-                            "Login automático de solo lectura correcto.",
+                            "Gateway local autenticado; identidad del productor comprobada.",
                             "PPI Producción", success=True)
                     # A successful login can follow a 900s interlock hold.
                     # Clear its DEGRADED process state atomically with auth;
@@ -3017,7 +3076,7 @@ def run():
                     store.state(process_state="STARTING", ppi_auth="OK",
                                 session_state=phase, heartbeat_at=now_iso(),
                                 real_orders_sent=0,
-                                detail="Login de solo lectura correcto; inicializando motor PAPER.")
+                                detail="Gateway único conectado; inicializando motor PAPER.")
                     # La IA continúa OFF; este paso no envía órdenes ni llama
                     # rutas operativas. Sólo prepara decisiones simuladas.
                     broker = broker_from_environment(store, ai_gate=None, require_ai=False,
@@ -3029,9 +3088,13 @@ def run():
                             f"{type(exc).__name__}: {str(exc)[:300]}", "PPI Producción")
                     store.state(process_state="DEGRADED", ppi_auth="ERROR",
                                 heartbeat_at=now_iso(), detail=f"Login fallo: {type(exc).__name__}")
-                    reader.close()
+                    local_attach_failure = reader is None or _scanner_gateway_reader_lost(exc)
+                    if reader is not None:
+                        reader.close()
                     reader = None
-                    next_login_at = time.time() + LOGIN_COOLDOWN_SECONDS
+                    next_login_at = time.time() + (
+                        GATEWAY_LOCAL_ATTACH_RETRY_SECONDS if local_attach_failure
+                        else LOGIN_COOLDOWN_SECONDS)
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
@@ -3079,19 +3142,23 @@ def run():
                 continue
             (focus, symbols, eligible_total, cursor_before, cursor_after,
              feasibility) = _runtime_readiness(store, record_event=True)
-            if (not symbols and
-                    os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1" and
-                    time.monotonic() - last_direct_rest_probe >= 60):
-                # The existing READY-only basket can be empty even when PPI
-                # catalog identities exist. A separately fenced REST probe
-                # tests one exact native pair; it never calls broker.on_quote,
-                # changes eligibility or asserts PAPER_READY.
-                last_direct_rest_probe = time.monotonic()
-                probe = _ppi_direct_rest_observe_only(reader, store)
-                _health(store, "PPI_DIRECT_REST_RECOVERY",
-                        "VERDE" if probe["status"] == "FRESH_OBSERVED" else "AMARILLO",
-                        "Native REST observe-only: " + probe["status"],
-                        "PPI Producción", success=probe["status"] == "FRESH_OBSERVED")
+            if (os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
+                    and time.monotonic() - last_direct_rest_probe >= 60):
+                # Do not let one READY equity suppress all nine other family
+                # diagnostics. Exactly one missing family per due interval,
+                # and never compete with opened PAPER EXIT/derivative exposure.
+                family, next_cursor = _next_ppi_diagnostic_family(
+                    symbols, direct_probe_family_cursor)
+                if (family is not None and not store.open_positions()
+                        and not store.active_future_positions()):
+                    last_direct_rest_probe = time.monotonic()
+                    direct_probe_family_cursor = next_cursor
+                    probe = _ppi_direct_rest_observe_only(
+                        reader, store, family=family)
+                    _health(store, "PPI_DIRECT_REST_RECOVERY",
+                            "VERDE" if probe["status"] == "FRESH_OBSERVED" else "AMARILLO",
+                            "Native observe-only family=" + family + ";status=" + probe["status"],
+                            "PPI Producción", success=probe["status"] == "FRESH_OBSERVED")
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
@@ -3158,10 +3225,10 @@ def run():
                 except Exception as exc:
                     cycle_failures += 1
                     store.event("DATA_ERROR", f"{symbol}: {classify_read_error(exc)}")
-                    if session_invalid(exc):
+                    if session_invalid(exc) or _scanner_gateway_reader_lost(exc):
                         cycle_session_invalid = True
-                        store.event("PPI_SESSION_INVALID",
-                                    "Sesión de market data expirada; ciclo interrumpido y relogin controlado")
+                        store.event("PPI_GATEWAY_REATTACH_REQUIRED",
+                                    "Owner PPI cambió/no responde o auth inválida; reconexión AF_UNIX sin login")
                         break
                 finally:
                     latency = round((time.perf_counter() - symbol_clock) * 1000, 2)
@@ -3189,12 +3256,20 @@ def run():
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
                    f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
-            metrics = reader.metrics
+            try:
+                metrics = reader.metrics
+            except Exception as exc:
+                if not _scanner_gateway_reader_lost(exc):
+                    raise
+                cycle_session_invalid = True
+                metrics = None  # keep last physical owner HTTP counts, never false zeros
+                store.event("PPI_GATEWAY_METRICS_UNVERIFIED", type(exc).__name__)
             store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
                         ppi_auth="ERROR" if cycle_session_invalid else "OK",
-                        http_allowed=metrics["http_allowed"],
-                        http_blocked=metrics["http_blocked"], real_orders_sent=0,
+                        **({"http_allowed": metrics["http_allowed"],
+                            "http_blocked": metrics["http_blocked"]} if metrics else {}),
+                        real_orders_sent=0,
                         detail=(f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
                                 f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas."))
             _health(store, "PPI_PRODUCTION_MARKETDATA",

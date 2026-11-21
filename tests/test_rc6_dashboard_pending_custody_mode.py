@@ -17,7 +17,10 @@ def test_pending_custody_manifest_takes_precedence_over_paper_observer(tmp_path,
     monkeypatch.setattr(dashboard, "DB_PATH", str(data / "database" / "paper.sqlite"))
     monkeypatch.setattr(dashboard, "CONFIGURED_MODE", "PRODUCTION_PAPER")
     monkeypatch.setattr(dashboard, "MODE", "DETENIDO")
-    monkeypatch.setattr(dashboard, "_table", lambda _name: True)
+    # Only observer_state is present in this synthetic database. The patched
+    # banner also probes paper_positions and expects a COUNT(*) column named n.
+    monkeypatch.setattr(dashboard, "_table",
+                        lambda name: name == "observer_state")
     monkeypatch.setattr(dashboard, "_rows", lambda *_a, **_kw: [{"mode": "PRODUCTION_PAPER"}])
 
     assert dashboard._effective_mode() == "PENDING_CUSTODY_SEAL"
@@ -33,7 +36,10 @@ def test_pending_custody_observer_fails_closed_without_manifest(tmp_path, monkey
     monkeypatch.setattr(dashboard, "DB_PATH", str(data / "database" / "paper.sqlite"))
     monkeypatch.setattr(dashboard, "CONFIGURED_MODE", "PRODUCTION_PAPER")
     monkeypatch.setattr(dashboard, "MODE", "PRODUCTION_PAPER")
-    monkeypatch.setattr(dashboard, "_table", lambda _name: True)
+    # Only observer_state is present in this synthetic database. The patched
+    # banner also probes paper_positions and expects a COUNT(*) column named n.
+    monkeypatch.setattr(dashboard, "_table",
+                        lambda name: name == "observer_state")
     monkeypatch.setattr(dashboard, "_rows", lambda *_a, **_kw: [{"mode": "PENDING_CUSTODY_SEAL"}])
 
     assert dashboard._effective_mode() == "PENDING_CUSTODY_SEAL"

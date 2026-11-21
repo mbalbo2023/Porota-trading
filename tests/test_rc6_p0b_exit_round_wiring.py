@@ -42,6 +42,7 @@ class FakeExitReader:
 
     def login_once(self):
         self.login_calls += 1
+        raise AssertionError("EXIT_CHILD_SECOND_PPI_LOGIN_FORBIDDEN")
 
     def observe_exit_round(self, **record):
         self.observations.append(record)
@@ -62,19 +63,25 @@ def run_one(collector, *, reader=None, clock=None, status_result=True, stop_afte
         store = SimpleNamespace(path=Path(directory) / "paper.sqlite",
                                 audit_http=lambda *_: None,
                                 event=lambda *args: events.append(args))
-        # run_reader is genuine, while SDK/market-phase imports are isolated:
-        # the test must not import requests, PPI SDK or an on-wire transport.
+        # run_reader is genuine, while owner SDK and market phase are isolated.
+        # No provider GET/login, second account reader or on-wire transport.
         guarded = ModuleType("bd_ppi_readonly_guard")
-        guarded.ProductionMarketReader = lambda *a, **k: reader
         guarded.session_invalid = lambda exc: False
         observer = ModuleType("bf_production_paper_observer")
         observer._market_phase = lambda: "OPEN"
         observer._secret = lambda: ("FAKE", "FAKE")
         observer._support_schema = lambda store: None
+        gateway = ModuleType("rc6_ppi_gateway_reader_adapter")
+        def fake_gateway_connect(database, *, consumer):
+            assert database == store.path and consumer == "exit_reader"
+            return reader  # consumer-side reader only; owner login is not retried
+        gateway.connect_paper_gateway_reader = fake_gateway_connect
+        gateway.gateway_reader_needs_reattach = lambda exc: False
         stack.enter_context(patch.dict(os.environ, {"POROTA_RUNTIME_SCHEMA_READY": "1"}))
         stack.enter_context(patch.dict(sys.modules, {
             "bd_ppi_readonly_guard": guarded,
             "bf_production_paper_observer": observer,
+            "rc6_ppi_gateway_reader_adapter": gateway,
         }))
         stack.enter_context(patch.object(runtime, "collect_exit_books", lambda *a, **kw: collector(stop)))
         stack.enter_context(patch.object(runtime, "exit_reader_cadence", lambda *a: 5.0))
@@ -91,8 +98,9 @@ def run_one(collector, *, reader=None, clock=None, status_result=True, stop_afte
 
 class ExitRoundWiring(unittest.TestCase):
     def test_completed_cycle_publishes_elapsed_and_failures(self):
-        reader, statuses, _, sidecar = run_one(lambda stop: 0)
-        self.assertEqual(reader.login_calls, 1)
+        reader, statuses, events, sidecar = run_one(lambda stop: 0)
+        self.assertEqual(reader.login_calls, 0)  # child never authenticates to provider
+        self.assertIn(("PPI_GATEWAY_ATTACHED", "consumer=exit_reader;no_sdk_login"), events)
         self.assertTrue(reader.closed)
         self.assertEqual(reader.provider_gets, 0)
         self.assertFalse(sidecar)

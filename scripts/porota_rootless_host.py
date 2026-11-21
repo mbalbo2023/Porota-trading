@@ -37,8 +37,10 @@ ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
-# Frozen PAPER settings enable both optional workers in this release contract.
-CONTROLLER_CHILDREN = ("scanner", "performance", "dynamic_shadow", "exit_reader", "notifications",
+# Frozen PAPER settings include a dedicated PPI Gateway owner before three
+# independent consumers. Exact roles, not a raw count: Performance remains
+# operator-disabled and must never return as an expected/accepted child.
+CONTROLLER_CHILDREN = ("ppi_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
                        "candles", "intraday_scalping", "caucion_cash_sweep")
 DOCKER_OPERATIONS = {
     ("image", "load"): "IMAGE_LOAD", ("image", "inspect"): "IMAGE_INSPECT",

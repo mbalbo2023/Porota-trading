@@ -299,17 +299,23 @@ class IntradayFreshnessTests(unittest.TestCase):
         reader.metrics = {"http_blocked": 0}
         reader.intraday.return_value = []
         guard = types.ModuleType("bd_ppi_readonly_guard")
-        guard.ProductionMarketReader = Mock(return_value=reader)
+        reader.login_once.side_effect = AssertionError("SCALPING_CHILD_SECOND_SDK_LOGIN_FORBIDDEN")
         guard.retry_read = lambda call, **_kwargs: call()
         guard.session_invalid = lambda _exc: False
         guard.classify_read_error = lambda exc: type(exc).__name__
         guard.instrument_not_found = lambda _exc: False
-        observer = types.ModuleType("bf_production_paper_observer")
-        observer._secret = lambda: ()
+        import rc6_ppi_gateway_reader_adapter as gateway
+        attached = []
+        def fake_gateway_connect(database, *, consumer):
+            self.assertEqual(database, self.store.path)
+            self.assertEqual(consumer, "scalping")
+            attached.append(consumer)
+            return reader
         at = "2026-10-05T10:46:00-03:00"
         later = "2026-10-05T10:49:00-03:00"
         clock = Mock(side_effect=[at, at, later, later, later])
-        with patch.dict(sys.modules, {guard.__name__: guard, observer.__name__: observer}), \
+        with patch.dict(sys.modules, {guard.__name__: guard}), \
+             patch.object(gateway, "connect_paper_gateway_reader", fake_gateway_connect), \
              patch.object(scalping, "_market_open", return_value=True), \
              patch.object(scalping, "select_batch", return_value=([self.record], 0, 1)), \
              patch.object(scalping, "persist_payload", return_value={"inserted": 0, "state": "CONFIRMED_INTERVAL_VOLUME"}), \
@@ -317,6 +323,8 @@ class IntradayFreshnessTests(unittest.TestCase):
              patch.object(scalping, "promote_paper_candidate", return_value="STALE_INTRADAY_SOURCE") as promote, \
              patch.object(scalping, "_heartbeat"):
             scalping.run_worker(self.store, Stop(), clock_fn=clock)
+        self.assertEqual(attached, ["scalping"])
+        reader.login_once.assert_not_called()
         self.assertEqual(evaluate.call_args.kwargs["at"], scalping._stamp(at))
         self.assertEqual(promote.call_args.kwargs["at"], scalping._stamp(later))
 
