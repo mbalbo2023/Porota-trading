@@ -767,6 +767,27 @@ class TestParallelProofRunner(unittest.TestCase):
                 {"exception_type": "AssertionError", "phase": "call",
                  "source_file": "tests/test_rc6_ci_parallel_runner.py",
                  "source_line": record["source_line"]})
+            target.unlink()
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_FAILURE_PATH": str(target)}):
+                try:
+                    shards._red("NODEID_DUPLICATE")
+                except shards.ShardQuorumRed as error:
+                    call = SimpleNamespace(
+                        excinfo=SimpleNamespace(type=type(error), value=error))
+                    identity.pytest_exception_interact(
+                        None, call, SimpleNamespace(failed=True, when="call"))
+            tracked = json.loads(target.read_text())
+            self.assertEqual(tracked["exception_type"], "ShardQuorumRed")
+            self.assertEqual(tracked["source_file"],
+                             "tests/test_rc6_ci_parallel_runner.py")
+            self.assertEqual(tracked["origin_file"],
+                             "scripts/rc6_ci_shard_quorum.py")
+            self.assertGreater(tracked["origin_line"], 0)
+            self.assertEqual(
+                runner._verified_test_failure_sidecar(target, REPO)["origin_file"],
+                "scripts/rc6_ci_shard_quorum.py")
 
     def test_failed_pytest_shard_retains_sanitized_first_exception(self):
         fake = FakePytest(require_parallel=False)
@@ -813,6 +834,9 @@ class TestParallelProofRunner(unittest.TestCase):
                  "source_file": "../PRIVATE.py", "source_line": 5},
                 {"schema": "rc6.pytest.failure.v1",
                  "exception_type": "AssertionError", "phase": "outside"},
+                {"schema": "rc6.pytest.failure.v1",
+                 "exception_type": "AssertionError", "phase": "call",
+                 "origin_file": "../PRIVATE_TOKEN.py", "origin_line": 7},
             )
             for record in cases:
                 path.write_text(json.dumps(record))

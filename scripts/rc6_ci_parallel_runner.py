@@ -199,7 +199,8 @@ def _verified_test_failure_sidecar(path: Path, repo: Path) -> dict | None:
         if (type(record) is not dict
                 or record.get("schema") != "rc6.pytest.failure.v1"
                 or set(record) - {"schema", "exception_type", "phase",
-                                 "source_file", "source_line"}):
+                                 "source_file", "source_line",
+                                 "origin_file", "origin_line"}):
             return None
         kind = record.get("exception_type")
         phase = record.get("phase")
@@ -208,21 +209,25 @@ def _verified_test_failure_sidecar(path: Path, repo: Path) -> dict | None:
                 or phase not in ("setup", "call", "teardown", "collect")):
             return None
         result = {"exception_type": kind, "phase": phase}
-        source = record.get("source_file")
-        line = record.get("source_line")
-        if source is None and line is None:
-            return result
-        if (type(source) is not str or
-                not re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", source)
-                or ".." in Path(source).parts or type(line) is not int
-                or not 1 <= line <= 10000000):
-            return result
-        parts = Path(source).parts
-        if (repo / source).is_file() and not any(
-                (repo / Path(*parts[:i])).is_symlink()
-                for i in range(1, len(parts) + 1)):
-            result["source_file"] = source
-            result["source_line"] = line
+        for prefix in ("source", "origin"):
+            source = record.get(prefix + "_file")
+            line = record.get(prefix + "_line")
+            if source is None and line is None:
+                continue
+            if (type(source) is not str or
+                    not re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", source)
+                    or ".." in Path(source).parts or type(line) is not int
+                    or not 1 <= line <= 10000000):
+                continue
+            if (prefix == "source" and not source.startswith("tests/")) or (
+                    prefix == "origin" and source.startswith("tests/")):
+                continue
+            parts = Path(source).parts
+            if (repo / source).is_file() and not any(
+                    (repo / Path(*parts[:i])).is_symlink()
+                    for i in range(1, len(parts) + 1)):
+                result[prefix + "_file"] = source
+                result[prefix + "_line"] = line
         return result
     except (OSError, ValueError, TypeError, UnicodeError):
         return None

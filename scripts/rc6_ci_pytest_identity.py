@@ -86,13 +86,16 @@ def pytest_exception_interact(node, call, report):
                 try:
                     rel = filename.resolve(strict=True).relative_to(root).as_posix()
                     parts = Path(rel).parts
-                    if (re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", rel)
+                    if (re.fullmatch(r"[A-Za-z0-9_./-]{1,220}\.py", rel)
                             and ".." not in parts and (root / rel).is_file()
                             and not any((root / Path(*parts[:i])).is_symlink()
                                         for i in range(1, len(parts) + 1))
                             and 1 <= trace.tb_lineno <= 10000000):
-                        receipt["source_file"] = rel
-                        receipt["source_line"] = trace.tb_lineno
+                        # Separate the test assertion callsite from the deepest
+                        # repository frame where a failure was raised.
+                        prefix = "source" if rel.startswith("tests/") else "origin"
+                        receipt[prefix + "_file"] = rel
+                        receipt[prefix + "_line"] = trace.tb_lineno
                 except (OSError, ValueError, RuntimeError):
                     pass
             trace = trace.tb_next
