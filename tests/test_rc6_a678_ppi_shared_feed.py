@@ -792,7 +792,10 @@ class PPISharedFeedTests(unittest.TestCase):
                                         received_monotonic_ns=10)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "ppi-market.sock"
-            server = ReadOnlyUnixFeedServer(bus, socket_path=path)
+            # The test process acts as supervisor and scanner. The live
+            # socket still verifies its PID through SO_PEERCRED.
+            pid = os.getpid()
+            server = ReadOnlyUnixFeedServer(bus, socket_path=path, supervisor_pid=pid)
             self.assertFalse(path.exists())  # no auto-start
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             try:
@@ -809,10 +812,24 @@ class PPISharedFeedTests(unittest.TestCase):
                         client.connect(str(path))
                         client.sendall((json.dumps(payload) + "\n").encode())
                         return json.loads(client.makefile("rb").readline())
-                result = request({"op": "pull", "consumer": "watch", "after_sequence": 0})
+                birth_tick = server.process_starttime(pid)
+                self.assertIsNotNone(birth_tick)
+                registration = request({
+                    "op": "register_client", "consumer": "scanner",
+                    "client_pid": pid, "client_starttime": birth_tick,
+                })
+                self.assertEqual(registration["state"], "REGISTERED")
+                unregistered = request({"op": "pull", "consumer": "watch", "after_sequence": 0})
+                self.assertEqual(unregistered, {
+                    "state": "PPI_GATEWAY_UNREGISTERED_CLIENT",
+                    "provider_calls_by_rpc": 0,
+                })
+                result = request({"op": "pull", "consumer": "scanner", "after_sequence": 0})
                 self.assertEqual(result["state"], "OK")
                 self.assertEqual(len(result["events"]), 1)
                 denied = request({"op": "place_order", "consumer": "watch"})
+                self.assertEqual(denied["state"], "DENIED_READ_ONLY")
+                denied = request({"op": "place_order", "consumer": "scanner"})
                 self.assertEqual(denied["state"], "DENIED_READ_ONLY")
                 self.assertEqual(bus.stats()["provider_calls_by_bus"], 0)
             finally:
