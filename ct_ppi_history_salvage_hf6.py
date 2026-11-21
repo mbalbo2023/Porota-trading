@@ -141,7 +141,8 @@ def _validate_payload(payload, *, symbol, instrument_type, market, currency,
         try:
             candidate = _v2_candles(symbol=symbol, instrument_type=instrument_type,
                 market=market, currency=currency, settlement=settlement,
-                rows=checked.valid_rows, observed_at=attempted_iso)[0].normalized()
+                rows=checked.valid_rows, observed_at=attempted_iso,
+                provider_contract_id=contract_id)[0].normalized()
             candidate.validate()
             if row.get('currency') and cash_currency(row['currency']) != currency:
                 raise ValueError('HISTORY_CURRENCY_CONFLICT')
