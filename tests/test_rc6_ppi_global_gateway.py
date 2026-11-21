@@ -58,8 +58,8 @@ def test_catalog_authority_requires_exact_literal_ppi_primary_five_key(tmp_path)
         load_primary_ppi_catalog_snapshot(store.path)
 
 
-def _seed_query_only(store, *, currency="ARS", primary=True):
-    key = ("GGAL", "ACCIONES", "BYMA", currency, "INMEDIATA")
+def _seed_query_only(store, *, ticker="GGAL", currency="ARS", primary=True):
+    key = (ticker, "ACCIONES", "BYMA", currency, "INMEDIATA")
     with store.connect() as connection:
         connection.execute(
             "INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -115,3 +115,41 @@ def test_gateway_query_rejects_three_key_collisions_and_nonprimary(tmp_path):
     with raises(ValueError, match="PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED"):
         load_primary_ppi_catalog_snapshot(
             other.path, include_diagnostic_candidates=True)
+
+
+def test_one_unrepresentable_key_does_not_block_gateway_construction(tmp_path, monkeypatch):
+    from bv_paper_runtime import _make_ppi_gateway_owner
+
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    usable_key = _seed_query_only(store)
+    _seed_query_only(store, ticker="BAD TICKER")
+
+    def unexpected_provider_audit(*args):
+        raise AssertionError("constructing the gateway must not touch provider transport")
+
+    monkeypatch.setattr(store, "audit_http", unexpected_provider_audit)
+    owner = _make_ppi_gateway_owner(store)
+    assert owner.status()["state"] == "NOT_OPEN"
+    rows, query_keys, _, attested = load_primary_ppi_catalog_snapshot(
+        store.path, include_diagnostic_candidates=True)
+    assert [row["ticker"] for row in rows] == [usable_key[0]]
+    assert query_keys == [usable_key]
+    assert attested == []
+    with store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM http_audit").fetchone()[0] == 0
+        assert connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_an_unrepresentable_competing_alias_remains_a_collision(tmp_path):
+    from pytest import raises
+
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    _seed_query_only(store)
+    _seed_query_only(store, currency="USD BAD LABEL")
+    with raises(ValueError, match="PPI_PRIMARY_CATALOG_EMPTY_OR_UNVERIFIED"):
+        load_primary_ppi_catalog_snapshot(
+            store.path, include_diagnostic_candidates=True)

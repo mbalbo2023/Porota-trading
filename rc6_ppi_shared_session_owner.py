@@ -29,6 +29,8 @@ from typing import Any, Callable
 from rc6_ppi_shared_feed import (
     NATIVE_ACQUIRE_SCHEMA,
     _canonical_bytes,
+    _five,
+    CatalogIdentityError,
     PPIReadOnlyNativeReceiptStore,
     PPISharedMarketFeed,
     ReadOnlyUnixFeedServer,
@@ -91,6 +93,13 @@ def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates
                 if include_diagnostic_candidates:
                     request_aliases.setdefault(
                         (key[0], key[1], key[4]), set()).add(key)
+                # Match the existing feed and wire contract before constructing
+                # the single owner. Keep rejected rows in the alias census so
+                # a collision cannot become a superficially unique request.
+                try:
+                    _five(key)
+                except CatalogIdentityError:
+                    continue
                 record = {"ticker": row[0], "instrument_type": row[1],
                           "market": row[2], "currency": row[3],
                           "settlement": row[4], "settlement_source": row[5],
