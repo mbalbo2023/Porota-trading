@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -24,13 +24,15 @@ import urllib.request
 SCHEMA = "rc6.observer-online-custody-once.v1"
 ROOT = Path("/opt/porota-trading/data")
 OBSERVER = ROOT / "paper_v17/observer_v17.db"
+HISTORY = ROOT / "market_history.db"
+DATABASES = {"OBSERVER": OBSERVER, "HISTORY": HISTORY}
 MARKER = ROOT / "deploy/CURRENT_STATE_V2.json"
 # A UID1000-private host path OUTSIDE both Docker role bind mount allowlists.
 # Source SQLite/WAL/SHM are opened AS UID1000, never as privileged root.
 CUSTODY = Path("/home/porotaadmin/.local/share/rc6-observer-custody")
-EXPECTED_SOURCE_SHA = "b3cbe57a5b4b82016a65a0e253b251abbb84a04c"
-EXPECTED_TREE_SHA = "7370fea6c9c6daa802fcdd8ce6fc20c5cf8e31b0"
-EXPECTED_IMAGE_ID = "sha256:62c649ac94c586f488c516f53a030b75529edd7529425254ff33b2a70bc4008d"
+EXPECTED_SOURCE_SHA = "615ed9056e672074a4ea01ddc7ff800409a2f9ca"
+EXPECTED_TREE_SHA = "54618bc017cfea0167c3e94e7a460631ad4543b5"
+EXPECTED_IMAGE_ID = "sha256:384282ef540e0e7133f5d0449f02a2953306a318a4f673e7817ed06fb0bddd4b"
 MAX_DB_BYTES = 5 * 1024**3
 MAX_WAL_BYTES = 512 * 1024**2
 MIN_RESERVE_BYTES = 2 * 1024**3
@@ -504,7 +506,8 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
                 or daemon.get("CgroupDriver") != "systemd"
                 or daemon.get("DockerRootDir") != str(
                     operator_home / ".local/share/porota-rc6/docker"))
-            or db_path != data_root / "paper_v17/observer_v17.db"):
+            or db_path not in (data_root / "paper_v17/observer_v17.db",
+                               data_root / "market_history.db")):
         raise Hold(fail)
     for role in ("observer", "dashboard"):
         item = containers.get(role)
@@ -553,6 +556,10 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
                     "EXECUTION_MODE": "SIMULATION",
                     "REAL_ORDER_CAPABILITY": "BLOCKED"}
         if any(env.get(key) != value for key, value in required.items()):
+            raise Hold(fail)
+        if (db_path == data_root / "market_history.db"
+                and env.get("HIST_DB_PATH", "/app/data/market_history.db")
+                != "/app/data/market_history.db"):
             raise Hold(fail)
         mounts = item.get("Mounts")
         if not isinstance(mounts, list) or any(not isinstance(m, dict) for m in mounts):
@@ -611,9 +618,10 @@ def _sha256(path: Path) -> str:
     return sha.hexdigest()
 
 
-def _verify_restore(path: Path, deadline: float) -> None:
+def _verify_restore(path: Path, deadline: float, *, database_role="OBSERVER") -> None:
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1",
                                  uri=True, timeout=1)) as restored:
+        restored.execute("PRAGMA trusted_schema=OFF")
         restored.set_progress_handler(lambda: int(time.monotonic() > deadline), 5000)
         try:
             value = restored.execute("PRAGMA quick_check").fetchone()
@@ -621,7 +629,15 @@ def _verify_restore(path: Path, deadline: float) -> None:
             raise Hold("PRIVATE_RESTORE_QUICK_CHECK_FAILED") from exc
         if not value or value[0] != "ok":
             raise Hold("PRIVATE_RESTORE_QUICK_CHECK_FAILED")
-        _live_paper_zero(restored)
+        if database_role == "OBSERVER":
+            _live_paper_zero(restored)
+        else:
+            restored.execute("PRAGMA query_only=ON")
+            tables = {row[0] for row in restored.execute(
+                "SELECT name FROM sqlite_schema WHERE type='table' AND name IN "
+                "('history_versions_v2','history_canonical_v2','market_historical_ohlcv')")}
+            if tables != {"history_versions_v2", "history_canonical_v2", "market_historical_ohlcv"}:
+                raise Hold("PRIVATE_HISTORY_RESTORE_SCHEMA_UNVERIFIED")
 
 
 def source_metadata(db_path: Path) -> dict:
@@ -656,7 +672,8 @@ def source_continuity(before: dict, after: dict) -> str:
 
 
 def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
-                      custody_root: Path = CUSTODY, *, run_id: str) -> dict:
+                      custody_root: Path = CUSTODY, *, run_id: str,
+                      paper_db_path: Path | None = None) -> dict:
     """Explicit writer mode: one private online backup + separate restore check.
 
     Never copy the base file or WAL bytewise. The SQLite backup API merges
@@ -666,8 +683,11 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
     if not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id):
         raise Hold("CUSTODY_RUN_ID_INVALID")
     db_path, marker_path, custody_root = map(Path, (db_path, marker_path, custody_root))
-    if db_path == OBSERVER:
+    database_role = "HISTORY" if paper_db_path is not None else "OBSERVER"
+    if db_path in DATABASES.values():
         _operator_identity_guard()
+    if db_path == HISTORY and paper_db_path != OBSERVER:
+        raise Hold("PAPER_WITNESS_REQUIRED_FOR_HISTORY")
     before = host_preflight(db_path, marker_path, custody_root)
     runtime_binding = _rootless_runtime_binding(_release_marker(marker_path), db_path)
     source_before = source_metadata(db_path)
@@ -675,11 +695,15 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
     # A real WAL reader may briefly affect -shm locking; this path requires
     # the separately attested DEPLOY_OWNER and cannot be run by preflight.
     try:
-        with _anchored_source_sqlite(db_path) as source:
+        with ExitStack() as connections:
+            source = connections.enter_context(_anchored_source_sqlite(db_path))
+            paper = (source if paper_db_path is None else
+                     connections.enter_context(_anchored_source_sqlite(paper_db_path)))
             source.execute("PRAGMA busy_timeout=200")
-            _live_paper_zero(source)
-            exit_quiescence = _exit_quiescence(source)
-            final_name, partial_name = "observer_" + run_id, ".partial_" + run_id
+            source.execute("PRAGMA query_only=ON")
+            _live_paper_zero(paper)
+            exit_quiescence = _exit_quiescence(paper)
+            final_name, partial_name = database_role.lower() + "_" + run_id, ".partial_" + run_id
             final = custody_root / final_name
             partial = custody_root / partial_name
             if final.exists() or final.is_symlink() or partial.exists() or partial.is_symlink():
@@ -706,8 +730,8 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     os.chmod("snapshot.sqlite", 0o600, dir_fd=part_fd,
                              follow_symlinks=False)
                     _fsync_private_file(part_fd, "snapshot.sqlite")
-                    _live_paper_zero(source)
-                    if _exit_quiescence(source) != exit_quiescence:
+                    _live_paper_zero(paper)
+                    if _exit_quiescence(paper) != exit_quiescence:
                         raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
                     if (_rootless_runtime_binding(_release_marker(marker_path), db_path)
                             != runtime_binding):
@@ -726,7 +750,7 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     restore_digest = _sha256(restored)
                     if snapshot_digest != restore_digest:
                         raise Hold("PRIVATE_RESTORE_DIGEST_MISMATCH")
-                    _verify_restore(restored, deadline)
+                    _verify_restore(restored, deadline, database_role=database_role)
                     if time.monotonic() > deadline:
                         raise Hold("CUSTODY_BACKUP_TIMEOUT")
                     continuity = source_continuity(source_before, source_metadata(db_path))
@@ -751,6 +775,8 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                                "host_mutations": 1,
                                "ppi_requests": 0, "real_orders_sent_by_action": 0,
                                "ppi_watch_touched": False}
+                    if database_role == "HISTORY":
+                        receipt["database_role"] = database_role
                     manifest_fd = os.open("manifest.json", os.O_WRONLY | os.O_CREAT |
                                           os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                                           0o600, dir_fd=part_fd)
@@ -772,9 +798,9 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
 
 
 def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
-                     expected_run_id: str | None = None) -> dict:
+                     expected_run_id: str | None = None, database_role="OBSERVER") -> dict:
     """Runner-side allowlist; refuses unexpected content, never echoes raw text."""
-    if mode not in {"PREFLIGHT_ONLY", "CUSTODY_ONCE"}:
+    if mode not in {"PREFLIGHT_ONLY", "CUSTODY_ONCE"} or database_role not in DATABASES:
         raise Hold("MODE_UNSUPPORTED")
     fallback = {"schema": SCHEMA, "state": "NO_VERIFICADO_HOST_COMMAND"
                 if remote_rc else "NO_VERIFICADO_RECEIPT_UNSAFE",
@@ -796,6 +822,10 @@ def sanitize_receipt(mode: str, raw: dict, *, remote_rc: int,
                "generated_at_utc", "host_mutations", "source_identity_continuity",
                "runtime_db_binding", "exit_quiescence"}
     allowed = shared | (preflight if mode == "PREFLIGHT_ONLY" else custody)
+    if database_role == "HISTORY":
+        allowed.add("database_role")
+        if raw.get("database_role") != database_role:
+            return fallback
     if set(raw) != allowed or raw.get("ppi_requests") != 0 or raw.get("ppi_watch_touched") is not False:
         return fallback
     if type(raw.get("real_orders_sent_by_action")) is not int or raw["real_orders_sent_by_action"] != 0:
@@ -856,7 +886,7 @@ def _field(body: str, key: str) -> str:
     return hits[0].strip()
 
 
-def validate_deploy_owner(receipt: dict, comments: list[dict]) -> str:
+def validate_deploy_owner(receipt: dict, comments: list[dict], *, database_role="OBSERVER") -> str:
     """Separate current global DEPLOY_OWNER lease, independent of WRITE_OWNER."""
     if (not isinstance(receipt, dict) or type(receipt.get("id")) is not int
             or receipt.get("issue_url") != OWNER_ISSUE
@@ -867,7 +897,8 @@ def validate_deploy_owner(receipt: dict, comments: list[dict]) -> str:
     if ("DEPLOY_OWNER" not in body
             or _field(body, "Ownership role") != "DEPLOY_OWNER"
             or _field(body, "Ownership status") != "ACTIVE"
-            or _field(body, "Host scope") != "RC6_OBSERVER_ONLINE_CUSTODY_ONCE"):
+            or database_role not in DATABASES
+            or _field(body, "Host scope") != f"RC6_{database_role}_ONLINE_CUSTODY_ONCE"):
         raise Hold("DEPLOY_OWNER_RECEIPT_INVALID")
     workstream = _field(body, "Workstream ID")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{1,79}", workstream):
@@ -906,7 +937,7 @@ def validate_deploy_owner(receipt: dict, comments: list[dict]) -> str:
     return workstream
 
 
-def verify_owner_from_github(receipt_id: str) -> str:
+def verify_owner_from_github(receipt_id: str, *, database_role="OBSERVER") -> str:
     """Runner-only GitHub lease validation, never executed on the droplet."""
     if not re.fullmatch(r"[1-9][0-9]{5,15}", receipt_id):
         raise Hold("DEPLOY_OWNER_ID_INVALID")
@@ -941,22 +972,34 @@ def verify_owner_from_github(receipt_id: str) -> str:
             raise Hold("DEPLOY_OWNER_LEDGER_UNAVAILABLE")
     except (OSError, ValueError, TypeError) as exc:
         raise Hold("DEPLOY_OWNER_API_UNAVAILABLE") from exc
-    return validate_deploy_owner(receipt, comments)
+    return validate_deploy_owner(receipt, comments, database_role=database_role)
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     try:
-        if arguments == ["host-preflight"]:
+        if arguments[:1] == ["host-preflight"] and len(arguments) in (1, 2):
             _operator_identity_guard()
-            print(json.dumps(host_preflight(), sort_keys=True))
+            role = arguments[1] if len(arguments) == 2 else "OBSERVER"
+            if role not in DATABASES:
+                raise Hold("MODE_UNSUPPORTED")
+            receipt = host_preflight(DATABASES[role])
+            if role == "HISTORY":
+                receipt["database_role"] = role
+            print(json.dumps(receipt, sort_keys=True))
             return 0
-        if len(arguments) == 2 and arguments[0] == "host-custody":
+        if arguments[:1] == ["host-custody"] and len(arguments) in (2, 3):
             _operator_identity_guard()
-            print(json.dumps(host_custody_once(run_id=arguments[1]), sort_keys=True))
+            role = arguments[2] if len(arguments) == 3 else "OBSERVER"
+            if role not in DATABASES:
+                raise Hold("MODE_UNSUPPORTED")
+            paper_db = OBSERVER if role == "HISTORY" else None
+            print(json.dumps(host_custody_once(DATABASES[role], run_id=arguments[1],
+                                               paper_db_path=paper_db), sort_keys=True))
             return 0
         if len(arguments) == 2 and arguments[0] == "verify-owner":
-            workstream = verify_owner_from_github(arguments[1])
+            workstream = verify_owner_from_github(arguments[1],
+                database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
             print("DEPLOY_OWNER_VERIFIED=" + workstream)
             return 0
         if len(arguments) == 5 and arguments[0] == "sanitize":
@@ -972,7 +1015,8 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 raw = {}
             public = sanitize_receipt(mode, raw, remote_rc=int(rc_text),
-                                      expected_run_id=os.environ.get("GITHUB_RUN_ID"))
+                                      expected_run_id=os.environ.get("GITHUB_RUN_ID"),
+                                      database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
             with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
                 json.dump(public, target, sort_keys=True)
             print("RC6_CUSTODY_SANITIZED=" + public["state"])

@@ -21,6 +21,12 @@ on:
         description: 'Current ACTIVE global DEPLOY_OWNER issue #980 comment ID; required only for CUSTODY_ONCE'
         required: false
         type: string
+      database_role:
+        description: 'Fixed RC6 database to verify and restore privately'
+        type: choice
+        options: [OBSERVER, HISTORY]
+        default: OBSERVER
+        required: true
 
 permissions:
   contents: read
@@ -63,6 +69,7 @@ jobs:
       DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
       DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
       REQUEST_MODE: ${{ inputs.mode }}
+      REQUEST_DATABASE_ROLE: ${{ inputs.database_role }}
       DEPLOY_OWNER_RECEIPT_ID: ${{ inputs.deploy_owner_receipt_id }}
     steps:
       - uses: actions/checkout@v4
@@ -98,11 +105,12 @@ jobs:
               echo '::error::CUSTODY_HOST_ACCESS_UNAVAILABLE'
               exit 2
             }
+          case "$REQUEST_DATABASE_ROLE" in OBSERVER|HISTORY) ;; *) exit 2 ;; esac
           case "$REQUEST_MODE" in
-            PREFLIGHT_ONLY) remote_command='timeout 790 python3 -B - host-preflight' ;;
+            PREFLIGHT_ONLY) remote_command="timeout 790 python3 -B - host-preflight $REQUEST_DATABASE_ROLE" ;;
             CUSTODY_ONCE)
               case "$GITHUB_RUN_ID" in ''|*[!0-9]*) exit 2 ;; esac
-              remote_command="timeout 790 python3 -B - host-custody $GITHUB_RUN_ID" ;;
+              remote_command="timeout 790 python3 -B - host-custody $GITHUB_RUN_ID $REQUEST_DATABASE_ROLE" ;;
             *) exit 2 ;;
           esac
           printf '%s\n' "$DO_SSH_KEY" > "$private/id_key"
@@ -139,6 +147,7 @@ jobs:
           test "${RC6_CUSTODY_REMOTE_RC:-255}" -eq 0
           python3 - "$RC6_CUSTODY_PRIVATE/a-custody-public.json" "$REQUEST_MODE" <<'PY'
           import json
+          import os
           import sys
           expected = {'PREFLIGHT_ONLY': 'PREFLIGHT_METADATA_PASS',
                       'CUSTODY_ONCE': 'PRIVATE_SNAPSHOT_RESTORE_OK'}
@@ -148,6 +157,8 @@ jobs:
               receipt = json.loads(raw)
               verified = (len(raw) <= 8192 and
                           receipt.get('state') == expected.get(sys.argv[2]) and
+                          receipt.get('database_role', 'OBSERVER') ==
+                          os.environ.get('REQUEST_DATABASE_ROLE', 'OBSERVER') and
                           receipt.get('schema') == 'rc6.observer-online-custody-once.v1')
           except (OSError, ValueError, TypeError, AttributeError):
               verified = False
