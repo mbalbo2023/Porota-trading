@@ -33,11 +33,12 @@ _HISTORY_TRADING_WITHOUT_SETTLEMENT = frozenset({
     date(2025, 11, 6), date(2025, 11, 21), date(2025, 12, 24),
     date(2026, 3, 23), date(2026, 7, 10),
 })
-# BYMA published T+1 trades of Nov 21 settling on Nov 25, and communiqué
-# 18897 documents Contado 24 h on Dec 24. The exchange calendar and July 10
-# market records confirm the holiday session traded on the T+1 book only.
+# BYMA notice 18859 and Nov 6 market reporting establish both November T+1
+# sessions. Notice 18897 documents Contado 24 h on Dec 24. The 2026 BYMA
+# calendar and dated 24 h trades corroborate March 23 and July 10.
 _HISTORY_ATTESTED_T1_WITHOUT_SAME_DAY_SETTLEMENT = frozenset({
-    date(2025, 11, 21), date(2025, 12, 24), date(2026, 7, 10),
+    date(2025, 11, 6), date(2025, 11, 21), date(2025, 12, 24),
+    date(2026, 3, 23), date(2026, 7, 10),
 })
 
 

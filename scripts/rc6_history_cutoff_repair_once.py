@@ -159,6 +159,12 @@ def _canonical_issue(row, provider_contracts) -> str | None:
     return None
 
 
+def _canonical_schema_verified(connection) -> bool:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(history_canonical_v2)")}
+    return {"symbol", "instrument_type", "market", "settlement", "currency", "price_basis",
+            "adjustment_basis", "date", "source", "metadata_json", "adjusted"} <= columns
+
+
 def _coverage(db, identity) -> dict[str, Any]:
     """Fail closed unless a full, attested baseline through cutoff is proven.
 
@@ -178,9 +184,7 @@ def _coverage(db, identity) -> dict[str, Any]:
 
     with db.connect() as c:
         try:
-            columns = {str(row[1]) for row in
-                       c.execute("PRAGMA table_info(history_canonical_v2)")}
-            if not {"date", "source", "metadata_json", "adjusted"}.issubset(columns):
+            if not _canonical_schema_verified(c):
                 return blocked("CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED")
             # Bound SQL work as well as rows and Python heap. Never sort all
             # historical years just to check the 365-day cutoff.
@@ -691,6 +695,17 @@ def main(*, shared_reader=None, reserve_history_get=None) -> int:
     import bf_production_paper_observer as observer
 
     history_store = _history_store()
+    # The one-shot writer requires the exact financial identity columns. The
+    # physically restored legacy store lacks them and belongs to copy migration.
+    try:
+        with history_store.connect() as connection:
+            schema_verified = _canonical_schema_verified(connection)
+    except (sqlite3.Error, OSError, ValueError):
+        print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_CANONICAL_SQL_READ_UNVERIFIED")
+        return 2
+    if not schema_verified:
+        print("RC6_HISTORY_CUTOFF_REPAIR=BLOCKED_CANONICAL_PROVENANCE_SCHEMA_UNVERIFIED")
+        return 2
     observer_store = runtime_store()
     targets_list = _targets(observer_store)
     if not targets_list:
