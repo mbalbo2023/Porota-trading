@@ -47,7 +47,8 @@ BACKUP_TIMEOUT_SECONDS = 600
 PUBLIC_HOLD_REASONS = frozenset({
     "CUSTODY_BACKUP_TIMEOUT", "CUSTODY_DIRECTORY_UNSAFE", "CUSTODY_DISK_RESERVE_BLOCKED",
     "CUSTODY_DURABILITY_UNVERIFIED", "CUSTODY_LOCK_UNSAFE", "CUSTODY_OWNER_BUSY",
-    "CUSTODY_RUN_ALREADY_EXISTS", "CUSTODY_SQLITE_UNAVAILABLE", "CUSTODY_UNCLASSIFIED",
+    "CUSTODY_RUN_ALREADY_EXISTS", "CUSTODY_SQLITE_BACKUP_TIMEOUT",
+    "CUSTODY_SQLITE_UNAVAILABLE", "CUSTODY_UNCLASSIFIED",
     "EXIT_QUIESCENCE_UNVERIFIED", "PAPER_ORDERS_UNVERIFIED",
     "PARENT_PATH_UNAVAILABLE", "PARENT_PATH_UNSAFE", "PRIVILEGED_PATH_BINDING_UNVERIFIED",
     "PRIVATE_HISTORY_RESTORE_SCHEMA_UNVERIFIED", "PRIVATE_RESTORE_DIGEST_MISMATCH",
@@ -770,11 +771,25 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     # /app/data bind. No DB base-file/WAL byte copying.
                     snapshot = Path(f"/proc/self/fd/{part_fd}/snapshot.sqlite")
                     restored = Path(f"/proc/self/fd/{part_fd}/restore-check.sqlite")
-                    with closing(sqlite3.connect(snapshot, timeout=1)) as target:
+                    with source, closing(sqlite3.connect(snapshot, timeout=1)) as target:
+                        wal_mode = source.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+                        if wal_mode:
+                            # Pin one read view as in A729. Without it, each
+                            # concurrent WAL commit can restart a paged backup.
+                            source.execute("BEGIN")
+                            source.execute("SELECT name FROM sqlite_schema LIMIT 1").fetchone()
+
                         def progress(status, remaining, total):
                             if time.monotonic() > deadline:
-                                raise Hold("CUSTODY_BACKUP_TIMEOUT")
+                                raise Hold("CUSTODY_SQLITE_BACKUP_TIMEOUT")
+                            if wal_mode:
+                                wal = source_metadata(db_path)["wal"]
+                                if wal is not None and wal[2] > MAX_WAL_BYTES:
+                                    raise Hold("SQLITE_SIDECAR_UNSAFE")
+
                         source.backup(target, pages=256, sleep=0.1, progress=progress)
+                    # Release the read view before fsync, restore checks or
+                    # refreshing the live PAPER and exit witnesses.
                     os.chmod("snapshot.sqlite", 0o600, dir_fd=part_fd,
                              follow_symlinks=False)
                     _fsync_private_file(part_fd, "snapshot.sqlite")

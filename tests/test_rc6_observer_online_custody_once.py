@@ -253,6 +253,46 @@ class OneShotCustodyContracts(LiveWalFixture):
                          [(p.stat().st_size, p.stat().st_mtime_ns, p.read_bytes())
                           for p in (self.db, Path(str(self.db) + "-wal"))])
 
+    def test_online_backup_pins_one_wal_snapshot_while_writer_advances(self):
+        self.writer.execute("CREATE TABLE backup_pages (body BLOB)")
+        self.writer.execute("INSERT INTO backup_pages VALUES (zeroblob(2097152))")
+        self.writer.commit()
+        writer = self.writer
+        remaining_pages = []
+        connect = sqlite3.connect
+
+        class ActiveWalSource(sqlite3.Connection):
+            def backup(self, target, *, pages, sleep, progress):
+                def write_between_chunks(status, remaining, total):
+                    remaining_pages.append(remaining)
+                    if status == sqlite3.SQLITE_OK and len(remaining_pages) <= 3:
+                        writer.execute("UPDATE historical_rows SET price=price+1 WHERE id=2")
+                        writer.commit()
+                    progress(status, remaining, total)
+
+                super().backup(target, pages=pages, sleep=sleep, progress=write_between_chunks)
+
+        def connect_with_active_writer(database, *args, **kwargs):
+            if kwargs.get("uri") and str(database).endswith(f"/{self.db.name}?mode=ro"):
+                kwargs["factory"] = ActiveWalSource
+            return connect(database, *args, **kwargs)
+
+        with patch.object(custody.sqlite3, "connect", side_effect=connect_with_active_writer):
+            receipt = self._custody()
+        self.assertTrue(all(before > after for before, after in
+                            zip(remaining_pages, remaining_pages[1:])), remaining_pages)
+        self.assertGreater(len(remaining_pages), 2)
+        self.assertEqual(receipt["state"], "PRIVATE_SNAPSHOT_RESTORE_OK")
+        self.assertEqual(receipt["paper_zero"], "OBSERVED")
+        self.assertTrue(receipt["source_identity_continuity"].startswith(
+            "DB_IDENTITY_STABLE_WAL_CHANGED_SHM_"))
+        restored = self.custody_root / ("observer_" + self.RUN_ID) / "restore-check.sqlite"
+        with sqlite3.connect(restored.as_uri() + "?mode=ro", uri=True) as restored_db:
+            self.assertEqual(restored_db.execute(
+                "SELECT price FROM historical_rows WHERE id=2").fetchone(), (22,))
+        self.assertGreater(writer.execute(
+            "SELECT price FROM historical_rows WHERE id=2").fetchone()[0], 22)
+
     def test_history_uses_same_wal_restore_and_independent_paper_witness(self):
         path = self.db.parent.parent / "market_history.db"
         with sqlite3.connect(path) as writer:
