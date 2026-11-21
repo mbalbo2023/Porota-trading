@@ -330,6 +330,14 @@ def _governed_serial_shard_tests(root, output, identity, retirement):
                         receipt["failed_test_module"] = failure.failure_module
                     if failure.failed_test_base is not None:
                         receipt["failed_test_base"] = failure.failed_test_base
+                    if failure.test_failure is not None:
+                        detail = failure.test_failure
+                        receipt["pytest_failure_phase"] = detail["phase"]
+                        receipt["pytest_failure_exception_type"] = (
+                            detail["exception_type"])
+                        if "source_file" in detail:
+                            receipt["pytest_failure_source_file"] = detail["source_file"]
+                            receipt["pytest_failure_source_line"] = detail["source_line"]
                     if failure.last_active_module is not None:
                         receipt["last_active_test_module"] = failure.last_active_module
                     if failure.process_exit_code is not None:

@@ -727,10 +727,99 @@ class TestParallelProofRunner(unittest.TestCase):
                     "test_xunit2_exact_failure_name_without_params",
                     "test_nonzero_shard_propagates_only_sanitized_static_test_base",
                     "test_pytest_internalerror_quorum_reason_is_allowlisted",
-                    "test_internalerror_unknown_quorum_code_is_not_trusted")
+                    "test_internalerror_unknown_quorum_code_is_not_trusted",
+                    "test_pytest_failure_hook_records_phase_type_and_tracked_line_only",
+                    "test_failed_pytest_shard_retains_sanitized_first_exception",
+                    "test_failure_sidecar_rejects_forged_location_and_private_type")
         for name in required:
             self.assertTrue(callable(getattr(TestParallelProofRunner, name, None)),
                             name + "_NOT_COLLECTED")
+
+
+    def test_pytest_failure_hook_records_phase_type_and_tracked_line_only(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            target = Path(directory) / "first-failure.json"
+            with patch.dict(os.environ, {
+                    "RC6_CI_IDENTITY_PROOF": "1",
+                    "RC6_CI_FAILURE_PATH": str(target)}):
+                try:
+                    raise AssertionError("PRIVATE_TICKER_ACCOUNT_TOKEN")
+                except AssertionError as error:
+                    call = SimpleNamespace(
+                        excinfo=SimpleNamespace(type=type(error), value=error))
+                    identity.pytest_exception_interact(
+                        None, call, SimpleNamespace(failed=True, when="call"))
+                    # Second failure must not overwrite first evidence.
+                    identity.pytest_exception_interact(
+                        None, call, SimpleNamespace(failed=True, when="teardown"))
+            record = json.loads(target.read_text())
+            self.assertEqual(record["schema"], "rc6.pytest.failure.v1")
+            self.assertEqual(record["exception_type"], "AssertionError")
+            self.assertEqual(record["phase"], "call")
+            self.assertEqual(record["source_file"],
+                             "tests/test_rc6_ci_parallel_runner.py")
+            self.assertGreater(record["source_line"], 0)
+            self.assertEqual(target.stat().st_mode & 0o077, 0)
+            self.assertNotIn("PRIVATE_", target.read_text())
+            self.assertEqual(
+                runner._verified_test_failure_sidecar(target, REPO),
+                {"exception_type": "AssertionError", "phase": "call",
+                 "source_file": "tests/test_rc6_ci_parallel_runner.py",
+                 "source_line": record["source_line"]})
+
+    def test_failed_pytest_shard_retains_sanitized_first_exception(self):
+        fake = FakePytest(require_parallel=False)
+
+        def fail(argv, *, cwd, env, timeout=3600):
+            result = fake(argv, cwd=cwd, env=env, timeout=timeout)
+            if any(arg.startswith("--junitxml=") for arg in argv):
+                target = Path(env["RC6_CI_FAILURE_PATH"])
+                target.write_text(json.dumps({
+                    "schema": "rc6.pytest.failure.v1",
+                    "exception_type": "AssertionError",
+                    "phase": "call",
+                    "source_file": "tests/test_rc6_ci_parallel_runner.py",
+                    "source_line": 100}))
+                target.chmod(0o600)
+                return subprocess.CompletedProcess(
+                    argv, 1, "PRIVATE_PARAMETERS", "PRIVATE_EXCEPTIONS")
+            return result
+
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            with patch.object(runner, "_invoke", fail):
+                with self.assertRaises(runner.ParallelRunnerRed) as caught:
+                    runner.run(SHA, TREE, repo=REPO, shard_count=2,
+                               max_workers=1,
+                               output_junit=Path(directory) / "combined.xml")
+        self.assertEqual(caught.exception.reason, "SHARD_PYTEST_NONZERO")
+        self.assertEqual(caught.exception.test_failure, {
+            "exception_type": "AssertionError", "phase": "call",
+            "source_file": "tests/test_rc6_ci_parallel_runner.py",
+            "source_line": 100})
+        self.assertNotIn("PRIVATE", str(caught.exception))
+        self.assertEqual(len([
+            x for x in fake.calls
+            if any(a.startswith("--junitxml=") for a in x)]), 1)
+
+    def test_failure_sidecar_rejects_forged_location_and_private_type(self):
+        with tempfile.TemporaryDirectory(dir=self.temporary_root) as directory:
+            path = Path(directory) / "failure.json"
+            cases = (
+                {"schema": "rc6.pytest.failure.v1",
+                 "exception_type": "PRIVATE:TOKEN", "phase": "call"},
+                {"schema": "rc6.pytest.failure.v1",
+                 "exception_type": "AssertionError", "phase": "call",
+                 "source_file": "../PRIVATE.py", "source_line": 5},
+                {"schema": "rc6.pytest.failure.v1",
+                 "exception_type": "AssertionError", "phase": "outside"},
+            )
+            for record in cases:
+                path.write_text(json.dumps(record))
+                path.chmod(0o600)
+                parsed = runner._verified_test_failure_sidecar(path, REPO)
+                self.assertTrue(parsed is None or "source_file" not in parsed)
+                self.assertNotIn("PRIVATE", str(parsed))
 
 
 if __name__ == "__main__":

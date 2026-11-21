@@ -53,6 +53,71 @@ def pytest_runtest_logstart(nodeid, location):
 
 
 
+
+def pytest_exception_interact(node, call, report):
+    """Keep only first failed pytest phase, exception type, and safe coordinate.
+
+    This is source-only evidence, not an authority to skip any failing nodeid.
+    Neither traceback strings nor assertion values enter the sidecar.
+    """
+    target = os.environ.get("RC6_CI_FAILURE_PATH", "")
+    if not (_enabled() and target and getattr(report, "failed", False)):
+        return
+    staged = None
+    try:
+        failure = getattr(call, "excinfo", None)
+        if failure is None:
+            return
+        kind = getattr(getattr(failure, "type", None), "__name__", "")
+        phase = getattr(report, "when", "")
+        if (type(kind) is not str or
+                not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", kind) or
+                phase not in ("setup", "call", "teardown", "collect")):
+            return
+        receipt = {"schema": "rc6.pytest.failure.v1",
+                   "exception_type": kind, "phase": phase}
+        root = Path.cwd().resolve(strict=True)
+        trace = getattr(getattr(failure, "value", None), "__traceback__", None)
+        for _ in range(128):
+            if trace is None:
+                break
+            filename = Path(trace.tb_frame.f_code.co_filename)
+            if filename.is_absolute():
+                try:
+                    rel = filename.resolve(strict=True).relative_to(root).as_posix()
+                    parts = Path(rel).parts
+                    if (re.fullmatch(r"tests/[A-Za-z0-9_./-]{1,220}\.py", rel)
+                            and ".." not in parts and (root / rel).is_file()
+                            and not any((root / Path(*parts[:i])).is_symlink()
+                                        for i in range(1, len(parts) + 1))
+                            and 1 <= trace.tb_lineno <= 10000000):
+                        receipt["source_file"] = rel
+                        receipt["source_line"] = trace.tb_lineno
+                except (OSError, ValueError, RuntimeError):
+                    pass
+            trace = trace.tb_next
+        path = Path(target)
+        if path.is_symlink() or path.parent.is_symlink() or not path.parent.is_dir():
+            return
+        with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent,
+                prefix=".rc6-failure-", delete=False) as output:
+            staged = Path(output.name)
+            os.chmod(staged, 0o600)
+            json.dump(receipt, output, sort_keys=True, separators=(",", ":"))
+            output.write("\n")
+        # First failure wins; later failures cannot overwrite attribution.
+        os.link(staged, path)
+    except (FileExistsError, Exception):
+        # This hook cannot cause an additional CI failure or print private data.
+        pass
+    finally:
+        if staged is not None:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                pass
+
 def pytest_internalerror(excrepr, excinfo):
     """Persist a PRIVATE sanitized pytest INTERNAL_ERROR cause, fail-closed.
 
