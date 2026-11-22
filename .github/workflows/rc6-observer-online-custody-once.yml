@@ -16,7 +16,7 @@ on:
         description: 'Inspect, rehearse or apply HISTORY under custody'
         required: true
         type: choice
-        options: [PREFLIGHT_ONLY, CUSTODY_ONCE, RESTORED_HISTORY_READ_ONLY, RESTORED_HISTORY_MIGRATION_REHEARSAL, RESTORED_HISTORY_UPGRADE_REHEARSAL, HISTORY_REFERENCE_PREPARE, HISTORY_REFERENCE_APPLY]
+        options: [PREFLIGHT_ONLY, CUSTODY_ONCE, RESTORED_HISTORY_READ_ONLY, RESTORED_HISTORY_MIGRATION_REHEARSAL, RESTORED_HISTORY_UPGRADE_REHEARSAL, HISTORY_REFERENCE_PREPARE, HISTORY_REFERENCE_APPLY, HISTORY_REFERENCE_VERIFY]
       deploy_owner_receipt_id:
         description: 'Current ACTIVE global DEPLOY_OWNER issue #980 comment ID for host writes'
         required: false
@@ -223,6 +223,13 @@ jobs:
               remote_command="timeout 185 nice -n 19 ionice -c 3 python3 -B - host-restored-history-export $HISTORY_RESTORE_RUN $HISTORY_RESTORE_SHA256"
               response="$private/.restored-history.sqlite"
               max_blocks=2097152 ;;
+            HISTORY_REFERENCE_VERIFY)
+              [[ "$REQUEST_DATABASE_ROLE" == HISTORY ]]
+              [[ "$HISTORY_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+              [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{7,14}$ ]]
+              [[ "$HISTORY_PREPARE_RUN" =~ ^[1-9][0-9]{7,14}$ ]]
+              remote_command="timeout 355 python3 -B - host-history-verify $HISTORY_PREPARE_RUN $GITHUB_RUN_ID $HISTORY_UPGRADE_SHA $HISTORY_UPGRADE_TREE $HISTORY_IMAGE_ID"
+              ;;
             HISTORY_REFERENCE_PREPARE|HISTORY_REFERENCE_APPLY)
               [[ "$REQUEST_DATABASE_ROLE" == HISTORY ]]
               [[ "$HISTORY_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -304,12 +311,14 @@ jobs:
                       'RESTORED_HISTORY_MIGRATION_REHEARSAL': 'RESTORED_HISTORY_MIGRATION_REHEARSED',
                       'RESTORED_HISTORY_UPGRADE_REHEARSAL': 'RESTORED_HISTORY_UPGRADE_REHEARSED',
                       'HISTORY_REFERENCE_PREPARE': 'HISTORY_REFERENCE_READY',
-                      'HISTORY_REFERENCE_APPLY': 'HISTORY_REFERENCE_APPLIED'}
+                      'HISTORY_REFERENCE_APPLY': 'HISTORY_REFERENCE_APPLIED',
+                      'HISTORY_REFERENCE_VERIFY': 'HISTORY_REFERENCE_VERIFIED'}
           schemas = {'RESTORED_HISTORY_READ_ONLY': 'rc6.restored-history-inventory.v1',
                      'RESTORED_HISTORY_MIGRATION_REHEARSAL': 'RC6_OFFHOST_MIGRATION_REHEARSAL_V1',
                      'RESTORED_HISTORY_UPGRADE_REHEARSAL': 'rc6.restored-history-upgrade-rehearsal.v1',
                      'HISTORY_REFERENCE_PREPARE': 'rc6.history-reference-transfer.v1',
-                     'HISTORY_REFERENCE_APPLY': 'rc6.history-reference-transfer.v1'}
+                     'HISTORY_REFERENCE_APPLY': 'rc6.history-reference-transfer.v1',
+                     'HISTORY_REFERENCE_VERIFY': 'rc6.history-reference-transfer.v1'}
           mode = sys.argv[2]
           schema = schemas.get(mode, 'rc6.observer-online-custody-once.v1')
           try:
