@@ -1,4 +1,4 @@
-name: RC6 validation milestone dialog check
+name: RC6 validation candidate Playwright and host prerequisites
 
 on:
   push:
@@ -10,40 +10,101 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
+  browser:
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 6
     steps:
-      - name: Checkout the isolated diagnostic
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          path: diagnostic
           persist-credentials: false
-
-      - name: Install Playwright
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 9471840d3463026e62a55d3f44cea13eee705bad
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Review the exact candidate with two simulated PAPER sessions
+        working-directory: candidate
+        env:
+          POROTA_QA_SHA: 9471840d3463026e62a55d3f44cea13eee705bad
+          PYTHONDONTWRITEBYTECODE: '1'
+        shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --disable-pip-version-check 'playwright==1.55.0'
-          command -v google-chrome >/dev/null
+          test "$(git rev-parse HEAD)" = "$POROTA_QA_SHA"
+          rg '^(fastapi|uvicorn|python-multipart|python-dotenv|apscheduler|requests)==.*$' requirements.lock.txt > "$RUNNER_TEMP/browser-dependencies.txt"
+          python -m pip install -q -r "$RUNNER_TEMP/browser-dependencies.txt" 'playwright==1.55.0'
+          PYTHONPATH="$GITHUB_WORKSPACE/candidate" python -B "$GITHUB_WORKSPACE/diagnostic/scripts/dashboard_visual_audit/verify_candidate.py" "$RUNNER_TEMP"
+      - name: Preserve focused browser evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-candidate-playwright
+          path: ${{ runner.temp }}/playwright.json
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Review the installed read-only dashboard with Chromium
+  host_prerequisites:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 9471840d3463026e62a55d3f44cea13eee705bad
+          persist-credentials: false
+      - name: Read the deployed host scheduler and evidence directories
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
         run: |
           set -Eeuo pipefail
-          PYTHONPATH="$GITHUB_WORKSPACE" python3 -B scripts/dashboard_visual_audit/live_probe.py
-
-      - name: Upload filtered evidence
-        if: always()
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.porota_actions_host import connection, ssh_run
+          probe = r'''
+          from datetime import datetime, timezone
+          import json, os, pathlib, subprocess
+          root = pathlib.Path("/opt/porota-trading")
+          data = root / "data"
+          marker = json.loads((data / "deploy/CURRENT_STATE_V2.json").read_text())
+          assert marker.get("validation_status") == "VALIDATED_RUNTIME"
+          assert marker.get("real_order_capability") == "BLOCKED"
+          def writable(path):
+              if not path.is_dir():
+                  path = path.parent
+              return path.is_dir() and os.access(path, os.W_OK | os.X_OK)
+          def unit_property(unit, prop):
+              return subprocess.check_output(["systemctl", "show", "--value", "-p", prop, unit],
+                                             text=True, timeout=8).strip()
+          after_close = "porota-snapshot-postclose-rc6.service"
+          exporter = "porota-scheduler-export-rc6.service"
+          print(json.dumps({
+              "utc": datetime.now(timezone.utc).isoformat(),
+              "deployment_sha": marker.get("deployment_sha"),
+              "validation_dir_writable_by_rootless_uid": writable(data / "validation"),
+              "report_dir_writable_by_rootless_uid": writable(data / "paper_v17/artifacts/observer_v17.db/reports"),
+              "postclose_uses_rootless_dispatcher": "scheduler-dispatch.py" in unit_property(after_close, "ExecStart"),
+              "scheduler_exporter_uses_host_script": "/opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh" in unit_property(exporter, "ExecStart"),
+              "no_host_mutations": True
+          }))
+          '''
+          with connection(os.environ) as (ssh, _, _):
+              result = ssh_run(ssh, ["/usr/bin/python3", "-B", "-"], data=probe.encode(), timeout=35)
+          if result.returncode != 0:
+              raise SystemExit("READONLY_HOST_PREREQUISITES_UNVERIFIED")
+          facts = json.loads(result.stdout)
+          Path(os.environ["RUNNER_TEMP"], "host-prerequisites.json").write_text(json.dumps(facts, indent=2) + "\n")
+          PY
+      - name: Preserve host prerequisites
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-dashboard-visual-audit-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/porota-dashboard-audit/host-facts.json
-            ${{ runner.temp }}/porota-dashboard-audit/audit.json
-            ${{ runner.temp }}/porota-dashboard-audit/*.png
-          if-no-files-found: warn
-          retention-days: 7
+          name: validation-host-prerequisites
+          path: ${{ runner.temp }}/host-prerequisites.json
+          if-no-files-found: error
+          retention-days: 30
