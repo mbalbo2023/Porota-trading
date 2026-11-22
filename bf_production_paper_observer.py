@@ -692,7 +692,8 @@ def _download_catalog_generation(reader, store):
                     elif market_query not in configuration['markets']:
                         record['capability'] = 'MARKET_NOT_ENUMERATED'
                 key = tuple(record[k] for k in ("ticker", "instrument_type", "market", "currency", "settlement"))
-                found[key] = record
+                if not financial_catalog.retain_ppi_settlement_witness(found.get(key), record):
+                    found[key] = record
                 count += 1
             if count:
                 status, detail, available = "AVAILABLE", f"{count} coincidencia(s).", available + 1
@@ -739,18 +740,20 @@ def _download_catalog_generation(reader, store):
           WHERE julianday(last_checked_at) < julianday(?, '-14 days')""", (downloaded,))
         for record in found.values():
             discovery_source = str((record.get("raw") or {}).get("_discovery_source") or "PPI_PRIMARY")
-            existing = c.execute("""SELECT metadata_json,last_seen_at FROM financial_instrument_catalog
+            existing = c.execute("""SELECT * FROM financial_instrument_catalog
               WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",
               (record["ticker"],record["instrument_type"],record["market"],record["currency"],record["settlement"])).fetchone()
             if discovery_source != "PPI_PRIMARY" and existing:
                 try:
-                    prior_meta=json.loads(existing[0] or "{}")
+                    prior_meta=json.loads(existing["metadata_json"] or "{}")
                 except (TypeError,ValueError,json.JSONDecodeError):
                     prior_meta={}
                 if str(prior_meta.get("_discovery_source") or "").upper()=="PPI_PRIMARY":
                     # Complementary evidence may widen/fill elsewhere, but cannot
                     # replace a still-retained primary catalog identity.
                     continue
+            if existing and financial_catalog.retain_ppi_settlement_witness(dict(existing), record):
+                continue
             financial_catalog.persist(c, record)
             c.execute("INSERT OR REPLACE INTO instrument_catalog VALUES(?,?,?,?,?,?,?)",
                       (record["instrument_type"], record["ticker"], record["description"],
@@ -831,7 +834,7 @@ def _reconcile_complementary_catalog_generation(store):
         store.event("IOL_EVIDENCE_INGEST_UNAVAILABLE", type(exc).__name__)
     try:
         complementary = complementary_discovery(market_root)
-        from rc6_contract_bridge import complements_from_store
+        from rc6_contract_bridge import complements_from_store, is_static_caucion_policy
         complementary += complements_from_store(store)
     except Exception as exc:
         store.event("COMPLEMENTARY_RECONCILIATION_UNAVAILABLE", type(exc).__name__)
@@ -871,13 +874,17 @@ def _reconcile_complementary_catalog_generation(store):
             for raw in complementary[offset:offset + 32]:
                 negative_bridge = (raw.get("source") == "CONTRACT_EVIDENCE_V2"
                                    and (raw.get("contract_bridge") or {}).get("status") == "BLOCKED")
-                static_v2_contract = (
+                normalized_bridge = (
                     raw.get("source") == "CONTRACT_EVIDENCE_V2"
                     and (raw.get("contract_bridge") or {}).get("status") == "NORMALIZED"
-                    and raw.get("instrument_type") != "CAUCIONES"
-                    and (raw.get("financial_contract_v17")
-                         or raw.get("paper_family_contract_v1"))
                 )
+                if raw.get("instrument_type") == "CAUCIONES":
+                    static_caucion_policy = normalized_bridge and is_static_caucion_policy(raw)
+                    static_v2_contract = static_caucion_policy
+                else:
+                    static_caucion_policy = False
+                    static_v2_contract = normalized_bridge and (
+                        raw.get("financial_contract_v17") or raw.get("paper_family_contract_v1"))
                 if not negative_bridge and not static_v2_contract and not financial_catalog.complementary_is_fresh(
                         raw, max_age_seconds=COMPLEMENTARY_CONTRACT_TTL_SECONDS):
                     continue
@@ -925,6 +932,10 @@ def _reconcile_complementary_catalog_generation(store):
                     continue
 
                 if not matches:
+                    # A static PAPER policy can complete an existing PPI
+                    # identity only. The quote TTL remains in the sweep.
+                    if static_caucion_policy:
+                        continue
                     # A complement-only identity may enter only if that provider
                     # supplied a complete, internally consistent PAPER contract.
                     try:
@@ -952,6 +963,9 @@ def _reconcile_complementary_catalog_generation(store):
                 try:
                     primary["raw"] = json.loads(primary.pop("metadata_json"))
                 except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if static_caucion_policy and (primary.get("status") != "AVAILABLE"
+                                              or financial_catalog.ppi_full_key_evidence_reason(primary)):
                     continue
 
                 # A policy complement may satisfy a missing PAPER term, but it
@@ -1167,15 +1181,18 @@ def _eligible_scanner_identities(store):
         full_keys = c.execute("""SELECT 1 FROM sqlite_master
             WHERE type='table' AND name='candidate_identity_v2'""").fetchone()
         if full_keys:
-            # Count the whole alias before filtering by readiness. A held
-            # sibling still makes the three-field provider request ambiguous.
-            rows = c.execute(f"""SELECT ticker,instrument_type,market,currency,settlement
-              FROM candidate_identity_v2
-              WHERE UPPER(TRIM(instrument_type)) IN ({allowed_sql})
-              GROUP BY UPPER(TRIM(ticker)),UPPER(TRIM(instrument_type)),UPPER(TRIM(settlement))
-              HAVING COUNT(*)=1 AND MAX(can_simulate)=1 AND MAX(status)='AVAILABLE'
-              ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                       instrument_type,ticker,settlement""", family_order).fetchall()
+            # A held sibling with a real contract still makes the three-field
+            # request ambiguous. Retired diagnostic placeholders do not.
+            aliases = financial_catalog.scanner_diagnostic_aliases_sql(c)
+            rows = c.execute(f"""WITH diagnostic_aliases AS ({aliases})
+              SELECT p.ticker,p.instrument_type,p.market,p.currency,p.settlement
+              FROM candidate_identity_v2 p LEFT JOIN diagnostic_aliases h
+                USING(ticker,instrument_type,market,currency,settlement)
+              WHERE UPPER(TRIM(p.instrument_type)) IN ({allowed_sql}) AND h.ticker IS NULL
+              GROUP BY UPPER(TRIM(p.ticker)),UPPER(TRIM(p.instrument_type)),UPPER(TRIM(p.settlement))
+              HAVING COUNT(*)=1 AND MAX(p.can_simulate)=1 AND MAX(p.status)='AVAILABLE'
+              ORDER BY CASE WHEN p.ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                       p.instrument_type,p.ticker,p.settlement""", family_order).fetchall()
         else:
             rows = c.execute(f"""SELECT ticker,instrument_type,market,NULL,settlement
               FROM candidate_universe
@@ -1860,35 +1877,31 @@ def _exact_pit_ready_spot_requests(store):
     """
     try:
         with store.connect() as c:
-            rows = c.execute("""WITH
-                f_full AS (
-                  SELECT ticker,instrument_type,market,currency,settlement,
-                         COUNT(*) AS n
-                  FROM financial_instrument_catalog
-                  GROUP BY ticker,instrument_type,market,currency,settlement),
-                p_full AS (
-                  SELECT ticker,instrument_type,market,currency,settlement,
-                         COUNT(*) AS n
-                  FROM candidate_identity_v2
-                  GROUP BY ticker,instrument_type,market,currency,settlement),
+            aliases = financial_catalog.scanner_diagnostic_aliases_sql(c)
+            rows = c.execute(f"""WITH
+                diagnostic_aliases AS ({aliases}),
                 f_request AS (
-                  SELECT ticker,instrument_type,settlement,SUM(n) AS n
-                  FROM f_full GROUP BY ticker,instrument_type,settlement),
+                  SELECT f.ticker,f.instrument_type,f.settlement
+                  FROM financial_instrument_catalog f LEFT JOIN diagnostic_aliases h
+                    USING(ticker,instrument_type,market,currency,settlement)
+                  WHERE f.instrument_type IN ('ACCIONES','CEDEARS','ETFS') AND h.ticker IS NULL
+                  GROUP BY f.ticker,f.instrument_type,f.settlement
+                  HAVING COUNT(*)=1),
                 p_request AS (
-                  SELECT ticker,instrument_type,settlement,SUM(n) AS n
-                  FROM p_full GROUP BY ticker,instrument_type,settlement)
+                  SELECT p.ticker,p.instrument_type,p.settlement
+                  FROM candidate_identity_v2 p LEFT JOIN diagnostic_aliases h
+                    USING(ticker,instrument_type,market,currency,settlement)
+                  WHERE p.instrument_type IN ('ACCIONES','CEDEARS','ETFS') AND h.ticker IS NULL
+                  GROUP BY p.ticker,p.instrument_type,p.settlement
+                  HAVING COUNT(*)=1)
                 SELECT f.ticker,f.instrument_type,f.settlement
                 FROM financial_instrument_catalog f
                 JOIN candidate_identity_v2 p
                   USING(ticker,instrument_type,market,currency,settlement)
-                JOIN f_full fc USING(ticker,instrument_type,market,currency,settlement)
-                JOIN p_full pc USING(ticker,instrument_type,market,currency,settlement)
                 JOIN f_request fr USING(ticker,instrument_type,settlement)
                 JOIN p_request pr USING(ticker,instrument_type,settlement)
-                WHERE f.instrument_type IN ('ACCIONES','CEDEARS','ETFS')
-                  AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+                WHERE f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
                   AND p.status='AVAILABLE' AND p.can_simulate=1
-                  AND fc.n=1 AND pc.n=1 AND fr.n=1 AND pr.n=1
                 ORDER BY f.instrument_type,f.ticker,f.settlement""").fetchall()
     except sqlite3.Error:
         # A missing/incomplete PIT ledger never falls back to ticker-only GO.

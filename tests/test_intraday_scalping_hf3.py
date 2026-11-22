@@ -63,13 +63,17 @@ def test_volumen_se_confirma_solo_con_solapamiento_estable_y_minuto_nuevo(store)
         assert connection.execute("SELECT COUNT(*) FROM ppi_intraday_points").fetchone()[0] == 11
 
 
-def test_modificar_un_minuto_cerrado_frena_el_contrato(store):
+def test_revision_del_volumen_cerrado_preserva_la_confirmacion_del_precio(store):
     first = scalping.normalize_payload(payload(10),received_at="2026-09-01T10:40:00-03:00")
     scalping.persist_payload(store,record(),first,received_at="2026-09-01T10:40:00-03:00")
     changed = scalping.normalize_payload(payload(11,changed=0),received_at="2026-09-01T10:41:00-03:00")
     result = scalping.persist_payload(store,record(),changed,
                                       received_at="2026-09-01T10:41:00-03:00")
-    assert result["state"] == "REJECTED_MUTABLE_CLOSED_POINTS"
+    assert result["state"] == "CONFIRMED_PRICE_EVENTS"
+    assert result["changed"] == 0
+    with store.connect() as connection:
+        detail = json.loads(connection.execute("SELECT detail FROM ppi_intraday_contract_state").fetchone()[0])
+    assert detail["volume_contract_state"] == "PPI_CLOSED_VOLUME_REVISED"
 
 
 def test_rotacion_usa_solo_spot_ready_y_excluye_derivados(store):

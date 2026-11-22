@@ -228,9 +228,11 @@ class SharedPPIReaderAdapterTests(unittest.TestCase):
                 self.calls.append((consumer, method, args))
                 assert not (args["ticker"] == "CAUCION"
                             and args["instrument_type"] == "CAUCIONES")
-                return {"state": "OK", "result": [{"ticker": args["ticker"],
+                row = {"ticker": args["ticker"],
                     "type": "CAUCIONES", "market": "BYMA",
-                    "currency": "ARS" if args["ticker"].startswith("PESOS") else "USD"}]}
+                    "currency": "ARS" if args["ticker"].startswith("PESOS") else "USD"}
+                rows = [row, dict(row, settlement="INMEDIATA"), row] if args["ticker"] == "PESOS1" else [row]
+                return {"state": "OK", "result": rows}
 
         client = OneSearchPerPacketClient(bus())
         reader = SharedPPIReaderAdapter(
@@ -241,6 +243,7 @@ class SharedPPIReaderAdapterTests(unittest.TestCase):
                                                name="CAUCION", market="BYMA")
         assert {row["ticker"] for row in result} == {
             "PESOS1", "DOLAR1", "PESOS2", "DOLAR2"}
+        assert [row.get("settlement") for row in result if row["ticker"] == "PESOS1"] == [None, "INMEDIATA"]
         assert [(call[2]["ticker"], call[2]["name"]) for call in client.calls] == [
             ("PESOS1", "1"), ("DOLAR1", "1"),
             ("PESOS2", "2"), ("DOLAR2", "2")]

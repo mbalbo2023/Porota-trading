@@ -1,19 +1,32 @@
 
 import json
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
+from ppi_client.ppi import PPI
 
 import bf_production_paper_observer as observer
 import bu_instrument_catalog as catalog
 import cr_contract_evidence_v2_mass_hf6 as mass
 import dj_caucion_live_ppi_rc6 as live
 import rc6_contract_bridge as bridge
-from be_paper_engine import PaperStore
+import rc6_paper_admission_gate as admission
+from bd_ppi_readonly_guard import ProductionMarketReader
+from be_paper_engine import PaperBroker, PaperStore
 from bt_caucion_paper import automatic_liquidity_cap
-from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
+from cp_contract_evidence_v2_hf6 import record_snapshots
+from di_caucion_cash_sweep_runtime_hf6 import (
+    obligation_snapshot_from_ledger,
+    offers_from_store,
+    paper_schedule,
+    run_paper_sweep,
+)
 
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
 NOW=datetime(2026,10,2,16,59,57,tzinfo=TZ)
@@ -63,6 +76,193 @@ def test_mass_policy_marks_exact_ars_caucion_static_ready(tmp_path):
         primary=dict(row); primary["raw"]=json.loads(primary.pop("metadata_json"))
     completed=catalog.complete_with_complement(primary,claim)
     assert completed["capability"]=="READY_PAPER_CAUCION_PLACING"
+
+
+@pytest.mark.parametrize("returns_native_settlement", [False, True])
+def test_caucion_sdk_public_shape_cannot_substitute_request_for_native_settlement(
+        tmp_path, monkeypatch, returns_native_settlement):
+    # Public REST 1.0 response shapes with invented test values. Only the
+    # positive control adds a literal to SearchInstrument's documented shape.
+    at = datetime(2026, 11, 24, 16, 40, tzinfo=TZ)
+    stamp = "2026-11-24T19:39:59.875Z"
+    search_row = {"ticker": "PESOS1", "description": "1 DÍA", "currency": "Pesos",
+                  "type": "CAUCIONES", "market": "BYMA"}
+    current = {"date": stamp, "price": 18.9, "volume": 7_500_000,
+               "openingPrice": 18.7, "max": 19.25, "min": 18.5}
+    book = {"date": stamp, "bids": [{"position": 1, "price": 19.1, "quantity": 6_000_000}],
+            "offers": [{"position": 1, "price": 19.3, "quantity": 7_000_000}]}
+    calls = []
+
+    def send(_adapter, request, **_kwargs):
+        uri = urlsplit(request.url)
+        endpoint = uri.path.rsplit("/", 1)[-1]
+        query = parse_qs(uri.query)
+        calls.append((endpoint, query.get("ticker")))
+        assert request.method == "GET" and uri.path.startswith("/api/1.0/MarketData/")
+        assert query["type"] == ["CAUCIONES"]
+        if endpoint == "SearchInstrument":
+            assert query["market"] == ["BYMA"] and query["name"] == ["1"]
+            assert "settlement" not in query
+            payload = [search_row] if query["ticker"] == ["PESOS1"] else []
+            if payload and returns_native_settlement:
+                payload = [search_row, dict(search_row, settlement="INMEDIATA")]
+        else:
+            assert query["ticker"] == ["PESOS1"] and query["settlement"] == ["INMEDIATA"]
+            payload = {"Current": current, "Book": book}[endpoint]
+        response = requests.Response()
+        response.status_code = 200
+        response.url = request.url
+        response.headers["Content-Type"] = "application/json"
+        response._content = json.dumps(payload).encode()
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "1")
+    monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [
+        ("CAUCION", "CAUCIONES", "INMEDIATA", "BYMA", True, "CAUCIONES"),
+    ])
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _root: [])
+    monkeypatch.setattr(observer, "now_iso", lambda: at.isoformat())
+    complements_from_store = bridge.complements_from_store
+    monkeypatch.setattr(bridge, "complements_from_store", lambda store: complements_from_store(store, now=at))
+    budget = SimpleNamespace(acquire=lambda *_a, **_k: {"allowed": True, "lease": "FIXTURE"},
+                             start=lambda _lease: None, finish=lambda *_a, **_k: None,
+                             wire_scope=lambda _lease: nullcontext())
+    reader = ProductionMarketReader("TEST_KEY", "TEST_SECRET", budget=budget, consumer="SCANNER")
+    # Inject an SDK behind the local transport. No authentication request.
+    reader._ProductionMarketReader__client = PPI(sandbox=False)
+    reader._ProductionMarketReader__authenticated = True
+    monkeypatch.setattr(reader, "market_configuration", lambda: {
+        "instrument_types": ["CAUCIONES"], "markets": ["BYMA"], "settlements": ["INMEDIATA"],
+        "quantity_types": ["MONTO"], "operation_terms": ["INMEDIATA"],
+        "operation_types": ["COLOCADORA"], "operations": ["COMPRA"],
+    })
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    try:
+        assert observer._download_catalog(reader, store) == 1
+        with reader.read_scope(identity=("PESOS1", "CAUCIONES", "BYMA", "ARS", "INMEDIATA")):
+            assert reader.current("PESOS1", "CAUCIONES", "INMEDIATA") == current
+        assert live.refresh(reader, store, now=at, clock_fn=lambda: at)["states"] == {"PESOS1": "BOOK_READY"}
+    finally:
+        reader.close()
+
+    assert calls == [("SearchInstrument", ["PESOS1"]), ("SearchInstrument", ["DOLAR1"]),
+                     ("Current", ["PESOS1"]), ("Book", ["PESOS1"])]
+    record = catalog.lookup(store, "PESOS1", "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
+    offers, errors = offers_from_store(store, now=at)
+    if returns_native_settlement:
+        assert (record["settlement_source"], record["capability"]) == ("PPI_FIELD", "READY_PAPER_CAUCION_PLACING")
+        assert not errors and len(offers) == 1
+        assert offers[0].annual_rate_fraction == Decimal("0.191")
+    else:
+        assert (record["settlement_source"], record["capability"]) == ("REQUEST_CANDIDATE", "NEEDS_CAUCION_TERMS")
+        assert record["_admission_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+        assert offers == [] and errors == ["PESOS1:CAUCION_STATIC_POLICY_NOT_READY"]
+
+
+@pytest.mark.parametrize(("policy", "hold"), [
+    ("OLD_STATIC", None),
+    ("CURRENT_STATIC", None),
+    ("OLD_QUOTE", "CAUCION_STATIC_POLICY_NOT_READY"),
+    ("MISSING_POLICY", "CAUCION_STATIC_POLICY_NOT_READY"),
+    ("REQUEST_ONLY", "CAUCION_STATIC_POLICY_NOT_READY"),
+    ("MATERIAL_CHANGE", "CHANGED_REVIEW_REQUIRED"),
+    ("WRONG_TERM", "CAUCION_STATIC_POLICY_NOT_READY"),
+    ("FUTURE_POLICY", "CAUCION_STATIC_POLICY_NOT_READY"),
+])
+def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
+        tmp_path, monkeypatch, policy, hold):
+    # The same exact PPI identity is observed this session. Its contract can
+    # already exist from a prior catalogue read. These responses are synthetic.
+    at = datetime(2026, 11, 24, 16, 40, tzinfo=TZ)
+    seen = at - (timedelta(minutes=2) if policy == "CURRENT_STATIC" else timedelta(days=3))
+    store = _store(tmp_path, ticker="PESOS1", at=seen)
+    if policy != "MISSING_POLICY":
+        records, skipped, identities = mass.planned_records(mass._catalog_rows(store))
+        assert not skipped and identities == {"CAUCIONES": 1}
+        if policy == "OLD_QUOTE":
+            records[-1]["evidence"].update(annual_rate_fraction="0.50", quoted_at=seen.isoformat())
+        elif policy == "WRONG_TERM":
+            records[-1]["evidence"]["term_days"] = "7"
+        elif policy == "FUTURE_POLICY":
+            records[-1]["effective_at"] = (at + timedelta(days=1)).isoformat()
+        record_snapshots(store, records)
+        if policy == "MATERIAL_CHANGE":
+            records[-1]["evidence"]["minimum_principal"] = "150000"
+            record_snapshots(store, records[-1:])
+
+    with store.connect() as connection:
+        row = dict(connection.execute(
+            "SELECT metadata_json FROM financial_instrument_catalog WHERE ticker='PESOS1'"
+        ).fetchone())
+        raw = json.loads(row["metadata_json"])
+        if policy == "REQUEST_ONLY":
+            del raw["settlement"]
+        catalog.persist(connection, catalog.normalize_record(raw, "INMEDIATA", at.isoformat(), "refresh"))
+    if policy == "REQUEST_ONLY":
+        assert mass.collect(store, run_id="request-only")["skipped"] == {
+            "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1,
+        }
+
+    monkeypatch.setenv("POROTA_MARKET_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "1")
+    monkeypatch.setattr(observer, "now_iso", lambda: at.isoformat())
+    complements = bridge.complements_from_store
+    monkeypatch.setattr(bridge, "complements_from_store", lambda store: complements(store, now=at))
+    is_fresh = catalog.complementary_is_fresh
+    monkeypatch.setattr(catalog, "complementary_is_fresh", lambda raw, **kw: is_fresh(raw, now=at, **kw))
+    expected_ready = hold is None
+    assert observer._reconcile_complementary_catalog(store) == int(expected_ready)
+    record = catalog.lookup(store, "PESOS1", "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
+    assert bool(record.get("_admission_reason")) != expected_ready
+    if expected_ready:
+        # A repeated receipt of the identical version advances the clock and
+        # must not invent a contradiction in the materialized terms.
+        assert not mass.collect(store, run_id="same-policy-new-observation")["first_seen"]
+        assert observer._reconcile_complementary_catalog(store) == 0
+        record = catalog.lookup(store, "PESOS1", "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
+        assert not record.get("_admission_reason")
+        assert record["raw"]["paper_caucion_contract_v1"]["field_provenance"]["term_days"]["observed_at"] == at.isoformat()
+
+    class Reader:
+        def book(self, ticker, family, settlement):
+            assert (ticker, family, settlement) == ("PESOS1", "CAUCIONES", "INMEDIATA")
+            return {"date": at.isoformat(), "bids": [{"price": "19.1", "quantity": "6000000"}]}
+
+    assert live.refresh(Reader(), store, now=at, clock_fn=lambda: at)["states"] == {"PESOS1": "BOOK_READY"}
+    offers, errors = offers_from_store(store, now=at)
+    if hold:
+        assert offers == [] and errors == [f"PESOS1:{hold}"]
+        return
+
+    assert not errors and len(offers) == 1
+    assert offers[0].annual_rate_fraction == Decimal("0.191")
+    assert offers[0].maturity_at == "2026-11-25T17:00:00-03:00"
+    assert offers_from_store(store, now=at + timedelta(seconds=91)) == (
+        [], ["PESOS1:CAUCION_LIVE_BOOK_STALE"],
+    )
+
+    # Only a synthetic local test receives a GO receipt. Runtime allocation
+    # rechecks the catalog, exact candidate, book history, risk and cash.
+    monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
+    monkeypatch.setattr(admission, "admission_status", lambda **_: (True, ""))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    broker = PaperBroker(store, initial_cash="2000000")
+    schedule = paper_schedule(at)
+    snapshot = obligation_snapshot_from_ledger(store, observed_at=at, liquidity_deadline=schedule["liquidity_deadline"])
+    request_id = "paper-caucion-cash-sweep:2026-11-24:ARS:v1"
+    options = dict(obligation_snapshot=snapshot, currency="ARS", as_of=at,
+                   request_id=request_id, **schedule)
+    first = run_paper_sweep(broker, offers, **options)
+    retry = run_paper_sweep(broker, offers, **options)
+    assert first["status"] == retry["status"] == "PLACED_SIMULATED"
+    assert first["allocation"]["paper_id"] == retry["allocation"]["paper_id"]
+    with store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
+        assert connection.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+
 
 def test_live_book_is_separate_dynamic_state_and_participation_is_conservative(tmp_path,monkeypatch):
     store=_store(tmp_path)

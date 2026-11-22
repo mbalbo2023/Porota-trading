@@ -187,12 +187,13 @@ def evaluate_shadow(quote: Quote, proof: ContractProof, flows: Iterable[Projecte
             and PaperSessionPolicy().execution_error(quote, exit_at)):
         return _blocked(key, at, exit_at, exit_mode, qty, "FI_SHADOW_EXIT_SESSION_CLOSED")
     ask, bid = _amount(quote.ask, "ASK"), _amount(quote.bid, "BID")
-    if bid > ask or _amount(quote.ask_size, "ASK_SIZE") <= 0 or (
-        _amount(quote.bid_size, "BID_SIZE") <= 0
-    ):
+    depth = _amount(quote.ask_size, "ASK_SIZE", positive=False)
+    if exit_mode == "MARKET_EXIT":
+        depth = min(depth, _amount(quote.bid_size, "BID_SIZE", positive=False))
+    if bid > ask or depth <= 0:
         return _blocked(key, at, exit_at, exit_mode, qty, "FI_SHADOW_BOOK_INVALID")
     participation = _amount(limits.participation, "PARTICIPATION")
-    if participation > 1 or qty > min(quote.ask_size, quote.bid_size) * participation:
+    if participation > 1 or qty > depth * participation:
         return _blocked(key, at, exit_at, exit_mode, qty, "FI_SHADOW_DEPTH_INSUFFICIENT")
     spread_bps = (ask - bid) / ask * 10000
     if spread_bps > _amount(limits.max_spread_bps, "MAX_SPREAD_BPS"):

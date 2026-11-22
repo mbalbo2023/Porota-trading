@@ -3,6 +3,7 @@ import sqlite3
 import json
 from pathlib import Path
 from time import monotonic
+from rc6_signal_contracts import CONFIRMED_INTRADAY_PRICE_STATES, CONFIRMED_INTERVAL_VOLUME
 from .common import identity, stamp
 
 
@@ -182,20 +183,21 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                 try:
                     source_at = stamp(r["last_source_at"])
                     checked_at = stamp(r["checked_at"])
-                    confirmed = (r["state"] == "CONFIRMED_INTERVAL_VOLUME" and
+                    confirmed = (r["state"] in CONFIRMED_INTRADAY_PRICE_STATES and
                         0 <= (at-source_at).total_seconds() <= 120 and
                         0 <= (at-checked_at).total_seconds() <= 120 and source_at <= checked_at)
                 except (ValueError, TypeError):
                     confirmed = False
-                contracts[k] = confirmed
+                contracts[k] = (confirmed, r["state"] == CONFIRMED_INTERVAL_VOLUME)
                 transform_guard("INTRADAY_CONTRACTS")
             for r in intraday_rows[:observation_limit]:
                 key = tuple(r[k] for k in ("symbol", "asset_class", "market", "currency", "settlement"))
+                confirmed, interval_volume = contracts.get(key, (False, False))
                 observations.append({"identity": key, "source_at": r["event_at"],
                     "received_at": r["last_verified_at"], "source": r["source"], "useful": True,
-                    "endpoint": "intraday", "intraday_confirmed": contracts.get(key, False),
+                    "endpoint": "intraday", "intraday_confirmed": confirmed,
                     "fields": {"price": r["price"]},
-                    "volume_semantics": "INTERVAL_VOLUME" if contracts.get(key, False) else "NO_VERIFICADO",
+                    "volume_semantics": "INTERVAL_VOLUME" if confirmed and interval_volume else "NO_VERIFICADO",
                     "volume_unit": "NO_VERIFICADO", "entry_authority": False})
                 transform_guard("INTRADAY_POINTS")
             truncated = len(intraday_rows) > observation_limit

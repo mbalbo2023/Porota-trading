@@ -2,8 +2,8 @@
 
 Usa exclusivamente ``MarketData/Intraday`` mediante la fachada PPI de solo
 lectura. No expone métodos de órdenes ni convierte datos incompletos en fills.
-El volumen requiere un contrato explícito de unidad y acumulación de PPI.
-Continuidad y solapamiento no demuestran la unidad ni la cadencia del proveedor.
+La señal se calcula con precios confirmados y un libro ejecutable. El volumen
+recibido se conserva como diagnóstico sin inferir su unidad ni acumulación.
 """
 from __future__ import annotations
 
@@ -24,7 +24,15 @@ from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import aware_datetime, family_name, utc_microseconds
 from rc6_operator_family_hold import paper_entry_hold_reason
-from rc6_signal_contracts import register_exact_time
+from rc6_signal_contracts import (
+    CONFIRMED_INTRADAY_PRICE_STATES,
+    CONFIRMED_INTERVAL_VOLUME,
+    CONFIRMED_PRICE_EVENTS,
+    event_window_contract,
+    quantity_activity,
+    register_exact_time,
+    volume_contract,
+)
 from co_market_sessions_hf6 import byma_paper_spot_open
 from fg_intraday_contract_policy_rc6 import classify_revision, previous_for_session
 
@@ -641,11 +649,21 @@ def select_runtime_batch(store, *, limit, cursor=0, at, controller=None):
 
 def _state(store, identity):
     with store.connect() as connection:
-        register_exact_time(connection)
-        row = connection.execute("""SELECT * FROM ppi_intraday_contract_state
-          WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?""",
-          identity).fetchone()
+        return _read_intraday_state(connection, identity)
+
+
+def _read_intraday_state(connection, identity):
+    row = connection.execute("""SELECT * FROM ppi_intraday_contract_state
+      WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?""",
+      identity).fetchone()
     return dict(row) if row else None
+
+
+def _latest_intraday_event_at(connection, identity):
+    row = connection.execute("""SELECT event_at FROM ppi_intraday_points
+      WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+      ORDER BY event_at DESC LIMIT 1""", identity).fetchone()
+    return row["event_at"] if row else None
 
 
 def _request_capability_state(store, record):
@@ -723,14 +741,9 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
             raise ValueError("INTRADAY_CAPABILITY_CLOCK_ROLLBACK")
         points = [point for point in points if aware_datetime(point[0]) > epoch]
     stable = changed = inserted = refreshed = sampled = capped = 0
+    closed_volume_revised = False
     down_steps = sum(1 for left, right in zip(points, points[1:]) if right[2] < left[2])
-    from rc6_signal_contracts import volume_contract, quantity_activity
-    volume_evidence, volume_reason = None, ""
-    try:
-        volume_evidence = volume_contract(record, received_at)
-        quantity_activity([p[2] for p in points], volume_evidence)
-    except ValueError as exc:
-        volume_reason = str(exc)
+    volume_evidence, volume_reason = _volume_diagnostics(record, [p[2] for p in points], received_at)
     with store.connect() as connection:
         register_exact_time(connection)
         connection.execute("BEGIN IMMEDIATE")
@@ -744,13 +757,19 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
                     event_at=event_at, received_at=received_at,
                     old_price=existing[0], old_volume=existing[1],
                     new_price=values[0], new_volume=values[1])
-                if decision["action"] == "SAME":
-                    if decision["age_seconds"] > 120:
-                        stable += 1
-                    connection.execute("""UPDATE ppi_intraday_points SET last_verified_at=?
-                      WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=? AND event_at=?""",
-                      (received_at, *identity, event_at))
-                elif decision["action"] == "REFRESH_MUTABLE":
+                if decision["closed_revision"]:
+                    forensic = _sample_closed_revision(connection, identity,
+                        event_at, received_at, existing, values,
+                        age_seconds=decision["age_seconds"])
+                    sampled += int(forensic == "SAMPLED")
+                    capped += int(forensic == "BUDGET_CAPPED")
+                    # A closed price revision invalidates the signal. Volume-only
+                    # revisions are audited against the original stored point.
+                    if _decimal(existing[0]) != price:
+                        changed += 1
+                        continue
+                    closed_volume_revised = True
+                if decision["refresh"]:
                     # PPI may finalize the still-forming recent minute. Persist
                     # the newest baseline now so it is not falsely rejected once
                     # the point ages beyond the mutable window.
@@ -760,13 +779,11 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
                       (*values, received_at, *identity, event_at))
                     refreshed += 1
                 else:
-                    # A genuine revision to a closed minute remains fail-closed.
-                    changed += 1
-                    forensic = _sample_closed_revision(connection, identity,
-                        event_at, received_at, existing, values,
-                        age_seconds=decision["age_seconds"])
-                    sampled += int(forensic == "SAMPLED")
-                    capped += int(forensic == "BUDGET_CAPPED")
+                    if decision["age_seconds"] > 120:
+                        stable += 1
+                    connection.execute("""UPDATE ppi_intraday_points SET last_verified_at=?
+                      WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=? AND event_at=?""",
+                      (received_at, *identity, event_at))
                 continue
             connection.execute("""INSERT INTO ppi_intraday_points VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
               (*identity, event_at, *values, received_at, received_at, "PPI_MARKETDATA_INTRADAY"))
@@ -777,15 +794,16 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
         prior_stable = (previous or {}).get("stable_overlap", 0)
         prior_changed = (previous or {}).get("changed_closed_points", 0)
         confirmed_now = (observations >= 2 and stable >= 5 and inserted >= 1
-                         and not volume_reason and changed == 0 and prior_changed == 0)
+                         and changed == 0 and prior_changed == 0)
+        if closed_volume_revised and not volume_reason:
+            volume_reason = "PPI_CLOSED_VOLUME_REVISED"
+        confirmed_state = CONFIRMED_PRICE_EVENTS if volume_reason else CONFIRMED_INTERVAL_VOLUME
         state = ("REJECTED_MUTABLE_CLOSED_POINTS" if changed or prior_changed
                  else "EMPTY_INTRADAY_PAYLOAD" if not payload_present
-                 else volume_reason if volume_reason
-                 else "CONFIRMED_INTERVAL_VOLUME" if confirmed_now or (
-                    (previous or {}).get("state") == "CONFIRMED_INTERVAL_VOLUME"
-                    and changed == 0 and prior_changed == 0)
+                 else confirmed_state if confirmed_now or (
+                    (previous or {}).get("state") in CONFIRMED_INTRADAY_PRICE_STATES)
                  else "PENDING_LIVE_CONFIRMATION")
-        volume_contract_state = state
+        volume_contract_state = volume_reason if payload_present and volume_reason else state
         if warmup_after:
             # Recovery is a distinct durable state until the *whole* native
             # warmup is satisfied. Even replacing metadata with valid legacy
@@ -794,7 +812,7 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
             # closed-minute rejection remains stronger than an ordinary warmup.
             if state == "REJECTED_MUTABLE_CLOSED_POINTS":
                 state = INTRADAY_CAPABILITY_REJECTED_STATE
-            elif state != "CONFIRMED_INTERVAL_VOLUME":
+            elif state not in CONFIRMED_INTRADAY_PRICE_STATES:
                 state = INTRADAY_CAPABILITY_WARMUP_STATE
             else:
                 post_epoch_samples = connection.execute("""SELECT COUNT(*) FROM (
@@ -809,7 +827,7 @@ def persist_payload(store, record, points, *, received_at, capability_recovery=N
                   f"cerrados_modificados={changed}; nuevos={inserted}; "
                    f"mutables_refrescados={refreshed}; descensos_volumen={down_steps}; "
                    f"forense_muestras={sampled}; forense_cupo_agotado={capped}")
-        if capability or volume_evidence:
+        if capability or volume_evidence or volume_reason:
             detail = json.dumps({"schema": INTRADAY_CAPABILITY_SCHEMA if capability else "rc6.intraday-source-contract.v1",
                 **({"capability": capability} if capability else {}),
                 "volume_contract": volume_evidence, "volume_contract_state": volume_contract_state,
@@ -830,12 +848,22 @@ SCALPING_PAPER_CAPABILITIES = frozenset({
 })
 
 
+def _volume_diagnostics(record, volumes, at):
+    evidence = None
+    try:
+        evidence = volume_contract(record, at)
+        quantity_activity(volumes, evidence)
+    except ValueError as exc:
+        return evidence, str(exc)
+    return evidence, ""
+
+
 def _intraday_freshness_reason(contract, *, at, latest_event_at):
     """Fail closed unless the current source and indicator tail agree and age safely."""
     capability = _capability_detail(contract)
     if capability and capability.get("warmup_reset_required"):
         return contract.get("state") or "INTRADAY_CAPABILITY_REPROBE_REQUIRED"
-    if contract.get("state") != "CONFIRMED_INTERVAL_VOLUME":
+    if contract.get("state") not in CONFIRMED_INTRADAY_PRICE_STATES:
         return contract.get("state") or "PENDING_LIVE_CONFIRMATION"
     source_at = contract.get("last_source_at")
     checked_at = contract.get("checked_at")
@@ -856,6 +884,12 @@ def _intraday_freshness_reason(contract, *, at, latest_event_at):
     if source != latest:
         return "INTRADAY_SOURCE_MISMATCH"
     return ""
+
+
+def scalping_intraday_reason(connection, identity, at):
+    """Revalidate the same price source on the broker's write transaction."""
+    return _intraday_freshness_reason(_read_intraday_state(connection, identity) or {},
+        at=at, latest_event_at=_latest_intraday_event_at(connection, identity))
 
 
 def _book_time_error(quote, at):
@@ -913,7 +947,6 @@ def evaluate_candidate(store, record, *, at):
     score = Decimal("0")
     economics = {"binding": True, "execution_enabled": False, "passed": False}
     from be_paper_engine import PaperStore
-    from rc6_signal_contracts import event_window_contract, volume_contract, quantity_activity
     with store.connect() as connection:
         register_exact_time(connection)
         points = connection.execute("""SELECT event_at,price,volume,first_received_at,last_verified_at,source FROM ppi_intraday_points
@@ -954,13 +987,21 @@ def evaluate_candidate(store, record, *, at):
             executable_quote = PaperStore.quote_from_snapshot(quote)
             spread = scalping_book_spread(executable_quote, at)
             prices = [_decimal(row["price"], positive=True) for row in points]
-            explicit_volume = volume_contract(record, at)
-            volumes = quantity_activity([row["volume"] for row in points], explicit_volume)
-            economics["volume_contract"] = explicit_volume
+            volume_evidence, volume_reason = _volume_diagnostics(record, [row["volume"] for row in points], at)
+            economics["volume_contract"] = volume_evidence
+            if volume_reason:
+                economics["volume_diagnostic"] = volume_reason
             short = sum(prices[-3:]) / 3
             long = sum(prices[-15:]) / 15
             momentum = short / long - 1
             observed_range = max(prices[-15:]) / min(prices[-15:]) - 1
+            from rc6_performance.costs import paper_cost_contract
+            costs = paper_cost_contract(executable_quote.asset_class, executable_quote.currency, at,
+                symbol=executable_quote.symbol, market=executable_quote.market,
+                settlement=executable_quote.settlement)
+            if costs.family == "ETFS" and (cost_error := costs.binding_error(at)):
+                economics["cost_contract"] = costs.diagnostic()
+                raise ValueError(cost_error)
             import au_fee_schedule
             one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
                 family_name(record["instrument_type"]), currency=record["currency"])))
@@ -974,9 +1015,7 @@ def evaluate_candidate(store, record, *, at):
                 "observed_event_span_seconds": temporal["observed_span_seconds"],
                 "spread_fraction": str(spread), "momentum": str(momentum),
             })
-            if sum(volumes[-5:]) <= 0:
-                reason = "NO_RECENT_VOLUME"
-            elif observed_range <= required_move:
+            if observed_range <= required_move:
                 reason = "ECONOMICS_BINDING_RANGE_BELOW_COST"
             elif score < Decimal(os.getenv("PAPER_SCALPING_SCORE_THRESHOLD", "0.68")):
                 reason = "SCALPING_SCORE_BELOW_THRESHOLD"
@@ -1012,7 +1051,7 @@ def _record_native_entry_snapshot(connection, record, points, quote, contract, *
     from rc6_dynamic_universe.common import digest
     from rc6_shadow_runtime.entry_signals import native_entry_snapshot, NATIVE_INPUT_SCHEMA
     key = "scalping-native:" + digest(_identity(record)) + ":" + evaluated + ":" + str(quote.get("book_at"))
-    config = {"version": "SCALPING_HF3_NATIVE_V1", "samples": 15, "window_minutes": 45,
+    config = {"version": "SCALPING_HF3_NATIVE_V2", "samples": 15, "window_minutes": 45,
         "min_net_margin": os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"),
         "max_spread": os.getenv("PAPER_SCALPING_MAX_SPREAD", "0.005"),
         "score_threshold": os.getenv("PAPER_SCALPING_SCORE_THRESHOLD", "0.68"),
@@ -1026,7 +1065,10 @@ def _record_native_entry_snapshot(connection, record, points, quote, contract, *
         "temporal_contract": economics.get("temporal_contract"),
         "raw_volume_samples": [str(p["volume"]) for p in points],
         "volume_contract": economics.get("volume_contract"),
-        "activity": {"interval_volume_contract": contract.get("state", "NO_VERIFICADO"),
+        "activity": {"intraday_price_state": contract.get("state", "NO_VERIFICADO"),
+            "interval_volume_contract": economics.get("volume_diagnostic")
+                or (CONFIRMED_INTERVAL_VOLUME if contract.get("state") == CONFIRMED_INTERVAL_VOLUME
+                    and economics.get("volume_contract") else "NO_VERIFICADO"),
             "volume_unit": (economics.get("volume_contract") or {}).get("unit", "NO_VERIFICADO"),
             "volume_contract": economics.get("volume_contract"), "rvol_status": "NO_VERIFICADO"}}
     exact_quote = {name: quote.get(name) for name in ("symbol", "asset_class", "settlement", "currency", "market",
@@ -1071,9 +1113,10 @@ def promote_paper_candidate(store, record, *, at):
     if not _market_open(at):
         return "OUTSIDE_SCALPING_PAPER_SESSION"
     from be_paper_engine import PaperStore
-    contract = _state(store, _identity(record)) or {}
+    identity = _identity(record)
     with store.connect() as connection:
         register_exact_time(connection)
+        contract = _read_intraday_state(connection, identity) or {}
         scalp_open = 0
         for row in connection.execute("SELECT features_json FROM paper_positions WHERE status='OPEN'"):
             try:
@@ -1085,12 +1128,9 @@ def promote_paper_candidate(store, record, *, at):
         quote_row = PaperStore.latest_quote_row(connection, _quote_identity(record))
         candidate = connection.execute("""SELECT * FROM scalping_candidates
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
-          ORDER BY id DESC LIMIT 1""", _identity(record)).fetchone()
-        latest = connection.execute("""SELECT event_at FROM ppi_intraday_points
-          WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
-          ORDER BY event_at DESC LIMIT 1""", _identity(record)).fetchone()
-    freshness_reason = _intraday_freshness_reason(
-        contract, at=at, latest_event_at=latest["event_at"] if latest else None)
+          ORDER BY id DESC LIMIT 1""", identity).fetchone()
+        latest_event_at = _latest_intraday_event_at(connection, identity)
+    freshness_reason = _intraday_freshness_reason(contract, at=at, latest_event_at=latest_event_at)
     if freshness_reason:
         return freshness_reason
     if not quote_row or not candidate or candidate["action"] != "BUY_CANDIDATE":
@@ -1346,7 +1386,7 @@ def run_worker(store, stop, *, clock_fn):
                     else:
                         result = persist_payload(store,record,points,received_at=received)
                     inserted += result["inserted"]
-                    confirmed += int(result["state"] == "CONFIRMED_INTERVAL_VOLUME")
+                    confirmed += int(result["state"] in CONFIRMED_INTRADAY_PRICE_STATES)
                     candidate_action = "HOLD" if reprobe else evaluate_candidate(store,record,at=received)
                     if candidate_action == "BUY_CANDIDATE":
                         candidates += 1

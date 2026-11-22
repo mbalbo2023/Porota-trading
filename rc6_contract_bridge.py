@@ -51,6 +51,8 @@ NUMERIC = {"cash_multiplier", "quantity_step", "minimum_quantity", "strike", "pr
            "paper_subscription_min", "paper_amount_unit", "paper_margin_rate", "term_days", "minimum_principal",
            "principal_step", "paper_notional_cap", "paper_principal_step",
            "day_count_basis", "annual_rate_fraction", "available_principal"}
+CAUCION_STATIC_FIELDS = ("side", "term_days", "minimum_principal", "paper_principal_step",
+                        "day_count_basis", "fee_payment", "paper_fill_policy", "fee_authority")
 
 
 def _value(field, value):
@@ -152,9 +154,7 @@ def normalize_group(records, *, now=None):
                      "expires_at", "underlying", "strike", "option_right"),
         "FUTUROS": ("cash_multiplier", "quantity_step", "minimum_quantity",
                     "expires_at", "underlying"),
-        "CAUCIONES": ("side", "term_days", "minimum_principal",
-                      "paper_principal_step", "day_count_basis", "fee_payment",
-                      "paper_fill_policy", "fee_authority"),
+        "CAUCIONES": CAUCION_STATIC_FIELDS,
     }
     required = required_by_family.get(
         family, ("cash_multiplier", "quantity_step", "minimum_quantity"))
@@ -248,6 +248,60 @@ def hard_blocked_bridge(bridge):
                for gap in bridge.get("gaps", []))
 
 
+def is_static_caucion_policy(normalized):
+    """Recognize the versioned PAPER policy without carrying quote fields."""
+    from cr_contract_evidence_v2_mass_hf6 import (
+        CAUCION_PAPER_LIVE_BOOK_POLICY, CAUCION_PAPER_LIVE_BOOK_SOURCE,
+    )
+    from rc6_cauciones_contract import parse_ticker
+
+    policy = normalized.get("paper_caucion_contract_v1") or {}
+    if not isinstance(policy, dict):
+        return False
+    provenance = policy.get("field_provenance") or {}
+    if (policy.get("paper_fill_policy") != CAUCION_PAPER_LIVE_BOOK_POLICY
+            or (policy.get("market"), policy.get("currency"), policy.get("settlement"))
+            != ("BYMA", "ARS", "INMEDIATA")
+            or policy.get("side") != "COLOCADORA"
+            or not isinstance(provenance, dict)
+            or provenance.keys() != set(CAUCION_STATIC_FIELDS)
+            or any(not isinstance(proof, dict) or proof.get("source_class") != "DERIVED_OFFICIAL_RULE"
+                   or proof.get("source_ref") != CAUCION_PAPER_LIVE_BOOK_SOURCE
+                   for proof in provenance.values())):
+        return False
+    try:
+        identity = parse_ticker(normalized["ticker"])
+        return identity.currency_prefix == "PESOS" and Decimal(policy["term_days"]) == identity.term_days
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return False
+
+
+def same_bound_contract_version(previous, current, *, provenance_fields=None):
+    """Compare static contracts and their evidence with only observation clocks removed."""
+    def without_observation(contract):
+        if not isinstance(contract, dict) or contract.get("metadata_source") != "CONTRACT_EVIDENCE_V2_BOUND":
+            return None
+        provenance = contract.get("field_provenance")
+        if not isinstance(provenance, dict) or not provenance:
+            return None
+        if provenance_fields is not None and provenance.keys() != set(provenance_fields):
+            return None
+        if any(not isinstance(proof, dict) or not proof.get("evidence_hash") for proof in provenance.values()):
+            return None
+        stable_provenance = {
+            field: {name: value for name, value in proof.items() if name != "observed_at"}
+            for field, proof in provenance.items()
+        }
+        return {**contract, "field_provenance": stable_provenance}
+
+    old_version = without_observation(previous)
+    return old_version is not None and old_version == without_observation(current)
+
+
+def same_caucion_policy_version(previous, current):
+    return same_bound_contract_version(previous, current, provenance_fields=CAUCION_STATIC_FIELDS)
+
+
 def complements_from_store(store, *, now=None):
     """Read current evidence using one connection; absent tables remain absent."""
     with store.connect() as c:
@@ -266,9 +320,14 @@ def complements_from_store(store, *, now=None):
             r["evidence"] = json.loads(r.pop("evidence_json"))
         except (ValueError, TypeError):
             continue
-        r["change_pending"] = tuple(r[k] for k in (
-            "family", "ticker", "market", "currency", "settlement")) in pending
-        grouped[(r["family"],r["ticker"],r["market"],r["currency"],r["settlement"])].append(r)
+        family, ticker, market, currency, settlement = (
+            r[k] for k in ("family", "ticker", "market", "currency", "settlement"))
+        r["change_pending"] = (family, ticker, market, currency, settlement) in pending
+        # Keep review lookup on the stored identity. Combine A3/ROFEX evidence
+        # for the same future before normalizing and checking its terms.
+        if family == "FUTUROS":
+            market = canonical_market(market)
+        grouped[(family, ticker, market, currency, settlement)].append(r)
     result = []
     for records in grouped.values():
         normalized = normalize_group(records, now=now)

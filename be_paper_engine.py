@@ -1293,6 +1293,14 @@ class PaperBroker:
         if q.contract is None or not q.contract.underlying:
             return None
         from rc6_option_paper_strategy import UnderlyingEvidence, UnderlyingTrade
+        from rc6_paper_runtime_safety import runtime_admission_context
+        from rc6_ppi_option_contract_policy import PPI_OPTION_UNDERLYING_SETTLEMENT
+        runtime_book, safety_error = runtime_admission_context(self.store)
+        if safety_error:
+            return None
+        # Runtime admission verifies this settlement for the underlying.
+        # An independent replay can still study other ARS settlements.
+        settlement = PPI_OPTION_UNDERLYING_SETTLEMENT if runtime_book else None
         try:
             with self.store.connect() as c:
                 matches = c.execute("""SELECT f.ticker, f.instrument_type, f.market,
@@ -1302,9 +1310,10 @@ class PaperBroker:
                         (ticker, instrument_type, market, currency, settlement)
                     WHERE f.ticker=? AND f.instrument_type IN ('ACCIONES','CEDEARS')
                       AND f.market='BYMA' AND f.currency='ARS'
+                      AND (? IS NULL OR f.settlement=?)
                       AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
                       AND ci.status='AVAILABLE' AND ci.can_simulate=1
-                    LIMIT 8""", (q.contract.underlying,)).fetchall()
+                    LIMIT 8""", (q.contract.underlying, settlement, settlement)).fetchall()
             fresh = []
             for row in matches:
                 entry = dict(zip(("symbol", "asset_class", "market", "currency",
@@ -1462,6 +1471,42 @@ class PaperBroker:
                      "reason_codes": ["SPECIALIZED_LIFECYCLE", "STRATEGY_NOT_VALIDATED"],
                      "error_type": type(exc).__name__})
 
+    @staticmethod
+    def _fixed_income_entry_plan(q, features):
+        if family_name(q.asset_class) != "LETRAS":
+            return None
+        from rc6_fixed_income_event_ledger import NATIVE_MATURITY_MODE
+        plan = features.get("fixed_income_exit_plan")
+        if features.get("strategy") == "FI_LETRA_PAPER_V1":
+            return plan if isinstance(plan, dict) else {}
+        if isinstance(plan, dict) and plan.get("mode") == NATIVE_MATURITY_MODE:
+            return plan
+        return None
+
+    @staticmethod
+    def _fixed_income_maturity_ledger_available(connection):
+        from rc6_fixed_income_native_exit import _table
+        from rc6_fixed_income_portfolio_bridge import _required_schema
+        _required_schema(connection)
+        return _table(connection) and connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            ("paper_fi_native_redemption_reviews",)).fetchone() is not None
+
+    def fixed_income_native_exit_authorized(self, q, plan, at):
+        """Bind the existing maturity ledger only for a reviewed fixed-face LETRA."""
+        if family_name(q.asset_class) != "LETRAS":
+            return False
+        from rc6_fixed_income_paper_strategy import native_maturity_quantity
+        try:
+            native_maturity_quantity(q, plan, at)
+            with self.store.connect() as connection:
+                state = connection.execute(
+                    "SELECT mode, real_orders_sent FROM observer_state WHERE id=1").fetchone()
+                return (state is not None and tuple(state) == (SOURCE, 0)
+                        and self._fixed_income_maturity_ledger_available(connection))
+        except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError):
+            return False
+
     @trace_spot_signal
     def decide(self, q: Quote):
         try:
@@ -1613,15 +1658,18 @@ class PaperBroker:
 
     def _economic_admission(self, q, features):
         """One truthful economic contract, used by every PAPER admission caller."""
+        maturity_entry = self._fixed_income_entry_plan(q, features) is not None
+        mode = "BINDING" if maturity_entry else self.economics_mode
         try:
-            economics = self._economic_diagnostics(q)
-        except (ValueError, TypeError, ArithmeticError):
-            features["economics"] = {"passed": False, "reason_code": "ECONOMICS_CONTRACT_UNAVAILABLE"}
-            features["economics_mode"] = self.economics_mode
-            return "ECONOMICS_CONTRACT_UNAVAILABLE"
+            economics = self._candidate_economics(q, features)
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            reason = str(exc) if maturity_entry else "ECONOMICS_CONTRACT_UNAVAILABLE"
+            features["economics"] = {"passed": False, "reason_code": reason}
+            features["economics_mode"] = mode
+            return reason
         features["economics"] = economics
-        features["economics_mode"] = self.economics_mode
-        if self.economics_mode == "BINDING" and economics.get("passed") is not True:
+        features["economics_mode"] = mode
+        if mode == "BINDING" and economics.get("passed") is not True:
             return economics.get("reason_code") or "ECONOMICS_BINDING_NET_REWARD_RISK_INSUFFICIENT"
         return ""
 
@@ -1703,7 +1751,8 @@ class PaperBroker:
                 self.store, connection=connection)
             if safety_error:
                 return safety_error
-            if not runtime_book:
+            maturity_plan = self._fixed_income_entry_plan(q, features)
+            if not runtime_book and maturity_plan is None:
                 return ""
             strategy = features.get("strategy")
             if not isinstance(strategy, str) or not strategy or len(strategy) > 100:
@@ -1714,6 +1763,8 @@ class PaperBroker:
             elif (not strategy.startswith("FI_") or
                   not strategy.endswith("_PAPER_V1")):
                 return "FI_NATIVE_STRATEGY_NOT_BOUND"
+            if family == "LETRAS" and (strategy != "FI_LETRA_PAPER_V1" or maturity_plan is None):
+                return "FI_NATIVE_MATURITY_PLAN_INVALID"
             if (features.get("entry_authority") is not False or
                     features.get("real_routes_used") != []):
                 return "PAPER_SPECIALIZED_ROUTE_OR_AUTHORITY_MISMATCH"
@@ -1740,14 +1791,72 @@ class PaperBroker:
                 if any(frozen.get(name) is None or
                        frozen.get(name) != features.get(name) for name in fields):
                     return "OPTION_NATIVE_SIGNAL_CHANGED_BEFORE_ADMISSION"
+                from rc6_ppi_option_contract_policy import (
+                    OPTION_LOT_BY_UNDERLYING_FAMILY, PPI_OPTION_UNDERLYING_SETTLEMENT)
+                underlying = frozen["underlying_identity"]
+                if (not isinstance(underlying, list) or len(underlying) != 5
+                        or q.contract is None or underlying[0] != q.contract.underlying
+                        or underlying[1] not in OPTION_LOT_BY_UNDERLYING_FAMILY
+                        or underlying[2:] != ["BYMA", "ARS", PPI_OPTION_UNDERLYING_SETTLEMENT]):
+                    return "OPTION_NATIVE_UNDERLYING_IDENTITY_MISMATCH"
+            if maturity_plan is not None:
+                from rc6_fixed_income_runtime import _digest, quote_sha256
+                evidence = features.get("fixed_income_runtime_evidence")
+                if (frozen.get("fixed_income_exit_plan") != maturity_plan
+                        or not isinstance(evidence, dict)
+                        or frozen.get("fixed_income_runtime_evidence") != evidence
+                        or _digest(evidence.get("manifest_sha256")) != os.getenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256")
+                        or evidence.get("quote_sha256") != quote_sha256(q)
+                        or evidence.get("identity") != maturity_plan.get("identity")):
+                    return "FI_NATIVE_SIGNAL_CHANGED_BEFORE_ADMISSION"
+                _digest(evidence.get("receipt_sha256"))
+                if not self._fixed_income_maturity_ledger_available(connection):
+                    return "FI_NATIVE_MATURITY_LIFECYCLE_MISSING"
             return ""
         except (OSError, sqlite3.Error, ValueError, TypeError, KeyError,
                 json.JSONDecodeError):
             return "PAPER_SPECIALIZED_DECISION_VERIFICATION_FAILED"
 
+    def _candidate_economics(self, q, features):
+        maturity_plan = self._fixed_income_entry_plan(q, features)
+        if maturity_plan is None:
+            return self._economic_diagnostics(q)
+        from rc6_fixed_income_paper_strategy import native_maturity_quantity
+        from rc6_performance.costs import paper_cost_contract
+        at = self.execution_time(q)
+        quantity = native_maturity_quantity(q, maturity_plan, at)
+        entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
+        entry_value = entry * q.contract.cash_multiplier * quantity
+        policy = paper_cost_contract(q.asset_class, q.currency, at)
+        diagnostic = policy.diagnostic()
+        error = policy.binding_error(at)
+        if error or diagnostic["policy_sha256"] != maturity_plan["fee_policy_sha256"]:
+            raise ValueError(error or "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION")
+        at_risk = entry_value + policy.leg_cost(entry_value, decision_at=at)
+        if at_risk <= 0:
+            raise ValueError("FI_NATIVE_MATURITY_ENTRY_BASIS_INVALID")
+        redemption_cash = D(maturity_plan["redemption_cash"])
+        net_gain = redemption_cash - at_risk
+        gain_bps = net_gain / at_risk * 10000
+        passed = gain_bps >= D(maturity_plan["minimum_scenario_net_bps"])
+        return {
+            "modeled_tariff": "FULL_ENTRY_LEG_ONLY",
+            "net_reward_risk": str(net_gain / at_risk),
+            "entry_outlay": str(at_risk), "full_principal_risk": str(at_risk),
+            "projected_redemption_cash": str(redemption_cash), "scenario_net_bps": str(gain_bps),
+            "cost_contract": diagnostic, "passed": passed,
+            "reason_code": "" if passed else "FI_NET_EDGE_AFTER_FEES_TOO_LOW",
+        }
+
     def _economic_diagnostics(self, q):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
+        from rc6_performance.costs import paper_cost_contract, price_sensitivity_fees
         at = self.execution_time(q)
+        costs = paper_cost_contract(q.asset_class, q.currency, at,
+                                    symbol=q.symbol, market=q.market, settlement=q.settlement)
+        cost_error = costs.binding_error(at)
+        if costs.family == "ETFS" and cost_error:
+            return {"passed": False, "reason_code": cost_error, "cost_contract": costs.diagnostic()}
         grid = q.contract and q.contract.price_tick is not None and q.contract.family in SPOT_FAMILIES
         entry = q.ask * (1 + self.slippage)
         if grid:
@@ -1764,14 +1873,10 @@ class PaperBroker:
         # La bonificacion corresponde a la operacion de menor valor. En una
         # ganancia es la compra; en una perdida, la venta. Si no es elegible,
         # low == full y se conserva el modelo previo.
-        from rc6_performance.costs import price_sensitivity_fees
         net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
         net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
-        from rc6_performance.costs import paper_cost_contract
-        costs = paper_cost_contract(q.asset_class, q.currency, at)
-        cost_error = costs.binding_error(at)
         passed = not cost_error and net_reward > 0 and ratio >= self.min_net_reward_risk
         try:
             import rc6_cost_settlement_takeprofit_shadow as shadow_costs
@@ -1845,7 +1950,7 @@ class PaperBroker:
                                         detail=features)
                 return
             try:
-                economics = self._economic_diagnostics(q)
+                economics = self._candidate_economics(q, features)
             except ValueError as exc:
                 features["economics"] = {"passed": False, "error": str(exc)}
                 self.store.record_gates(
@@ -1854,14 +1959,16 @@ class PaperBroker:
                 self.store.event("ECONOMIC_GATE_UNSUPPORTED", f"{q.symbol}: {exc}")
                 return
             features["economics"] = economics
-            features["economics_mode"] = self.economics_mode
+            maturity_entry = self._fixed_income_entry_plan(q, features) is not None
+            economics_mode = "BINDING" if maturity_entry else self.economics_mode
+            features["economics_mode"] = economics_mode
             if not economics["passed"]:
-                self.store.event("ECONOMIC_GATE_" + self.economics_mode,
-                                 f"{q.symbol}: reward/risk neto {economics['net_reward_risk']}")
-                if self.economics_mode == "BINDING":
+                economic_reason = economics["reason_code"]
+                self.store.event("ECONOMIC_GATE_" + economics_mode,
+                                 f"{q.symbol}: {economic_reason}")
+                if economics_mode == "BINDING":
                     self.store.record_gates(q, key, "APPROVE", "NOT_EVALUATED",
-                                            "NOT_EVALUATED", "BLOCKED",
-                                            "Economía ex ante no supera el mínimo versionado",
+                                            "NOT_EVALUATED", "BLOCKED", economic_reason,
                                             detail=features)
                     return
             ai_result = "NOT_USED"
@@ -2502,6 +2609,8 @@ class PaperBroker:
             currency, market = q.monetary_identity()
         except ValueError as exc:
             return False, str(exc), None
+        maturity_plan = self._fixed_income_entry_plan(q, features)
+        full_principal_risk = family == "OPCIONES" or maturity_plan is not None
         # Direct PAPER callers (including scalping) cannot bypass operator veto.
         operator_hold = paper_entry_hold_reason(family)
         if operator_hold:
@@ -2521,7 +2630,8 @@ class PaperBroker:
         if error:
             return False, error, None
         from rc6_performance.costs import paper_cost_contract
-        cost_policy = paper_cost_contract(family, currency, at)
+        cost_policy = paper_cost_contract(family, currency, at,
+                                          symbol=q.symbol, market=market, settlement=q.settlement)
         cost_policy_sha = cost_policy.diagnostic()["policy_sha256"]
         if cost_policy.binding_error(at):
             return False, cost_policy.binding_error(at), None
@@ -2612,7 +2722,8 @@ class PaperBroker:
         try:
             entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
             stop = entry * (1 - self.stop_loss_pct)
-            modeled_stop_fill = self._spot_fill_price(stop, side="SELL", contract=q.contract, at=at)
+            modeled_stop_fill = (self._spot_fill_price(stop, side="SELL", contract=q.contract, at=at)
+                                 if maturity_plan is None else None)
         except (ValueError, ArithmeticError) as exc:
             return False, str(exc), None
         if entry <= 0:
@@ -2633,10 +2744,8 @@ class PaperBroker:
         if concurrent_risk_budget <= 0:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
             return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
-        if family == "OPCIONES":
-            # A long option may gap to zero before a stop can execute. Size
-            # against the full premium at risk plus entry costs, not the
-            # nominal stop distance used by spot families.
+        if full_principal_risk:
+            # A long option or a held-to-maturity lot can lose its entire outlay.
             by_risk = self._quantity_in_budget(
                 entry * factor, concurrent_risk_budget,
                 lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
@@ -2662,6 +2771,12 @@ class PaperBroker:
         )
         by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
         qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        if maturity_plan is not None:
+            from rc6_fixed_income_paper_strategy import native_maturity_quantity
+            reviewed_quantity = native_maturity_quantity(q, maturity_plan, at)
+            if qty < reviewed_quantity:
+                return False, "FI_NATIVE_MATURITY_REVIEWED_LOT_EXCEEDS_CAPACITY", None
+            qty = reviewed_quantity
         if family == "OPCIONES" and features.get("strategy") == "OPTION_LONG_UNDERLYING_TREND_PAPER_V1":
             # A strict strategy that evaluated one premium-at-risk contract
             # cannot silently become a multi-contract purchase in the common
@@ -2689,6 +2804,12 @@ class PaperBroker:
             "execution": "SUPERVISED_EXIT_READER",
             "meaning": "Una salida requiere libro fresco y se registra; nunca envía una orden real.",
         }
+        if maturity_plan is not None:
+            features["exit_policy"] = {
+                "mode": maturity_plan["mode"], "maturity_at": maturity_plan["exit_at"],
+                "max_hold_minutes": None, "end_of_day": False,
+                "execution": "SUPERVISED_VERIFIED_REDEMPTION", "market_sale": False,
+            }
         features.update({
             "book_source_at": q.book_at, "trade_source_at": q.trade_at,
             "received_at": q.observed_at, "last_kind": q.last_kind,
@@ -2721,10 +2842,16 @@ class PaperBroker:
             binding = min(limits, key=lambda name: limits[name])
             return False, (f"Portón patrimonial/liquidez: {binding} dejó cantidad "
                            f"ejecutable en {limits[binding]}"), None
-        candidate_risk_value = candidate_stop_risk(
-            self, entry_price=entry, stop_price=stop, quantity=qty,
-            cash_multiplier=factor, asset_class=q.asset_class, currency=currency,
-            modeled_stop_fill=modeled_stop_fill)
+        if maturity_plan is not None:
+            notional = entry * factor * qty
+            candidate_risk_value = notional + cost_policy.leg_cost(notional, decision_at=at)
+            if candidate_risk_value > per_trade_risk_budget:
+                return False, "FI_NATIVE_MATURITY_REVIEWED_LOT_EXCEEDS_CAPACITY", None
+        else:
+            candidate_risk_value = candidate_stop_risk(
+                self, entry_price=entry, stop_price=stop, quantity=qty,
+                cash_multiplier=factor, asset_class=q.asset_class, currency=currency,
+                modeled_stop_fill=modeled_stop_fill)
         try:
             concurrent_preview = portfolio_capacity(
                 self, currency, at, candidate_risk=candidate_risk_value,
@@ -2754,13 +2881,18 @@ class PaperBroker:
             if error:
                 return False, error, None
             if features.get("execution_style") == "SCALPING_PAPER":
-                from cf_intraday_scalping import scalping_book_spread
+                from cf_intraday_scalping import scalping_book_spread, scalping_intraday_reason
                 try:
                     locked_quote = self.store.latest_quote_row(c, vars(q))
                     if (locked_quote is None or locked_quote["id"] != features.get("scalping_book_snapshot_id")
                             or self.store.quote_from_snapshot(locked_quote) != q):
                         return False, "SCALPING_BOOK_CHANGED_BEFORE_FILL", None
                     scalping_book_spread(q, at)
+                    error = scalping_intraday_reason(c, (q.symbol, family, market, currency, q.settlement), at)
+                    if error:
+                        return False, error, None
+                except sqlite3.Error:
+                    return False, "SCALPING_INTRADAY_SOURCE_UNAVAILABLE", None
                 except (ValueError, TypeError, ArithmeticError) as exc:
                     return False, str(exc), None
             error = self._economic_admission(q, features)
@@ -2773,9 +2905,11 @@ class PaperBroker:
             # The exact policy captured before sizing also owns the locked cash
             # and risk amounts; a mutable environment cannot mix two tariffs.
             cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
-            candidate_risk_value = (entry * factor * qty + cost if family == "OPCIONES"
+            candidate_risk_value = (entry * factor * qty + cost if full_principal_risk
                 else (entry - modeled_stop_fill) * factor * qty + cost
                 + cost_policy.leg_cost(modeled_stop_fill * factor * qty, decision_at=at))
+            if maturity_plan is not None and candidate_risk_value > per_trade_risk_budget:
+                return False, "FI_NATIVE_MATURITY_REVIEWED_LOT_EXCEEDS_CAPACITY", None
             features["candidate_stop_risk"] = str(candidate_risk_value)
             try:
                 if qty > spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation):
@@ -2857,6 +2991,13 @@ class PaperBroker:
             fill = c.execute("INSERT INTO paper_fills VALUES(NULL,?,?,?,?,?,?,?,?)",
                       (paper_id, SOURCE, "BUY_SIMULATED", at, str(qty),
                        str(entry), str(cost), str(entry-q.ask)))
+            if maturity_plan is not None:
+                from rc6_fixed_income_event_ledger import record_opening_lot
+                try:
+                    record_opening_lot(c, paper_id)
+                except (sqlite3.Error, ValueError, TypeError, KeyError, ArithmeticError):
+                    c.rollback()
+                    return False, "FI_NATIVE_MATURITY_OPENING_LEDGER_REJECTED", None
             spot_liquidity.record(c,fill.lastrowid,q)
             evidence = _atomic_admission_snapshot(q, features, paper_id, at, self.execution_time(q), score)
             sha = _insert_evidence_snapshot(c, evidence)

@@ -932,6 +932,8 @@ class ProductionMarketReader:
         únicamente plazos configurados/probados y se devuelve una lista directa
         compatible con el catálogo existente. No consulta cuentas ni Order/Budget.
         """
+        from rc6_cauciones_contract import search_evidence_key
+
         records = []
         seen = set()
         for days in caucion_discovery_days():
@@ -946,12 +948,7 @@ class ProductionMarketReader:
                 for raw in payload:
                     if not isinstance(raw, dict):
                         raise ValueError("PPI_CAUCION_SEARCH_INVALID_ROW")
-                    key = (
-                        str(raw.get("ticker") or "").upper(),
-                        str(raw.get("type") or "").upper(),
-                        str(raw.get("market") or "").upper(),
-                        str(raw.get("currency") or "").upper(),
-                    )
+                    key = search_evidence_key(raw)
                     if key not in seen:
                         seen.add(key)
                         records.append(raw)

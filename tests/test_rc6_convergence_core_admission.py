@@ -147,8 +147,8 @@ def test_aud03_reset_or_monotone_volume_does_not_supply_missing_unit_contract(tm
     store=engine.PaperStore(str(tmp_path/'paper.sqlite'));scalping.init_schema(store)
     r=record();r['raw']={}
     scalping.persist_payload(store,r,points(AT-timedelta(minutes=1),15),received_at=AT-timedelta(minutes=1))
-    assert scalping.persist_payload(store,r,points(AT),received_at=AT)['state']=='PPI_VOLUME_CONTRACT_UNVERIFIED'
-    from rc6_signal_contracts import quantity_activity
+    from rc6_signal_contracts import CONFIRMED_PRICE_EVENTS, quantity_activity
+    assert scalping.persist_payload(store,r,points(AT),received_at=AT)['state']==CONFIRMED_PRICE_EVENTS
     contract=record()['raw']['intraday_volume_contract']|{'unit':'TURNOVER_MONEY','currency':'ARS'}
     with pytest.raises(ValueError,match='QUANTITY_VOLUME_UNAVAILABLE'):
         quantity_activity([D(100),D(50)],contract)

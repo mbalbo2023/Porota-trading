@@ -427,6 +427,8 @@ class SharedPPIReaderAdapter:
             # Split into exact one-search-per-RPC calls, so EXIT can run
             # between them; this still uses the same owner SDK and no fallback.
             from bd_ppi_readonly_guard import caucion_discovery_days
+            from rc6_cauciones_contract import search_evidence_key
+
             records, seen = [], set()
             for days in caucion_discovery_days():
                 for currency in ("PESOS", "DOLAR"):
@@ -439,8 +441,7 @@ class SharedPPIReaderAdapter:
                     for row in result:
                         if not isinstance(row, dict):
                             raise GatewayEvidenceRejected("PPI_AUX_CAUCION_SEARCH_ROW_INVALID")
-                        key = tuple(str(row.get(field) or "").upper()
-                                    for field in ("ticker", "type", "market", "currency"))
+                        key = search_evidence_key(row)
                         if key not in seen:
                             seen.add(key)
                             records.append(row)

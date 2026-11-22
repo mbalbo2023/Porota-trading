@@ -5,6 +5,7 @@ The provider's published Intraday JSON schema does not establish what its
 must stay rejected while future private analysis gets one-way causal evidence.
 """
 from datetime import timedelta
+import json
 
 from tests.test_intraday_scalping_rc6_integration import START, make_store, record
 import cf_intraday_scalping as scalping
@@ -99,11 +100,14 @@ def test_global_daily_budget_is_hard_bound_across_many_instruments(tmp_path):
     assert len(_rows(store)) == scalping.INTRADAY_REVISION_FORENSICS_MAX_DAILY
 
 
-def test_no_authentic_volume_contract_stays_fail_closed_without_forensic(tmp_path):
+def test_one_replayed_price_does_not_confirm_a_series_or_create_forensic(tmp_path):
     store, instrument = make_store(tmp_path), record()
     instrument.pop("raw", None)
     instrument.pop("metadata_json", None)
     first = scalping.persist_payload(store, instrument, _points(), received_at=_at(10))
     second = scalping.persist_payload(store, instrument, _points(), received_at=_at(11))
-    assert first["state"] == second["state"] == "PPI_VOLUME_CONTRACT_UNVERIFIED"
+    assert first["state"] == second["state"] == "PENDING_LIVE_CONFIRMATION"
+    with store.connect() as conn:
+        detail = json.loads(conn.execute("SELECT detail FROM ppi_intraday_contract_state").fetchone()[0])
+    assert detail["volume_contract_state"] == "PPI_VOLUME_CONTRACT_UNVERIFIED"
     assert _rows(store) == []

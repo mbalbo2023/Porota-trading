@@ -22,12 +22,18 @@ def dump(root, name, value):
     return {"file": name, "sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def reviewed_bundle(tmp_path):
+def reviewed_bundle(tmp_path, family="OBLIGACIONES", *, settlement=None):
     root = tmp_path / "evidence"
     root.mkdir()
-    quote, _, terms, validation = fixture("OBLIGACIONES", symbol="SYNTHETIC_ON")
+    symbols = {"BONOS": "SYNTHETIC_BOND", "LETRAS": "SYNTHETIC_LETRA",
+               "OBLIGACIONES": "SYNTHETIC_ON"}
+    quote, _, terms, validation = fixture(family, symbol=symbols[family])
     quote = replace(quote, metadata_source="PPI_CATALOG:SYNTHETIC_TEST_ONLY",
                     last_kind="TRADE")
+    if settlement is not None:
+        quote = replace(quote, settlement=settlement,
+                        contract=replace(quote.contract, settlement=settlement))
+        terms["identity"] = validation["identity"] = quote.contract.key
     issuer = dump(root, "issuer.bin", b"SYNTHETIC issuer document, not a market term")
     artifact = dump(root, "oos.bin", b"SYNTHETIC independent OOS, not a real result")
     dataset = dump(root, "dataset.bin", b"SYNTHETIC OOS dataset, not real trades")
@@ -39,6 +45,15 @@ def reviewed_bundle(tmp_path):
             "source_reference": terms["source_reference"],
             "source_sha256": issuer["sha256"],
             "source_at": YESTERDAY.isoformat(), "known_at": YESTERDAY.isoformat()}
+    loss_budget = "3"
+    if family == "LETRAS":
+        maturity = AT + timedelta(days=1)
+        terms.update(native_maturity_redemption_supported=True, maturity_at=maturity.isoformat(),
+                     ex_at=(AT + timedelta(hours=2)).isoformat(),
+                     record_at=(AT + timedelta(hours=3)).isoformat())
+        flow.update(obligation_id="SYNTHETIC_MATURITY", kind="AMORTIZATION",
+                    due_at=maturity.isoformat(), cash_per_vn="1.05")
+        loss_budget = "110"
     receipt = {"schema": RECEIPT_SCHEMA, "identity": list(quote.contract.key),
                "known_at": YESTERDAY.isoformat(),
                "valid_until": (AT + timedelta(days=1)).isoformat(),
@@ -49,7 +64,7 @@ def reviewed_bundle(tmp_path):
                "oos_dataset": dataset, "flows": [flow],
                "quantity_vn": "100", "market_exit_horizon_minutes": 120,
                "risk_limits": {"cash_available": "100000", "max_allocation": "1000",
-                               "max_loss_budget": "3", "stress_bid_drop": "0.01",
+                               "max_loss_budget": loss_budget, "stress_bid_drop": "0.01",
                                "max_spread_bps": "50", "max_holding_days": 1,
                                "participation": "0.10", "slippage_fraction": "0.0002"}}
     manifest = {"schema": MANIFEST_SCHEMA, "paper_only": True, "real_routes_used": [],
@@ -164,8 +179,9 @@ def test_native_provenance_and_source_clocks_are_not_invented(tmp_path, change, 
         load(replace(quote, **change), root, pin)
 
 
-def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_path, monkeypatch):
-    quote, root, pin = reviewed_bundle(tmp_path)
+@pytest.mark.parametrize("family", ["BONOS", "OBLIGACIONES"])
+def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_path, monkeypatch, family):
+    quote, root, pin = reviewed_bundle(tmp_path, family)
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     broker = PaperBroker(store, daily_loss_pct=None)
     monkeypatch.delenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", raising=False)
@@ -184,11 +200,195 @@ def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_
     assert result[0] == "HOLD"
     assert result[3]["reason_code"] == "FI_NATIVE_EVENT_EXIT_ENGINE_NOT_BOUND"
     assert result[3]["fixed_income_runtime_evidence"]["manifest_sha256"] == pin
-    assert not callable(getattr(broker, "fixed_income_native_exit_authorized", None))
+    assert broker.fixed_income_native_exit_authorized(quote, {}, AT.isoformat()) is False
     with store.connect() as db:
         assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def letter_broker(tmp_path, monkeypatch, *, settlement="INMEDIATA", **broker_config):
+    quote, root, pin = reviewed_bundle(tmp_path, "LETRAS", settlement=settlement)
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_DIRECTORY", str(root))
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
+    sector_map = tmp_path / "reviewed-sectors.csv"
+    sector_map.write_text(
+        "ticker,family,market,currency,settlement,sector,source,author,effective_at,reviewed\n"
+        + ",".join((*quote.contract.key, "SYNTHETIC_SOVEREIGN", "fixture:reviewed-sector",
+                    "SYNTHETIC_TEST", YESTERDAY.isoformat(), "true")) + "\n",
+        encoding="utf-8")
+    monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sector_map))
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+    return quote, root, PaperBroker(PaperStore(str(tmp_path / "paper.sqlite")),
+                                    economics_mode="BINDING", **broker_config)
+
+
+def test_reviewed_letter_opens_exact_vn_and_closes_only_after_the_matched_payment(tmp_path, monkeypatch):
+    from bm_exit_supervisor import PositionExitSupervisor
+    from dh_paper_dynamic_risk_gate_hf6 import open_stop_risk, portfolio_capacity
+    from rc6_fixed_income_native_redemption import normalized_issuer_schedule_sha256
+    from rc6_fixed_income_portfolio_bridge import position_at
+    from tests.test_rc6_fixed_income_native_redemption import NativeRedemptionReviewTest
+
+    quote, evidence, broker = letter_broker(tmp_path, monkeypatch, daily_soft_stop_pct="0.015")
+    quote = replace(quote, bid_size=Decimal(1))  # No sale lot is needed for a redemption.
+    store = broker.store
+    broker.on_quote(quote)
+    broker.on_quote(quote)  # Same BUY can only be committed once.
+    position, = store.open_positions()
+    paper_id = position["paper_id"]
+    features = json.loads(position["features_json"])
+    plan = features["fixed_income_exit_plan"]
+    outlay = Decimal(position["entry_price"]) * quote.contract.cash_multiplier * 100 + Decimal(position["entry_cost"])
+    assert Decimal(position["quantity"]) == Decimal(plan["quantity_vn"]) == 100
+    assert features["exit_policy"]["market_sale"] is False
+    assert Decimal(features["candidate_stop_risk"]) == outlay
+    assert Decimal(features["economics"]["full_principal_risk"]) == outlay
+    assert features["economics"]["modeled_tariff"] == "FULL_ENTRY_LEG_ONLY"
+    assert not broker._close(position, quote, "SYNTHETIC_SELL_IS_BLOCKED")
+    with store.connect() as db:
+        assert position_at(db, paper_id, AT).residual_nominal == 100
+        assert open_stop_risk(broker, "ARS", AT, connection=db) == outlay
+        assert db.execute("SELECT count(*) FROM paper_fi_cash_entries").fetchone()[0] == 0
+
+    restarted = PaperBroker(PaperStore(store.path), daily_soft_stop_pct="0.015")
+    next_quote_at = (AT + timedelta(minutes=5)).isoformat()
+    next_quote = replace(quote, observed_at=next_quote_at, book_at=next_quote_at, trade_at=next_quote_at)
+    capacity = portfolio_capacity(restarted, "ARS", next_quote_at, candidate_risk=outlay,
+                                  quotes={quote.symbol: next_quote})
+    assert capacity.open_stop_risk == outlay
+    assert capacity.soft_stop_budget >= outlay > capacity.remaining_before_candidate
+    assert not capacity.admitted and capacity.reason == "CANDIDATE_EXCEEDS_REMAINING_CONCURRENT_RISK"
+
+    at = AT + timedelta(days=1, minutes=5)
+    supervisor = PositionExitSupervisor(broker, clock_fn=lambda: at.isoformat())
+    assert supervisor.supervise(position, None, at.isoformat()).reason == "FI_MATURITY_OFFICIAL_EVENT_RECEIPT_PENDING"
+
+    fixture = NativeRedemptionReviewTest()
+    fixture.store, fixture.family = store, "LETRAS"
+    identity = list(quote.contract.key)
+    economic = fixture._economic_receipt()
+    economic["identity"] = identity
+    economic["event"].update(paper_id=paper_id, obligation_id=plan["reviewed_obligation_id"],
+                             effective_at=plan["exit_at"], recorded_at=at.isoformat(),
+                             source_at=at.isoformat(), cash_amount=plan["redemption_cash"])
+    economic["cash_per_nominal"] = "1.05"
+    economic["entitlement"].update(ex_at=plan["ex_at"], record_at=plan["record_at"],
+                                   known_at=at.isoformat(), paper_settled_at=position["opened_at"],
+                                   settlement_basis="PAPER_CI_AT_TRADE")
+    review = fixture._review()
+    review.update(paper_id=paper_id, identity=identity,
+                  paid_obligation_ids=[plan["reviewed_obligation_id"]], final_principal_cash="105",
+                  expected_principal_by_currency=[["ARS", "105"]],
+                  expected_cash_by_currency=[["ARS", "105"]])
+    schedule = review["issuer_schedule"]
+    schedule.update(identity=identity, maturity_at=plan["exit_at"],
+                    source_sha256=plan["issuer_source_sha256"],
+                    source_reference=plan["issuer_source_reference"],
+                    final_obligation_id=plan["reviewed_obligation_id"])
+    schedule["obligations"] = [{key: economic["event"][key] for key in schedule["obligations"][0]}]
+    economic["event"]["obligation_id"] = "DIFFERENT_OFFICIAL_OBLIGATION"
+    with pytest.raises(ValueError, match="FI_LEDGER_OPENING_OBLIGATION_MISMATCH"):
+        fixture._book(economic=economic, at=at.isoformat())
+    economic["event"]["obligation_id"] = plan["reviewed_obligation_id"]
+    fixture._book(economic=economic, at=at.isoformat())
+    fixture._book(economic=economic, at=at.isoformat())
+    assert supervisor.supervise(position, None, at.isoformat()).state == "OPEN"
+
+    fixture._apply(review, issuer_bytes=(evidence / "issuer.bin").read_bytes(),
+                   approved_issuer_sha256=plan["issuer_source_sha256"],
+                   approved_schedule_sha256=normalized_issuer_schedule_sha256(schedule),
+                   at=at.isoformat())
+    before = broker._cash(as_of=at.isoformat(), currency="ARS")
+    assert supervisor.supervise(position, None, at.isoformat()).state == "CLOSED"
+    assert broker._cash(as_of=at.isoformat(), currency="ARS") == before == 1_000_000 - outlay + 105
+    assert not store.open_positions()
+    with store.connect() as db:
+        assert open_stop_risk(broker, "ARS", at, connection=db) == 0
+        assert [row[0] for row in db.execute("SELECT side FROM paper_fills")] == ["BUY_SIMULATED"]
+        assert db.execute("SELECT count(*) FROM paper_fi_cash_entries").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM paper_fi_native_maturities").fetchone()[0] == 1
+        assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
+
+
+def test_letter_needs_documented_entitlement_and_the_entire_reviewed_risk_lot(tmp_path, monkeypatch):
+    quote, root, broker = letter_broker(tmp_path, monkeypatch, settlement="A-24HS")
+    action, _, _, features = broker.decide(quote)
+    assert action == "HOLD"
+    assert features["reason_code"] == "FI_NATIVE_MATURITY_ENTITLEMENT_UNVERIFIED"
+    maturity_at = (AT + timedelta(days=4)).isoformat()
+    repin(root, "terms.json", lambda terms: terms.update(
+        ex_at=(AT + timedelta(days=2, hours=1)).isoformat(),
+        record_at=(AT + timedelta(days=2, hours=2)).isoformat(), maturity_at=maturity_at))
+    def move_maturity(receipt):
+        receipt["flows"][0]["due_at"] = maturity_at
+        receipt["risk_limits"]["max_holding_days"] = 4
+    pin = repin(root, "receipt.json", move_maturity)
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
+    assert broker.decide(quote)[0] == "BUY"
+    ci_path = tmp_path / "ci"
+    ci_path.mkdir()
+    quote, _, broker = letter_broker(ci_path, monkeypatch, risk_pct="0.00005")
+    action, score, _, features = broker.decide(quote)
+    assert action == "BUY"
+    assert broker._open(quote, score, features) == (
+        False, "FI_NATIVE_MATURITY_REVIEWED_LOT_EXCEEDS_CAPACITY", None)
+    assert not broker.store.open_positions()
+
+
+def test_letter_candidate_cannot_change_its_reviewed_plan_before_fill(tmp_path, monkeypatch):
+    quote, _, broker = letter_broker(tmp_path, monkeypatch)
+    action, score, reason, features = broker.decide(quote)
+    assert action == "BUY"
+    identity = ":".join((quote.symbol, quote.asset_class, quote.settlement, quote.currency, quote.market))
+    key = f"{features['strategy']}:{identity}:{quote.observed_at[:16]}:BUY"
+    features["native_decision_key"] = key
+    assert broker.store.record_decision(key, quote, action, score, reason, features)
+    features["fixed_income_exit_plan"]["redemption_cash"] = "106"
+    assert broker._open(quote, score, features) == (False, "FI_NATIVE_SIGNAL_CHANGED_BEFORE_ADMISSION", None)
+    assert not broker.store.open_positions()
+    with broker.store.connect() as db:
+        assert db.execute("SELECT count(*) FROM paper_positions").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_letter_opening_ledger_failure_rolls_back_trade_and_nominal_together(tmp_path, monkeypatch):
+    quote, _, broker = letter_broker(tmp_path, monkeypatch)
+    with broker.store.connect() as db:
+        db.execute("""CREATE TRIGGER fail_reviewed_lot BEFORE INSERT ON paper_fi_lots
+          BEGIN SELECT RAISE(ABORT,'SYNTHETIC_LOT_INSERT_FAILURE'); END""")
+    broker.on_quote(quote)
+    with broker.store.connect() as db:
+        for table in ("paper_positions", "paper_fills", "paper_fi_lots", "paper_fi_cash_entries"):
+            assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+        assert db.execute("""SELECT count(*) FROM trade_gate_evaluations
+          WHERE reason='FI_NATIVE_MATURITY_OPENING_LEDGER_REJECTED'""").fetchone()[0] == 1
+
+
+def test_letter_requires_healthy_exit_workers_and_existing_tables_before_any_debit(tmp_path, monkeypatch):
+    from bm_exit_supervisor import PositionExitSupervisor
+
+    quote, _, broker = letter_broker(tmp_path, monkeypatch, require_supervisor=True)
+    at = AT.isoformat()
+    action, score, _, features = broker._decide_fixed_income(quote, at)
+    assert action == "BUY"
+    assert broker._open(quote, score, features) == (False, "EXIT_SUPERVISOR_UNAVAILABLE", None)
+    PositionExitSupervisor(broker, clock_fn=lambda: at).heartbeat(at)
+    assert broker._open(quote, score, features) == (False, "EXIT_READER_UNAVAILABLE", None)
+    with broker.store.connect() as db:
+        db.execute("INSERT OR REPLACE INTO paper_exit_reader_state VALUES(1,?,'READY','SYNTHETIC_TEST')", (at,))
+    assert broker.decide(quote)[0] == "BUY"
+    with broker.store.connect() as db:
+        db.execute("DROP TABLE paper_fi_native_redemption_reviews")
+    broker.on_quote(quote)
+    with broker.store.connect() as db:
+        decision = db.execute("SELECT action, features_json FROM paper_decisions").fetchone()
+        assert decision[0] == "HOLD"
+        assert json.loads(decision[1])["reason_code"] == "FI_NATIVE_EVENT_EXIT_ENGINE_NOT_BOUND"
+        assert db.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM paper_fi_lots").fetchone()[0] == 0
 
 
 def test_duplicate_json_keys_are_rejected_even_with_matching_digest(tmp_path):

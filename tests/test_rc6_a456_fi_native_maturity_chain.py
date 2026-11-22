@@ -212,7 +212,6 @@ def test_supervisor_closes_only_already_paid_reviewed_plan_without_book(lot):
     root = lot.store.open_positions()[0]
     assert sup.supervise(root, None, NEXT).state == "CLOSED"
     assert lot.store.open_positions() == []
-    assert not callable(getattr(paper, "fixed_income_native_exit_authorized", None))
 
 
 def test_supervisor_does_not_infer_terminal_from_missing_plan(lot):

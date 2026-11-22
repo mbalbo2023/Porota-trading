@@ -134,6 +134,51 @@ def test_outside_preopen_event_promotes_prospectively_but_requires_dense_warmup(
     assert expired['telemetry'][-1]['state']=='DISCOVERY'
 
 
+def test_active_prospective_warmup_can_finish_at_the_existing_sampling_cadence():
+    policy = EnginePolicy()
+    assets = catalog(1)
+    key = identity(assets[0])
+    freeze = frozen(assets, tradeable=False)
+    event = {'identity': key, 'at': OPEN.isoformat(), 'promotion_candidate': True,
+             'reason_codes': ['RVOL_ANOMALY']}
+    previous = plan(assets, freeze=freeze, observations=[obs(assets[0], OPEN)],
+                    events=[event], policy=policy)
+    for count in range(1, policy.warmup_samples):
+        at = OPEN + timedelta(seconds=count * policy.warm_seconds)
+        previous = json.loads(json.dumps(previous))
+        previous = plan(assets, at, freeze=freeze, previous=previous, policy=policy,
+                        observations=[obs(assets[0], at)])
+        expected = 'HOT' if count == policy.warmup_samples - 1 else 'WARM'
+        assert previous['telemetry'][0]['state'] == expected
+        assert previous['checkpoint_reused']
+    assert previous['telemetry'][0]['signal_result'] == 'SAMPLES_READY'
+    assert previous['telemetry'][0]['entry_authority'] is False
+
+    stale = at + timedelta(seconds=policy.max_age_seconds + 1)
+    expired = plan(assets, stale, freeze=freeze, previous=previous, policy=policy)
+    assert expired['telemetry'][0]['state'] == 'DISCOVERY'
+
+    over_window = OPEN + timedelta(seconds=policy.window_seconds + 1)
+    expired = plan(assets, over_window, freeze=freeze, previous=previous, policy=policy,
+                   observations=[obs(assets[0], over_window)])
+    assert expired['telemetry'][0]['state'] == 'DISCOVERY'
+
+
+def test_fresh_radar_does_not_extend_discovery_without_strategy_samples():
+    assets = catalog(1)
+    freeze = frozen(assets, tradeable=False)
+    event = {'identity': identity(assets[0]), 'at': OPEN.isoformat(), 'promotion_candidate': True}
+    radar = obs(assets[0], OPEN, source='BYMA', endpoint='radar')
+    warm = plan(assets, freeze=freeze, observations=[radar], events=[event])
+    assert warm['telemetry'][0]['state'] == 'WARM'
+
+    at = OPEN + timedelta(seconds=POLICY.discovery_seconds + 1)
+    radar = obs(assets[0], at, source='BYMA', endpoint='radar')
+    expired = plan(assets, at, freeze=freeze, previous=warm, observations=[radar])
+    assert expired['telemetry'][0]['state'] == 'DISCOVERY'
+    assert expired['telemetry'][0]['warmup_progress']['distinct_samples'] == 0
+
+
 def test_open_positions_retained_on_capacity_loss_and_overflow_specialized_delegated():
     assets=catalog(4); opened=list(map(identity,assets))+[('DLR/NOV26','FUTUROS','A3','ARS','INMEDIATA')]
     report=plan(assets,opened=opened,cap={'status':'NO_VERIFICADO','safe_limit':0})

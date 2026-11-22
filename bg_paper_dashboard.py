@@ -1289,6 +1289,8 @@ def _economic_shadow_panel():
 
 
 def scalping_page():
+    from rc6_signal_contracts import CONFIRMED_INTRADAY_PRICE_STATES, CONFIRMED_PRICE_EVENTS
+
     canonical_truth=truth_projection()
     scalping_truth=canonical_truth['scalping']
     readiness_truth=canonical_truth['readiness']
@@ -1301,7 +1303,8 @@ def scalping_page():
     except (KeyError,ValueError,TypeError):
         state="UNKNOWN" if worker else "NOT_STARTED"
     point_count=(_rows("SELECT COUNT(*) n FROM ppi_intraday_points") or [{"n":0}])[0]["n"] if _table("ppi_intraday_points") else 0
-    confirmed=(_rows("SELECT COUNT(*) n FROM ppi_intraday_contract_state WHERE state='CONFIRMED_INTERVAL_VOLUME'") or [{"n":0}])[0]["n"] if _table("ppi_intraday_contract_state") else 0
+    confirmed=(_rows("SELECT COUNT(*) n FROM ppi_intraday_contract_state WHERE state IN (?,?)",
+                     CONFIRMED_INTRADAY_PRICE_STATES) or [{"n":0}])[0]["n"] if _table("ppi_intraday_contract_state") else 0
     contract_rows=_rows("""SELECT symbol,asset_class,market,currency,settlement,state,observations,
       stable_overlap,changed_closed_points,new_points,last_source_at,checked_at,detail
       FROM ppi_intraday_contract_state ORDER BY checked_at DESC LIMIT 50""") if _table("ppi_intraday_contract_state") else []
@@ -1326,6 +1329,7 @@ def scalping_page():
       "PENDING_LIVE_CONFIRMATION":"Pendiente de confirmación intradía para esta identidad",
       "PPI_INTRADAY_UNSUPPORTED":"PPI no ofrece intradía para esta identidad",
       "CONFIRMED_INTERVAL_VOLUME":"Contrato intradiario confirmado para esta identidad",
+      CONFIRMED_PRICE_EVENTS:"Precios intradía confirmados para esta identidad",
     }
     raw_worker_detail=str(worker.get('detail') or 'Esperando estado del proceso.')
     identity_detail_tokens=(

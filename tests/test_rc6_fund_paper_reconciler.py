@@ -19,11 +19,13 @@ CLASS = "SYNTHETIC.FUND.A"
 AS_OF = "2026-10-27T12:15:00+00:00"
 
 
-def setup_fund(tmp_path):
+def setup_fund(tmp_path, **terms_fields):
     store = PaperStore(str(tmp_path / "fund.db"))
     broker = PaperBroker(store, initial_cash="2000")
     terms = PaperFundTerms(CLASS, "FCI", "ARS", "FCI", "INMEDIATA",
-                           "SYNTHETIC_EXACT_CLASS", paper_subscription_policy="INTERNAL_RISK_BUDGET_BY_AMOUNT")
+                           "SYNTHETIC_EXACT_CLASS",
+                           paper_subscription_policy="INTERNAL_RISK_BUDGET_BY_AMOUNT",
+                           **terms_fields)
     evidence = FundClassEvidence(terms, CLASS, "SYNTHETIC_REGULATION:CLASS_A",
                                  SHA, "2026-10-27T11:00:00+00:00")
     return store, broker, terms, evidence
@@ -101,6 +103,45 @@ def test_open_fci_reserves_cash_without_inventing_nav_or_profit(tmp_path):
     assert broker._cash(AS_OF, "ARS") == Decimal("1000")
 
 
+def test_fci_reconciles_subscription_using_writer_decimal_normalization(tmp_path):
+    store, broker, terms, evidence = setup_fund(
+        tmp_path, paper_subscription_min=Decimal("1E+3"),
+        paper_amount_unit=Decimal("0.0100"))
+    broker.family_paper.subscribe_fund(
+        terms, lifecycle_id="fund-1", event_id="e0", amount="1000.00",
+        occurred_at="2026-10-27T12:00:00+00:00")
+    result = reconcile_fund_store(store.path, "fund-1", [], evidence, as_of=AS_OF)
+    assert result.subscription_ars == Decimal("1000.00")
+    assert result.reserved_cash_ars == Decimal("-1000.00")
+
+
+@pytest.mark.parametrize("json_price, json_amount", [
+    (10.0101, 1001.01),
+    ("10.010100", "1001.010"),
+])
+def test_fci_allocation_accepts_exact_decimals_from_json_receipts(tmp_path, json_price, json_amount):
+    store, broker, terms, evidence = setup_fund(tmp_path)
+    broker.family_paper.subscribe_fund(
+        terms, lifecycle_id="fund-1", event_id="e0", amount="1001.01",
+        occurred_at="2026-10-27T12:00:00+00:00")
+    event(store, "PENDING", 1)
+    event(store, "NAV_APPLIED", 2)
+    event(store, "SETTLED", 3)
+    nav_at = "2026-10-27T12:02:00+00:00"
+    nav = receipt("e2", "NAV_APPLIED", "FUND_ADMINISTRATOR_NAV", at=3,
+                  nav="10.0101", nav_effective_at=nav_at)
+    # The broker movement supplies price, quantity and amount as decoded JSON
+    # numbers. Its exact class/fee/NAV linkage is supplied by the receipt.
+    movement = {"price": json_price, "quantity": 100, "amount": json_amount}
+    allocation = receipt(
+        "e3", "SETTLED", "BROKER_FUND_ALLOCATION", at=5, nav=movement["price"],
+        units=movement["quantity"], fee="0", cash=movement["amount"],
+        nav_effective_at=nav_at, nav_reference=nav.source_reference)
+    result = reconcile_fund_store(store.path, "fund-1", [nav, allocation], evidence, as_of=AS_OF)
+    assert (result.state, result.units, result.nav_per_unit) == (
+        "SETTLED", Decimal("100"), Decimal("10.0101"))
+
+
 @pytest.mark.parametrize("mutation,code", [
     (lambda rs: rs[:2], "FCI_RECEIPT_IDENTITY_OR_SOURCE_MISMATCH"),
     (lambda rs: [replace(rs[0], class_key="OTHER"), *rs[1:]], "FCI_RECEIPT_IDENTITY_OR_SOURCE_MISMATCH"),
@@ -108,7 +149,10 @@ def test_open_fci_reserves_cash_without_inventing_nav_or_profit(tmp_path):
     (lambda rs: [rs[0], replace(rs[1], explicit_fee=None), rs[2]], "FCI_SUBSCRIPTION_FEE_UNKNOWN"),
     (lambda rs: [rs[0], replace(rs[1], units=Decimal("100")), rs[2]], "FCI_ALLOCATION_ARITHMETIC_MISMATCH"),
     (lambda rs: [rs[0], replace(rs[1], nav_reference="OTHER_NAV"), rs[2]], "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH"),
+    (lambda rs: [rs[0], replace(rs[1], nav_per_unit=10.0001), rs[2]], "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH"),
+    (lambda rs: [rs[0], replace(rs[1], cash_amount="999.99"), rs[2]], "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH"),
     (lambda rs: [replace(rs[0], nav_effective_at="2026-10-27T12:06:00+00:00"), *rs[1:]], "FCI_NAV_EFFECTIVE_TIME_INVALID"),
+    (lambda rs: [replace(rs[0], nav_effective_at="2026-10-26T18:00:00+00:00"), *rs[1:]], "FCI_NAV_EFFECTIVE_TIME_INVALID"),
     (lambda rs: [*rs[:2], replace(rs[2], cash_amount=Decimal("1081"))], "FCI_REDEMPTION_ARITHMETIC_MISMATCH"),
     (lambda rs: [*rs, rs[-1]], "FCI_RECEIPT_DUPLICATE_OR_INVALID"),
 ])
@@ -134,6 +178,40 @@ def test_fci_rejects_history_not_known_at_requested_cut(tmp_path):
     with pytest.raises(ValueError, match="FCI_EVENT_PIT_INVALID"):
         reconcile_fund_store(store.path, "fund-1", receipts, evidence,
                              as_of="2026-10-27T12:04:30+00:00")
+
+
+def test_fci_rejects_durable_event_from_inconsistent_predecessor_state(tmp_path):
+    store, _, evidence, receipts = complete_cycle(tmp_path)
+    with sqlite3.connect(store.path) as db:
+        db.execute("UPDATE paper_family_lifecycle_events SET from_state=? WHERE event_id=?",
+                   ("PENDING", "e3"))
+    with pytest.raises(ValueError, match="FCI_EVENT_SEQUENCE_INVALID"):
+        reconcile_fund_store(store.path, "fund-1", receipts, evidence, as_of=AS_OF)
+
+
+def test_fci_reconciliation_reads_one_snapshot_during_a_paper_transition(tmp_path, monkeypatch):
+    store, broker, terms, evidence = setup_fund(tmp_path)
+    broker.family_paper.subscribe_fund(
+        terms, lifecycle_id="fund-1", event_id="e0", amount="1000",
+        occurred_at="2026-10-27T12:00:00+00:00")
+    connect = sqlite3.connect
+
+    class AdvanceBeforeEventsRead(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if "FROM paper_family_lifecycle_events WHERE lifecycle_id=?" in sql:
+                event(store, "PENDING", 1)
+            return super().execute(sql, parameters)
+
+    def connect_for_reconciliation(path, *args, **kwargs):
+        if isinstance(path, str) and path.endswith("?mode=ro"):
+            kwargs["factory"] = AdvanceBeforeEventsRead
+        return connect(path, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_for_reconciliation)
+    result = reconcile_fund_store(store.path, "fund-1", [], evidence, as_of=AS_OF)
+    assert result.state == "SUBSCRIBE_REQUESTED"
+    with store.connect() as db:
+        assert db.execute("SELECT state FROM paper_family_lifecycle").fetchone()[0] == "PENDING"
 
 
 def test_fci_durable_root_inconsistent_with_events_is_not_accepted(tmp_path):

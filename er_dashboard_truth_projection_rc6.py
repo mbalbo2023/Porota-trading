@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from rc6_signal_contracts import CONFIRMED_INTRADAY_PRICE_STATES
+
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 SCHEMA = "rc6-dashboard-truth-v1"
@@ -264,8 +266,9 @@ def build(query: Callable[..., list[dict[str, Any]]],
     ) or [{}])[0] if table("scalping_candidates") else {}
     intraday_contracts = (query(
         """SELECT COUNT(*) total,
-                  SUM(CASE WHEN state='CONFIRMED_INTERVAL_VOLUME' THEN 1 ELSE 0 END) confirmed,
-                  MAX(checked_at) as_of FROM ppi_intraday_contract_state"""
+                  SUM(CASE WHEN state IN (?,?) THEN 1 ELSE 0 END) confirmed,
+                  MAX(checked_at) as_of FROM ppi_intraday_contract_state""",
+        CONFIRMED_INTRADAY_PRICE_STATES,
     ) or [{}])[0] if table("ppi_intraday_contract_state") else {}
     scalp_fills = (query(
         """SELECT COUNT(*) total,MAX(opened_at) as_of FROM paper_positions

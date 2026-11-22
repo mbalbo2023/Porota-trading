@@ -30,6 +30,7 @@ PAPER_ONLY = True
 ENTRY_AUTHORITY = False
 REAL_ROUTES_USED = ()
 RECEIPT_SCHEMA = "rc6.fixed-income-economic-receipt.v1"
+NATIVE_MATURITY_MODE = "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
 MAX_RECEIPT_BYTES = 256 * 1024
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_LOT_EVENTS = 4096
@@ -117,11 +118,39 @@ def _seed(db, paper_id):
     immutable = {key: root[key] for key in ("paper_id", "source", "symbol", "asset_class",
                  "market", "currency", "settlement", "quantity", "entry_price", "entry_cost", "opened_at")}
     immutable.update(contract=asdict(contract), buy=buy)
+    maturity_plan = features.get("fixed_income_exit_plan")
+    if family == "LETRAS" and isinstance(maturity_plan, dict) and "reviewed_obligation_id" in maturity_plan:
+        immutable["reviewed_maturity_plan"] = {
+            key: value for key, value in maturity_plan.items() if key != "revoked"}
     digest = _hash(_canonical(immutable).encode())
     seed = PositionSeed(paper_id, root["symbol"], family, root["market"], root["settlement"],
                         root["currency"], str(quantity), "VN", root["opened_at"],
                         "paper-fill:" + str(buy["id"]), digest)
     return seed
+
+
+def record_opening_lot(connection, paper_id):
+    """Attach the existing FI projection to the new BUY in its transaction."""
+    if not connection.in_transaction:
+        raise ValueError("FI_LEDGER_OPENING_TRANSACTION_REQUIRED")
+    safety = connection.execute(
+        "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+    if not safety or safety[0] != "PRODUCTION_PAPER" or type(safety[1]) is not int or safety[1] != 0:
+        raise ValueError("FI_LEDGER_PAPER_SAFETY_REQUIRED")
+    seed = _seed(connection, paper_id)
+    connection.execute("INSERT INTO paper_fi_lots VALUES(?,?,?)",
+                       (paper_id, _canonical(asdict(seed)), seed.position_sha256))
+
+
+def paper_entitlement_settlement(term, opened_at, *, family, market, currency):
+    term = term.upper()
+    if term in {"INMEDIATA", "CI", "T+0"}:
+        return aware_datetime(opened_at), "PAPER_CI_AT_TRADE"
+    if term in {"A-24HS", "24HS", "T+1"}:
+        return conservative_unconfirmed_availability(
+            term, opened_at, family=family, market=market, currency=currency
+        ), "PAPER_CONSERVATIVE_FULL_SETTLEMENT_DATE"
+    return None, ""
 
 
 def _entitlement(seed, event, receipt, at, prior_events):
@@ -143,16 +172,9 @@ def _entitlement(seed, event, receipt, at, prior_events):
             and opened <= settled <= record_at
             and known <= aware_datetime(event.recorded_at) <= at):
         raise ValueError("FI_LEDGER_NOT_ENTITLED_OR_CLOCK_INVALID")
-    term = seed.settlement.upper()
-    if term in {"INMEDIATA", "CI", "T+0"}:
-        expected, basis = opened, "PAPER_CI_AT_TRADE"
-    elif term in {"A-24HS", "24HS", "T+1"}:
-        expected = conservative_unconfirmed_availability(
-            term, seed.opened_at, family=seed.family, market=seed.market,
-            currency=seed.trading_currency)
-        basis = "PAPER_CONSERVATIVE_FULL_SETTLEMENT_DATE"
-    else:
-        expected, basis = None, ""
+    expected, basis = paper_entitlement_settlement(
+        seed.settlement, seed.opened_at, family=seed.family, market=seed.market,
+        currency=seed.trading_currency)
     if expected is None or settled != expected or proof.get("settlement_basis") != basis:
         raise ValueError("FI_LEDGER_SETTLEMENT_MODEL_UNVERIFIED")
     entitled_nominal = decimal_value(seed.initial_nominal, "initial nominal", positive=True)
@@ -170,6 +192,30 @@ def _entitlement(seed, event, receipt, at, prior_events):
             decimal_value(event.nominal_base, "coupon nominal", positive=True))
     if decimal_value(event.cash_amount, "cash", nonnegative=True) != base * per_vn:
         raise ValueError("FI_LEDGER_PAYMENT_UNIT_MISMATCH")
+
+
+def _opening_maturity_obligation(db, seed, event, receipt):
+    if seed.family != "LETRAS":
+        return
+    root = db.execute("SELECT features_json FROM paper_positions WHERE paper_id=?",
+                      (seed.paper_id,)).fetchone()
+    plan = json.loads(root[0]).get("fixed_income_exit_plan")
+    # Older PAPER positions predate frozen obligation economics. Their existing
+    # independently reviewed receipt contract remains readable and replayable.
+    if not isinstance(plan, dict) or "reviewed_obligation_id" not in plan:
+        return
+    proof = receipt.get("entitlement") or {}
+    if (plan.get("mode") != NATIVE_MATURITY_MODE or event.kind != "AMORTIZATION"
+            or event.obligation_id != plan["reviewed_obligation_id"]
+            or event.payment_currency != seed.trading_currency
+            or aware_datetime(event.effective_at) != aware_datetime(plan["exit_at"])
+            or aware_datetime(proof["ex_at"]) != aware_datetime(plan["ex_at"])
+            or aware_datetime(proof["record_at"]) != aware_datetime(plan["record_at"])
+            or decimal_value(event.nominal_redeemed, "redemption VN", positive=True) !=
+               decimal_value(seed.initial_nominal, "entry VN", positive=True)
+            or decimal_value(event.cash_amount, "redemption cash", positive=True) !=
+               decimal_value(plan["redemption_cash"], "plan cash", positive=True)):
+        raise ValueError("FI_LEDGER_OPENING_OBLIGATION_MISMATCH")
 
 
 def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_bytes, applied_at):
@@ -211,6 +257,7 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
                           (seed.paper_id,)).fetchall()
         prior_events = tuple(EconomicEvent(**json.loads(row["event_json"])) for row in rows)
         _entitlement(seed, event, receipt, at, prior_events)
+        _opening_maturity_obligation(db, seed, event, receipt)
         prior = next((row for row in rows if row["event_id"] == event.event_id), None)
         if prior:
             if prior["receipt_sha256"] != approved_sha256:

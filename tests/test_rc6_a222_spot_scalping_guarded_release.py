@@ -29,7 +29,7 @@ from bm_exit_supervisor import PositionExitSupervisor, init_schema as init_exit
 from bq_exit_policy import PaperSessionPolicy
 from bs_instrument_contracts import InstrumentContract
 from rc6_dynamic_universe.routing import strategy_route
-from rc6_signal_contracts import volume_contract
+from rc6_signal_contracts import CONFIRMED_PRICE_EVENTS, volume_contract
 from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
 
 
@@ -138,9 +138,12 @@ class A222GuardedScalpingTests(unittest.TestCase):
         self.assertEqual(catalog.quote_terms(requested, now=AT)["opening_block_reason"],
                          "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED")
 
-    def _scalping_buy_candidate(self, *, financial_contract=None):
+    def _scalping_buy_candidate(self, *, financial_contract=None, with_volume_contract=True):
         record = _record()
-        self.assertEqual(self._two_reads(record)["state"], "CONFIRMED_INTERVAL_VOLUME")
+        if not with_volume_contract:
+            record.pop("raw")
+        expected = "CONFIRMED_INTERVAL_VOLUME" if with_volume_contract else CONFIRMED_PRICE_EVENTS
+        self.assertEqual(self._two_reads(record)["state"], expected)
         terms = self._seed_synthetic_ready_catalog()
         if financial_contract is not None:
             terms["contract"] = financial_contract
@@ -172,7 +175,24 @@ class A222GuardedScalpingTests(unittest.TestCase):
         self.assertEqual(sum(evidence["reason_counts"].values()), evidence["total_hold"])
         self.assertIn("not actual provider payload pairs", evidence["limits"])
 
-    def test_provider_volume_claims_without_exact_evidence_stay_hold_before_broker(self):
+    def _assert_volume_diagnostic_candidate(self, record, reason):
+        self.assertEqual(self._two_reads(record)["state"], CONFIRMED_PRICE_EVENTS)
+        self.store.add_quote(_quote())
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "BUY_CANDIDATE")
+        with self.store.connect() as connection:
+            candidate = connection.execute("SELECT economics_json FROM scalping_candidates").fetchone()
+            self.assertEqual(json.loads(candidate[0])["volume_diagnostic"], reason)
+            snapshot = json.loads(connection.execute("SELECT payload_json FROM decision_evidence_snapshots").fetchone()[0])
+            inputs = snapshot["inputs_used"]["entry_signal_inputs"]
+            self.assertIsNone(inputs["rvol"])
+            self.assertEqual(inputs["activity"]["interval_volume_contract"], reason)
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+            # Only the temporary test book is reused for the next input variant.
+            for table in ("ppi_intraday_contract_state", "ppi_intraday_points", "market_snapshots",
+                          "scalping_candidates", "decision_evidence_snapshots"):
+                connection.execute(f"DELETE FROM {table}")
+
+    def test_provider_volume_claims_without_exact_evidence_are_diagnostic_only(self):
         invalid = {
             "missing": lambda c: c.clear(),
             "other_provider": lambda c: c.update(provider="IOL"),
@@ -193,13 +213,7 @@ class A222GuardedScalpingTests(unittest.TestCase):
                 record["raw"]["intraday_volume_contract"] = claim
                 with self.assertRaisesRegex(ValueError, "PPI_VOLUME_CONTRACT_UNVERIFIED"):
                     volume_contract(record, AT)
-                self.assertEqual(self._two_reads(record)["state"], "PPI_VOLUME_CONTRACT_UNVERIFIED")
-                self._no_entry(record, "PPI_VOLUME_CONTRACT_UNVERIFIED")
-                # Reset the isolated DB between variants; no false confirmation
-                # from another read or reason is allowed to cross a test case.
-                with self.store.connect() as connection:
-                    for table in ("ppi_intraday_contract_state", "ppi_intraday_points", "market_snapshots", "scalping_candidates"):
-                        connection.execute(f"DELETE FROM {table}")
+                self._assert_volume_diagnostic_candidate(record, "PPI_VOLUME_CONTRACT_UNVERIFIED")
 
     def test_wrong_volume_units_and_cumulative_resets_do_not_become_quantities(self):
         for unit, accumulation, expected in (
@@ -213,11 +227,25 @@ class A222GuardedScalpingTests(unittest.TestCase):
                 claim.update(unit=unit, accumulation=accumulation)
                 if unit == "TURNOVER_MONEY":
                     claim["currency"] = "ARS"
-                self.assertEqual(self._two_reads(record)["state"], expected)
-                self._no_entry(record, expected)
-                with self.store.connect() as connection:
-                    for table in ("ppi_intraday_contract_state", "ppi_intraday_points", "market_snapshots", "scalping_candidates"):
-                        connection.execute(f"DELETE FROM {table}")
+                self._assert_volume_diagnostic_candidate(record, expected)
+
+    def test_zero_raw_volume_and_volume_only_revision_keep_usable_prices(self):
+        record = _record()
+        record.pop("raw")
+        first_at = AT - timedelta(minutes=1)
+        scalping.persist_payload(self.store, record, _points(15, at=first_at), received_at=first_at)
+        points = [(event_at, price, Decimal(0)) for event_at, price, _ in _points()]
+        confirmed = scalping.persist_payload(self.store, record, points, received_at=AT)
+        self.assertEqual(confirmed["state"], CONFIRMED_PRICE_EVENTS)
+        self.assertEqual(confirmed["changed"], 0)
+        self.assertGreater(confirmed["revision_forensics_sampled"], 0)
+        self.store.add_quote(_quote())
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "BUY_CANDIDATE")
+        with self.store.connect() as connection:
+            first = connection.execute("SELECT volume FROM ppi_intraday_points ORDER BY event_at LIMIT 1").fetchone()
+            revised = connection.execute("SELECT DISTINCT price_changed,volume_changed FROM ppi_intraday_revision_forensics").fetchall()
+            self.assertEqual(Decimal(first[0]), Decimal(20))
+            self.assertEqual([tuple(row) for row in revised], [(0, 1)])
 
     def test_empty_and_closed_revision_each_revoke_previously_confirmed_source(self):
         record = _record()
@@ -296,6 +324,21 @@ class A222GuardedScalpingTests(unittest.TestCase):
         with self.store.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
 
+    def test_merv_scalping_cannot_use_the_equity_tariff(self):
+        at = datetime.fromisoformat("2026-11-24T12:00:00-03:00")
+        record = _record(ticker="MERV")
+        record.pop("raw")
+        first_at = at - timedelta(minutes=1)
+        scalping.persist_payload(self.store, record, _points(15, at=first_at), received_at=first_at)
+        confirmed = scalping.persist_payload(self.store, record, _points(at=at), received_at=at)
+        self.assertEqual(confirmed["state"], CONFIRMED_PRICE_EVENTS)
+        self.store.add_quote(_quote(at, ticker="MERV"))
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=at), "HOLD")
+        with self.store.connect() as connection:
+            candidate = connection.execute("SELECT reason,economics_json FROM scalping_candidates").fetchone()
+            self.assertEqual(candidate["reason"], "COST_COMPONENT_UNKNOWN:commission")
+            self.assertEqual(json.loads(candidate["economics_json"])["cost_contract"]["family"], "ETFS")
+
     def test_synthetic_buy_candidate_stays_blocked_without_paper_preopen_go(self):
         record, _ = self._scalping_buy_candidate()
         # A good signal and a ready synthetic catalog are not authorization;
@@ -311,7 +354,8 @@ class A222GuardedScalpingTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0], 0)
 
     def test_synthetic_signal_to_paper_fill_to_independent_supervisor_exit(self):
-        record, terms = self._scalping_buy_candidate(financial_contract=_contract(10))
+        record, terms = self._scalping_buy_candidate(
+            financial_contract=_contract(10), with_volume_contract=False)
         self._seed_synthetic_exit_availability()
         synthetic_env = {"PAPER_SCALPING_MODE": "ACTIVE_PAPER",
                          "PAPER_ECONOMIC_GATE_MODE": "BINDING",
@@ -424,6 +468,31 @@ class A222GuardedScalpingTests(unittest.TestCase):
              patch.object(preopen, "admission_status", return_value=(True, "")):
             result = scalping.promote_paper_candidate(self.store, record, at=AT)
         self.assertEqual(result, "BLOCKED:SCALPING_BOOK_CHANGED_BEFORE_FILL")
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+
+    def test_promotion_rechecks_closed_price_revision_inside_fill_transaction(self):
+        record, _ = self._scalping_buy_candidate(
+            financial_contract=_contract(10), with_volume_contract=False)
+        self._seed_synthetic_exit_availability()
+        canonical_record = self.store.record_decision
+
+        def revise_price_after_decision(*args):
+            recorded = canonical_record(*args)
+            revised = scalping.persist_payload(self.store, record,
+                _points(price_delta=Decimal(".01")), received_at=AT)
+            self.assertEqual(revised["state"], "REJECTED_MUTABLE_CLOSED_POINTS")
+            return recorded
+
+        with patch.dict(os.environ, {"PAPER_SCALPING_MODE": "ACTIVE_PAPER",
+                                     "PAPER_ECONOMIC_GATE_MODE": "BINDING",
+                                     "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY",
+                                     "PAPER_SCALPING_TARGET_GAIN_PCT": "0.05"}), \
+             patch.object(self.store, "record_decision", side_effect=revise_price_after_decision), \
+             patch.object(runtime, "now_iso", return_value=AT.isoformat()), \
+             patch.object(preopen, "admission_status", return_value=(True, "")):
+            result = scalping.promote_paper_candidate(self.store, record, at=AT)
+        self.assertEqual(result, "BLOCKED:REJECTED_MUTABLE_CLOSED_POINTS")
         with self.store.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
 

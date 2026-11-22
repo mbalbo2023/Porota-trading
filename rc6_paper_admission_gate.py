@@ -332,7 +332,8 @@ def paper_admission_guard(quote, store):
                                       and quote.contract is None)):
             return False, "PAPER_EXACT_CONTRACT_MISMATCH"
         if quote.asset_class == "OPCIONES":
-            from rc6_ppi_option_contract_policy import current_option_contract_reason
+            from rc6_ppi_option_contract_policy import (
+                PPI_OPTION_UNDERLYING_SETTLEMENT, current_option_contract_reason)
             now = datetime.now(TZ)
             with store.connect() as connection:
                 underlying_rows = [dict(row) for row in connection.execute("""
@@ -348,7 +349,7 @@ def paper_admission_guard(quote, store):
                     if (underlying.get("status") == "AVAILABLE"
                             and underlying.get("market") == "BYMA"
                             and underlying.get("currency") == "ARS"
-                            and underlying.get("settlement") == "INMEDIATA"
+                            and underlying.get("settlement") == PPI_OPTION_UNDERLYING_SETTLEMENT
                             and str(json.loads(underlying.get("metadata_json") or "{}").get(
                                 "_discovery_source") or "").upper() == "PPI_PRIMARY"):
                         _current_option_dependency_contract(connection, underlying, now)

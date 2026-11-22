@@ -50,7 +50,7 @@ class FamilyIntegration(unittest.TestCase):
             clock_fn=stamp)
 
     def seed_underlying(self, *, duplicate_fresh=False, missing_ppi=False,
-                        underlying_block=""):
+                        underlying_block="", settlement="A-24HS"):
         with self.store.connect() as c:
             c.execute("""CREATE TABLE IF NOT EXISTS financial_instrument_catalog (
                 ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
@@ -58,7 +58,7 @@ class FamilyIntegration(unittest.TestCase):
             c.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2 (
                 ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
                 settlement TEXT, status TEXT, can_simulate INTEGER)""")
-            terms = ["A-24HS"] + (["INMEDIATA"] if duplicate_fresh else [])
+            terms = [settlement] + (["INMEDIATA"] if duplicate_fresh else [])
             for settlement in terms:
                 key = ("GGAL", "ACCIONES", "BYMA", "ARS", settlement)
                 c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?)",
@@ -103,6 +103,18 @@ class FamilyIntegration(unittest.TestCase):
         action, _, reason, _ = self.broker.decide(option_quote())
         self.assertEqual((action, reason),
                          ("HOLD", "OPTION_UNDERLYING_EVIDENCE_MISSING"))
+
+    def test_canonical_option_uses_the_settlement_admission_verifies(self):
+        self.seed_underlying()
+        with patch("cg_paper_workspace.database_path", return_value=Path(self.store.path)):
+            action, _, reason, _ = self.broker.decide(option_quote())
+            self.assertEqual((action, reason),
+                             ("HOLD", "OPTION_UNDERLYING_EVIDENCE_MISSING"))
+            self.seed_underlying(settlement="INMEDIATA")
+            action, _, reason, features = self.broker.decide(option_quote())
+        self.assertEqual((action, reason), ("BUY", "OPTION_LONG_PAPER_CANDIDATE"))
+        self.assertEqual(features["underlying_identity"],
+                         ["GGAL", "ACCIONES", "BYMA", "ARS", "INMEDIATA"])
 
     def test_option_underlying_missing_ppi_source_is_hold(self):
         self.seed_underlying(missing_ppi=True)
@@ -209,10 +221,31 @@ class FamilyIntegration(unittest.TestCase):
             self.assertEqual(self.store.open_positions(), [])
             # The native on_quote path records its strategy-identified BUY
             # before entering the locked ledger, unlike the direct bypass.
+            self.seed_underlying(settlement="INMEDIATA")
             broker.on_quote(option_quote())
             rows = broker.store.open_positions()
             self.assertEqual(len(rows), 1)
             self.assertEqual(D(rows[0]["quantity"]), D("1"))
+
+    def test_canonical_option_cannot_commit_receipt_using_other_settlement(self):
+        self.seed_underlying()
+        quote = option_quote()
+        action, score, reason, features = self.broker.decide(quote)
+        self.assertEqual(action, "BUY", reason)
+        self.assertEqual(features["underlying_identity"][-1], "A-24HS")
+        strategy = features["strategy"]
+        key = (
+            f"{strategy}:{quote.symbol}:{quote.asset_class}:{quote.settlement}:"
+            f"{quote.currency}:{quote.market}:{quote.observed_at[:16]}:BUY")
+        features["native_decision_key"] = key
+        self.assertTrue(self.store.record_decision(key, quote, action, score, reason, features))
+        with (patch("cg_paper_workspace.database_path", return_value=Path(self.store.path)),
+              self.store.connect() as connection):
+            connection.execute("BEGIN IMMEDIATE")
+            self.assertEqual(
+                self.broker._specialized_decision_error(connection, quote, score, features),
+                "OPTION_NATIVE_UNDERLYING_IDENTITY_MISMATCH")
+        self.assertEqual(self.store.open_positions(), [])
 
     def test_fi_no_provider_never_inherits_equity_buy(self):
         contract = InstrumentContract(

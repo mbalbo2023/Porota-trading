@@ -15,7 +15,7 @@ from dataclasses import asdict
 from datetime import timezone
 
 from bs_instrument_contracts import aware_datetime, decimal_value
-from rc6_fixed_income_event_ledger import _canonical, _hash, _seed
+from rc6_fixed_income_event_ledger import NATIVE_MATURITY_MODE, _canonical, _hash, _seed
 from rc6_fixed_income_portfolio_bridge import position_at, valuation_at
 from rc6_fixed_income_runtime import _digest
 
@@ -52,7 +52,7 @@ def _validate_persisted_plan(root, seed, reviewed, at):
         maturity = aware_datetime(plan["exit_at"])
         if (seed.family != "LETRAS" or plan["verified"] is not True
                 or plan.get("revoked", False) is not False
-                or plan["mode"] != "FI_NATIVE_MATURITY_EVENT_LEDGER_V1"
+                or plan["mode"] != NATIVE_MATURITY_MODE
                 or plan["strategy_id"] != "FI_LETRA_PAPER_V1"
                 or plan["max_hold_minutes"] is not None
                 or plan["nominal_rebase_required"] is not True

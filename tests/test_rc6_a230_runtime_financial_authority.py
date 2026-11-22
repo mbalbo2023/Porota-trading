@@ -1,4 +1,5 @@
 """A230: adversarial PAPER-cash replay with NO real route and no deploy clock gate."""
+from datetime import datetime, timedelta
 from decimal import Decimal
 import os
 
@@ -138,6 +139,71 @@ def test_valid_runtime_future_mark_settlement_and_exit_are_quote_bound(
         assert any("PAPER_FUTURE_MARK:" in row[0] for row in receipts)
         assert any("PAPER_FUTURE_CLOSE:" in row[0] for row in receipts)
     assert future_cash_effect(paper.store, "ARS", clock[0]) > Decimal("-1500000")
+
+
+def test_native_runtime_dlr_binds_normalized_contract_to_open_mark_and_close(
+        tmp_path, monkeypatch):
+    from be_paper_engine import Quote
+    import bu_instrument_catalog as catalog
+    from cp_contract_evidence_v2_hf6 import record_snapshots
+    from cr_contract_evidence_v2_mass_hf6 import planned_records
+    from rc6_contract_bridge import complements_from_store
+    from tests.test_rc6_future_paper_engine import broker as make_broker
+
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.sqlite"))
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    at = datetime.fromisoformat("2026-11-24T12:00:00-03:00")
+    clock = [at.isoformat()]
+    paper = make_broker(tmp_path, clock)
+    paper.admission_guard = gate.paper_admission_guard
+    catalog.init_schema(paper.store)
+    primary = catalog.normalize_record(
+        {"ticker": "DLR/DIC26", "type": "FUTUROS", "market": "A3", "currency": "ARS",
+         "settlement": "INMEDIATA"},
+        "INMEDIATA", clock[0], "TEST_PPI_DLR")
+    with paper.store.connect() as db:
+        db.execute("""CREATE TABLE candidate_universe (
+            ticker TEXT,instrument_type TEXT,settlement TEXT,market TEXT,
+            can_simulate INTEGER,status TEXT,detail TEXT,checked_at TEXT)""")
+        catalog.persist(db, primary)
+        row = dict(db.execute("SELECT * FROM financial_instrument_catalog").fetchone())
+    records, _, _ = planned_records([row])
+    record_snapshots(paper.store, records)
+    complement, = complements_from_store(paper.store, now=at)
+    bound = catalog.complete_with_complement(primary, complement)
+    assert bound["capability"] == "READY_PAPER_FUTURES"
+    with paper.store.connect() as db:
+        catalog.persist(db, bound)
+        catalog.sync_candidate_universe(db, clock[0])
+    terms = catalog.quote_terms(bound, now=at)
+    assert str(terms["contract"].cash_multiplier) == "1E+3"
+
+    def dlr_quote(instant, bid):
+        bid = Decimal(bid)
+        return Quote("DLR/DIC26", "FUTUROS", "INMEDIATA", bid, bid, bid + Decimal("0.5"),
+                     Decimal("10"), Decimal("10"), instant, book_at=instant,
+                     trade_at=instant, last_kind="TRADE", **terms)
+
+    for i in range(8):
+        q = dlr_quote((at - timedelta(minutes=7 - i)).isoformat(), 1470 + 4 * i)
+        paper.store.add_quote(q)
+    paper.on_quote(q)
+    with paper.store.connect() as db:
+        assert tuple(db.execute("SELECT final_result,reason FROM trade_gate_evaluations").fetchone()) == (
+            "OPENED_SIMULATED", "FUTURES_PAPER_OPENED_SIMULATED")
+        assert db.execute("SELECT COUNT(*) FROM decision_evidence_snapshots "
+                          "WHERE decision_key LIKE 'PAPER_ADMISSION:%'").fetchone()[0] == 1
+    clock[0] = at.replace(hour=14, minute=50).isoformat()
+    paper.on_quote(dlr_quote(clock[0], 1500))
+    with paper.store.connect() as db:
+        assert db.execute("SELECT status FROM paper_future_positions").fetchone()[0] == "CLOSED"
+        phases = {row[0].partition(":")[0] for row in db.execute(
+            "SELECT decision_key FROM decision_evidence_snapshots "
+            "WHERE decision_key LIKE 'PAPER_FUTURE_%'")}
+        assert phases == {"PAPER_FUTURE_MARK", "PAPER_FUTURE_CLOSE"}
+        assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
+    assert future_cash_effect(paper.store, "ARS", clock[0]) != 0
 
 
 def _open_offline_fixture_in_runtime_book(tmp_path, monkeypatch):
