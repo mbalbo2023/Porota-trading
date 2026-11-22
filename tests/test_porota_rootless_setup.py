@@ -706,6 +706,63 @@ class PrivateRuntimeObservationTests(unittest.TestCase):
         self.assertNotIn("must-never-leak", json.dumps(result))
 
 
+class DatabaseWriterCensusTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.proc = self.root / "proc"
+        self.proc.mkdir()
+        scope = {"__name__": "test_census"}
+        exec(setup.WRITER_CENSUS, scope)
+        self.census = scope["census"]
+        self.observer = self.root / scope["DATABASES"]["OBSERVER"]
+        self.history = self.root / scope["DATABASES"]["HISTORY"]
+        self.observer.parent.mkdir(parents=True)
+        self.observer.write_bytes(b"observer")
+        self.history.write_bytes(b"history")
+
+    def add_process(self, pid, role, member, flags):
+        process = self.proc / str(pid)
+        (process / "fd").mkdir(parents=True)
+        (process / "fdinfo").mkdir()
+        (process / "fd/3").symlink_to(member)
+        (process / "fdinfo/3").write_text(f"pos:\t0\nflags:\t{flags:o}\n")
+        (process / "cmdline").write_bytes(b"python\0/app/bv_paper_runtime.py\0" + role + b"\0private-value\0")
+        (process / "cgroup").write_text("0::/system.slice/docker-" + "a" * 64 + ".scope\n")
+
+    def observe(self):
+        with patch("os.geteuid", return_value=0):
+            return self.census(self.root, self.proc)
+
+    def test_census_matches_physical_identity_and_separates_shm_from_db_writes(self):
+        shm = self.history.with_name(self.history.name + "-shm")
+        shm.write_bytes(b"shared")
+        self.add_process(411, b"--candle-worker", self.observer, os.O_RDWR)
+        self.add_process(412, b"--exit-reader", self.history, os.O_RDONLY)
+        self.add_process(413, b"--notification-worker", shm, os.O_RDWR)
+        receipt = self.observe()
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["host_mutations"], 0)
+        holders = {row["pid"]: row for row in receipt["holders"]}
+        self.assertEqual(set(holders), {411, 413})
+        self.assertEqual(holders[411]["role"], "candles")
+        self.assertEqual(holders[411]["members"], [("OBSERVER", "DATABASE")])
+        self.assertEqual(holders[413]["members"], [("HISTORY", "SHM")])
+        self.assertEqual(holders[411]["container_prefix"], "a" * 12)
+        self.assertNotIn("private-value", json.dumps(receipt))
+
+    def test_missing_fd_flags_and_aliased_databases_cannot_certify_census(self):
+        self.add_process(411, b"--candle-worker", self.observer, os.O_RDWR)
+        (self.proc / "411/fdinfo/3").write_text("pos:\t0\n")
+        receipt = self.observe()
+        self.assertEqual(receipt["status"], "NO_VERIFICADO")
+        self.assertEqual(receipt["coverage"]["target_fd_unverified"], 1)
+        self.history.unlink()
+        self.history.symlink_to(self.observer)
+        self.assertEqual(self.observe()["reason"], "DB_PATH_ALIAS")
+
+
 class PrivateControllerHealthTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -714,7 +771,7 @@ class PrivateControllerHealthTests(unittest.TestCase):
         self.path = self.root / "data/paper_v17/artifacts/observer_v17.db/runtime-health.json"
         self.path.parent.mkdir(parents=True)
         self.source_sha, self.source_tree = "a" * 40, "b" * 40
-        self.roles = ("scanner", "performance", "dynamic_shadow", "exit_reader",
+        self.roles = ("scanner", "ppi_gateway", "dynamic_shadow", "exit_reader",
                       "notifications", "candles", "intraday_scalping", "caucion_cash_sweep")
         self.health = {"schema": "rc6.runtime-child-health.v1", "source_sha": self.source_sha,
             "candidate_tree_sha": self.source_tree, "recorded_at": "2026-11-15T20:31:00+00:00",

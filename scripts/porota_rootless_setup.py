@@ -95,6 +95,191 @@ print(json.dumps(results,sort_keys=True))
 '''
 
 
+# Like UNIT_DETAILS, this fixed probe is sent with the existing inspect action.
+# It never opens a database or publishes raw process arguments.
+WRITER_CENSUS = r'''
+import json
+import os
+import re
+import stat
+import sys
+import time
+from pathlib import Path
+
+DATABASES = {
+    "OBSERVER": "data/paper_v17/observer_v17.db",
+    "HISTORY": "data/market_history.db",
+}
+MEMBERS = {"DATABASE": "", "WAL": "-wal", "SHM": "-shm", "JOURNAL": "-journal"}
+JOBS = {
+    "bf_production_paper_observer.py": "scanner",
+    "bv_paper_runtime.py": "runtime",
+    "rc6_local_eod_history.py": "local_eod_history",
+    "rc6_postclose_history_job.py": "postclose_history",
+    "rc6_history_cutoff_repair_once.py": "history_cutoff_repair",
+    "rc6_history_import_source_reported.py": "history_source_reported_import",
+    "ex_a3_history_job_rc6.py": "a3_history",
+    "bg_paper_dashboard.py": "dashboard",
+}
+WORKERS = {
+    b"--candle-worker": "candles",
+    b"--caucion-cash-sweep-worker": "caucion_cash_sweep",
+    b"--dynamic-shadow-worker": "dynamic_shadow",
+    b"--exit-reader": "exit_reader",
+    b"--intraday-scalping-worker": "intraday_scalping",
+    b"--notification-worker": "notifications",
+    b"--ppi-gateway-worker": "ppi_gateway",
+}
+
+
+def targets(root):
+    result = {}
+    for book, relative in DATABASES.items():
+        path = root / relative
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            raise ValueError("DB_PATH_ALIAS")
+        for member, suffix in MEMBERS.items():
+            member_path = path.with_name(path.name + suffix)
+            try:
+                info = member_path.lstat()
+            except FileNotFoundError:
+                if member == "DATABASE":
+                    raise ValueError("DB_NOT_FOUND") from None
+                continue
+            identity = (info.st_dev, info.st_ino)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or identity in result:
+                raise ValueError("DB_MEMBER_ALIAS")
+            result[identity] = (book, member)
+    return result
+
+
+def read_prefix(path, limit):
+    with path.open("rb") as stream:
+        return stream.read(limit)
+
+
+def role_for(process):
+    try:
+        args = read_prefix(process / "cmdline", 4096).split(b"\0")
+        role = next((JOBS[os.fsdecode(arg.rsplit(b"/", 1)[-1])] for arg in args[1:]
+                     if os.fsdecode(arg.rsplit(b"/", 1)[-1]) in JOBS), "UNCLASSIFIED")
+        if role == "runtime":
+            role = next((WORKERS[arg] for arg in args[1:] if arg in WORKERS), role)
+        scope = read_prefix(process / "cgroup", 4096)
+        match = re.search(rb"(?:/|docker-)([0-9a-f]{64})(?:\.scope|/|\n|$)", scope)
+    except OSError:
+        return "UNCLASSIFIED", None
+    return role, match.group(1)[:12].decode("ascii") if match else None
+
+
+def writer_members(process, indexed, metrics, deadline):
+    members = set()
+    try:
+        with os.scandir(process / "fd") as descriptors:
+            for entry in descriptors:
+                if metrics["descriptors"] >= 50000 or time.monotonic() > deadline:
+                    metrics["bounded"] = True
+                    break
+                metrics["descriptors"] += 1
+                identity = None
+                try:
+                    before = entry.stat()
+                    identity = (before.st_dev, before.st_ino)
+                    if identity not in indexed:
+                        continue
+                    raw = read_prefix(process / "fdinfo" / entry.name, 1024)
+                    flag = re.search(rb"(?m)^flags:\s+([0-7]+)$", raw)
+                    after = os.stat(entry.path)
+                    if (after.st_dev, after.st_ino) != identity or not flag:
+                        metrics["target_fd_unverified"] += 1
+                        continue
+                    access = int(flag.group(1), 8) & os.O_ACCMODE
+                    if access in (os.O_WRONLY, os.O_RDWR):
+                        members.add(indexed[identity])
+                except (ProcessLookupError, FileNotFoundError):
+                    column = "target_fd_unverified" if identity in indexed else "descriptors_disappeared"
+                    metrics[column] += 1
+                except OSError:
+                    metrics["unreadable"] += 1
+    except (ProcessLookupError, FileNotFoundError):
+        metrics["processes_disappeared"] += 1
+    except OSError:
+        metrics["unreadable"] += 1
+    return sorted(members)
+
+
+def census(root, proc):
+    origin = {"schema": "porota.rootless.db-writer-census.v1", "host_mutations": 0}
+    if os.geteuid() != 0:
+        return dict(origin, status="NO_VERIFICADO", reason="HOST_PROC_PRIVILEGE_REQUIRED")
+    try:
+        indexed = targets(root)
+    except ValueError as error:
+        return dict(origin, status="NO_VERIFICADO", reason=str(error))
+    except OSError:
+        return dict(origin, status="NO_VERIFICADO", reason="DB_IDENTITY_UNAVAILABLE")
+    metrics = dict(processes=0, descriptors=0, unreadable=0, target_fd_unverified=0,
+                   processes_disappeared=0, descriptors_disappeared=0, bounded=False)
+    holders = []
+    deadline = time.monotonic() + 8
+    with os.scandir(proc) as processes:
+        for entry in processes:
+            if not entry.name.isdecimal():
+                continue
+            if metrics["processes"] >= 4096 or len(holders) >= 64 or time.monotonic() > deadline:
+                metrics["bounded"] = True
+                break
+            metrics["processes"] += 1
+            process = Path(entry.path)
+            members = writer_members(process, indexed, metrics, deadline)
+            if members:
+                role, container = role_for(process)
+                try:
+                    uid = process.stat().st_uid
+                except (ProcessLookupError, FileNotFoundError):
+                    metrics["processes_disappeared"] += 1
+                    continue
+                except OSError:
+                    metrics["unreadable"] += 1
+                    continue
+                holders.append(dict(pid=int(entry.name), uid=uid, role=role,
+                                    container_prefix=container, members=members))
+            if metrics["bounded"]:
+                break
+    try:
+        stable = targets(root) == indexed
+    except (OSError, ValueError):
+        stable = False
+    complete = stable and not any(metrics[k] for k in ("unreadable", "target_fd_unverified", "bounded"))
+    return dict(origin, status="OBSERVED" if complete else "NO_VERIFICADO",
+                scope="WRITE_CAPABLE_FDS_AT_SAMPLE", target_identity_stable=stable,
+                targets=[dict(book=book, member=member, device=dev, inode=ino)
+                         for (dev, ino), (book, member) in sorted(indexed.items())],
+                holders=holders, coverage=metrics)
+
+
+if __name__ == "__main__":
+    print(json.dumps(census(Path(sys.argv[1]), Path("/proc")), sort_keys=True))
+'''
+
+
+def database_writer_census(root, *, run=subprocess.run):
+    result = _call((SUDO, "-n", "--", "/usr/bin/python3", "-I", "-B", "-c",
+                    WRITER_CENSUS, str(root)), run=run, timeout=12)
+    unavailable = {"status": "NO_VERIFICADO", "reason": "HOST_PROC_PROBE_UNAVAILABLE"}
+    if result is None or result.returncode:
+        return unavailable
+    try:
+        receipt = json.loads(result.stdout)
+    except ValueError:
+        return unavailable
+    if (not isinstance(receipt, dict) or receipt.get("schema") != "porota.rootless.db-writer-census.v1"
+            or type(receipt.get("host_mutations")) is not int or receipt["host_mutations"] != 0
+            or receipt.get("status") not in {"OBSERVED", "NO_VERIFICADO"}):
+        return unavailable
+    return receipt
+
+
 def detailed_units(inventory, *, run=subprocess.run):
     selected = [row for row in inventory.get("units", []) if row.get("name") in INSPECT_UNITS]
     paths = set()
@@ -1262,7 +1447,7 @@ def private_controller_health(root, source_sha, source_tree, *, now=None):
     reference = now or datetime.now(timezone.utc)
     if observed_at is None or reference.tzinfo is None or not 0 <= (reference - observed_at).total_seconds() <= 120:
         return dict(result, reason="CONTROLLER_HEALTH_STALE")
-    roles = ("scanner", "performance", "dynamic_shadow", "exit_reader",
+    roles = ("scanner", "ppi_gateway", "dynamic_shadow", "exit_reader",
              "notifications", "candles", "intraday_scalping", "caucion_cash_sweep")
     children = document.get("children")
     if not isinstance(children, dict) or set(children) != set(roles):
@@ -1362,6 +1547,7 @@ def inspect_host(root: Path, *, run=subprocess.run):
             "user_service": _properties(user_service, {"LoadState", "ActiveState", "SubState", "FragmentPath"}),
             "linger": _properties(linger, {"Linger"}), "cgroup_controllers": controllers,
             "own_daemon": own_info, "legacy_rc6": legacy, "files": files,
+            "database_writer_census": database_writer_census(root, run=run),
             "legacy_units": units, "unit_details": detailed_units(units, run=run),
             "preopen_79": preopen_79_diagnostic(run=run),
             "preopen_last": preopen_last_diagnostic(run=run),
