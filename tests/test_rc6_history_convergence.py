@@ -219,6 +219,9 @@ def test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_
     replay=history.append_many(s,[replace(value,observed_at='2026-10-01T18:00:00Z')],attempt_key='original-unit-attempt')
     assert replay['replayed_committed_attempt'] and not replay['versions_appended']
     assert len(table(s,'history_versions_v2'))==2
+    assert table(s,'history_canonical_v2')[0]['last_checked_at']==history.utc('2026-10-01T17:00:00Z')
+    checks={row['version_id']:row['last_checked_at'] for row in table(s,'history_checks_v2')}
+    assert checks[first['row_results'][0]['version_id']]==history.utc('2026-10-01T18:00:00Z')
     assert json.loads(exact_read(s)[0]['metadata_json'])['volume_unit']=='UNKNOWN'
     with pytest.raises(ValueError,match='HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT'):
         history.append_many(s,[replace(value,metadata={'volume_unit':'UNKNOWN'},observed_at='2026-10-01T19:00:00Z')],attempt_key='original-unit-attempt')

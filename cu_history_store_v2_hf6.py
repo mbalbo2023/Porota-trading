@@ -407,8 +407,11 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
                 for row,value in zip(prior,values):
                     connection.execute('UPDATE history_checks_v2 SET last_checked_at=MAX(last_checked_at,?) WHERE version_id=?',
                                        (value.observed_at,row['version_id']))
-                    connection.execute('UPDATE history_canonical_v2 SET last_checked_at=MAX(last_checked_at,?) WHERE version_id=?',
-                                       (value.observed_at,row['version_id']))
+                    connection.execute(
+                        'UPDATE history_canonical_v2 SET last_checked_at=MAX(last_checked_at,?) WHERE '
+                        + _WHERE + ' AND version_id=?',
+                        (value.observed_at, *_key(value), row['version_id']),
+                    )
                     results.append({'version_id':row['version_id'],'version_appended':False,'canonical_updated':False,
                                     'source_rank':source_rank(value.source),'payload_hash':row['payload_hash'],'conflicts_recorded':0})
                 connection.execute('UPDATE history_batch_attempts_v2 SET last_checked_at=MAX(last_checked_at,?) WHERE attempt_key=?',
