@@ -16,6 +16,9 @@ from scripts.porota_consume_runtime_evidence_rc6 import ConsumerError, consume
 
 
 NOW = datetime(2026, 9, 27, 17, 0, tzinfo=timezone.utc)
+PPI_NATIVE_IDENTITY = {"ticker": "GGAL", "type": "ACCIONES", "market": "BYMA",
+                       "currency": "Pesos", "settlement": "A-24HS",
+                       "_discovery_source": "PPI_PRIMARY"}
 
 
 class SystemctlResult:
@@ -87,7 +90,7 @@ def make_db(path: Path, *, last_seen="2026-09-27T16:59:00+00:00",
          real_orders_sent, 10, 0),
     )
     metadata = {
-        "_discovery_source": "PPI_PRIMARY",
+        **PPI_NATIVE_IDENTITY,
         "_freshness_by_source": {
             "IOL_COMPLEMENTARY": "2026-09-27T16:58:00+00:00",
             "BYMA_PUBLIC_COMPLEMENTARY": "2026-09-27T16:57:00+00:00",
@@ -162,6 +165,148 @@ def exact_ledger(db: Path, *rows):
 def exact_ggal(*, currency="ARS", ready=1):
     return ("GGAL", "ACCIONES", "BYMA", currency, "A-24HS", ready,
             "AVAILABLE", "READY_PAPER_SPOT", "2026-09-27T16:59:00+00:00")
+
+
+@pytest.mark.parametrize(("source", "raw_literal", "state", "expected_reason"), [
+    ("PPI_FIELD", "A-24HS", "LITERAL_MATCH", None),
+    ("REQUEST_CANDIDATE", None, "REQUEST_ONLY", "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"),
+    ("PPI_FIELD", None, "NO_VERIFICADO", "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"),
+    ("PPI_FIELD", "INMEDIATA", "LITERAL_MISMATCH", "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"),
+    ("PPI_FIELD", "PRIVATE_EXTERNAL_VALUE", "NO_VERIFICADO", "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"),
+])
+def test_exact_settlement_witness_and_ledger_publish_only_causal_safe_evidence(
+        tmp_path, source, raw_literal, state, expected_reason):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    raw = dict(PPI_NATIVE_IDENTITY, description="PRIVATE_FREE_TEXT")
+    raw.pop("settlement")
+    if raw_literal is not None:
+        raw["settlement"] = raw_literal
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE financial_instrument_catalog SET settlement_source=?,metadata_json=?",
+                     (source, json.dumps(raw)))
+    ledger_reason = "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED;PRIVATE_OTHER_REASON"
+    row = exact_ggal() if source == "PPI_FIELD" else (
+        *exact_ggal(ready=0)[:7], ledger_reason, "2026-09-27T16:59:00+00:00")
+    exact_ledger(db, row)
+
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    evidence.validate_bundle(payload)
+    instrument = payload["instruments"][0]
+    witness = instrument["catalog"]["settlement_witness"]
+    assert witness == {"source": source, "state": state,
+                       "literal": raw_literal if state in {"LITERAL_MATCH", "LITERAL_MISMATCH"} else None,
+                       "observed_at": "2026-09-27T16:59:00+00:00"}
+    ledger = instrument["readiness"]["exact_candidate"]
+    assert ledger["checked_at"] == "2026-09-27T16:59:00+00:00"
+    assert ledger["can_simulate"] == row[5]
+    assert ledger["reasons"] == ([expected_reason] if source == "REQUEST_CANDIDATE" else [])
+    if expected_reason:
+        assert instrument["readiness"]["status"] == "NO_READY"
+        assert instrument["readiness"]["first_block"] == {
+            "stage": "PPI_IDENTITY", "state": "BLOCKED", "reason": expected_reason}
+        assert ("CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]) == bool(row[5])
+    else:
+        assert instrument["readiness"]["status"] == "READY_PAPER"
+        assert instrument["readiness"]["first_block"]["state"] == "NO_VERIFICADO"
+    assert "PRIVATE_" not in json.dumps(payload)
+
+
+def test_last_exact_market_snapshot_retains_clocks_without_claiming_provider_identity(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    exact_ledger(db, exact_ggal())
+    base = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    at = "2026-09-27T16:59:50+00:00"
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE market_snapshots(id INTEGER PRIMARY KEY, symbol TEXT,
+         asset_class TEXT,market TEXT,currency TEXT,settlement TEXT,observed_at TEXT,trade_at TEXT,
+         book_at TEXT,last_kind TEXT,opening_block_reason TEXT)""")
+        conn.executemany("INSERT INTO market_snapshots VALUES(?,?,?,?,?,?,?,?,?,?,?)", [
+            (1, *base, at, at, at, "TRADE", "PPI_DIRECT_REST_OBSERVE_ONLY"),
+            (2, *base, at, at, "2026-09-27T16:59:59+00:00", "TRADE", "PRIVATE_IGNORED"),
+            (3, *base[:3], "USD", base[4], at, at, at, "TRADE", ""),
+        ])
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    instrument = payload["instruments"][0]
+    quote = instrument["market_observation"]
+    assert quote["state"] == "CLOCK_ORDER_INVALID"
+    assert quote["received_at"] == at and quote["trade_at"] == at
+    assert quote["book_at"] == "2026-09-27T16:59:59+00:00"
+    assert quote["provider_origin"] == "NO_VERIFICADO"
+    assert instrument["readiness"]["first_block"] == {
+        "stage": "MARKET_OBSERVATION", "state": "NO_VERIFICADO", "reason": "CLOCK_ORDER_INVALID"}
+    assert "PRIVATE_" not in json.dumps(payload)
+
+
+def test_bounded_wire_receipts_distinguish_returned_literal_from_requested_term(tmp_path, monkeypatch):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    exact_ledger(db, exact_ggal())
+    at = "2026-09-27T16:59:55+00:00"
+    received = "2026-09-27T16:59:53+00:00"
+    market_at = "2026-09-27T16:59:51+00:00"
+    shared = ("identity5=GGAL:ACCIONES:BYMA:ARS:A-24HS;http_status=200;paper_ready=false;"
+              "wire_sha256=" + "a" * 64 + ";market_timestamp_utc=" + market_at)
+    monkeypatch.setattr(evidence, "NATIVE_WIRE_LIMIT", 5)
+    with sqlite3.connect(db) as conn:
+        conn.execute("""CREATE TABLE paper_events(id INTEGER PRIMARY KEY,event_at TEXT,
+          event_type TEXT,detail TEXT)""")
+        conn.execute("CREATE INDEX event_clock ON paper_events(event_type,julianday(event_at))")
+        conn.executemany("INSERT INTO paper_events VALUES(?, ?, ?, ?)", [
+            (1, at, evidence.NATIVE_WIRE_EVENT, shared + ";endpoint=current;wire_received_at_utc=" + received),
+            (2, at, evidence.NATIVE_WIRE_EVENT, shared + ";command_id=22;endpoint=current;"
+             "response_settlement_status=EXPLICIT;response_settlement_literal=INMEDIATA;wire_received_at_utc=" + received),
+            (3, at, evidence.NATIVE_WIRE_EVENT, shared + ";command_id=22;endpoint=book;"
+             "response_settlement_status=ABSENT;response_settlement_literal=;wire_received_at_utc=" + received),
+            (4, at, evidence.NATIVE_WIRE_EVENT, shared + ";endpoint=book;"
+             "response_settlement_status=EXPLICIT;response_settlement_literal=PRIVATE_VALUE;"
+             "wire_received_at_utc=2026-09-27T17:00:01+00:00"),
+            (5, at, "ANOTHER_EVENT", shared + ";endpoint=current;wire_received_at_utc=" + received),
+            (6, at, evidence.NATIVE_WIRE_EVENT, shared + ";endpoint=book;endpoint=current;"
+             "wire_received_at_utc=" + received),
+            (7, at, evidence.NATIVE_WIRE_EVENT, shared + ";endpoint=current;wire_received_at_utc="
+             + received + ";" + "a" * 2048),
+        ])
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    evidence.validate_bundle(payload)
+    market = payload["instruments"][0]["market_observation"]
+    assert market["provider_origin"] == "NO_VERIFICADO"
+    assert [read["endpoint"] for read in market["native_reads"]] == ["current", "book"]
+    current, book = market["native_reads"]
+    assert current["response_settlement_status"] == "EXPLICIT"
+    assert current["response_settlement_literal"] == "INMEDIATA"
+    assert current["settlement_matches_request"] is False
+    assert book["response_settlement_status"] == "ABSENT"
+    assert book["response_settlement_literal"] is None and book["settlement_matches_request"] is None
+    assert all(read["received_at"] == received and read["market_at"] == market_at
+               and read["command_id"] == 22 and read["paper_ready"] is False
+               for read in market["native_reads"])
+    assert "PRIVATE_VALUE" not in json.dumps(payload)
+
+
+def test_missing_or_future_exact_ledger_never_claims_candidate_admission(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    exact_ledger(db, (*exact_ggal()[:-1], "2026-09-27T17:00:01+00:00"))
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    gate = payload["instruments"][0]["readiness"]
+    assert gate["status"] == "NO_READY" and gate["exact_candidate"]["can_simulate"] is None
+    assert gate["first_block"] == {"stage": "CANDIDATE_LEDGER", "state": "NO_VERIFICADO",
+                                    "reason": "EXACT_CANDIDATE_LEDGER_NO_VERIFICADO"}
+    assert "EXACT_CANDIDATE_LEDGER_CLOCK_NO_VERIFICADO" in payload["gaps"]
 
 
 def test_evidence_and_candidate_writer_use_the_same_identity_lkg():
