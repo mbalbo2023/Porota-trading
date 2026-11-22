@@ -49,8 +49,15 @@ def test_empty_intraday_does_not_exhaust_budget_parsing_2424_unconsumed_contract
     assert diagnostics['transform_elapsed_ms'] < 2000
 
 
-def test_only_observed_identity_has_contract_timestamps_converted(database, monkeypatch):
+@pytest.mark.parametrize('state,volume_semantics', [
+    ('CONFIRMED_INTERVAL_VOLUME', 'INTERVAL_VOLUME'),
+    ('CONFIRMED_PRICE_EVENTS', 'NO_VERIFICADO'),
+])
+def test_only_observed_identity_has_contract_timestamps_converted(database, monkeypatch, state, volume_semantics):
     point(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute('UPDATE ppi_intraday_contract_state SET state=? WHERE symbol=?',
+                           (state, 'S00000'))
     real_stamp = runtime.stamp
     calls = []
     def tracked_stamp(value):
@@ -60,6 +67,7 @@ def test_only_observed_identity_has_contract_timestamps_converted(database, monk
     result = runtime.read_runtime(database, as_of=AT, query_budget_seconds=2)
     assert len(calls) == 3
     assert result['observations'][0]['intraday_confirmed'] is True
+    assert result['observations'][0]['volume_semantics'] == volume_semantics
     assert result['observations'][0]['entry_authority'] is False
 
 

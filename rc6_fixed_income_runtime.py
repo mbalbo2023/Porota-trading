@@ -6,10 +6,9 @@ The manifest attests issuer/OOS review; hashing alone never proves either.
 No unpinned JSON, IOL analytics flag, or quote can attest its own authority.
 
 This module verifies that exact reviewed bytes and clocks are still present,
-then computes the scenario using the existing immutable model. It neither
-imports receipts into SQLite nor implements the native event/cash exit. The
-strategy must still HOLD at that capability gate until that separate lifecycle
-is implemented and tested. No orders, network calls, fills or DB writes.
+then computes the scenario using the existing immutable model. The strategy
+and broker separately validate whether the scenario has a native PAPER exit.
+This producer does not send orders, call the network or write to SQLite.
 """
 from __future__ import annotations
 
@@ -223,10 +222,19 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
         rows = receipt.get("flows")
         if not isinstance(rows, list) or not 0 < len(rows) <= MAX_FLOWS:
             _fail("FI_EVIDENCE_FLOW_SET_INVALID")
-        minutes = receipt.get("market_exit_horizon_minutes")
-        if type(minutes) is not int or not 0 < minutes <= 360:
-            _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
-        exit_at = at + timedelta(minutes=minutes)
+        if key[1] == "LETRAS":
+            if aware_datetime(terms["redemption_known_at"]) > aware_datetime(receipt["known_at"]):
+                _fail("FI_EVIDENCE_REVIEW_CLOCK_INVALID")
+            exit_at = aware_datetime(terms["maturity_at"])
+            if exit_at <= at:
+                _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
+            exit_mode = "MATURITY_REDEMPTION"
+        else:
+            minutes = receipt.get("market_exit_horizon_minutes")
+            if type(minutes) is not int or not 0 < minutes <= 360:
+                _fail("FI_EVIDENCE_EXIT_HORIZON_INVALID")
+            exit_at = at + timedelta(minutes=minutes)
+            exit_mode = "MARKET_EXIT"
         flows, obligation_ids = [], set()
         for row in rows:
             flow = ProjectedFlow(**row)
@@ -240,7 +248,7 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             if not flow.obligation_id or flow.obligation_id in obligation_ids:
                 _fail("FI_EVIDENCE_FLOW_OBLIGATION_DUPLICATE")
             obligation_ids.add(flow.obligation_id)
-            if at < aware_datetime(flow.due_at) <= exit_at:
+            if exit_mode == "MATURITY_REDEMPTION" or at < aware_datetime(flow.due_at) <= exit_at:
                 flows.append(flow)
         if not flows:
             _fail("FI_EVIDENCE_NO_FLOWS_IN_HOLDING_HORIZON")
@@ -248,7 +256,7 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
         scenario = evaluate_shadow(
             quote, proof, flows, RiskLimits(**receipt["risk_limits"]),
             quantity_vn=receipt["quantity_vn"], decision_at=decision_at,
-            planned_exit_at=exit_at.isoformat(), exit_mode="MARKET_EXIT",
+            planned_exit_at=exit_at.isoformat(), exit_mode=exit_mode,
             book_reference="native-ppi-quote:" + live_quote_sha,
             book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY")
         return {"scenario": scenario, "terms": terms, "validation": validation,
@@ -258,7 +266,9 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
                                      "receipt_sha256": entry["proof"]["sha256"],
                                      "quote_sha256": live_quote_sha,
                                      "identity": list(key),
-                                     "native_event_cash_lifecycle": "NO_VERIFICADO"}}
+                                     "native_event_cash_lifecycle": (
+                                         "PAYMENT_REVIEW_PENDING" if exit_mode == "MATURITY_REDEMPTION"
+                                         else "NO_VERIFICADO")}}
     except FixedIncomeEvidenceError:
         raise
     except (KeyError, TypeError, ValueError, OSError, OverflowError) as exc:

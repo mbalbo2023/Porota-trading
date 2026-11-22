@@ -1,9 +1,11 @@
 """Numeric JSON serialization changes are not economic intraday revisions."""
 from datetime import timedelta
+import json
 
 import pytest
 
 from fg_intraday_contract_policy_rc6 import classify_revision, IntradayContractPolicyError
+from rc6_signal_contracts import CONFIRMED_PRICE_EVENTS
 from tests.test_intraday_scalping_rc6_integration import START, make_store, record
 import cf_intraday_scalping as scalping
 
@@ -68,4 +70,8 @@ def test_equal_serialization_does_not_authenticate_missing_volume_contract(tmp_p
                   for k in range(20+i)]
         result = scalping.persist_payload(store, identity, points, received_at=at)
     assert result["changed"] == 0
-    assert result["state"] == "PPI_VOLUME_CONTRACT_UNVERIFIED"
+    assert result["state"] == CONFIRMED_PRICE_EVENTS
+    with store.connect() as connection:
+        detail = json.loads(connection.execute("SELECT detail FROM ppi_intraday_contract_state").fetchone()[0])
+    assert detail["volume_contract_state"] == "PPI_VOLUME_CONTRACT_UNVERIFIED"
+    assert detail["volume_contract"] is None

@@ -22,6 +22,15 @@ def parse_ticker(ticker:str)->CaucionIdentity:
     raw=str(ticker).strip().upper(); match=_TICKER_RE.fullmatch(raw)
     if not match: raise CaucionContractError(f"invalid caucion ticker: {ticker!r}")
     prefix,days_raw=match.groups(); return CaucionIdentity(ticker=raw,currency_prefix=prefix,term_days=int(days_raw))
+
+
+def search_evidence_key(row: Mapping[str, Any]) -> tuple[str, ...]:
+    """Deduplicate native search observations without dropping literal settlement."""
+    return tuple(str(row.get(field) or "").strip().upper() for field in (
+        "ticker", "type", "market", "currency", "settlement",
+    ))
+
+
 def validate_amount(ticker:str,amount:Any)->Decimal:
     identity=parse_ticker(ticker)
     try: value=Decimal(str(amount))

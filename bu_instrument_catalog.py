@@ -407,10 +407,16 @@ def complete_with_complement(record, complementary):
         raw["_contract_complement_source"] = source
     elif (isinstance(family_contract, dict) and family_contract
           and existing_family_contract != family_contract):
-        raw["_contract_conflicts"] = {
-            "fields": ["paper_family_contract_v1"], "source": source,
-            "incoming": family_contract, "existing": existing_family_contract,
-        }
+        from rc6_contract_bridge import same_bound_contract_version
+        if (canonical_family(primary["instrument_type"]) == "FCI"
+                and raw.get("_contract_complement_source") == source == "CONTRACT_EVIDENCE_V2"
+                and same_bound_contract_version(existing_family_contract, family_contract)):
+            raw["paper_family_contract_v1"] = family_contract
+        else:
+            raw["_contract_conflicts"] = {
+                "fields": ["paper_family_contract_v1"], "source": source,
+                "incoming": family_contract, "existing": existing_family_contract,
+            }
     caucion_contract = complementary.get("paper_caucion_contract_v1")
     existing_caucion_contract = raw.get("paper_caucion_contract_v1")
     if isinstance(caucion_contract, dict) and caucion_contract and not existing_caucion_contract:
@@ -418,10 +424,16 @@ def complete_with_complement(record, complementary):
         raw["_contract_complement_source"] = source
     elif (isinstance(caucion_contract, dict) and caucion_contract
           and existing_caucion_contract != caucion_contract):
-        raw["_contract_conflicts"] = {
-            "fields": ["paper_caucion_contract_v1"], "source": source,
-            "incoming": caucion_contract, "existing": existing_caucion_contract,
-        }
+        from rc6_contract_bridge import is_static_caucion_policy, same_caucion_policy_version
+        if (raw.get("_contract_complement_source") == source == "CONTRACT_EVIDENCE_V2"
+                and is_static_caucion_policy(complementary)
+                and same_caucion_policy_version(existing_caucion_contract, caucion_contract)):
+            raw["paper_caucion_contract_v1"] = caucion_contract
+        else:
+            raw["_contract_conflicts"] = {
+                "fields": ["paper_caucion_contract_v1"], "source": source,
+                "incoming": caucion_contract, "existing": existing_caucion_contract,
+            }
 
     stamp=_source_timestamp(complementary)
     freshness=dict(raw.get("_freshness_by_source") or {})
@@ -517,6 +529,91 @@ def ppi_full_key_evidence_reason(record):
     except (ValueError, TypeError):
         return "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
     return "" if observed == expected else "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
+
+
+def retain_ppi_settlement_witness(previous, incoming):
+    """Keep an existing literal PPI witness when a search only omits settlement.
+
+    SearchInstrument queries overlap and can later replay the same instrument
+    without settlement. Retention preserves the original provider record and
+    receipt clock. New literal data or material changes follow normal publication.
+    """
+    if (incoming.get("settlement_source") != "REQUEST_CANDIDATE" or not previous
+            or previous.get("status") != "AVAILABLE" or incoming.get("status") != "AVAILABLE"
+            or incoming.get("capability") in {"TYPE_NOT_ENUMERATED", "MARKET_NOT_ENUMERATED"}
+            or ppi_full_key_evidence_reason(previous)
+            or not _candidate_timestamp_is_fresh(previous.get("last_seen_at"),
+                    incoming.get("last_seen_at"), PAPER_PPI_IDENTITY_LKG_SECONDS)):
+        return False
+    coordinates = ("ticker", "instrument_type", "market", "currency", "settlement")
+    key = tuple(incoming[field] for field in coordinates)
+    raw = incoming["raw"]
+    if (tuple(previous[field] for field in coordinates) != key
+            or raw.get("_discovery_source") != "PPI_PRIMARY"
+            or raw.get("settlement") not in (None, "")
+            or canonical_family(raw.get("_provider_instrument_type")) != key[1]):
+        return False
+    from rc6_ppi_global_budget import assert_native_ppi_response_identity
+    try:
+        assert_native_ppi_response_identity(raw, key)
+    except ValueError:
+        return False
+    witness = previous.get("raw")
+    if not isinstance(witness, dict):
+        witness = json.loads(previous["metadata_json"])
+    search_fields = {"ticker", "symbol", "type", "instrumentType", "market", "currency",
+                     "settlement", "_discovery_source", "_provider_instrument_type"}
+    if key[1] != "OPCIONES":
+        search_fields.add("description")
+    return all(field in search_fields or (field in witness and witness[field] == value)
+               for field, value in raw.items())
+
+
+def scanner_diagnostic_aliases_sql(connection):
+    """Recognize obsolete Spot placeholders without relaxing request uniqueness.
+
+    Keep the catalog and ledger rows intact for diagnostics. Only a unique,
+    incomplete complementary sibling that both views have retired can leave the census.
+    Any known coordinate must agree with an available, PPI-attested five-key.
+    Older snapshots without provenance columns still count all aliases.
+    """
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(financial_instrument_catalog)")}
+    if not {"metadata_json", "settlement_source"} <= columns:
+        return "SELECT NULL ticker,NULL instrument_type,NULL market,NULL currency,NULL settlement WHERE 0"
+
+    def attested(ticker, family, market, currency, settlement, settlement_source, metadata_json):
+        return not ppi_full_key_evidence_reason({
+            "ticker": ticker, "instrument_type": family, "market": market, "currency": currency,
+            "settlement": settlement, "settlement_source": settlement_source, "metadata_json": metadata_json,
+        })
+
+    connection.create_function("rc6_scanner_ppi_primary", 2, _candidate_has_ppi_primary, deterministic=True)
+    connection.create_function("rc6_scanner_ppi_attested", 7, attested, deterministic=True)
+    return """SELECT h.ticker,h.instrument_type,h.market,h.currency,h.settlement
+      FROM financial_instrument_catalog h JOIN candidate_identity_v2 p
+        USING(ticker,instrument_type,market,currency,settlement)
+      WHERE h.instrument_type IN ('ACCIONES','CEDEARS','ETFS')
+        AND h.status='STALE' AND h.capability='MISSING_CURRENCY_OR_MARKET'
+        AND p.status='STALE' AND p.can_simulate=0
+        AND (h.market IN ('','UNKNOWN','NO_VERIFICADO') OR h.currency IN ('','UNKNOWN','NO_VERIFICADO'))
+        AND CASE WHEN json_valid(h.metadata_json) THEN
+          UPPER(h.settlement_source) IN ('IOL_COMPLEMENTARY','BYMA_PUBLIC_COMPLEMENTARY')
+          AND UPPER(json_extract(h.metadata_json,'$._discovery_source'))=UPPER(h.settlement_source)
+          AND NOT rc6_scanner_ppi_primary(h.settlement_source,h.metadata_json)
+        ELSE 0 END
+        AND (SELECT COUNT(*) FROM financial_instrument_catalog d
+          WHERE (d.ticker,d.instrument_type,d.market,d.currency,d.settlement)=
+                (h.ticker,h.instrument_type,h.market,h.currency,h.settlement))=1
+        AND (SELECT COUNT(*) FROM candidate_identity_v2 d
+          WHERE (d.ticker,d.instrument_type,d.market,d.currency,d.settlement)=
+                (h.ticker,h.instrument_type,h.market,h.currency,h.settlement))=1
+        AND EXISTS (SELECT 1 FROM financial_instrument_catalog f
+          WHERE f.ticker=h.ticker AND f.instrument_type=h.instrument_type AND f.settlement=h.settlement
+            AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
+            AND (h.market IN ('','UNKNOWN','NO_VERIFICADO') OR h.market=f.market)
+            AND (h.currency IN ('','UNKNOWN','NO_VERIFICADO') OR h.currency=f.currency)
+            AND rc6_scanner_ppi_attested(f.ticker,f.instrument_type,f.market,f.currency,
+                f.settlement,f.settlement_source,f.metadata_json))"""
 
 
 def ppi_option_full_key_evidence_reason(record):

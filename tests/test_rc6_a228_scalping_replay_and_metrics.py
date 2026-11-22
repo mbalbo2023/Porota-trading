@@ -107,12 +107,12 @@ class A228ScalpingReplayTests(unittest.TestCase):
         record = _record()
         record.pop("raw", None)
         self.assertEqual(self.seed_two_reads(self.store, record, AT)["state"],
-                         "PPI_VOLUME_CONTRACT_UNVERIFIED")
+                         "CONFIRMED_PRICE_EVENTS")
         self.store.add_quote(_quote())
-        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "HOLD")
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "BUY_CANDIDATE")
         report = session_rca_snapshot(self.store, as_of=AT)
-        self.assertEqual(report["latest_identity_states"], {"PPI_VOLUME_CONTRACT_UNVERIFIED": 1})
-        self.assertEqual(report["candidate_hold_reasons"], {"PPI_VOLUME_CONTRACT_UNVERIFIED": 1})
+        self.assertEqual(report["latest_identity_states"], {"CONFIRMED_PRICE_EVENTS": 1})
+        self.assertEqual(report["candidate_hold_reasons"], {})
         self.assertEqual(report["provider_payload_pairs"], "NO_VERIFICADO")
         self.assertEqual(report["oos_edge"], "OOS_NO_VERIFICADO")
 

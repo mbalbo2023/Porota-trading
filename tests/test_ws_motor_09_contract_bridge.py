@@ -85,6 +85,35 @@ def test_fci_bridge_reaches_connected_subscription_capability():
     assert catalog.contract_for(completed).subscription_amount("1000") == Decimal("1000")
 
 
+def test_fci_contract_receipt_refresh_keeps_readiness_for_same_version(tmp_path):
+    s = store(tmp_path)
+    primary = catalog.normalize_record(
+        {"ticker": "FCI.FIXTURE", "type": "FCI", "market": "BYMA", "currency": "ARS",
+         "settlement": "INMEDIATA"}, "INMEDIATA", NOW.isoformat(), "synthetic-ppi")
+    receipt = dict(
+        family="FCI", ticker=primary["ticker"], market=primary["market"], currency="ARS",
+        settlement="INMEDIATA", source_class="DERIVED_OFFICIAL_RULE",
+        source_ref="POROTA_PAPER_FCI_RISK_BUDGET_POLICY:v1",
+        evidence={"currency": "ARS", "paper_subscription_policy": "INTERNAL_RISK_BUDGET_BY_AMOUNT",
+                  "paper_subscription_min": "1000", "paper_amount_unit": "0.01"})
+    baseline = evidence.record_snapshot(s, **receipt, observed_at=NOW.isoformat())
+    first, = bridge.complements_from_store(s, now=NOW)
+    ready = catalog.complete_with_complement(primary, first)
+    assert ready["capability"] == "READY_PAPER_FCI_SUBSCRIPTION"
+    later = NOW + timedelta(minutes=5)
+    current = evidence.record_snapshot(s, **receipt, observed_at=later.isoformat())
+    assert baseline["evidence_hash"] == current["evidence_hash"] and not current["changed"]
+    refreshed, = bridge.complements_from_store(s, now=later)
+    observed = catalog.complete_with_complement(ready, refreshed)
+    assert observed["capability"] == "READY_PAPER_FCI_SUBSCRIPTION"
+    updated = {**receipt, "evidence": {**receipt["evidence"], "paper_subscription_min": "1010"}}
+    later += timedelta(minutes=5)
+    assert evidence.record_snapshot(s, **updated, observed_at=later.isoformat())["changed"]
+    changed, = bridge.complements_from_store(s, now=later)
+    assert catalog.complete_with_complement(observed, changed)["capability"] == (
+        "CONTRACT_EVIDENCE_REVIEW_REQUIRED")
+
+
 def test_future_bridge_uses_one_published_margin_as_conservative_floor():
     payload = {
         "currency": "ARS", "cash_multiplier": "1000", "quantity_min": "1",
@@ -98,6 +127,70 @@ def test_future_bridge_uses_one_published_margin_as_conservative_floor():
     claim = bridge.normalize_group([r], now=NOW)
     contract = contract_from_metadata("DLR/DIC26", "FUTUROS", claim["financial_contract_v17"])
     assert contract.initial_margin == contract.maintenance_margin == Decimal("160000")
+
+
+DLR_ALIAS_CHECKED = datetime(2026, 11, 24, 15, 0, tzinfo=timezone.utc)
+
+
+def _dlr_alias_evidence():
+    from rc6_ppi_future_contract_policy import standard_dlr_terms
+
+    identity = dict(family="FUTUROS", ticker="DLR/DIC26", currency="ARS",
+                    settlement="INMEDIATA", observed_at=DLR_ALIAS_CHECKED.isoformat())
+    simulator = dict(identity, market="A3", source_class="DERIVED_OFFICIAL_RULE",
+                     source_ref="fixture:versioned-PAPER-DLR-policy",
+                     evidence={"paper_quantity_min": "1", "paper_quantity_step": "1",
+                               "paper_margin_policy": "CONSERVATIVE_NOTIONAL_RATE",
+                               "paper_margin_rate": "1"})
+    official = dict(identity, market="ROFEX", source_class="A3_OFFICIAL_DOCUMENTATION",
+                    source_ref="fixture:versioned-2026-DLR-terms",
+                    evidence={**standard_dlr_terms("DLR/DIC26"), "cash_multiplier": "1000"})
+    return simulator, official
+
+
+def test_stored_rofex_and_a3_terms_recover_the_same_exact_dlr(tmp_path, monkeypatch):
+    s = store(tmp_path)
+    primary = catalog.normalize_record(
+        {"ticker": "DLR/DIC26", "type": "FUTUROS", "market": "A3",
+         "currency": "ARS", "settlement": "INMEDIATA"},
+        "INMEDIATA", DLR_ALIAS_CHECKED.isoformat(), "ppi-primary")
+    primary["capability"] = "CONTRACT_EVIDENCE_REVIEW_REQUIRED"
+    primary["raw"]["_contract_bridge"] = {"status": "BLOCKED", "gaps": ["CHANGE_REVIEW_REQUIRED"]}
+    with s.connect() as c:
+        catalog.persist(c, primary)
+    evidence.record_snapshots(s, _dlr_alias_evidence())
+    claim, = bridge.complements_from_store(s, now=DLR_ALIAS_CHECKED)
+    assert claim["contract_bridge"]["status"] == "NORMALIZED"
+    assert claim["market"] == "A3"
+
+    read_current = bridge.complements_from_store
+    monkeypatch.setattr(bridge, "complements_from_store", lambda st: read_current(st, now=DLR_ALIAS_CHECKED))
+    monkeypatch.setattr(observer, "now_iso", lambda: DLR_ALIAS_CHECKED.isoformat())
+    monkeypatch.setattr(observer, "complementary_discovery", lambda _: [])
+    assert observer._reconcile_complementary_catalog(s) == 1
+    candidate = catalog.lookup(s, "DLR/DIC26", "FUTUROS", "INMEDIATA", market="A3", currency="ARS")
+    assert candidate["capability"] == "READY_PAPER_FUTURES"
+    assert not candidate.get("_admission_reason")
+
+
+def test_material_change_on_rofex_alias_blocks_current_dlr_terms(tmp_path):
+    s = store(tmp_path)
+    simulator, official = _dlr_alias_evidence()
+    evidence.record_snapshots(s, (simulator, official))
+    changed = {**official, "evidence": {**official["evidence"], "cash_multiplier": "1001"}}
+    evidence.record_snapshots(s, (changed,))
+    claim, = bridge.complements_from_store(s, now=DLR_ALIAS_CHECKED)
+    assert claim["financial_contract_v17"] is None
+    assert "CHANGE_REVIEW_REQUIRED" in claim["contract_bridge"]["gaps"]
+
+
+def test_rofex_dlr_terms_cannot_cross_instrument_settlements(tmp_path):
+    s = store(tmp_path)
+    simulator, official = _dlr_alias_evidence()
+    evidence.record_snapshots(s, (simulator, {**official, "settlement": "A-24HS"}))
+    claims = bridge.complements_from_store(s, now=DLR_ALIAS_CHECKED)
+    assert {claim["settlement"] for claim in claims} == {"INMEDIATA", "A-24HS"}
+    assert all(claim["financial_contract_v17"] is None for claim in claims)
 
 
 def test_stored_evidence_reaches_real_reconciler_candidate_lookup_and_paper(tmp_path, monkeypatch):

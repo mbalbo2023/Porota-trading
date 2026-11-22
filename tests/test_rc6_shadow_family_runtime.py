@@ -127,6 +127,8 @@ def test_dispatches_all_ten_families_with_specialized_evidence_and_no_database_m
     fci = instruments["FUND1"]["handler_result"]
     assert instruments["FUND1"]["cadence_seconds"] == 86400
     assert fci["terms"]["nav"]["value"] == 10.1 and not fci["intraday_equity_scanner"]
+    assert fci["reason_codes"] == ["FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED",
+                                   "FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED"]
     json.dumps(report, allow_nan=False)
 
 
@@ -147,6 +149,11 @@ def test_missing_or_stale_specialized_evidence_never_falls_back_to_equity(tmp_pa
     assert fixed["nominal_contract_status"] == "NO_VERIFICADO"
     assert fixed["cash_per_nominal"] is None and fixed["analytics"]["yield"]["value"] is None
     assert not instruments["AL30"]["generic_equity"] and not instruments["FUND1"]["generic_equity"]
+    assert instruments["FUND1"]["handler_result"]["reason_codes"] == [
+        "FUND_NAV_OR_LIFECYCLE_NO_VERIFICADO",
+        "FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED",
+        "FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED",
+    ]
 
 
 def test_source_capture_is_not_provider_freshness_and_future_revision_is_unavailable(tmp_path):

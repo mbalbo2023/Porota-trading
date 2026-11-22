@@ -10,6 +10,10 @@ from decimal import Decimal
 
 from bs_instrument_contracts import aware_datetime
 
+CONFIRMED_INTERVAL_VOLUME = "CONFIRMED_INTERVAL_VOLUME"
+CONFIRMED_PRICE_EVENTS = "CONFIRMED_PRICE_EVENTS"
+CONFIRMED_INTRADAY_PRICE_STATES = (CONFIRMED_INTERVAL_VOLUME, CONFIRMED_PRICE_EVENTS)
+
 SCALPING_TEMPORAL_CONTRACT = {
     "schema": "rc6.event-signal-contract.v1", "version": "scalping-events-v1",
     "sample_kind": "DISTINCT_SOURCE_EVENTS", "minimum_samples": 15,

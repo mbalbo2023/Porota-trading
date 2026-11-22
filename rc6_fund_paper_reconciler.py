@@ -9,16 +9,16 @@ evidence before a caller may initiate a new subscription.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import sqlite3
-from dataclasses import asdict, dataclass
+from contextlib import closing
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Mapping, Sequence
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
-from rc6_paper_family_lifecycle import PaperFundTerms
+from rc6_paper_family_lifecycle import PaperFundTerms, fund_subscription_detail
 
 
 PAPER_ONLY = True
@@ -40,6 +40,8 @@ class FundClassEvidence:
 
 @dataclass(frozen=True)
 class FundReceipt:
+    """The reconciler reads financial values as decimals from decoded JSON."""
+
     event_id: str
     kind: str
     class_key: str
@@ -51,10 +53,10 @@ class FundReceipt:
     recorded_at: str
     nav_effective_at: str | None = None
     nav_reference: str | None = None
-    nav_per_unit: Decimal | None = None
-    units: Decimal | None = None
-    explicit_fee: Decimal | None = None
-    cash_amount: Decimal | None = None
+    nav_per_unit: Decimal | str | int | float | None = None
+    units: Decimal | str | int | float | None = None
+    explicit_fee: Decimal | str | int | float | None = None
+    cash_amount: Decimal | str | int | float | None = None
 
 
 @dataclass(frozen=True)
@@ -98,13 +100,6 @@ def _time(value, code):
         return aware_datetime(value)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(code) from exc
-
-
-def _fund_terms_digest(snapshot):
-    if not isinstance(snapshot, dict):
-        raise ValueError("FCI_TERMS_SNAPSHOT_REQUIRED")
-    return hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(",", ":"),
-                                     ensure_ascii=False).encode()).hexdigest()
 
 
 def _receipt(receipt, *, event, evidence, as_of, expected_kind, expected_source):
@@ -170,8 +165,10 @@ def reconcile_fund_events(
         if event_id in seen_events or event.get("lifecycle_id") != lifecycle_id:
             raise ValueError("FCI_EVENT_IDENTITY_OR_REPLAY_CONFLICT")
         seen_events.add(event_id)
+        prior_state = state if index else None
         state = event.get("to_state")
-        if state != _STATES[index] or event.get("family") != "FCI":
+        if (state != _STATES[index] or event.get("family") != "FCI"
+                or event.get("from_state") != prior_state):
             raise ValueError("FCI_EVENT_SEQUENCE_INVALID")
         at = _time(event.get("occurred_at"), "FCI_EVENT_TIME_INVALID")
         if (last_at is not None and at < last_at) or at > cutoff:
@@ -186,12 +183,8 @@ def reconcile_fund_events(
             amount = decimal_value(event.get("amount"), "FCI_EVENT_AMOUNT_INVALID")
             paid = -amount
             _amount(paid, "FCI_SUBSCRIPTION_AMOUNT_INVALID", positive=True)
-            expected = json.loads(json.dumps(asdict(terms), default=str))
-            if (detail.get("mode") != "PRODUCTION_PAPER"
-                    or detail.get("execution") != "SIMULATION"
-                    or detail.get("fund_terms") != expected
-                    or detail.get("metadata_source") != terms.metadata_source
-                    or detail.get("subscription_amount") != str(paid)):
+            expected = fund_subscription_detail(terms, paid)
+            if any(detail.get(key) != value for key, value in expected.items()):
                 raise ValueError("FCI_SUBSCRIPTION_TERMS_OR_AMOUNT_MISMATCH")
             if _time(evidence.known_at, "FCI_REGULATION_TIME_INVALID") > at:
                 raise ValueError("FCI_REGULATION_NOT_KNOWN_BEFORE_SUBSCRIPTION")
@@ -216,7 +209,11 @@ def reconcile_fund_events(
                                         expected_source="BROKER_FUND_ALLOCATION"))
             units = _amount(receipt.units, "FCI_UNITS_INVALID", positive=True)
             fee = _amount(receipt.explicit_fee, "FCI_SUBSCRIPTION_FEE_UNKNOWN")
-            if (receipt.nav_per_unit != nav or receipt.cash_amount != paid
+            allocation_nav = _amount(receipt.nav_per_unit, "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH",
+                                     positive=True)
+            allocation_cash = _amount(receipt.cash_amount, "FCI_ALLOCATION_NAV_OR_CASH_MISMATCH",
+                                      positive=True)
+            if (allocation_nav != nav or allocation_cash != paid
                     or receipt.nav_reference != nav_reference
                     or _time(receipt.nav_effective_at, "FCI_ALLOCATION_NAV_DATE_REQUIRED") != nav_effective_at):
                 raise ValueError("FCI_ALLOCATION_NAV_OR_CASH_MISMATCH")
@@ -257,9 +254,10 @@ def reconcile_fund_store(path, lifecycle_id, receipts, evidence, *, as_of):
     resolved = checked_path(path)
     if not resolved.is_file():
         raise ValueError("FCI_DURABLE_DATABASE_UNVERIFIED")
-    with sqlite3.connect(resolved.as_uri() + "?mode=ro", uri=True, timeout=2) as db:
+    with closing(sqlite3.connect(resolved.as_uri() + "?mode=ro", uri=True, timeout=2)) as db:
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA query_only=ON")
+        db.execute("BEGIN")  # The root and its events must share a read snapshot.
         identity_from_connection(db)
         root = db.execute("SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?",
                           (lifecycle_id,)).fetchone()

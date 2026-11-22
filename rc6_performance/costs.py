@@ -211,7 +211,7 @@ class VersionedPaperCostContract:
                 "paper_assumptions": {
                     "clearing": render(self.clearing),
                     "minimum_commission": render(self.minimum_commission),
-                    "tiers": "EXPLICIT_COMPONENT_TABLE",
+                    "tiers": "EXPLICIT_COMPONENT_TABLE" if self.tiers is not None else None,
                     "fee_currency": "SAME_AS_SIMULATED_LEDGER",
                     "account_tariff_margin_statement": "EXTERNAL_NO_VERIFICADO"},
                 "personal_taxes": "OUT_OF_SCOPE"}
@@ -220,7 +220,7 @@ class VersionedPaperCostContract:
         return result
 
 
-def paper_cost_contract(family, currency, decision_at):
+def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=None, settlement=None):
     """Current versioned PAPER schedule; not an authenticated account tariff."""
     import au_fee_schedule as schedule
     family = family_name(family)
@@ -228,7 +228,18 @@ def paper_cost_contract(family, currency, decision_at):
         raise ValueError("FAMILY_ECONOMICS_NOT_VALIDATED")
     at = aware_datetime(decision_at)
     currency = cash_currency(currency)
-    fee = schedule.arancel_de(family, currency=currency)
+    # BYMA's 03/11/2026 launch and the Fima gForce MSCI Merval FCIA ETF
+    # fact sheet identify the ARS secondary listing MERV at T+0 and T+1.
+    # Select its economic class separately from PPI's instrument/search key.
+    local_ars_etf = (
+        family in {"ACCIONES", "ETFS"} and currency == "ARS"
+        and str(symbol or "").strip().upper() == "MERV"
+        and str(market or "").strip().upper() == "BYMA"
+        and str(settlement or "").strip().upper() in {"INMEDIATA", "A-24HS"}
+    )
+    if local_ars_etf:
+        family = "ETFS"
+    fee = None if local_ars_etf else schedule.arancel_de(family, currency=currency)
     revised = family in {"LETRAS", "OBLIGACIONES"}
     # The pre-existing BYMA rights assumption for ARS Letras has no proved
     # currency-specific mapping to USD/MEP/CCL. Keep the public broker rate
@@ -238,27 +249,40 @@ def paper_cost_contract(family, currency, decision_at):
     # while a local CEDEAR of an ETF is a different instrument.  The generic
     # ETFS family carries neither that identity nor the execution venue.
     unbound_etf_terms = family == "ETFS"
+    rebate_policy = ("COMMISSION_ON_SMALLER_INTRADAY_LEG"
+                     if family in schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA else "NONE")
+    version = "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1"
+    effective_at = "2026-07-01T00:00:00-03:00"
+    known_at = "2026-08-21T00:00:00-03:00"
+    source = "PAPER:au_fee_schedule:PPI_PUBLIC_2026-07-01:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
+    if local_ars_etf:
+        version = "POROTA_PAPER_LOCAL_ETF_TERMS_V1"
+        # The notice provides a publication date, without an intraday timestamp.
+        effective_at = known_at = "2026-11-04T00:00:00-03:00"
+        source = "PAPER:BYMA_FIMA_MERV_ARS:ETF_LOCAL_TARIFF_UNVERIFIED:ACCOUNT_UNVERIFIED"
+    elif unbound_etf_terms:
+        version = "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
+        known_at = "2026-10-27T00:13:27Z"
+        source = "PAPER:PPI_PUBLIC_2026-07-01:ETF_VENUE_AND_MINIMUM_UNVERIFIED:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
+    elif revised:
+        version = "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
+        known_at = "2026-10-26T19:12:00Z"
+        source = "PAPER:PPI_PUBLIC_2026-07-01:OBSERVED_2026-10-26:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
     contract = VersionedPaperCostContract(
         family=family, currency=currency,
-        policy_version=("POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
-                        if revised or unbound_etf_terms else "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V1"),
-        effective_at="2026-07-01T00:00:00-03:00",
-        known_at=("2026-10-27T00:13:27Z" if unbound_etf_terms else
-                  "2026-10-26T19:12:00Z" if revised else "2026-08-21T00:00:00-03:00"),
-        source=("PAPER:PPI_PUBLIC_2026-07-01:OBSERVED_2026-10-26:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
-                if revised else
-                "PAPER:PPI_PUBLIC_2026-07-01:ETF_VENUE_AND_MINIMUM_UNVERIFIED:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
-                if unbound_etf_terms else
-                "PAPER:au_fee_schedule:PPI_PUBLIC_2026-07-01:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"),
-        commission=number(fee.comision),
-        rights=(None if unbound_dollar_rights or unbound_etf_terms else number(fee.derecho)), clearing=ZERO,
-        premium_rights=number(fee.derecho_sobre_prima), vat=number(schedule.IVA_PCT),
-        commission_vat=fee.comision_iva,
+        policy_version=version, effective_at=effective_at, known_at=known_at, source=source,
+        commission=(None if local_ars_etf else number(fee.comision)),
+        rights=(None if unbound_dollar_rights or unbound_etf_terms else number(fee.derecho)),
+        clearing=(None if local_ars_etf else ZERO),
+        premium_rights=(None if local_ars_etf else number(fee.derecho_sobre_prima)),
+        vat=number(schedule.IVA_PCT),
+        commission_vat=(None if local_ars_etf else fee.comision_iva),
         rights_vat=(None if unbound_dollar_rights or unbound_etf_terms else fee.derecho_iva),
-        clearing_vat=False, premium_rights_vat=fee.prima_iva,
-        minimum_commission=(None if unbound_etf_terms else ZERO), tiers=(),
-        rebate_policy=("COMMISSION_ON_SMALLER_INTRADAY_LEG"
-                       if family in schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA else "NONE"),
+        clearing_vat=(None if local_ars_etf else False),
+        premium_rights_vat=(None if local_ars_etf else fee.prima_iva),
+        minimum_commission=(None if unbound_etf_terms else ZERO),
+        tiers=(None if local_ars_etf else ()),
+        rebate_policy=(None if local_ars_etf else rebate_policy),
         fee_currency=cash_currency(currency), fx_rate=Decimal("1"),
         fx_source="IDENTITY_SAME_SIMULATED_LEDGER_CURRENCY",
         fee_quantum=Decimal("0.01"), rounding="ROUND_HALF_EVEN")

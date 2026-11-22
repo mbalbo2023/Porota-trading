@@ -172,7 +172,19 @@ class UniverseOrchestrator:
                                    if 0 <= (at-stamp(t)).total_seconds() <= self.policy.window_seconds})
             s["attempts"] = [v for v in s["attempts"] if 0 <= (at-stamp(v[0])).total_seconds() <= self.policy.window_seconds]
             s["source_failures"] = [v for v in s["source_failures"] if 0 <= (at-stamp(v[0])).total_seconds() <= self.policy.window_seconds]
-            if s["event_at"] and not 0 <= (at-stamp(s["event_at"])).total_seconds() <= self.policy.discovery_seconds:
+            if not s["event_at"]:
+                continue
+            event_at = stamp(s["event_at"])
+            sample_at = stamp(s["samples"][-1]) if s["samples"] else None
+            # Discovery cadence can be shorter than strategy warm-up. Keep an
+            # admitted sampling prospect only while native strategy observations
+            # made since the event are still fresh, within the strategy window.
+            progressing = (s["state"] in {"WARM", "HOT"} and sample_at is not None
+                           and event_at <= sample_at
+                           and 0 <= (at-sample_at).total_seconds() <= self.policy.max_age_seconds)
+            lifetime = (max(self.policy.discovery_seconds, self.policy.window_seconds)
+                        if progressing else self.policy.discovery_seconds)
+            if not 0 <= (at-event_at).total_seconds() <= lifetime:
                 s["event_at"], s["event_reasons"] = None, []
         # New measurements invalidate warmup/checkpoints, not yesterday's
         # immutable ranking. Intraday measurement cannot rewrite that ranking.
@@ -188,7 +200,7 @@ class UniverseOrchestrator:
         fresh = lambda s: (s.get("last_useful_observation_at") and
                            0 <= (at-stamp(s["last_useful_observation_at"])).total_seconds() <= self.policy.max_age_seconds)
         def warmed(s):
-            # Interval-volume capability is additionally required by the existing cf evaluator.
+            # The strategy evaluator applies its own contract to this sample window.
             return (len(s["samples"]) >= self.policy.warmup_samples and fresh(s) and
                     s.get("book_at") and 0 <= (at-stamp(s["book_at"])).total_seconds() <= self.policy.max_age_seconds and
                     0 <= (at-stamp(s["samples"][-1])).total_seconds() <= self.policy.max_age_seconds and

@@ -8,7 +8,7 @@ import pytest
 
 import au_fee_schedule as fees
 import d_economics as economics
-from be_paper_engine import PaperBroker, PaperStore
+from be_paper_engine import PaperBroker, PaperStore, Quote
 from rc6_performance.costs import ledger_leg_cost, paper_cost_contract
 from rc6_ppi_contract_normalizer import separate_unbound_fee_estimate
 
@@ -122,6 +122,59 @@ def test_generic_etf_fee_binding_requires_venue_and_minimum():
     assert "ETF_VENUE_AND_MINIMUM_UNVERIFIED" in contract.diagnostic()["source"]
     with pytest.raises(ValueError, match="COST_COMPONENT_UNKNOWN:rights"):
         contract.leg_cost(Decimal("1000"), decision_at="2026-10-27T00:13:28Z")
+
+
+@pytest.mark.parametrize("settlement", ["INMEDIATA", "A-24HS"])
+def test_verified_merv_listing_selects_exact_unbound_etf_costs(settlement):
+    earlier = "2026-11-03T23:59:59-03:00"
+    published = "2026-11-04T00:00:00-03:00"
+    terms = paper_cost_contract("ACCIONES", "ARS", published,
+                                symbol="MERV", market="BYMA", settlement=settlement)
+    assert terms.family == "ETFS"
+    assert terms.binding_error(earlier) == "COST_POLICY_NOT_KNOWN_OR_EFFECTIVE"
+    assert terms.binding_error(published) == "COST_COMPONENT_UNKNOWN:commission"
+    assert terms.rights is terms.rights_vat is terms.minimum_commission is None
+    assert "BYMA_FIMA_MERV_ARS" in terms.diagnostic()["source"]
+
+
+@pytest.mark.parametrize("mode", ["BINDING", "SHADOW"])
+def test_fresh_merv_cannot_use_equity_fees_and_other_spot_costs_still_bind(tmp_path, mode, monkeypatch):
+    at = "2026-11-24T10:46:00-03:00"
+    store = PaperStore(str(tmp_path / "synthetic.db"))
+    broker = PaperBroker(store, clock_fn=lambda: at, ai_mode="OFF",
+                         economics_mode=mode, target_gain_pct="0.10")
+
+    def quote(symbol, family, market="BYMA"):
+        return Quote(symbol, family, "A-24HS", Decimal("100"), Decimal("99.95"),
+                     Decimal("100.05"), Decimal("1000"), Decimal("1000"), at,
+                     market=market, currency="ARS", metadata_source="SYNTHETIC",
+                     book_at=at, trade_at=at, last_kind="TRADE")
+
+    for symbol, family in [("GGAL", "ACCIONES"), ("SPY", "CEDEARS")]:
+        economics = broker._economic_diagnostics(quote(symbol, family))
+        assert economics["passed"] is True
+        assert economics["cost_contract"]["family"] == family
+
+    other_venue = broker._economic_diagnostics(quote("MERV", "ACCIONES", "OTHER"))
+    assert other_venue["cost_contract"]["family"] == "ACCIONES"
+
+    merv = quote("MERV", "ACCIONES")
+    store.add_quote(merv)
+    features = {}
+    assert broker.admit_paper_candidate(merv, Decimal("0.95"), features) == (
+        False, "COST_COMPONENT_UNKNOWN:commission", None)
+    assert merv.asset_class == "ACCIONES"
+    decision = features["economics"]
+    assert decision["cost_contract"]["family"] == "ETFS"
+    assert "net_reward_risk" not in decision
+
+    monkeypatch.setattr(broker, "decide", lambda quote: ("BUY", Decimal("0.95"), "SYNTHETIC_BUY", {}))
+    broker.on_quote(merv)
+    with store.connect() as connection:
+        gate = connection.execute("SELECT reason, final_result FROM trade_gate_evaluations").fetchone()
+        assert tuple(gate) == ("COST_COMPONENT_UNKNOWN:commission", "BLOCKED")
+        assert connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+        assert connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
 def test_authenticated_get_estimate_is_not_fanned_out_to_cash_identities(

@@ -43,18 +43,20 @@ def store(tmp_path, monkeypatch):
 
 
 def identity(store, request, *, market="BYMA", currency="ARS", capability="READY_PAPER_SPOT",
-             catalog_status="AVAILABLE", ledger_status="AVAILABLE", can_simulate=1):
+             catalog_status="AVAILABLE", ledger_status="AVAILABLE", can_simulate=1,
+             settlement_source="PPI_FIELD", discovery_source="PPI_PRIMARY"):
     ticker, kind, settlement = request
     with store.connect() as connection:
         connection.execute("""INSERT INTO financial_instrument_catalog
             (ticker,instrument_type,market,currency,settlement,settlement_source,
              description,last_seen_at,run_id,status,capability,metadata_json)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (ticker, kind, market, currency, settlement, "PPI_FIELD",
+            (ticker, kind, market, currency, settlement, settlement_source,
              "A248 synthetic", now_iso(), "A248-READ_ONLY", catalog_status,
              capability, json.dumps({"ticker": ticker, "instrumentType": kind,
                                      "market": market, "currency": currency,
-                                     "settlement": settlement})))
+                                     "settlement": settlement,
+                                     "_discovery_source": discovery_source})))
         connection.execute("""INSERT INTO candidate_identity_v2
             (ticker,instrument_type,market,currency,settlement,can_simulate,
              status,detail,checked_at) VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -341,6 +343,61 @@ def test_ambiguous_monetary_identity_remains_hold_even_when_both_are_ready(store
     focus, _, _, decision = capacity(store, ALTERNATE)
     assert ALTERNATE not in focus["matched"]
     assert decision[0] is False
+
+
+@pytest.mark.parametrize("request_key", [FOCUS, CEDEAR], ids=["accion", "cedear"])
+@pytest.mark.parametrize("source", ["IOL_COMPLEMENTARY", "BYMA_PUBLIC_COMPLEMENTARY"])
+def test_stale_nonprimary_placeholder_does_not_veto_attested_spot(store, scan_once, request_key, source):
+    identity(store, request_key)
+    identity(store, request_key, currency="UNKNOWN", capability="MISSING_CURRENCY_OR_MARKET",
+             catalog_status="STALE", ledger_status="STALE", can_simulate=0,
+             settlement_source=source, discovery_source=source)
+    with store.connect() as connection:
+        observer.financial_catalog.sync_candidate_universe(connection, now_iso())
+    _, symbols, _, decision = capacity(store, request_key)
+    assert symbols == (request_key,)
+    assert decision == (True, "")
+
+    calls, _, state = scan_once(PaperBroker(store))
+    full = (*request_key[:2], "BYMA", "ARS", request_key[2])
+    assert calls == [("scanner", endpoint, full, "DISCOVERY") for endpoint in ("current", "book")]
+    assert state["real_orders_sent"] == 0
+
+
+@pytest.mark.parametrize(("placeholder", "ready_source"), [
+    ({"settlement_source": "REQUEST_CANDIDATE"}, "PPI_PRIMARY"),
+    ({"discovery_source": "PPI_PRIMARY"}, "PPI_PRIMARY"),
+    ({"discovery_source": ""}, "PPI_PRIMARY"),
+    ({"settlement_source": "UNKNOWN", "discovery_source": "UNKNOWN"}, "PPI_PRIMARY"),
+    ({"market": "NYSE"}, "PPI_PRIMARY"),
+    ({"currency": "USD"}, "PPI_PRIMARY"),
+    ({"catalog_status": "AVAILABLE"}, "PPI_PRIMARY"),
+    ({"ledger_status": "AVAILABLE"}, "PPI_PRIMARY"),
+    ({}, "IOL_COMPLEMENTARY"),
+])
+def test_unproven_or_potentially_distinct_aliases_still_veto_spot(store, placeholder, ready_source):
+    identity(store, FOCUS, discovery_source=ready_source)
+    settings = dict(currency="UNKNOWN", capability="MISSING_CURRENCY_OR_MARKET",
+                    catalog_status="STALE", ledger_status="STALE", can_simulate=0,
+                    settlement_source="IOL_COMPLEMENTARY", discovery_source="IOL_COMPLEMENTARY")
+    identity(store, FOCUS, **(settings | placeholder))
+    assert FOCUS not in observer._eligible_scanner_identities(store)
+    assert FOCUS not in observer._exact_pit_ready_spot_requests(store)
+
+
+@pytest.mark.parametrize("table", ["candidate_identity_v2", "financial_instrument_catalog"])
+def test_duplicate_incomplete_obsolete_alias_still_blocks_exact_spot(store, table):
+    identity(store, FOCUS)
+    identity(store, FOCUS, currency="UNKNOWN", capability="MISSING_CURRENCY_OR_MARKET",
+             catalog_status="STALE", ledger_status="STALE", can_simulate=0,
+             settlement_source="IOL_COMPLEMENTARY", discovery_source="IOL_COMPLEMENTARY")
+    with store.connect() as connection:
+        connection.execute(f"ALTER TABLE {table} RENAME TO original_{table}")
+        connection.execute(f"CREATE TABLE {table} AS SELECT * FROM original_{table}")
+        connection.execute(f"INSERT INTO {table} SELECT * FROM original_{table} WHERE currency='UNKNOWN'")
+
+    assert FOCUS not in observer._eligible_scanner_identities(store)
+    assert FOCUS not in observer._exact_pit_ready_spot_requests(store)
 
 
 @pytest.mark.parametrize("duplicate_source", ["catalog", "ledger"])

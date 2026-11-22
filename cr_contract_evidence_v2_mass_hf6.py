@@ -25,6 +25,7 @@ MAX_CATALOG_ROWS = 20_000
 SPOT_UNIT_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
 FIXED_INCOME_FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})
 CAUCION_PAPER_LIVE_BOOK_POLICY = "LIVE_PPI_BID_PARTICIPATION_CAP"
+CAUCION_PAPER_LIVE_BOOK_SOURCE = "PPI_CAUCION_TICKER+POROTA_PAPER_LIVE_BOOK_POLICY:v1"
 UNKNOWN = frozenset({"", "*", "UNKNOWN", "NO_VERIFICADO"})
 
 
@@ -183,7 +184,7 @@ def planned_records(rows):
                     records.append({
                         **identity,
                         "source_class": "DERIVED_OFFICIAL_RULE",
-                        "source_ref": "PPI_CAUCION_TICKER+POROTA_PAPER_LIVE_BOOK_POLICY:v1",
+                        "source_ref": CAUCION_PAPER_LIVE_BOOK_SOURCE,
                         "observed_at": row.get("last_seen_at"),
                         "evidence": {
                             "side": "COLOCADORA",

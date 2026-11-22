@@ -21,6 +21,8 @@ from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_cu
 
 PAPER_ONLY = True
 REAL_ROUTES_USED = ()
+FCI_CALENDAR_AUTHORITY_ERROR = "FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"
+FCI_WRITER_AUTHORITY_ERROR = "FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED"
 
 
 def _number_text(value):
@@ -61,7 +63,7 @@ def _runtime_fund_session_error(at):
         # A future explicit adapter must add independently checked class
         # schedule, fee/NAV and cash authority before this executor can open.
         return "FCI_RUNTIME_AUTHENTICATED_ADAPTER_REVIEW_REQUIRED"
-    return "FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED"
+    return FCI_CALENDAR_AUTHORITY_ERROR
 
 
 def _json_default(value):
@@ -224,7 +226,7 @@ def _verify_runtime_future_fill_snapshot(connection, *, detail, lifecycle_id,
                 or quote["asset_class"] != "FUTUROS"
                 or (quote["symbol"], quote["market"], quote["currency"], quote["settlement"])
                    != (contract.symbol, contract.market, contract.currency, contract.settlement)
-                or quote["financial_contract"] != json.loads(_canonical_json(asdict(contract)))
+                or quote["financial_contract"] != _contract_snapshot(contract)
                 or not str(quote["metadata_source"]).startswith("PPI_CATALOG:")
                 or utc_microseconds(quote["book_at"]) != utc_microseconds(book_at)
                 or not _within_mark_age(at, quote["observed_at"], 120)):
@@ -260,7 +262,7 @@ def _verify_runtime_future_quote_proof(connection, *, event_id, lifecycle_id,
                 or quoted["asset_class"] != "FUTUROS"
                 or (quoted["symbol"], quoted["market"], quoted["currency"], quoted["settlement"])
                    != (contract.symbol, contract.market, contract.currency, contract.settlement)
-                or quoted["financial_contract"] != json.loads(_canonical_json(asdict(contract)))
+                or quoted["financial_contract"] != _contract_snapshot(contract)
                 or not str(quoted["metadata_source"]).startswith("PPI_CATALOG:")
                 or utc_microseconds(proof["recorded_at"]) != utc_microseconds(at)
                 or utc_microseconds(quoted["book_at"]) != utc_microseconds(book_at)
@@ -343,6 +345,14 @@ def fund_terms_from_metadata(symbol, metadata):
         raise ValueError("PAPER_FUND_TERMS_INCOMPLETE") from exc
 
 
+def fund_subscription_detail(terms: PaperFundTerms, amount: Decimal):
+    """Canonical FCI subscription detail shared by the ledger and its replay."""
+    return {"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
+            "subscription_amount": _number_text(amount),
+            "metadata_source": terms.metadata_source,
+            "fund_terms": json.loads(_canonical_json(asdict(terms)))}
+
+
 class FamilyPaperExecutor:
     """Motor durable de FCI/futuros, exclusivamente simulado y sin broker."""
 
@@ -358,10 +368,7 @@ class FamilyPaperExecutor:
         if not isinstance(terms, PaperFundTerms):
             raise ValueError("FCI_TERMS_REQUIRED")
         subscribed = terms.subscription_amount(amount)
-        detail = {"mode": "PRODUCTION_PAPER", "execution": "SIMULATION",
-                  "subscription_amount": _number_text(subscribed),
-                  "metadata_source": terms.metadata_source,
-                  "fund_terms": json.loads(_canonical_json(asdict(terms)))}
+        detail = fund_subscription_detail(terms, subscribed)
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             # A retry is checked against the immutable original intent; it
@@ -1026,7 +1033,7 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 else:
                     # No source-authenticated NAV/clearing/units writer exists
                     # in runtime: never let generic transitions mint cash.
-                    raise ValueError("FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED")
+                    raise ValueError(FCI_WRITER_AUTHORITY_ERROR)
             elif _financial_authority is not _FUTURE_LOCKED_FINANCIAL_EVENT:
                 raise ValueError("FUTURES_DIRECT_RUNTIME_FINANCIAL_EVENT_FORBIDDEN")
     # Retrying an implicitly timestamped request reuses its original instant.
@@ -1131,6 +1138,7 @@ def _validate_future_contract(contract):
 
 
 def _contract_snapshot(contract):
+    """Preserve the exact decimal strings used by the quote receipt writer."""
     return {key: str(value) if isinstance(value, Decimal) else value
             for key, value in asdict(contract).items()}
 

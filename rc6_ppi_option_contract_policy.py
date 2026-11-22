@@ -22,6 +22,7 @@ OPTION_DESCRIPTION = re.compile(
     r"(?P<expiry>[0-9]{2}/[0-9]{2}/[0-9]{4})$"
 )
 OPTION_LOT_BY_UNDERLYING_FAMILY = {"ACCIONES": "100", "CEDEARS": "10"}
+PPI_OPTION_UNDERLYING_SETTLEMENT = "INMEDIATA"
 OPTION_DERIVED_SOURCE_REF = (
     "PPI_SEARCH_INSTRUMENT_DESCRIPTION+BYMA_OPTION_CONTRACT_2026+"
     "POROTA_PAPER_ONE_CONTRACT_POLICY:v1"
@@ -83,7 +84,7 @@ def underlying_family_index(rows):
         ticker: next(iter(values))[0]
         for ticker, values in identities.items()
         if len(values) == 1 and ticker not in invalid
-        and next(iter(values))[1:] == ("ARS", "INMEDIATA")
+        and next(iter(values))[1:] == ("ARS", PPI_OPTION_UNDERLYING_SETTLEMENT)
     }
 
 
@@ -161,7 +162,7 @@ def current_option_contract_reason(record, underlying_rows, contract, *, checked
             and _upper(row.get("instrument_type")) == family
             and _upper(row.get("market")) == "BYMA"
             and _upper(row.get("currency")) == "ARS"
-            and _upper(row.get("settlement")) == "INMEDIATA"
+            and _upper(row.get("settlement")) == PPI_OPTION_UNDERLYING_SETTLEMENT
             and _upper(raw_of(row).get("_discovery_source")) == "PPI_PRIMARY")]
         if (len(selected) != 1 or selected[0].get("capability") != "READY_PAPER_SPOT"
                 or not current(selected[0])):

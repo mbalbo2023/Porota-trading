@@ -18,7 +18,9 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Mapping
 
-from bs_instrument_contracts import aware_datetime, family_name
+from bs_instrument_contracts import aware_datetime, decimal_value, family_name
+from rc6_fixed_income_event_ledger import (NATIVE_MATURITY_MODE,
+                                          paper_entitlement_settlement)
 from rc6_fixed_income_strategy_shadow import ShadowScenario
 
 
@@ -66,6 +68,41 @@ def _age(value, at):
         return (at - aware_datetime(value)).total_seconds()
     except (TypeError, ValueError, OverflowError):
         return None
+
+
+def native_maturity_quantity(quote, plan, at):
+    """Check the exact reviewed lot and entitlement against the actual BUY time."""
+    try:
+        identity = (quote.symbol, "LETRAS", quote.market, quote.currency, quote.settlement)
+        cutoff = aware_datetime(at)
+        ex_at = aware_datetime(plan["ex_at"])
+        record_at = aware_datetime(plan["record_at"])
+        maturity_at = aware_datetime(plan["exit_at"])
+        settled, _ = paper_entitlement_settlement(
+            quote.settlement, at, family="LETRAS", market=quote.market, currency=quote.currency)
+        quantity = quote.contract.quantity(plan["quantity_vn"])
+        minimum = decimal_value(plan["minimum_scenario_net_bps"], "FI minimum edge", positive=True)
+        decimal_value(plan["redemption_cash"], "FI fixed face", positive=True)
+        if (family_name(quote.asset_class) != "LETRAS" or quote.contract.key != identity
+                or quote.contract.minimum_quantity is None or quantity != quantity.to_integral_value()
+                or plan.get("identity") != list(identity) or plan["mode"] != NATIVE_MATURITY_MODE
+                or plan["strategy_id"] != STRATEGY_IDS["LETRAS"]
+                or plan["verified"] is not True or plan.get("revoked", False) is not False
+                or plan["max_hold_minutes"] is not None or plan["nominal_rebase_required"] is not True
+                or not _SHA256.fullmatch(str(plan["issuer_source_sha256"]))
+                or not _SHA256.fullmatch(str(plan["fee_policy_sha256"]))
+                or not isinstance(plan["issuer_source_reference"], str)
+                or not plan["issuer_source_reference"].strip()
+                or not isinstance(plan["reviewed_obligation_id"], str)
+                or not plan["reviewed_obligation_id"].strip()
+                or minimum > 2000):
+            raise ValueError("FI_NATIVE_MATURITY_PLAN_INVALID")
+    except (AttributeError, KeyError, TypeError, ValueError, ArithmeticError) as exc:
+        raise ValueError("FI_NATIVE_MATURITY_PLAN_INVALID") from exc
+    if (not cutoff < ex_at <= record_at <= maturity_at or settled is None
+            or not cutoff <= settled <= record_at):
+        raise ValueError("FI_NATIVE_MATURITY_ENTITLEMENT_UNVERIFIED")
+    return quantity
 
 
 def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
@@ -180,13 +217,24 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 terms.get("native_exit_proof_verified") is not True):
             return _hold("FI_NATIVE_EXIT_LIFECYCLE_MISMATCH", family)
     elif scenario.exit_mode == "MATURITY_REDEMPTION":
-        # Current spot PAPER exit is time/price-based, not a VN amortization
-        # lifecycle. Even an asserted receipt field is not native ledger
-        # support: wait for a separate production-native owner and tests.
-        return _hold("FI_NATIVE_MATURITY_LIFECYCLE_MISSING", family)
+        if (family != "LETRAS" or terms.get("native_maturity_redemption_supported") is not True
+                or terms.get("maturity_redemption_receipt_contract") != "EXACT_NOMINAL_EVENT_REDUCER_V1"
+                or len(scenario.projected_obligations) != 1 or len(scenario.projected_flows) != 1
+                or scenario.exit_cash_scenario != _ZERO or scenario.stress_loss != scenario.entry_cash):
+            return _hold("FI_NATIVE_MATURITY_LIFECYCLE_MISSING", family)
     else:
         return _hold("FI_EXIT_MODE_UNSUPPORTED", family)
 
+    exit_plan = {
+        "mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT",
+        "verified": True,
+        "strategy_id": STRATEGY_IDS[family],
+        "max_hold_minutes": native_exit_minutes,
+        "exit_at": exit_at.isoformat(),
+        "coupon_ledger_required": True,
+        "nominal_rebase_required": False,
+        "economic_event_policy": "EXACT_NOMINAL_EVENT_REDUCER_V1",
+    }
     if family == "BONOS":
         duration = _number(terms.get("duration_years"))
         if (duration is None or not 0 < duration <= 5 or
@@ -199,14 +247,38 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
         if scenario.stress_loss > scenario.entry_cash * Decimal("0.05"):
             return _hold("FI_BOND_DOWNSIDE_BUDGET_RED", family)
     elif family == "LETRAS":
-        # A floating CER/indexed future fixing is not a known face amount.
-        if (terms.get("redemption_basis") != "FIXED_KNOWN_FACE" or
-                terms.get("indexation") != "NONE" or
-                terms.get("redemption_face_official") is not True or
-                scenario.exit_mode != "MATURITY_REDEMPTION" or
-                not _proof_time(terms.get("redemption_source_at"),
-                                terms.get("redemption_known_at"), at) or
-                terms.get("maturity_at") != exit_at.isoformat()):
+        try:
+            if (terms.get("redemption_basis") != "FIXED_KNOWN_FACE" or
+                    terms.get("indexation") != "NONE" or
+                    terms.get("redemption_face_official") is not True or
+                    scenario.exit_mode != "MATURITY_REDEMPTION" or
+                    not _proof_time(terms.get("redemption_source_at"),
+                                    terms.get("redemption_known_at"), at) or
+                    aware_datetime(terms["maturity_at"]) != exit_at):
+                return _hold("FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED", family)
+            obligation, event, due_at, currency = scenario.projected_obligations[0]
+            payment_currency, redemption_cash = scenario.projected_flows[0]
+            if (event != "AMORTIZATION" or currency != key[3] or payment_currency != currency
+                    or aware_datetime(due_at) != exit_at
+                    or redemption_cash - scenario.entry_cash != scenario.scenario_net):
+                return _hold("FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED", family)
+            exit_plan = {
+                "mode": NATIVE_MATURITY_MODE, "verified": True, "strategy_id": STRATEGY_IDS[family],
+                "identity": list(key), "max_hold_minutes": None, "nominal_rebase_required": True,
+                "exit_at": exit_at.isoformat(), "quantity_vn": str(scenario.quantity_vn),
+                "issuer_source_sha256": terms["source_sha256"],
+                "issuer_source_reference": terms["source_reference"],
+                "ex_at": aware_datetime(terms["ex_at"]).isoformat(),
+                "record_at": aware_datetime(terms["record_at"]).isoformat(),
+                "reviewed_obligation_id": obligation, "redemption_cash": str(redemption_cash),
+                "minimum_scenario_net_bps": str(min_gain_bps), "fee_policy_sha256": scenario.fee_policy_sha256,
+            }
+            native_maturity_quantity(quote, exit_plan, at)
+        except ValueError as exc:
+            if str(exc) == "FI_NATIVE_MATURITY_ENTITLEMENT_UNVERIFIED":
+                return _hold(str(exc), family)
+            return _hold("FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED", family)
+        except (KeyError, TypeError, ArithmeticError):
             return _hold("FI_LETTER_FIXED_DISCOUNT_REDEMPTION_RED", family)
     elif family == "OBLIGACIONES":
         credit_stress = _number(terms.get("issuer_credit_stress_bps"))
@@ -234,17 +306,8 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
                 "scenario_type": scenario.exit_mode,
                 "scenario_is_forecast": False,
                 "external_authentication_required": True,
-                "native_exit_minutes": native_exit_minutes,
-                "fixed_income_exit_plan": {
-                    "mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT",
-                    "verified": True,
-                    "strategy_id": STRATEGY_IDS[family],
-                    "max_hold_minutes": native_exit_minutes,
-                    "exit_at": exit_at.isoformat(),
-                    "coupon_ledger_required": True,
-                    "nominal_rebase_required": False,
-                    "economic_event_policy": "EXACT_NOMINAL_EVENT_REDUCER_V1",
-                },
+                "native_exit_minutes": exit_plan["max_hold_minutes"],
+                "fixed_income_exit_plan": exit_plan,
                 "source_authority": "PPI_EXACT_IDENTITY; OFFICIAL_ISSUER_VERIFIED",
                 "risk_scope": "PAPER_ONLY_INDEPENDENT_ADMISSION_REQUIRED"}
     return "BUY", score, "FI_PAPER_CANDIDATE_VALIDATED", features
@@ -253,9 +316,8 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
 def decide_fixed_income(quote, engine, at):
     """PaperEngine-compatible adapter, read-only and HOLD by default.
 
-    No implicit network call, ticker-only lookup, mock cashflow, guessed yield
-    or synthetic backtest is allowed. In particular, today no authoritative
-    producer is present in the reference engine: this is fail-closed.
+    The producer verifies the release receipt and the engine verifies whether
+    it has the native ledger and supervisor required by the candidate's plan.
     """
     try:
         family = family_name(quote.asset_class)
@@ -282,9 +344,7 @@ def decide_fixed_income(quote, engine, at):
             native_exit_minutes=max_minutes)
         if candidate[0] != "BUY":
             return candidate
-        # This is a runtime engine capability, not a source-provided string.
-        # Current engine has no fixed-income event-aware exit owner and must
-        # hold even when a mock/invalid source asserts native exit support.
+        # A reviewed issuer receipt does not establish runtime exit capability.
         exit_authorizer = getattr(engine, "fixed_income_native_exit_authorized", None)
         if not callable(exit_authorizer) or exit_authorizer(
                 quote, candidate[3]["fixed_income_exit_plan"], at) is not True:
