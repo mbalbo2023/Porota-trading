@@ -82,6 +82,43 @@ class SourceReportedImportTest(unittest.TestCase):
             append_many(ordinary, [candle])
         self.assertFalse(self.destination.exists())
 
+    def test_existing_store_import_preserves_exact_history_and_schema_on_retry(self):
+        destination = self.root / "market_history.db"
+        ordinary = HistoricalStore(str(destination))
+        append_many(ordinary, [Candle(symbol="GGAL", instrument_type="ACCIONES", market="BYMA",
+            settlement="T+1", date="2025-09-22", open=100, high=110, low=90, close=105,
+            volume=100, source="PPI", currency="ARS", observed_at=self.observed)])
+        identity = (destination.stat().st_dev, destination.stat().st_ino)
+        sql = "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+        with ordinary.connect() as before:
+            schema = [tuple(row) for row in before.execute(sql)]
+        first = import_iol_export(self.archive, destination, self.digest, existing_identity=identity)
+        retry = import_iol_export(self.archive, destination, self.digest, existing_identity=identity)
+        self.assertEqual(first["destination"], "EXISTING_HISTORY")
+        self.assertEqual(first["versions_appended"], 1)
+        self.assertEqual(retry["versions_appended"], 0)
+        self.assertEqual(retry["canonical_updates"], 0)
+        with ordinary.connect() as after:
+            self.assertEqual([tuple(row) for row in after.execute(sql)], schema)
+            self.assertEqual([tuple(row) for row in after.execute(
+                "SELECT price_basis,close FROM history_canonical_v2 ORDER BY price_basis")],
+                [("RAW", 105.0), (SOURCE_REPORTED, 12.0)])
+
+    def test_existing_store_rejects_legacy_schema_and_wrong_file_identity_without_writes(self):
+        destination = self.root / "market_history.db"
+        with sqlite3.connect(destination) as connection:
+            connection.execute("CREATE TABLE history_canonical_v2(symbol TEXT PRIMARY KEY, close REAL)")
+            connection.execute("INSERT INTO history_canonical_v2 VALUES('GGAL', 100)")
+        before = destination.read_bytes()
+        stat = destination.stat()
+        with self.assertRaisesRegex(ValueError, "HISTORY_EXISTING_DESTINATION_CHANGED"):
+            import_iol_export(self.archive, destination, self.digest,
+                              existing_identity=(stat.st_dev, stat.st_ino + 1))
+        with self.assertRaisesRegex(ValueError, "HISTORY_EXISTING_SCHEMA_REQUIRED"):
+            import_iol_export(self.archive, destination, self.digest,
+                              existing_identity=(stat.st_dev, stat.st_ino))
+        self.assertEqual(destination.read_bytes(), before)
+
     def test_an_exact_history_row_keeps_its_original_route(self):
         exact = Candle(symbol="GGAL", instrument_type="ACCIONES", market="BYMA",
                        currency="ARS", settlement="A-24HS", date="2025-09-22",

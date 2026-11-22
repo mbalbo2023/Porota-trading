@@ -265,6 +265,16 @@ def init_schema(store):
     initialize_history_schema(store,_init_connection)
 
 
+def require_current_history(connection):
+    """Reject incomplete or legacy destinations before existing-store appends."""
+    names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    required = {"history_versions_v2", "history_canonical_v2", "history_checks_v2",
+                "history_batch_attempts_v2", "history_batch_rows_v2", "history_source_conflicts_v2"}
+    if not required <= names:
+        raise ValueError("HISTORY_EXISTING_SCHEMA_REQUIRED")
+    _validate_existing_schema(connection)
+
+
 def _key(value): return tuple(getattr(value,f) for f in SERIES)
 
 
@@ -372,12 +382,16 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
         raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
     for value in values: value.validate()
     if not values: return {"versions_appended":0,"canonical_updates":0,"protected_by_precedence":0,"committed_rows":0,"batch_semantics":"ATOMIC_BOUNDED"}
-    init_schema(store)
+    existing_only = getattr(store, "existing_history_identity", None) is not None
+    if not existing_only:
+        init_schema(store)
     key=attempt_key or sha256(_canonical_json([(v.observed_at,_hash(v)) for v in values]).encode()).hexdigest()
     results=[]
     with store.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         try:
+            if existing_only:
+                require_current_history(connection)
             prior=connection.execute('SELECT ordinal,version_id,payload_hash FROM history_batch_rows_v2 WHERE attempt_key=? ORDER BY ordinal',
                                      (key,)).fetchall() if attempt_key is not None else []
             if prior:

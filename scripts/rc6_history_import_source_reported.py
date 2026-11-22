@@ -120,7 +120,7 @@ def _candles(capture, archive_sha):
     return candles, rejected, len(rows), attempt
 
 
-def import_iol_export(archive, destination, expected_sha256, *, symbols=()):
+def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None):
     """Load valid observations under provider-series keys and verify committed counts."""
     if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
         raise ValueError("HISTORY_CAPTURE_DIGEST_REQUIRED")
@@ -153,7 +153,9 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=()):
                     rejected.update(invalid)
                     if candles:
                         if store is None:
-                            store = _source_store(destination)
+                            store = (_source_store(destination) if existing_identity is None else
+                                     HistoricalStore(str(destination), source_reported_only=True,
+                                                     existing_history_identity=existing_identity))
                         receipt = append_many(store, candles, attempt_key=attempt)
                         for field in ("committed_rows", "versions_appended", "canonical_updates"):
                             totals[field] += receipt[field]
@@ -173,6 +175,7 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=()):
     return {
         **totals, "canonical_rows": stored, "version_rows": versioned,
         "rejected": dict(rejected), "capture_sha256": expected_sha256,
+        "destination": "EXISTING_HISTORY" if existing_identity is not None else "REFERENCE_STORE",
         "price_basis": SOURCE_REPORTED, "readiness_implication": "NONE",
         "quick_check": "ok",
     }
@@ -184,8 +187,15 @@ def main():
     parser.add_argument("destination", type=Path)
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--symbol", action="append", default=[])
+    parser.add_argument("--existing-history-id", metavar="DEVICE:INODE")
     args = parser.parse_args()
-    receipt = import_iol_export(args.archive, args.destination, args.sha256, symbols=args.symbol)
+    identity = None
+    if args.existing_history_id is not None:
+        if not re.fullmatch(r"[0-9]+:[1-9][0-9]*", args.existing_history_id):
+            parser.error("--existing-history-id requires numeric DEVICE:INODE")
+        identity = tuple(map(int, args.existing_history_id.split(":")))
+    receipt = import_iol_export(args.archive, args.destination, args.sha256,
+                                symbols=args.symbol, existing_identity=identity)
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
 
 
