@@ -538,6 +538,15 @@ def _rootless_current_state() -> tuple[pwd.struct_passwd, dict]:
         raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO") from exc
 
 
+def _rootless_client_environment(account: pwd.struct_passwd) -> dict[str, str]:
+    home = Path(account.pw_dir)
+    return {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
+            "HOME": str(home), "USER": "porotaadmin", "LOGNAME": "porotaadmin",
+            "XDG_RUNTIME_DIR": "/run/user/1000",
+            "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
+            "DOCKER_CLI_HINTS": "false"}
+
+
 def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
     """Fixed UID1000/rootless socket, inspect/info ONLY; never host Docker."""
     _operator_identity_guard()
@@ -557,17 +566,11 @@ def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
                 raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
         finally:
             os.close(runtime_fd)
-        home = Path(account.pw_dir)
-        env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C",
-               "HOME": str(home), "USER": "porotaadmin", "LOGNAME": "porotaadmin",
-               "XDG_RUNTIME_DIR": "/run/user/1000",
-               "DOCKER_CONFIG": str(home / ".config/porota-rc6/client"),
-               "DOCKER_CLI_HINTS": "false"}
         result = subprocess.run([
             "/usr/bin/docker",
             "--host", "unix:///run/user/1000/porota-rc6-docker.sock", *args],
             check=False, input=b"", stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, timeout=9, env=env, cwd="/")
+            stderr=subprocess.DEVNULL, timeout=9, env=_rootless_client_environment(account), cwd="/")
         if result.returncode != 0 or len(result.stdout) > 131072:
             raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
         return json.loads(result.stdout)
@@ -1491,21 +1494,41 @@ HISTORY_LOADER = r"""
 from contextlib import closing
 from hashlib import file_digest
 from pathlib import Path
+import errno
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
 import tarfile
 import tempfile
 
+def report_loader_failure(error_type, error, _traceback):
+    code = str(error) if isinstance(error, ValueError) else ''
+    if not re.fullmatch(r'HISTORY_[A-Z0-9_]{3,85}', code):
+        if isinstance(error, sqlite3.Error):
+            name = getattr(error, 'sqlite_errorname', '') or ''
+            code = ('HISTORY_IMPORT_' + name if re.fullmatch(r'SQLITE_[A-Z0-9_]{2,55}', name)
+                    else 'HISTORY_IMPORT_SQLITE_ERROR')
+        elif isinstance(error, OSError):
+            code = 'HISTORY_IMPORT_OS_' + errno.errorcode.get(error.errno, 'ERROR')
+        elif isinstance(error, ImportError):
+            code = 'HISTORY_IMPORT_PRODUCT_MODULE_UNAVAILABLE'
+        elif isinstance(error, tarfile.TarError):
+            code = 'HISTORY_IMPORT_CAPSULE_INVALID'
+        else:
+            code = 'HISTORY_IMPORT_PRODUCT_EXCEPTION'
+    print(code, file=sys.stderr)
+
+sys.excepthook = report_loader_failure
 from scripts.rc6_history_import_source_reported import import_iol_export
 
 destination = Path('/app/data/market_history.db')
 identity = tuple(map(int, sys.argv[1].split(':')))
 legacy = int(sys.argv[2])
 pins = json.loads(sys.argv[3])
-with tempfile.TemporaryDirectory(prefix='rc6-iol-') as folder:
+with tempfile.TemporaryDirectory(prefix='rc6-iol-', dir='/tmp') as folder:
     storage = Path(folder)
     names = set()
     with tarfile.open(fileobj=sys.stdin.buffer, mode='r|') as bundle:
@@ -1546,6 +1569,19 @@ with tempfile.TemporaryDirectory(prefix='rc6-iol-') as folder:
         'quick_check': 'ok',
     }))
 """
+
+
+def _history_loader_failure(returncode, stderr):
+    cause = re.search(rb'\b(HISTORY_[A-Z0-9_]{3,85})\s*$', stderr.strip())
+    if cause:
+        return cause[1].decode()
+    if returncode in {-9, 137}:
+        return "HISTORY_IMPORT_CONTAINER_PROCESS_KILLED"
+    if b"Cannot connect to the Docker daemon" in stderr:
+        return "HISTORY_IMPORT_ROOTLESS_SOCKET_UNAVAILABLE"
+    if b"OCI runtime exec failed" in stderr or returncode in {125, 126, 127}:
+        return "HISTORY_IMPORT_CONTAINER_EXEC_UNAVAILABLE"
+    return "HISTORY_IMPORT_DOCKER_FAILED"
 
 
 def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
@@ -1592,18 +1628,18 @@ def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
                     if not HEX64.fullmatch(cid) or current["source_sha"] != release[0]:
                         raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
                     identity = ":".join(map(str, capture["source"]["db"][:2]))
-                    docker_config = Path(account.pw_dir) / ".config/porota-rc6/client"
                     with bundle.open("rb") as payload:
                         result = subprocess.run(
-                            ["/usr/bin/docker", "--config", str(docker_config), "--host",
-                             "unix:///run/user/1000/porota-rc6-docker.sock", "exec", "-i", cid,
+                            ["/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock",
+                             "container", "exec", "--interactive", "--workdir", "/app", cid,
                              "python", "-B", "-c", HISTORY_LOADER, identity, str(HISTORY_LEGACY_ROWS),
                              json.dumps(CAPTURE_PINS, separators=(",", ":"))],
                             stdin=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=450, cwd="/")
-                    if result.returncode or len(result.stdout) > 8192:
-                        cause = re.search(rb'\b(HISTORY_[A-Z0-9_]{3,85})\s*$', result.stderr.strip())
-                        raise Hold(cause[1].decode() if cause else "HISTORY_IMPORT_DOCKER_FAILED")
+                            timeout=450, env=_rootless_client_environment(account), cwd="/")
+                    if result.returncode:
+                        raise Hold(_history_loader_failure(result.returncode, result.stderr))
+                    if len(result.stdout) > 8192:
+                        raise Hold("HISTORY_IMPORT_RECEIPT_INVALID")
                     observed = json.loads(result.stdout)
                     _rootless_runtime_binding(_release_marker(MARKER, release), HISTORY, release=release)
                     _live_paper_zero(paper)
