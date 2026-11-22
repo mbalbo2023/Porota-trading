@@ -126,7 +126,7 @@ def _fake_module(monkeypatch, name, **functions):
 def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HISTORY",
                    publish=True, targets=True, ambiguous=False,
                    provider_ambiguous=False, large_currency_detail=False,
-                   session_only=False, already_published=False, contract_available=True):
+                   session_only=False, already_published=False):
     """Exercise the actual locked producer without opening any PPI connection."""
     observer_db = tmp_path / "observer.db"
     with sqlite3.connect(observer_db) as conn:
@@ -167,7 +167,7 @@ def _history_cycle(monkeypatch, history, tmp_path, *, source="PPI_PRODUCTION_HIS
 
     _fake_module(monkeypatch, "ct_ppi_history_salvage_hf6",
                  ingest_ppi_payload=ingest,
-                 VERIFIED_PPI_HISTORY_CONTRACTS={TEST_CONTRACT} if contract_available else set())
+                 VERIFIED_PPI_HISTORY_CONTRACTS={TEST_CONTRACT})
 
     class _FixedClock(datetime):
         @classmethod
@@ -243,13 +243,76 @@ def test_new_closure_does_not_repeat_verified_publication(monkeypatch, history, 
     assert amount == 0 and calls == []
 
 
-def test_new_closure_records_missing_source_contract_without_provider_get(
-        monkeypatch, history, tmp_path):
-    amount, row, calls, _events = _history_cycle(
-        monkeypatch, history, tmp_path, session_only=True, contract_available=False)
-    assert amount == 0 and calls == []
-    assert row == ("AMARILLO", None,
-                   "session_requested=2026-11-02; HISTORY_PROVENANCE_UNVERIFIED")
+@pytest.mark.parametrize("exact_archive", [False, True])
+def test_new_closure_archives_ppi_reply_once_without_certifying_unknown_contract(
+        monkeypatch, tmp_path, exact_archive):
+    from be_paper_engine import PaperStore
+    import bf_production_paper_observer as observer
+    import ct_ppi_history_salvage_hf6 as salvage
+    import cv_history_store_adapter_hf6 as history_adapter
+    import fb_raw_evidence_exact_v1 as archive
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
+
+    store = PaperStore(str(tmp_path / "observer.db"))
+    observer._support_schema(store)
+    history = history_adapter.HistoricalStore(str(tmp_path / "history.db"))
+    monkeypatch.setattr(history_adapter, "default_history_store", lambda: history)
+    monkeypatch.setattr(observer, "datetime", FixedClock)
+    monkeypatch.setattr(observer, "now_iso", NOW.isoformat)
+    monkeypatch.setattr(observer, "HISTORY_BATCH_LIMIT", 1)
+    monkeypatch.setattr(salvage, "VERIFIED_PPI_HISTORY_CONTRACTS", frozenset())
+    monkeypatch.setenv(archive.MODE_ENV, archive.MODE if exact_archive else "")
+    monkeypatch.setenv(archive.ROOT_ENV, str(tmp_path / "exact"))
+    with store.connect() as conn:
+        conn.executemany("""INSERT INTO financial_instrument_catalog VALUES
+          (?,?,?,?,?,'PPI_FIELD','fixture',?,'fixture','AVAILABLE','READY_PAPER_SPOT',?)""",
+          [(*identity, NOW.isoformat(), json.dumps({"_discovery_source": "PPI_PRIMARY"}))
+           for identity in (GGAL, ("YPFD", *GGAL[1:]))])
+
+    payload = [{"date": "2026-11-02T17:00:00-03:00", "openingPrice": 100,
+                "max": 105, "min": 99, "price": 102, "volume": 123}]
+    calls = []
+
+    def read_history(*args):
+        calls.append(args)
+        return payload
+
+    reader = SimpleNamespace(history=read_history)
+    assert observer._download_histories(reader, store, session_only=True) == 0
+    assert observer._download_histories(reader, store, session_only=True) == 0
+    assert calls == [("GGAL", "ACCIONES", "CI", SESSION, SESSION)]
+
+    with store.connect() as conn:
+        raw = conn.execute("SELECT quality,body_json FROM historical_raw_archive").fetchall()
+        attempts = conn.execute("""SELECT provider_rows,valid_rows,rejected_rows
+          FROM history_attempt_ledger_v2 WHERE source='PPI_PRODUCTION_HISTORY'""").fetchall()
+        rejection = conn.execute("SELECT reason FROM history_row_rejections_v2").fetchone()[0]
+        receipt = conn.execute("""SELECT status,last_success_at,items,detail FROM source_sync
+          WHERE source='PPI_PRODUCTION_HISTORY'""").fetchone()
+        assert conn.execute("SELECT COUNT(*) FROM production_history").fetchone()[0] == 0
+    assert [tuple(row) for row in attempts] == [(1, 0, 1)]
+    assert rejection == "HISTORY_PROVENANCE_UNVERIFIED"
+    assert tuple(receipt)[:3] == ("AMARILLO", None, 0)
+    assert "source_session_verified=2026-11-02:0/1" in receipt[3]
+    assert "ohlcv_archivado_sin_certificar=1" in receipt[3]
+    assert "source_raw_provenance=" not in receipt[3]
+    with history.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM history_canonical_v2").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM history_versions_v2").fetchone()[0] == 0
+    if exact_archive:
+        assert raw == []
+        with sqlite3.connect(archive.manifest_path()) as conn:
+            [(quality, wrapper, digest)] = conn.execute(
+                "SELECT quality,wrapper_json,inner_sha256 FROM exact_attempts_v1").fetchall()
+        archived = archive.reconstruct(wrapper, digest)
+    else:
+        [(quality, archived)] = raw
+    assert quality == "UNVALIDATED"
+    assert json.loads(json.loads(archived)["payload_json"]) == payload
 
 
 @pytest.mark.parametrize("published_day", [CUTOFF, date(2026, 11, 1)])

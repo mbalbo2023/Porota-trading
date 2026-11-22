@@ -2526,15 +2526,11 @@ def _download_histories_locked(reader, store, history_store, *,
         return 0
     import ct_ppi_history_salvage_hf6 as history_salvage
 
+    archive_without_contract = session_only and not history_salvage.VERIFIED_PPI_HISTORY_CONTRACTS
     if session_only:
         # The shared cutoff lock is held here. Persist the existing per-day
         # attempt before a GET so a restarted scanner cannot repeat the batch.
         if not _source_sync_due(store, "PPI_PRODUCTION_HISTORY", retention_now):
-            return 0
-        if not history_salvage.VERIFIED_PPI_HISTORY_CONTRACTS:
-            detail = f"session_requested={end.isoformat()}; HISTORY_PROVENANCE_UNVERIFIED"
-            _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0, detail)
-            _health(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", detail, "PPI Producción")
             return 0
         _sync_state(store, "PPI_PRODUCTION_HISTORY", "AMARILLO", 0,
                     f"session_requested={end.isoformat()}; HISTORY_SESSION_ATTEMPT_STARTED")
@@ -2544,6 +2540,7 @@ def _download_histories_locked(reader, store, history_store, *,
     history_v2.init_schema(history_store)
     history_ledger.init_schema(store)
     total, batch_statuses = 0, []
+    archived_ohlcv = 0
     exact_targets, requests = [], []
     already_verified = 0
     for target in _historical_targets(store):
@@ -2558,6 +2555,8 @@ def _download_histories_locked(reader, store, history_store, *,
         exact_targets.append(identity)
         if session_only:
             requests.append((identity, end, end, metadata))
+            if archive_without_contract and len(requests) >= HISTORY_BATCH_LIMIT:
+                break
             continue
         symbol,family,market,currency,settlement=identity
         with history_store.connect() as c:
@@ -2576,7 +2575,7 @@ def _download_histories_locked(reader, store, history_store, *,
         if start<=end:
             request_end=min(end,start+timedelta(days=29)) if incremental_only else end
             requests.append((identity,start,request_end,metadata))
-    if session_only:
+    if session_only and not archive_without_contract:
         verified = _verified_ppi_eod_keys(history_store, exact_targets, end, retention_now)
         requests = [request for request in requests if request[0] not in verified]
         already_verified = len(verified)
@@ -2612,6 +2611,10 @@ def _download_histories_locked(reader, store, history_store, *,
             result=history_salvage.ingest_ppi_payload(store,symbol=symbol,instrument_type=family,
                 market=market,currency=currency,settlement=settlement,payload=payload,
                 requested_from=start,requested_to=request_end,attempted_at=attempted,history_store=history_store)
+            if archive_without_contract:
+                # The archive and rejection ledger retain the evidence. The
+                # ingest still requires a verified contract for canonical rows.
+                archived_ohlcv += _history_count(payload,as_of=attempted,date_from=start,date_to=request_end)
             count=int(result['full_ohlc_rows'])
             status=result['storage_quality']
             total+=count
@@ -2651,18 +2654,23 @@ def _download_histories_locked(reader, store, history_store, *,
         coverage=history_v2.coverage_inventory(
             c, batch_keys if session_only else exact_targets, as_of=now_iso(),
             consumer='PPI_HISTORY_INGEST_MONITOR',session=end.isoformat(),minimum_rows=30)
-    exact_eod=len(_verified_ppi_eod_keys(history_store,batch_keys,end,datetime.now(TZ)))
+    exact_eod = 0
+    if not archive_without_contract:
+        exact_eod = len(_verified_ppi_eod_keys(history_store, batch_keys, end, datetime.now(TZ)))
     exact_required=len(batch_keys)
     current_session_verified=bool(exact_required and exact_eod==exact_required)
     semantics=_history_batch_semantics(batch_statuses)
     state=semantics['state']
-    if not batch_statuses:
+    if not batch_statuses or archived_ohlcv:
         state='AMARILLO'
     if state=='VERDE' and not current_session_verified:
         state='AMARILLO'
+    provenance = (f"HISTORY_PROVENANCE_UNVERIFIED; ohlcv_archivado_sin_certificar={archived_ohlcv}; "
+                  if archive_without_contract else
+                  "source_raw_provenance=OBSERVER_PPI_HISTORY_CANONICAL_V2_RAW_FULL_KEY; ")
     detail=(f"session={end.isoformat()}; "
         f"source_session_verified={end.isoformat()}:{exact_eod}/{exact_required}; "
-        "source_raw_provenance=OBSERVER_PPI_HISTORY_CANONICAL_V2_RAW_FULL_KEY; "
+        f"{provenance}"
         f"Lote aceptado={semantics['full_valid']}/{min(len(requests),HISTORY_BATCH_LIMIT)}; "
         f"parciales={semantics['partial_with_valid_evidence']}; errores={semantics['hard_failures']}; "
         f"cobertura exacta {coverage['covered']}/{coverage['denominator']}; "
