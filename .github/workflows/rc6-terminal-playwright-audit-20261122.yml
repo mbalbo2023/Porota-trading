@@ -1,0 +1,133 @@
+name: RC6 terminal visual audit for the exact release
+on:
+  push:
+    branches: [diagnostic/rc6-terminal-playwright-20261122]
+    paths:
+      - .github/workflows/rc6-terminal-playwright-audit-20261122.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 223725e2860b295533d480d6ad24aee46f098b8e
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install browser audit dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install playwright fastapi requests python-dotenv pyyaml python-dateutil
+          if chromium_bin="$(command -v google-chrome || command -v chromium)"; then
+            echo "POROTA_BROWSER_BIN=$chromium_bin" >> "$GITHUB_ENV"
+          else
+            python -m playwright install chromium
+          fi
+      - name: Reuse the repository fixture to audit terminal layout and milestone routes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -B - <<'PY'
+          """Browse the immutable terminal with its existing synthetic SQLite fixture."""
+          import ast
+          import os
+          from datetime import datetime, timedelta, timezone
+          import json
+          from pathlib import Path
+          import sqlite3
+          import sys
+          import tempfile
+          from urllib.parse import parse_qs, urlsplit
+          
+          from playwright.sync_api import sync_playwright
+          
+          HERE = Path(__file__).resolve().parent
+          REPO = Path.cwd()
+          sys.path.insert(0, str(REPO))
+          from rc6_trader_dashboard.navigation import CANONICAL_PATHS, LEGACY
+          from rc6_trader_dashboard.routes import build_page
+          
+          fixture_text = (REPO/"tests/test_ws_dash_trader_terminal_08.py").read_text()
+          fixture_ast = ast.parse(fixture_text)
+          keep = [node for node in fixture_ast.body if
+                  (isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in {"NOW","STAMP"})
+                  or (isinstance(node, ast.FunctionDef) and node.name=="database")]
+          keep[-1].decorator_list = []
+          exec(compile(ast.Module(body=keep, type_ignores=[]), "audited-fixture", "exec"))
+          record = {"static_tree":"bc8432a6d03f7fa4b44b46694486c60fe0787b3c",
+                    "browser":"Chromium (Playwright)", "scenario":"OFFHOST_SYNTHETIC", "provider_requests":0,
+                    "findings":[], "viewport_checks":0, "legacy_checks":0, "rows":{}, "milestones":{}}
+          out = Path(os.environ["RUNNER_TEMP"]) / "porota-browser-audit"
+          (out/"pdf-preview").mkdir(parents=True,exist_ok=True)
+          with tempfile.TemporaryDirectory(prefix="porota-current-visual-") as td:
+              db=database(Path(td))
+              with sync_playwright() as pw:
+                  browser=pw.chromium.launch(executable_path=os.environ.get("POROTA_BROWSER_BIN"), headless=True, args=["--no-sandbox"])
+                  page=browser.new_page(viewport={"width":800,"height":960}, reduced_motion="reduce")
+                  def serve(route):
+                      u=urlsplit(route.request.url)
+                      if u.netloc!="terminal.test":
+                          record["findings"].append({"unexpected_external_host":u.netloc})
+                          route.abort()
+                          return
+                      if u.path=="/favicon.ico":
+                          route.fulfill(status=204)
+                          return
+                      filters={k:v[-1] for k,v in parse_qs(u.query).items()}
+                      page_body,headers=build_page(u.path,filters,db)
+                      route.fulfill(status=200,body=page_body,content_type="text/html",headers=headers)
+                  page.route("**/*",serve)
+                  page.on("pageerror", lambda error: record["findings"].append({"js":str(error)}))
+                  for width in (1440, 1280, 1024, 800, 600, 360):
+                      page.set_viewport_size({"width":width,"height":960})
+                      for path in sorted(CANONICAL_PATHS):
+                          page.goto("http://terminal.test"+path)
+                          rec=page.evaluate("""
+                          () => ({ body:document.body.scrollWidth, html:document.documentElement.scrollWidth,
+                                    nav:document.querySelectorAll(".primary-nav > a").length,
+                                    visibleRows:document.querySelectorAll("tr[data-row]").length,
+                                    unnamed:[...document.querySelectorAll("button, a, summary, input, select")]
+                                        .filter(el=>!el.textContent.trim()&&!el.getAttribute("aria-label")&&!el.labels?.length)
+                                        .map(el=>el.tagName+" "+el.id)})
+                          """)
+                          if (max(rec["body"],rec["html"])>width+1 or rec["nav"]!=8 or rec["visibleRows"]>10 or rec["unnamed"]):
+                              record["findings"].append({"path":path,"width":width,**rec})
+                          record["viewport_checks"]+=1
+                          if width==800 and rec["visibleRows"]:
+                              record["rows"][path]=[" ".join(t.split())[:160] for t in page.locator("tr[data-row]").all_inner_texts()[:3]]
+                  page.set_viewport_size({"width":800,"height":960})
+                  for path,pair in sorted(LEGACY.items()):
+                      page.goto("http://terminal.test"+path)
+                      if page.locator("#terminal-content").get_attribute("data-view")!="/".join(pair):
+                          record["findings"].append({"legacy_wrong_view":path})
+                      record["legacy_checks"]+=1
+                  for variant in ("/sistema/validacion","/validacion","/sistema/validacion?channel=campaign"):
+                      page.goto("http://terminal.test"+variant)
+                      values={}
+                      for name in ("M0","M1"):
+                          panel=page.get_by_role("heading",name=__import__("re").compile("^"+name+r" · ")).locator("..")
+                          summary=panel.locator("summary")
+                          before=page.url
+                          summary.click()
+                          assert page.url==before and panel.locator("details").get_attribute("open") is not None
+                          values[name]={"detail_in_view":True,"heading":panel.locator("h3").inner_text(),
+                                        "selection":panel.locator("p").first.inner_text()}
+                      record["milestones"][variant]=values
+                  page.screenshot(path=str(out/"pdf-preview"/"validacion-800.png"),full_page=False)
+                  browser.close()
+          (out/"browser-audit.json").write_text(json.dumps(record,ensure_ascii=False,indent=2)+"\n")
+          print(json.dumps({k:v for k,v in record.items() if k!="rows"},ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-terminal-playwright-audit
+          path: ${{ runner.temp }}/porota-browser-audit/
+          if-no-files-found: warn
+          retention-days: 14
