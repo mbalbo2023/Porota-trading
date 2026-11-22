@@ -1057,7 +1057,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         options = workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"]
         self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE", custody.INVENTORY_MODE,
                                    "RESTORED_HISTORY_MIGRATION_REHEARSAL", custody.HISTORY_UPGRADE_REHEARSAL,
-                                   "HISTORY_REFERENCE_PREPARE", "HISTORY_REFERENCE_APPLY"])
+                                   "HISTORY_REFERENCE_PREPARE", "HISTORY_REFERENCE_APPLY", custody.HISTORY_VERIFY])
         roles = workflow["on"]["workflow_dispatch"]["inputs"]["database_role"]
         self.assertEqual(roles["options"], ["OBSERVER", "HISTORY"])
         self.assertEqual(roles["default"], "OBSERVER")
@@ -1070,6 +1070,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("inputs.mode == 'CUSTODY_ONCE'", owner["if"])
         self.assertIn("inputs.mode == 'HISTORY_REFERENCE_PREPARE'", owner["if"])
         self.assertIn("inputs.mode == 'HISTORY_REFERENCE_APPLY'", owner["if"])
+        self.assertNotIn(custody.HISTORY_VERIFY, owner["if"])
         self.assertIn("github.triggering_actor == 'mbalbo2023'", gate)
         self.assertIn("verify-owner", owner["run"])
         remote = next(step for step in steps if step.get("id") == "remote")
@@ -1081,6 +1082,7 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("timeout 790 python3 -B - host-custody", remote["run"])
         self.assertIn("timeout 155 python3 -B - host-restored-inventory", remote["run"])
         self.assertIn("host-restored-history-export", remote["run"])
+        self.assertIn("host-history-verify", remote["run"])
         self.assertNotIn("sudo", remote["run"])
         uploads = [step for step in steps if step.get("uses", "").startswith("actions/upload-artifact")]
         self.assertEqual(len(uploads), 1)
@@ -1202,6 +1204,46 @@ with sqlite3.connect(sys.argv[1]) as db:
             self.assertEqual(result.returncode, 0)
             self.assertEqual(len(used), 1)
             self.assertFalse(used[0].exists())
+
+    def test_history_seal_completion_syncs_an_anchored_directory_handle(self):
+        with tempfile.TemporaryDirectory() as folder:
+            storage = Path(folder)
+            apply_run = "44982940533"
+            for name in ("transfer.key", "transfer.crt", f"sealed-{apply_run}.cms", "manifest.json"):
+                (storage / name).touch()
+            descriptor = custody._anchor_directory(storage)
+            try:
+                custody._retire_history_seal(descriptor, apply_run)
+            finally:
+                os.close(descriptor)
+            self.assertEqual({path.name for path in storage.iterdir()}, {"manifest.json"})
+
+    def test_history_verification_counts_both_capture_digests_and_rejects_raw_publication(self):
+        pins = {"cutoff.zip": ("a" * 64, 2), "complement.zip": ("b" * 64, 1)}
+        with sqlite3.connect(":memory:") as db:
+            for table in ("history_versions_v2", "history_canonical_v2"):
+                db.execute(f"CREATE TABLE {table} (metadata_json TEXT, source TEXT, price_basis TEXT, "
+                           "currency TEXT, settlement TEXT)")
+                for digest, count in pins.values():
+                    db.executemany(f"INSERT INTO {table} VALUES (?,?,?,?,?)",
+                                   [(json.dumps({"archive_sha256": digest}), "IOL_MCP", "SOURCE_REPORTED",
+                                     "UNKNOWN", "UNKNOWN")] * count)
+            for table in ("history_versions_v2_legacy", "history_canonical_v2_legacy"):
+                db.execute(f"CREATE TABLE {table} (id INTEGER)")
+                db.execute(f"INSERT INTO {table} VALUES (1)")
+            db.commit()
+            before = db.total_changes
+            with patch.object(custody, "CAPTURE_PINS", pins), patch.object(custody, "HISTORY_LEGACY_ROWS", 1), \
+                    patch.object(custody, "HISTORY_LEGACY_CANONICAL", 1):
+                check = custody._read_history_reference_totals(db)
+                self.assertEqual(check["source_reported_committed_rows"], 3)
+                self.assertEqual(check["source_sql_writes"], 0)
+                self.assertEqual(db.total_changes, before)
+                db.execute("PRAGMA query_only=OFF")
+                db.execute("UPDATE history_canonical_v2 SET price_basis='RAW' WHERE rowid=1")
+                db.commit()
+                with self.assertRaisesRegex(custody.Hold, "HISTORY_REFERENCE_COVERAGE_NOT_VERIFIED"):
+                    custody._read_history_reference_totals(db)
 
 
 if __name__ == "__main__":
