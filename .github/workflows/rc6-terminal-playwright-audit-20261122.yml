@@ -112,10 +112,13 @@ jobs:
                       values={}
                       for name in ("M0","M1"):
                           panel=page.get_by_role("heading",name=__import__("re").compile("^"+name+r" · ")).locator("..")
-                          summary=panel.locator("summary")
+                          summary=panel.get_by_role("button",name=__import__("re").compile("^Detalle "+name+r" · "))
                           before=page.url
-                          summary.click()
-                          assert page.url==before and panel.locator("details").get_attribute("open") is not None
+                          summary.click(timeout=5000)
+                          dialog=panel.locator("dialog")
+                          assert page.url==before and dialog.is_visible()
+                          dialog.get_by_role("button",name="Cerrar detalle").click(timeout=5000)
+                          assert not dialog.is_visible()
                           values[name]={"detail_in_view":True,"heading":panel.locator("h3").inner_text(),
                                         "selection":panel.locator("p").first.inner_text()}
                       record["milestones"][variant]=values
