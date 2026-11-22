@@ -42,7 +42,11 @@ def test_active_timer_does_not_hide_failed_service_or_stale_snapshot():
     assert failed.rows[0]["state"] == "SERVICE_FAILED"
     assert failed.rows[0]["reason"] == "Service result: exit-code"
     assert "badge-blocked" in badge(failed.rows[0]["state"])
-    stale = page((NOW - timedelta(minutes=4)).isoformat(), "success")
+    within_cadence = page((NOW - timedelta(minutes=4)).isoformat())
+    assert within_cadence.state == "FRESH"
+    assert within_cadence.rows[0]["state"] == "TIMER_ACTIVE"
+    # The deployed timer runs every five minutes with 15 seconds of accuracy.
+    stale = page((NOW - timedelta(minutes=5, seconds=16)).isoformat(), "success")
     assert stale.state == "STALE"
     assert stale.rows[0]["state"] == "NO_VERIFICADO"
     assert stale.rows[0]["freshness"] == "STALE"

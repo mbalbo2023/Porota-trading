@@ -93,12 +93,15 @@ def _read_regular(path, bound):
         os.close(fd)
 
 
-def _root_owned_receipt(directory, *, with_raw=False):
+def _root_owned_receipt(directory, *, with_raw=False, receipt_name=None):
     """Proof that a PAPER container cannot forge the authority through DATA.
 
     Both directory and file must be root-owned and not writable by group or
     others; mount readonly is an additional independent defense.
     """
+    receipt_name = RECEIPT_NAME if receipt_name is None else receipt_name
+    if not isinstance(receipt_name, str) or receipt_name in {"", ".", ".."} or Path(receipt_name).name != receipt_name:
+        raise ValueError("OPERATOR_REARM_RECEIPT_NAME_INVALID")
     directory = Path(directory)
     parent = os.lstat(directory)
     if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0
@@ -106,7 +109,7 @@ def _root_owned_receipt(directory, *, with_raw=False):
         raise ValueError("OPERATOR_REARM_DIRECTORY_UNTRUSTED")
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        file_fd = os.open(RECEIPT_NAME, os.O_RDONLY | os.O_NOFOLLOW,
+        file_fd = os.open(receipt_name, os.O_RDONLY | os.O_NOFOLLOW,
                           dir_fd=fd)
         try:
             observed = os.fstat(file_fd)

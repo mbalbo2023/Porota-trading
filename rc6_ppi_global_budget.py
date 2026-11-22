@@ -26,7 +26,7 @@ import uuid
 
 from rc6_dynamic_universe.common import digest, stamp
 from bs_instrument_contracts import cash_currency
-from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
+from rc6_multisource_discovery import TERM_ALIAS, canonical_family, canonical_market, canonical_settlement
 
 SCHEMA = "RC6_GLOBAL_PPI_BUDGET_V1"
 ENDPOINTS = ("current", "book", "intraday")
@@ -76,6 +76,33 @@ _PPI_RESPONSE_IDENTITY_FIELDS = {
     "currency": 3, "currencycode": 3, "moneda": 3,
     "settlement": 4, "settlementtype": 4, "settlementused": 4, "term": 4,
 }
+NATIVE_PPI_SETTLEMENT_LITERALS = frozenset(TERM_ALIAS) | {"A-48HS", "A-72HS"}
+
+
+def _native_ppi_response_identity_items(payload):
+    if not isinstance(payload, dict):
+        return
+    for container in (payload, payload.get("instrument"), payload.get("identity")):
+        if isinstance(container, dict):
+            for raw_field, value in container.items():
+                field = str(raw_field).strip().lower().replace("_", "")
+                index = _PPI_RESPONSE_IDENTITY_FIELDS.get(field)
+                if index is not None:
+                    yield index, value
+
+
+def native_ppi_response_settlement(payload):
+    """Return an allowlisted literal observed in a native body, never the query term."""
+    if not isinstance(payload, dict):
+        return "UNVERIFIED", ""
+    values = [value for index, value in _native_ppi_response_identity_items(payload) if index == 4]
+    if not values:
+        return "ABSENT", ""
+    first = values[0]
+    if type(first) is str and first in NATIVE_PPI_SETTLEMENT_LITERALS and all(
+            type(value) is str and value == first for value in values):
+        return "EXPLICIT", first
+    return "UNVERIFIED", ""
 
 
 def assert_native_ppi_response_identity(payload, expected):
@@ -86,36 +113,29 @@ def assert_native_ppi_response_identity(payload, expected):
     """
     if not isinstance(expected, (tuple, list)) or len(expected) != 5:
         raise ValueError("PPI_RESPONSE_IDENTITY_EXPECTATION_INVALID")
-    if not isinstance(payload, dict):
-        return
-    for container in (payload, payload.get("instrument"), payload.get("identity")):
-        if not isinstance(container, dict):
+    for index, value in _native_ppi_response_identity_items(payload):
+        if value in (None, "") or expected[index] is None:
             continue
-        for raw_field, value in container.items():
-            field = str(raw_field).strip().lower().replace("_", "")
-            index = _PPI_RESPONSE_IDENTITY_FIELDS.get(field)
-            if index is None or value in (None, "") or expected[index] is None:
-                continue
-            try:
-                if index == 1:
-                    actual = canonical_family(value)
-                    wanted = canonical_family(expected[index])
-                elif index == 2:
-                    actual = canonical_market(value)
-                    wanted = canonical_market(expected[index])
-                elif index == 3:
-                    actual = cash_currency(value)
-                    wanted = cash_currency(expected[index])
-                elif index == 4:
-                    actual = canonical_settlement(value, expected[1])
-                    wanted = canonical_settlement(expected[index], expected[1])
-                else:
-                    actual = str(value).strip().upper()
-                    wanted = str(expected[index]).strip().upper()
-                if not actual or actual != wanted:
-                    raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH")
-            except (TypeError, ValueError) as exc:
-                raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH") from exc
+        try:
+            if index == 1:
+                actual = canonical_family(value)
+                wanted = canonical_family(expected[index])
+            elif index == 2:
+                actual = canonical_market(value)
+                wanted = canonical_market(expected[index])
+            elif index == 3:
+                actual = cash_currency(value)
+                wanted = cash_currency(expected[index])
+            elif index == 4:
+                actual = canonical_settlement(value, expected[1])
+                wanted = canonical_settlement(expected[index], expected[1])
+            else:
+                actual = str(value).strip().upper()
+                wanted = str(expected[index]).strip().upper()
+            if not actual or actual != wanted:
+                raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("PPI_RESPONSE_IDENTITY_MISMATCH") from exc
 
 # Review pin is deliberately unset until an independent Ed25519 *reviewer*
 # public key is approved. The signer key is not a runtime secret, never made

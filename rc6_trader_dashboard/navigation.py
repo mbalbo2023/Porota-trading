@@ -40,7 +40,8 @@ DESTINATIONS = (
     Destination("sistema", "Sistema", "/sistema", "⚙", "¿La plataforma técnica está sana?", (
         ("resumen", "Resumen"), ("salud", "Salud"), ("workers", "Workers"),
         ("integraciones", "Integraciones"), ("scheduler", "Scheduler"), ("evidencia", "Evidencia"),
-        ("backups", "Backups"), ("logs", "Logs"), ("configuracion", "Configuración"))),
+        ("backups", "Backups"), ("logs", "Logs"), ("configuracion", "Configuración"),
+        ("validacion", "Validación"))),
 )
 BY_KEY = {item.key: item for item in DESTINATIONS}
 
@@ -53,7 +54,7 @@ LEGACY = {
     "/aprendizaje": ("analitica", "contrafactuales"), "/reportes": ("analitica", "reportes"),
     "/postcierre": ("analitica", "cierre-diario"), "/salud": ("sistema", "salud"),
     "/sre": ("sistema", "salud"), "/infra": ("sistema", "resumen"),
-    "/scheduler": ("sistema", "scheduler"), "/dashboard/logs": ("sistema", "logs"),
+    "/validacion": ("sistema", "validacion"), "/scheduler": ("sistema", "scheduler"), "/dashboard/logs": ("sistema", "logs"),
     "/config": ("sistema", "configuracion"), "/testing": ("sistema", "evidencia"),
     "/observacion": ("universo", "discovery"), "/telegram": ("sistema", "workers"),
     "/informacion-financiera": ("instrumentos", "evidencia"),

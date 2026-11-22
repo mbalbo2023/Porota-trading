@@ -47,7 +47,7 @@ def render(destination, tab, projection, content):
     real_order_status, real_order_alert = _real_order_receipt(state)
     values = (
         ("Modo runtime", state.get("mode", UNKNOWN)), ("Sesión", state.get("session_state", UNKNOWN)),
-        ("Selector / capacidad", selector), ("PPI · autoridad primaria", state.get("ppi_auth", UNKNOWN)),
+        ("Selector / capacidad", selector), ("Autenticación PPI", state.get("ppi_auth", UNKNOWN)),
         ("Órdenes reales observadas", real_order_status),
         ("Heartbeat", f"{clock(state.get('heartbeat_at'))} · age {number(state.get('heartbeat_age'), 1)} s · {state['heartbeat_freshness']}"),
         ("Último dato de mercado", f"{clock(state.get('last_market_data_at'))} · age {number(state.get('market_age'), 1)} s · {state['market_freshness']}"),

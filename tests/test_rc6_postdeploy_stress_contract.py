@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from rc6_trader_dashboard.navigation import CANONICAL_PATHS
 from scripts import rc6_postdeploy_stress as harness
 from scripts import rc6_postdeploy_stress_host as host
 
@@ -291,7 +292,10 @@ def test_short_harness_requires_real_isolated_fills_and_eod(tmp_path,monkeypatch
     value=harness.session_replay(tmp_path,minutes=8)
     assert value['counts']['paper_fills']>=2
     assert value['exit_reasons'].get('EOD_PAPER',0)>=1
-    assert len(value['dashboard_routes'])==52 and value['local_eod_repeated_imported']==0
+    rendered_paths = sorted(route["path"] for route in value["dashboard_routes"])
+    assert rendered_paths == sorted(CANONICAL_PATHS)
+    assert "/sistema/validacion" in rendered_paths
+    assert value["local_eod_repeated_imported"] == 0
     assert value['actual_market_acceptance'] is False and value['provider_requests']==0
 
 

@@ -97,6 +97,7 @@ def _validated_events(connection, paper_id, seed, as_of):
     if len(cash_rows) > len(rows):
         raise ValueError("FI_PORTFOLIO_ORPHAN_CASH_ENTRY")
     events, visible, last_booked, used_cash = [], [], _instant(seed.opened_at), set()
+    record_dates = {}
     for row in rows:
         try:
             event = EconomicEvent(**json.loads(row["event_json"]))
@@ -112,9 +113,16 @@ def _validated_events(connection, paper_id, seed, as_of):
                 raise ValueError("FI_PORTFOLIO_BOOKING_CLOCK_INVALID")
             last_booked = booked
             cash = cash_rows.get(row["id"])
-            if event.kind == "FIXING":
+            if event.kind in {"FIXING", "MARKET_SALE"}:
                 if cash is not None or row["entitlement_record_at"] is not None:
                     raise ValueError("FI_PORTFOLIO_FIXING_CASH_CONFLICT")
+                if event.kind == "MARKET_SALE":
+                    receipt = connection.execute("""SELECT nominal,receipt_sha256 FROM paper_fi_native_sales
+                        WHERE event_row_id=? AND paper_id=?""", (row["id"], paper_id)).fetchone()
+                    if (receipt is None or receipt["receipt_sha256"] != row["receipt_sha256"]
+                            or decimal_value(receipt["nominal"], "sold VN", positive=True) !=
+                               decimal_value(event.nominal_redeemed, "ledger sold VN", positive=True)):
+                        raise ValueError("FI_PORTFOLIO_NATIVE_SALE_JOURNAL_CONFLICT")
             else:
                 if (cash is None or cash["paper_id"] != paper_id
                         or cash["kind"] != event.kind
@@ -129,6 +137,7 @@ def _validated_events(connection, paper_id, seed, as_of):
                                 <= _instant(event.effective_at))):
                     raise ValueError("FI_PORTFOLIO_EVENT_CASH_CONFLICT")
                 used_cash.add(row["id"])
+                record_dates[event.event_id] = row["entitlement_record_at"]
             events.append(event)
             if booked <= as_of:
                 visible.append(event)
@@ -138,8 +147,8 @@ def _validated_events(connection, paper_id, seed, as_of):
         raise ValueError("FI_PORTFOLIO_ORPHAN_CASH_ENTRY")
     # The reducer validates contractual order, nominal and economic clocks.
     if events:
-        reduce_events(seed, events, as_of=max(as_of, last_booked).isoformat())
-    return visible
+        reduce_events(seed, events, as_of=max(as_of, last_booked).isoformat(), entitlement_records=record_dates)
+    return visible, record_dates
 
 
 def position_at(connection, paper_id, as_of):
@@ -167,8 +176,8 @@ def position_at(connection, paper_id, as_of):
     cutoff = _instant(as_of)
     if cutoff < _instant(seed.opened_at):
         return None
-    snapshot = reduce_events(seed, _validated_events(connection, paper_id, seed, cutoff),
-                             as_of=cutoff.isoformat())
+    events, record_dates = _validated_events(connection, paper_id, seed, cutoff)
+    snapshot = reduce_events(seed, events, as_of=cutoff.isoformat(), entitlement_records=record_dates)
     coupons, principal = {}, {}
     for entry in snapshot.cash_entries:
         target = coupons if entry.kind == "COUPON" else principal
@@ -176,7 +185,8 @@ def position_at(connection, paper_id, as_of):
     return FiPositionProjection(
         seed.paper_id, seed.symbol, seed.family, seed.trading_currency, seed.opened_at,
         snapshot.initial_nominal, snapshot.residual_nominal,
-        snapshot.initial_nominal - snapshot.residual_nominal,
+        sum((decimal_value(event.nominal_redeemed, "amortized VN", positive=True)
+             for event in events if event.kind == "AMORTIZATION"), Decimal(0)),
         snapshot.cash_by_currency, tuple(sorted(coupons.items())),
         tuple(sorted(principal.items())), len(snapshot.applied_event_ids),
         snapshot.applied_event_ids)

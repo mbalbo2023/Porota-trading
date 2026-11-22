@@ -146,7 +146,20 @@ def _instant(value, field):
     return result
 
 
-def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as_of) -> LedgerSnapshot:
+def sale_entitlement_time(position, sale):
+    """The existing conservative PAPER settlement clock for ownership at record date."""
+    from cf_sale_settlement import conservative_unconfirmed_availability, modeled_sale_settlement
+    immediate = modeled_sale_settlement(position.settlement, sale.recorded_at)
+    settled = (aware_datetime(immediate) if immediate else conservative_unconfirmed_availability(
+        position.settlement, sale.recorded_at, family=position.family, market=position.market,
+        currency=position.trading_currency))
+    if settled is None:
+        raise ValueError("FIXED_INCOME_MARKET_SALE_SETTLEMENT_UNVERIFIED")
+    return settled
+
+
+def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as_of,
+                  entitlement_records=None) -> LedgerSnapshot:
     """Fold a complete ordered event history; exact replays do not pay twice.
 
     Distinct receipt IDs for the same contractual obligation fail closed. New
@@ -180,6 +193,7 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
     seen_ids: dict[str, tuple] = {}
     seen_obligations: set[tuple[str, str]] = set()
     seen_fixing_keys: set[tuple[str, int]] = set()
+    nominal_changes = []
     last_new_us = opened_us
     for event in events:
         if not isinstance(event, EconomicEvent):
@@ -189,7 +203,7 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
         if event.paper_id != position.paper_id:
             raise ValueError("FIXED_INCOME_POSITION_MISMATCH")
         kind = event.kind
-        if kind not in {"COUPON", "AMORTIZATION", "FIXING"}:
+        if kind not in {"COUPON", "AMORTIZATION", "FIXING", "MARKET_SALE"}:
             raise ValueError("FIXED_INCOME_EVENT_KIND_UNSUPPORTED")
         effective_us = _instant(event.effective_at, "EFFECTIVE_AT")
         recorded_us = _instant(event.recorded_at, "RECORDED_AT")
@@ -213,6 +227,15 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
             fingerprint = (event.paper_id, obligation_id, kind, effective_us, recorded_us, source_us,
                            event.source_kind, source_reference, source_sha, code,
                            fixing_value, unit)
+        elif kind == "MARKET_SALE":
+            if (family not in {"BONOS", "OBLIGACIONES"} or event.source_kind != "PPI_LIVE_BOOK"
+                    or effective_us < opened_us):
+                raise ValueError("FIXED_INCOME_PAPER_SALE_SOURCE_REQUIRED")
+            _absent(event, "payment_currency", "cash_amount", "fixing_code", "fixing_value", "fixing_unit")
+            nominal_base = _amount(event.nominal_base, "NOMINAL_BASE", positive=True)
+            redeemed = _amount(event.nominal_redeemed, "SOLD_NOMINAL", positive=True)
+            fingerprint = (event.paper_id, obligation_id, kind, effective_us, recorded_us,
+                           source_us, event.source_kind, source_reference, source_sha, nominal_base, redeemed)
         else:
             if effective_us < opened_us:
                 raise ValueError("FIXED_INCOME_PAYMENT_BEFORE_POSITION")
@@ -241,18 +264,26 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
         if recorded_us < last_new_us:
             raise ValueError("FIXED_INCOME_EVENT_CLOCK_ROLLBACK")
         if kind != "FIXING":
-            if nominal_base != residual:
+            expected_base = residual
+            if kind == "COUPON" and entitlement_records and event_id in entitlement_records:
+                record_at = _instant(entitlement_records[event_id], "RECORD_AT")
+                expected_base += sum((amount for when, amount in nominal_changes if when > record_at), Decimal(0))
+            if nominal_base != expected_base:
                 raise ValueError("FIXED_INCOME_NOMINAL_BASE_MISMATCH")
-            if kind == "AMORTIZATION":
+            if kind in {"AMORTIZATION", "MARKET_SALE"}:
                 if redeemed > residual:
                     raise ValueError("FIXED_INCOME_OVER_AMORTIZATION")
                 residual -= redeemed
-            cash[currency] = cash.get(currency, Decimal(0)) + amount
-            cash_entries.append(CashEntry(event_id, obligation_id, kind, currency,
-                                          amount, residual, aware_datetime(event.effective_at).isoformat(),
-                                          aware_datetime(event.recorded_at).isoformat(),
-                                          aware_datetime(event.source_at).isoformat(),
-                                          source_reference, source_sha))
+                when = (utc_microseconds(sale_entitlement_time(position, event))
+                        if kind == "MARKET_SALE" else effective_us)
+                nominal_changes.append((when, redeemed))
+            if kind != "MARKET_SALE":
+                cash[currency] = cash.get(currency, Decimal(0)) + amount
+                cash_entries.append(CashEntry(event_id, obligation_id, kind, currency,
+                                              amount, residual, aware_datetime(event.effective_at).isoformat(),
+                                              aware_datetime(event.recorded_at).isoformat(),
+                                              aware_datetime(event.source_at).isoformat(),
+                                              source_reference, source_sha))
         else:
             fixings.append(FixingEntry(event_id, obligation_id, code,
                                        aware_datetime(event.effective_at).isoformat(),

@@ -937,6 +937,35 @@ def _contract_digest(quote):
     return digest(asdict(quote.contract)) if quote.contract else None
 
 
+def sized_etf_range(connection, quote, policy, entry_notional, *, features, at):
+    """Apply the frozen scalping range at the executable ETF notional."""
+    from rc6_performance.common import identity
+    key = features.get("signal_snapshot_key")
+    frozen = connection.execute("SELECT payload_sha256,payload_json FROM decision_evidence_snapshots "
+                                "WHERE decision_key=?", (key,)).fetchone()
+    if (not frozen or frozen[0] != features.get("signal_snapshot_sha256")
+            or hashlib.sha256(frozen[1].encode()).hexdigest() != frozen[0]):
+        raise ValueError("SCALPING_ETF_RANGE_EVIDENCE_MISSING")
+    snapshot = json.loads(frozen[1])
+    screen = snapshot["inputs_used"]["economics"]
+    age = (aware_datetime(at) - aware_datetime(snapshot["signal_at"])).total_seconds()
+    if (snapshot["decision_key"] != key or snapshot["decision"]["action"] != "BUY_CANDIDATE"
+            or not 0 <= age <= INTRADAY_SOURCE_MAX_AGE_SECONDS
+            or identity(snapshot["quote_used"]) != identity(vars(quote))
+            or screen.get("quantity_pending") is not True
+            or screen["cost_contract"] != policy.diagnostic()):
+        raise ValueError("SCALPING_ETF_RANGE_EVIDENCE_MISMATCH")
+    observed_range = _decimal(screen["observed_event_window_range_fraction"], nonnegative=True)
+    net_margin = _decimal(screen["minimum_net_margin_fraction"], nonnegative=True)
+    fees = (policy.leg_cost(entry_notional, decision_at=at)
+            + policy.leg_cost(entry_notional * (1 + observed_range), decision_at=at))
+    roundtrip = fees / entry_notional + scalping_book_spread(quote, at) + Decimal("0.0004")
+    required = roundtrip + net_margin
+    return {**screen, "passed": observed_range > required, "quantity_pending": False,
+            "modeled_roundtrip_fraction": str(roundtrip), "required_move_fraction": str(required),
+            "entry_notional": str(entry_notional)}
+
+
 def evaluate_candidate(store, record, *, at):
     identity = _identity(record)
     contract = _state(store, identity) or {}
@@ -999,18 +1028,25 @@ def evaluate_candidate(store, record, *, at):
             costs = paper_cost_contract(executable_quote.asset_class, executable_quote.currency, at,
                 symbol=executable_quote.symbol, market=executable_quote.market,
                 settlement=executable_quote.settlement)
-            if costs.family == "ETFS" and (cost_error := costs.binding_error(at)):
+            exact_etf = costs.family == "ETFS"
+            net_margin = Decimal(os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"))
+            modeled_roundtrip = spread + Decimal("0.0004")
+            if exact_etf:
                 economics["cost_contract"] = costs.diagnostic()
-                raise ValueError(cost_error)
-            import au_fee_schedule
-            one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
-                family_name(record["instrument_type"]), currency=record["currency"])))
-            modeled_roundtrip = one_leg * 2 + spread + Decimal("0.0004")
-            required_move = modeled_roundtrip + Decimal(os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"))
+                if cost_error := costs.binding_error(at):
+                    raise ValueError(cost_error)
+                economics.update(quantity_pending=True, minimum_net_margin_fraction=str(net_margin))
+            else:
+                import au_fee_schedule
+                one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
+                    family_name(record["instrument_type"]), currency=record["currency"])))
+                # Preserve the legacy per-leg fee model for the existing spot screen.
+                modeled_roundtrip = one_leg * 2 + spread + Decimal("0.0004")
+                economics["modeled_roundtrip_fraction"] = str(modeled_roundtrip)
+            required_move = modeled_roundtrip + net_margin
             score = max(Decimal(0), min(Decimal(1), Decimal("0.5") + momentum*40 - spread*10))
             economics.update({
-                "modeled_roundtrip_fraction": str(modeled_roundtrip),
-                "required_move_fraction": str(required_move),
+                "required_move_before_fees_fraction" if exact_etf else "required_move_fraction": str(required_move),
                 "observed_event_window_range_fraction": str(observed_range),
                 "observed_event_span_seconds": temporal["observed_span_seconds"],
                 "spread_fraction": str(spread), "momentum": str(momentum),
@@ -1020,8 +1056,9 @@ def evaluate_candidate(store, record, *, at):
             elif score < Decimal(os.getenv("PAPER_SCALPING_SCORE_THRESHOLD", "0.68")):
                 reason = "SCALPING_SCORE_BELOW_THRESHOLD"
             else:
-                action, reason = "BUY_CANDIDATE", "VALIDATED_SCALPING_CANDIDATE"
-                economics["passed"] = True
+                action = "BUY_CANDIDATE"
+                reason = "SCALPING_ETF_RANGE_PENDING_SIZE" if exact_etf else "VALIDATED_SCALPING_CANDIDATE"
+                economics["passed"] = None if exact_etf else True
         except (ValueError, TypeError, InvalidOperation) as exc:
             reason = str(exc) or type(exc).__name__
     evaluated = _stamp(at)

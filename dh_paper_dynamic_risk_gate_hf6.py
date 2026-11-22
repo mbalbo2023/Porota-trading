@@ -52,7 +52,7 @@ def realized_losing_fills_today(broker, currency, at, *, connection) -> Decimal:
     return consumed
 
 
-def position_stop_risk(broker, position) -> Decimal:
+def position_stop_risk(broker, position, *, connection=None) -> Decimal:
     """Full remaining-position risk using the financial family's loss contract.
 
     For a long option the loss is not the modeled stop distance: the premium
@@ -69,8 +69,11 @@ def position_stop_risk(broker, position) -> Decimal:
     stop = decimal_value(position.get("stop_price"), "stop", positive=True)
     modeled_stop_fill = broker._spot_fill_price(stop, side="SELL",
         contract=broker._position_spot_grid(position), at=position.get("opened_at"))
-    exit_cost = broker._cost(modeled_stop_fill * factor, qty, position.get("asset_class"),
-                             currency=position.get("currency"))
+    try:
+        exit_cost = broker._position_exit_fee_reserve(position, modeled_stop_fill * factor, qty,
+                                                     at=position["opened_at"], connection=connection)
+    except ValueError as exc:
+        raise ConcurrentRiskGateError(str(exc)) from exc
     return full_trade_stop_risk(
         entry_price=entry,
         modeled_stop_fill=modeled_stop_fill,
@@ -104,7 +107,7 @@ def open_stop_risk(broker, currency, at, *, connection) -> Decimal:
                 total += (entry * view.residual_nominal * factor
                           + fee * view.residual_nominal / original)
                 continue
-        total += position_stop_risk(broker, p)
+        total += position_stop_risk(broker, p, connection=connection)
     return total
 
 

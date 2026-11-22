@@ -70,7 +70,7 @@ class Verdict:
 
 class PositionExitSupervisor:
     def __init__(self, broker, *, clock_fn, session_policy=None, max_hold_minutes=180,
-                 close_fn=None, telemetry=None):
+                 close_fn=None, telemetry=None, market_sale_witness=None):
         self.broker, self.store = broker, broker.store
         self.clock_fn, self.session_policy = clock_fn, session_policy
         if max_hold_minutes <= 0:
@@ -78,6 +78,7 @@ class PositionExitSupervisor:
         self.max_hold_minutes = max_hold_minutes
         self.close_fn = close_fn or broker._close
         self.telemetry = telemetry
+        self.market_sale_witness = market_sale_witness or getattr(broker, "market_sale_witness", None)
 
     def _probe(self, paper_id, stage, at, cause):
         if self.telemetry is not None:
@@ -279,6 +280,21 @@ class PositionExitSupervisor:
         # BONOS/ON must not fall into the generic spot close callback. The
         # engine deliberately has no authorized native FI sale ledger here.
         if family in {"BONOS", "OBLIGACIONES"}:
+            if q.ppi_native_rest_book is not None:
+                from rc6_fixed_income_sale_authority import prepare_market_sale
+                try:
+                    key = prepare_market_sale(self.store, p, q, cause, at)
+                    witness = self.market_sale_witness(key) if self.market_sale_witness else None
+                    if witness:
+                        from rc6_fixed_income_paper_market_sale import apply_paper_market_sale
+                        result = apply_paper_market_sale(self.store, self.broker,
+                            paper_id=p["paper_id"], applied_at=self.clock_fn(), witness=witness)
+                        if result["closed_paper"]:
+                            return Verdict(p["paper_id"], "CLOSED", cause, result["reason"])
+                        return verdict("EXIT_PARTIAL", "FI_NATIVE_MARKET_SALE_PARTIAL")
+                    return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_SIGNED_BOOK2_PENDING")
+                except (OSError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
+                    return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", str(exc)[:180])
             return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_EVIDENCE_REQUIRED")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
         reason = "El ejecutor no confirmó un cierre"

@@ -37,8 +37,9 @@ def render(p, destination, tab):
     if tab == "scheduler":
         return render_table(p, destination, tab, artifact(p, "scheduler"), "Scheduler · snapshot read-only",
                             fields("unit|Unidad / job;state|Estado|status;freshness|Snapshot freshness|status;next_run|Próxima ejecución|time;last_run|Última ejecución|time"),
-                            fields("enabled|Habilitado;active|Activo;last_result|Resultado servicio;exec_main_status|Exit status;description|Descripción;reason|Excepción"),
-                            note="El timer activo no certifica ejecución exitosa. Estado y reloj de un snapshot vencido no son evidencia actual; esta pantalla no ejecuta comandos ni habilita timers.")
+                            fields("enabled|Habilitado;active|Activo;last_result|Resultado informado por systemd;exec_main_status|Exit status;next_calendar|Próxima por calendario|time;next_monotonic|Próxima por reloj monotónico|time;next_elapse_monotonic|Lectura monotónica original;description|Descripción;reason|Excepción"),
+                            identity=False,
+                            note="El próximo disparo usa el primero de los relojes disponibles. Los tiempos de un snapshot vencido se conservan como evidencia histórica.")
     if tab == "evidencia":
         cut = p.shadow
         pointer, manifest = cut.get("pointer", {}), cut.get("manifest", {})
@@ -55,11 +56,14 @@ def render(p, destination, tab):
                 "<section class='panel'><h2>Validación — Camino a Producción</h2>"
                 "<p>Consultar el estado y las brechas de M0–M11, uno por uno. "
                 "El dinero real continúa bloqueado por política RC6.</p>"
-                "<a class='text-link' href='/validacion'>Ver hitos M0–M11</a></section>" +
+                "<a class='text-link' href='/sistema/validacion'>Ver hitos M0–M11</a></section>" +
                 "<section class='panel'><h2>Integridad de generación SHADOW</h2>" + definition_list(row, fields(
                     "state|Estado de verificación|status;as_of|Watermark as_of|time;reason|Motivo"))
                 + detail(row, fields("observation_coverage|Cobertura de observaciones SHADOW|status;generation_id|Generation ID;sequence|Sequence|number;manifest_digest|Manifest digest;source_watermark|Source watermark;configuration_fingerprint|Configuration fingerprint;members|Report / status cross hashes;retention|Retención / pins / ACK;preopen_digest|Preopen freeze"), "sistema-evidencia", 1)
                 + "</section>")
+    if tab == "validacion":
+        from .views_validation import render as render_validation
+        return render_validation(p)
     if tab == "backups":
         try:
             policy = json.loads((Path(__file__).resolve().parents[1] /

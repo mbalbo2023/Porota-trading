@@ -129,9 +129,10 @@ def pending_proceeds(store, as_of, currency="ARS", *, connection=None):
         r.net_proceeds,r.available_at,r.basis FROM paper_positions p
         LEFT JOIN paper_sale_receivables r USING(paper_id) WHERE p.currency=? AND p.status='CLOSED'""",
         (cash_currency(currency),)).fetchall()
-    pending = spot_ledger.pending(connection,at,currency)
+    from rc6_fixed_income_paper_market_sale import REASON, sale_cash_effect
+    pending = spot_ledger.pending(connection,at,currency) + sale_cash_effect(connection,currency,at,pending=True)
     for row in rows:
-        if row['close_reason'] == 'FI_NATIVE_MATURITY_REVIEWED':
+        if row['close_reason'] in ('FI_NATIVE_MATURITY_REVIEWED', REASON):
             # Durable terminal validation is mandatory even for old cutoffs.
             spot_ledger.partition(connection, row, at)
             continue

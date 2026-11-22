@@ -215,8 +215,8 @@ class DailyRisk:
                         unrealized += fi_now.unrealized_pnl - residual_exit_fee
                         continue
                     unrealized += ((exit_price-Decimal(p['entry_price']))*qty*factor -
-                        Decimal(p['entry_cost']) - self.broker._cost(
-                            exit_price*factor, qty, p['asset_class'], currency=p['currency']))
+                        Decimal(p['entry_cost']) - self.broker._position_exit_fee_reserve(
+                            p, exit_price*factor, qty, at=at, connection=c))
                 before += future_before["realized"]
                 realized += future_now["realized"]
                 today_realized += future_now["realized"] - future_before["realized"]

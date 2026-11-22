@@ -11,6 +11,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import rc6_validation_dynamic as dynamic
+from rc6_scheduler_snapshot import instant
+from rc6_validation_runtime import IDENTITY, bind_deploy, read_object
 from em_validation_campaign_rc6 import load_records
 from ek_history_freshness_metrics_rc5 import _expected_completed_session, freshness_qualified_metrics
 from rc6_validation_operational_daily import collect as collect_operational_daily
@@ -26,18 +28,24 @@ def snapshot_path(root=None):
 
 def _write_atomic(path, payload):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".validation-", suffix=".tmp", delete=False) as handle:
-        json.dump(payload, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":")); handle.write("\n"); handle.flush(); os.fsync(handle.fileno()); temp = Path(handle.name)
-    os.replace(temp, path)
+    temporary = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                prefix=".validation-", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
 
 
 def _read_raw(root):
-    try:
-        value = json.loads(snapshot_path(root).read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None
-    return value if isinstance(value, dict) and isinstance(value.get("milestones"), dict) else None
-
+    value = read_object(snapshot_path(root))
+    return value if isinstance(value.get("milestones"), dict) else None
 
 def _latched_rows(previous):
     """Retain the last published evidence in a bounded daily projection.
@@ -53,7 +61,7 @@ def _latched_rows(previous):
     return [{"milestone": code, **dict(row)} for code, row in previous["milestones"].items() if isinstance(row, dict)]
 
 
-def _freshness_pulse() -> dict:
+def _freshness_pulse(*, published_only=False) -> dict:
     """Prefer the explicit pre-open evidence snapshot; never trigger ingestion."""
     root = Path(os.getenv("POROTA_VALIDATION_ROOT", "/app/data/validation"))
     try:
@@ -74,7 +82,9 @@ def _freshness_pulse() -> dict:
                         expected_session_date=audit.get("expected_session_date"))
     except (OSError, ValueError, json.JSONDecodeError):
         pass
-    db_path = os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
+    if published_only:
+        return {"available": False, "reason": "PREOPEN_FRESHNESS_RECEIPT_UNAVAILABLE"}
+    db_path = dynamic._db_path()
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
             conn.execute("PRAGMA query_only=ON")
@@ -90,7 +100,8 @@ def _operational_pulse() -> dict:
         return {"days": [], "reason": f"OPERATIONAL_PULSE_UNAVAILABLE:{type(exc).__name__}"}
 
 
-def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
+def _apply_daily_operational_audit(rows: dict[str, dict], *, now=None, operational=None,
+                                   published_only=False) -> dict[str, dict]:
     """Attach today's read-only IOL/history pulses only to the daily audit."""
     result = {code: dict(row) for code, row in rows.items()}
     observed, target = dynamic._iol_coverage()
@@ -111,11 +122,11 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
             "observed_evidence": "Implementación IOL SHADOW disponible; cache de cobertura no observable desde este worker.",
             "next_action": "Revisar la próxima auditoría diaria.",
         })
-    operational = _operational_pulse()
+    operational = _operational_pulse() if operational is None else operational
     days = operational.get("days") if isinstance(operational.get("days"), list) else []
     if days:
         latest = days[0] if isinstance(days[0], dict) else {}
-        today = datetime.now(TZ_AR).date().isoformat()
+        today = (now or datetime.now(TZ_AR)).astimezone(TZ_AR).date().isoformat()
         latest_day = str(latest.get("date_ar") or "")
         current = latest_day == today
         future = latest_day > today
@@ -140,7 +151,7 @@ def _apply_daily_operational_audit(rows: dict[str, dict]) -> dict[str, dict]:
             "next_action": "Restablecer sólo la lectura de auditoría diaria.",
             "evidence_ref": "observer_v17.db/read-only/operational-daily",
         })
-    freshness = _freshness_pulse()
+    freshness = _freshness_pulse(published_only=True) if published_only else _freshness_pulse()
     if freshness.get("available"):
         target = max(0, int(freshness.get("target_total") or 0))
         fresh = max(0, int(freshness.get("fresh_total") or 0))
@@ -191,6 +202,33 @@ def refresh(root=None, *, full_verify=None, daily_audit=False):
     _write_atomic(snapshot_path(root), payload); return payload
 
 
-def read(root=None):
+def read(root=None, *, data=None, now=None):
+    """Render outdated or unbound claims as historical on every HTTP read."""
     value = _read_raw(root)
-    return value if value and value.get("schema_version") == SCHEMA_VERSION else None
+    if value is None or value.get("schema_version") != SCHEMA_VERSION:
+        return None
+
+    now = now or datetime.now(timezone.utc)
+    data = Path(data) if data is not None else Path(dynamic._db_path()).resolve().parent.parent
+    release = value.get("release") or {}
+    marker = bind_deploy(data, build=os.getenv("POROTA_BUILD_SHA"),
+                         tree=os.getenv("POROTA_CANDIDATE_TREE_SHA"), now=now)
+    published = instant(value.get("generated_at"))
+    current = (published is not None and published <= now
+               and published.astimezone(TZ_AR).date() == now.astimezone(TZ_AR).date()
+               and value.get("session_date") == now.astimezone(TZ_AR).date().isoformat()
+               and isinstance(release, dict) and bool(marker)
+               and all(release.get(key) == marker[key] for key in IDENTITY))
+    rows = {code: dict(row) for code, row in value["milestones"].items()
+            if isinstance(row, dict)}
+    for row in rows.values():
+        if not current and (row.get("claim_status") == "VERIFIED_CURRENT"
+                            or row.get("evidence_status") == "CURRENT"):
+            row.update(claim_status="STALE", evidence_status="STALE")
+            if row.get("state") == "GREEN":
+                row["state"] = "YELLOW"
+    rows["M11"] = {**rows.get("M11", {}), "state": "GRAY", "compliance_pct": 0,
+                   "claim_status": "BLOCKED_BY_POLICY", "evidence_status": "POLICY_BLOCKED",
+                   "work_status": "BLOCKED"}
+    return {**value, "milestones": rows, "summary": dynamic.summary(rows),
+            "snapshot_status": "CURRENT" if current else "STALE", "real_money_state": "BLOCKED"}

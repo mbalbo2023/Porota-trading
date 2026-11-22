@@ -143,9 +143,10 @@ TRANSITIONS = {
 
 # An initial FCI commitment in the effective runtime book must pass the
 # executor's locked catalog, cash and preopen checks. The generic lifecycle
-# primitive remains available for offline fixtures; runtime settlement has no
-# authenticated NAV/redemption writer and therefore cannot mint buying power.
+# primitive remains available for offline fixtures. Runtime settlement is
+# restricted to the executor's signed evidence transaction.
 _FCI_LOCKED_SUBSCRIPTION = object()
+_FCI_LOCKED_SETTLEMENT = object()
 # Money-bearing futures transitions require an executor-owned transaction;
 # the runtime opening/mark/exit writer additionally requires the broker's
 # private validated-quote handoff. Neither is public generic event authority.
@@ -429,6 +430,105 @@ class FamilyPaperExecutor:
                 to_state="SUBSCRIBE_REQUESTED", amount=-subscribed, occurred_at=occurred_at,
                 detail=detail, connection=connection,
                 _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
+
+    def record_fund_settlement(self, evidence, *, lifecycle_id, receipts, proof):
+        """Advance an existing runtime PAPER commitment under signed source evidence."""
+        from rc6_fund_paper_reconciler import (
+            FundReceipt, fund_evidence_digest, read_locked_fund_events,
+            reconcile_fund_events, validate_fund_event_ledger,
+        )
+        from rc6_fund_source_quarantine import verify_settlement_attestation
+        from rc6_paper_runtime_safety import runtime_admission_context
+
+        if (not isinstance(receipts, (list, tuple)) or len(receipts) > 3
+                or any(not isinstance(receipt, FundReceipt) for receipt in receipts)):
+            raise ValueError("FCI_SETTLEMENT_RECEIPTS_INVALID")
+        receipts = tuple(receipts)
+        raw_proof = _canonical_json(proof).encode("utf-8")
+        if len(raw_proof) > 10_000:
+            raise ValueError("FCI_SETTLEMENT_ATTESTATION_CAPACITY")
+        proof = json.loads(raw_proof)
+        claims = proof.get("claims") if isinstance(proof, dict) else None
+        transitions = claims.get("transitions") if isinstance(claims, dict) else None
+        if (not isinstance(transitions, list) or not 1 <= len(transitions) <= 3
+                or any(not isinstance(row, list) or len(row) != 2
+                       or not all(isinstance(v, str) and 0 < len(v) <= 128 for v in row)
+                       or row[1] in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"} for row in transitions)
+                or len({row[0] for row in transitions}) != len(transitions)):
+            raise ValueError("FCI_SETTLEMENT_TRANSITIONS_INVALID")
+        digest = hashlib.sha256(raw_proof).hexdigest()
+        with self.store.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            runtime, error = runtime_admission_context(self.store, connection=connection)
+            if not runtime or error:
+                raise ValueError(error or "FCI_SETTLEMENT_RUNTIME_DATASET_REQUIRED")
+            root, prior_events = read_locked_fund_events(connection, lifecycle_id, evidence)
+            validate_fund_event_ledger(root, prior_events)
+            positions = {event["event_id"]: index for index, event in enumerate(prior_events)}
+            already_recorded = [positions[event_id] for event_id, _ in transitions if event_id in positions]
+            if already_recorded:
+                if (len(already_recorded) != len(transitions)
+                        or already_recorded != list(range(already_recorded[0], already_recorded[-1] + 1))
+                        or any(prior_events[index]["detail"].get("fci_attestation_sha256") != digest
+                               for index in already_recorded)):
+                    raise ValueError("FCI_SETTLEMENT_EVENT_COLLISION")
+                prior_events = prior_events[:already_recorded[-1] + 1]
+            stamp = prior_events[-1]["occurred_at"] if already_recorded else _now()
+            claims = verify_settlement_attestation(proof, at=stamp)
+            known_at = aware_datetime(claims["known_at"])
+            if any(aware_datetime(receipt.recorded_at) > known_at for receipt in receipts):
+                raise ValueError("FCI_SETTLEMENT_ATTESTED_BEFORE_RECEIPT")
+            terms = evidence.terms
+            payments = {receipt.event_id: receipt for receipt in receipts}
+            receipt_hashes = {event_id: fund_evidence_digest(receipt)
+                              for event_id, receipt in payments.items()}
+            if (claims["identity"] != [terms.symbol, "FCI", terms.market, terms.currency, terms.settlement]
+                    or claims["lifecycle_id"] != lifecycle_id
+                    or claims["class_evidence_sha256"] != fund_evidence_digest(evidence)
+                    or claims["receipt_hashes"] != receipt_hashes):
+                raise ValueError("FCI_SETTLEMENT_EVIDENCE_MISMATCH")
+            for event in prior_events:
+                event_id = event["event_id"]
+                if event_id in receipt_hashes and event["detail"].get("fci_receipt_sha256") != receipt_hashes[event_id]:
+                    raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_MISMATCH")
+            if already_recorded:
+                return reconcile_fund_events(lifecycle_id, prior_events, receipts, evidence, as_of=stamp)
+
+            proposed = []
+            prior_state = prior_events[-1]["to_state"]
+            if transitions[-1][1] == "REDEEMED" and prior_state != "REDEEM_REQUESTED":
+                raise ValueError("FCI_SETTLEMENT_REDEMPTION_REQUEST_REQUIRED")
+            for event_id, state in transitions:
+                amount = Decimal("0")
+                detail = {"fci_attestation_sha256": digest}
+                if event_id in receipt_hashes:
+                    detail["fci_receipt_sha256"] = receipt_hashes[event_id]
+                if state == "REDEEM_REQUESTED":
+                    allocation = next((receipt for receipt in receipts if receipt.kind == "SETTLED"), None)
+                    if allocation is None:
+                        raise ValueError("FCI_SETTLEMENT_PRIOR_ALLOCATION_REQUIRED")
+                    detail["units"] = allocation.units
+                if state == "REDEEMED":
+                    payment = payments.get(event_id)
+                    if payment is None:
+                        raise ValueError("FCI_SETTLEMENT_PAYMENT_REQUIRED")
+                    amount = decimal_value(payment.cash_amount, "FCI_SETTLEMENT_PAYOUT", positive=True)
+                    detail["fci_cash_attestation"] = proof
+                proposed.append(dict(
+                    lifecycle_id=lifecycle_id, event_id=event_id, family="FCI", from_state=prior_state,
+                    to_state=state, amount=amount, occurred_at=stamp, detail=detail))
+                prior_state = state
+            payout = decimal_value(claims["payout_ars"], "FCI_SETTLEMENT_PAYOUT", nonnegative=True)
+            if payout != proposed[-1]["amount"]:
+                raise ValueError("FCI_SETTLEMENT_PAYOUT_MISMATCH")
+            result = reconcile_fund_events(
+                lifecycle_id, prior_events + proposed, receipts, evidence, as_of=stamp)
+            for event in proposed:
+                apply_paper_event(
+                    self.store, connection=connection, instrument=terms.symbol, currency=terms.currency,
+                    _financial_authority=_FCI_LOCKED_SETTLEMENT,
+                    **{key: value for key, value in event.items() if key != "from_state"})
+            return result
 
     def future_event(self, contract, *, lifecycle_id, event_id, to_state,
                      amount="0", occurred_at=None, detail=None, connection=None,
@@ -1030,9 +1130,7 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
                 if to_state in {"SUBSCRIBE", "SUBSCRIBE_REQUESTED"}:
                     if _subscription_authority is not _FCI_LOCKED_SUBSCRIPTION:
                         raise ValueError("FCI_DIRECT_RUNTIME_SUBSCRIPTION_BLOCKED")
-                else:
-                    # No source-authenticated NAV/clearing/units writer exists
-                    # in runtime: never let generic transitions mint cash.
+                elif _financial_authority is not _FCI_LOCKED_SETTLEMENT:
                     raise ValueError(FCI_WRITER_AUTHORITY_ERROR)
             elif _financial_authority is not _FUTURE_LOCKED_FINANCIAL_EVENT:
                 raise ValueError("FUTURES_DIRECT_RUNTIME_FINANCIAL_EVENT_FORBIDDEN")
@@ -1517,6 +1615,31 @@ def cancel_open_future_admin(connection, lifecycle_id, at, authority):
             'cash_reversal': str(-booked), 'real_routes_used': []}
 
 
+def _verify_fund_redemption_cash(connection, row, amount):
+    from rc6_fund_source_quarantine import verify_settlement_attestation
+
+    try:
+        detail = json.loads(row["detail_json"])
+        proof = detail.get("fci_cash_attestation")
+        claims = verify_settlement_attestation(proof,
+                                               at=row["occurred_at"])
+        opening = connection.execute("""SELECT detail_json FROM paper_family_lifecycle_events
+            WHERE lifecycle_id=? AND to_state='SUBSCRIBE_REQUESTED'""",
+            (row["lifecycle_id"],)).fetchone()
+        terms = json.loads(opening["detail_json"])["fund_terms"]
+        identity = [row["instrument"], "FCI", terms["market"], row["currency"], terms["settlement"]]
+        receipt_hash = claims["receipt_hashes"][row["event_id"]]
+        if (claims["lifecycle_id"] != row["lifecycle_id"] or claims["identity"] != identity
+                or claims["transitions"][-1] != [row["event_id"], "REDEEMED"]
+                or receipt_hash != detail.get("fci_receipt_sha256")
+                or hashlib.sha256(_canonical_json(proof).encode("utf-8")).hexdigest()
+                   != detail.get("fci_attestation_sha256")
+                or decimal_value(claims["payout_ars"], "FCI_SETTLEMENT_PAYOUT", positive=True) != amount):
+            raise ValueError("FCI_SETTLEMENT_PAYOUT_MISMATCH")
+    except (IndexError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("FCI_RUNTIME_REDEMPTION_SOURCE_UNVERIFIED") from exc
+
+
 def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     """FCI cash committed on request and released only on recorded redemption.
 
@@ -1536,20 +1659,21 @@ def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     runtime_book, safety_error = _projection_runtime_context(store, connection)
     if safety_error:
         raise ValueError(safety_error)
-    rows = connection.execute("""SELECT e.to_state,e.amount FROM paper_family_lifecycle_events e
+    rows = connection.execute("""SELECT e.*,l.instrument,l.currency FROM paper_family_lifecycle_events e
       JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
       WHERE e.family='FCI' AND l.family='FCI' AND l.currency=?
         AND e.to_state IN ('SUBSCRIBE_REQUESTED','SUBSCRIBE','REDEEMED')
         AND rc6_instant_us(e.occurred_at)""" + operator + "?",
       (cash_currency(currency), utc_microseconds(point)))
     total = Decimal("0")
-    for state, raw_amount in rows:
-        amount = decimal_value(raw_amount, "flujo FCI")
+    for row in rows:
+        state = row["to_state"]
+        amount = decimal_value(row["amount"], "flujo FCI")
         if ((state in {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"} and amount > 0)
                 or (state == "REDEEMED" and amount < 0)):
             raise ValueError("FCI_CASH_EVENT_DIRECTION_INVALID")
         if runtime_book and state == "REDEEMED" and amount > 0:
-            raise ValueError("FCI_RUNTIME_REDEMPTION_SOURCE_UNVERIFIED")
+            _verify_fund_redemption_cash(connection, row, amount)
         total += amount
     return total
 

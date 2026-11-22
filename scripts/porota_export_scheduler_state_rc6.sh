@@ -8,36 +8,35 @@ LOCK="/run/lock/porota-scheduler-export-rc6.lock"
 mkdir -p "$OUTDIR"
 exec 9>"$LOCK"
 flock -n 9 || exit 0
-python3 - "$OUT" <<'PY'
+PYTHONPATH="$ROOT" python3 - "$OUT" <<'PY'
 from __future__ import annotations
-import json,stat,subprocess,sys,time
+import json,os,stat,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
+from rc6_scheduler_snapshot import CLOSED_REUSE_SECONDS, instant, monotonic_target, snapshot_phase
 out=Path(sys.argv[1])
-# The timer remains armed each minute so OPEN and preopen retain their original
-# cadence. Outside those phases, an existing recent 20-unit snapshot is still
-# useful and avoids dozens of systemctl calls and an identical JSON rewrite.
+# Use the existing timer cadence. In CLOSED, reuse a recent complete snapshot.
 # Unknown calendar, missing/untrusted output or clock skew takes the original
 # full export path. No provider or trading source is accessed here.
 try:
-    import ak_byma_calendar as calendar
-    from co_market_sessions_hf6 import byma_paper_spot_phase, TZ
-    now=datetime.now(TZ)
+    now=datetime.now(timezone.utc)
     info=out.stat()
     age=time.time()-info.st_mtime
     if (not out.is_symlink() and stat.S_ISREG(info.st_mode) and info.st_size <= 1024*1024 and
-            now.year in calendar.ANIOS_AUDITADOS and
-            0 <= (now.date()-calendar.CALENDARIO_ACTUALIZADO_EL).days <= 60 and
-            byma_paper_spot_phase(now)=='CLOSED' and 0 <= age < 540):
+            snapshot_phase(now)=='CLOSED' and 0 <= age < CLOSED_REUSE_SECONDS):
         prior=json.loads(out.read_text(encoding='utf-8'))
+        captured = instant(prior.get('recorded_at'))
         if (prior.get('schema')=='porota-scheduler-systemd-v1' and
+                captured is not None and 0 <= (now-captured).total_seconds() < CLOSED_REUSE_SECONDS and
+                snapshot_phase(captured)=='CLOSED' and
                 prior.get('state')=='OK' and isinstance(prior.get('timers'),list) and
                 len(prior['timers'])>=20):
             sys.exit(0)
 except (OSError, ValueError, TypeError, ImportError, AttributeError):
     pass
 def run(*args):
-    p=subprocess.run(args,text=True,capture_output=True,timeout=12,check=False)
+    p=subprocess.run(args,text=True,capture_output=True,timeout=12,check=False,
+                     env={**os.environ, "LC_ALL":"C", "TZ":"UTC"})
     return p.returncode,p.stdout,p.stderr
 def props(unit,names):
     cmd=["systemctl","show",unit,"--no-pager"]
@@ -57,13 +56,19 @@ if rc==0:
         if not parts: continue
         unit=parts[0]
         if not unit.startswith("porota-") or not unit.endswith(".timer"): continue
-        t=props(unit,["Id","Description","ActiveState","SubState","UnitFileState","LastTriggerUSec","NextElapseUSecRealtime","Triggers"])
+        t=props(unit,["Id","Description","ActiveState","SubState","UnitFileState","LastTriggerUSec","NextElapseUSecRealtime","NextElapseUSecMonotonic","WakeSystem","Triggers"])
+        observed=datetime.now(timezone.utc)
+        tick_clock = time.CLOCK_BOOTTIME if t.get("WakeSystem")=="yes" else time.CLOCK_MONOTONIC
+        elapsed_deadline = monotonic_target(t.get("NextElapseUSecMonotonic"),
+                                           wall=observed,monotonic=time.clock_gettime(tick_clock))
         service=unit[:-6]+".service"
         s=props(service,["Id","Description","ActiveState","SubState","Result","ExecMainCode","ExecMainStatus","ActiveEnterTimestamp","InactiveExitTimestamp"])
         timers.append({"unit":unit,"description":t.get("Description") or "",
             "active_state":t.get("ActiveState") or "unknown","sub_state":t.get("SubState") or "unknown",
             "enabled_state":t.get("UnitFileState") or (parts[1] if len(parts)>1 else "unknown"),
             "last_trigger":t.get("LastTriggerUSec") or None,"next_elapse":t.get("NextElapseUSecRealtime") or None,
+            "next_elapse_monotonic":t.get("NextElapseUSecMonotonic") or None,
+            "next_elapse_monotonic_at":elapsed_deadline.isoformat() if elapsed_deadline else None,
             "triggers":t.get("Triggers") or service,"service":service,
             "service_description":s.get("Description") or "","service_active_state":s.get("ActiveState") or "unknown",
             "service_sub_state":s.get("SubState") or "unknown","last_result":s.get("Result") or "unknown",

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from importlib.metadata import version
 import json
 from pathlib import Path
+import sqlite3
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -13,9 +14,11 @@ import requests
 from bd_ppi_readonly_guard import ProductionMarketReader
 from be_paper_engine import PaperBroker, PaperStore
 import bf_production_paper_observer as observer
+from bl_candle_engine import SampleMaterializer
 import bu_instrument_catalog as catalog
 from rc6_dynamic_universe import promotion
 import rc6_paper_admission_gate as gate
+from rc6_local_eod_history import RESERVE, consolidate
 from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
 from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
 from tests.test_rc6_a680_ppi_guard_wire_receipt import FakeBudget
@@ -102,7 +105,8 @@ def replay(tmp_path, monkeypatch):
         wire = receipt["guard_wire_receipt"]
         assert wire["adapter_response_completed"] is True
         assert datetime.fromisoformat(wire["received_at_utc"]) == clock.at
-        return {"state": "OK", "receipt": {"raw_payload": receipt["native_payload"]}}
+        return {"state": "OK", "receipt": {"raw_payload": receipt["native_payload"]},
+                "guard_wire_receipt": wire}
 
     reader = SharedPPIReaderAdapter(consumer="scanner", catalog_source_digest="a" * 64,
         client=SimpleNamespace(pull=lambda *_: pytest.fail("Unexpected stream use"),
@@ -188,12 +192,27 @@ def test_spot_sdk_writer_selector_and_paper_admission(replay, symbol, partial_fi
         quote = observer._read_scanner_quote(reader, store, *request, priority=scope["priority"], identity=key)
         store.add_quote(quote)
         broker.on_quote(quote)
+    assert SampleMaterializer(store).tick(AT + timedelta(minutes=9)) == {
+        "cursor": 8, "accepted": 8, "rejected": 0, "versions": 10, "state": "RUNNING"}
     with store.connect() as connection:
         assert connection.execute("SELECT side FROM paper_fills").fetchone()[0] == "BUY_SIMULATED"
         assert connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 1
         assert connection.execute("SELECT action FROM paper_decisions ORDER BY id DESC LIMIT 1").fetchone()[0] == "BUY"
         assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
             "PRODUCTION_PAPER", 0)
+        bars = connection.execute("""SELECT s.identity_json,v.body_json FROM candle_versions v
+            JOIN candle_series s USING(series_id) ORDER BY v.bar_start""").fetchall()
+    by_resolution = {"1m": [], "5m": []}
+    for identity, body in bars:
+        series = json.loads(identity)
+        assert tuple(series[k] for k in ("symbol", "asset_class", "market", "currency", "settlement")) == key
+        assert (series["price_kind"], series["volume_kind"]) == ("TRADE_SAMPLES", "UNKNOWN")
+        bar = json.loads(body)
+        assert bar["quality"] == "SAMPLED" and bar["volume"] is None
+        by_resolution[series["resolution"]].append(bar)
+    assert len(by_resolution["1m"]) == 8
+    assert [(bar["open"], bar["close"], bar["samples"]) for bar in by_resolution["5m"]] == [
+        ("100", "100.6", 4), ("100.8", "102", 4)]
 
 
 @pytest.mark.parametrize("symbol", ["GGAL", "AAPL"])
@@ -213,6 +232,45 @@ def test_spot_sdk_public_catalog_is_diagnostic_even_with_fresh_current_book(repl
     assert [name for name, _ in calls] == ["SearchInstrument", "Current", "Book"]
     assert scopes == [(method, key, "DISCOVERY", False) for method in ("current", "book")]
     assert gate.paper_admission_guard(quote, store) == (False, "PAPER_EXACT_CONTRACT_NOT_READY")
+
+
+def test_ppi_observe_only_samples_reach_existing_local_eod(replay, tmp_path):
+    store, records, reader, clock, calls, scopes, refresh = replay
+    raw = records["GGAL"]
+    key = ("GGAL", "ACCIONES", "BYMA", "ARS", TERM)
+    assert refresh("ACCIONES", [("GGAL", raw)]) == 1
+    # This models receipt of a T+1 tick during the BYMA late-source window.
+    # The test explicitly invokes the existing observation function. It does
+    # not assume the observer schedules PPI reads after the PAPER close.
+    clock.at = AT.replace(hour=17, minute=35, second=2)
+    assert observer._market_phase(clock.at) == "CLOSED"
+    materializer = SampleMaterializer(store)
+    for _ in range(2):
+        observed = observer._ppi_direct_rest_observe_only(reader, store, family="ACCIONES")
+        assert observed == {"status": "FRESH_OBSERVED", "identity": list(key),
+                            "paper_ready": False, "native_receipts": ["current", "book"]}
+    assert [query["settlement"] for endpoint, query in calls if endpoint in {"Current", "Book"}] == [TERM] * 4
+    assert materializer.tick(clock.at)["versions"] == 0
+    assert materializer.tick(clock.at.replace(minute=40))["versions"] == 2
+
+    eod_at = AT.replace(hour=18, minute=15)
+    store.state(session_state="MARKET_CLOSED", heartbeat_at=eod_at.isoformat(), real_orders_sent=0)
+    target = tmp_path / "history.db"
+    first = consolidate(store.path, target, as_of=eod_at, free_bytes=RESERVE)
+    assert (first["state"], first["imported"], first["rejected"], first["daily_groups"]) == (
+        "LOCAL_EOD_READY", 2, 0, 1)
+    assert first["provider_requests"] == first["real_orders_sent"] == 0
+    assert consolidate(store.path, target, as_of=eod_at, free_bytes=RESERVE)["imported"] == 0
+    with store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM candle_samples").fetchone()[0] == 2
+    with sqlite3.connect(target) as connection:
+        identity, body = connection.execute("SELECT identity_json,body_json FROM history_local_daily_v1").fetchone()
+    day = json.loads(body)
+    assert json.loads(identity)["settlement"] == TERM
+    assert (day["close"], day["coverage_state"], day["captured_minutes"], day["expected_minutes"]) == (
+        "100", "PARTIAL", 1, 450)
+    assert day["volume"] is day["trades"] is day["vwap"] is None
 
 
 def test_later_partial_republication_keeps_original_literal_clock(replay):

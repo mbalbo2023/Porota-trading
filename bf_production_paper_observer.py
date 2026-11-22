@@ -35,7 +35,7 @@ from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
-from rc6_ppi_global_budget import assert_native_ppi_response_identity
+from rc6_ppi_global_budget import assert_native_ppi_response_identity, native_ppi_response_settlement
 from co_market_sessions_hf6 import byma_eod_publication_floor
 from scripts.rc6_history_cutoff_repair_once import CUTOFF as HISTORY_CUTOFF
 
@@ -97,6 +97,10 @@ OPERATIONAL_FAMILIES = frozenset({
     "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
 })
+_PPI_REFERENCE_OBSERVED = {
+    "FCI": "FCI_CURRENT_REFERENCE_OBSERVED",
+    "CAUCIONES": "CAUCION_CURRENT_REFERENCE_OBSERVED",
+}
 
 # A diagnostic sweep is not the PAPER admission universe. One PPI-native
 # observation at most per due interval, with ETFs deliberately last.
@@ -1293,7 +1297,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
         capture = getattr(reader, "capture_guarded_native", None)
         if not callable(capture):
             raise ValueError("PPI_DIRECT_NATIVE_WIRE_WITNESS_REQUIRED")
-        endpoints = (("current",) if family in {"FCI", "CAUCIONES"}
+        endpoints = (("current",) if family in _PPI_REFERENCE_OBSERVED
                      else ("current", "book"))
         for endpoint in endpoints:
             if pre_wire is not None:
@@ -1320,14 +1324,17 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
             payload = witness.get("native_payload")
             native_time = (payload.get("date") if isinstance(payload, dict)
                            else None)
+            settlement_status, settlement_literal = native_ppi_response_settlement(payload)
             store.event("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
                         f"command_id={command_id or 0};{ticker}:{family}:{settlement};"
                         f"identity5={ticker}:{family}:{market}:{currency}:{settlement};"
                         f"endpoint={endpoint};http_status=200;"
                         f"wire_received_at_utc={_safe_ppi_evidence_timestamp(receipt.get('received_at_utc'))};"
                         f"market_timestamp_utc={_safe_ppi_evidence_timestamp(native_time)};"
+                        f"response_settlement_status={settlement_status};"
+                        f"response_settlement_literal={settlement_literal};"
                         f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
-        if family in {"FCI", "CAUCIONES"}:
+        if family in _PPI_REFERENCE_OBSERVED:
             # PPI SearchInstrument does not promise settlement, and funds/
             # money-market rates are not an equity two-sided order book.
             # Preserve the *actual* native Current receipt but do not insert
@@ -1353,8 +1360,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                             "family=" + family + ";reason=REFERENCE_UNUSABLE")
                 return {"status": "REFERENCE_UNUSABLE", "paper_ready": False,
                         "native_receipts": list(witnessed)}
-            status = ("FCI_CURRENT_REFERENCE_OBSERVED" if family == "FCI"
-                      else "CAUCION_CURRENT_REFERENCE_OBSERVED")
+            status = _PPI_REFERENCE_OBSERVED[family]
             store.event("PPI_DIRECT_REST_REFERENCE_OBSERVED",
                         f"family={family};identity5={':'.join(key)};"
                         f"wire_sha256={witnessed['current']['guard_wire_receipt']['raw_body_sha256']};"
@@ -1631,16 +1637,21 @@ def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
             status = result.get("status")
             if result.get("paper_ready") is not False:
                 raise ValueError("PPI_OPEN_UNEXPECTED_READINESS")
-            if status not in {"FRESH_OBSERVED", "STALE_OR_INVALID",
-                              "CATALOG_IDENTITY_UNAVAILABLE",
-                              "PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
+            outcome_receipts = (
+                {_PPI_REFERENCE_OBSERVED[family]: ["current"], "REFERENCE_UNUSABLE": ["current"]}
+                if family in _PPI_REFERENCE_OBSERVED else
+                {"FRESH_OBSERVED": ["current", "book"], "STALE_OR_INVALID": ["current", "book"]}
+            )
+            if status not in outcome_receipts and status not in {
+                "CATALOG_IDENTITY_UNAVAILABLE", "PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"
+            }:
                 raise ValueError("PPI_OPEN_UNEXPECTED_PROBE_STATUS")
             receipts = result.get("native_receipts")
             if receipts not in ([], ["current"], ["current", "book"]):
                 raise ValueError("PPI_OPEN_NATIVE_WIRE_EVIDENCE_INVALID")
-            if status in {"FRESH_OBSERVED", "STALE_OR_INVALID"} and receipts != ["current", "book"]:
-                # An asserted provider outcome with no native SEND+HTTP200
-                # receipts is not a witnessed pair, even in a test adapter.
+            if status in outcome_receipts and receipts != outcome_receipts[status]:
+                # A reference proves one Current reading. Only the market-book
+                # families can prove a Current+Book pair.
                 status = "PROVIDER_OR_CONTRACT_HOLD"
             statuses[family] = status
             attempted = int("current" in receipts)
@@ -1648,7 +1659,7 @@ def _run_ppi_open_command(store, reader, command_id, name, *, now=None):
             coverage[family]["unattempted"] -= attempted
             if status == "FRESH_OBSERVED" and receipts == ["current", "book"]:
                 coverage[family]["native_pair_qa_pass"] = 1
-            if status in {"FRESH_OBSERVED", "STALE_OR_INVALID"}:
+            if status in outcome_receipts:
                 witnessed = True
             if status in {"PROVIDER_OR_CONTRACT_HOLD", "PRE_WIRE_GUARD_HOLD"}:
                 abort = True
@@ -1770,8 +1781,10 @@ def _run_ppi_postclose_command(store, reader, command_id, name, *, now=None):
             pre_wire=pre_wire)
         if result.get("paper_ready") is not False:
             raise ValueError("PPI_POSTCLOSE_UNEXPECTED_READINESS")
-        status = ("EVIDENCE" if result.get("status") in
-                  {"FRESH_OBSERVED", "STALE_OR_INVALID"} else "HOLD")
+        evidence_status = {"FRESH_OBSERVED", "STALE_OR_INVALID"}
+        if family in _PPI_REFERENCE_OBSERVED:
+            evidence_status.add(_PPI_REFERENCE_OBSERVED[family])
+        status = ("EVIDENCE" if result.get("status") in evidence_status else "HOLD")
         detail = json.dumps({"command_id": command_id, "family": family,
                              "provider_status": result.get("status"),
                              "reason": result.get("reason"),

@@ -579,6 +579,63 @@ class RootlessContracts(unittest.TestCase):
             host.persist_release(identity, stage, release, manifest)
 
 
+class PreservedSourcesTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        home = Path(temporary.name)
+        self.identity = host.Identity(os.getuid(), os.getgid(), "deploy-user", home)
+        self.root = home / "project"
+        self.source = self.identity.state / "releases" / SHA / "source"
+        (self.root / "scripts").mkdir(parents=True)
+        (self.source / "scripts").mkdir(parents=True)
+        files = []
+        for name in host.PRESERVED_RELEASE_SOURCES:
+            data = f"verified {name}\n".encode()
+            (self.source / name).write_bytes(data)
+            files.append({"path": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
+        self.manifest = json.dumps({"files": files}).encode()
+        self.exporter = self.root / host.PRESERVED_RELEASE_SOURCES[1]
+        self.publisher = self.root / host.PRESERVED_RELEASE_SOURCES[2]
+        self.exporter.write_bytes(b"old exporter")
+        self.publisher.write_bytes(b"old evidence publisher")
+        self.unit_user = self.identity.name
+
+    def unit_properties(self, arguments, **kwargs):
+        wrapper = host.PRESERVED_SOURCE_UNITS[arguments[-1]]
+        return types.SimpleNamespace(returncode=0, stdout=(
+            f"User={self.unit_user}\nExecStart={{ argv[]=/bin/sh {self.root / wrapper} ; }}\n"
+        ))
+
+    def plan(self):
+        with patch.object(host.subprocess, "run", side_effect=self.unit_properties):
+            return host.preserved_source_plan(self.root, self.identity, {"source_sha": SHA}, self.manifest)
+
+    def test_existing_units_use_exact_promoted_host_sources(self):
+        plan = self.plan()
+        self.assertEqual(self.exporter.read_bytes(), b"old exporter")
+        result = host.install_preserved_sources(plan)
+        self.assertEqual(tuple(result), host.PRESERVED_RELEASE_SOURCES)
+        for name, facts in result.items():
+            installed = self.root / name
+            self.assertTrue(facts["updated"])
+            self.assertEqual(installed.read_bytes(), (self.source / name).read_bytes())
+            self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
+        self.assertFalse(any(x["updated"] for x in host.install_preserved_sources(self.plan()).values()))
+
+    def test_privileged_unit_or_source_drift_blocks_source_replacement(self):
+        self.unit_user = "root"
+        with self.assertRaisesRegex(host.Hold, "HOST_SOURCE_UNIT_UNVERIFIED"):
+            self.plan()
+        self.unit_user = self.identity.name
+        plan = self.plan()
+        self.publisher.write_bytes(b"unrelated change")
+        with self.assertRaisesRegex(host.Hold, "HOST_SOURCE_CHANGED_DURING_DEPLOY"):
+            host.install_preserved_sources(plan)
+        self.assertEqual(self.exporter.read_bytes(), b"old exporter")
+        self.assertFalse((self.root / host.PRESERVED_RELEASE_SOURCES[0]).exists())
+
+
 class AttemptsDirectoryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

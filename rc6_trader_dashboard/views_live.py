@@ -11,7 +11,7 @@ def render(p, destination, tab):
     if tab == "resumen":
         events = shadow_rows(p, "events")
         counts = p.counts()
-        cards = "".join(metric(label, counts.get(key), source, kind="number") for key, label, source in (
+        cards = "".join(metric(label, counts.get(key), source, kind="count") for key, label, source in (
             ("open_positions", "Operaciones abiertas", "paper_positions · OPEN"),
             ("closed_today", "Cerradas hoy", "Cierres factuales en ART"), ("HOT", "HOT en corte fresco", "Observación SHADOW; HOT ≠ BUY"),
             ("SIGNAL", "Señales candidatas", "Cut SHADOW comprometido")))
@@ -21,7 +21,8 @@ def render(p, destination, tab):
         # DailyRisk is a risk state, not a heartbeat-bearing worker.
         watched = [r for r in workers.rows if r.get("source") != "paper_daily_risk"]
         verified = sum(r.get("freshness") == "FRESH" and r.get("state") in {"RUNNING", "OK"} for r in watched)
-        cards += metric("Workers críticos frescos", verified, f"De {len(watched)} · revisar cobertura", kind="number")
+        cards += metric("Workers críticos en RUNNING u OK", verified,
+                        f"De {len(watched)} con heartbeat exigido · incluye sólo heartbeats vigentes", kind="count")
         content = "<div class='metric-grid'>" + cards + "</div>" + committed_funnel(p)
         content += "<div class='split-panels'>" + preview(shadow_rows(p, "opportunities"), "Oportunidades", "/en-vivo/oportunidades") + timeline(events.rows, verified_empty=events.state == "AVAILABLE") + "</div>"
         content += "<div class='split-panels'>" + preview(p.positions(limit=5), "1. Operaciones abiertas ahora", "/en-vivo/posiciones") + preview(p.positions(closed=True, today=True, limit=5), "2. Operaciones cerradas hoy", "/en-vivo/cierres") + "</div>"

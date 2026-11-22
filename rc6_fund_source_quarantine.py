@@ -1,10 +1,8 @@
 """Strict, read-only intake for exact-class FCI source evidence.
 
-This is a quarantine boundary, NOT a PPI/IOL authentication adapter, a NAV
-publisher, a scheduler, or a subscription route.  A self-computed digest and a
-source label cannot authenticate a broker or fund-manager document.  Until a
-separately audited connector proves the source and binds its receipts to the
-account/class, all output remains non-executable and non-READY.
+The structural FundSourceFact quarantine has no entry authority. Settlement
+attestations are checked separately against operator-owned signer and account
+pins. A self-computed digest or source label cannot satisfy that check.
 
 The exact-key schema also prevents accidentally copying token-bearing provider
 payloads to a public audit receipt.  Callers retain raw evidence in their own
@@ -30,6 +28,11 @@ RUNTIME_ENTRY_AUTHORITY = False
 SOURCE_AUTHENTICATED = False
 REAL_ROUTES_USED = ()
 SCHEMA = "rc6-fci-exact-class-quarantine-v1"
+SETTLEMENT_SCHEMA = "rc6-fci-paper-settlement-attestation-v1"
+SETTLEMENT_SOURCE_REQUIRED = "FCI_RUNTIME_SETTLEMENT_SOURCE_PIN_MISSING"
+SETTLEMENT_RECEIPT_REQUIRED = "FCI_RUNTIME_ATTESTED_SETTLEMENT_RECEIPT_REQUIRED"
+SETTLEMENT_AUTHORITY_SCHEMA = "rc6-fci-paper-settlement-authority-v1"
+SETTLEMENT_AUTHORITY_FILE = "paper-fci-settlement-authority-v1.json"
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _OPAQUE_REF = re.compile(r"[A-Za-z0-9_./:@+-]{1,200}\Z")
@@ -53,6 +56,67 @@ _FEE_SOURCES = frozenset({"BROKER_ACCOUNT_TARIFF", "PPI_AUTHENTICATED_WEB"})
 _NAV_SOURCES = frozenset({
     "PPI_STRUCTURED_API", "PPI_AUTHENTICATED_WEB", "FUND_MANAGER_DOCUMENT",
     "IOL_MCP_READONLY"})
+_SETTLEMENT_FIELDS = frozenset({
+    "schema", "account_scope_sha256", "identity", "lifecycle_id", "transitions",
+    "class_evidence_sha256", "receipt_hashes", "payout_ars", "known_at", "valid_until",
+})
+
+
+def settlement_attestation_bytes(claims):
+    return json.dumps(claims, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                      allow_nan=False).encode("utf-8")
+
+
+def _settlement_authority_pins():
+    from scripts.rc6_operator_paper_rearm import OPERATOR_DIR_RUNTIME, _root_owned_receipt
+
+    try:
+        authority = _root_owned_receipt(OPERATOR_DIR_RUNTIME, receipt_name=SETTLEMENT_AUTHORITY_FILE)
+    except (OSError, ValueError) as exc:
+        raise ValueError(SETTLEMENT_SOURCE_REQUIRED) from exc
+    if (set(authority) != {"schema", "signer_sha256", "account_scope_sha256"}
+            or authority["schema"] != SETTLEMENT_AUTHORITY_SCHEMA
+            or any(not isinstance(authority[key], str) or not _DIGEST.fullmatch(authority[key])
+                   for key in ("signer_sha256", "account_scope_sha256"))):
+        raise ValueError(SETTLEMENT_SOURCE_REQUIRED)
+    return authority["signer_sha256"], authority["account_scope_sha256"]
+
+
+def verify_settlement_attestation(proof, *, at):
+    """Accept a scoped attestation only under a separately pinned release authority.
+
+    These pins are supplied by the release owner, independently of the evidence.
+    The passive browser capture and decision-timing signer have no authority here.
+    """
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    signer_pin, account_pin = _settlement_authority_pins()
+    if not isinstance(proof, dict) or set(proof) != {"claims", "public_key_hex", "signature_hex"}:
+        raise ValueError("FCI_SETTLEMENT_ATTESTATION_REQUIRED")
+    try:
+        claims = proof["claims"]
+        if (not isinstance(claims, dict) or set(claims) != _SETTLEMENT_FIELDS
+                or claims["schema"] != SETTLEMENT_SCHEMA
+                or claims["account_scope_sha256"] != account_pin):
+            raise ValueError("FCI_SETTLEMENT_ATTESTATION_SCOPE_MISMATCH")
+        raw = settlement_attestation_bytes(claims)
+        if len(raw) > 8192:
+            raise ValueError("FCI_SETTLEMENT_ATTESTATION_CAPACITY")
+        point, start, end = map(aware_datetime, (at, claims["known_at"], claims["valid_until"]))
+        if not start <= point < end:
+            raise ValueError("FCI_SETTLEMENT_ATTESTATION_NOT_CURRENT")
+        if (not isinstance(proof["public_key_hex"], str) or len(proof["public_key_hex"]) != 64
+                or not isinstance(proof["signature_hex"], str) or len(proof["signature_hex"]) != 128):
+            raise ValueError("FCI_SETTLEMENT_ATTESTATION_INVALID")
+        public = bytes.fromhex(proof["public_key_hex"])
+        signature = bytes.fromhex(proof["signature_hex"])
+        if len(public) != 32 or len(signature) != 64 or hashlib.sha256(public).hexdigest() != signer_pin:
+            raise ValueError("FCI_SETTLEMENT_SIGNER_NOT_PINNED")
+        Ed25519PublicKey.from_public_bytes(public).verify(signature, raw)
+    except (InvalidSignature, TypeError, OverflowError) as exc:
+        raise ValueError("FCI_SETTLEMENT_ATTESTATION_INVALID") from exc
+    return json.loads(raw)
 
 
 @dataclass(frozen=True)

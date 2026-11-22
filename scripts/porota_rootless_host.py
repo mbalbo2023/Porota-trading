@@ -37,6 +37,17 @@ ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
+# These existing non-privileged units run checkout files rather than the
+# versioned scheduler dispatcher. Install their narrowly scoped sources too.
+PRESERVED_SOURCE_UNITS = {
+    "porota-scheduler-export-rc6.service": "scripts/porota_export_scheduler_state_rc6.sh",
+    "porota-runtime-evidence-rc6.service": "scripts/porota_publish_runtime_evidence_github_rc6.sh",
+}
+PRESERVED_RELEASE_SOURCES = (
+    "rc6_scheduler_snapshot.py",
+    PRESERVED_SOURCE_UNITS["porota-scheduler-export-rc6.service"],
+    "ops_runtime_evidence_rc6.py",
+)
 # Frozen PAPER settings include a dedicated PPI Gateway owner before three
 # independent consumers. Exact roles, not a raw count: Performance remains
 # operator-disabled and must never return as an expected/accepted child.
@@ -186,7 +197,7 @@ def private_attempts_dir(identity):
     return state / "attempts"
 
 
-def atomic_write(path, raw, *, private=True):
+def atomic_write(path, raw, *, private=True, mode=0o600):
     path = no_alias(path)
     if private:
         private_dir(path.parent)
@@ -195,9 +206,10 @@ def atomic_write(path, raw, *, private=True):
         require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == os.getuid() and
                 not meta.st_mode & 0o022, "RELEASE_DIRECTORY_CUSTODY")
     temporary = path.with_name(path.name + "." + os.urandom(8).hex() + ".tmp")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     try:
         with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), mode)
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
@@ -214,6 +226,64 @@ def atomic_write(path, raw, *, private=True):
 
 def write_json(path, value):
     atomic_write(path, (json.dumps(value, sort_keys=True) + "\n").encode())
+
+
+def preserved_source_plan(root, identity, release, manifest):
+    rows = {row["path"]: row for row in decode(manifest)["files"]}
+    if PRESERVED_RELEASE_SOURCES[0] not in rows:
+        return []
+    source = identity.state / "releases" / release["source_sha"] / "source"
+    plan = []
+    for rel in PRESERVED_RELEASE_SOURCES:
+        row = rows.get(rel)
+        content = read_regular(source / rel, 2 * 1024**2)
+        expected = hashlib.sha256(content).hexdigest()
+        require(row is not None and expected == row["sha256"] and len(content) == row["bytes"],
+                "HOST_SOURCE_RELEASE_MISMATCH")
+        destination = no_alias(root / rel)
+        parent = destination.parent.stat()
+        require(parent.st_uid == identity.uid and not parent.st_mode & 0o022
+                and os.access(destination.parent, os.W_OK | os.X_OK), "HOST_SOURCE_DIRECTORY_CUSTODY")
+        previous = None
+        if destination.exists():
+            meta = destination.stat()
+            require(meta.st_uid in (0, identity.uid) and not meta.st_mode & 0o022, "HOST_SOURCE_FILE_CUSTODY")
+            previous = hashlib.sha256(read_regular(destination, 2 * 1024**2)).hexdigest()
+        plan.append((rel, destination, previous, expected, content))
+    if any(previous != expected for _, _, previous, expected, _ in plan):
+        for unit, entry in PRESERVED_SOURCE_UNITS.items():
+            try:
+                result = subprocess.run(
+                    ["/usr/bin/systemctl", "show", "--no-pager", "-p", "User", "-p", "ExecStart", unit],
+                    capture_output=True, text=True, timeout=8, check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise Hold("HOST_SOURCE_UNIT_UNVERIFIED") from exc
+            properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+            path = re.escape(str(root / entry))
+            require(result.returncode == 0 and
+                    properties.get("User") in (identity.name, str(identity.uid)) and identity.uid > 0 and
+                    re.search(path + r"(?=[ ;}]|$)", properties.get("ExecStart", "")),
+                    "HOST_SOURCE_UNIT_UNVERIFIED")
+    return plan
+
+
+def install_preserved_sources(plan):
+    observed = {}
+    for rel, destination, previous, expected, _ in plan:
+        current = (hashlib.sha256(read_regular(destination, 2 * 1024**2)).hexdigest()
+                   if destination.exists() else None)
+        require(current in (previous, expected), "HOST_SOURCE_CHANGED_DURING_DEPLOY")
+        observed[rel] = current
+    receipt = {}
+    for rel, destination, _, expected, content in plan:
+        current = observed[rel]
+        if current != expected:
+            atomic_write(destination, content, private=False, mode=0o644)
+            require(hashlib.sha256(read_regular(destination, 2 * 1024**2)).hexdigest() == expected,
+                    "HOST_SOURCE_INSTALL_MISMATCH")
+        receipt[rel] = {"sha256": expected, "updated": current != expected}
+    return receipt
 
 
 def read_release_state(identity):
@@ -1013,6 +1083,7 @@ class Host:
             require(disk_before >= required, "ROOTLESS_DISK_CAPACITY")
             require(data_free >= 2147483648, "DATA_DISK_CAPACITY")
             self.receipt["release_manifest_sha256"] = persist_release(self.identity, release_dir, release, manifest)
+            host_sources = preserved_source_plan(self.root, self.identity, release, manifest) if transition is None else []
             journal = directory / "receipt.json"
             write_json(journal, self.receipt)
             image_was_present = image_present(self.docker, release["image_id"])
@@ -1070,6 +1141,9 @@ class Host:
                 if guard:
                     guard()
                 require(database_snapshot(self.root / DB_RELATIVE) == before, "DATABASE_CHANGED_IDENTITY")
+                if host_sources:
+                    self.receipt["phase"] = "PRESERVED_HOST_SOURCES"
+                    self.receipt["preserved_host_sources"] = install_preserved_sources(host_sources)
                 self.receipt.update({"state": "VALIDADO_RUNTIME", "real_orders_sent": 0,
                                      "operating_mode": "PRODUCTION_PAPER", "execution_mode": "SIMULATION"})
                 if current:

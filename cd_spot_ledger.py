@@ -277,6 +277,10 @@ def partition(c, p, at=None):
             return dict(p, status='OPEN', closed_at=None, exit_price=None,
                         exit_cost=None, gross_pnl=None, net_pnl=None, close_reason=None), []
         return None, [p]
+    if p['asset_class'] in {'BONOS', 'OBLIGACIONES', 'ON'}:
+        from rc6_fixed_income_paper_market_sale import REASON, _sales, native_partition
+        if p['close_reason'] == REASON or _sales(c, p['paper_id']):
+            return native_partition(c, p, at)
     start = aware_datetime(p['opened_at'])
     end = aware_datetime(p['closed_at']) if p['closed_at'] else None
     if (p['status'] not in {'OPEN','CLOSED'} or (p['status']=='CLOSED') != bool(end)

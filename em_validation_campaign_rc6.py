@@ -16,6 +16,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
@@ -99,29 +100,77 @@ def load_records(root: Path | str | None = None, *, verify: bool = True) -> list
         return []
     result: list[dict[str, Any]] = []
     previous = "GENESIS"
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not raw.strip():
-            continue
-        item = json.loads(raw)
-        if verify:
-            expected = item.get("record_hash")
-            body = dict(item)
-            body.pop("record_hash", None)
-            if item.get("previous_hash") != previous:
-                raise ValueError(f"VALIDATION_LEDGER_CHAIN_BREAK:{number}")
-            if expected != _record_hash(body):
-                raise ValueError(f"VALIDATION_LEDGER_HASH_MISMATCH:{number}")
-            previous = str(expected)
-        result.append(item)
+    with path.open(encoding="utf-8") as handle:
+        for number, raw in enumerate(handle, 1):
+            if not raw.strip():
+                continue
+            item = json.loads(raw)
+            if verify:
+                body = dict(item)
+                expected = body.pop("record_hash", None)
+                if item.get("previous_hash") != previous:
+                    raise ValueError(f"VALIDATION_LEDGER_CHAIN_BREAK:{number}")
+                if expected != _record_hash(body):
+                    raise ValueError(f"VALIDATION_LEDGER_HASH_MISMATCH:{number}")
+                previous = str(expected)
+            result.append(item)
     return result
 
 
-def append_record(payload: dict[str, Any], root: Path | str | None = None) -> dict[str, Any]:
-    """Append one immutable validation evidence record.
+def _locked_key(payload):
+    return tuple(payload.get(key) for key in
+                 ("source", "date_ar", "commit_release", "deployment_sha", "milestone"))
 
-    Caller supplies evidence; this function only validates structure, assigns
-    sequence/timestamps and hash-chains the record.  It has no trading imports.
-    """
+
+def append_records(payloads, root=None, *, idempotent=False, now=None):
+    """Commit a batch atomically under the same lock as a single observation."""
+    path = ledger_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stamp = (now or datetime.now(TZ)).astimezone(TZ)
+    with path.with_suffix(".lock").open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        records = load_records(root, verify=True)
+        seen = {_locked_key(record): record for record in records} if idempotent else {}
+        committed = []
+        initial_count = len(records)
+        for payload in payloads:
+            key = _locked_key(payload)
+            if idempotent and (not all(isinstance(part, str) and part for part in key)):
+                raise ValueError("VALIDATION_DAILY_KEY_INCOMPLETE")
+            if idempotent and key in seen:
+                committed.append(seen[key])
+                continue
+            prior = records[-1] if records else {}
+            row = _new_record(payload, seq=int(prior.get("seq", 0)) + 1,
+                              previous=prior.get("record_hash", "GENESIS"), stamp=stamp)
+            if idempotent:
+                seen[key] = row
+            records.append(row)
+            committed.append(row)
+        if len(records) != initial_count:
+            temporary = None
+            try:
+                with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                        prefix=".validation-ledger-", delete=False) as handle:
+                    temporary = Path(handle.name)
+                    for row in records:
+                        handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                temporary.replace(path)
+            finally:
+                if temporary:
+                    temporary.unlink(missing_ok=True)
+        return committed, records
+
+
+def append_record(payload: dict[str, Any], root: Path | str | None = None) -> dict[str, Any]:
+    """Append one immutable validation evidence record."""
+    committed, _ = append_records([payload], root)
+    return committed[0]
+
+
+def _new_record(payload, *, seq, previous, stamp):
     milestone = str(payload.get("milestone") or "").upper().strip()
     if milestone not in MILESTONE_BY_CODE:
         raise ValueError("VALIDATION_MILESTONE_INVALID")
@@ -141,56 +190,43 @@ def append_record(payload: dict[str, Any], root: Path | str | None = None) -> di
     if evidence_status not in EVIDENCE_STATES:
         raise ValueError("VALIDATION_EVIDENCE_STATUS_INVALID")
 
-    path = ledger_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        handle.seek(0)
-        lines = [line for line in handle.read().splitlines() if line.strip()]
-        previous = "GENESIS"
-        seq = 1
-        if lines:
-            last = json.loads(lines[-1])
-            previous = str(last.get("record_hash") or "")
-            seq = int(last.get("seq") or len(lines)) + 1
-        now = datetime.now(TZ).isoformat(timespec="seconds")
-        body = {
-            "schema_version": 2,
-            "seq": seq,
-            "recorded_at": now,
-            "date_ar": str(payload.get("date_ar") or datetime.now(TZ).date().isoformat()),
-            "milestone": milestone,
-            "objective": str(payload.get("objective") or MILESTONE_BY_CODE[milestone].goal),
-            "expected_evidence": str(payload.get("expected_evidence") or ""),
-            "observed_evidence": str(payload.get("observed_evidence") or ""),
-            "compliance_pct": pct,
-            "state": state,
-            "implementation_status": implementation,
-            "work_status": work_status,
-            "evidence_status": evidence_status,
-            "evidence_at": str(payload.get("evidence_at") or now),
-            "expected": str(payload.get("expected") or ""),
-            "observed": str(payload.get("observed") or ""),
-            "deviation": str(payload.get("deviation") or ""),
-            "root_cause": str(payload.get("root_cause") or ""),
-            "lesson": str(payload.get("lesson") or ""),
-            "decision": str(payload.get("decision") or ""),
-            "blocker": str(payload.get("blocker") or ""),
-            "next_action": str(payload.get("next_action") or ""),
-            "owner": str(payload.get("owner") or "POROTA"),
-            "evidence_ref": str(payload.get("evidence_ref") or ""),
-            "commit_release": str(payload.get("commit_release") or ""),
-            "critical_path": bool(payload.get("critical_path", MILESTONE_BY_CODE[milestone].critical)),
-            "source": str(payload.get("source") or "MANUAL_OR_AUTOMATION_EVIDENCE"),
-            "previous_hash": previous,
-        }
-        record = {**body, "record_hash": _record_hash(body)}
-        handle.seek(0, 2)
-        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    return record
+    body = {
+        "schema_version": 2,
+        "seq": seq,
+        "recorded_at": stamp.isoformat(timespec="seconds"),
+        "date_ar": str(payload.get("date_ar") or stamp.date().isoformat()),
+        "milestone": milestone,
+        "objective": str(payload.get("objective") or MILESTONE_BY_CODE[milestone].goal),
+        "expected_evidence": str(payload.get("expected_evidence") or ""),
+        "observed_evidence": str(payload.get("observed_evidence") or ""),
+        "compliance_pct": pct,
+        "state": state,
+        "implementation_status": implementation,
+        "work_status": work_status,
+        "evidence_status": evidence_status,
+        "evidence_at": str(payload.get("evidence_at") or stamp.isoformat(timespec="seconds")),
+        "expected": str(payload.get("expected") or ""),
+        "observed": str(payload.get("observed") or ""),
+        "deviation": str(payload.get("deviation") or ""),
+        "root_cause": str(payload.get("root_cause") or ""),
+        "lesson": str(payload.get("lesson") or ""),
+        "decision": str(payload.get("decision") or ""),
+        "blocker": str(payload.get("blocker") or ""),
+        "next_action": str(payload.get("next_action") or ""),
+        "owner": str(payload.get("owner") or "POROTA"),
+        "evidence_ref": str(payload.get("evidence_ref") or ""),
+        "commit_release": str(payload.get("commit_release") or ""),
+        "critical_path": bool(payload.get("critical_path", MILESTONE_BY_CODE[milestone].critical)),
+        "source": str(payload.get("source") or "MANUAL_OR_AUTOMATION_EVIDENCE"),
+        "previous_hash": previous,
+    }
+    if payload.get("deployment_sha"):
+        body["deployment_sha"] = str(payload["deployment_sha"])
+        body["session_evidence_ref"] = str(payload.get("session_evidence_ref") or "")
+        body["claim_status"] = str(payload.get("claim_status") or "PENDING")
+        body["criteria_status"] = dict(payload.get("criteria_status") or {})
+        body["evaluated_at"] = str(payload.get("evaluated_at") or stamp.isoformat())
+    return {**body, "record_hash": _record_hash(body)}
 
 
 def latest_by_milestone(records: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
