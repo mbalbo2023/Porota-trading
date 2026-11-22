@@ -1127,6 +1127,27 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertEqual(custody.history_reference_receipt(evidence, "HISTORY_REFERENCE_APPLY", 0)["state"],
                          "NO_VERIFICADO")
 
+    def test_history_loader_failure_keeps_a_bounded_cause_without_private_stderr(self):
+        stderr = b"private runtime context\nHISTORY_IMPORT_SQLITE_READONLY\n"
+        cause = custody._history_loader_failure(1, stderr)
+        self.assertEqual(cause, "HISTORY_IMPORT_SQLITE_READONLY")
+        receipt = custody.history_reference_receipt({"failure_reason": cause}, "HISTORY_REFERENCE_APPLY", 1)
+        self.assertEqual(receipt, {"schema": "rc6.history-reference-transfer.v1", "state": "NO_VERIFICADO",
+                                   "failure_reason": "HISTORY_IMPORT_SQLITE_READONLY"})
+        self.assertEqual(custody._history_loader_failure(137, b"private"),
+                         "HISTORY_IMPORT_CONTAINER_PROCESS_KILLED")
+        self.assertEqual(custody._history_loader_failure(1, b"OCI runtime exec failed: private"),
+                         "HISTORY_IMPORT_CONTAINER_EXEC_UNAVAILABLE")
+        self.assertEqual(custody._history_loader_failure(1, b"private"), "HISTORY_IMPORT_DOCKER_FAILED")
+
+    def test_rootless_client_environment_excludes_inherited_docker_and_shell_selectors(self):
+        with patch.dict(os.environ, {"DOCKER_CONTEXT": "unexpected", "DOCKER_HOST": "unexpected",
+                                     "SSH_AUTH_SOCK": "unexpected", "PYTHONPATH": "unexpected"}):
+            env = custody._rootless_client_environment(SimpleNamespace(pw_dir="/home/porotaadmin"))
+        self.assertEqual(env["DOCKER_CONFIG"], "/home/porotaadmin/.config/porota-rc6/client")
+        self.assertEqual(env["XDG_RUNTIME_DIR"], "/run/user/1000")
+        self.assertFalse({"DOCKER_CONTEXT", "DOCKER_HOST", "SSH_AUTH_SOCK", "PYTHONPATH"} & env.keys())
+
 
 if __name__ == "__main__":
     unittest.main()
