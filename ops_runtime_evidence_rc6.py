@@ -206,7 +206,7 @@ def _require_columns(schema: dict[str, set[str]], table: str, columns: Iterable[
     return [f"MISSING_COLUMN:{table}.{column}" for column in missing]
 
 
-def _rows(conn: sqlite3.Connection, table: str, columns: tuple[str, ...]) -> list[dict[str, Any]]:
+def _select(conn: sqlite3.Connection, table: str, columns: tuple[str, ...]) -> sqlite3.Cursor:
     if table not in ALLOWED_TABLES or tuple(columns) != ALLOWED_TABLES[table]:
         raise EvidenceError("QUERY_NOT_ALLOWLISTED")
     byte_limits = {"metadata_json": 65_536, "opening_block_reason": 512}
@@ -221,9 +221,13 @@ def _rows(conn: sqlite3.Connection, table: str, columns: tuple[str, ...]) -> lis
     if table == "market_snapshots":
         query += f' ORDER BY id DESC LIMIT {MARKET_SNAPSHOT_LIMIT + 1}'
     if table == "paper_events":
-        return [dict(row) for row in conn.execute(query + """ WHERE event_type=?
-            ORDER BY julianday(event_at) DESC,id DESC LIMIT ?""", (NATIVE_WIRE_EVENT, NATIVE_WIRE_LIMIT))]
-    return [dict(row) for row in conn.execute(query)]
+        return conn.execute(query + """ WHERE event_type=?
+            ORDER BY julianday(event_at) DESC,id DESC LIMIT ?""", (NATIVE_WIRE_EVENT, NATIVE_WIRE_LIMIT))
+    return conn.execute(query)
+
+
+def _rows(conn: sqlite3.Connection, table: str, columns: tuple[str, ...]) -> list[dict[str, Any]]:
+    return [dict(row) for row in _select(conn, table, columns)]
 
 
 def _freshness(value: Any, current: datetime, max_age_seconds: int) -> dict[str, Any]:
@@ -259,14 +263,17 @@ def _source_freshness(metadata: dict[str, Any], source: str, primary_at: Any,
     return _freshness(stamp, current, max_age_seconds)
 
 
-def _primary_identity(row: dict[str, Any], metadata: dict[str, Any]) -> bool:
+def _primary_identity(row: dict[str, Any], metadata: dict[str, Any] | None = None) -> bool:
+    settlement_source = str(row.get("settlement_source") or "").upper()
+    if settlement_source in PPI_SETTLEMENT_SOURCES:
+        return True
+    if metadata is None:
+        metadata = _metadata(row.get("metadata_json"))
     discovery = str(metadata.get("_discovery_source") or "").upper()
     availability = str(metadata.get("_availability_source") or "").upper()
-    settlement_source = str(row.get("settlement_source") or "").upper()
     return (
         discovery in {"PPI_PRIMARY", "LEGACY_CATALOG"}
         or availability.startswith("PPI_PRIMARY")
-        or settlement_source in {"PPI_FIELD", "REQUEST_CANDIDATE"}
     )
 
 
@@ -294,6 +301,18 @@ def _retry_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
 
 def _catalog_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return _retry_key(row)
+
+
+def _read_market_window(conn: sqlite3.Connection):
+    snapshots = {}
+    rows = 0
+    for rows, row in enumerate(_select(conn, "market_snapshots", MARKET_SNAPSHOT_COLUMNS), 1):
+        if rows > MARKET_SNAPSHOT_LIMIT:
+            break
+        key = tuple(str(row[column] or "").strip().upper() for column in MARKET_SNAPSHOT_COLUMNS[1:6])
+        if key not in snapshots and all(part not in {"", "UNKNOWN", "NO_VERIFICADO"} for part in key):
+            snapshots[key] = dict(row)
+    return snapshots, rows
 
 
 def _causal_clock(value: Any, current: datetime) -> str | None:
@@ -362,15 +381,12 @@ def _exact_candidate_evidence(projected, current, catalog_clock, catalog_status,
     return result
 
 
-def _market_observation(row, *, current, snapshots_available):
-    result = {"state": "NO_VERIFICADO", "provider_origin": "NO_VERIFICADO",
-              "received_at": None, "trade_at": None, "book_at": None, "opening_block_reason": None}
+def _market_observation(row, current):
     if row is None:
-        result["state"] = ("NO_EXACT_MARKET_SNAPSHOT_IN_WINDOW" if snapshots_available else
-                          "MARKET_SNAPSHOT_SOURCE_NO_VERIFICADO")
-        return result
+        return None
     received, trade, book = (iso(row.get(name)) for name in ("observed_at", "trade_at", "book_at"))
-    result.update(received_at=received, trade_at=trade, book_at=book)
+    result = {key: clock for key, clock in (("received_at", received), ("trade_at", trade),
+                                           ("book_at", book)) if clock is not None}
     recorded_hold = row.get("opening_block_reason")
     if recorded_hold:
         result["opening_block_reason"] = (recorded_hold if recorded_hold in OBSERVATION_BLOCK_REASONS
@@ -381,10 +397,7 @@ def _market_observation(row, *, current, snapshots_available):
         result["state"] = "CLOCK_ORDER_INVALID"
     elif not trade or not book or row.get("last_kind") != "TRADE":
         result["state"] = "TRADE_OR_BOOK_CLOCK_NO_VERIFICADO"
-    else:
-        # The clocks say when the persisted read happened. A snapshot's
-        # PRODUCTION_PAPER source is execution mode, not a broker wire receipt.
-        result["state"] = "CAUSAL_CLOCKS"
+    # The normal case is a complete clock set. No decision is implied.
     return result
 
 
@@ -427,18 +440,17 @@ def _first_block(catalog_blocks, exact, market):
     if catalog_blocks:
         reason = catalog_blocks[0]
         stage = "PPI_IDENTITY" if reason.startswith("PPI_") else "CATALOG"
-        return {"stage": stage, "state": "BLOCKED", "reason": reason}
+        return stage, reason
     if exact["can_simulate"] is None:
-        return {"stage": "CANDIDATE_LEDGER", "state": "NO_VERIFICADO",
-                "reason": "EXACT_CANDIDATE_LEDGER_NO_VERIFICADO"}
+        return "CANDIDATE_LEDGER", None
     if exact["can_simulate"] == 0 or exact["status"] != "AVAILABLE":
         reasons = exact["reasons"] or ["CANDIDATE_GATE:NO_GO"]
-        return {"stage": "CANDIDATE_LEDGER", "state": "BLOCKED", "reason": reasons[0]}
-    if market["state"] != "CAUSAL_CLOCKS":
-        return {"stage": "MARKET_OBSERVATION", "state": "NO_VERIFICADO", "reason": market["state"]}
-    if market["opening_block_reason"]:
-        return {"stage": "MARKET_OBSERVATION", "state": "BLOCKED", "reason": market["opening_block_reason"]}
-    return {"stage": "PAPER_ADMISSION", "state": "NO_VERIFICADO", "reason": "PAPER_DECISION_NOT_PROJECTED"}
+        return "CANDIDATE_LEDGER", reasons[0]
+    if market is None or "state" in market:
+        return "MARKET_OBSERVATION", None
+    if "opening_block_reason" in market:
+        return "MARKET_OBSERVATION", market["opening_block_reason"]
+    return "PAPER_ADMISSION", None
 
 
 def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]],
@@ -465,28 +477,20 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
     for row in catalog:
         symbol_key = _candidate_key(row)
         symbol_groups[symbol_key].append(row)
-        if _primary_identity(row, _metadata(row.get("metadata_json"))):
+        if _primary_identity(row):
             primary_symbol_groups[symbol_key].append(row)
 
     instruments: list[dict[str, Any]] = []
     for row in sorted(catalog, key=_identity_key):
         metadata = _metadata(row.get("metadata_json"))
         primary = _primary_identity(row, metadata)
-        source_state = {
-            source: {
-                "evidence": "PRIMARY_IDENTITY" if source == "PPI" and primary else (
-                    "COMPLEMENTARY" if _source_freshness(
-                        metadata, source, row.get("last_seen_at"), current,
-                        freshness_seconds
-                    )["observed_at"] else "NO_VERIFICADO"
-                ),
-                "freshness": _source_freshness(
-                    metadata, source, row.get("last_seen_at"), current,
-                    freshness_seconds
-                ),
-            }
-            for source in SOURCES
-        }
+        source_state = {}
+        for source in SOURCES:
+            freshness = _source_freshness(metadata, source, row.get("last_seen_at"), current,
+                                          freshness_seconds)
+            attribution = "PRIMARY_IDENTITY" if source == "PPI" and primary else (
+                "COMPLEMENTARY" if freshness["observed_at"] else "NO_VERIFICADO")
+            source_state[source] = {"evidence": attribution, "freshness": freshness}
         key = _catalog_key(row)
         retry_rows = retry_by_key.get(key, [])
         symbol_key = _candidate_key(row)
@@ -589,10 +593,40 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
             for item in sorted(retry_rows, key=lambda item: str(item.get("source") or ""))
         ]
         ticker = str(row.get("ticker") or "").strip().upper()
-        market = _market_observation(market_snapshots.get(key) if market_snapshots is not None else None,
-                                     current=current, snapshots_available=market_snapshots is not None)
+        market = _market_observation(market_snapshots.get(key) if market_snapshots is not None else None, current)
+        stage, block = _first_block(catalog_blocks, exact, market)
         receipts = (native_reads or {}).get(key, {})
-        market["native_reads"] = [receipts[endpoint] for endpoint in ("current", "book") if endpoint in receipts]
+        if receipts:
+            if market is None:
+                market = {}
+            market["native_reads"] = [receipts[endpoint] for endpoint in ("current", "book") if endpoint in receipts]
+        last_seen = source_state["PPI"]["freshness"]["observed_at"]
+        catalog_view = {"status": catalog_status, "capability": capability, "last_seen_at": last_seen,
+                        "run_id": safe_text(row.get("run_id")), "settlement_source": witness["source"]}
+        if witness["literal"] is not None:
+            catalog_view["ppi_settlement_literal"] = witness["literal"]
+        if witness["state"] == "LITERAL_MISMATCH" or (
+                witness["source"] == "REQUEST_CANDIDATE" and witness["state"] == "NO_VERIFICADO"):
+            catalog_view["settlement_state"] = witness["state"]
+        if witness["state"] == "NO_VERIFICADO" and witness["observed_at"] is not None:
+            catalog_view["settlement_observed_at"] = witness["observed_at"]
+
+        ready_view = {"status": readiness, "reasons": reasons or ["NO_OPEN_READINESS_GAP"],
+                      "paper_shadow_only": True, "real_money_authorized": False}
+        gate = exact["can_simulate"]
+        if gate is not None:
+            ready_view["candidate_can_simulate"] = gate
+        if exact["status"] != ("AVAILABLE" if gate is not None else "NO_VERIFICADO"):
+            ready_view["candidate_status"] = exact["status"]
+        if exact["checked_at"] is not None and (gate is None or exact["checked_at"] != last_seen):
+            ready_view["candidate_checked_at"] = exact["checked_at"]
+        if block is None:
+            ready_view["unverified_stage"] = stage
+        else:
+            ready_view["first_block_stage"] = stage
+            if block != ready_view["reasons"][0]:
+                ready_view["first_block_reason"] = block
+
         instrument = {
             "identity": {
                 "primary_source": "PPI" if primary else "NO_VERIFICADO",
@@ -603,22 +637,8 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                 "settlement": str(row.get("settlement") or "").strip().upper(),
                 "identity_key": _identity_key(row),
             },
-            "catalog": {
-                "status": catalog_status,
-                "capability": capability,
-                "last_seen_at": iso(row.get("last_seen_at")),
-                "run_id": safe_text(row.get("run_id")),
-                "settlement_witness": witness,
-            },
-            "readiness": {
-                "status": readiness,
-                "reasons": reasons or ["NO_OPEN_READINESS_GAP"],
-                "paper_shadow_only": True,
-                "real_money_authorized": False,
-                "exact_candidate": exact,
-                "first_block": _first_block(catalog_blocks, exact, market),
-            },
-            "market_observation": market,
+            "catalog": catalog_view,
+            "readiness": ready_view,
             "sources": source_state,
             "retry": retry_view,
             "identity_flags": {
@@ -628,6 +648,8 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                 "ghost": False,
             },
         }
+        if market is not None:
+            instrument["market_observation"] = market
         instruments.append(instrument)
 
     catalog_candidates = {_candidate_key(row) for row in catalog}
@@ -982,7 +1004,7 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     current = current or utcnow()
     gaps: list[str] = []
     refresh = {"state": "NO_VERIFICADO", "checked_at": None}
-    snapshots = None
+    snapshots, market_rows = None, 0
     native_wire_events = []
     with closing(connect_readonly(db_path)) as conn, conn:
         conn.execute("BEGIN")
@@ -1014,7 +1036,7 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
                                 if exact_ledger_present else [])
             sync_rows = _rows(conn, "source_sync", SOURCE_SYNC_COLUMNS)
             if not _require_columns(schema, "market_snapshots", MARKET_SNAPSHOT_COLUMNS):
-                snapshots = _rows(conn, "market_snapshots", MARKET_SNAPSHOT_COLUMNS)
+                snapshots, market_rows = _read_market_window(conn)
             if not _require_columns(schema, "paper_events", NATIVE_WIRE_COLUMNS):
                 native_wire_events = _rows(conn, "paper_events", NATIVE_WIRE_COLUMNS)
         if "candidate_refresh_state" in schema:
@@ -1039,16 +1061,9 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     if not catalog:
         gaps.append("CATALOG_EMPTY")
 
-    market_snapshots = None
-    if snapshots is not None:
-        market_snapshots = {}
-        for row in snapshots[:MARKET_SNAPSHOT_LIMIT]:
-            key = _catalog_key(dict(row, ticker=row["symbol"], instrument_type=row["asset_class"]))
-            if all(part not in {"", "UNKNOWN", "NO_VERIFICADO"} for part in key):
-                market_snapshots.setdefault(key, row)
     instruments, ledger_issues = _instrument_rows(
         catalog, retries, candidates, exact_candidates, exact_ledger_present,
-        current, freshness_seconds, market_snapshots, _native_wire_reads(native_wire_events, current),
+        current, freshness_seconds, snapshots, _native_wire_reads(native_wire_events, current),
     )
     gaps.extend(ledger_issues)
     if len(instruments) != len(catalog):
@@ -1111,9 +1126,10 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             "candidate_refresh": refresh,
             "market_snapshot_window": {
                 "state": "READ" if snapshots is not None else "NO_VERIFICADO",
-                "rows": min(len(snapshots or ()), MARKET_SNAPSHOT_LIMIT),
+                "provider_origin": "NO_VERIFICADO",
+                "rows": min(market_rows, MARKET_SNAPSHOT_LIMIT),
                 "row_limit": MARKET_SNAPSHOT_LIMIT,
-                "truncated": len(snapshots or ()) > MARKET_SNAPSHOT_LIMIT,
+                "truncated": market_rows > MARKET_SNAPSHOT_LIMIT,
             },
             # Compatibility alias: unlike the previous implementation this now
             # counts the actual candidate ledger, never catalog projections.
