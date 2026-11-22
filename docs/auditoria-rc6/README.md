@@ -27,7 +27,19 @@ Corte físico del **22/11/2026**. La captura de timers y esquema comenzó a las 
 - **IOL y preopen.** Recibo de IOL en `REAUTH_REQUIRED`, HTTP 403 al renovar OAuth. Último preopen del viernes a las 10:20 ART con `NO_GO_PAPER_SCALPING`, anterior al release actual. La siguiente rueda ordinaria prevista es el 24/11, según el [feriado bursátil BYMA del 23/11](https://www.byma.com.ar/mercado/calendario-bursatil).
 - **Código y datos.** Árbol completo de 1.275 archivos. 1.107 Python interpretados por AST, 0 errores de sintaxis, 0 grupos de blobs idénticos y 28 módulos sin referencias estáticas detectadas. Son candidatos a revisar también por ABI, importación dinámica, CI, manuales y systemd. La DB Observer auditada presenta 116 tablas, 30 índices nombrados y 19 triggers sobre WAL. Se consultó la estructura sin extraer registros.
 
-## Regeneración bajo demanda
+## Operación y regeneración bajo demanda
+
+### Cómo seguir velas, históricos y embudos
+
+Partir del checkout fijado arriba. `bl_candle_engine.py` toma muestras `TRADE` de `market_snapshots` en orden de ID, asigna ventanas ART de 1m y 5m y guarda revisiones con `known_at`. Una consulta debe aplicar el corte sobre el fin de la barra y la hora de conocimiento. `rc6_local_eod_history.py` copia sólo el delta de revisiones aceptables a COLD después de 17:15 ART en rueda hábil. El diario de `TRADE_SAMPLES` registra cobertura parcial y minutos faltantes. El histórico externo tiene su política de identidad, calidad, proveedor y corte en `history_source_policy_rc6.py` y su conciliación en `fb_history_reconciler_rc6.py`.
+
+`rc6_shadow_runtime/funnel.py` enlaza catálogo, descubrimiento, señal evaluada y candidata, economía, riesgo, apertura PAPER, salida y P&L. Las evaluaciones, los inputs distintos, los instrumentos y las posiciones tienen contadores propios. El funnel cruza evidencias nativas por versión, cohorte, identidad, reloj y moneda. `be_paper_engine.py`, `cf_intraday_scalping.py` y los motores por familia mantienen sus decisiones y motivos de admisión reproducibles.
+
+### Recuperación del acceso complementario IOL
+
+El operador consiente en la tablet con el callback `http://127.0.0.1:8765/callback` por el túnel ya configurado. Actions prepara state y PKCE nuevos con el cliente existente. Elegir **Solo lectura** en IOL. El proceso temporal confirma la lista de herramientas de lectura y actualiza la credencial de forma atómica. Revisar el recibo `AUTHENTICATED_READ_ONLY` para acreditar la autorización. La continuidad del pipeline y de PPI conserva su evidencia propia. [Documentación oficial de IOL MCP](https://mcp.invertironline.com/documentacion-tecnica).
+
+### Generadores
 
 Los generadores de esta carpeta consumen un árbol Git limpio y los dos JSON sanitizados que se descargan de las Actions enlazadas. Las salidas documentan el corte y se pueden renovar con los recibos del siguiente release.
 
