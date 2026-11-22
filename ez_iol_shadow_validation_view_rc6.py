@@ -156,7 +156,7 @@ def _summary(rows: list[dict[str, Any]]) -> tuple[int, int, int, int]:
     return aligned, divergent, incomplete, unavailable
 
 
-def render() -> str:
+def render(*, terminal=False) -> str:
     """Render bounded cache evidence only; no network, refresh, or decision calls."""
     data = observation.collect()
     rows = [row for row in (data.get("symbols") or []) if isinstance(row, dict)]
@@ -183,25 +183,30 @@ def render() -> str:
         if state in {"UNAVAILABLE", UNKNOWN} else
         "Lectura local cacheada: esta página no consulta IOL ni PPI. La cobertura corresponde al ciclo activo."
     )
+    card = bg._card
+    if terminal:
+        from rc6_trader_dashboard.components import metric
+        def card(label, value, description, _tone):
+            return metric(label, value, description)
     cards = "".join((
-        bg._card("Estado IOL", state, cache_note, _card_state(state)),
-        bg._card("Progreso de ingesta", progress["label"],
+        card("Estado IOL", state, cache_note, _card_state(state)),
+        card("Progreso de ingesta", progress["label"],
                  "Plan publicado por collector; nunca inicia una consulta desde esta vista.", _card_state(progress["state"])),
-        bg._card("Calidad MCP", cache_label,
+        card("Calidad MCP", cache_label,
                  "Las métricas se muestran sólo si fueron registradas en el cache aislado.", "gray"),
-        bg._card("Reconciliación PPI/IOL", f"{aligned} alineados · {divergent} divergentes · {incomplete} sin base comparable",
+        card("Reconciliación PPI/IOL", f"{aligned} alineados · {divergent} divergentes · {incomplete} sin base comparable",
                  "Divergencia = diagnóstico background, nunca HOLD/READY.", "yellow" if divergent or incomplete else "green"),
-        bg._card("No disponibles", unavailable,
+        card("No disponibles", unavailable,
                  "Faltantes y errores se mantienen visibles; no se completan con supuestos.", "gray"),
     ))
     contribution = "".join((
-        bg._card("Cobertura para análisis", progress["label"],
+        card("Cobertura para análisis", progress["label"],
                  "IOL amplía el contexto del universo completo del catálogo; no crea ni descarta señales.", _card_state(progress["state"])),
-        bg._card("Cotizaciones IOL con timestamp reciente", f"{fresh_rows}/{len(rows)} filas visibles",
+        card("Cotizaciones IOL con timestamp reciente", f"{fresh_rows}/{len(rows)} filas visibles",
                  f"frescos para decisión: {capture_recent_rows + fresh_rows}/{len(rows)} según captura local; timestamp de proveedor fresco: {fresh_rows}/{len(rows)} (≤120 s). Las capturas sin timestamp de proveedor no se presentan como fuente verificada.", "green" if fresh_rows else "yellow"),
-        bg._card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
+        card("Contraste con fuente primaria", f"{aligned} coinciden · {divergent} difieren · contrato {primary_state}",
                  "Sólo se compara con un cache primario con fuente, mercado y timestamp verificables. Una divergencia jamás cambia PAPER.", "yellow" if divergent or incomplete or primary_state != "READY" else "green"),
-        bg._card("Efecto en el motor", "INFORMATIVO",
+        card("Efecto en el motor", "INFORMATIVO",
                  "Expone cotización, liquidez observada e identidad del instrumento para revisión SHADOW. No altera señales ni gates PAPER.", "green"),
     ))
     rendered_rows = []
@@ -233,19 +238,21 @@ def render() -> str:
         "<tr><td colspan='9' class='paper-muted'>Aún no hay evidencia IOL cacheada. "
         "Se mostrará progreso, calidad y reconciliación cuando el collector publique datos.</td></tr>"
     )
+    panel, grid, warning, wrap = (("panel", "metric-grid", "notice", "validation-table-wrap") if terminal
+                                  else ("paper-card", "paper-grid", "paper-warning", "paper-table-wrap"))
     return (
-        "<section class='paper-card'>"
+        f"<section class='{panel}'>"
         "<h2>IOL — evidencia SHADOW: calidad, reconciliación y contrafactual</h2>"
-        "<div class='paper-warning'><b>Observación únicamente.</b> PPI conserva la autoridad primaria. "
+        f"<div class='{warning}'><b>Observación únicamente.</b> PPI conserva la autoridad primaria. "
         "Esta evidencia no puede cambiar READY/HOLD, señales, tamaños, entradas, salidas ni órdenes.</div>"
         f"<p class='paper-muted'>Fuente: {escape(_text(data.get('source'), 'IOL_MCP'))} · "
         f"modo: {escape(_text(data.get('mode'), 'SHADOW'))} · "
         f"efecto: {escape(_text(data.get('decision_effect'), 'OBSERVE_ONLY'))} · "
         f"última cache: {escape(_text(data.get('refreshed_at'), 'pendiente'))}</p>"
-        f"<div class='paper-grid'>{cards}</div>"
+        f"<div class='{grid}'>{cards}</div>"
         "<h3>Aporte de IOL al análisis del motor</h3>"
-        f"<div class='paper-grid'>{contribution}</div>"
-        "<div class='paper-table-wrap'><table><thead><tr>"
+        f"<div class='{grid}'>{contribution}</div>"
+        f"<div class='{wrap}'><table><thead><tr>"
         "<th>Especie</th><th>Mercado</th><th>Tipo · moneda · lote</th><th>Estado</th><th>Último · bid · ask</th>"
         "<th>Spread · variación · volumen</th><th>Frescura de fuente · calidad</th><th>PPI/IOL</th><th>Qué habría pasado</th>"
         "</tr></thead><tbody>" + rows_html + "</tbody></table></div>"

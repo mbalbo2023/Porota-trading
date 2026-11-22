@@ -71,6 +71,29 @@ it no longer counts catalog projections. If a future ghost is detected, its
 sanitized settlement, gate, status, detail and check timestamp are included for
 RCA without exposing provider payloads.
 
+### Per-instrument evidence
+
+- `identity.settlement` is the normalized key. `catalog.settlement_source`
+  reports `PPI_FIELD`, `REQUEST_CANDIDATE` or `NO_VERIFICADO` for every key.
+  `catalog.ppi_settlement_literal` carries a safe native literal when known.
+  `catalog.settlement_state` records a literal mismatch or an unverified
+  request claim. A request candidate with no override has a catalog receipt
+  for the request-only case. Its observation time and the time of any literal
+  are in `catalog.last_seen_at`. An exceptional catalog receipt with an
+  unverified settlement uses `catalog.settlement_observed_at` when available.
+- `readiness.candidate_can_simulate` reports the exact ledger flag when
+  verified. With that flag present, omitted `candidate_status` and
+  `candidate_checked_at` mean `AVAILABLE` and the catalog clock respectively.
+  Exact ledger reasons appear in `readiness.reasons` with `CANDIDATE_REASON:`.
+  When `first_block_stage` is present, its reason is `first_block_reason` or
+  the first entry of `readiness.reasons` when the reason is shared. Otherwise
+  `unverified_stage` identifies the first stage without evidence of a verdict.
+- `market_observation` includes only available clocks, exceptions and native
+  receipts. The three valid snapshot clocks with no exception indicate causal
+  ordering. The snapshot source and the size of the bounded read appear in
+  `database.market_snapshot_window`. `native_reads` lists separate observed
+  Current and Book receipts with their own settlement fields when present.
+
 ## Pinned consumption
 
 Never read the moving branch name as evidence. Resolve the

@@ -375,6 +375,11 @@ class SharedPPIReaderAdapter:
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("book", ticker, instrument_type, settlement)
 
+    def book_with_native_receipt(self, ticker: str, instrument_type: str, settlement: str):
+        """Same guarded GET, preserving the REST Book1 receipt for FI exits."""
+        response = self._native("book", ticker, instrument_type, settlement, include_guard=True)
+        return response["receipt"]
+
     def intraday(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("intraday", ticker, instrument_type, settlement)
 

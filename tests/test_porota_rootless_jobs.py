@@ -35,13 +35,27 @@ class DispatcherTests(unittest.TestCase):
             docker=types.SimpleNamespace(call=lambda *args, **kwargs: self.calls.append(args)),
             check_role=lambda current, role: {"State": {"Running": True}})
 
-    def test_postclose_preserves_three_commands_and_targets_only_exact_dashboard_cid(self):
+    def test_postclose_preserves_three_commands_and_publishes_campaign_on_dashboard(self):
+        self.current.update(deployment_sha="d" * 40, source_tree="e" * 40,
+                            health={"orders_guard": "BLOCKED"})
+        def call(*args, **kwargs):
+            self.calls.append(args)
+            if args[5:6] == ("/app/rc6_validation_publish.py",):
+                return json.dumps({"state": "PUBLISHED", "session_date": "2026-11-20", "records": 12})
+
+        self.manager.docker.call = call
         with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
-             patch.object(jobs, "database_snapshot", return_value={"real_orders_sent": 0}):
-            result = jobs.run_job("porota-snapshot-postclose-rc6.service", root=self.root, identity=self.identity)
-        self.assertEqual([command[4] for command in self.calls], ["/app/rc6_snapshot.py",
+             patch.object(jobs, "database_snapshot", return_value={"real_orders_sent": 0}), \
+             patch.object(jobs, "disk_usage", return_value=types.SimpleNamespace(free=2**34)):
+            result = jobs.run_job(jobs.POSTCLOSE, root=self.root, identity=self.identity)
+        self.assertEqual([command[4] for command in self.calls[:3]], ["/app/rc6_snapshot.py",
             "/app/rc6_postclose_review.py", "/app/rc6_decision_evidence_report.py"])
         self.assertTrue(all(command[:3] == ("container", "exec", "2" * 64) for command in self.calls))
+        self.assertEqual(self.calls[-1][5:7], ("/app/rc6_validation_publish.py", "--runtime-proof"))
+        proof = json.loads(self.calls[-1][-1])
+        self.assertEqual(proof["deployment_sha"], "d" * 40)
+        self.assertEqual(proof["orders_guard"], "BLOCKED")
+        self.assertEqual(result["commands"][-1]["result"], "PUBLISHED")
         self.assertEqual(result["state"], "EXECUTED")
 
     def test_preopen_uses_current_source_explicit_rootless_environment_and_shared_lock(self):

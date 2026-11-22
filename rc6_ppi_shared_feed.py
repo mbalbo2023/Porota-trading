@@ -1011,6 +1011,9 @@ class ReadOnlyUnixFeedServer:
                                   session_generation=status.get("session_generation"))
                 elif request["op"] == "native_read":
                     result["schema"] = NATIVE_READ_SCHEMA
+                    if "session_generation" in request:
+                        result.update(owner_pid=status.get("owner_pid"),
+                                      session_generation=status.get("session_generation"))
                 return result
         if (self._ever_listened and isinstance(request, dict)
                 and request.get("op") in {"native_acquire", "aux_acquire"}):
@@ -1156,6 +1159,16 @@ class ReadOnlyUnixFeedServer:
                 return {**base, "state": "PPI_EXIT_ROUND_OBSERVATION_UNVERIFIED"}
             return {**base, "state": "OK", "observation": result}
         if isinstance(request, dict) and request.get("op") == "native_read":
+            if "session_generation" in request:
+                status = self.owner_status() if callable(self.owner_status) else {}
+                generation = status.get("session_generation")
+                owner = {"owner_pid": status.get("owner_pid"), "session_generation": generation}
+                if status.get("state") != "OPEN" or request["session_generation"] != generation:
+                    return {**PPIReadOnlyNativeReceiptStore._state("PPI_PIT_BOOK2_SESSION_CHANGED"), **owner}
+                native_request = {key: value for key, value in request.items() if key != "session_generation"}
+                response = (self.native_receipts.dispatch(native_request) if self.native_receipts else
+                            PPIReadOnlyNativeReceiptStore._state("NO_AUTHENTIC_NATIVE_RECEIPT"))
+                return {**response, **owner}
             if self.native_receipts is None:
                 return PPIReadOnlyNativeReceiptStore._state(
                     "NO_AUTHENTIC_NATIVE_RECEIPT")
@@ -1565,7 +1578,7 @@ class ReadOnlyUnixFeedClient:
 
     def read_native(self, consumer: str, *, method: str, five_key,
                     book1_receipt_sha256=None, commit_at=None,
-                    commit_monotonic_ns=None) -> dict:
+                    commit_monotonic_ns=None, require_owner_identity=False) -> dict:
         """Read a previously acquired PPI REST RAW receipt; no implicit GET.
 
         Any non-OK state is a HARD HOLD for PAPER consumers. The returned
@@ -1584,7 +1597,13 @@ class ReadOnlyUnixFeedClient:
                         "commit_at": (commit_at.isoformat() if isinstance(commit_at, datetime)
                                       else commit_at),
                         "commit_monotonic_ns": commit_monotonic_ns})
-        result = self._request(req)
+        if require_owner_identity:
+            if self._pinned_owner is None:
+                raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_NOT_PINNED")
+            req["session_generation"] = self._pinned_owner[1]
+        result = (self._request(req, require_owner_identity=True) if require_owner_identity else self._request(req))
+        if require_owner_identity and (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner:
+            raise SharedFeedUnavailable("PPI_PIT_BOOK2_SESSION_CHANGED")
         if (result.get("schema") != NATIVE_READ_SCHEMA
             or type(result.get("state")) is not str
             or result.get("provider_calls_by_rpc") != 0):
@@ -1608,4 +1627,6 @@ class ReadOnlyUnixFeedClient:
             or receipt.get("receipt_sha256") != _sha(unsigned)
             or receipt.get("raw_sha256") != _sha(receipt.get("raw_payload"))):
             raise SharedFeedUnavailable("PPI_NATIVE_RPC_RECEIPT_INVALID")
+        if require_owner_identity and receipt.get("session_fingerprint") != self._pinned_owner[1]:
+            raise SharedFeedUnavailable("PPI_PIT_BOOK2_SESSION_CHANGED")
         return result

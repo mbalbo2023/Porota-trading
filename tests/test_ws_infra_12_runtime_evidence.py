@@ -196,28 +196,35 @@ def test_exact_settlement_witness_and_ledger_publish_only_causal_safe_evidence(
     )
     evidence.validate_bundle(payload)
     instrument = payload["instruments"][0]
-    witness = instrument["catalog"]["settlement_witness"]
-    assert witness == {"source": source, "state": state,
-                       "literal": raw_literal if state in {"LITERAL_MATCH", "LITERAL_MISMATCH"} else None,
-                       "observed_at": "2026-09-27T16:59:00+00:00"}
-    ledger = instrument["readiness"]["exact_candidate"]
-    assert ledger["checked_at"] == "2026-09-27T16:59:00+00:00"
-    assert ledger["can_simulate"] == row[5]
-    assert ledger["reasons"] == ([expected_reason] if source == "REQUEST_CANDIDATE" else [])
+    witness = instrument["catalog"]
+    assert witness["settlement_source"] == source
+    assert witness.get("ppi_settlement_literal") == (
+        raw_literal if state in {"LITERAL_MATCH", "LITERAL_MISMATCH"} else None)
+    assert witness.get("settlement_state") == ("LITERAL_MISMATCH" if state == "LITERAL_MISMATCH" else None)
+    assert witness.get("settlement_observed_at") == (
+        "2026-09-27T16:59:00+00:00" if state == "NO_VERIFICADO" else None)
+    assert witness["last_seen_at"] == "2026-09-27T16:59:00+00:00"
+    ledger = instrument["readiness"]
+    assert "candidate_checked_at" not in ledger and "candidate_status" not in ledger
+    assert ledger["candidate_can_simulate"] == row[5]
+    assert [code for code in ledger["reasons"] if code.startswith("CANDIDATE_REASON:")] == (
+        ["CANDIDATE_REASON:" + expected_reason] if source == "REQUEST_CANDIDATE" else [])
     if expected_reason:
-        assert instrument["readiness"]["status"] == "NO_READY"
-        assert instrument["readiness"]["first_block"] == {
-            "stage": "PPI_IDENTITY", "state": "BLOCKED", "reason": expected_reason}
+        assert ledger["status"] == "NO_READY"
+        assert ledger["first_block_stage"] == "PPI_IDENTITY"
+        assert "first_block_reason" not in ledger and ledger["reasons"][0] == expected_reason
         assert ("CANDIDATE_LEDGER_CONTRADICTION" in payload["gaps"]) == bool(row[5])
     else:
-        assert instrument["readiness"]["status"] == "READY_PAPER"
-        assert instrument["readiness"]["first_block"]["state"] == "NO_VERIFICADO"
+        assert ledger["status"] == "READY_PAPER"
+        assert "first_block_stage" not in ledger and ledger["unverified_stage"] == "MARKET_OBSERVATION"
+    assert "market_observation" not in instrument
     assert "PRIVATE_" not in json.dumps(payload)
 
 
-def test_last_exact_market_snapshot_retains_clocks_without_claiming_provider_identity(tmp_path):
+def test_last_exact_market_snapshot_retains_clocks_without_claiming_provider_identity(tmp_path, monkeypatch):
     db, mode, deploy, frozen, manifest = inputs(tmp_path)
     exact_ledger(db, exact_ggal())
+    monkeypatch.setattr(evidence, "MARKET_SNAPSHOT_LIMIT", 2)
     base = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
     at = "2026-09-27T16:59:50+00:00"
     with sqlite3.connect(db) as conn:
@@ -239,9 +246,12 @@ def test_last_exact_market_snapshot_retains_clocks_without_claiming_provider_ide
     assert quote["state"] == "CLOCK_ORDER_INVALID"
     assert quote["received_at"] == at and quote["trade_at"] == at
     assert quote["book_at"] == "2026-09-27T16:59:59+00:00"
-    assert quote["provider_origin"] == "NO_VERIFICADO"
-    assert instrument["readiness"]["first_block"] == {
-        "stage": "MARKET_OBSERVATION", "state": "NO_VERIFICADO", "reason": "CLOCK_ORDER_INVALID"}
+    assert payload["database"]["market_snapshot_window"] == {
+        "state": "READ", "provider_origin": "NO_VERIFICADO", "rows": 2,
+        "row_limit": 2, "truncated": True,
+    }
+    assert instrument["readiness"]["unverified_stage"] == "MARKET_OBSERVATION"
+    assert "first_block_stage" not in instrument["readiness"]
     assert "PRIVATE_" not in json.dumps(payload)
 
 
@@ -280,7 +290,9 @@ def test_bounded_wire_receipts_distinguish_returned_literal_from_requested_term(
     )
     evidence.validate_bundle(payload)
     market = payload["instruments"][0]["market_observation"]
-    assert market["provider_origin"] == "NO_VERIFICADO"
+    assert set(market) == {"native_reads"}
+    assert payload["instruments"][0]["readiness"]["unverified_stage"] == "MARKET_OBSERVATION"
+    assert payload["database"]["market_snapshot_window"]["provider_origin"] == "NO_VERIFICADO"
     assert [read["endpoint"] for read in market["native_reads"]] == ["current", "book"]
     current, book = market["native_reads"]
     assert current["response_settlement_status"] == "EXPLICIT"
@@ -303,10 +315,27 @@ def test_missing_or_future_exact_ledger_never_claims_candidate_admission(tmp_pat
         freshness_seconds=3600, include_ppi_watch=False, current=NOW,
     )
     gate = payload["instruments"][0]["readiness"]
-    assert gate["status"] == "NO_READY" and gate["exact_candidate"]["can_simulate"] is None
-    assert gate["first_block"] == {"stage": "CANDIDATE_LEDGER", "state": "NO_VERIFICADO",
-                                    "reason": "EXACT_CANDIDATE_LEDGER_NO_VERIFICADO"}
+    assert gate["status"] == "NO_READY" and "candidate_can_simulate" not in gate
+    assert gate["candidate_status"] == "AVAILABLE" and "candidate_checked_at" not in gate
+    assert gate["unverified_stage"] == "CANDIDATE_LEDGER" and "first_block_stage" not in gate
     assert "EXACT_CANDIDATE_LEDGER_CLOCK_NO_VERIFICADO" in payload["gaps"]
+
+
+def test_compact_readiness_keeps_distinct_candidate_clock_and_first_reason(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    at = "2026-09-27T16:59:10+00:00"
+    exact_ledger(db, (*exact_ggal(ready=0)[:7], "RETRY_IDENTITY_AMBIGUOUS;PRIVATE_VALUE", at))
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    gate = payload["instruments"][0]["readiness"]
+    assert gate["candidate_can_simulate"] == 0 and gate["candidate_checked_at"] == at
+    assert "candidate_status" not in gate
+    assert gate["first_block_stage"] == "CANDIDATE_LEDGER"
+    assert gate["first_block_reason"] == "RETRY_IDENTITY_AMBIGUOUS"
+    assert gate["reasons"] == ["CANDIDATE_GATE:NO_GO", "CANDIDATE_REASON:RETRY_IDENTITY_AMBIGUOUS"]
 
 
 def test_evidence_and_candidate_writer_use_the_same_identity_lkg():
