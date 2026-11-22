@@ -1,4 +1,4 @@
-name: RC6 dashboard focused validation audit
+name: RC6 validation milestone dialog check
 
 on:
   push:

@@ -167,7 +167,7 @@ def validation(page, path, report):
         return None
     cards = page.locator("details.paper-trade > summary")
     output = {"hitos": cards.count(), "details": [], "contrast": page.evaluate(VALIDATION_CONTRAST),
-              "legacy_shell": page.locator("#porota-canonical-nav").count() == 0}
+              "legacy_shell": page.locator("#terminal-content").count() == 0}
     output["legacy_main"] = page.locator("#porota-main-content").count() == 1
     output["m4_current_text"] = ("VERIFICADO ACTUAL" in cards.nth(4).text_content()) if cards.count() > 4 else None
     output["m11_blocked"] = ("BLOQUEADO POR POLÍTICA" in cards.nth(11).text_content()) if cards.count() > 11 else None
@@ -177,15 +177,23 @@ def validation(page, path, report):
         if n not in {0, 1, 4, 11}:
             continue
         summary.evaluate("(s) => { s.scrollIntoView({block:'center'}); s.focus(); }")
-        summary.press("Enter", timeout=1200)
-        body = summary.locator("xpath=following-sibling::*[1]")
-        if body.count():
-            visible = body.text_content()
-            output["details"].append({"milestone": f"M{n}", "summary_status": BADGE.findall(title),
-                                      "percentages": re.findall(r"\d{1,3}%", title), "expanded": body.is_visible(),
-                                      "exit_criteria": body.locator("li").count(),
-                                      "details_include_blocker": "Blocker:" in visible,
-                                      "details_include_ref": "Referencia:" in visible})
+        summary.press("Enter", timeout=2000)
+        dialog = page.locator("dialog.paper-detail-dialog")
+        dialog.wait_for(state="visible", timeout=2000)
+        body = dialog.locator(".paper-detail-content")
+        visible = body.inner_text()
+        recorded = {"milestone": f"M{n}", "summary_status": BADGE.findall(title),
+                    "percentages": re.findall(r"\d{1,3}%", title),
+                    "opened": dialog.evaluate("(d) => d.open && d.matches(':modal')"),
+                    "title_matches": normalize(dialog.locator("h2").inner_text()) == title,
+                    "exit_criteria": body.locator("li").count(),
+                    "details_include_blocker": "Blocker:" in visible,
+                    "details_include_ref": "Referencia:" in visible}
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="hidden", timeout=2000)
+        page.wait_for_function("(n) => document.activeElement === document.querySelectorAll('details.paper-trade > summary')[n]", arg=n, timeout=2500)
+        recorded["focus_restored"] = True
+        output["details"].append(recorded)
     return output
 
 
@@ -231,7 +239,7 @@ def run(base, token, output, live=False, focused=False):
             page.screenshot(path=str(output / filename), animations="disabled", timeout=5000)
             results["snapshots"].append(filename)
 
-        targets = ("/sistema/evidencia", "/validacion") if focused else [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]
+        targets = ("/validacion",) if focused else [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]
         for path in targets:
             info = {"page_errors": 0}
             page_errors.clear()
@@ -267,7 +275,7 @@ def run(base, token, output, live=False, focused=False):
             if live:
                 sleep(.18)
         page.set_viewport_size(PHONE)
-        mobile = ("/sistema/scheduler", "/validacion") if focused else ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/evidencia", "/validacion")
+        mobile = () if focused else ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/evidencia", "/validacion")
         for path in mobile:
             try:
                 response = page.goto(base + path, wait_until="domcontentloaded", timeout=7000)
