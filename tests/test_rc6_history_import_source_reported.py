@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import datetime, timezone
 from hashlib import file_digest
 import json
@@ -5,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from cu_history_store_v2_hf6 import (
@@ -117,6 +119,61 @@ class SourceReportedImportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "HISTORY_EXISTING_SCHEMA_REQUIRED"):
             import_iol_export(self.archive, destination, self.digest,
                               existing_identity=(stat.st_dev, stat.st_ino))
+        self.assertEqual(destination.read_bytes(), before)
+
+    def _legacy_history(self):
+        destination = self.root / "market_history.db"
+        with closing(sqlite3.connect(destination)) as connection, connection:
+            connection.executescript("""
+                CREATE TABLE history_versions_v2(
+                    id INTEGER PRIMARY KEY, symbol, instrument_type, market, settlement,
+                    date, open, high, low, close, volume, source, adjusted, observed_at,
+                    payload_hash, metadata_json);
+                CREATE TABLE history_canonical_v2(symbol, instrument_type, market, settlement,
+                                                  date, close, version_id);
+                CREATE TABLE candle_evidence(value);
+                INSERT INTO candle_evidence VALUES('preserved');
+                INSERT INTO history_versions_v2 VALUES(
+                    7, 'GGAL', 'ACCIONES', 'BYMA', 'T+1', '2025-09-22',
+                    12, 16, 10, 14, 100, 'PPI', 0, '2025-10-02T21:00:00Z',
+                    'old-hash', '{}');
+                INSERT INTO history_canonical_v2 VALUES(
+                    'GGAL', 'ACCIONES', 'BYMA', 'T+1', '2025-09-22', 14, 7);
+            """)
+        stat = destination.stat()
+        return destination, (stat.st_dev, stat.st_ino)
+
+    def test_owned_legacy_upgrade_and_ingest_reuse_the_same_file(self):
+        destination, identity = self._legacy_history()
+        load = dict(existing_identity=identity, expected_legacy_versions=1)
+        first = import_iol_export(self.archive, destination, self.digest, **load)
+        retry = import_iol_export(self.archive, destination, self.digest, **load)
+        self.assertEqual(first["schema_upgrade"]["quarantined_rows"], 1)
+        self.assertEqual(first["schema_upgrade"]["migrated_rows"], 0)
+        self.assertEqual(first["schema_upgrade"]["legacy_canonical_rows"], 1)
+        self.assertEqual(retry["schema_upgrade"]["state"], "SCHEMA_ALREADY_UPGRADED")
+        self.assertEqual((retry["versions_appended"], retry["canonical_updates"]), (0, 0))
+        self.assertEqual((destination.stat().st_dev, destination.stat().st_ino), identity)
+        with closing(sqlite3.connect(destination)) as connection:
+            self.assertEqual(connection.execute("SELECT id,close,payload_hash FROM history_versions_v2_legacy").fetchall(),
+                             [(7, 14, "old-hash")])
+            self.assertEqual(connection.execute("SELECT close,version_id FROM history_canonical_v2_legacy").fetchall(),
+                             [(14, 7)])
+            self.assertEqual(connection.execute("SELECT value FROM candle_evidence").fetchone(), ("preserved",))
+            self.assertEqual(connection.execute("SELECT price_basis,close FROM history_canonical_v2").fetchall(),
+                             [(SOURCE_REPORTED, 12.0)])
+            self.assertFalse(connection.execute(
+                "SELECT 1 FROM sqlite_schema WHERE name LIKE 'history%migration%'").fetchone())
+            self.assertFalse(connection.execute("PRAGMA foreign_key_check").fetchone())
+
+    def test_upgrade_rolls_back_schema_and_rows_when_validation_fails(self):
+        destination, identity = self._legacy_history()
+        before = destination.read_bytes()
+        with patch("cu_history_store_v2_hf6._check_migrated_history",
+                   side_effect=ValueError("HISTORY_MIGRATION_INTEGRITY_FAILED")):
+            with self.assertRaisesRegex(ValueError, "HISTORY_MIGRATION_INTEGRITY_FAILED"):
+                import_iol_export(self.archive, destination, self.digest, existing_identity=identity,
+                                  expected_legacy_versions=1)
         self.assertEqual(destination.read_bytes(), before)
 
     def test_an_exact_history_row_keeps_its_original_route(self):

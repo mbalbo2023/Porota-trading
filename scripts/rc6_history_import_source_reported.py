@@ -15,7 +15,7 @@ from zipfile import ZipFile
 
 from cu_history_store_v2_hf6 import (
     ART, SOURCE_REPORTED, Candle, append_many, instant, source_reported_adjustment,
-    validate_daily_values,
+    upgrade_existing_history, validate_daily_values,
 )
 from cv_history_store_adapter_hf6 import HistoricalStore, SOURCE_REPORTED_APPLICATION_ID
 
@@ -120,15 +120,19 @@ def _candles(capture, archive_sha):
     return candles, rejected, len(rows), attempt
 
 
-def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None):
+def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None,
+                      expected_legacy_versions=None):
     """Load valid observations under provider-series keys and verify committed counts."""
     if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
         raise ValueError("HISTORY_CAPTURE_DIGEST_REQUIRED")
+    if expected_legacy_versions is not None and (existing_identity is None or symbols):
+        raise ValueError("HISTORY_MIGRATION_EXISTING_FULL_CAPTURE_REQUIRED")
     selected = set(symbols)
     seen = set()
     totals = Counter()
     rejected = Counter()
     store = None
+    schema_upgrade = None
     with Path(archive).open("rb") as capture_file:
         if os.fstat(capture_file.fileno()).st_size > MAX_BYTES:
             raise ValueError("HISTORY_CAPTURE_FILE_TOO_LARGE")
@@ -156,6 +160,9 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=(), exis
                             store = (_source_store(destination) if existing_identity is None else
                                      HistoricalStore(str(destination), source_reported_only=True,
                                                      existing_history_identity=existing_identity))
+                            if expected_legacy_versions is not None:
+                                schema_upgrade = upgrade_existing_history(
+                                    store, expected_versions=expected_legacy_versions)
                         receipt = append_many(store, candles, attempt_key=attempt)
                         for field in ("committed_rows", "versions_appended", "canonical_updates"):
                             totals[field] += receipt[field]
@@ -178,6 +185,7 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=(), exis
         "destination": "EXISTING_HISTORY" if existing_identity is not None else "REFERENCE_STORE",
         "price_basis": SOURCE_REPORTED, "readiness_implication": "NONE",
         "quick_check": "ok",
+        **({"schema_upgrade": schema_upgrade} if schema_upgrade is not None else {}),
     }
 
 
@@ -188,6 +196,8 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--symbol", action="append", default=[])
     parser.add_argument("--existing-history-id", metavar="DEVICE:INODE")
+    parser.add_argument("--expected-legacy-versions", type=int,
+                        help="Explicitly upgrade the existing file from a verified legacy snapshot count")
     args = parser.parse_args()
     identity = None
     if args.existing_history_id is not None:
@@ -195,7 +205,8 @@ def main():
             parser.error("--existing-history-id requires numeric DEVICE:INODE")
         identity = tuple(map(int, args.existing_history_id.split(":")))
     receipt = import_iol_export(args.archive, args.destination, args.sha256,
-                                symbols=args.symbol, existing_identity=identity)
+                                symbols=args.symbol, existing_identity=identity,
+                                expected_legacy_versions=args.expected_legacy_versions)
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
 
 
