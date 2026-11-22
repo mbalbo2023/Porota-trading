@@ -61,12 +61,36 @@ EXACT_CANDIDATE_COLUMNS = (
     "can_simulate", "status", "detail", "checked_at",
 )
 CANDIDATE_REFRESH_COLUMNS = ("id", "state", "checked_at")
+MARKET_SNAPSHOT_COLUMNS = (
+    "id", "symbol", "asset_class", "market", "currency", "settlement",
+    "observed_at", "trade_at", "book_at", "last_kind", "opening_block_reason",
+)
+MARKET_SNAPSHOT_LIMIT = 20_000
+NATIVE_WIRE_COLUMNS = ("id", "event_at", "event_type", "detail")
+NATIVE_WIRE_LIMIT = 128
+NATIVE_WIRE_EVENT = "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS"
+# Public PPI settlement enum plus the accepted literal aliases used by discovery.
+PPI_SETTLEMENT_LITERALS = {
+    "INMEDIATA": "INMEDIATA", "CI": "INMEDIATA", "T0": "INMEDIATA",
+    "A-24HS": "A-24HS", "24HS": "A-24HS", "T1": "A-24HS",
+    "A-48HS": "A-48HS", "A-72HS": "A-72HS",
+}
+PPI_SETTLEMENT_SOURCES = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE"})
 EXPLICIT_CANDIDATE_REASONS = frozenset({
     "CATALOG_RECONCILIATION",
     "FUTURES_CONTRACT_OR_PAPER_MARGIN_UNRESOLVED",
     "ON_CONTRACT_UNRESOLVED",
     "ON_IDENTITY_AMBIGUOUS",
     "OPTION_CONTRACT_UNRESOLVED",
+})
+EXACT_CANDIDATE_REASONS = frozenset({
+    "PPI_PRIMARY_IDENTITY_NOT_VERIFIED", "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED",
+    "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED", "PPI_FRESHNESS_STALE", "IDENTITY_INCOMPLETE",
+    "IDENTITY_AMBIGUOUS", "RETRY_IDENTITY_AMBIGUOUS", "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
+})
+OBSERVATION_BLOCK_REASONS = EXACT_CANDIDATE_REASONS | frozenset({
+    "CATALOG_READ_ERROR", "PPI_DIRECT_REST_OBSERVE_ONLY", "CAUCION_LEDGER_INVALID",
+    "CONTRACT_EVIDENCE_STALE",
 })
 # The candidate writer and the PAPER quote guard use a fourteen-day identity
 # LKG.  The bundle's shorter --freshness-seconds is an evidence-quality clock,
@@ -82,6 +106,8 @@ ALLOWED_TABLES = {
     "candidate_universe": CANDIDATE_COLUMNS,
     "candidate_identity_v2": EXACT_CANDIDATE_COLUMNS,
     "candidate_refresh_state": CANDIDATE_REFRESH_COLUMNS,
+    "market_snapshots": MARKET_SNAPSHOT_COLUMNS,
+    "paper_events": NATIVE_WIRE_COLUMNS,
     "source_sync": SOURCE_SYNC_COLUMNS,
 }
 
@@ -183,8 +209,21 @@ def _require_columns(schema: dict[str, set[str]], table: str, columns: Iterable[
 def _rows(conn: sqlite3.Connection, table: str, columns: tuple[str, ...]) -> list[dict[str, Any]]:
     if table not in ALLOWED_TABLES or tuple(columns) != ALLOWED_TABLES[table]:
         raise EvidenceError("QUERY_NOT_ALLOWLISTED")
-    quoted = ",".join(f'"{column}"' for column in columns)
-    return [dict(row) for row in conn.execute(f'SELECT {quoted} FROM "{table}"')]
+    byte_limits = {"metadata_json": 65_536, "opening_block_reason": 512}
+    if table in {"candidate_identity_v2", "paper_events"}:
+        byte_limits["detail"] = 2_048
+    quoted = ",".join(
+        f'CASE WHEN length(CAST("{column}" AS BLOB))<={byte_limits[column]} '
+        f'THEN "{column}" END AS "{column}"' if column in byte_limits else f'"{column}"'
+        for column in columns
+    )
+    query = f'SELECT {quoted} FROM "{table}"'
+    if table == "market_snapshots":
+        query += f' ORDER BY id DESC LIMIT {MARKET_SNAPSHOT_LIMIT + 1}'
+    if table == "paper_events":
+        return [dict(row) for row in conn.execute(query + """ WHERE event_type=?
+            ORDER BY julianday(event_at) DESC,id DESC LIMIT ?""", (NATIVE_WIRE_EVENT, NATIVE_WIRE_LIMIT))]
+    return [dict(row) for row in conn.execute(query)]
 
 
 def _freshness(value: Any, current: datetime, max_age_seconds: int) -> dict[str, Any]:
@@ -199,7 +238,7 @@ def _freshness(value: Any, current: datetime, max_age_seconds: int) -> dict[str,
 def _metadata(value: Any) -> dict[str, Any]:
     try:
         payload = json.loads(str(value or "{}"))
-    except (TypeError, ValueError, json.JSONDecodeError):
+    except (TypeError, ValueError, RecursionError):
         return {}
     return payload if isinstance(payload, dict) else {}
 
@@ -257,10 +296,156 @@ def _catalog_key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return _retry_key(row)
 
 
+def _causal_clock(value: Any, current: datetime) -> str | None:
+    observed = iso(value)
+    return observed if observed and datetime.fromisoformat(observed) <= current else None
+
+
+def _public_settlement_literal(value):
+    if not isinstance(value, str) or len(value) > 16:
+        return None
+    literal = value.strip()
+    return literal if literal.isascii() and literal.upper() in PPI_SETTLEMENT_LITERALS else None
+
+
+def _settlement_witness(row, metadata, current):
+    source = str(row.get("settlement_source") or "").strip().upper()
+    primary = str(metadata.get("_discovery_source") or "").upper() == "PPI_PRIMARY"
+    observed = _causal_clock(row.get("last_seen_at"), current) if primary else None
+    witness = {"source": source if source in PPI_SETTLEMENT_SOURCES else "NO_VERIFICADO",
+               "state": "NO_VERIFICADO", "literal": None, "observed_at": observed}
+    literal = metadata.get("settlement")
+    if source == "REQUEST_CANDIDATE":
+        if observed and literal in (None, ""):
+            witness["state"] = "REQUEST_ONLY"
+        return witness, "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+    if source != "PPI_FIELD":
+        return witness, None
+    if not primary or not isinstance(literal, str) or not literal.strip():
+        return witness, "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
+    term = literal.strip().upper()
+    catalog_term = str(row.get("settlement") or "").strip().upper()
+    matches = (PPI_SETTLEMENT_LITERALS.get(term, term)
+               == PPI_SETTLEMENT_LITERALS.get(catalog_term, catalog_term))
+    # Publish only the market's small enum, even on a mismatch. Unknown
+    # strings remain private and the stored ledger retains its own verdict.
+    public_literal = _public_settlement_literal(literal)
+    if observed and public_literal is not None:
+        witness.update(literal=public_literal, state="LITERAL_MATCH" if matches else "LITERAL_MISMATCH")
+    return witness, None if matches else "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
+
+
+def _exact_candidate_evidence(projected, current, catalog_clock, catalog_status, capability):
+    result = {"status": "NO_VERIFICADO", "checked_at": None, "can_simulate": None, "reasons": []}
+    if len(projected) != 1:
+        return result
+    row = projected[0]
+    checked = _causal_clock(row.get("checked_at"), current)
+    flag = row.get("can_simulate")
+    result.update(status=safe_text(row.get("status")), checked_at=checked)
+    if (checked is None or (catalog_clock and checked < catalog_clock)
+            or type(flag) is not int or flag not in {0, 1}):
+        return result
+    result["can_simulate"] = flag
+    if flag == 1:
+        return result
+    allowed = EXACT_CANDIDATE_REASONS | {f"CATALOG_STATUS:{catalog_status}", f"CAPABILITY:{capability}"}
+    codes = []
+    for item in str(row.get("detail") or "").split(";"):
+        if item in allowed:
+            codes.append(item)
+        elif row.get("status") == "PAUSED_EXPLICIT" and item.startswith("PAUSED_EXPLICIT:"):
+            code = item.removeprefix("PAUSED_EXPLICIT:")
+            if code in EXPLICIT_CANDIDATE_REASONS:
+                codes.append(code)
+    result["reasons"] = list(dict.fromkeys(codes))
+    return result
+
+
+def _market_observation(row, *, current, snapshots_available):
+    result = {"state": "NO_VERIFICADO", "provider_origin": "NO_VERIFICADO",
+              "received_at": None, "trade_at": None, "book_at": None, "opening_block_reason": None}
+    if row is None:
+        result["state"] = ("NO_EXACT_MARKET_SNAPSHOT_IN_WINDOW" if snapshots_available else
+                          "MARKET_SNAPSHOT_SOURCE_NO_VERIFICADO")
+        return result
+    received, trade, book = (iso(row.get(name)) for name in ("observed_at", "trade_at", "book_at"))
+    result.update(received_at=received, trade_at=trade, book_at=book)
+    recorded_hold = row.get("opening_block_reason")
+    if recorded_hold:
+        result["opening_block_reason"] = (recorded_hold if recorded_hold in OBSERVATION_BLOCK_REASONS
+                                          else "QUOTE_HOLD_REASON_NO_VERIFICADO")
+    if received is None:
+        result["state"] = "SNAPSHOT_RECEIPT_CLOCK_NO_VERIFICADO"
+    elif datetime.fromisoformat(received) > current or any(clock and clock > received for clock in (trade, book)):
+        result["state"] = "CLOCK_ORDER_INVALID"
+    elif not trade or not book or row.get("last_kind") != "TRADE":
+        result["state"] = "TRADE_OR_BOOK_CLOCK_NO_VERIFICADO"
+    else:
+        # The clocks say when the persisted read happened. A snapshot's
+        # PRODUCTION_PAPER source is execution mode, not a broker wire receipt.
+        result["state"] = "CAUSAL_CLOCKS"
+    return result
+
+
+def _native_wire_reads(events, current):
+    result = defaultdict(dict)
+    for event in events:
+        parts = [part.partition("=") for part in str(event.get("detail") or "").split(";")]
+        fields = {name: value for name, separator, value in parts if separator}
+        if len(fields) != sum(bool(separator) for _, separator, _ in parts):
+            continue
+        key = tuple(fields.get("identity5", "").split(":"))
+        endpoint = fields.get("endpoint")
+        wire_hash = fields.get("wire_sha256", "")
+        event_at = _causal_clock(event.get("event_at"), current)
+        if (len(key) != 5 or endpoint not in {"current", "book"} or not event_at
+                or fields.get("http_status") != "200" or fields.get("paper_ready") != "false"
+                or not SHA64.fullmatch(wire_hash) or endpoint in result.get(key, {})):
+            continue
+        received = _causal_clock(fields.get("wire_received_at_utc"), datetime.fromisoformat(event_at))
+        if received is None:
+            continue
+        market_at = _causal_clock(fields.get("market_timestamp_utc"), datetime.fromisoformat(received))
+        literal = _public_settlement_literal(fields.get("response_settlement_literal"))
+        state = fields.get("response_settlement_status")
+        if not (state == "EXPLICIT" and literal is not None):
+            empty = fields.get("response_settlement_literal") in (None, "")
+            state, literal = ("ABSENT" if state == "ABSENT" and empty else "UNVERIFIED"), None
+        command = fields.get("command_id", "")
+        matches_request = (PPI_SETTLEMENT_LITERALS[literal.upper()] == key[4] if literal is not None else None)
+        result[key][endpoint] = {"source": NATIVE_WIRE_EVENT, "endpoint": endpoint,
+                                 "received_at": received, "market_at": market_at,
+                                 "body_sha256": wire_hash, "response_settlement_status": state,
+                                 "response_settlement_literal": literal, "paper_ready": False,
+                                 "settlement_matches_request": matches_request,
+                                 "command_id": int(command) if re.fullmatch(r"[0-9]{1,12}", command) else None}
+    return result
+
+
+def _first_block(catalog_blocks, exact, market):
+    if catalog_blocks:
+        reason = catalog_blocks[0]
+        stage = "PPI_IDENTITY" if reason.startswith("PPI_") else "CATALOG"
+        return {"stage": stage, "state": "BLOCKED", "reason": reason}
+    if exact["can_simulate"] is None:
+        return {"stage": "CANDIDATE_LEDGER", "state": "NO_VERIFICADO",
+                "reason": "EXACT_CANDIDATE_LEDGER_NO_VERIFICADO"}
+    if exact["can_simulate"] == 0 or exact["status"] != "AVAILABLE":
+        reasons = exact["reasons"] or ["CANDIDATE_GATE:NO_GO"]
+        return {"stage": "CANDIDATE_LEDGER", "state": "BLOCKED", "reason": reasons[0]}
+    if market["state"] != "CAUSAL_CLOCKS":
+        return {"stage": "MARKET_OBSERVATION", "state": "NO_VERIFICADO", "reason": market["state"]}
+    if market["opening_block_reason"]:
+        return {"stage": "MARKET_OBSERVATION", "state": "BLOCKED", "reason": market["opening_block_reason"]}
+    return {"stage": "PAPER_ADMISSION", "state": "NO_VERIFICADO", "reason": "PAPER_DECISION_NOT_PROJECTED"}
+
+
 def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]],
                      candidates: list[dict[str, Any]], exact_candidates: list[dict[str, Any]],
                      exact_ledger_present: bool, current: datetime,
-                     freshness_seconds: int) -> tuple[list[dict[str, Any]], list[str]]:
+                     freshness_seconds: int, market_snapshots=None,
+                     native_reads=None) -> tuple[list[dict[str, Any]], list[str]]:
     issues: list[str] = []
     retry_by_key: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for retry in retries:
@@ -312,10 +497,13 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         retry_ambiguity = any("AMBIG" in str(item.get("reason") or "").upper() for item in retry_rows)
         capability = safe_text(row.get("capability"), "UNKNOWN_CAPABILITY")
         catalog_status = safe_text(row.get("status"), "UNKNOWN_STATUS")
+        witness, settlement_reason = _settlement_witness(row, metadata, current)
         ppi_fresh = source_state["PPI"]["freshness"]["state"] == "FRESH"
         reasons: list[str] = []
         if not primary:
             reasons.append("PPI_PRIMARY_IDENTITY_NOT_VERIFIED")
+        if settlement_reason:
+            reasons.append(settlement_reason)
         if not ppi_fresh:
             reasons.append("PPI_FRESHNESS_" + source_state["PPI"]["freshness"]["state"])
         if catalog_status != "AVAILABLE":
@@ -325,27 +513,32 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         if ambiguity or retry_ambiguity:
             reasons.append("IDENTITY_AMBIGUOUS")
 
+        # A documentary clock must not be reported as the runtime's fourteen-
+        # day expiry when the exact admission clock is still within its LKG.
+        catalog_blocks = [reason for reason in reasons if not (
+            reason == "PPI_FRESHNESS_STALE" and
+            _freshness(row.get("last_seen_at"), current,
+                       PPI_IDENTITY_LKG_SECONDS)["state"] == "FRESH")]
         projected = (exact_by_key.get(key, []) if exact_ledger_present
                      else candidate_by_key.get(_candidate_key(row), []))
+        exact = _exact_candidate_evidence(projected if exact_ledger_present else [], current,
+                                          witness["observed_at"], catalog_status, capability)
         candidate_applies = exact_ledger_present or primary or primary_count == 0
         if len(projected) != 1:
             reasons.append(("EXACT_CANDIDATE_LEDGER_CARDINALITY:" if exact_ledger_present
                             else "CANDIDATE_LEDGER_CARDINALITY:") + str(len(projected)))
             issues.append("CANDIDATE_LEDGER_CARDINALITY")
-        elif int(projected[0].get("can_simulate") or 0) not in {0, 1}:
+        elif type(projected[0].get("can_simulate")) is not int or projected[0]["can_simulate"] not in {0, 1}:
             reasons.append("CANDIDATE_LEDGER_INVALID")
             issues.append("CANDIDATE_LEDGER_INVALID")
+        elif exact_ledger_present and exact["can_simulate"] is None:
+            reasons.append("EXACT_CANDIDATE_LEDGER_CLOCK_NO_VERIFICADO")
+            issues.append("EXACT_CANDIDATE_LEDGER_CLOCK_NO_VERIFICADO")
         else:
             projected_row = projected[0]
-            can_simulate = int(projected_row.get("can_simulate") or 0)
+            can_simulate = projected_row["can_simulate"]
             candidate_status = str(projected_row.get("status") or "")
-            # 24-hour evidence may be stale even when the writer's exact
-            # identity remains admissible for fourteen days.  Preserve NO_READY
-            # for this bundle, but do not call the two clocks contradictory.
-            hard_reasons = [reason for reason in reasons if not (
-                reason == "PPI_FRESHNESS_STALE" and
-                _freshness(row.get("last_seen_at"), current,
-                           PPI_IDENTITY_LKG_SECONDS)["state"] == "FRESH")]
+            hard_reasons = list(catalog_blocks)
             if candidate_status != "AVAILABLE":
                 status_reason = "CANDIDATE_STATUS:" + safe_text(candidate_status)
                 reasons.append(status_reason)
@@ -355,11 +548,14 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                 issues.append("CANDIDATE_LEDGER_CONTRADICTION")
             elif candidate_applies and can_simulate == 0:
                 reasons.append("CANDIDATE_GATE:NO_GO")
-                detail = str(projected_row.get("detail") or "").partition(";")[0]
-                code = detail.removeprefix("PAUSED_EXPLICIT:")
-                if (candidate_status == "PAUSED_EXPLICIT" and code != detail
-                        and code in EXPLICIT_CANDIDATE_REASONS):
-                    reasons.append("CANDIDATE_REASON:" + code)
+                if exact_ledger_present:
+                    reasons.extend("CANDIDATE_REASON:" + code for code in exact["reasons"])
+                else:
+                    detail = str(projected_row.get("detail") or "").partition(";")[0]
+                    code = detail.removeprefix("PAUSED_EXPLICIT:")
+                    if (candidate_status == "PAUSED_EXPLICIT" and code != detail
+                            and code in EXPLICIT_CANDIDATE_REASONS):
+                        reasons.append("CANDIDATE_REASON:" + code)
 
         readiness = "READY_PAPER" if not reasons else "NO_READY"
         if readiness == "READY_PAPER" and any(
@@ -393,6 +589,10 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
             for item in sorted(retry_rows, key=lambda item: str(item.get("source") or ""))
         ]
         ticker = str(row.get("ticker") or "").strip().upper()
+        market = _market_observation(market_snapshots.get(key) if market_snapshots is not None else None,
+                                     current=current, snapshots_available=market_snapshots is not None)
+        receipts = (native_reads or {}).get(key, {})
+        market["native_reads"] = [receipts[endpoint] for endpoint in ("current", "book") if endpoint in receipts]
         instrument = {
             "identity": {
                 "primary_source": "PPI" if primary else "NO_VERIFICADO",
@@ -408,13 +608,17 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                 "capability": capability,
                 "last_seen_at": iso(row.get("last_seen_at")),
                 "run_id": safe_text(row.get("run_id")),
+                "settlement_witness": witness,
             },
             "readiness": {
                 "status": readiness,
                 "reasons": reasons or ["NO_OPEN_READINESS_GAP"],
                 "paper_shadow_only": True,
                 "real_money_authorized": False,
+                "exact_candidate": exact,
+                "first_block": _first_block(catalog_blocks, exact, market),
             },
+            "market_observation": market,
             "sources": source_state,
             "retry": retry_view,
             "identity_flags": {
@@ -778,6 +982,8 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     current = current or utcnow()
     gaps: list[str] = []
     refresh = {"state": "NO_VERIFICADO", "checked_at": None}
+    snapshots = None
+    native_wire_events = []
     with closing(connect_readonly(db_path)) as conn, conn:
         conn.execute("BEGIN")
         schema = _schema(conn)
@@ -807,6 +1013,10 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             exact_candidates = (_rows(conn, "candidate_identity_v2", EXACT_CANDIDATE_COLUMNS)
                                 if exact_ledger_present else [])
             sync_rows = _rows(conn, "source_sync", SOURCE_SYNC_COLUMNS)
+            if not _require_columns(schema, "market_snapshots", MARKET_SNAPSHOT_COLUMNS):
+                snapshots = _rows(conn, "market_snapshots", MARKET_SNAPSHOT_COLUMNS)
+            if not _require_columns(schema, "paper_events", NATIVE_WIRE_COLUMNS):
+                native_wire_events = _rows(conn, "paper_events", NATIVE_WIRE_COLUMNS)
         if "candidate_refresh_state" in schema:
             refresh_gaps = _require_columns(schema, "candidate_refresh_state", CANDIDATE_REFRESH_COLUMNS)
             gaps.extend(refresh_gaps)
@@ -829,9 +1039,16 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     if not catalog:
         gaps.append("CATALOG_EMPTY")
 
+    market_snapshots = None
+    if snapshots is not None:
+        market_snapshots = {}
+        for row in snapshots[:MARKET_SNAPSHOT_LIMIT]:
+            key = _catalog_key(dict(row, ticker=row["symbol"], instrument_type=row["asset_class"]))
+            if all(part not in {"", "UNKNOWN", "NO_VERIFICADO"} for part in key):
+                market_snapshots.setdefault(key, row)
     instruments, ledger_issues = _instrument_rows(
         catalog, retries, candidates, exact_candidates, exact_ledger_present,
-        current, freshness_seconds
+        current, freshness_seconds, market_snapshots, _native_wire_reads(native_wire_events, current),
     )
     gaps.extend(ledger_issues)
     if len(instruments) != len(catalog):
@@ -892,6 +1109,12 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             "exact_candidate_rows": len(exact_candidates) if exact_ledger_present else None,
             "candidate_readiness_source": "candidate_identity_v2" if exact_ledger_present else "candidate_universe",
             "candidate_refresh": refresh,
+            "market_snapshot_window": {
+                "state": "READ" if snapshots is not None else "NO_VERIFICADO",
+                "rows": min(len(snapshots or ()), MARKET_SNAPSHOT_LIMIT),
+                "row_limit": MARKET_SNAPSHOT_LIMIT,
+                "truncated": len(snapshots or ()) > MARKET_SNAPSHOT_LIMIT,
+            },
             # Compatibility alias: unlike the previous implementation this now
             # counts the actual candidate ledger, never catalog projections.
             "ledger_rows": len(candidates),
