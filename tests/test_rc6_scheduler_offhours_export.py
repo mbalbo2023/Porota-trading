@@ -1,5 +1,5 @@
 """A recent CLOSED scheduler snapshot avoids repeated host systemctl scans."""
-from datetime import datetime
+from datetime import datetime, timedelta
 import fcntl
 import json
 import os
@@ -26,8 +26,12 @@ def test_scheduler_snapshot_closed_skip_and_corrupt_fail_open(tmp_path):
     directory = tmp_path / 'scheduler'
     directory.mkdir()
     output = directory / 'systemd_timers.json'
-    output.write_text(json.dumps({'schema': 'porota-scheduler-systemd-v1',
-        'state': 'OK', 'timers': [{'unit': f'porota-{n}.timer'} for n in range(20)]}))
+
+    def write_snapshot(**metadata):
+        output.write_text(json.dumps({'schema': 'porota-scheduler-systemd-v1',
+            'state': 'OK', 'timers': [{'unit': f'porota-{n}.timer'} for n in range(20)],
+            **metadata}))
+
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
     fake = bin_dir / 'systemctl'
@@ -42,6 +46,7 @@ fi
     fake.chmod(0o755)
     log = tmp_path / 'systemctl.log'
     env = {**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
+           'POROTA_ROOT': str(SCRIPT.parents[1]),
            'POROTA_SCHEDULER_DIR': str(directory), 'RC6_TEST_SYSTEMCTL_LOG': str(log)}
 
     def invoke():
@@ -50,6 +55,7 @@ fi
         assert result.returncode == 0, result.stderr
 
     before = datetime.now(TZ)
+    write_snapshot(recorded_at=before.isoformat())
     invoke()
     after = datetime.now(TZ)
     audited = (before.year in calendar.ANIOS_AUDITADOS and
@@ -57,6 +63,17 @@ fi
     if before.date() == after.date() and byma_paper_spot_phase(before) == byma_paper_spot_phase(after):
         closed = audited and byma_paper_spot_phase(before) == 'CLOSED'
         assert log.exists() is not closed
+
+    # The file mtime alone cannot establish when the timer state was captured.
+    for metadata in (
+        {},
+        {'recorded_at': (before - timedelta(minutes=20)).isoformat()},
+        {'recorded_at': (before + timedelta(minutes=5)).isoformat()},
+    ):
+        write_snapshot(**metadata)
+        log.unlink(missing_ok=True)
+        invoke()
+        assert 'list-unit-files' in log.read_text()
 
     # A recent but malformed artifact cannot justify skipping an export.
     output.write_text('{corrupt')

@@ -27,7 +27,8 @@ try:
         prior=json.loads(out.read_text(encoding='utf-8'))
         captured = instant(prior.get('recorded_at'))
         if (prior.get('schema')=='porota-scheduler-systemd-v1' and
-                captured is not None and snapshot_phase(captured)=='CLOSED' and
+                captured is not None and 0 <= (now-captured).total_seconds() < CLOSED_REUSE_SECONDS and
+                snapshot_phase(captured)=='CLOSED' and
                 prior.get('state')=='OK' and isinstance(prior.get('timers'),list) and
                 len(prior['timers'])>=20):
             sys.exit(0)
