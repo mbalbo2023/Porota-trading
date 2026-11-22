@@ -3,38 +3,13 @@
   "caucion_readiness": {
     "complete_offers": 0,
     "declared": 1,
-    "missing_offer_requirements": [
-      "instrument_id",
-      "currency",
-      "annual_rate_fraction",
-      "start_date",
-      "maturity_at",
-      "quoted_at",
-      "available_principal",
-      "minimum_principal",
-      "principal_step",
-      "day_count_basis",
-      "fee_payment",
-      "metadata_source"
-    ],
-    "missing_policy_requirements": [
-      "frozen_at",
-      "reserve_cash",
-      "maximum_cash_fraction",
-      "maximum_principal",
-      "liquidity_deadline",
-      "maximum_quote_age_seconds",
-      "participation",
-      "minimum_net_profit",
-      "ranking",
-      "session_open_at",
-      "session_close_at",
-      "session_source"
-    ],
+    "missing_offer_requirements": [],
+    "missing_policy_requirements": [],
     "observed_contracts": 10,
+    "offer_checked_at": "2026-11-22T13:35:17.517194-03:00",
     "placed_today": 0,
     "queries": 1,
-    "state": "MISSING_CURRENT_CONTRACT_TERMS"
+    "state": "NO_CURRENT_VALID_OFFER"
   },
   "changes": [
     "ingestion.rows: 15624 -> 242636"
@@ -67,7 +42,8 @@
       "instrument_type": "ACCIONES",
       "observed_count": 46,
       "queries": 4,
-      "ready_paper_count": 46
+      "ready_paper_count": 46,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -78,7 +54,8 @@
       "instrument_type": "ACCIONES-USA",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -102,7 +79,8 @@
       "instrument_type": "BONOS",
       "observed_count": 891,
       "queries": 4,
-      "ready_paper_count": 8
+      "ready_paper_count": 8,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -118,7 +96,8 @@
       "instrument_type": "CAUCIONES",
       "observed_count": 10,
       "queries": 1,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -134,7 +113,8 @@
       "instrument_type": "CEDEARS",
       "observed_count": 228,
       "queries": 4,
-      "ready_paper_count": 228
+      "ready_paper_count": 228,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -145,7 +125,8 @@
       "instrument_type": "ETF",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -156,7 +137,8 @@
       "instrument_type": "ETFS",
       "observed_count": 0,
       "queries": 4,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -176,7 +158,8 @@
       "instrument_type": "FCI",
       "observed_count": 885,
       "queries": 4,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -187,7 +170,8 @@
       "instrument_type": "FCI-EXTERIOR",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -207,7 +191,8 @@
       "instrument_type": "FUTUROS",
       "observed_count": 91,
       "queries": 4,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -218,7 +203,8 @@
       "instrument_type": "INDICES",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -229,7 +215,8 @@
       "instrument_type": "LEBAC",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -245,7 +232,8 @@
       "instrument_type": "LETRAS",
       "observed_count": 18,
       "queries": 4,
-      "ready_paper_count": 1
+      "ready_paper_count": 1,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -256,7 +244,8 @@
       "instrument_type": "LICITACIONES",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -267,7 +256,8 @@
       "instrument_type": "NOBAC",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -291,7 +281,8 @@
       "instrument_type": "OBLIGACIONES",
       "observed_count": 1257,
       "queries": 4,
-      "ready_paper_count": 17
+      "ready_paper_count": 17,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
@@ -302,7 +293,8 @@
       "instrument_type": "ON",
       "observed_count": 0,
       "queries": 0,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [
@@ -326,14 +318,15 @@
       "instrument_type": "OPCIONES",
       "observed_count": 2417,
       "queries": 4,
-      "ready_paper_count": 0
+      "ready_paper_count": 0,
+      "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     }
   ],
   "github_publication": {
     "branch": "runtime-observability",
     "day": "2026-11-22",
     "detail": null,
-    "recorded_at": "2026-11-22T14:42:59.593423+00:00",
+    "recorded_at": "2026-11-22T15:42:32.158917+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -392,7 +385,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-11-22T15:35:01.877929+00:00",
+    "heartbeat_at": "2026-11-22T16:35:14.625646+00:00",
     "http_allowed": 516,
     "http_blocked": 5,
     "last_market_data_at": "2026-11-05T19:59:51.029496+00:00",
@@ -422,19 +415,19 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 2816217088,
-    "filesystem_free": 24624390144,
+    "database_bytes": 2816303104,
+    "filesystem_free": 24639709184,
     "filesystem_total": 61285326848,
-    "filesystem_used": 36644159488,
-    "filesystem_used_pct": 59.79,
-    "wal_bytes": 30203752
+    "filesystem_used": 36628840448,
+    "filesystem_used_pct": 59.77,
+    "wal_bytes": 4214792
   },
   "telegram": {
     "DEAD": 1,
     "SENT": 722,
     "SUPPRESSED_WEEKEND": 6
   },
-  "timestamp": "2026-11-22T12:35:07-03:00",
+  "timestamp": "2026-11-22T13:35:17-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -448,33 +441,33 @@
   "warnings": [],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": 1.170445,
-      "heartbeat_at": "2026-11-22T15:35:06.059489+00:00",
+      "heartbeat_age_seconds": 16.210165,
+      "heartbeat_at": "2026-11-22T16:35:01.307029+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 23.859077,
-      "heartbeat_at": "2026-11-22T15:34:43.370857+00:00",
+      "heartbeat_age_seconds": 20.726043,
+      "heartbeat_at": "2026-11-22T16:34:56.791151+00:00",
       "state": "WAITING_CALENDAR"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-11-22T15:35:12.514005+00:00",
+      "heartbeat_age_seconds": 4.632574,
+      "heartbeat_at": "2026-11-22T16:35:12.884620+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 13.547505,
-      "heartbeat_at": "2026-11-22T15:34:53.682429+00:00",
+      "heartbeat_age_seconds": 19.166564,
+      "heartbeat_at": "2026-11-22T16:34:58.350630+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-11-22T15:35:12.273199+00:00",
+      "heartbeat_age_seconds": 1.350182,
+      "heartbeat_at": "2026-11-22T16:35:16.167012+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": 0.0,
-      "heartbeat_at": "2026-11-22T15:35:12.430410+00:00",
+      "heartbeat_age_seconds": 2.238753,
+      "heartbeat_at": "2026-11-22T16:35:15.278441+00:00",
       "state": "RUNNING"
     }
   }
