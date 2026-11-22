@@ -118,6 +118,9 @@ TERMINAL_DATASETS = {
 }
 
 TERMINAL_VIEW_DATASETS = {
+    ('sistema','validacion'): (['validation_campaign','safety','learning_history'],
+                             ['validation_milestones_rc6.json','validation_campaign_rc6.jsonl (proyección)',
+                              'rc6_action4_auditoria_latest.json','iol_shadow_latest.json']),
     ('analitica','anual'): (['history'],['history_canonical_v2','production_history (selector only)']),
     ('analitica','contrafactuales'): (['learning_history'],['counterfactual_learning_rc6.json',
         'decision_evidence_latest.json','trade_gate_evaluations','paper_positions',
@@ -148,17 +151,15 @@ def inventory() -> dict[str, Any]:
             "stale_unknown_semantics": ("VISIBLE_EXPLICIT; no se promueve a LIVE/READY"
                                         if kind != "FRAMEWORK" else "NOT_APPLICABLE"),
             "navigation": "Enlaces sin token; menú canónico y Arriba" if kind == "VISIBLE_SURFACE" else "NOT_APPLICABLE",
-            "pagination": ("12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas" if route.path == "/validacion"
+            "pagination": ("12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas" if route.path in {"/validacion", "/sistema/validacion"}
                            else "Máximo 10 filas visibles + Mostrar más" if kind == "VISIBLE_SURFACE"
                            else "Paginación/limit del contrato API"),
             "accessibility": "ARIA + foco + texto además de color + Voice Access" if kind == "VISIBLE_SURFACE" else "JSON/HTTP",
             "locale": "es-AR" if kind == "VISIBLE_SURFACE" else "JSON canónico",
             "write_route": any(method not in {"GET", "HEAD", "OPTIONS"} for method in methods),
-            "presentation_endpoint": ("en_validation_project_dashboard_rc6.rc6_validation_project_view" if route.path == "/validacion"
-                                      else "rc6_trader_dashboard.routes.trader_terminal" if route.path in CANONICAL_PATHS or route.path in LEGACY
+            "presentation_endpoint": ("rc6_trader_dashboard.routes.trader_terminal" if route.path in CANONICAL_PATHS or route.path in LEGACY
                                       else "NOT_APPLICABLE"),
-            "canonical_view": ("validacion/m0-m11" if route.path == "/validacion"
-                               else "/".join(CANONICAL_PATHS.get(route.path) or LEGACY.get(route.path)) if route.path in CANONICAL_PATHS or route.path in LEGACY
+            "canonical_view": ("/".join(CANONICAL_PATHS.get(route.path) or LEGACY.get(route.path)) if route.path in CANONICAL_PATHS or route.path in LEGACY
                                else "NOT_APPLICABLE"),
             "legacy_compatible_alias": route.path in LEGACY,
         })

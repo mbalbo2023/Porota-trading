@@ -8,10 +8,11 @@ from pathlib import Path
 
 from em_validation_campaign_rc6 import MILESTONES, latest_by_milestone
 from rc6_validation_truth import historical_claim, implementation_status, iso_now
+from cg_paper_workspace import database_path
 
 
 def _db_path():
-    return os.getenv("POROTA_PAPER_DB", "/app/data/paper_v17/observer_v17.db")
+    return os.getenv("POROTA_PAPER_DB") or str(database_path())
 
 
 def _db_ok(*, deep=False):
@@ -29,8 +30,8 @@ def _db_ok(*, deep=False):
         return False, type(exc).__name__
 
 
-def _observer_evidence():
-    path = Path(_db_path())
+def _observer_evidence(db_path=None):
+    path = Path(db_path or _db_path())
     if not path.exists():
         return {}
     try:
@@ -62,53 +63,49 @@ def _iol_coverage():
     return 0, 0
 
 
-def _runtime_safety():
-    mode = os.getenv("POROTA_MODE", os.getenv("DASHBOARD_OPERATION_MODE", "")).upper()
-    execution = os.getenv("EXECUTION", "").upper()
-    routes = os.getenv("REAL_ORDER_ROUTES", os.getenv("REAL_ORDER_CAPABILITY", "")).upper()
-    safe = mode in {"PRODUCTION_PAPER", "PAPER"} and execution in {"SIMULATED", "PAPER"} and (not routes or routes in {"BLOCKED", "NOT_CALLED", "NONE", "DISABLED"})
-    return safe, f"mode={mode or 'UNKNOWN'} execution={execution or 'UNKNOWN'} routes={routes or 'UNSET'}"
-
-
-def _row(milestone, prior, *, deep_db_check=False):
+def _row(milestone, prior, *, db_probe, observer, runtime):
     code, prior = milestone.code, dict(prior or {})
     state, pct = "GRAY", 0
     claim = "PENDING"
     observed, deviation = "Sin evidencia verificable actual", "Sin evidencia suficiente"
     blocker, next_action = "Requiere evidencia verificable", "Publicar evidencia verificable"
-    ok_db, db_detail = _db_ok(deep=deep_db_check)
-    safe, safety_detail = _runtime_safety()
-    observer = _observer_evidence()
+    ok_db, db_detail = db_probe
+    supplied = runtime.get(code)
+    criteria = ({label: supplied.get(label, "NO_VERIFICADO") for label in milestone.exit_criteria}
+                if supplied else {})
     impl = implementation_status(prior)
     # These capabilities exist in the RC6 deployment; the audit still separates
     # them from a current verification claim.
     if code in {"M0", "M1", "M2", "M3", "M7"} and impl == "UNKNOWN":
         impl = "IMPLEMENTED"
 
-    runtime_zero = str(observer.get("real_orders_sent", "")) == "0"
+    runtime_zero = type(observer.get("real_orders_sent")) is int and observer["real_orders_sent"] == 0
     runtime_paper = str(observer.get("mode") or "") == "PRODUCTION_PAPER"
     if code == "M11":
         claim = "BLOCKED_BY_POLICY"
         observed = "Dinero real bloqueado permanentemente por diseño RC6"
         deviation, blocker, next_action = "No es un fallo", "Política de alcance", "Conservar bloqueado"
-    elif code == "M0" and ok_db and deep_db_check:
-        state, pct, claim = "GREEN", 100, "VERIFIED_CURRENT"
-        observed, deviation, blocker = f"quick_check={db_detail} por lectura", "Ninguna detectada", "Ninguno"
-        next_action = "Mantener controles de infraestructura"
+    elif code in {"M0", "M1"} and criteria:
+        verified = sum(status == "VERIFICADO" for status in criteria.values())
+        pct = round(100 * verified / len(criteria))
+        observed = " · ".join(f"{label}: {status}" for label, status in criteria.items())
+        if pct == 100:
+            state, claim = "GREEN", "VERIFIED_CURRENT"
+            deviation, blocker, next_action = "Ninguna detectada", "Ninguno", "Revalidar en la próxima rueda."
+        else:
+            state = "YELLOW" if verified else "GRAY"
+            blocker = ", ".join(label for label, status in criteria.items() if status != "VERIFICADO")
+            next_action = "Acreditar los criterios faltantes con evidencia de la versión en ejecución."
     elif code == "M0" and ok_db:
-        state, pct = "YELLOW", 60
-        observed, blocker = "Base accesible por lectura acotada", "Control profundo pendiente"
-        next_action = "Esperar/ejecutar auditoría profunda programada"
-    elif code == "M1" and safe and runtime_paper and runtime_zero:
-        state, pct, claim = "GREEN", 100, "VERIFIED_CURRENT"
-        observed, deviation, blocker = f"PAPER observado; {safety_detail}; real_orders_sent=0", "Ninguna detectada", "Ninguno"
-        next_action = "Revalidar en cada deploy; no promover dinero real"
+        state = "YELLOW"
+        observed = f"Lectura SQLite: {db_detail}"
+        blocker = "Pendiente acreditar disco, Docker, backups/restore, timers y reinicio."
+        next_action = "Publicar el recibo físico de infraestructura."
     elif code == "M1" and runtime_paper and runtime_zero:
-        state, pct = "YELLOW", 80
-        observed = "PAPER observado y real_orders_sent=0; la capacidad de rutas no se puede probar desde este proceso de lectura."
-        deviation = "Pulso de enrutamiento pendiente de evidencia de deploy."
-        blocker = "Sin acceso de auditoría a las variables de rutas."
-        next_action = "Conservar BLOCKED y validar rutas en el próximo deploy."
+        state = "YELLOW"
+        observed = "PAPER y contador local 0 informados por SQLite."
+        blocker = "Pendiente acreditar modo, rutas y contador con el recibo del despliegue activo."
+        next_action = "Validar los invariantes con el próximo recibo de runtime."
     elif prior:
         # Historical records remain visible, but are never a current GREEN.
         claim = historical_claim(prior)
@@ -132,18 +129,25 @@ def _row(milestone, prior, *, deep_db_check=False):
         "state": state, "compliance_pct": pct, "claim_status": claim,
         "implementation_status": impl, "work_status": work_status,
         "evidence_status": evidence_status, "owner": str(prior.get("owner") or "POROTA"),
-        "evidence_at": str(prior.get("evidence_at") or prior.get("recorded_at") or ""),
+        "evidence_at": str((runtime.get("observed_at") if criteria else None)
+                           or prior.get("evidence_at") or prior.get("recorded_at") or ""),
         "objective": milestone.goal,
         "expected_evidence": ", ".join(milestone.exit_criteria),
         "observed_evidence": observed, "deviation": deviation, "blocker": blocker,
-        "next_action": next_action, "evidence_ref": str(prior.get("evidence_ref") or "dynamic-read-only-evaluator"),
+        "next_action": next_action,
+        "evidence_ref": ("deploy/CURRENT_STATE_V2.json · recibo rootless de cierre" if criteria
+                         else str(prior.get("evidence_ref") or "dynamic-read-only-evaluator")),
+        "criteria_status": criteria,
         "evaluated_at": iso_now(), "dynamic": True,
     }
 
 
-def evaluate(records=(), *, deep_db_check=False):
+def evaluate(records=(), *, deep_db_check=False, runtime=None, observer=None):
     prior = latest_by_milestone(records or [])
-    return {m.code: _row(m, prior.get(m.code), deep_db_check=deep_db_check) for m in MILESTONES}
+    db_probe = _db_ok(deep=deep_db_check)
+    observer = _observer_evidence() if observer is None else observer
+    return {m.code: _row(m, prior.get(m.code), db_probe=db_probe, observer=observer,
+                         runtime=runtime or {}) for m in MILESTONES}
 
 
 def summary(rows):

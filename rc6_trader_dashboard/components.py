@@ -64,13 +64,13 @@ def badge(value):
     key = text.upper()
     if key == "HOT":
         tone, icon = "hot", "◆"
-    elif key == "WARM":
+    elif key in {"WARM", "AMARILLO"}:
         tone, icon = "warm", "◇"
     elif key == "DISCOVERY":
         tone, icon = "discovery", "⌕"
-    elif key in {"PASS", "HEALTHY", "FRESH", "RUNNING", "OK"}:
+    elif key in {"PASS", "HEALTHY", "FRESH", "RUNNING", "OK", "VERDE"}:
         tone, icon = "pass", "✓"
-    elif key in {"FAIL", "BLOCKED", "STALE", "ERROR", "HARD_STOP", "SOFT_STOP", "SERVICE_FAILED"}:
+    elif key in {"FAIL", "BLOCKED", "STALE", "ERROR", "HARD_STOP", "SOFT_STOP", "SERVICE_FAILED", "ROJO"}:
         tone, icon = "blocked", "!"
     else:
         tone, icon = "unknown", "·"
@@ -118,6 +118,8 @@ def value_html(row, field):
     if field.kind == "money":
         rendered = e(number(value)) + " <span class='currency'>" + e(row.get("currency") or "MONEDA_NO_VERIFICADA") + "</span>"
         return result_html(value, rendered) if field.key in RESULT_KEYS else rendered
+    if field.kind == "count":
+        return e(number(value, 0))
     if field.kind in {"number", "percent"}:
         return e(number(value)) + (" %" if field.kind == "percent" else "")
     if field.kind == "score":
@@ -139,7 +141,11 @@ def definition_list(row, columns):
 
 
 def detail(row, columns, row_id, index, *, label=None):
-    label = label or f"Detalle fila {index} · {row.get('symbol') or row.get('worker') or row.get('component') or row.get('currency') or row.get('id') or 'registro'}"
+    if label is None:
+        keys = ("symbol", "worker", "component", "unit", "store", "setting", "engine",
+                "strategy", "family", "currency", "label", "date_ar", "session_date", "id")
+        name = next((row[key] for key in keys if row.get(key) not in (None, "", UNKNOWN)), None)
+        label = f"Detalle fila {index}" + (f" · {sanitized(name)}" if name is not None else "")
     dialog_id = f"{row_id}-dialog"
     return (f"<button class='button detail-trigger' type='button' data-detail-dialog='{dialog_id}' "
             f"aria-haspopup='dialog' aria-controls='{dialog_id}'>{e(label)}</button>"

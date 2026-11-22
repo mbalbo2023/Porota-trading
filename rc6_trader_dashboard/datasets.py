@@ -1,5 +1,5 @@
 """View adapters to existing facts and a coherent future SHADOW cut."""
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 import os
 import re
@@ -7,6 +7,7 @@ import stat
 from pathlib import Path
 import hashlib
 from co_market_sessions_hf6 import byma_paper_spot_phase
+from rc6_scheduler_snapshot import freshness_budget, instant, systemd_clock
 
 from .projection import Page, UNKNOWN, age, freshness, json_object, contract_labels, validated_metrics
 
@@ -221,19 +222,9 @@ def artifact(p, kind):
     result = []
     captured = (payload.get("recorded_at") if kind == "scheduler" else
                 payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of"))
-    # One-minute exporter timer: three missed cycles are stale. Other
-    # artifacts retain their independent hourly display budget.
-    budget = 180 if kind == "scheduler" else 3600
+    budget = freshness_budget(instant(captured), p.now, len(rows)) if kind == "scheduler" else 3600
     snapshot_freshness = freshness(captured, p.now, budget)
     snapshot_fresh = snapshot_freshness == "FRESH"
-
-    def systemd_time(value):
-        if not isinstance(value, str) or not value.endswith(" UTC"):
-            return None
-        try:
-            return datetime.strptime(value, "%a %Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc).isoformat()
-        except ValueError:
-            return None
 
     for row in rows:
         if not isinstance(row, dict):
@@ -247,15 +238,22 @@ def artifact(p, kind):
             row_state = ("SERVICE_FAILED" if outcome not in {None, "", "success", "unknown"} else
                          "TIMER_ACTIVE" if enabled == "enabled" and active == "active" and outcome == "success" else
                          "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN)
+            wall_next = systemd_clock(row.get("next_elapse"))
+            mono_next = instant(row.get("next_elapse_monotonic_at"))
+            deadlines = [stamp for stamp in (wall_next, mono_next) if stamp is not None]
+            last_trigger = systemd_clock(row.get("last_trigger"))
             row = {**row, "state": row_state if current else UNKNOWN,
                    "enabled": enabled, "active": active,
-                   "next_run": systemd_time(row.get("next_elapse")),
-                   "last_run": systemd_time(row.get("last_trigger")),
+                   "next_run": min(deadlines).isoformat() if deadlines else None,
+                   "next_calendar": wall_next.isoformat() if wall_next else None,
+                   "next_monotonic": mono_next.isoformat() if mono_next else None,
+                   "last_run": last_trigger.isoformat() if last_trigger else None,
                    "description": row.get("description"),
                    "reason": ("Service result: " + str(outcome)[:64]) if outcome not in {None, "success"} else None}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
-        result.append({**row, "as_of": row.get("as_of") or captured,
-                       "source": files[kind], "freshness": freshness(row.get("as_of") or captured, p.now, budget)})
+        row_clock = captured if kind == "scheduler" else row.get("as_of") or captured
+        result.append({**row, "as_of": row_clock, "source": files[kind],
+                       "freshness": freshness(row_clock, p.now, budget)})
     page_state = state
     if kind == "scheduler":
         page_state = (snapshot_freshness if state == "AVAILABLE" and payload.get("state") == "OK"

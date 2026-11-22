@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import fcntl
 import json
 import os
 from pathlib import Path
 import re
+from shutil import disk_usage
 import stat
 import subprocess
 import sys
@@ -21,10 +23,13 @@ import tempfile
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+from rc6_validation_runtime import PROOF_SOURCE
 from scripts.porota_rootless_host import (
     Hold, Host, Identity, DB_RELATIVE, database_snapshot, no_alias,
     read_regular, read_release_state, require,
 )
+
+POSTCLOSE = "porota-snapshot-postclose-rc6.service"
 
 DOCKER_JOBS = {
     "porota-candle-integrity-rc6.service": ("observer", (("python", "/app/rc6_candle_integrity.py"),)),
@@ -32,7 +37,7 @@ DOCKER_JOBS = {
     "porota-market-watch-silence-rc6.service": ("observer", (("python", "-B", "/app/rc6_market_watch_silence.py"),)),
     "porota-full-db-integrity-rc6.service": ("observer", (("python", "/app/rc6_full_db_integrity.py"),)),
     "porota-snapshot-preopen-rc6.service": ("dashboard", (("python", "/app/rc6_snapshot.py", "--phase", "preopen"),)),
-    "porota-snapshot-postclose-rc6.service": ("dashboard", (
+    POSTCLOSE: ("dashboard", (
         ("python", "/app/rc6_snapshot.py", "--phase", "postclose"),
         ("python", "/app/rc6_postclose_review.py"), ("python", "/app/rc6_decision_evidence_report.py"))),
     "porota-local-eod-history-rc6.service": ("observer", (
@@ -216,6 +221,39 @@ def read_preopen_red_receipt(output):
         return None
 
 
+def publish_validation(manager, current, root, identity):
+    """Pass the already verified rootless identity to the fixed container command."""
+    health = current.get("health") or {}
+    controller = current.get("controller") or {}
+    proof = {
+        "source": PROOF_SOURCE, "observed_at": datetime.now(timezone.utc).isoformat(),
+        "candidate_sha": current.get("source_sha"), "candidate_tree_sha": current.get("source_tree"),
+        "deployment_sha": current.get("deployment_sha"), "image_id": current.get("image_id"),
+        "download_receipt_sha256": current.get("download_receipt_sha256"),
+        "orders_guard": health.get("orders_guard"), "rootless_pair": True,
+        "startup_verified": (health.get("observer") == "running" and health.get("dashboard") == "healthy"
+                             and controller.get("status") == "READY"
+                             and controller.get("source_sha") == current.get("source_sha")
+                             and controller.get("source_tree") == current.get("source_tree")),
+        "data_free_bytes": disk_usage(root / "data").free,
+        "docker_free_bytes": disk_usage(identity.store).free,
+    }
+    cid = current["roles"]["dashboard"]
+    raw = manager.docker.call("container", "exec", cid, "python", "-B", "/app/rc6_validation_publish.py",
+                              "--runtime-proof", json.dumps(proof, separators=(",", ":")), timeout=60)
+    receipt = json.loads(raw)
+    state = receipt.get("state")
+    require(state in {"PUBLISHED", "UNCHANGED", "NOT_DUE"}, "VALIDATION_PUBLICATION_UNVERIFIED")
+    entry = {"role": "dashboard", "cid": cid, "command": "validation_publish", "exit_code": 0,
+             "result": state}
+    if state != "NOT_DUE":
+        day, records = receipt.get("session_date"), receipt.get("records")
+        require(isinstance(day, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day)
+                and type(records) is int and records > 0, "VALIDATION_PUBLICATION_UNVERIFIED")
+        entry.update(session_date=day, records=records)
+    return entry
+
+
 def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subprocess.run):
     identity = identity or Identity.current()
     require(unit in ADAPTED_SERVICES, "SCHEDULER_UNIT_SCOPE")
@@ -226,6 +264,8 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
             commands_result = execute_commands(manager, current, role, commands,
                 timeout=900 if unit == "porota-full-db-integrity-rc6.service" else 600,
                 classified_critical=unit == INTROSPECTION)
+            if unit == POSTCLOSE:
+                commands_result.append(publish_validation(manager, current, root, identity))
         elif unit == INMARKET:
             baseline_path = identity.state / "inmarket-baseline-20260917"
             if not baseline_path.exists():

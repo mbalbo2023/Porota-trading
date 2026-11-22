@@ -100,12 +100,14 @@ def _columns(connection, table: str) -> set[str]:
 
 def build(db_path=None, now=None):
     """Construye un resumen compacto, reproducible y sin escritura en SQLite."""
-    now = now or datetime.now(TZ)
+    now = (now or datetime.now(TZ)).astimezone(TZ)
     day = now.date().isoformat()
     db_path = Path(db_path or database_path()).resolve()
     connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=20)
     connection.row_factory = sqlite3.Row
     try:
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("BEGIN")
         has_session_state = "session_state" in _columns(connection, "observer_state")
         observer = connection.execute(
             "SELECT mode,real_orders_sent" + (",session_state" if has_session_state else "") +
@@ -126,8 +128,9 @@ def build(db_path=None, now=None):
             WHERE (date(opened_at, '-3 hours')=? OR date(closed_at, '-3 hours')=?)""",
             (day, day))
         gates = _rows(connection, """
-            SELECT final_result FROM trade_gate_evaluations
+            SELECT final_result, COUNT(*) AS total FROM trade_gate_evaluations
             WHERE date(evaluated_at, '-3 hours')=?
+            GROUP BY final_result
         """, (day,))
         events = _rows(connection, """
             SELECT event_type, COUNT(*) AS total
@@ -148,7 +151,9 @@ def build(db_path=None, now=None):
 
     closed = [row for row in positions if row.get("status") == "CLOSED" and _local_day(row.get("closed_at")) == day]
     opened = [row for row in positions if row.get("status") == "OPEN" or _local_day(row.get("opened_at")) == day]
-    final = Counter(str(row.get("final_result") or "UNKNOWN") for row in gates)
+    final = Counter()
+    for row in gates:
+        final[str(row.get("final_result") or "UNKNOWN")] += row["total"]
     reasons = Counter(str(row.get("close_reason") or "UNSPECIFIED") for row in closed)
     events_by_type = ({str(row.get("event_type") or "UNKNOWN"): int(row.get("total") or 0)
                        for row in events} if events is not None else None)
