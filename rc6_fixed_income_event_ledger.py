@@ -25,6 +25,7 @@ from bs_instrument_contracts import (aware_datetime, cash_currency,
 from cf_sale_settlement import conservative_unconfirmed_availability
 from rc6_fixed_income_event_reducer import EconomicEvent, PositionSeed, reduce_events
 from rc6_fixed_income_runtime import _json, _digest
+from rc6_lelink_paper_maturity import is_lelink_lot, validate_lelink_event
 
 PAPER_ONLY = True
 ENTRY_AUTHORITY = False
@@ -204,17 +205,26 @@ def _opening_maturity_obligation(db, seed, event, receipt):
     # independently reviewed receipt contract remains readable and replayable.
     if not isinstance(plan, dict) or "reviewed_obligation_id" not in plan:
         return
+    if (plan.get("mode") != NATIVE_MATURITY_MODE
+            or event.obligation_id != plan["reviewed_obligation_id"]):
+        raise ValueError("FI_LEDGER_OPENING_OBLIGATION_MISMATCH")
+    lelink = is_lelink_lot(seed)
+    if lelink and event.kind == "FIXING":
+        return
+    # D30N6's cash was validated against the fixing, even if the opening
+    # plan could only freeze the obligation and entitlement dates.
+    has_frozen_cash = not lelink or "redemption_cash" in plan
     proof = receipt.get("entitlement") or {}
-    if (plan.get("mode") != NATIVE_MATURITY_MODE or event.kind != "AMORTIZATION"
-            or event.obligation_id != plan["reviewed_obligation_id"]
+    if (event.kind != "AMORTIZATION"
             or event.payment_currency != seed.trading_currency
             or aware_datetime(event.effective_at) != aware_datetime(plan["exit_at"])
             or aware_datetime(proof["ex_at"]) != aware_datetime(plan["ex_at"])
             or aware_datetime(proof["record_at"]) != aware_datetime(plan["record_at"])
             or decimal_value(event.nominal_redeemed, "redemption VN", positive=True) !=
                decimal_value(seed.initial_nominal, "entry VN", positive=True)
-            or decimal_value(event.cash_amount, "redemption cash", positive=True) !=
-               decimal_value(plan["redemption_cash"], "plan cash", positive=True)):
+            or (has_frozen_cash and
+                decimal_value(event.cash_amount, "redemption cash", positive=True) !=
+                decimal_value(plan["redemption_cash"], "plan cash", positive=True))):
         raise ValueError("FI_LEDGER_OPENING_OBLIGATION_MISMATCH")
 
 
@@ -257,6 +267,8 @@ def apply_verified_receipt(store, *, receipt_bytes, approved_sha256, source_byte
                           (seed.paper_id,)).fetchall()
         prior_events = tuple(EconomicEvent(**json.loads(row["event_json"])) for row in rows)
         _entitlement(seed, event, receipt, at, prior_events)
+        if is_lelink_lot(seed):
+            validate_lelink_event(seed, event, prior_events, as_of=at)
         _opening_maturity_obligation(db, seed, event, receipt)
         prior = next((row for row in rows if row["event_id"] == event.event_id), None)
         if prior:

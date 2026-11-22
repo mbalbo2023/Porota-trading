@@ -26,6 +26,7 @@ from rc6_fixed_income_event_ledger import (
 from rc6_fixed_income_event_reducer import EconomicEvent
 from rc6_fixed_income_portfolio_bridge import position_at
 from rc6_fixed_income_runtime import _digest, _json
+from rc6_lelink_paper_maturity import is_lelink_lot, validate_lelink_schedule
 
 PAPER_ONLY = True
 ENTRY_AUTHORITY = False
@@ -244,7 +245,8 @@ def apply_verified_redemption_review(store, *, receipt_bytes, approved_sha256,
         if seed.family not in FI_FAMILIES or identity != (
                 seed.symbol, seed.family, seed.market, seed.trading_currency, seed.settlement):
             raise ValueError("FI_REDEMPTION_IDENTITY_MISMATCH")
-        if seed.family == "LETRAS" and (
+        lelink = is_lelink_lot(seed)
+        if seed.family == "LETRAS" and not lelink and (
                 schedule.get("redemption_basis") != "FIXED_KNOWN_FACE" or
                 schedule.get("indexation") != "NONE" or
                 schedule.get("redemption_face_official") is not True):
@@ -278,6 +280,8 @@ def apply_verified_redemption_review(store, *, receipt_bytes, approved_sha256,
                 schedule.get("final_obligation_id") != final.obligation_id or
                 any(aware_datetime(e.effective_at) > maturity_at for e in events)):
             raise ValueError("FI_REDEMPTION_TERMINAL_EVENT_MISMATCH")
+        if lelink:
+            validate_lelink_schedule(seed, schedule, final, events, as_of=at)
         try:
             final_economics_match = (
                 cash_currency(final.payment_currency) == principal_currency and
