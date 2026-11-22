@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import errno
+import base64
 import importlib.util
 from datetime import datetime, timezone
 import hashlib
@@ -1055,7 +1056,8 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertNotIn("schedule", workflow["on"])
         options = workflow["on"]["workflow_dispatch"]["inputs"]["mode"]["options"]
         self.assertEqual(options, ["PREFLIGHT_ONLY", "CUSTODY_ONCE", custody.INVENTORY_MODE,
-                                   "RESTORED_HISTORY_MIGRATION_REHEARSAL"])
+                                   "RESTORED_HISTORY_MIGRATION_REHEARSAL", custody.HISTORY_UPGRADE_REHEARSAL,
+                                   "HISTORY_REFERENCE_PREPARE", "HISTORY_REFERENCE_APPLY"])
         roles = workflow["on"]["workflow_dispatch"]["inputs"]["database_role"]
         self.assertEqual(roles["options"], ["OBSERVER", "HISTORY"])
         self.assertEqual(roles["default"], "OBSERVER")
@@ -1066,6 +1068,9 @@ class ActionsBoundaryContracts(unittest.TestCase):
         steps = host["steps"]
         owner = next(step for step in steps if step.get("id") == "owner_gate")
         self.assertIn("inputs.mode == 'CUSTODY_ONCE'", owner["if"])
+        self.assertIn("inputs.mode == 'HISTORY_REFERENCE_PREPARE'", owner["if"])
+        self.assertIn("inputs.mode == 'HISTORY_REFERENCE_APPLY'", owner["if"])
+        self.assertIn("github.triggering_actor == 'mbalbo2023'", gate)
         self.assertIn("verify-owner", owner["run"])
         remote = next(step for step in steps if step.get("id") == "remote")
         self.assertIn("needs", host)
@@ -1084,6 +1089,43 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertIn("PREFLIGHT_METADATA_PASS", result["run"])
         self.assertIn("PRIVATE_SNAPSHOT_RESTORE_OK", result["run"])
         self.assertIn("a-custody-public.json", result["run"])
+
+    def test_sealed_history_download_validates_content_and_preserves_other_files(self):
+        tree, part = "a"*40, "b"*40
+        encrypted = b"synthetic sealed data"
+        index = {"sha": tree, "truncated": False,
+                 "tree": [{"path": "part-000.der", "type": "blob", "mode": "100644",
+                           "sha": part, "size": len(encrypted)}]}
+        blob = {"sha": part, "encoding": "base64", "content": base64.b64encode(encrypted).decode()}
+
+        def fake_response(request, timeout):
+            return io.BytesIO(json.dumps(index if request.full_url.endswith(tree) else blob).encode())
+
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"GH_TOKEN": "test"}):
+            output = Path(folder) / "sealed.cms"
+            digest = hashlib.sha256(encrypted).hexdigest()
+            with patch.object(custody.urllib.request, "urlopen", fake_response):
+                custody.fetch_sealed_history(tree, digest, output)
+                self.assertEqual(output.read_bytes(), encrypted)
+                with self.assertRaises(FileExistsError):
+                    custody.fetch_sealed_history(tree, digest, output)
+                self.assertTrue(output.is_file())
+                with self.assertRaisesRegex(custody.Hold, "HISTORY_IMPORT_CAPSULE_DIGEST_MISMATCH"):
+                    custody.fetch_sealed_history(tree, "f"*64, Path(folder) / "invalid.cms")
+                self.assertFalse((Path(folder) / "invalid.cms").exists())
+
+    def test_history_reference_receipt_requires_the_exact_count(self):
+        evidence = {"schema": "rc6.history-reference-transfer.v1", "state": "HISTORY_REFERENCE_APPLIED",
+                    "run_id": "44917242971", "restore_sha256": "a"*64,
+                    "source_reported_committed_rows": 152052, "legacy_versions_preserved": 596196,
+                    "canonical_updates": 152052, "versions_appended": 152052,
+                    "quick_check": "ok", "preparation": "SCHEMA_UPGRADED", "private": "never expose"}
+        verified = custody.history_reference_receipt(evidence, "HISTORY_REFERENCE_APPLY", 0)
+        self.assertEqual(verified["state"], "HISTORY_REFERENCE_APPLIED")
+        self.assertNotIn("private", verified)
+        evidence["source_reported_committed_rows"] -= 1
+        self.assertEqual(custody.history_reference_receipt(evidence, "HISTORY_REFERENCE_APPLY", 0)["state"],
+                         "NO_VERIFICADO")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, closing, contextmanager
+import base64
 from datetime import date, datetime, timedelta, timezone
 import errno
 import fcntl
@@ -19,6 +20,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -35,6 +37,16 @@ CUSTODY = Path("/home/porotaadmin/.local/share/rc6-observer-custody")
 EXPECTED_SOURCE_SHA = "615ed9056e672074a4ea01ddc7ff800409a2f9ca"
 EXPECTED_TREE_SHA = "54618bc017cfea0167c3e94e7a460631ad4543b5"
 EXPECTED_IMAGE_ID = "sha256:384282ef540e0e7133f5d0449f02a2953306a318a4f673e7817ed06fb0bddd4b"
+CUSTODY_RELEASE = (EXPECTED_SOURCE_SHA, EXPECTED_TREE_SHA, EXPECTED_IMAGE_ID)
+HISTORY_MODES = {"HISTORY_REFERENCE_PREPARE", "HISTORY_REFERENCE_APPLY"}
+HISTORY_WRITE_SCOPE = "RC6_HISTORY_REFERENCE_IMPORT_ONCE"
+HISTORY_LEGACY_ROWS = 596196
+CAPSULE_MAX = 16 * 1024**2
+CAPSULE_PART = 512 * 1024
+CAPTURE_PINS = {
+    "cutoff.zip": ("b420f63c42f7ac4ceb791ec9bc521c281cb08a1a8e62f094d4bf46c421f38ff2", 151970),
+    "complement.zip": ("4a4aabbe0633c60b13238691f4f3abf3bec1fee492bbdf6ae4eee53bd3944756", 82),
+}
 MAX_DB_BYTES = 5 * 1024**3
 MAX_WAL_BYTES = 512 * 1024**2
 MIN_RESERVE_BYTES = 2 * 1024**3
@@ -150,7 +162,8 @@ def _operator_identity_guard() -> pwd.struct_passwd:
     return account
 
 
-def _release_marker(path: Path) -> dict:
+def _release_marker(path: Path, release=CUSTODY_RELEASE) -> dict:
+    source_sha, tree_sha, image_id = release
     info = _safe_file(path, maximum=16 * 1024)
     try:
         directory = _anchor_directory(path.parent)
@@ -175,9 +188,9 @@ def _release_marker(path: Path) -> dict:
     except (OSError, ValueError, TypeError) as exc:
         raise Hold("RELEASE_PAPER_IDENTITY_UNVERIFIED") from exc
     if (not isinstance(marker, dict)
-            or marker.get("candidate_sha") != EXPECTED_SOURCE_SHA
-            or marker.get("candidate_tree_sha") != EXPECTED_TREE_SHA
-            or marker.get("image_id") != EXPECTED_IMAGE_ID
+            or marker.get("candidate_sha") != source_sha
+            or marker.get("candidate_tree_sha") != tree_sha
+            or marker.get("image_id") != image_id
             or marker.get("validation_status") != "VALIDATED_RUNTIME"
             or marker.get("mode") != "PRODUCTION_PAPER"
             or type(marker.get("real_orders_sent")) is not int
@@ -190,7 +203,7 @@ def _release_marker(path: Path) -> dict:
 
 
 def host_preflight(db_path: Path = OBSERVER, marker_path: Path = MARKER,
-                   custody_root: Path = CUSTODY) -> dict:
+                   custody_root: Path = CUSTODY, *, release=CUSTODY_RELEASE) -> dict:
     """Pure metadata read: never open SQLite or create the custody directory."""
     db_path, marker_path, custody_root = map(Path, (db_path, marker_path, custody_root))
     with _custody_parent_fd(custody_root):
@@ -218,7 +231,7 @@ def host_preflight(db_path: Path = OBSERVER, marker_path: Path = MARKER,
             raise Hold("SQLITE_SIDECAR_UNSAFE")
     if wal_info and wal_info.st_size > 0 and shm_info is None:
         raise Hold("SQLITE_SIDECAR_UNSAFE")
-    _release_marker(marker_path)
+    _release_marker(marker_path, release)
     total = source.st_size + (wal_info.st_size if wal_info else 0)
     required = 3 * total + MIN_RESERVE_BYTES
     free = shutil.disk_usage(custody_root.parent).free
@@ -564,10 +577,11 @@ def _docker_readonly_json(account: pwd.struct_passwd, *args: str):
 
 def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
                                  marker: dict, db_path: Path, *,
-                                 data_root: Path = ROOT,
+                                 data_root: Path = ROOT, release=CUSTODY_RELEASE,
                                  operator_home: Path = Path("/home/porotaadmin")) -> str:
     """Cross-bind marker ↔ private CIDs ↔ inspect ↔ exact host data inode."""
     fail = "RUNTIME_DB_BINDING_NO_VERIFICADO"
+    source_sha, tree_sha, image_id = release
     if (not isinstance(current, dict) or not isinstance(daemon, dict)
             or not isinstance(containers, dict) or not isinstance(marker, dict)):
         raise Hold(fail)
@@ -578,9 +592,9 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
             or current.get("execution_mode") != "SIMULATION"
             or type(current.get("real_orders_sent")) is not int
             or current["real_orders_sent"] != 0
-            or current.get("source_sha") != EXPECTED_SOURCE_SHA
-            or current.get("source_tree") != EXPECTED_TREE_SHA
-            or current.get("image_id") != EXPECTED_IMAGE_ID
+            or current.get("source_sha") != source_sha
+            or current.get("source_tree") != tree_sha
+            or current.get("image_id") != image_id
             or current["source_sha"] != marker.get("candidate_sha")
             or current["source_tree"] != marker.get("candidate_tree_sha")
             or current["image_id"] != marker.get("image_id")
@@ -611,8 +625,8 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
         state = item.get("State") or {}
         if (item.get("Id") != roles[role]
                 or item.get("Name") != f"/porota-rc6-{role}-{current['attempt']}"
-                or item.get("Image") != EXPECTED_IMAGE_ID
-                or config.get("Image") != EXPECTED_IMAGE_ID
+                or item.get("Image") != image_id
+                or config.get("Image") != image_id
                 or state.get("Status") != "running"
                 or state.get("OOMKilled") is True
                 or labels.get("io.porota.project") != "rc6"
@@ -641,8 +655,8 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
                     or key in env or "\x00" in value):
                 raise Hold(fail)
             env[key] = value
-        required = {"POROTA_BUILD_SHA": EXPECTED_SOURCE_SHA,
-                    "POROTA_CANDIDATE_TREE_SHA": EXPECTED_TREE_SHA,
+        required = {"POROTA_BUILD_SHA": source_sha,
+                    "POROTA_CANDIDATE_TREE_SHA": tree_sha,
                     "PAPER_V17_DB_PATH": "/app/data/paper_v17/observer_v17.db",
                     "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
                     "EXECUTION_MODE": "SIMULATION",
@@ -676,7 +690,7 @@ def _verify_rootless_attestation(current: dict, daemon: dict, containers: dict,
     return "BOTH_ROOTLESS_CIDS_DATA_DB_INODE_MATCHED"
 
 
-def _rootless_runtime_binding(marker: dict, db_path: Path) -> str:
+def _rootless_runtime_binding(marker: dict, db_path: Path, *, release=CUSTODY_RELEASE) -> str:
     """No Docker writes, no credential forwarding, no silent rootful fallback."""
     try:
         account, current = _rootless_current_state()
@@ -694,7 +708,7 @@ def _rootless_runtime_binding(marker: dict, db_path: Path) -> str:
                 raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
             containers[role] = items[0]
         result = _verify_rootless_attestation(current, daemon, containers, marker,
-                                              db_path, operator_home=Path(account.pw_dir))
+                                              db_path, operator_home=Path(account.pw_dir), release=release)
         if _rootless_current_state()[1] != current:
             raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
         return result
@@ -1044,7 +1058,7 @@ def source_continuity(before: dict, after: dict) -> str:
 
 def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                       custody_root: Path = CUSTODY, *, run_id: str,
-                      paper_db_path: Path | None = None) -> dict:
+                      paper_db_path: Path | None = None, release=CUSTODY_RELEASE) -> dict:
     """Explicit writer mode: one private online backup + separate restore check.
 
     Never copy the base file or WAL bytewise. The SQLite backup API merges
@@ -1059,8 +1073,8 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
         _operator_identity_guard()
     if db_path == HISTORY and paper_db_path != OBSERVER:
         raise Hold("PAPER_WITNESS_REQUIRED_FOR_HISTORY")
-    before = host_preflight(db_path, marker_path, custody_root)
-    runtime_binding = _rootless_runtime_binding(_release_marker(marker_path), db_path)
+    before = host_preflight(db_path, marker_path, custody_root, release=release)
+    runtime_binding = _rootless_runtime_binding(_release_marker(marker_path, release), db_path, release=release)
     source_before = source_metadata(db_path)
     deadline = time.monotonic() + BACKUP_TIMEOUT_SECONDS
     # A real WAL reader may briefly affect -shm locking; this path requires
@@ -1118,7 +1132,7 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     _live_paper_zero(paper)
                     if _exit_quiescence(paper) != exit_quiescence:
                         raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
-                    if (_rootless_runtime_binding(_release_marker(marker_path), db_path)
+                    if (_rootless_runtime_binding(_release_marker(marker_path, release), db_path, release=release)
                             != runtime_binding):
                         raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
                     if time.monotonic() > deadline:
@@ -1139,7 +1153,7 @@ def host_custody_once(db_path: Path = OBSERVER, marker_path: Path = MARKER,
                     if time.monotonic() > deadline:
                         raise Hold("CUSTODY_BACKUP_TIMEOUT")
                     continuity = source_continuity(source_before, source_metadata(db_path))
-                    _release_marker(marker_path)  # Same pinned release after copy.
+                    _release_marker(marker_path, release)  # Same pinned release after copy.
                     receipt = {"schema": SCHEMA, "state": "PRIVATE_SNAPSHOT_RESTORE_OK",
                                "read_only": False, "source_sql_writes": 0,
                                "shm_locking_possible": True,
@@ -1275,7 +1289,7 @@ def _field(body: str, key: str) -> str:
     return hits[0].strip()
 
 
-def validate_deploy_owner(receipt: dict, comments: list[dict], *, database_role="OBSERVER") -> str:
+def validate_deploy_owner(receipt: dict, comments: list[dict], *, database_role="OBSERVER", host_scope=None) -> str:
     """Separate current global DEPLOY_OWNER lease, independent of WRITE_OWNER."""
     if (not isinstance(receipt, dict) or type(receipt.get("id")) is not int
             or receipt.get("issue_url") != OWNER_ISSUE
@@ -1287,7 +1301,7 @@ def validate_deploy_owner(receipt: dict, comments: list[dict], *, database_role=
             or _field(body, "Ownership role") != "DEPLOY_OWNER"
             or _field(body, "Ownership status") != "ACTIVE"
             or database_role not in DATABASES
-            or _field(body, "Host scope") != f"RC6_{database_role}_ONLINE_CUSTODY_ONCE"):
+            or _field(body, "Host scope") != (host_scope or f"RC6_{database_role}_ONLINE_CUSTODY_ONCE")):
         raise Hold("DEPLOY_OWNER_RECEIPT_INVALID")
     workstream = _field(body, "Workstream ID")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{1,79}", workstream):
@@ -1326,7 +1340,7 @@ def validate_deploy_owner(receipt: dict, comments: list[dict], *, database_role=
     return workstream
 
 
-def verify_owner_from_github(receipt_id: str, *, database_role="OBSERVER") -> str:
+def verify_owner_from_github(receipt_id: str, *, database_role="OBSERVER", host_scope=None) -> str:
     """Runner-only GitHub lease validation, never executed on the droplet."""
     if not re.fullmatch(r"[1-9][0-9]{5,15}", receipt_id):
         raise Hold("DEPLOY_OWNER_ID_INVALID")
@@ -1361,7 +1375,7 @@ def verify_owner_from_github(receipt_id: str, *, database_role="OBSERVER") -> st
             raise Hold("DEPLOY_OWNER_LEDGER_UNAVAILABLE")
     except (OSError, ValueError, TypeError) as exc:
         raise Hold("DEPLOY_OWNER_API_UNAVAILABLE") from exc
-    return validate_deploy_owner(receipt, comments, database_role=database_role)
+    return validate_deploy_owner(receipt, comments, database_role=database_role, host_scope=host_scope)
 
 
 def rehearse_restored_history(database: Path, product: Path, run_id: str, expected_sha: str) -> dict:
@@ -1406,9 +1420,355 @@ def rehearse_restored_history(database: Path, product: Path, run_id: str, expect
             "cross_database_pins": "NO_VERIFICADO"}
 
 
+def _history_release(source, tree, image):
+    if (not re.fullmatch(r"[0-9a-f]{40}", source) or not re.fullmatch(r"[0-9a-f]{40}", tree)
+            or not image.startswith("sha256:") or not HEX64.fullmatch(image[7:])):
+        raise Hold("HISTORY_IMPORT_RELEASE_INVALID")
+    return source, tree, image
+
+
+@contextmanager
+def _history_eod_lock():
+    lock_path = HISTORY.with_suffix(HISTORY.suffix + ".local-eod.lock")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1:
+            raise Hold("HISTORY_IMPORT_LOCK_UNSAFE")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Hold("HISTORY_IMPORT_WRITER_BUSY") from exc
+        yield
+    finally:
+        os.close(fd)
+
+
+def _history_source_pin():
+    meta = source_metadata(HISTORY)
+    wal = meta["wal"]
+    return {"db": list(meta["db"]), "wal": list(wal) if wal and wal[2] else None}
+
+
+def _history_folder(run_id):
+    if not RUN_ID.fullmatch(run_id):
+        raise Hold("HISTORY_IMPORT_RUN_ID_INVALID")
+    path = CUSTODY / ("history_" + run_id)
+    fd = _anchor_directory(path)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise Hold("HISTORY_IMPORT_DIRECTORY_UNSAFE")
+    finally:
+        os.close(fd)
+    return path
+
+
+def prepare_reference_history(run_id, release):
+    _operator_identity_guard()
+    with _history_eod_lock():
+        before = _history_source_pin()
+        receipt = host_custody_once(HISTORY, run_id=run_id, paper_db_path=OBSERVER, release=release)
+        if _history_source_pin() != before:
+            raise Hold("HISTORY_IMPORT_SOURCE_CHANGED")
+        folder = _history_folder(run_id)
+        cert, key = folder / "transfer.crt", folder / "transfer.key"
+        with _private_umask():
+            subprocess.run(
+                ["/usr/bin/openssl", "req", "-new", "-x509", "-newkey", "rsa:3072", "-nodes",
+                 "-days", "1", "-subj", "/CN=RC6-HISTORY-ONE-SHOT", "-keyout", str(key), "-out", str(cert)],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+            with (folder / "reference-apply.json").open("x", encoding="utf-8") as f:
+                json.dump({"release": release, "source": before, "restore_sha256": receipt["restore_sha256"]}, f)
+                f.flush()
+                os.fsync(f.fileno())
+        return {"schema": "rc6.history-reference-transfer.v1", "state": "HISTORY_REFERENCE_READY",
+                "run_id": run_id, "restore_sha256": receipt["restore_sha256"],
+                "certificate_b64": base64.b64encode(cert.read_bytes()).decode("ascii")}
+
+
+HISTORY_LOADER = r"""
+from contextlib import closing
+from hashlib import file_digest
+from pathlib import Path
+import json
+import os
+import shutil
+import sqlite3
+import sys
+import tarfile
+import tempfile
+
+from scripts.rc6_history_import_source_reported import import_iol_export
+
+destination = Path('/app/data/market_history.db')
+identity = tuple(map(int, sys.argv[1].split(':')))
+legacy = int(sys.argv[2])
+pins = json.loads(sys.argv[3])
+with tempfile.TemporaryDirectory(prefix='rc6-iol-') as folder:
+    storage = Path(folder)
+    names = set()
+    with tarfile.open(fileobj=sys.stdin.buffer, mode='r|') as bundle:
+        for member in bundle:
+            if member.name not in pins or member.name in names or not member.isreg() or not 0 < member.size <= 16*1024**2:
+                raise SystemExit('HISTORY_IMPORT_CAPSULE_INVALID')
+            names.add(member.name)
+            with bundle.extractfile(member) as src, (storage / member.name).open('xb') as dst:
+                shutil.copyfileobj(src, dst, 1024*1024)
+    if names != set(pins):
+        raise SystemExit('HISTORY_IMPORT_CAPSULE_INVALID')
+    for name, (digest, _) in pins.items():
+        with (storage / name).open('rb') as f:
+            if file_digest(f, 'sha256').hexdigest() != digest:
+                raise SystemExit('HISTORY_IMPORT_CAPTURE_DIGEST_MISMATCH')
+    results = {}
+    for name, (digest, expected) in pins.items():
+        result = import_iol_export(storage / name, destination, digest, existing_identity=identity,
+                                   expected_legacy_versions=legacy if name == 'cutoff.zip' else None)
+        if result.get('committed_rows') != expected or result['readiness_implication'] != 'NONE':
+            raise SystemExit('HISTORY_IMPORT_ACCOUNTING_MISMATCH')
+        results[name] = result
+    with closing(sqlite3.connect(destination.as_uri()+'?mode=ro', uri=True, timeout=1)) as c:
+        if c.execute('PRAGMA foreign_key_check').fetchone():
+            raise SystemExit('HISTORY_IMPORT_FOREIGN_KEY_FAILED')
+        immutable_count = c.execute('SELECT COUNT(*) FROM history_versions_v2_legacy').fetchone()[0]
+        if immutable_count != legacy:
+            raise SystemExit('HISTORY_IMPORT_LEGACY_COUNT_CHANGED')
+    stat = destination.stat()
+    if (stat.st_dev, stat.st_ino) != identity:
+        raise SystemExit('HISTORY_IMPORT_INODE_CHANGED')
+    print(json.dumps({
+        'source_reported_committed_rows': sum(result['committed_rows'] for result in results.values()),
+        'versions_appended': sum(result['versions_appended'] for result in results.values()),
+        'canonical_updates': sum(result['canonical_updates'] for result in results.values()),
+        'legacy_versions_preserved': immutable_count,
+        'preparation': results['cutoff.zip']['schema_upgrade']['state'],
+        'quick_check': 'ok',
+    }))
+"""
+
+
+def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
+    account = _operator_identity_guard()
+    if not RUN_ID.fullmatch(apply_run) or not HEX64.fullmatch(capsule_digest):
+        raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+    folder = _history_folder(prepare_run)
+    if not (folder / "transfer.key").is_file() or (folder / "transfer.key").is_symlink():
+        raise Hold("HISTORY_IMPORT_KEY_UNAVAILABLE")
+    fd = _anchor_directory(folder)
+    try:
+        manifest, _ = _open_private_restore_member(fd, "reference-apply.json", 8192)
+        sealed, _ = _open_private_restore_member(fd, "sealed-" + apply_run + ".cms", CAPSULE_MAX)
+        with manifest, sealed:
+            capture = json.load(manifest)
+            if tuple(capture.get("release", ())) != release:
+                raise Hold("HISTORY_IMPORT_RELEASE_INVALID")
+            if hashlib.file_digest(sealed, "sha256").hexdigest() != capsule_digest:
+                raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+            sealed.seek(0)
+            with _private_umask(), tempfile.TemporaryDirectory(prefix="apply-", dir=folder) as scratch:
+                bundle = Path(scratch) / "reference.tar"
+                with bundle.open("xb") as out:
+                    subprocess.run(
+                        ["/usr/bin/openssl", "cms", "-decrypt", "-binary", "-inform", "DER",
+                         "-recip", str(folder / "transfer.crt"), "-inkey", str(folder / "transfer.key")],
+                        stdin=sealed, stdout=out, stderr=subprocess.DEVNULL, check=True, timeout=60)
+                if not 0 < bundle.stat().st_size <= CAPSULE_MAX:
+                    raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+                deadline = time.monotonic() + 165
+                with _history_eod_lock(), \
+                        _verified_restore(CUSTODY, "HISTORY", prepare_run, deadline,
+                                          maximum=MIGRATION_MAX_BYTES,
+                                          expected_sha=capture["restore_sha256"]), \
+                        _anchored_source_sqlite(OBSERVER) as paper:
+                    marker = _release_marker(MARKER, release)
+                    _rootless_runtime_binding(marker, HISTORY, release=release)
+                    _live_paper_zero(paper)
+                    proof = _exit_quiescence(paper)
+                    if _history_source_pin() != capture["source"]:
+                        raise Hold("HISTORY_IMPORT_SOURCE_CHANGED")
+                    _, current = _rootless_current_state()
+                    cid = current["roles"]["observer"]
+                    if not HEX64.fullmatch(cid) or current["source_sha"] != release[0]:
+                        raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
+                    identity = ":".join(map(str, capture["source"]["db"][:2]))
+                    docker_config = Path(account.pw_dir) / ".config/porota-rc6/client"
+                    with bundle.open("rb") as payload:
+                        result = subprocess.run(
+                            ["/usr/bin/docker", "--config", str(docker_config), "--host",
+                             "unix:///run/user/1000/porota-rc6-docker.sock", "exec", "-i", cid,
+                             "python", "-B", "-c", HISTORY_LOADER, identity, str(HISTORY_LEGACY_ROWS),
+                             json.dumps(CAPTURE_PINS, separators=(",", ":"))],
+                            stdin=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            timeout=450, cwd="/")
+                    if result.returncode or len(result.stdout) > 8192:
+                        cause = re.search(rb'\b(HISTORY_[A-Z0-9_]{3,85})\s*$', result.stderr.strip())
+                        raise Hold(cause[1].decode() if cause else "HISTORY_IMPORT_DOCKER_FAILED")
+                    observed = json.loads(result.stdout)
+                    _rootless_runtime_binding(_release_marker(MARKER, release), HISTORY, release=release)
+                    _live_paper_zero(paper)
+                    if _exit_quiescence(paper) != proof:
+                        raise Hold("EXIT_QUIESCENCE_UNVERIFIED")
+        receipt = history_reference_receipt(
+            {"schema": "rc6.history-reference-transfer.v1", "state": "HISTORY_REFERENCE_APPLIED",
+             "run_id": apply_run, "restore_sha256": capture["restore_sha256"], **observed},
+            "HISTORY_REFERENCE_APPLY", 0)
+        if receipt["state"] != "HISTORY_REFERENCE_APPLIED":
+            raise Hold("HISTORY_IMPORT_RECEIPT_INVALID")
+        for name in ("transfer.key", "transfer.crt", "sealed-" + apply_run + ".cms"):
+            os.unlink(name, dir_fd=fd)
+        os.fsync(fd)
+        return receipt
+    finally:
+        os.close(fd)
+
+
+def history_reference_receipt(raw, mode, rc):
+    schema = "rc6.history-reference-transfer.v1"
+    expected = {"HISTORY_REFERENCE_PREPARE": "HISTORY_REFERENCE_READY",
+                "HISTORY_REFERENCE_APPLY": "HISTORY_REFERENCE_APPLIED"}
+    failed = {"schema": schema, "state": "NO_VERIFICADO"}
+    if not isinstance(raw, dict) or rc or raw.get("schema") != schema or raw.get("state") != expected.get(mode) \
+            or not RUN_ID.fullmatch(str(raw.get("run_id", ""))) or not HEX64.fullmatch(str(raw.get("restore_sha256", ""))):
+        reason = str(raw.get("failure_reason", "")) if isinstance(raw, dict) else ""
+        if re.fullmatch(r"(?:HISTORY|RUNTIME|CUSTODY|PRIVATE|SOURCE|PAPER|EXIT|SQLITE|RESTORED)_[A-Z0-9_]{3,90}", reason):
+            failed["failure_reason"] = reason
+        return failed
+    core = {key: raw[key] for key in ("schema", "state", "run_id", "restore_sha256")}
+    if mode == "HISTORY_REFERENCE_PREPARE":
+        cert = raw.get("certificate_b64")
+        if not isinstance(cert, str) or not 100 <= len(cert) <= 4096 or not re.fullmatch(r"[A-Za-z0-9+/=]+", cert):
+            return failed
+        return core | {"certificate_b64": cert}
+    if (raw.get("source_reported_committed_rows") != 152052 or raw.get("legacy_versions_preserved") != HISTORY_LEGACY_ROWS
+            or raw.get("quick_check") != "ok" or raw.get("preparation") not in {"SCHEMA_UPGRADED", "SCHEMA_ALREADY_UPGRADED"}):
+        return failed
+    changes = ("canonical_updates", "versions_appended")
+    if any(type(raw.get(k)) is not int or not 0 <= raw[k] <= 152052 for k in changes):
+        return failed
+    return core | {key: raw[key] for key in (*changes, "source_reported_committed_rows",
+                                             "legacy_versions_preserved", "quick_check", "preparation")}
+
+
+def fetch_sealed_history(tree, expected, destination):
+    if (not re.fullmatch(r"[0-9a-f]{40}", tree) or not HEX64.fullmatch(expected)
+            or not os.environ.get("GH_TOKEN")):
+        raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+    api = "https://api.github.com/repos/" + OWNER_BRANCH + "/git/"
+
+    def fetch(path, maximum):
+        request = urllib.request.Request(api + path, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+            "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            raw = response.read(maximum + 1)
+        if len(raw) > maximum:
+            raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+        return json.loads(raw)
+
+    index = fetch("trees/" + tree, 32768)
+    entries = index.get("tree")
+    if index.get("sha") != tree or index.get("truncated") is not False or not isinstance(entries, list) \
+            or not 1 <= len(entries) <= CAPSULE_MAX // CAPSULE_PART:
+        raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+    digest = hashlib.sha256()
+    created = False
+    try:
+        with _private_umask(), destination.open("xb") as output:
+            created = True
+            for number, entry in enumerate(entries):
+                sha, declared = entry.get("sha", ""), entry.get("size")
+                if (entry.get("path") != f"part-{number:03d}.der" or entry.get("type") != "blob"
+                        or entry.get("mode") != "100644" or not re.fullmatch(r"[0-9a-f]{40}", sha)
+                        or type(declared) is not int or not 1 <= declared <= CAPSULE_PART
+                        or (number != len(entries)-1 and declared != CAPSULE_PART)):
+                    raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+                blob = fetch("blobs/" + sha, CAPSULE_PART * 2)
+                if blob.get("sha") != sha or blob.get("encoding") != "base64":
+                    raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+                part = base64.b64decode("".join(blob["content"].splitlines()), validate=True)
+                if len(part) != declared:
+                    raise Hold("HISTORY_IMPORT_CAPSULE_INVALID")
+                output.write(part)
+                digest.update(part)
+        if digest.hexdigest() != expected:
+            raise Hold("HISTORY_IMPORT_CAPSULE_DIGEST_MISMATCH")
+    except BaseException:
+        if created:
+            destination.unlink()
+        raise
+
+
+
+HISTORY_UPGRADE_REHEARSAL = "RESTORED_HISTORY_UPGRADE_REHEARSAL"
+HISTORY_UPGRADE_SCHEMA = "rc6.restored-history-upgrade-rehearsal.v1"
+REHEARSE_UPGRADE = """
+from pathlib import Path
+import json
+import sys
+from cu_history_store_v2_hf6 import upgrade_existing_history
+from cv_history_store_adapter_hf6 import HistoricalStore
+
+target = Path(sys.argv[1])
+info = target.stat()
+store = HistoricalStore(str(target), source_reported_only=True,
+                        existing_history_identity=(info.st_dev, info.st_ino))
+result = upgrade_existing_history(store, expected_versions=int(sys.argv[2]), seconds=510)
+assert (target.stat().st_dev,target.stat().st_ino)==(info.st_dev,info.st_ino)
+retry = upgrade_existing_history(store, expected_versions=int(sys.argv[2]), seconds=120)
+assert retry['state']=='SCHEMA_ALREADY_UPGRADED'
+with store.connect() as c:
+    names = {row[0] for row in c.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+    result['audit_tables_permanent'] = sum('migration_' in name for name in names)
+    result['exact_canonical_rows'] = c.execute(
+         "SELECT COUNT(*) FROM history_canonical_v2 WHERE price_basis='RAW'").fetchone()[0]
+print(json.dumps(result))
+"""
+
+
+def rehearse_existing_upgrade(database, product, history_run, expected_sha):
+    database = Path(database)
+    runner = Path(os.environ["RUNNER_TEMP"]).resolve()
+    if (os.environ.get("GITHUB_ACTIONS") != "true" or database.is_symlink()
+            or not database.resolve().is_relative_to(runner)
+            or not RUN_ID.fullmatch(history_run) or not HEX64.fullmatch(expected_sha)
+            or not 4096 <= database.stat().st_size <= MIGRATION_MAX_BYTES
+            or _sha256(database) != expected_sha):
+        raise Hold("OFFHOST_RESTORE_BINDING_UNVERIFIED")
+    with tempfile.TemporaryDirectory(prefix="history-upgrade-", dir=runner) as scratch:
+        target = Path(scratch) / "market_history.db"
+        shutil.copyfile(database, target)
+        task = subprocess.run([sys.executable, "-B", "-c", REHEARSE_UPGRADE,
+                               str(target), str(HISTORY_LEGACY_ROWS)],
+                              cwd=product, capture_output=True, timeout=650, check=False)
+        if task.returncode:
+            cause = re.search(rb'\b(HISTORY_[A-Z0-9_]{3,85})\s*$', task.stderr.strip())
+            raise Hold(cause[1].decode() if cause else "OFFHOST_HISTORY_UPGRADE_FAILED")
+        if len(task.stdout) > 8192:
+            raise Hold("OFFHOST_HISTORY_UPGRADE_FAILED")
+        result = json.loads(task.stdout)
+    if (result.get("state") != "SCHEMA_UPGRADED" or result.get("source_rows") != HISTORY_LEGACY_ROWS
+            or result.get("migrated_rows") != 0 or result.get("quarantined_rows") != HISTORY_LEGACY_ROWS
+            or result.get("audit_tables_permanent") != 0 or result.get("exact_canonical_rows") != 0
+            or _sha256(database) != expected_sha):
+        raise Hold("OFFHOST_HISTORY_UPGRADE_ACCOUNTING_FAILED")
+    return {"schema": HISTORY_UPGRADE_SCHEMA, "state": "RESTORED_HISTORY_UPGRADE_REHEARSED",
+            "history_run": history_run, "source_sha256": expected_sha, "legacy_versions": HISTORY_LEGACY_ROWS,
+            "new_exact_rows": 0, "permanent_migration_audit_tables": 0,
+            "legacy_canonical_rows": result["legacy_canonical_rows"], "source_sql_writes": 0}
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     try:
+        if arguments[:1] == ["host-history-prepare"] and len(arguments) == 5:
+            print(json.dumps(prepare_reference_history(arguments[1], _history_release(*arguments[2:]))))
+            return 0
+        if arguments[:1] == ["host-history-apply"] and len(arguments) == 7:
+            print(json.dumps(apply_reference_history(*arguments[1:4], _history_release(*arguments[4:]))))
+            return 0
+        if arguments[:1] == ["fetch-sealed-history"] and len(arguments) == 4:
+            fetch_sealed_history(arguments[1], arguments[2], Path(arguments[3]))
+            return 0
         if arguments[:1] == ["host-preflight"] and len(arguments) in (1, 2):
             _operator_identity_guard()
             role = arguments[1] if len(arguments) == 2 else "OBSERVER"
@@ -1438,7 +1798,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if len(arguments) == 2 and arguments[0] == "verify-owner":
             workstream = verify_owner_from_github(arguments[1],
-                database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"))
+                database_role=os.environ.get("REQUEST_DATABASE_ROLE", "OBSERVER"),
+                host_scope=(HISTORY_WRITE_SCOPE if os.environ.get("REQUEST_MODE") in HISTORY_MODES else None))
             print("DEPLOY_OWNER_VERIFIED=" + workstream)
             return 0
         if len(arguments) == 5 and arguments[0] == "sanitize":
@@ -1453,7 +1814,9 @@ def main(argv: list[str] | None = None) -> int:
                     raw = {}
             else:
                 raw = {}
-            if mode == INVENTORY_MODE:
+            if mode in HISTORY_MODES:
+                public = history_reference_receipt(raw, mode, int(rc_text))
+            elif mode == INVENTORY_MODE:
                 public = sanitize_restored_inventory(
                     raw, remote_rc=int(rc_text), observer_run=os.getenv("OBSERVER_RESTORE_RUN", ""),
                     history_run=os.getenv("HISTORY_RESTORE_RUN", ""), mask=os.getenv("HISTORY_CALENDAR", ""))
@@ -1464,6 +1827,18 @@ def main(argv: list[str] | None = None) -> int:
             with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
                 json.dump(public, target, sort_keys=True)
             print("RC6_CUSTODY_SANITIZED=" + public["state"])
+            return 0
+        if len(arguments) == 7 and arguments[0] == "rehearse-existing-upgrade":
+            _, database, product, run_id, expected_sha, rc_text, public_path = arguments
+            try:
+                if rc_text != "0":
+                    raise Hold("OFFHOST_RESTORE_TRANSFER_FAILED")
+                public = rehearse_existing_upgrade(database, product, run_id, expected_sha)
+            except (Hold, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                public = {"schema": HISTORY_UPGRADE_SCHEMA, "state": "NO_VERIFICADO",
+                          "failure_reason": str(exc) if isinstance(exc, Hold) else "OFFHOST_HISTORY_UPGRADE_FAILED"}
+            with _private_umask(), Path(public_path).open("x", encoding="utf-8") as target:
+                json.dump(public, target, sort_keys=True)
             return 0
         if len(arguments) == 7 and arguments[0] == "rehearse-restored":
             _, database, product, run_id, expected_sha, rc_text, public_path = arguments
@@ -1481,7 +1856,10 @@ def main(argv: list[str] | None = None) -> int:
             print("RC6_CUSTODY_SANITIZED=" + public["state"])
             return 0
         raise Hold("ACTION_UNSUPPORTED")
-    except (Hold, OSError, sqlite3.Error, ValueError, TypeError) as exc:
+    except (Hold, OSError, sqlite3.Error, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        if arguments[:1] in (["host-history-prepare"], ["host-history-apply"]):
+            print(json.dumps({"schema": "rc6.history-reference-transfer.v1",
+                              "failure_reason": str(exc) if isinstance(exc, Hold) else "HISTORY_IMPORT_UNCLASSIFIED"}))
         if arguments[:1] in (["host-preflight"], ["host-custody"], ["host-restored-inventory"]):
             reason = str(exc) if isinstance(exc, Hold) else "CUSTODY_UNCLASSIFIED"
             schema = INVENTORY_SCHEMA if arguments[0] == "host-restored-inventory" else SCHEMA
