@@ -5,6 +5,7 @@ on:
     branches: [diagnostic/rc6-dashboard-visual-20261122]
     paths:
       - .github/workflows/rc6-dashboard-visual-readonly-20261122.yml
+      - scripts/dashboard_visual_audit/verify_candidate.py
 
 permissions:
   contents: read

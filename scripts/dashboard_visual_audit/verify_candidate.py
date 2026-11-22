@@ -23,7 +23,13 @@ ROUTES = ("/sistema/evidencia", "/validacion", "/sistema/validacion?channel=camp
 
 
 def prepare(fixture):
-    for now in (fixture.now, fixture.now + timedelta(days=4)):
+    first_session = fixture.now - timedelta(days=7)
+    receipt = fixture.data / "deploy" / "CURRENT_STATE_V2.json"
+    fixture.write_json(receipt, {
+        **json.loads(receipt.read_text(encoding="utf-8")),
+        "recorded_at": (first_session - timedelta(hours=2)).isoformat(),
+    })
+    for now in (first_session, first_session + timedelta(days=4)):
         fixture.mark_session(now)
         with fixture.store.connect() as c:
             c.execute("INSERT INTO paper_events(event_at,source,event_type,detail) VALUES (?,?,?,?)",
@@ -101,7 +107,12 @@ def review(out):
                         if path == "/validacion":
                             expect(page.locator("#terminal-content")).to_have_attribute("data-view", "sistema/validacion")
                             expect(page.locator("dialog[id^='validation-M']")).to_have_count(12)
-                            expect(page.get_by_text("Evidencia vencida", exact=True).first).to_be_visible()
+                            safety_card = page.locator("article").filter(
+                                has=page.locator("[data-detail-dialog='validation-M1-dialog']")
+                            )
+                            expired = safety_card.locator("[data-status='EVIDENCIA VENCIDA']")
+                            expect(expired).to_be_visible()
+                            expect(expired).to_contain_text("Evidencia vencida")
                             for n in (0, 1, 4, 11):
                                 trigger = page.locator(f"[data-detail-dialog='validation-M{n}-dialog']")
                                 trigger.click(timeout=4000)
