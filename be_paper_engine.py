@@ -106,6 +106,7 @@ class Quote:
     # Optional diagnostic SHA from a freshly CAPTURED native PPI Book1 event.
     # Not a PPI signature or an admission authority.
     ppi_book1_event_sha256: Optional[str] = None
+    ppi_native_rest_book: Optional[dict] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -491,6 +492,7 @@ class PaperStore:
                     "book_at": "TEXT", "trade_at": "TEXT",
                     "last_kind": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
                     "contract_json": "TEXT", "metadata_source": "TEXT",
+                    "ppi_native_rest_book": "TEXT",
                     "opening_block_reason": "TEXT NOT NULL DEFAULT ''"},
             }.items():
                 columns = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
@@ -513,6 +515,8 @@ class PaperStore:
         from rc6_fixed_income_native_exit import init_schema as init_fi_terminal_schema
         init_fi_review_schema(self)
         init_fi_terminal_schema(self)
+        from rc6_fixed_income_paper_market_sale import init_schema as init_fi_sale_schema
+        init_fi_sale_schema(self)
         from bm_exit_supervisor import init_schema as init_exit_schema
         init_exit_schema(self)
         from bn_telegram_bus import init_schema as init_outbox_schema
@@ -574,13 +578,14 @@ class PaperStore:
         with self.connect() as c:
             c.execute("""INSERT INTO market_snapshots
               (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market,
-               book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason,ppi_native_rest_book)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
                        str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size),
                        currency, market, q.book_at, q.trade_at, q.last_kind,
                        json.dumps(asdict(q.contract), default=str) if q.contract else None,
-                       q.metadata_source, q.opening_block_reason))
+                       q.metadata_source, q.opening_block_reason,
+                       json.dumps(q.ppi_native_rest_book, allow_nan=False) if q.ppi_native_rest_book else None))
 
     @staticmethod
     def latest_quote_row(connection, position):
@@ -603,7 +608,9 @@ class PaperStore:
         return Quote(**{k: values[k] for k in ("symbol", "asset_class", "settlement", "observed_at", "currency", "market",
                                              "book_at", "trade_at", "last_kind", "metadata_source", "opening_block_reason")},
                      **{k: D(values[k]) for k in ("last", "bid", "ask", "bid_size", "ask_size")},
-                     contract=InstrumentContract(**spec) if spec is not None else None)
+                     contract=InstrumentContract(**spec) if spec is not None else None,
+                     ppi_native_rest_book=json.loads(values["ppi_native_rest_book"])
+                     if values.get("ppi_native_rest_book") else None)
 
     def latest_quote(self, position):
         with self.connect() as c:
@@ -870,9 +877,10 @@ class PaperBroker:
                  economics_mode="SHADOW", min_net_reward_risk="1.20",
                  stop_loss_pct="0.02", target_gain_pct="0.035",
                  daily_loss_pct="2.5", daily_soft_stop_pct=None,
-                 intraday_fee_rebate=None, admission_guard=None):
+                 intraday_fee_rebate=None, admission_guard=None, market_sale_witness=None):
         self.store = store
         self.admission_guard = admission_guard
+        self.market_sale_witness = market_sale_witness
         self.initial_cash = D(initial_cash)
         self.risk_pct = D(risk_pct)
         self.max_positions = int(max_positions)
@@ -1106,16 +1114,29 @@ class PaperBroker:
                 WHERE currency=? AND rc6_instant_us(booked_at)>rc6_instant_us(?)
                 LIMIT 1""", (currency, at.isoformat())).fetchone():
                 raise ValueError('CASH_CLOCK_ROLLBACK')
+            if connection.execute("""SELECT 1 FROM paper_fi_native_sales s JOIN paper_positions p USING(paper_id)
+                WHERE p.currency=? AND rc6_instant_us(s.applied_at)>rc6_instant_us(?) LIMIT 1""",
+                (currency, at.isoformat())).fetchone():
+                raise ValueError('CASH_CLOCK_ROLLBACK')
         opened, closed = self._positions_at(at, connection)
+        from rc6_fixed_income_paper_market_sale import REASON as fi_sale_reason, sale_cash_effect
+        native_sale_roots = connection.execute("""SELECT * FROM paper_positions
+            WHERE currency=? AND paper_id IN (SELECT paper_id FROM paper_fi_native_sales)""", (currency,)).fetchall()
+        native_sale_ids = {row['paper_id'] for row in native_sale_roots}
         realized = sum((decimal_value(p['net_pnl'],'PnL cerrado') for p in closed
                         if p['currency']==currency and
-                        p.get('close_reason') != 'FI_NATIVE_MATURITY_REVIEWED'), ZERO)
+                        p.get('close_reason') not in ('FI_NATIVE_MATURITY_REVIEWED', fi_sale_reason)), ZERO)
         committed = sum((decimal_value(p['entry_price'],'precio',positive=True) *
                          decimal_value(p['quantity'],'cantidad',positive=True) * self._position_multiplier(p) +
                          decimal_value(p['entry_cost'],'costo',nonnegative=True)
                          for p in opened + [p for p in closed if
                              p.get('close_reason') == 'FI_NATIVE_MATURITY_REVIEWED']
-                         if p['currency']==currency), ZERO)
+                         if p['currency']==currency and p['paper_id'] not in native_sale_ids), ZERO)
+        committed += sum((decimal_value(row['entry_price'],'FI entry',positive=True) *
+                          decimal_value(row['quantity'],'FI original VN',positive=True) *
+                          self._position_multiplier(dict(row)) +
+                          decimal_value(row['entry_cost'],'FI entry fee',nonnegative=True)
+                          for row in native_sale_roots if aware_datetime(row['opened_at']) <= at), ZERO)
         from rc6_paper_family_lifecycle import future_cash_effect, fund_cash_effect
         futures = future_cash_effect(self.store, currency, at, connection=connection)
         funds = fund_cash_effect(self.store, currency, at, connection=connection)
@@ -1126,7 +1147,7 @@ class PaperBroker:
         fixed_income = cash_effect_checked(connection, currency, at)
         return (self.initial_balances[currency] + realized - committed
                 + self.cauciones.cash_effect(currency,at,connection=connection)
-                + futures + funds + fixed_income
+                + futures + funds + fixed_income + sale_cash_effect(connection,currency,at,pending=None)
                 - pending_proceeds(self.store, at, currency, connection=connection))
 
     def place_caucion(self, offer, principal, request_id, as_of=None, *, reserve="0"):
@@ -3251,6 +3272,18 @@ class PaperBroker:
                 and p.get("close_reason") == "FI_NATIVE_MATURITY_REVIEWED"
                 and p.get("net_pnl") is None]
             stale += len(terminal_fx_unknown)
+            from rc6_fixed_income_paper_market_sale import REASON as fi_sale_reason
+            open_ids = {p["paper_id"] for p in opened}
+            closed_fi = {p["paper_id"]: p for p in closed if p["currency"] == currency
+                         and p.get("close_reason") == fi_sale_reason and p["paper_id"] not in open_ids}
+            if closed_fi:
+                from rc6_fixed_income_portfolio_bridge import valuation_at
+                for paper_id, p in closed_fi.items():
+                    accrued = valuation_at(c, paper_id, measured_at, p["entry_price"])
+                    if accrued.realized_pnl is None:
+                        stale += 1
+                    else:
+                        fi_realized += accrued.realized_pnl
             realized = (fi_realized + sum((D(p.get("net_pnl")) for p in closed
                 if p["currency"] == currency and p not in terminal_fx_unknown), ZERO))
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)

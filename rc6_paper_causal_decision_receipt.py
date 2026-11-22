@@ -21,6 +21,7 @@ from pathlib import Path
 import re
 import sqlite3
 import stat
+import time
 from typing import Any
 from urllib.parse import quote as urlquote
 
@@ -100,6 +101,16 @@ def init_schema(store: Any) -> None:
           CREATE TRIGGER IF NOT EXISTS rc6_causal_receipts_no_delete
             BEFORE DELETE ON paper_causal_decision_receipts
             BEGIN SELECT RAISE(ABORT,'RC6_CAUSAL_RECEIPT_IMMUTABLE'); END;
+          CREATE TRIGGER IF NOT EXISTS rc6_causal_freezes_no_replace
+            BEFORE INSERT ON paper_causal_decision_freezes
+            WHEN EXISTS(SELECT 1 FROM paper_causal_decision_freezes
+                        WHERE id=NEW.id OR decision_key=NEW.decision_key)
+            BEGIN SELECT RAISE(ABORT,'RC6_CAUSAL_FREEZE_IMMUTABLE'); END;
+          CREATE TRIGGER IF NOT EXISTS rc6_causal_receipts_no_replace
+            BEFORE INSERT ON paper_causal_decision_receipts
+            WHEN EXISTS(SELECT 1 FROM paper_causal_decision_receipts
+                        WHERE sequence=NEW.sequence OR decision_key=NEW.decision_key)
+            BEGIN SELECT RAISE(ABORT,'RC6_CAUSAL_RECEIPT_IMMUTABLE'); END;
         """)
 
 
@@ -153,6 +164,8 @@ def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
         "features_json_sha256": _sha(features_json),
         "score": score,
     }
+    if action == "SELL" and isinstance(features.get("fixed_income_market_sale"), dict):
+        freeze["fixed_income_market_sale"] = features["fixed_income_market_sale"]
     raw = _json(freeze)
     if len(raw.encode("utf-8")) > MAX_RECEIPT_BYTES:
         raise ValueError("CAUSAL_DECISION_FREEZE_CAPACITY_HOLD")
@@ -278,6 +291,11 @@ def attest_after_commit(db_path: Path, *, decision_key: str,
                 "real_money_authorized": False,
                 "real_routes_used": [],
             }
+            if "fixed_income_market_sale" in frozen:
+                # The same independent observer samples both clocks after
+                # reading the durable decision on a separate connection.
+                receipt["fixed_income_market_sale"] = frozen["fixed_income_market_sale"]
+                receipt["decision_known_monotonic_ns"] = time.monotonic_ns()
             raw = _json(receipt)
             signed = base64.b64encode(signer.sign(raw.encode("utf-8"))).decode("ascii")
             digest = _sha(raw)
@@ -362,6 +380,15 @@ def verify_signed_receipt(db_path: Path, *, decision_key: str,
                 return {**result, "state": "BLOQUEADO", "reason": "CAUSAL_RECEIPT_BINDING_OR_CLOCK_HOLD"}
             Ed25519PublicKey.from_public_bytes(trusted_public_key_raw).verify(
                 base64.b64decode(signature, validate=True), raw.encode("utf-8"))
+            market_sale = frozen.get("fixed_income_market_sale")
+            market_sale_proof = {}
+            if market_sale is not None:
+                clock_ns = receipt.get("decision_known_monotonic_ns")
+                if (receipt["action"] != "SELL" or receipt.get("fixed_income_market_sale") != market_sale
+                        or type(clock_ns) is not int or clock_ns <= 0):
+                    return {**result, "state": "BLOQUEADO", "reason": "CAUSAL_FI_EXIT_RECEIPT_INVALID"}
+                market_sale_proof = {"fixed_income_market_sale": market_sale,
+                                     "decision_known_monotonic_ns": clock_ns}
             return {**result, "state": "SIGNED_DECISION_KNOWN_AT_VERIFIED",
                     "reason": "DECISION_TIMING_VERIFIED_ONLY_SOURCE_UNITS_AND_FILL_UNVERIFIED",
                     "decision_known_at": known_at,
@@ -369,7 +396,7 @@ def verify_signed_receipt(db_path: Path, *, decision_key: str,
                     "decision_signature_verified": True,
                     "freeze_sha256": freeze_sha,
                     "receipt_sha256": digest,
-                    "sequence": sequence}
+                    "sequence": sequence, **market_sale_proof}
     except Exception as exc:
         return {**result, "state": "BLOQUEADO", "reason": (
             "CAUSAL_SIGNATURE_OR_RECEIPT_INVALID:" + type(exc).__name__)}

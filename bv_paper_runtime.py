@@ -565,6 +565,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
                        pause=lambda: None, beat=lambda: None):
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
+    from dataclasses import replace
+    from bs_instrument_contracts import contract_from_metadata
+    from rc6_fixed_income_sale_authority import POLICY_PIN, native_book_fields
     from bd_ppi_readonly_guard import retry_read, session_invalid
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
@@ -586,17 +589,34 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             stage = "BROKER_BOOK"
             scope = getattr(reader, "read_scope", None)
             identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
+            native_book_reader = getattr(reader, "book_with_native_receipt", None)
+            native_book = None
             with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
-                book = retry_read(lambda: reader.book(
-                    p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+                if (p["asset_class"] in {"BONOS", "OBLIGACIONES"} and os.getenv(POLICY_PIN)
+                        and callable(native_book_reader)):
+                    native_book = retry_read(lambda: native_book_reader(
+                        p["symbol"], p["asset_class"], p["settlement"]), retries=1)
+                    book = native_book["raw_payload"]
+                else:
+                    book = retry_read(lambda: reader.book(
+                        p["symbol"],p["asset_class"],p["settlement"]), retries=1)
             stage = "CATALOG_LOOKUP"
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
                                       market=p["market"], currency=p["currency"])
             stage = "NORMALIZE_QUOTE"
             q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
                                 metadata=metadata, identity=identity)
+            if native_book is not None:
+                try:
+                    native_book_fields(native_book, identity)
+                    held_contract = contract_from_metadata(p["symbol"], p["asset_class"],
+                        json.loads(p["features_json"])["financial_contract"])
+                    if held_contract.key == identity:
+                        q = replace(q, contract=held_contract, ppi_native_rest_book=native_book)
+                except (ValueError, KeyError, TypeError, ArithmeticError):
+                    # Preserve the ordinary exit mark, without binding an ambiguous witness.
+                    pass
             if is_future:
-                from dataclasses import replace
                 # Request identity is the exact position; catalog changes cannot
                 # invent new exit terms or grant fresh entry authority.
                 q = replace(q, contract=original_contract, currency=p["currency"],
