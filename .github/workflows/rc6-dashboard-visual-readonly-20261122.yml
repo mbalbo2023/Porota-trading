@@ -1,48 +1,49 @@
-name: RC6 validation candidate Playwright
+name: RC6 inspect installed scheduler and evidence sources
 
 on:
   push:
     branches: [diagnostic/rc6-dashboard-visual-20261122]
     paths:
       - .github/workflows/rc6-dashboard-visual-readonly-20261122.yml
-      - scripts/dashboard_visual_audit/verify_candidate.py
 
 permissions:
   contents: read
 
 jobs:
-  browser:
+  inspect:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          path: diagnostic
+          ref: bad732511a7cc60981c730699e8527be03f7aa5b
           persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: 9471840d3463026e62a55d3f44cea13eee705bad
-          path: candidate
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Review the exact candidate with two simulated PAPER sessions
-        working-directory: candidate
+      - name: Observe host unit sources without writes
         env:
-          POROTA_QA_SHA: 9471840d3463026e62a55d3f44cea13eee705bad
-          PYTHONDONTWRITEBYTECODE: '1'
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "$POROTA_QA_SHA"
-          grep -E '^(fastapi|uvicorn|python-multipart|python-dotenv|apscheduler|requests)==.*$' requirements.lock.txt > "$RUNNER_TEMP/browser-dependencies.txt"
-          python -m pip install -q -r "$RUNNER_TEMP/browser-dependencies.txt" 'playwright==1.55.0'
-          PYTHONPATH="$GITHUB_WORKSPACE/candidate" python -B "$GITHUB_WORKSPACE/diagnostic/scripts/dashboard_visual_audit/verify_candidate.py" "$RUNNER_TEMP"
-      - name: Preserve focused browser evidence
-        uses: actions/upload-artifact@v4
+          python3 -B - <<'PY'
+          import json,os
+          from pathlib import Path
+          from scripts.porota_actions_host import connection,ssh_run
+          code="from datetime import datetime, timezone\nimport hashlib, json, os, pathlib, pwd, stat, subprocess\nr=pathlib.Path('/opt/porota-trading')\nm=json.loads((r/'data/deploy/CURRENT_STATE_V2.json').read_text())\nassert m['validation_status']=='VALIDATED_RUNTIME' and m['real_order_capability']=='BLOCKED'\nuid=os.getuid()\ndef get_source(rel):\n    p=r/rel\n    facts={'parent_owned':p.parent.stat().st_uid==uid,'parent_writable':os.access(p.parent,os.W_OK|os.X_OK)}\n    if not p.is_symlink() and p.is_file():\n        s=p.stat()\n        if stat.S_ISREG(s.st_mode) and s.st_size<2*1024**2:\n            facts.update(sha256=hashlib.sha256(p.read_bytes()).hexdigest(),owner_is_deploy_uid=s.st_uid==uid,\n                         owner_is_root=s.st_uid==0,writable=os.access(p,os.W_OK),mode=oct(stat.S_IMODE(s.st_mode)))\n    return facts\ndef observe(unit,rel):\n    def prop(name):\n        return subprocess.check_output(['systemctl','show','--value','-p',name,unit],text=True,timeout=5).strip()\n    action,user=prop('ExecStart'),prop('User')\n    return {'uses_checkout_source':str(r/rel) in action,'uses_versioned_dispatcher':'scheduler-dispatch.py' in action,\n            'runs_as_root':user in ('','root','0'),'runs_as_deploy_user':user==pwd.getpwuid(uid).pw_name}\nexporter='scripts/porota_export_scheduler_state_rc6.sh'\npublisher='scripts/porota_publish_runtime_evidence_github_rc6.sh'\nx=json.loads((r/'data/scheduler/systemd_timers.json').read_text())\nprint(json.dumps({'utc':datetime.now(timezone.utc).isoformat(),'deployment_sha':m.get('deployment_sha'),\n                  'exporter':observe('porota-scheduler-export-rc6.service',exporter),\n                  'publisher':observe('porota-runtime-evidence-rc6.service',publisher),\n                  'postclose':observe('porota-snapshot-postclose-rc6.service','scripts/porota_rootless_jobs.py'),\n                  'sources':{p:get_source(p) for p in (exporter,publisher,'ops_runtime_evidence_rc6.py','rc6_scheduler_snapshot.py','ops/policy/host-control-plane-reconciliation-v2.json')},\n                  'export':{'recorded_at':x.get('recorded_at'),'rows':len(x.get('timers',[])),\n                            'monotonic_targets':sum(bool(t.get('next_elapse_monotonic_at')) for t in x.get('timers',[]) if isinstance(t,dict))},'mutations':0}))\n"
+          with connection(os.environ) as (ssh,_,_):
+              output=ssh_run(ssh,['/usr/bin/python3','-B','-'],data=code.encode(),timeout=45)
+          if output.returncode:
+              raise SystemExit('READ_ONLY_HOST_SOURCES_UNAVAILABLE')
+          receipt=json.loads(output.stdout)
+          print(json.dumps(receipt,sort_keys=True))
+          Path(os.environ['RUNNER_TEMP'],'host-sources.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
         with:
-          name: validation-candidate-playwright
-          path: ${{ runner.temp }}/playwright.json
+          name: scheduler-and-evidence-host-sources
+          path: ${{ runner.temp }}/host-sources.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
