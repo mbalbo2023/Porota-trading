@@ -4,7 +4,7 @@ The public tariff is a PAPER sensitivity model. Account-specific terms are never
 certified by this module. Realized execution prices already include spread/slip.
 """
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_EVEN
 import hashlib
 import json
 
@@ -14,6 +14,10 @@ from .common import number, identity
 
 ZERO = Decimal(0)
 SPOT_LEDGER_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
+_COST_COMPONENTS = ("commission", "rights", "clearing", "premium_rights", "vat",
+                    "commission_vat", "rights_vat", "clearing_vat", "premium_rights_vat",
+                    "minimum_commission", "rebate_policy", "fee_currency", "fx_rate", "fx_source",
+                    "fee_quantum", "rounding")
 
 
 def ledger_leg_rate(family, *, currency=None, rebated=False):
@@ -189,20 +193,74 @@ class VersionedPaperCostContract:
         components = self.leg_components(notional, decision_at=decision_at, rebated=rebated)
         return sum(components.values(), ZERO).quantize(self.fee_quantum, rounding=ROUND_HALF_EVEN)
 
+    def sale_cost(self, *, buy_notional, sell_notional, buy_quantity, sell_quantity,
+                  sold_quantity=ZERO, bought_at, decision_at, intraday_eligible=False):
+        """Net sale cost and applied rebate in the existing nonnegative fee ledger."""
+        sell_cost = self.leg_cost(sell_notional, decision_at=decision_at)
+        if not intraday_eligible or self.rebate_policy != "COMMISSION_ON_SMALLER_INTRADAY_LEG":
+            return sell_cost, ZERO
+        if buy_notional * sell_quantity <= sell_notional * buy_quantity:
+            discount = (self.leg_cost(buy_notional, decision_at=bought_at) -
+                        self.leg_cost(buy_notional, decision_at=bought_at, rebated=True))
+            # Prorate the commission actually booked on the original buy. A
+            # partial sale does not incur another minimum on that purchase.
+            after = (discount * (sold_quantity + sell_quantity) / buy_quantity).quantize(
+                self.fee_quantum, rounding=ROUND_HALF_EVEN)
+            before = (discount * sold_quantity / buy_quantity).quantize(
+                self.fee_quantum, rounding=ROUND_HALF_EVEN)
+            rebate = min(sell_cost, after - before)
+        else:
+            rebate = sell_cost - self.leg_cost(sell_notional, decision_at=decision_at, rebated=True)
+        return sell_cost - rebate, rebate
+
+    def affordable_quantity(self, *, entry_unit, stop_unit, lot, quantity_limit, cash, risk, decision_at):
+        """Largest executable lot under both budgets, including discontinuous fee tiers."""
+        entry_lot, stop_lot = entry_unit * lot, stop_unit * lot
+        loss_lot = max(ZERO, entry_lot - stop_lot)
+        upper = min(int(quantity_limit / lot), int(cash / entry_lot))
+        if loss_lot > 0:
+            upper = min(upper, int(risk / loss_lot))
+        if upper < 1:
+            return ZERO
+        # A tier can reduce the absolute fee at a threshold. The budgets are
+        # monotone only within each interval of a constant buy/sell tier pair.
+        breaks = {1, upper + 1}
+        for tier in self.tiers:
+            for unit in (entry_lot, stop_lot):
+                start = int((tier.from_notional / unit).to_integral_value(rounding=ROUND_CEILING))
+                if 1 < start <= upper:
+                    breaks.add(start)
+        edges = sorted(breaks)
+
+        def fits(lots):
+            buy, sell = entry_lot * lots, stop_lot * lots
+            buy_fee = self.leg_cost(buy, decision_at=decision_at)
+            return (buy + buy_fee <= cash and
+                    loss_lot * lots + buy_fee + self.leg_cost(sell, decision_at=decision_at) <= risk)
+
+        for lower, next_lower in reversed(list(zip(edges, edges[1:]))):
+            if not fits(lower):
+                continue
+            upper = next_lower - 1
+            while lower < upper:
+                mid = (lower + upper + 1) // 2
+                if fits(mid):
+                    lower = mid
+                else:
+                    upper = mid - 1
+            return lower * lot
+        return ZERO
+
     def diagnostic(self):
         def render(value):
             return str(value) if isinstance(value, Decimal) else value
-        fields = ("commission", "rights", "clearing", "premium_rights", "vat",
-                  "commission_vat", "rights_vat", "clearing_vat", "premium_rights_vat",
-                  "minimum_commission", "rebate_policy", "fee_currency", "fx_rate", "fx_source",
-                  "fee_quantum", "rounding")
         result = {"schema_version": 1, "policy_version": self.policy_version,
                 "scope": self.scope, "authority": self.scope,
                 "account_authority": self.account_terms,
                 "family": self.family, "currency": self.currency,
                 "effective_at": self.effective_at, "known_at": self.known_at,
                 "source": self.source, "account_terms": self.account_terms,
-                "components": {field: render(getattr(self, field)) for field in fields},
+                "components": {field: render(getattr(self, field)) for field in _COST_COMPONENTS},
                 "tiers": ([{field: str(getattr(tier, field)) for field in
                             ("from_notional", "commission_rate", "minimum_commission")}
                            for tier in self.tiers] if self.tiers is not None else None),
@@ -219,6 +277,29 @@ class VersionedPaperCostContract:
             result, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
         return result
 
+    @classmethod
+    def from_diagnostic(cls, payload):
+        """Read back the versioned receipt and require its canonical digest and fields."""
+        try:
+            terms = {name: payload[name] for name in (
+                "family", "currency", "policy_version", "effective_at", "known_at", "source",
+                "scope", "account_terms")}
+            terms.update({name: payload["components"][name] for name in _COST_COMPONENTS})
+            tiers = payload["tiers"]
+            contract = cls(**terms, tiers=None if tiers is None else tuple(FeeTier(**tier) for tier in tiers))
+            if contract.diagnostic() != payload:
+                raise ValueError("noncanonical cost snapshot")
+            return contract
+        except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+            raise ValueError("PAPER_COST_POLICY_SNAPSHOT_INVALID") from exc
+
+
+def is_local_merv_listing(family, currency, *, symbol, market, settlement):
+    return (family in {"ACCIONES", "ETFS"} and currency == "ARS"
+            and str(symbol or "").strip().upper() == "MERV"
+            and str(market or "").strip().upper() == "BYMA"
+            and str(settlement or "").strip().upper() in {"INMEDIATA", "A-24HS"})
+
 
 def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=None, settlement=None):
     """Current versioned PAPER schedule; not an authenticated account tariff."""
@@ -231,12 +312,8 @@ def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=No
     # BYMA's 03/11/2026 launch and the Fima gForce MSCI Merval FCIA ETF
     # fact sheet identify the ARS secondary listing MERV at T+0 and T+1.
     # Select its economic class separately from PPI's instrument/search key.
-    local_ars_etf = (
-        family in {"ACCIONES", "ETFS"} and currency == "ARS"
-        and str(symbol or "").strip().upper() == "MERV"
-        and str(market or "").strip().upper() == "BYMA"
-        and str(settlement or "").strip().upper() in {"INMEDIATA", "A-24HS"}
-    )
+    local_ars_etf = is_local_merv_listing(family, currency, symbol=symbol, market=market,
+                                       settlement=settlement)
     if local_ars_etf:
         family = "ETFS"
     fee = None if local_ars_etf else schedule.arancel_de(family, currency=currency)

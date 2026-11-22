@@ -788,6 +788,23 @@ class PaperStore:
                json.dumps(features, ensure_ascii=False, default=str),
                json.dumps(result.get("raw", result), ensure_ascii=False, default=str)[:8000]))
 
+    @staticmethod
+    def financial_admission_snapshot(connection, key, digest, *, paper_id):
+        from rc6_performance.common import decision_snapshot_phase
+        receipt = connection.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots "
+                                     "WHERE decision_key=?", (key,)).fetchone()
+        try:
+            if (not receipt or hashlib.sha256(receipt[0].encode()).hexdigest() != receipt[1]
+                    or receipt[1] != digest):
+                raise ValueError("missing or changed receipt")
+            frozen = json.loads(receipt[0])
+            if (decision_snapshot_phase(frozen) != "ATOMIC_PAPER_ADMISSION"
+                    or frozen["decision_key"] != key or frozen["decision"]["paper_id"] != paper_id):
+                raise ValueError("receipt identity mismatch")
+            return frozen
+        except (ValueError, AttributeError, TypeError, KeyError) as exc:
+            raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID") from exc
+
     def record_gates(self, q: Quote, decision_key: str, technical: str,
                      ai: str, patrimonial: str, final: str, reason: str,
                      paper_id=None, detail=None):
@@ -819,16 +836,9 @@ class PaperStore:
         with self.connect() as c:
             admission_key = detail.get("financial_admission_snapshot_key") if isinstance(detail, dict) else None
             if final == "OPENED_SIMULATED" and admission_key:
-                receipt = c.execute("SELECT payload_json,payload_sha256 FROM decision_evidence_snapshots "
-                                    "WHERE decision_key=?", (admission_key,)).fetchone()
-                if (not receipt or hashlib.sha256(receipt[0].encode()).hexdigest() != receipt[1]
-                        or receipt[1] != detail.get("financial_admission_snapshot_sha256")):
-                    raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
-                frozen = json.loads(receipt[0])
-                from rc6_performance.common import decision_snapshot_phase
-                if (decision_snapshot_phase(frozen) != "ATOMIC_PAPER_ADMISSION"
-                        or frozen.get("native_decision_key") != decision_key
-                        or frozen["decision"].get("paper_id") != paper_id):
+                frozen = self.financial_admission_snapshot(c, admission_key,
+                    detail.get("financial_admission_snapshot_sha256"), paper_id=paper_id)
+                if frozen.get("native_decision_key") != decision_key:
                     raise ValueError("FINANCIAL_ADMISSION_SNAPSHOT_LINK_INVALID")
                 # Financial inputs and price vectors come from the receipt that
                 # committed with the fill. Only the later native stage clocks
@@ -1042,6 +1052,61 @@ class PaperBroker:
                             position["market"], position["currency"], position["settlement"]):
             raise ValueError("SPOT_POSITION_PRICE_GRID_IDENTITY_MISMATCH")
         return contract
+
+    def _position_etf_cost_terms(self, position, *, connection=None):
+        from rc6_performance.common import identity
+        from rc6_performance.costs import VersionedPaperCostContract, is_local_merv_listing
+        family = family_name(position["asset_class"])
+        if family != "ETFS" and not is_local_merv_listing(family, position.get("currency"),
+                symbol=position.get("symbol"), market=position.get("market"), settlement=position.get("settlement")):
+            return None
+        if connection is None:
+            with self.store.connect() as c:
+                return self._position_etf_cost_terms(position, connection=c)
+        row = connection.execute("SELECT features_json FROM paper_learning_samples WHERE paper_id=?",
+                                 (position["paper_id"],)).fetchone()
+        try:
+            position_economics = json.loads(position["features_json"] or "{}").get("economics") or {}
+            sample = json.loads(row[0]) if row else {}
+            sample_economics = sample.get("economics") or {}
+            if all((e.get("cost_contract") or {}).get("family") != "ETFS"
+                   for e in (position_economics, sample_economics)):
+                return None  # Historical spot position without a versioned ETF policy.
+            frozen = self.store.financial_admission_snapshot(connection,
+                sample.get("financial_admission_snapshot_key"),
+                sample.get("financial_admission_snapshot_sha256"), paper_id=position["paper_id"])
+            economics = frozen["inputs_used"]["economics"]
+            policy = VersionedPaperCostContract.from_diagnostic(economics["cost_contract"])
+            opened_at = position["opened_at"]
+            remaining = decimal_value(position["quantity"], "cantidad remanente", positive=True)
+            quantity = decimal_value(position.get("original_quantity", remaining), "cantidad original", positive=True)
+            entry = decimal_value(position["entry_price"], "precio original", positive=True)
+            entry_notional = entry * quantity * self._position_multiplier(position)
+            entry_cost = policy.leg_cost(entry_notional, decision_at=opened_at)
+            buys = connection.execute("SELECT quantity,price,costs,filled_at,source FROM paper_fills "
+                "WHERE paper_id=? AND side='BUY_SIMULATED'", (position["paper_id"],)).fetchall()
+            actual_buy = tuple(decimal_value(value, "fill de compra") for value in buys[0][:3]) if len(buys) == 1 else None
+            if (policy.family != "ETFS" or policy.currency != position["currency"]
+                    or identity(frozen["quote_used"]) != identity(position)
+                    or utc_microseconds(frozen["admission_at"]) != utc_microseconds(opened_at)
+                    or economics != position_economics or economics != sample_economics
+                    or D(economics["sized_quantity"]) != quantity
+                    or D(economics["entry_notional"]) != entry_notional
+                    or type(economics["intraday_rebate_eligible"]) is not bool
+                    or D(economics["entry_cost"]) != entry_cost
+                    or (remaining == quantity and decimal_value(position["entry_cost"], "costo original") != entry_cost)
+                    or actual_buy != (quantity, entry, entry_cost)
+                    or buys[0][4] != SOURCE or utc_microseconds(buys[0][3]) != utc_microseconds(opened_at)):
+                raise ValueError("ETF position fee evidence mismatch")
+            return policy, economics["intraday_rebate_eligible"]
+        except (ValueError, AttributeError, KeyError, TypeError, ArithmeticError) as exc:
+            raise ValueError("PAPER_ETF_COST_RECEIPT_INVALID") from exc
+
+    def _position_exit_fee_reserve(self, position, price, quantity, *, at, connection=None):
+        terms = self._position_etf_cost_terms(position, connection=connection)
+        if terms is not None:
+            return terms[0].leg_cost(price * quantity, decision_at=at)
+        return self._cost(price, quantity, position["asset_class"], currency=position.get("currency"))
 
     def _spot_fill_price(self, price, *, side, contract=None, at=None):
         raw = price * (1 + self.slippage if side == "BUY" else 1 - self.slippage)
@@ -1656,12 +1721,13 @@ class PaperBroker:
         }
         return "BUY", score, "Momentum positivo y friccion admisible", features
 
-    def _economic_admission(self, q, features):
+    def _economic_admission(self, q, features, *, quantity=None):
         """One truthful economic contract, used by every PAPER admission caller."""
         maturity_entry = self._fixed_income_entry_plan(q, features) is not None
         mode = "BINDING" if maturity_entry else self.economics_mode
         try:
-            economics = self._candidate_economics(q, features)
+            economics = (self._candidate_economics(q, features) if quantity is None else
+                         self._candidate_economics(q, features, quantity=quantity))
         except (ValueError, TypeError, ArithmeticError) as exc:
             reason = str(exc) if maturity_entry else "ECONOMICS_CONTRACT_UNAVAILABLE"
             features["economics"] = {"passed": False, "reason_code": reason}
@@ -1669,7 +1735,8 @@ class PaperBroker:
             return reason
         features["economics"] = economics
         features["economics_mode"] = mode
-        if mode == "BINDING" and economics.get("passed") is not True:
+        if (mode == "BINDING" and not economics.get("quantity_pending")
+                and economics.get("passed") is not True):
             return economics.get("reason_code") or "ECONOMICS_BINDING_NET_REWARD_RISK_INSUFFICIENT"
         return ""
 
@@ -1817,10 +1884,11 @@ class PaperBroker:
                 json.JSONDecodeError):
             return "PAPER_SPECIALIZED_DECISION_VERIFICATION_FAILED"
 
-    def _candidate_economics(self, q, features):
+    def _candidate_economics(self, q, features, *, quantity=None):
         maturity_plan = self._fixed_income_entry_plan(q, features)
         if maturity_plan is None:
-            return self._economic_diagnostics(q)
+            return (self._economic_diagnostics(q) if quantity is None else
+                    self._economic_diagnostics(q, quantity=quantity))
         from rc6_fixed_income_paper_strategy import native_maturity_quantity
         from rc6_performance.costs import paper_cost_contract
         at = self.execution_time(q)
@@ -1848,33 +1916,57 @@ class PaperBroker:
             "reason_code": "" if passed else "FI_NET_EDGE_AFTER_FEES_TOO_LOW",
         }
 
-    def _economic_diagnostics(self, q):
+    def _economic_diagnostics(self, q, *, quantity=None):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
         from rc6_performance.costs import paper_cost_contract, price_sensitivity_fees
         at = self.execution_time(q)
         costs = paper_cost_contract(q.asset_class, q.currency, at,
                                     symbol=q.symbol, market=q.market, settlement=q.settlement)
         cost_error = costs.binding_error(at)
-        if costs.family == "ETFS" and cost_error:
-            return {"passed": False, "reason_code": cost_error, "cost_contract": costs.diagnostic()}
+        exact_etf = costs.family == "ETFS"
+        if exact_etf:
+            if cost_error:
+                return {"passed": False, "reason_code": cost_error, "cost_contract": costs.diagnostic()}
+            if quantity is None:
+                return {"passed": None, "quantity_pending": True, "cost_contract": costs.diagnostic()}
         grid = q.contract and q.contract.price_tick is not None and q.contract.family in SPOT_FAMILIES
         entry = q.ask * (1 + self.slippage)
-        if grid:
+        if grid or exact_etf:
             entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
         stop = entry * (1 - self.stop_loss_pct)
         target = entry * (1 + self.target_gain_pct)
         stop_fill = stop * (1 - self.slippage)
         target_fill = target * (1 - self.slippage)
-        if grid:
+        if grid or exact_etf:
             stop_fill = self._spot_fill_price(stop, side="SELL", contract=q.contract, at=at)
             target_fill = self._spot_fill_price(target, side="SELL", contract=q.contract, at=at)
-        full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
-        low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
-        # La bonificacion corresponde a la operacion de menor valor. En una
-        # ganancia es la compra; en una perdida, la venta. Si no es elegible,
-        # low == full y se conserva el modelo previo.
-        net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
-        net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
+        if exact_etf:
+            factor = q.contract.cash_multiplier if q.contract else D(1)
+            entry_notional = entry * quantity * factor
+            entry_cost = costs.leg_cost(entry_notional, decision_at=at)
+            rebate_eligible = (self.intraday_fee_rebate and q.monetary_identity()[1] == "BYMA"
+                               and costs.rebate_policy == "COMMISSION_ON_SMALLER_INTRADAY_LEG")
+            stop_notional = stop_fill * quantity * factor
+            target_notional = target_fill * quantity * factor
+            sell = {"buy_notional": entry_notional, "buy_quantity": quantity, "sell_quantity": quantity,
+                    "bought_at": at, "decision_at": at, "intraday_eligible": rebate_eligible}
+            stop_cost, _ = costs.sale_cost(sell_notional=stop_notional, **sell)
+            target_cost, _ = costs.sale_cost(sell_notional=target_notional, **sell)
+            net_reward = (target_notional - entry_notional - entry_cost - target_cost) / quantity
+            net_loss = (entry_notional - stop_notional + entry_cost + stop_cost) / quantity
+            fee_diagnostics = {"modeled_tariff": "VERSIONED_PAPER_AT_SIZED_NOTIONAL",
+                               "sized_quantity": str(quantity), "entry_notional": str(entry_notional),
+                               "entry_cost": str(entry_cost), "target_exit_cost": str(target_cost),
+                               "stop_exit_cost": str(stop_cost), "intraday_rebate_eligible": rebate_eligible}
+        else:
+            full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
+            low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
+            net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
+            net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
+            fee_diagnostics = {"modeled_tariff": ("PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
+                               if self.intraday_fee_rebate else
+                               "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE"),
+                               "full_leg_rate": str(full), "rebated_leg_rate": str(low)}
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
         passed = not cost_error and net_reward > 0 and ratio >= self.min_net_reward_risk
@@ -1885,11 +1977,7 @@ class PaperBroker:
             tax_shadow = {"state": "ERROR", "rate": None, "amount": None,
                           "effect": type(exc).__name__}
         return {
-            "modeled_tariff": ("PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
-                               if self.intraday_fee_rebate else
-                               "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE"),
-            "full_leg_rate": str(full),
-            "rebated_leg_rate": str(low),
+            **fee_diagnostics,
             "net_reward_per_unit": str(net_reward),
             "net_loss_per_unit": str(net_loss),
             "net_reward_risk": str(ratio),
@@ -1962,7 +2050,7 @@ class PaperBroker:
             maturity_entry = self._fixed_income_entry_plan(q, features) is not None
             economics_mode = "BINDING" if maturity_entry else self.economics_mode
             features["economics_mode"] = economics_mode
-            if not economics["passed"]:
+            if not economics.get("quantity_pending") and not economics["passed"]:
                 economic_reason = economics["reason_code"]
                 self.store.event("ECONOMIC_GATE_" + economics_mode,
                                  f"{q.symbol}: {economic_reason}")
@@ -2637,6 +2725,7 @@ class PaperBroker:
             return False, cost_policy.binding_error(at), None
         if cost_policy_sha != features["economics"]["cost_contract"]["policy_sha256"]:
             return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
+        exact_etf = cost_policy.family == "ETFS"
         if family not in PAPER_POSITION_FAMILIES:
             return False, f"{family} requiere su ciclo financiero específico", None
         if not _family_operable(family):
@@ -2702,7 +2791,8 @@ class PaperBroker:
             return False, "Puntas o profundidad invalidas para una compra simulada", None
         if self.store.open_position(q.symbol):
             return False, "Ya existe una posicion abierta del simbolo", None
-        from de_concurrent_risk_capacity_hf6 import derive_emergency_position_cap, emergency_position_guard
+        from de_concurrent_risk_capacity_hf6 import (
+            derive_emergency_position_cap, emergency_position_guard, full_trade_stop_risk)
         from dh_paper_dynamic_risk_gate_hf6 import (
             ConcurrentRiskGateError, candidate_stop_risk, portfolio_capacity, snapshot_dict)
         if self.daily_risk is None:
@@ -2728,6 +2818,8 @@ class PaperBroker:
             return False, str(exc), None
         if entry <= 0:
             return False, "Precio de entrada no representable", None
+        if exact_etf and modeled_stop_fill <= 0:
+            return False, "PAPER_ETF_STOP_PRICE_NOT_REPRESENTABLE", None
         target = entry * (1 + self.target_gain_pct)
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
         # stop garantice este precio ante gaps o falta de liquidez. La cantidad
@@ -2744,33 +2836,45 @@ class PaperBroker:
         if concurrent_risk_budget <= 0:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
             return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
-        if full_principal_risk:
+        cash_available = max(ZERO, self._cash(as_of=at, currency=currency))
+        if not exact_etf and full_principal_risk:
             # A long option or a held-to-maturity lot can lose its entire outlay.
             by_risk = self._quantity_in_budget(
                 entry * factor, concurrent_risk_budget,
                 lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
-        else:
+        elif not exact_etf:
             by_risk = self._quantity_in_budget(
                 (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
                 lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency) +
                             self._cost(modeled_stop_fill * factor, qty, q.asset_class, currency=currency))
-        by_cash = self._quantity_in_budget(
-            entry * factor, max(ZERO, self._cash(as_of=at, currency=currency)),
-            lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
+        if not exact_etf:
+            by_cash = self._quantity_in_budget(
+                entry * factor, cash_available,
+                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
         try:
             with self.store.connect() as c:
-                by_book = spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation).to_integral_value(ROUND_DOWN)
+                by_book = spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation)
         except ValueError as exc:
             return False, str(exc), None
-        by_position_cap = (capital * self.max_position_pct / (entry * factor)).to_integral_value(ROUND_DOWN)
+        by_position_cap = capital * self.max_position_pct / (entry * factor)
         current_exposure = sum((D(p["entry_price"]) * D(p["quantity"]) * self._position_multiplier(p)
                                 for p in self.store.open_positions() if p["currency"] == currency), ZERO)
         current_exposure += self._future_exposure(currency, as_of=at)
         exposure_remaining = max(
             ZERO, capital * self.max_total_exposure_pct - current_exposure
         )
-        by_total_cap = (exposure_remaining / (entry * factor)).to_integral_value(ROUND_DOWN)
-        qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+        by_total_cap = exposure_remaining / (entry * factor)
+        if exact_etf:
+            qty = cost_policy.affordable_quantity(entry_unit=entry * factor,
+                stop_unit=modeled_stop_fill * factor, lot=step, cash=cash_available,
+                risk=concurrent_risk_budget, quantity_limit=min(by_book, by_position_cap, by_total_cap),
+                decision_at=at)
+            size_diagnostics = {"qty_by_cash_and_risk": str(qty)}
+        else:
+            by_book, by_position_cap, by_total_cap = (
+                limit.to_integral_value(ROUND_DOWN) for limit in (by_book, by_position_cap, by_total_cap))
+            qty = (min(by_risk, by_cash, by_book, by_position_cap, by_total_cap) / step).to_integral_value(ROUND_DOWN) * step
+            size_diagnostics = {"qty_by_risk": str(by_risk), "qty_by_cash": str(by_cash)}
         if maturity_plan is not None:
             from rc6_fixed_income_paper_strategy import native_maturity_quantity
             reviewed_quantity = native_maturity_quantity(q, maturity_plan, at)
@@ -2825,16 +2929,19 @@ class PaperBroker:
             "emergency_position_cap_source": emergency_cap_source,
             "max_position_pct": str(self.max_position_pct),
             "max_total_exposure_pct": str(self.max_total_exposure_pct),
-            "qty_by_risk": str(by_risk),
-            "qty_by_cash": str(by_cash),
+            **size_diagnostics,
             "qty_by_liquidity": str(by_book),
             "qty_by_position_cap": str(by_position_cap),
             "qty_by_total_cap": str(by_total_cap),
         })
         if currency == "ARS":
             features.update(initial_capital_ars=str(capital), risk_budget_ars=str(concurrent_risk_budget))
-        if qty < 1:
+        if qty < (step if exact_etf else 1):
             self.store.event("REJECTED_PAPER", f"{q.symbol}: capital/liquidez insuficiente")
+            if exact_etf:
+                features["economics"].update(quantity_pending=False, passed=False,
+                                             reason_code="PAPER_ETF_NO_AFFORDABLE_LOT")
+                return False, "PAPER_ETF_NO_AFFORDABLE_LOT", None
             limits = {
                 "riesgo": by_risk, "caja": by_cash, "profundidad": by_book,
                 "tope_posicion": by_position_cap, "exposicion_total": by_total_cap,
@@ -2842,7 +2949,12 @@ class PaperBroker:
             binding = min(limits, key=lambda name: limits[name])
             return False, (f"Portón patrimonial/liquidez: {binding} dejó cantidad "
                            f"ejecutable en {limits[binding]}"), None
-        if maturity_plan is not None:
+        if exact_etf:
+            entry_cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
+            stop_cost = cost_policy.leg_cost(modeled_stop_fill * factor * qty, decision_at=at)
+            candidate_risk_value = full_trade_stop_risk(entry_price=entry, modeled_stop_fill=modeled_stop_fill,
+                quantity=qty, cash_multiplier=factor, entry_cost=entry_cost, modeled_exit_cost=stop_cost)
+        elif maturity_plan is not None:
             notional = entry * factor * qty
             candidate_risk_value = notional + cost_policy.leg_cost(notional, decision_at=at)
             if candidate_risk_value > per_trade_risk_budget:
@@ -2865,7 +2977,6 @@ class PaperBroker:
             candidate_stop_risk=str(candidate_risk_value),
             concurrent_risk_preview=snapshot_dict(concurrent_preview))
         paper_id = "PAPER-" + uuid.uuid4().hex
-        cost = self._cost(entry * factor, qty, q.asset_class, currency=currency)
         with self.store.connect() as c:
             # Serializa contra otras compras y colocaciones de caución.
             # No se hace red ni IA dentro de esta transacción.
@@ -2895,13 +3006,23 @@ class PaperBroker:
                     return False, "SCALPING_INTRADAY_SOURCE_UNAVAILABLE", None
                 except (ValueError, TypeError, ArithmeticError) as exc:
                     return False, str(exc), None
-            error = self._economic_admission(q, features)
+            error = (self._economic_admission(q, features, quantity=qty) if exact_etf else
+                     self._economic_admission(q, features))
             if error:
                 return False, error, None
             if features["economics"]["cost_contract"]["policy_sha256"] != cost_policy_sha:
                 return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
             if cost_policy.binding_error(at):
                 return False, cost_policy.binding_error(at), None
+            if exact_etf and features.get("execution_style") == "SCALPING_PAPER":
+                from cf_intraday_scalping import sized_etf_range
+                try:
+                    features["scalping_range_screen"] = sized_etf_range(
+                        c, q, cost_policy, entry * factor * qty, features=features, at=at)
+                except (ValueError, TypeError, KeyError, ArithmeticError):
+                    return False, "SCALPING_ETF_RANGE_EVIDENCE_INVALID", None
+                if not features["scalping_range_screen"]["passed"]:
+                    return False, "ECONOMICS_BINDING_RANGE_BELOW_COST", None
             # The exact policy captured before sizing also owns the locked cash
             # and risk amounts; a mutable environment cannot mix two tariffs.
             cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
@@ -3123,11 +3244,38 @@ class PaperBroker:
                 return False
             if exit_price <= 0:
                 return False
-            exit_cost = self._cost(exit_price*factor,qty,p['asset_class'], currency=p['currency'])
-            rebate = ZERO
+            try:
+                etf_terms = self._position_etf_cost_terms(root, connection=c)
+                if etf_terms is not None:
+                    policy, intraday_eligible = etf_terms
+                    buy_quantity = D(root['quantity'])
+                    buy_notional = D(root['entry_price']) * buy_quantity * factor
+
+                    def sale_cost(price, quantity, sold, sale_at):
+                        same_day = opened.astimezone(TZ).date() == aware_datetime(sale_at).astimezone(TZ).date()
+                        return policy.sale_cost(buy_notional=buy_notional,
+                            sell_notional=price * quantity * factor, buy_quantity=buy_quantity,
+                            sell_quantity=quantity, sold_quantity=sold, bought_at=opened,
+                            decision_at=sale_at, intraday_eligible=intraday_eligible and same_day)
+
+                    sold_quantity = ZERO
+                    for sale in prior:
+                        sold = D(sale['quantity'])
+                        previous_cost, _ = sale_cost(D(sale['exit_price']), sold, sold_quantity, sale['closed_at'])
+                        if previous_cost != D(sale['exit_cost']):
+                            raise ValueError("PAPER_ETF_PREVIOUS_SALE_FEE_MISMATCH")
+                        sold_quantity += sold
+                    exit_cost, rebate = sale_cost(exit_price, qty, sold_quantity, at)
+            except (ValueError, TypeError, ArithmeticError) as exc:
+                c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
+                    (at, SOURCE, 'EXIT_PENDING_COST_CONTRACT', p['paper_id'], str(exc)))
+                return False
+            if etf_terms is None:
+                exit_cost = self._cost(exit_price*factor,qty,p['asset_class'], currency=p['currency'])
+                rebate = ZERO
             family = family_name(p['asset_class'])
             same_day = opened.astimezone(TZ).date() == observed.astimezone(TZ).date()
-            if (self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
+            if (etf_terms is None and self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
                 import au_fee_schedule
                 if family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
                     full = self._leg_rate(family, currency=p['currency'], rebated=False)
