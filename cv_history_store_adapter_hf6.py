@@ -9,6 +9,8 @@ import time
 
 import al_historical_ingest as legacy_history
 
+SOURCE_REPORTED_APPLICATION_ID = 0x52433652
+
 
 class _OwnedConnection(sqlite3.Connection):
     def __exit__(self, *exception):
@@ -21,8 +23,15 @@ class _OwnedConnection(sqlite3.Connection):
 class HistoricalStore:
     """SQLite store dedicado a series de mercado, con WAL y timeout."""
 
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: str | None = None, *, source_reported_only: bool = False,
+                 existing_history_identity: tuple[int, int] | None = None):
+        if source_reported_only and not path:
+            raise ValueError("HISTORY_SOURCE_REPORTED_DESTINATION_REQUIRED")
+        if existing_history_identity is not None and not source_reported_only:
+            raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
         self.path = path or os.getenv("HIST_DB_PATH", legacy_history.HIST_DB_PATH)
+        self.source_reported_only = source_reported_only
+        self.existing_history_identity = existing_history_identity
         self._initialized_identity = None
         self._prepared_identity = None
 
@@ -42,6 +51,14 @@ class HistoricalStore:
             if not stat.S_ISREG(member.st_mode) or member.st_nlink!=1:
                 raise ValueError('HISTORY_STORE_ALIAS_FORBIDDEN')
         return path, (info.st_dev, info.st_ino)
+
+    def for_source_reported_history(self):
+        """Use the configured HISTORY file without initializing it or changing its identity."""
+        path, identity = self._path_identity()
+        if identity is None:
+            raise ValueError("HISTORY_EXISTING_DESTINATION_REQUIRED")
+        return HistoricalStore(str(path), source_reported_only=True,
+                               existing_history_identity=identity)
 
     def prepare_history_schema(self, validator):
         """Capture/inspect once per initializer, before source SQLite or WAL.
@@ -96,12 +113,28 @@ class HistoricalStore:
         self._prepared_identity = self._initialized_identity
 
     def connect(self) -> sqlite3.Connection:
-        _, identity = self._path_identity()
+        path, identity = self._path_identity()
         if self._prepared_identity is not None and identity != self._prepared_identity:
             raise ValueError('HISTORY_INITIALIZATION_SOURCE_CHANGED')
-        folder = os.path.dirname(self.path) or "."
-        os.makedirs(folder, exist_ok=True)
-        c = sqlite3.connect(self.path, timeout=30, factory=_OwnedConnection)
+        if self.existing_history_identity is None:
+            if self.source_reported_only and identity is None:
+                raise ValueError("HISTORY_REFERENCE_DESTINATION_REQUIRED")
+            folder = os.path.dirname(self.path) or "."
+            os.makedirs(folder, exist_ok=True)
+            c = sqlite3.connect(self.path, timeout=30, factory=_OwnedConnection)
+            if self.source_reported_only and c.execute("PRAGMA application_id").fetchone()[0] != SOURCE_REPORTED_APPLICATION_ID:
+                c.close()
+                raise ValueError("HISTORY_REFERENCE_DESTINATION_REQUIRED")
+        else:
+            if identity != self.existing_history_identity:
+                raise ValueError("HISTORY_EXISTING_DESTINATION_CHANGED")
+            c = sqlite3.connect(path.as_uri()+"?mode=rw", uri=True, timeout=30, factory=_OwnedConnection)
+            try:
+                if self._path_identity()[1] != identity:
+                    raise ValueError("HISTORY_EXISTING_DESTINATION_CHANGED")
+            except (OSError, ValueError):
+                c.close()
+                raise
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA synchronous=NORMAL")
         c.execute("PRAGMA busy_timeout=30000")

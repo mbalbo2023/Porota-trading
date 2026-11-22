@@ -17,30 +17,27 @@ from cv_history_store_adapter_hf6 import default_history_store
 
 
 def _candles(identity, rows, observed_at):
-    symbol, family, market, currency, settlement = identity
-    for row in rows:
-        supplied=getattr(row,'currency','UNKNOWN')
-        if supplied not in {'UNKNOWN','',currency}:
-            raise ValueError('HISTORY_CURRENCY_CONFLICT')
+    symbol, family, _, _, _ = identity
     return [
         history_v2.Candle(
             symbol=symbol,
             instrument_type=family,
-            market=market,
-            settlement=settlement,
+            market="BCBA",
+            settlement="UNKNOWN",
             date=row[0],
             open=row[1], high=row[2], low=row[3], close=row[4], volume=row[5],
-            source="DATA912_POROTA_BATCH",
+            source="DATA912",
             adjusted=False,
-            currency=currency,
-            price_basis="RAW",
-            volume_kind=getattr(row,"volume_kind","UNKNOWN"),
+            currency="UNKNOWN",
+            price_basis=history_v2.SOURCE_REPORTED,
+            adjustment_basis=history_v2.source_reported_adjustment("DATA912"),
+            volume_kind="UNKNOWN",
             observed_at=observed_at,
             metadata={
                 "historical_only": True,
                 "execution_allowed": False,
                 "ready_paper_implication": "NONE",
-                "provider_currency_status":"EXPLICIT" if getattr(row,'currency','UNKNOWN')==currency else "REQUESTED_IDENTITY_ONLY",
+                "reported_currency": getattr(row, "currency", "UNKNOWN"),
             },
         )
         for row in rows
@@ -74,10 +71,10 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
             str(raw[4] or "").strip().upper(),
         )
         key = (symbol, family, market, currency, settlement)
-        if symbol and family in data912.OPERATIONAL_FAMILIES:
+        if symbol and family in data912.OPERATIONAL_FAMILIES and market in {"BYMA", "BCBA"}:
             request_cohort.setdefault((symbol,family),set()).add(key)
-        if (not symbol or family not in data912.OPERATIONAL_FAMILIES or not market or
-                market == "UNKNOWN" or not settlement or settlement == "UNKNOWN" or
+        if (not symbol or family not in data912.OPERATIONAL_FAMILIES or market not in {"BYMA", "BCBA"} or
+                not settlement or settlement == "UNKNOWN" or
                 currency not in {"ARS","USD","USD_MEP","USD_CCL"} or key in seen):
             invalid_targets += int(key not in seen)
             continue
@@ -93,16 +90,26 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
     if batch_limit is not None:
         normalized = normalized[:max(0, int(batch_limit))]
 
-    hstore = history_store or default_history_store()
-    history_v2.init_schema(hstore)
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
-    client = data912._session()
     started_at = datetime.now(timezone.utc).isoformat()
     successful = empty = failed = versions = canonical = protected = 0
     results = []
 
+    if normalized:
+        hstore = history_store if history_store is not None else default_history_store()
+        if not hstore.source_reported_only:
+            hstore = hstore.for_source_reported_history()
+        if hstore.existing_history_identity is None:
+            history_v2.init_schema(hstore)
+        else:
+            with hstore.connect() as connection:
+                history_v2.require_current_history(connection)
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        client = data912._session()
+
     for identity in normalized:
-        symbol, family, market, currency, settlement = identity
+        symbol, family, _, _, _ = identity
+        reported_key = {"symbol": symbol, "instrument_type": family, "market": "BCBA",
+                        "currency": "UNKNOWN", "settlement": "UNKNOWN", "requested_identity": list(identity)}
         try:
             path = data912.GROUPS[family][1].format(ticker=symbol)
             raw = data912._get_json(client, path)
@@ -111,8 +118,7 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
             if not rows:
                 empty += 1
                 results.append({
-                    "symbol":symbol,"instrument_type":family,"market":market,
-                    "currency":currency,"settlement":settlement,"state":"EMPTY_OR_INVALID",
+                    **reported_key, "state":"EMPTY_OR_INVALID",
                     "rejected_rows":len(rejected),"rejections":rejected,
                     "versions_appended":0,"canonical_updates":0,
                     "protected_by_precedence":0,
@@ -126,8 +132,7 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
                 canonical += stored["canonical_updates"]
                 protected += stored["protected_by_precedence"]
                 results.append({
-                    "symbol":symbol,"instrument_type":family,"market":market,
-                    "currency":currency,"settlement":settlement,
+                    **reported_key,
                     "state":"HISTORICAL_V2_PARTIAL" if rejected else "HISTORICAL_V2_INGESTED",
                     "rejected_rows":len(rejected),"rejections":rejected,
                     **stored,
@@ -137,8 +142,7 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
             allowed={'DATA912_TIMEOUT','DATA912_RATE_LIMIT','DATA912_HTTP_ERROR','DATA912_PAYLOAD_INVALID'}
             detail=str(exc) if str(exc) in allowed else 'HISTORICAL_PROVIDER_OR_VALIDATION_ERROR'
             results.append({
-                "symbol":symbol,"instrument_type":family,"market":market,
-                "currency":currency,"settlement":settlement,"state":"ERROR",
+                **reported_key, "state":"ERROR",
                 "error_class":type(exc).__name__,"detail":detail,
                 "versions_appended":0,"canonical_updates":0,
                 "protected_by_precedence":0,
@@ -148,6 +152,7 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
     return {
         "ok": not invalid_targets and failed == 0 and empty == 0 and not any(x.get('rejected_rows',0) for x in results),
         "source":"DATA912_HISTORICAL_BATCH_V2",
+        "price_basis": history_v2.SOURCE_REPORTED,
         "selected":len(normalized),
         "invalid_targets":invalid_targets,
         "ambiguous_provider_requests":len(ambiguous_requests),

@@ -298,8 +298,8 @@ def append_many(store, rows: Iterable[CloseEvidence]) -> dict:
 
 
 def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=lambda:None,
-                          mapping_digest=None):
-    """Migrate close-only tables in an already isolated destination copy."""
+                          mapping_digest=None, record_rows=True):
+    """Migrate close-only tables inside the caller’s transaction."""
     columns={r[1] for r in connection.execute('PRAGMA table_info(history_close_versions_v1)')}
     if not columns or {'currency','previous_version_id'}<=columns:
         return {'migrated_rows':0,'quarantined_rows':0}
@@ -312,8 +312,9 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
         connection.execute('DROP INDEX IF EXISTS '+index)
     for statement in DDL.split(';'):
         if statement.strip():connection.execute(statement)
-    connection.execute('CREATE TABLE history_close_migration_quarantine_v2(old_version_id INTEGER PRIMARY KEY,reason TEXT NOT NULL)')
-    connection.execute('CREATE TABLE history_close_migration_map_v2(old_version_id INTEGER PRIMARY KEY,new_version_id INTEGER NOT NULL)')
+    if record_rows:
+        connection.execute('CREATE TABLE history_close_migration_quarantine_v2(old_version_id INTEGER PRIMARY KEY,reason TEXT NOT NULL)')
+        connection.execute('CREATE TABLE history_close_migration_map_v2(old_version_id INTEGER PRIMARY KEY,new_version_id INTEGER NOT NULL)')
     migrated=quarantined=0
     def ordering(value):
         try:return utc(value)
@@ -346,14 +347,16 @@ def migrate_legacy_tables(connection, *, currency_map, max_rows=1000000, check=l
                     'copy_migration_currency':{'origin':'LEGACY_METADATA' if explicit else 'EXPLICIT_REVIEWED_MAPPING',
                         'mapping_sha256':mapping_digest,'legacy_version_id':row['id']}},currency)
             result=append_close_evidence(None,item,connection=connection)
-            connection.execute('INSERT INTO history_close_migration_map_v2 VALUES(?,?)',(row['id'],result['version_id']))
+            if record_rows:
+                connection.execute('INSERT INTO history_close_migration_map_v2 VALUES(?,?)',(row['id'],result['version_id']))
             connection.execute('RELEASE SAVEPOINT history_close_migration_row')
             migrated+=1
         except (ValueError,TypeError,KeyError) as exc:
             connection.execute('ROLLBACK TO SAVEPOINT history_close_migration_row')
             connection.execute('RELEASE SAVEPOINT history_close_migration_row')
             reason=str(exc) if str(exc).startswith('HISTORY_') else 'HISTORY_CLOSE_CURRENCY_UNVERIFIED'
-            connection.execute('INSERT INTO history_close_migration_quarantine_v2 VALUES(?,?)',(row['id'],reason))
+            if record_rows:
+                connection.execute('INSERT INTO history_close_migration_quarantine_v2 VALUES(?,?)',(row['id'],reason))
             quarantined+=1
     return {'migrated_rows':migrated,'quarantined_rows':quarantined}
 

@@ -23,6 +23,7 @@ import ct_ppi_history_salvage_hf6 as salvage
 import cu_history_store_v2_hf6 as history
 import cw_data912_history_v2_sink as sink
 import historical_candle_shadow_rc6 as shadow
+from cv_history_store_adapter_hf6 import HistoricalStore
 from db_a3_cem_normalizer_hf6 import closing_to_candle
 
 NOW=datetime(2026,10,2,16,tzinfo=timezone.utc)
@@ -218,6 +219,9 @@ def test_NEW_old_payload_hash_retry_and_attempt_replay_keep_first_known_without_
     replay=history.append_many(s,[replace(value,observed_at='2026-10-01T18:00:00Z')],attempt_key='original-unit-attempt')
     assert replay['replayed_committed_attempt'] and not replay['versions_appended']
     assert len(table(s,'history_versions_v2'))==2
+    assert table(s,'history_canonical_v2')[0]['last_checked_at']==history.utc('2026-10-01T17:00:00Z')
+    checks={row['version_id']:row['last_checked_at'] for row in table(s,'history_checks_v2')}
+    assert checks[first['row_results'][0]['version_id']]==history.utc('2026-10-01T18:00:00Z')
     assert json.loads(exact_read(s)[0]['metadata_json'])['volume_unit']=='UNKNOWN'
     with pytest.raises(ValueError,match='HISTORY_ATTEMPT_KEY_PAYLOAD_CONFLICT'):
         history.append_many(s,[replace(value,metadata={'volume_unit':'UNKNOWN'},observed_at='2026-10-01T19:00:00Z')],attempt_key='original-unit-attempt')
@@ -568,10 +572,10 @@ def test_AUD20_Data912_reports_exact_rejections_before_shared_sink(changes,reaso
 
 
 def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_fetches(tmp_path,monkeypatch):
-    # This test intentionally exercises the legacy historical opt-in path.
-    # Production defaults must remain fail-closed without Data912 refresh.
+    # Exercise the normal adapter on an existing compatible historical store.
     monkeypatch.setattr(data912,'DATA912_REFRESH_ENABLED',True)
-    s=Store(tmp_path/'history.sqlite');calls=[]
+    s=HistoricalStore(str(tmp_path/'history.sqlite'));calls=[]
+    history.init_schema(s)
     monkeypatch.setattr(data912,'_session',lambda:object())
     monkeypatch.setattr(sink.time,'sleep',lambda *_:None)
     def response(client,path):
@@ -582,7 +586,10 @@ def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_
     result=sink.refresh_identities([('AUDIT','ACCIONES','BYMA','ARS','A-24HS')],history_store=s)
     assert not result['ok'] and result['results'][0]['state']=='HISTORICAL_V2_PARTIAL'
     assert result['results'][0]['rejections'][0]['reason']=='DATE_IN_FUTURE'
-    assert len(table(s,'history_versions_v2'))==1
+    rows=table(s,'history_versions_v2')
+    assert len(rows)==1 and rows[0]['price_basis']==history.SOURCE_REPORTED
+    assert rows[0]['currency']==rows[0]['settlement']=='UNKNOWN'
+    assert exact_read(s,cut=datetime.now(timezone.utc))==[]
     rejected=sink.refresh_identities([('AUDIT','ACCIONES','BYMA','A-24HS')],history_store=s)
     assert rejected['invalid_targets']==1 and not rejected['ok'] and len(calls)==1
 
@@ -590,8 +597,8 @@ def test_AUD20_partial_batch_is_not_reported_complete_and_four_key_target_never_
 def test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_or_fetch(tmp_path,monkeypatch):
     # Test synthetic provider collision only when explicitly opted in.
     monkeypatch.setattr(data912,'DATA912_REFRESH_ENABLED',True)
-    monkeypatch.setattr(data912,'_session',lambda:object())
     def forbidden(*_):raise AssertionError('AMBIGUOUS_REQUEST_MUST_NOT_FETCH')
+    monkeypatch.setattr(data912,'_session',forbidden)
     monkeypatch.setattr(data912,'_get_json',forbidden)
     s=Store(tmp_path/'history.sqlite')
     result=sink.refresh_identities([('AUDIT','ACCIONES','BYMA','ARS','A-24HS'),
@@ -599,7 +606,7 @@ def test_AUD07_Data912_cohort_currency_collision_is_rejected_before_batch_limit_
     assert not result['ok'] and result['selected']==0 and result['invalid_targets']==2
     assert result['ambiguous_provider_requests']==1
     assert {row['reason'] for row in result['identity_rejections']}=={'HISTORY_PROVIDER_REQUEST_IDENTITY_AMBIGUOUS'}
-    assert table(s,'history_versions_v2')==[]
+    assert not Path(s.path).exists()
 
 
 @pytest.mark.parametrize('failure,reason',[('429','DATA912_RATE_LIMIT'),('timeout','DATA912_TIMEOUT')])

@@ -23,6 +23,18 @@ class _NonClosing:
     def __exit__(self, *_): self.connection.commit(); return False
 
 
+def test_data912_v2_sink_does_not_turn_requested_identity_into_provider_proof():
+    from cw_data912_history_v2_sink import _candles
+
+    rows = [('2026-09-02', 100, 110, 90, 105, 500)]
+    value, = _candles(('GGAL', 'ACCIONES', 'BYMA', 'ARS', 'T+1'), rows,
+                      '2026-09-02T22:00:00Z')
+    value.validate()
+    assert (value.market, value.currency, value.settlement) == ('BCBA', 'UNKNOWN', 'UNKNOWN')
+    assert value.price_basis == history_v2.SOURCE_REPORTED
+    assert value.adjustment_basis == history_v2.source_reported_adjustment('DATA912')
+
+
 def test_data912_execution_is_permanently_disabled():
     assert data912.DATA912_EXECUTION_ALLOWED is False
 
