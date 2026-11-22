@@ -128,7 +128,7 @@ def test_dispatches_all_ten_families_with_specialized_evidence_and_no_database_m
     assert instruments["FUND1"]["cadence_seconds"] == 86400
     assert fci["terms"]["nav"]["value"] == 10.1 and not fci["intraday_equity_scanner"]
     assert fci["reason_codes"] == ["FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED",
-                                   "FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED"]
+                                   "FCI_RUNTIME_ATTESTED_SETTLEMENT_RECEIPT_REQUIRED"]
     json.dumps(report, allow_nan=False)
 
 
@@ -152,7 +152,7 @@ def test_missing_or_stale_specialized_evidence_never_falls_back_to_equity(tmp_pa
     assert instruments["FUND1"]["handler_result"]["reason_codes"] == [
         "FUND_NAV_OR_LIFECYCLE_NO_VERIFICADO",
         "FCI_RUNTIME_SOURCE_CALENDAR_NOT_AUTHENTICATED",
-        "FCI_RUNTIME_NAV_OR_REDEMPTION_WRITER_UNVERIFIED",
+        "FCI_RUNTIME_ATTESTED_SETTLEMENT_RECEIPT_REQUIRED",
     ]
 
 

@@ -9,16 +9,17 @@ evidence before a caller may initiate a new subscription.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Mapping, Sequence
 
 from bs_instrument_contracts import aware_datetime, cash_currency, decimal_value
-from rc6_paper_family_lifecycle import PaperFundTerms, fund_subscription_detail
+from rc6_paper_family_lifecycle import PaperFundTerms, _canonical_json, fund_subscription_detail
 
 
 PAPER_ONLY = True
@@ -75,6 +76,35 @@ class FundSnapshot:
     status: str = "PAPER_INPUT_RECONCILIATION_ONLY"
     entry_authority: bool = False
     real_routes_used: tuple = ()
+
+
+def fund_evidence_digest(evidence: FundClassEvidence | FundReceipt) -> str:
+    values = asdict(evidence)
+    if isinstance(evidence, FundReceipt):
+        for field in ("nav_per_unit", "units", "explicit_fee", "cash_amount"):
+            if values[field] is not None:
+                values[field] = decimal_value(values[field], field)
+        fields = ("source_at", "recorded_at", "nav_effective_at")
+    else:
+        fields = ("known_at",)
+    for field in fields:
+        if values[field] is not None:
+            values[field] = aware_datetime(values[field])
+    return hashlib.sha256(_canonical_json(values).encode("utf-8")).hexdigest()
+
+
+def read_locked_fund_events(connection, lifecycle_id, evidence):
+    """Read the fund root and its immutable events using the caller's snapshot."""
+    if not isinstance(evidence, FundClassEvidence):
+        raise ValueError("FCI_CLASS_TERMS_REQUIRED")
+    root = connection.execute(
+        "SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?", (lifecycle_id,)).fetchone()
+    if not root or (root["family"], root["instrument"], root["currency"]) != (
+            "FCI", evidence.terms.symbol, evidence.terms.currency):
+        raise ValueError("FCI_DURABLE_IDENTITY_MISMATCH")
+    rows = connection.execute("""SELECT * FROM paper_family_lifecycle_events WHERE lifecycle_id=?
+                                ORDER BY rowid""", (lifecycle_id,)).fetchall()
+    return root, [{**dict(row), "detail": json.loads(row["detail_json"])} for row in rows]
 
 
 def _required(value, code):
@@ -259,21 +289,17 @@ def reconcile_fund_store(path, lifecycle_id, receipts, evidence, *, as_of):
         db.execute("PRAGMA query_only=ON")
         db.execute("BEGIN")  # The root and its events must share a read snapshot.
         identity_from_connection(db)
-        root = db.execute("SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?",
-                          (lifecycle_id,)).fetchone()
-        if not root or (root["family"], root["instrument"], root["currency"]) != (
-            "FCI", evidence.terms.symbol, evidence.terms.currency
-        ):
-            raise ValueError("FCI_DURABLE_IDENTITY_MISMATCH")
-        rows = db.execute("""SELECT * FROM paper_family_lifecycle_events WHERE lifecycle_id=?
-                         ORDER BY rowid""", (lifecycle_id,)).fetchall()
-    events = [{**dict(row), "detail": json.loads(row["detail_json"])} for row in rows]
+        root, events = read_locked_fund_events(db, lifecycle_id, evidence)
     result = reconcile_fund_events(lifecycle_id, events, receipts, evidence, as_of=as_of)
-    if root["state"] != result.state:
-        raise ValueError("FCI_DURABLE_STATE_MISMATCH")
-    if (not rows or _time(root["updated_at"], "FCI_DURABLE_CLOCK_INVALID") !=
-            _time(rows[-1]["occurred_at"], "FCI_DURABLE_CLOCK_INVALID")
-            or decimal_value(root["ledger_total"], "FCI_DURABLE_TOTAL_INVALID") !=
-            sum((decimal_value(row["amount"], "FCI_DURABLE_AMOUNT_INVALID") for row in rows), Decimal(0))):
-        raise ValueError("FCI_DURABLE_TOTAL_OR_CLOCK_MISMATCH")
+    validate_fund_event_ledger(root, events)
     return result
+
+
+def validate_fund_event_ledger(root, events):
+    if not events or root["state"] != events[-1]["to_state"]:
+        raise ValueError("FCI_DURABLE_STATE_MISMATCH")
+    if (_time(root["updated_at"], "FCI_DURABLE_CLOCK_INVALID") !=
+            _time(events[-1]["occurred_at"], "FCI_DURABLE_CLOCK_INVALID")
+            or decimal_value(root["ledger_total"], "FCI_DURABLE_TOTAL_INVALID") !=
+            sum((decimal_value(row["amount"], "FCI_DURABLE_AMOUNT_INVALID") for row in events), Decimal(0))):
+        raise ValueError("FCI_DURABLE_TOTAL_OR_CLOCK_MISMATCH")

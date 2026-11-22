@@ -24,7 +24,8 @@ from rc6_dynamic_universe.routing import (
     dispatch_observation, option_observation_universe, strategy_route,
 )
 from rc6_dynamic_universe.sources import MARKETS, TERMS, SOURCE_ALIASES
-from rc6_paper_family_lifecycle import FCI_CALENDAR_AUTHORITY_ERROR, FCI_WRITER_AUTHORITY_ERROR
+from rc6_fund_source_quarantine import SETTLEMENT_RECEIPT_REQUIRED
+from rc6_paper_family_lifecycle import FCI_CALENDAR_AUTHORITY_ERROR
 from .persistence import FrozenJSONDict
 from .source_authority import VERSION as SOURCE_POLICY_VERSION, resolve_field
 
@@ -702,7 +703,7 @@ def family_reports(database, *, as_of, catalog, sources=None, compact_missing=Fa
                  for name in ("nav", "nav_date", "subscription_status", "redemption_term", "cutoff_time")}
         reasons = ["FUND_NAV_OR_LIFECYCLE_NO_VERIFICADO"] if any(
             field["value"] is None for field in terms.values()) else []
-        reasons.extend((FCI_CALENDAR_AUTHORITY_ERROR, FCI_WRITER_AUTHORITY_ERROR))
+        reasons.extend((FCI_CALENDAR_AUTHORITY_ERROR, SETTLEMENT_RECEIPT_REQUIRED))
         return {"status": "OBSERVE_ONLY", "terms": terms, "trigger": "NAV_SUBSCRIPTION_REDEMPTION_EVENT",
                 "intraday_equity_scanner": False, "event_signature": digest({name: {"value": value["value"], "status": value["status"]} for name, value in terms.items()}),
                 "cadence_class": "EVENT_DRIVEN_NAV_PUBLICATION", "event_authority": "OBSERVATION_ONLY",
