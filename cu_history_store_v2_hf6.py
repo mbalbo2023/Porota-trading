@@ -25,6 +25,8 @@ MAX_BATCH_ROWS = 10000
 IDENTITY = ("symbol","instrument_type","market","currency","settlement")
 SERIES = (*IDENTITY,"date","price_basis","adjustment_basis")
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
+SOURCE_REPORTED = "SOURCE_REPORTED"
+SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912"}
 DDL = """
 CREATE TABLE IF NOT EXISTS history_versions_v2(
  id INTEGER PRIMARY KEY AUTOINCREMENT,symbol TEXT NOT NULL,instrument_type TEXT NOT NULL,
@@ -90,6 +92,13 @@ def utc(value) -> str:
 
 def _canonical_json(value) -> str:
     return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":"),allow_nan=False,default=str)
+
+
+def source_reported_adjustment(source):
+    if source not in SOURCE_REPORTED_PROVIDERS:
+        raise ValueError("HISTORY_SOURCE_REPORTED_PROVIDER_UNVERIFIED")
+    # The provider remains part of the key while the economic series is unknown.
+    return f"UNKNOWN:{source}"
 
 
 def validate_daily_values(*, date, open, high, low, close, volume, known_at, market,
@@ -167,14 +176,18 @@ class Candle:
         if any(isinstance(getattr(self,name),bool) for name in ('open','high','low','close','volume')):
             raise ValueError('HISTORY_NUMBER_BOOLEAN')
         metadata=dict(self.metadata or {})
-        monetary=self.currency or metadata.get("currency")
-        if not monetary: raise ValueError("HISTORY_CURRENCY_REQUIRED")
-        try: monetary=cash_currency(monetary)
-        except ValueError: raise ValueError("HISTORY_CURRENCY_UNVERIFIED") from None
-        if metadata.get("currency") and cash_currency(metadata["currency"])!=monetary:
-            raise ValueError("HISTORY_CURRENCY_CONFLICT")
         basis=str(self.price_basis or metadata.get("price_basis") or
                   ("UNKNOWN_ADJUSTED" if self.adjusted else "RAW")).strip().upper()
+        monetary=self.currency or metadata.get("currency")
+        if not monetary: raise ValueError("HISTORY_CURRENCY_REQUIRED")
+        if basis == SOURCE_REPORTED:
+            if monetary != "UNKNOWN" or metadata.get("currency", "UNKNOWN") != "UNKNOWN":
+                raise ValueError("HISTORY_SOURCE_REPORTED_CURRENCY_REQUIRED")
+        else:
+            try: monetary=cash_currency(monetary)
+            except ValueError: raise ValueError("HISTORY_CURRENCY_UNVERIFIED") from None
+            if metadata.get("currency") and cash_currency(metadata["currency"])!=monetary:
+                raise ValueError("HISTORY_CURRENCY_CONFLICT")
         adjustment=str(self.adjustment_basis or metadata.get("adjustment_basis") or
                        ("RAW_NO_ADJUSTMENT" if basis=="RAW" else "UNKNOWN")).strip()
         metadata["currency"]=monetary
@@ -192,8 +205,13 @@ class Candle:
 
     def validate(self):
         value=self.normalized()
-        if any(getattr(value,f) in {"","UNKNOWN"} for f in (*IDENTITY,"source")):
+        reported = value.price_basis == SOURCE_REPORTED
+        required = (*IDENTITY[:3], "source") if reported else (*IDENTITY, "source")
+        if any(getattr(value,f) in {"","UNKNOWN"} for f in required):
             raise ValueError("HISTORY_IDENTITY_UNVERIFIED")
+        if reported and (value.market != "BCBA" or value.settlement != "UNKNOWN" or value.adjusted
+                         or value.adjustment_basis != source_reported_adjustment(value.source)):
+            raise ValueError("HISTORY_SOURCE_REPORTED_KEY_INVALID")
         from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES,LEGACY_HISTORY_FAMILIES
         if value.instrument_type not in OPERATIONAL_HISTORY_FAMILIES | LEGACY_HISTORY_FAMILIES:
             raise ValueError("HISTORY_FAMILY_UNVERIFIED")
@@ -201,7 +219,7 @@ class Candle:
         validate_daily_values(date=value.date,open=value.open,high=value.high,low=value.low,
                               close=value.close,volume=value.volume,known_at=known,market=value.market,
                               family=value.instrument_type,settlement=value.settlement)
-        if value.price_basis not in {"RAW","SPLIT","DIVIDEND","TOTAL_RETURN","UNKNOWN_ADJUSTED"}:
+        if value.price_basis not in {"RAW","SPLIT","DIVIDEND","TOTAL_RETURN","UNKNOWN_ADJUSTED",SOURCE_REPORTED}:
             raise ValueError("HISTORY_PRICE_BASIS_UNVERIFIED")
         if value.price_basis=="RAW" and value.adjusted: raise ValueError("HISTORY_ADJUSTMENT_CONFLICT")
         if value.price_basis not in {"RAW","UNKNOWN_ADJUSTED"} and value.adjustment_basis in {"","UNKNOWN"}:
@@ -349,6 +367,9 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
     values=list(islice(iter(candles),MAX_BATCH_ROWS+1))
     if len(values)>MAX_BATCH_ROWS: raise ValueError("HISTORY_BATCH_ROW_BUDGET_EXHAUSTED")
     values=[v.normalized() for v in values]
+    reference_store = getattr(store, "source_reported_only", False) is True
+    if any((value.price_basis == SOURCE_REPORTED) != reference_store for value in values):
+        raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
     for value in values: value.validate()
     if not values: return {"versions_appended":0,"canonical_updates":0,"protected_by_precedence":0,"committed_rows":0,"batch_semantics":"ATOMIC_BOUNDED"}
     init_schema(store)
@@ -406,7 +427,13 @@ def read_as_of(connection,*,symbol,instrument_type,market,currency,settlement,as
     eligible("CLOSE_ONLY",minimum_quality)  # validate even when no rows exist
     cut=utc(as_of)
     identity=tuple(str(x or "").strip().upper() for x in (symbol,instrument_type,market,currency,settlement))
-    if any(x in {"","UNKNOWN"} for x in identity): raise ValueError("HISTORY_IDENTITY_UNVERIFIED")
+    if price_basis == SOURCE_REPORTED:
+        allowed = {source_reported_adjustment(source) for source in SOURCE_REPORTED_PROVIDERS}
+        if (any(x in {"", "UNKNOWN"} for x in identity[:2]) or identity[2:] != ("BCBA", "UNKNOWN", "UNKNOWN")
+                or adjustment_basis not in allowed):
+            raise ValueError("HISTORY_SOURCE_REPORTED_KEY_INVALID")
+    elif any(x in {"","UNKNOWN"} for x in identity):
+        raise ValueError("HISTORY_IDENTITY_UNVERIFIED")
     rows=connection.execute("""SELECT v.* FROM history_versions_v2 v WHERE symbol=? AND instrument_type=?
         AND market=? AND currency=? AND settlement=? AND price_basis=? AND adjustment_basis=?
         AND version_known_at<=? AND date<=? ORDER BY date,source,version_known_at,id LIMIT 200001""",

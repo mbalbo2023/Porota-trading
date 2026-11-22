@@ -9,6 +9,8 @@ import time
 
 import al_historical_ingest as legacy_history
 
+SOURCE_REPORTED_APPLICATION_ID = 0x52433652
+
 
 class _OwnedConnection(sqlite3.Connection):
     def __exit__(self, *exception):
@@ -21,8 +23,11 @@ class _OwnedConnection(sqlite3.Connection):
 class HistoricalStore:
     """SQLite store dedicado a series de mercado, con WAL y timeout."""
 
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: str | None = None, *, source_reported_only: bool = False):
+        if source_reported_only and not path:
+            raise ValueError("HISTORY_SOURCE_REPORTED_DESTINATION_REQUIRED")
         self.path = path or os.getenv("HIST_DB_PATH", legacy_history.HIST_DB_PATH)
+        self.source_reported_only = source_reported_only
         self._initialized_identity = None
         self._prepared_identity = None
 
@@ -99,9 +104,14 @@ class HistoricalStore:
         _, identity = self._path_identity()
         if self._prepared_identity is not None and identity != self._prepared_identity:
             raise ValueError('HISTORY_INITIALIZATION_SOURCE_CHANGED')
+        if self.source_reported_only and identity is None:
+            raise ValueError("HISTORY_REFERENCE_DESTINATION_REQUIRED")
         folder = os.path.dirname(self.path) or "."
         os.makedirs(folder, exist_ok=True)
         c = sqlite3.connect(self.path, timeout=30, factory=_OwnedConnection)
+        if self.source_reported_only and c.execute("PRAGMA application_id").fetchone()[0] != SOURCE_REPORTED_APPLICATION_ID:
+            c.close()
+            raise ValueError("HISTORY_REFERENCE_DESTINATION_REQUIRED")
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA synchronous=NORMAL")
         c.execute("PRAGMA busy_timeout=30000")
