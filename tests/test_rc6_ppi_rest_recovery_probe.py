@@ -117,6 +117,8 @@ def test_probe_uses_exact_current_and_book_but_never_simulates(
                for _, detail in native_receipts)
     assert all("http_status=200" in detail and "market_timestamp_utc=" in detail
                and "wire_received_at_utc=" in detail for _, detail in native_receipts)
+    assert all("response_settlement_status=ABSENT;response_settlement_literal=;"
+               in detail for _, detail in native_receipts)
 
 
 @pytest.mark.parametrize("defect", [
@@ -943,7 +945,7 @@ def test_native_reference_family_never_requires_spot_book_or_marks_ready(
             self.methods.append(endpoint)
             assert endpoint == "current" and priority == "DISCOVERY"
             assert tuple(five_key) == key
-            return {"native_payload": {"date": stamp, "price": 123.4},
+            return {"native_payload": {"date": stamp, "price": 123.4, "settlement": "CI"},
                     "guard_wire_receipt": {
                         "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1",
                         "endpoint": "current", "http_status_code": 200,
@@ -962,6 +964,58 @@ def test_native_reference_family_never_requires_spot_book_or_marks_ready(
         assert c.execute("SELECT COUNT(*) FROM market_snapshots").fetchone()[0] == 0
         assert c.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM paper_events WHERE event_type='PPI_DIRECT_REST_REFERENCE_OBSERVED'").fetchone()[0] == 1
+        witness = c.execute("SELECT detail FROM paper_events WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'").fetchone()[0]
+        assert "response_settlement_status=EXPLICIT;response_settlement_literal=CI;" in witness
+
+
+@pytest.mark.parametrize("bad_reference", [False, True])
+def test_open_receipts_distinguish_fci_and_caucion_references_from_book(
+        catalog_store, monkeypatch, bad_reference):
+    with catalog_store.connect() as c:
+        for ticker, family in (("FUNDX", "FCI"), ("PESOS1", "CAUCIONES")):
+            raw = {"_discovery_source": "PPI_PRIMARY", "ticker": ticker,
+                   "type": family, "market": "BYMA", "currency": "ARS"}
+            c.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (ticker, family, "BYMA", "ARS", "INMEDIATA", "REQUEST_CANDIDATE",
+                       "OFFHOST", ART_OPEN.isoformat(), "OFFHOST", "AVAILABLE",
+                       "NOT_READY", json.dumps(raw)))
+    reader = _ready_open_scanner(catalog_store, monkeypatch)
+    command_id = _queued_command(catalog_store, OPEN_BATCH, created_at=ART_OPEN)
+    stamp = datetime.now(timezone.utc).isoformat()
+    calls = []
+
+    def capture(endpoint, key, *, priority):
+        calls.append((key[0], endpoint))
+        if endpoint == "current":
+            payload = {"date": stamp, "price": None if bad_reference and key[1] == "FCI" else 101}
+        else:
+            payload = {"date": stamp,
+                       "bids": [{"position": 1, "price": 100, "quantity": 1}],
+                       "offers": [{"position": 1, "price": 102, "quantity": 1}]}
+        return {"native_payload": payload, "guard_wire_receipt": {
+            "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
+            "adapter_send_invoked": True, "adapter_response_completed": True,
+            "http_status_code": 200, "http_method": "GET",
+            "request_identity_3key": [key[0], key[1], key[4]], "claimed_five_key": list(key),
+            "received_at_utc": stamp, "raw_body_sha256": "a" * 64}}
+
+    reader.capture_guarded_native = capture
+    observer._run_ppi_open_command(catalog_store, reader, command_id, OPEN_BATCH, now=ART_OPEN)
+    status, raw = _command_receipt(catalog_store, command_id)
+    assert status == "EVIDENCE"
+    report = json.loads(raw)
+    assert report["statuses"]["CAUCIONES"] == "CAUCION_CURRENT_REFERENCE_OBSERVED"
+    assert report["statuses"]["FCI"] == (
+        "REFERENCE_UNUSABLE" if bad_reference else "FCI_CURRENT_REFERENCE_OBSERVED")
+    assert report["paper_ready"] is report["order_authority"] is False
+    for family in ("CAUCIONES", "FCI"):
+        assert report["coverage"][family] == {
+            "enumerated_exact": 0, "attempted": 1, "native_pair_qa_pass": 0,
+            "ready": 0, "hold": 1, "unattempted": 0}
+    assert calls == [("AL30", "current"), ("AL30", "book"),
+                     ("PESOS1", "current"), ("FUNDX", "current")]
+    with catalog_store.connect() as c:
+        assert [row[0] for row in c.execute("SELECT symbol FROM market_snapshots")] == ["AL30"]
 
 
 @pytest.mark.parametrize("bad_price", [0, -1, None])
