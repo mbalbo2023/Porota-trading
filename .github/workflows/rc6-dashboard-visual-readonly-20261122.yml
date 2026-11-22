@@ -1,4 +1,4 @@
-name: RC6 dashboard visual read-only audit
+name: RC6 dashboard focused validation audit
 
 on:
   push:

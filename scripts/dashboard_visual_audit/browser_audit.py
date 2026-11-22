@@ -147,6 +147,12 @@ def row_details(page, path, max_rows, take_screenshot=None):
 
 def validation(page, path, report):
     if path == "/sistema/evidencia":
+        trigger = page.locator("main #sistema-evidencia-dialog").locator("xpath=preceding-sibling::button[1]")
+        if trigger.count() == 1:
+            trigger.click(timeout=2000)
+            visible = page.locator("#sistema-evidencia-dialog").evaluate("(d) => d.open && d.matches(':modal')")
+            page.keyboard.press("Escape")
+            report["standalone_evidence_detail"] = {"opened": visible, "focus_restored": trigger.evaluate("(b) => b === document.activeElement")}
         link = page.get_by_role("link", name="Ver hitos M0–M11")
         if link.count() == 1:
             targets = []
@@ -156,19 +162,25 @@ def validation(page, path, report):
             page.wait_for_url("**/validacion", timeout=7000)
             page.wait_for_load_state("domcontentloaded", timeout=7000)
             report["validation_navigation"] = {"path": urlsplit(page.url).path, "responses": targets,
-                                               "terminal_shell": page.locator("#porota-canonical-nav").count() == 1}
+                                               "terminal_shell": page.locator("#terminal-content").count() == 1}
             page.remove_listener("response", observe)
         return None
     cards = page.locator("details.paper-trade > summary")
     output = {"hitos": cards.count(), "details": [], "contrast": page.evaluate(VALIDATION_CONTRAST),
               "legacy_shell": page.locator("#porota-canonical-nav").count() == 0}
-    for n in range(min(2, cards.count())):
+    output["legacy_main"] = page.locator("#porota-main-content").count() == 1
+    output["m4_current_text"] = ("VERIFICADO ACTUAL" in cards.nth(4).text_content()) if cards.count() > 4 else None
+    output["m11_blocked"] = ("BLOQUEADO POR POLÍTICA" in cards.nth(11).text_content()) if cards.count() > 11 else None
+    for n in range(min(12, cards.count())):
         summary = cards.nth(n)
-        title = normalize(summary.inner_text())
-        summary.click(timeout=3000)
+        title = normalize(summary.text_content())
+        if n not in {0, 1, 4, 11}:
+            continue
+        summary.evaluate("(s) => { s.scrollIntoView({block:'center'}); s.focus(); }")
+        summary.press("Enter", timeout=1200)
         body = summary.locator("xpath=following-sibling::*[1]")
         if body.count():
-            visible = body.inner_text()
+            visible = body.text_content()
             output["details"].append({"milestone": f"M{n}", "summary_status": BADGE.findall(title),
                                       "percentages": re.findall(r"\d{1,3}%", title), "expanded": body.is_visible(),
                                       "exit_criteria": body.locator("li").count(),
@@ -187,7 +199,7 @@ def view_states(page):
     return panels
 
 
-def run(base, token, output, live=False):
+def run(base, token, output, live=False, focused=False):
     output.mkdir(parents=True, exist_ok=True)
     scope = "LOOPBACK_DROPLET_VIA_ACTIONS" if live else "CHECKOUT_EXACTO_SQLITE_FIXTURE"
     results = {"schema": "porota.rc6.dashboard.browser-audit.v1", "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -219,13 +231,14 @@ def run(base, token, output, live=False):
             page.screenshot(path=str(output / filename), animations="disabled", timeout=5000)
             results["snapshots"].append(filename)
 
-        for path in [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]:
+        targets = ("/sistema/evidencia", "/validacion") if focused else [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]
+        for path in targets:
             info = {"page_errors": 0}
             page_errors.clear()
             try:
                 response = page.goto(base + path, wait_until="domcontentloaded", timeout=7000)
                 info.update(status=response.status if response else None,
-                            shell=page.locator("#porota-canonical-nav").count() == 1,
+                            shell=page.locator("#terminal-content").count() == 1,
                             main=page.locator("#terminal-content").get_attribute("data-view", timeout=1200)
                             if page.locator("#terminal-content").count() else None,
                             h1_count=page.locator("h1").count(),
@@ -241,7 +254,7 @@ def run(base, token, output, live=False):
                             info["validation"] = report
                     if path in ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/scheduler?offset=20", "/validacion"):
                         if path == "/validacion":
-                            page.locator("details.paper-trade > summary").first.scroll_into_view_if_needed()
+                            page.locator("details.paper-trade > summary").first.evaluate("(s) => s.scrollIntoView({block:'center'})")
                         elif not page.locator("tr[data-row='true']").count():
                             page.evaluate("window.scrollTo(0, 0)")
                         else:
@@ -254,7 +267,8 @@ def run(base, token, output, live=False):
             if live:
                 sleep(.18)
         page.set_viewport_size(PHONE)
-        for path in ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/evidencia", "/validacion"):
+        mobile = ("/sistema/scheduler", "/validacion") if focused else ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/evidencia", "/validacion")
+        for path in mobile:
             try:
                 response = page.goto(base + path, wait_until="domcontentloaded", timeout=7000)
                 info = {"status": response.status, "horizontal_overflow": page.evaluate(
@@ -267,8 +281,11 @@ def run(base, token, output, live=False):
                         info["mobile_menu_opens"] = menu.get_attribute("aria-expanded") == "true"
                         page.keyboard.press("Escape")
                         info["mobile_menu_closes"] = menu.get_attribute("aria-expanded") == "false"
-                    info["details"] = row_details(page, path, max_rows=3, take_screenshot=(
-                        (lambda: snapshot("phone-scheduler-dialog.png")) if path == "/sistema/scheduler" else None))
+                    info["details"] = row_details(page, path, max_rows=3)
+                    if path == "/sistema/scheduler":
+                        first = page.locator("tr[data-row='true'] button[data-detail-dialog]").first
+                        first.click(timeout=1500)
+                        snapshot("phone-scheduler-dialog.png")
                 results["phone"][path] = info
             except Error as exc:
                 results["phone"][path] = {"error": type(exc).__name__}

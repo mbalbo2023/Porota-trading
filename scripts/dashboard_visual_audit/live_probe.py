@@ -136,7 +136,7 @@ if mode == "before":
                                   "rc6_action4_auditoria_latest.json")
     action_report = action4.get("dashboard_daily_report") or {}
     period = action_report.get("periodo") if isinstance(action_report,dict) else None
-    receipt["action4"] = {**action_meta, "generated_at":instant(action4.get("generated_at")),
+    receipt["action4"] = {**action_meta, "generated_at":instant(action4.get("generated_at_utc")),
                           "period": period if isinstance(period,str) and re.fullmatch("[0-9 /T:Z.+–-]{1,125}",period) else None}
     snap_meta, snap = record(root / "scheduler" / "systemd_timers.json")
     rows = snap.get("timers")
@@ -149,6 +149,9 @@ if mode == "before":
              "porota-candle-integrity-rc6.timer","porota-1016-github-verify.timer",
              "porota-a3-history-daily-rc6.timer")
     receipt["units"] = systemd(names)
+    effective_timer = observe(["systemctl","cat","--no-pager","porota-scheduler-export-rc6.timer"])
+    receipt["exporter_timer_configuration"] = [line.strip() for line in effective_timer.splitlines()
+        if re.fullmatch(r"(?:OnBootSec|OnUnitActiveSec|OnUnitInactiveSec|AccuracySec)=[0-9A-Za-z .-]{1,32}",line.strip())]
     existing = observe(["systemctl","list-unit-files","--no-legend","--no-pager",
                         "--type=timer","porota-*"],timeout=5)
     receipt["validation_named_timers"] = [line.split()[0] for line in existing.splitlines() if
@@ -196,7 +199,7 @@ def main():
                     time.sleep(.3)
             else:
                 raise SystemExit("RC6_DASHBOARD_HEALTH_UNAVAILABLE")
-            run(BASE, token, output, live=True)
+            run(BASE, token, output, live=True, focused=True)
         finally:
             forwarding.terminate()
             try:
