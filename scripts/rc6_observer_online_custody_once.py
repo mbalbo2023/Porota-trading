@@ -39,8 +39,10 @@ EXPECTED_TREE_SHA = "54618bc017cfea0167c3e94e7a460631ad4543b5"
 EXPECTED_IMAGE_ID = "sha256:384282ef540e0e7133f5d0449f02a2953306a318a4f673e7817ed06fb0bddd4b"
 CUSTODY_RELEASE = (EXPECTED_SOURCE_SHA, EXPECTED_TREE_SHA, EXPECTED_IMAGE_ID)
 HISTORY_MODES = {"HISTORY_REFERENCE_PREPARE", "HISTORY_REFERENCE_APPLY"}
+HISTORY_VERIFY = "HISTORY_REFERENCE_VERIFY"
 HISTORY_WRITE_SCOPE = "RC6_HISTORY_REFERENCE_IMPORT_ONCE"
 HISTORY_LEGACY_ROWS = 596196
+HISTORY_LEGACY_CANONICAL = 439833
 CAPSULE_MAX = 16 * 1024**2
 CAPSULE_PART = 512 * 1024
 CAPTURE_PINS = {
@@ -1604,6 +1606,20 @@ def _execute_history_loader(account, cid, bundle, identity):
             timeout=450, env=_rootless_client_environment(account), cwd="/")
 
 
+def _retire_history_seal(anchor, apply_run):
+    # An O_PATH dirfd can resolve unlinkat but cannot be fsynced.
+    descriptor = os.open(".", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         dir_fd=anchor)
+    try:
+        for name in ("transfer.key", "transfer.crt", "sealed-" + apply_run + ".cms"):
+            os.unlink(name, dir_fd=descriptor)
+        os.fsync(descriptor)
+    except OSError as exc:
+        raise Hold("HISTORY_IMPORT_TRANSFER_CLEANUP_INCOMPLETE") from exc
+    finally:
+        os.close(descriptor)
+
+
 def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
     account = _operator_identity_guard()
     if not RUN_ID.fullmatch(apply_run) or not HEX64.fullmatch(capsule_digest):
@@ -1664,18 +1680,85 @@ def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
             "HISTORY_REFERENCE_APPLY", 0)
         if receipt["state"] != "HISTORY_REFERENCE_APPLIED":
             raise Hold("HISTORY_IMPORT_RECEIPT_INVALID")
-        for name in ("transfer.key", "transfer.crt", "sealed-" + apply_run + ".cms"):
-            os.unlink(name, dir_fd=fd)
-        os.fsync(fd)
+        _retire_history_seal(fd, apply_run)
         return receipt
     finally:
         os.close(fd)
 
 
+def _read_history_reference_totals(db):
+    db.execute("PRAGMA query_only=ON")
+    db.execute("BEGIN")
+    try:
+        expected = {digest: count for digest, count in CAPTURE_PINS.values()}
+        for table in ("history_versions_v2", "history_canonical_v2"):
+            rows = db.execute(f"""
+                SELECT json_extract(metadata_json, '$.archive_sha256'), COUNT(*),
+                    SUM(CASE WHEN source='IOL_MCP' AND price_basis='SOURCE_REPORTED'
+                        AND currency='UNKNOWN' AND settlement='UNKNOWN' THEN 1 ELSE 0 END)
+                FROM {table}
+                WHERE json_extract(metadata_json, '$.archive_sha256') IN (?, ?)
+                GROUP BY 1
+            """, tuple(expected)).fetchall()
+            if {digest: total for digest, total, reported in rows if total == reported} != expected:
+                raise Hold("HISTORY_REFERENCE_COVERAGE_NOT_VERIFIED")
+        legacy = db.execute("SELECT COUNT(*) FROM history_versions_v2_legacy").fetchone()[0]
+        canonical = db.execute("SELECT COUNT(*) FROM history_canonical_v2_legacy").fetchone()[0]
+        if legacy != HISTORY_LEGACY_ROWS or canonical != HISTORY_LEGACY_CANONICAL:
+            raise Hold("HISTORY_IMPORT_LEGACY_COUNT_CHANGED")
+        if (db.execute("PRAGMA quick_check").fetchone() != ("ok",)
+                or db.execute("PRAGMA foreign_key_check").fetchone() is not None):
+            raise Hold("HISTORY_REFERENCE_SQLITE_CHECK_FAILED")
+        return {"source_reported_committed_rows": sum(expected.values()),
+                "legacy_versions_preserved": legacy, "legacy_canonical_preserved": canonical,
+                "quick_check": "ok", "source_sql_writes": 0}
+    finally:
+        db.execute("ROLLBACK")
+
+
+def verify_reference_history(prepare_run, verify_run, release):
+    _operator_identity_guard()
+    if not RUN_ID.fullmatch(verify_run):
+        raise Hold("HISTORY_IMPORT_RUN_ID_INVALID")
+    folder = _history_folder(prepare_run)
+    fd = _anchor_directory(folder)
+    try:
+        saved, _ = _open_private_restore_member(fd, "reference-apply.json", 8192)
+        with saved:
+            capture = json.load(saved)
+        seal_retired = not any(os.path.lexists(folder / name) for name in ("transfer.key", "transfer.crt"))
+    finally:
+        os.close(fd)
+    if tuple(capture.get("release", ())) != release:
+        raise Hold("HISTORY_IMPORT_RELEASE_INVALID")
+    expected = capture.get("restore_sha256", "")
+    before = _history_source_pin()
+    if before["db"][:2] != capture["source"]["db"][:2]:
+        raise Hold("HISTORY_IMPORT_INODE_CHANGED")
+    deadline = time.monotonic() + 320
+    with _verified_restore(CUSTODY, "HISTORY", prepare_run, deadline,
+                           maximum=MIGRATION_MAX_BYTES, expected_sha=expected) as (_, digest, _), \
+            _anchored_source_sqlite(OBSERVER) as paper, _anchored_source_sqlite(HISTORY) as source:
+        _rootless_runtime_binding(_release_marker(MARKER, release), HISTORY, release=release)
+        _live_paper_zero(paper)
+        source.set_progress_handler(lambda: int(time.monotonic() > deadline), 5000)
+        try:
+            evidence = _read_history_reference_totals(source)
+        except sqlite3.Error as exc:
+            raise Hold("HISTORY_REFERENCE_LIVE_SQL_UNVERIFIED") from exc
+        _live_paper_zero(paper)
+    if _history_source_pin() != before:
+        raise Hold("HISTORY_IMPORT_SOURCE_CHANGED")
+    return {"schema": "rc6.history-reference-transfer.v1", "state": "HISTORY_REFERENCE_VERIFIED",
+            "run_id": verify_run, "restore_sha256": digest, "seal_retired": seal_retired,
+            "real_orders_sent": 0, **evidence}
+
+
 def history_reference_receipt(raw, mode, rc):
     schema = "rc6.history-reference-transfer.v1"
     expected = {"HISTORY_REFERENCE_PREPARE": "HISTORY_REFERENCE_READY",
-                "HISTORY_REFERENCE_APPLY": "HISTORY_REFERENCE_APPLIED"}
+                "HISTORY_REFERENCE_APPLY": "HISTORY_REFERENCE_APPLIED",
+                HISTORY_VERIFY: "HISTORY_REFERENCE_VERIFIED"}
     failed = {"schema": schema, "state": "NO_VERIFICADO"}
     if not isinstance(raw, dict) or rc or raw.get("schema") != schema or raw.get("state") != expected.get(mode) \
             or not RUN_ID.fullmatch(str(raw.get("run_id", ""))) or not HEX64.fullmatch(str(raw.get("restore_sha256", ""))):
@@ -1689,6 +1772,14 @@ def history_reference_receipt(raw, mode, rc):
         if not isinstance(cert, str) or not 100 <= len(cert) <= 4096 or not re.fullmatch(r"[A-Za-z0-9+/=]+", cert):
             return failed
         return core | {"certificate_b64": cert}
+    if mode == HISTORY_VERIFY:
+        counts = {"source_reported_committed_rows": sum(count for _, count in CAPTURE_PINS.values()),
+                  "legacy_versions_preserved": HISTORY_LEGACY_ROWS, "legacy_canonical_preserved": HISTORY_LEGACY_CANONICAL,
+                  "source_sql_writes": 0, "real_orders_sent": 0}
+        if (any(type(raw.get(k)) is not int or raw[k] != v for k, v in counts.items())
+                or raw.get("quick_check") != "ok" or type(raw.get("seal_retired")) is not bool):
+            return failed
+        return core | counts | {"quick_check": "ok", "seal_retired": raw["seal_retired"]}
     if (raw.get("source_reported_committed_rows") != 152052 or raw.get("legacy_versions_preserved") != HISTORY_LEGACY_ROWS
             or raw.get("quick_check") != "ok" or raw.get("preparation") not in {"SCHEMA_UPGRADED", "SCHEMA_ALREADY_UPGRADED"}):
         return failed
@@ -1815,6 +1906,9 @@ def main(argv: list[str] | None = None) -> int:
         if arguments[:1] == ["host-history-apply"] and len(arguments) == 7:
             print(json.dumps(apply_reference_history(*arguments[1:4], _history_release(*arguments[4:]))))
             return 0
+        if arguments[:1] == ["host-history-verify"] and len(arguments) == 6:
+            print(json.dumps(verify_reference_history(*arguments[1:3], _history_release(*arguments[3:]))))
+            return 0
         if arguments[:1] == ["fetch-sealed-history"] and len(arguments) == 4:
             fetch_sealed_history(arguments[1], arguments[2], Path(arguments[3]))
             return 0
@@ -1863,7 +1957,7 @@ def main(argv: list[str] | None = None) -> int:
                     raw = {}
             else:
                 raw = {}
-            if mode in HISTORY_MODES:
+            if mode in HISTORY_MODES or mode == HISTORY_VERIFY:
                 public = history_reference_receipt(raw, mode, int(rc_text))
             elif mode == INVENTORY_MODE:
                 public = sanitize_restored_inventory(
@@ -1906,7 +2000,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         raise Hold("ACTION_UNSUPPORTED")
     except (Hold, OSError, sqlite3.Error, ValueError, TypeError, subprocess.SubprocessError) as exc:
-        if arguments[:1] in (["host-history-prepare"], ["host-history-apply"]):
+        if arguments[:1] in (["host-history-prepare"], ["host-history-apply"], ["host-history-verify"]):
             print(json.dumps({"schema": "rc6.history-reference-transfer.v1",
                               "failure_reason": str(exc) if isinstance(exc, Hold) else "HISTORY_IMPORT_UNCLASSIFIED"}))
         if arguments[:1] in (["host-preflight"], ["host-custody"], ["host-restored-inventory"]):
