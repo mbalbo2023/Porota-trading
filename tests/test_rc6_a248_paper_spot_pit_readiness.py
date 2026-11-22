@@ -203,6 +203,24 @@ def test_base_scanner_separates_empty_pit_from_sqlite_error(store, scan_once):
     assert q.monetary_identity() == ("ARS", "BYMA")
 
 
+@pytest.mark.parametrize("capacity_status", ["NOT_APPROVED", "APPROVED_DYNAMIC"])
+def test_legacy_rotation_summary_does_not_dispatch_incomplete_identities(
+        store, scan_once, monkeypatch, capacity_status):
+    monkeypatch.setattr(promotion, "capacity_controller_from_environment",
+                        lambda *_: SimpleNamespace(state=lambda *_: {"status": capacity_status}))
+    with store.connect() as connection:
+        connection.execute("DROP TABLE candidate_identity_v2")
+        connection.execute("INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)",
+                           (*FOCUS, "BYMA", 1, "AVAILABLE", "legacy", SCAN_AT))
+    assert observer._cycle_symbols(store)[:2] == ((FOCUS,), 1)
+    symbols, total, _, _, plan = observer._cycle_plan(store)
+    assert (symbols, total) == ((), 0)
+    assert plan["catalog_status"] == "CATALOG_IDENTITY_UNVERIFIED"
+    assert plan["read_scopes"] == plan["opening_identities"] == []
+    calls, _, _ = scan_once(PaperBroker(store))
+    assert calls == []
+
+
 def test_invalid_caucion_keeps_exact_opened_book_for_independent_exit(store, scan_once, monkeypatch):
     identity(store, FOCUS)
     identity(store, ALTERNATE)

@@ -1913,7 +1913,7 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_plan(store, focus_candidates=None):
+def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     catalog_error = None
@@ -1922,7 +1922,9 @@ def _cycle_plan(store, focus_candidates=None):
     except sqlite3.Error as exc:
         identities = {}
         catalog_error = getattr(exc, "sqlite_errorname", type(exc).__name__)
-    universe = [request for request, key in identities.items() if key is not None]
+    exact = {request: key for request, key in identities.items() if key is not None}
+    legacy_catalog = bool(identities) and not exact
+    universe = list(identities if include_legacy_summary and legacy_catalog else exact)
     positions = store.open_positions()
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in positions))
@@ -1942,7 +1944,7 @@ def _cycle_plan(store, focus_candidates=None):
         limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
         now=at, cursor=row[0] if row else 0, previous=previous)
-    if not catalog_error:
+    if not catalog_error and not legacy_catalog:
         from rc6_dynamic_universe.promotion import capacity_controller_from_environment
         controller = capacity_controller_from_environment(store.path)
         if controller.state(at)["status"] == "APPROVED_DYNAMIC":
@@ -1951,7 +1953,7 @@ def _cycle_plan(store, focus_candidates=None):
             selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
             if selected["dynamic"]:
                 try:
-                    symbols, plan = _approved_equity_selection(store, selected, plan, identities)
+                    symbols, plan = _approved_equity_selection(store, selected, plan, exact)
                 except sqlite3.Error as exc:
                     catalog_error = getattr(exc, "sqlite_errorname", type(exc).__name__)
     if catalog_error:
@@ -1959,14 +1961,15 @@ def _cycle_plan(store, focus_candidates=None):
         universe = []
         plan.update(catalog_status="CATALOG_READ_ERROR", catalog_error=catalog_error,
                     feasible=False, focus_feasible=False, opening_identities=[])
+    elif legacy_catalog:
+        plan.update(catalog_status="CATALOG_IDENTITY_UNVERIFIED",
+                    feasible=False, focus_feasible=False, opening_identities=[])
     else:
-        plan["catalog_status"] = ("ELIGIBLE_INSTRUMENTS" if universe else
-                                   "CATALOG_IDENTITY_UNVERIFIED" if identities else
-                                   "NO_ELIGIBLE_INSTRUMENTS")
+        plan["catalog_status"] = "ELIGIBLE_INSTRUMENTS" if exact else "NO_ELIGIBLE_INSTRUMENTS"
     if not plan.get("dynamic_selection"):
         plan["read_scopes"] = [
-            {"request": request, "identity": identities[request], "priority": "DISCOVERY"}
-            for request in symbols if request in identities and not catalog_error]
+            {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
+            for request in symbols if request in exact and not catalog_error]
     return symbols, len(universe), before, after, plan
 
 
@@ -1999,7 +2002,8 @@ def _approved_equity_selection(store, selected, baseline_plan, identities):
 
 
 def _cycle_symbols(store, focus_candidates=None):
-    return _cycle_plan(store, focus_candidates)[:4]
+    """Return the historical rotation summary, including legacy triples."""
+    return _cycle_plan(store, focus_candidates, include_legacy_summary=True)[:4]
 
 
 def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=None,
