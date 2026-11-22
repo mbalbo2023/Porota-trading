@@ -1,6 +1,6 @@
 {
-  "registered_paths": 103,
-  "route_count": 105,
+  "registered_paths": 104,
+  "route_count": 106,
   "routes": [
     {
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
@@ -2697,6 +2697,39 @@
       "accessibility": "ARIA + foco + texto además de color + Voice Access",
       "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
       "canonical_concepts": [
+        "validation_campaign",
+        "safety",
+        "learning_history"
+      ],
+      "canonical_view": "sistema/validacion",
+      "datasets": [
+        "validation_milestones_rc6.json",
+        "validation_campaign_rc6.jsonl (proyección)",
+        "rc6_action4_auditoria_latest.json",
+        "iol_shadow_latest.json"
+      ],
+      "endpoint": "rc6_trader_dashboard.routes.endpoint",
+      "family_dimension": "NOT_APPLICABLE",
+      "kind": "VISIBLE_SURFACE",
+      "legacy_compatible_alias": false,
+      "locale": "es-AR",
+      "methods": [
+        "GET"
+      ],
+      "mode_authority": "observer_state",
+      "navigation": "Enlaces sin token; menú canónico y Arriba",
+      "pagination": "12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas",
+      "path": "/sistema/validacion",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
+      "ready_counter_authority": "NOT_APPLICABLE",
+      "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
+      "title_or_surface": "Sistema > Validación",
+      "write_route": false
+    },
+    {
+      "accessibility": "ARIA + foco + texto además de color + Voice Access",
+      "as_of_semantics": "Timestamp propio de la fuente; UNKNOWN/STALE nunca se reemplaza por generated_at",
+      "canonical_concepts": [
         "runtime",
         "timers"
       ],
@@ -3330,21 +3363,19 @@
       "canonical_concepts": [
         "validation_campaign",
         "safety",
-        "history",
-        "iol_current"
+        "learning_history"
       ],
-      "canonical_view": "validacion/m0-m11",
+      "canonical_view": "sistema/validacion",
       "datasets": [
         "validation_milestones_rc6.json",
-        "validation_campaign_rc6.jsonl",
-        "operational daily PAPER evidence",
-        "Action 4 published audit",
-        "IOL SHADOW view"
+        "validation_campaign_rc6.jsonl (proyección)",
+        "rc6_action4_auditoria_latest.json",
+        "iol_shadow_latest.json"
       ],
       "endpoint": "bg_paper_dashboard.validacion",
       "family_dimension": "NOT_APPLICABLE",
       "kind": "VISIBLE_SURFACE",
-      "legacy_compatible_alias": false,
+      "legacy_compatible_alias": true,
       "locale": "es-AR",
       "methods": [
         "GET"
@@ -3353,10 +3384,10 @@
       "navigation": "Enlaces sin token; menú canónico y Arriba",
       "pagination": "12 hitos M0–M11 visibles; actividad diaria acotada a 10 jornadas",
       "path": "/validacion",
-      "presentation_endpoint": "en_validation_project_dashboard_rc6.rc6_validation_project_view",
+      "presentation_endpoint": "rc6_trader_dashboard.routes.trader_terminal",
       "ready_counter_authority": "NOT_APPLICABLE",
       "stale_unknown_semantics": "VISIBLE_EXPLICIT; no se promueve a LIVE/READY",
-      "title_or_surface": "Validación > Camino a Producción M0–M11",
+      "title_or_surface": "Sistema > Validación",
       "write_route": false
     },
     {
