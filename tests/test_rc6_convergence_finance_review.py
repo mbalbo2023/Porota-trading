@@ -14,6 +14,7 @@ import pytest
 
 from be_paper_engine import PaperBroker, PaperStore, Quote
 from bs_instrument_contracts import InstrumentContract
+from dh_paper_dynamic_risk_gate_hf6 import position_stop_risk
 from rc6_performance.costs import ledger_leg_cost
 from rc6_ppi_future_contract_policy import standard_dlr_terms
 from rc6_paper_family_lifecycle import future_position_contract, future_risk_snapshot
@@ -48,10 +49,10 @@ def quote(at=OPEN, *, bid="1499.5", ask="1500", future=True):
         book_at=at, trade_at=at, last_kind="TRADE")
 
 
-def broker(path, clock, *, economics_mode="SHADOW"):
+def broker(path, clock, *, economics_mode="SHADOW", slippage_bps="0"):
     return PaperBroker(PaperStore(str(path)), initial_cash="100000000",
         risk_pct="0.005", max_positions=10, participation="1",
-        max_position_pct="1", max_total_exposure_pct="1", slippage_bps="0",
+        max_position_pct="1", max_total_exposure_pct="1", slippage_bps=slippage_bps,
         clock_fn=lambda: clock[0], session_policy=None, require_supervisor=False,
         ai_mode="OFF", economics_mode=economics_mode, stop_loss_pct=".02",
         target_gain_pct=".10", daily_loss_pct="5", daily_soft_stop_pct="4")
@@ -61,6 +62,43 @@ def open_future(engine):
     opened, reason, _ = engine._open_future(quote(), D(".8"), {})
     assert opened, reason
     return engine.store.active_future_positions()[0]
+
+
+def test_spot_proven_tick_rounds_open_stop_risk_and_each_partial_exit_adversely(tmp_path):
+    clock = [OPEN]
+    engine = broker(tmp_path / "spot.sqlite", clock, slippage_bps="12")
+    grid = InstrumentContract("GGAL", "ACCIONES", "ARS", "BYMA", "A-24HS", D(1), D(1),
+                              "SYNTHETIC_REVIEW", price_tick=D(".05"), price_tick_source="FIXTURE",
+                              price_tick_known_at=OPEN, price_tick_effective_at=OPEN)
+    entry_quote = replace(quote(bid="99.95", ask="100", future=False), contract=grid, ask_size=D(10))
+    features = {}
+    opened, reason, paper_id = engine.admit_paper_candidate(entry_quote, D(".8"), features)
+    assert opened, reason
+    position = engine.store.open_position("GGAL")
+    assert D(position["entry_price"]) == D("100.15")
+    assert D(position["quantity"]) == 10
+    expected_stop = D("98.00")
+    expected_risk = ((D(position["entry_price"]) - expected_stop) * 10
+                     + D(position["entry_cost"]) + ledger_leg_cost(expected_stop, 10, "ACCIONES"))
+    assert D(features["candidate_stop_risk"]) == position_stop_risk(engine, position) == expected_risk
+
+    clock[0] = CLOSE
+    first_exit = replace(quote(CLOSE, bid="110", ask="110.05", future=False), bid_size=D(4))
+    assert engine._close(position, first_exit, "SYNTHETIC_TEST")
+    position = engine.store.open_position("GGAL")
+    assert D(position["quantity"]) == 6
+    later = (datetime.fromisoformat(CLOSE) + timedelta(seconds=1)).isoformat()
+    clock[0] = later
+    second_exit = replace(quote(later, bid="105", ask="105.05", future=False), contract=grid, bid_size=D(6))
+    assert engine._close(position, second_exit, "SYNTHETIC_TEST")
+    assert not engine.store.open_position("GGAL")
+    with engine.store.connect() as connection:
+        fills = connection.execute("SELECT side,quantity,price FROM paper_fills WHERE paper_id=? ORDER BY id",
+                                   (paper_id,)).fetchall()
+        assert [(row[0], D(row[1]), D(row[2])) for row in fills] == [
+            ("BUY_SIMULATED", 10, D("100.15")), ("SELL_SIMULATED", 4, D("109.85")),
+            ("SELL_SIMULATED", 6, D("104.85"))]
+        assert connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("bid,ask", [("1480.123", "1480.5"), ("1480", "1479")])

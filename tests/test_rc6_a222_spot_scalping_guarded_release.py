@@ -27,6 +27,7 @@ import cf_intraday_scalping as scalping
 import rc6_paper_admission_gate as preopen
 from bm_exit_supervisor import PositionExitSupervisor, init_schema as init_exit
 from bq_exit_policy import PaperSessionPolicy
+from bs_instrument_contracts import InstrumentContract
 from rc6_dynamic_universe.routing import strategy_route
 from rc6_signal_contracts import volume_contract
 from tests.rc6_convergence_fixtures import with_synthetic_volume_contract
@@ -59,6 +60,12 @@ def _quote(at=AT, *, ticker="ALUA", family="ACCIONES", market="BYMA", currency="
         currency=currency, market=market, metadata_source="PPI:OFFLINE_SYNTHETIC_TEST",
         book_at=at.isoformat(), trade_at=at.isoformat(), last_kind="TRADE",
     )
+
+
+def _contract(minimum):
+    return InstrumentContract("ALUA", "ACCIONES", "ARS", "BYMA", "A-24HS",
+                              Decimal(1), Decimal(5), "SYNTHETIC_TEST_ONLY",
+                              minimum_quantity=Decimal(minimum))
 
 
 class A222GuardedScalpingTests(unittest.TestCase):
@@ -131,10 +138,12 @@ class A222GuardedScalpingTests(unittest.TestCase):
         self.assertEqual(catalog.quote_terms(requested, now=AT)["opening_block_reason"],
                          "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED")
 
-    def _scalping_buy_candidate(self):
+    def _scalping_buy_candidate(self, *, financial_contract=None):
         record = _record()
         self.assertEqual(self._two_reads(record)["state"], "CONFIRMED_INTERVAL_VOLUME")
         terms = self._seed_synthetic_ready_catalog()
+        if financial_contract is not None:
+            terms["contract"] = financial_contract
         self.store.add_quote(replace(_quote(), **terms))
         self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "BUY_CANDIDATE")
         return record, terms
@@ -302,7 +311,7 @@ class A222GuardedScalpingTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0], 0)
 
     def test_synthetic_signal_to_paper_fill_to_independent_supervisor_exit(self):
-        record, terms = self._scalping_buy_candidate()
+        record, terms = self._scalping_buy_candidate(financial_contract=_contract(10))
         self._seed_synthetic_exit_availability()
         synthetic_env = {"PAPER_SCALPING_MODE": "ACTIVE_PAPER",
                          "PAPER_ECONOMIC_GATE_MODE": "BINDING",
@@ -320,7 +329,13 @@ class A222GuardedScalpingTests(unittest.TestCase):
         self.assertEqual(len(open_positions), 1)
         position = open_positions[0]
         self.assertEqual(position["asset_class"], "ACCIONES")
-        self.assertEqual(json.loads(position["features_json"])["execution_style"], "SCALPING_PAPER")
+        features = json.loads(position["features_json"])
+        self.assertEqual(features["execution_style"], "SCALPING_PAPER")
+        self.assertEqual(features["economics_mode"], "BINDING")
+        self.assertEqual(features["financial_contract"]["minimum_quantity"], "10")
+        self.assertEqual(features["financial_contract"]["quantity_step"], "5")
+        self.assertEqual(Decimal(position["quantity"]) % 5, 0)
+        self.assertEqual(len(features["scalping_book_contract_sha256"]), 64)
         later = AT + timedelta(minutes=32)
         newer_quote = replace(_quote(at=later), **terms)
         self.store.add_quote(newer_quote)
@@ -359,6 +374,69 @@ class A222GuardedScalpingTests(unittest.TestCase):
         with self.store.connect() as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
             self.assertEqual(connection.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0], 0)
+
+    def test_promotion_rejects_deteriorated_spread_missing_depth_and_changed_contract(self):
+        record, terms = self._scalping_buy_candidate(financial_contract=_contract(10))
+        fresh = replace(_quote(), **terms)
+        cases = [
+            (replace(fresh, ask=Decimal("110")), "SPREAD_TOO_WIDE"),
+            (replace(fresh, ask_size=Decimal("0")), "SCALPING_BOOK_DEPTH_UNAVAILABLE"),
+            (replace(fresh, contract=_contract(300)), "SCALPING_BOOK_CONTRACT_CHANGED"),
+            (replace(fresh, contract=None), "SCALPING_BOOK_CONTRACT_CHANGED"),
+        ]
+        with patch.dict(os.environ, {"PAPER_SCALPING_MODE": "ACTIVE_PAPER", "PAPER_SCALPING_MAX_SPREAD": "0.005"}), \
+             patch.object(runtime, "broker_from_environment", side_effect=AssertionError("BROKER_ON_BAD_BOOK")):
+            for quote, expected in cases:
+                with self.subTest(expected=expected):
+                    self.store.add_quote(quote)
+                    self.assertEqual(scalping.promote_paper_candidate(self.store, record, at=AT), expected)
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+
+    def test_promotion_cannot_fill_below_confirmed_contract_minimum(self):
+        record, _ = self._scalping_buy_candidate(financial_contract=_contract(300))
+        self._seed_synthetic_exit_availability()
+        with patch.dict(os.environ, {"PAPER_SCALPING_MODE": "ACTIVE_PAPER",
+                                     "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
+                                     "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY"}), \
+             patch.object(runtime, "now_iso", return_value=AT.isoformat()), \
+             patch.object(preopen, "admission_status", return_value=(True, "")):
+            result = scalping.promote_paper_candidate(self.store, record, at=AT)
+        self.assertTrue(result.startswith("BLOCKED:CONTRACT_QUANTITY_INVALID:"), result)
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+
+    def test_promotion_rechecks_snapshot_inside_fill_transaction(self):
+        record, terms = self._scalping_buy_candidate(financial_contract=_contract(10))
+        self._seed_synthetic_exit_availability()
+        canonical_record = self.store.record_decision
+
+        def replace_book_after_decision(*args):
+            recorded = canonical_record(*args)
+            self.store.add_quote(replace(_quote(), ask=Decimal("110"), **terms))
+            return recorded
+
+        with patch.dict(os.environ, {"PAPER_SCALPING_MODE": "ACTIVE_PAPER",
+                                     "PAPER_ECONOMIC_GATE_MODE": "SHADOW",
+                                     "PAPER_SECTOR_CONCENTRATION_POLICY": "OBSERVATION_ONLY"}), \
+             patch.object(self.store, "record_decision", side_effect=replace_book_after_decision), \
+             patch.object(runtime, "now_iso", return_value=AT.isoformat()), \
+             patch.object(preopen, "admission_status", return_value=(True, "")):
+            result = scalping.promote_paper_candidate(self.store, record, at=AT)
+        self.assertEqual(result, "BLOCKED:SCALPING_BOOK_CHANGED_BEFORE_FILL")
+        with self.store.connect() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0], 0)
+
+    def test_book_receipt_must_be_known_at_exact_decision_microsecond(self):
+        record = _record()
+        self._two_reads(record)
+        receipt = AT + timedelta(microseconds=1)
+        self.store.add_quote(replace(_quote(), observed_at=receipt.isoformat()))
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=AT), "HOLD")
+        with self.store.connect() as connection:
+            candidate = connection.execute("SELECT reason FROM scalping_candidates").fetchone()
+            self.assertEqual(candidate["reason"], "RECEIPT_STALE_OR_FUTURE")
+        self.assertEqual(scalping.evaluate_candidate(self.store, record, at=receipt), "BUY_CANDIDATE")
 
 
 if __name__ == "__main__":

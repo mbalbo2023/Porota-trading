@@ -14,6 +14,7 @@ from datetime import date, datetime, time
 import unittest
 from zoneinfo import ZoneInfo
 
+from co_market_sessions_hf6 import byma_source_session_for
 from cq_contract_readiness_hf6 import canonical_family
 from cy_market_source_arbitration_hf6 import SourceSnapshot, primary_live_source, select_live_snapshot
 import iol_shadow_collector_rc6 as iol_windows
@@ -69,6 +70,25 @@ class Com19031TimeAuthorityTest(unittest.TestCase):
         ):
             with self.subTest(instant=instant):
                 self.assertFalse(dispatch.phase_status(instant, "intraday_ppt_senebi")[0])
+
+    def test_archive_window_is_scoped_to_audited_regular_t1_equity_sessions(self):
+        for day, family, settlement, expected_close in (
+            (date(2026, 11, 24), "ACCIONES", "A-24HS", time(18)),
+            (date(2026, 11, 24), "CEDEARS", "24HS", time(18)),
+            (date(2026, 11, 24), "ACCIONES", "CI", time(17)),
+            (date(2026, 11, 24), "ACCIONES", "UNKNOWN", time(17)),
+            (date(2026, 11, 24), "BONOS", "A-24HS", time(17)),
+            (date(2026, 11, 24), "OPCIONES", "A-24HS", None),
+            (date(2026, 10, 30), "ACCIONES", "A-24HS", time(17)),
+            (date(2026, 11, 6), "ACCIONES", "A-24HS", time(17)),
+            (date(2026, 11, 6), "ACCIONES", "CI", None),
+            (date(2026, 11, 9), "ACCIONES", "A-24HS", None),
+            (date(2027, 1, 4), "ACCIONES", "A-24HS", None),
+        ):
+            with self.subTest(day=day, family=family, settlement=settlement):
+                session = byma_source_session_for(day, market="BYMA", family=family,
+                                                  settlement=settlement)
+                self.assertEqual(session.regular_close if session else None, expected_close)
 
     def test_on_and_fci_aliases_keep_ppi_primary_without_authorizing_trade(self):
         for alias, canonical in (("OBLIGACIONES", "ON"), ("ON", "ON"),

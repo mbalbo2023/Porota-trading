@@ -379,3 +379,26 @@ def test_run_reader_source_has_explicit_sqlite_contention_recovery():
     assert "except sqlite3.OperationalError as exc" in source
     assert "_sqlite_contention(exc)" in source
     assert "SQLite contention; reintento acotado" in source
+
+
+@pytest.mark.parametrize("code", ["PPI_NATIVE_HTTP_401",
+                                  "PPI_GATEWAY_SESSION_RECOVERY_PENDING",
+                                  "PPI_NATIVE_HTTP_429"])
+def test_exit_book_gateway_auth_reaches_reattach_and_429_counts_once(position, code):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected
+
+    broker, _, q = position
+    calls = []
+
+    class Reader:
+        def book(self, *args):
+            calls.append(args)
+            raise GatewayEvidenceRejected(code)
+
+    if code == "PPI_NATIVE_HTTP_429":
+        assert collect_exit_books(
+            Reader(), broker.store, PaperSessionPolicy(), q.observed_at) == 1
+    else:
+        with pytest.raises(GatewayEvidenceRejected, match=code):
+            collect_exit_books(Reader(), broker.store, PaperSessionPolicy(), q.observed_at)
+    assert len(calls) == 1

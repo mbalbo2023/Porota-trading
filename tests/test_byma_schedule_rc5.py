@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from unittest.mock import call, patch
 from zoneinfo import ZoneInfo
@@ -41,6 +41,35 @@ def test_unknown_byma_family_does_not_inherit_spot_clock():
     assert sessions.session_for("BYMA", "OPCIONES") is None
     assert sessions.session_for("BYMA", "FUTUROS") is None
     assert sessions.session_for("BYMA", "CAUCIONES") is None
+
+
+def test_a3_reference_resolves_explicit_products_to_their_published_windows():
+    for market, product, clocks in (
+        ("A3", "DLR", (time(9, 30), time(10), time(15))),
+        ("A3", "MONEDAS", (time(9, 30), time(10), time(15))),
+        ("A3", "AGRO_ESTANDAR", (time(10, 30), time(11), time(17))),
+        ("A3", "AGRO_MINI", (time(10, 30), time(11), time(17))),
+        ("A3", "MAÍZ_MINI", (time(10, 30), time(11), time(17))),
+        ("A3", "AGRO_CHICAGO", (time(10, 30), time(11), time(16, 20))),
+        ("A3", "SOJA_CHICAGO", (time(10, 30), time(11), time(16, 20))),
+        ("A3", "RFX20", (time(10), time(10, 30), time(18))),
+        ("MATBA_ROFEX", "ACCIONES", (time(10), time(10, 30), time(18))),
+        ("ROFEX", "WTI", (time(10), time(10, 30), time(17))),
+        ("A3", "CAUC", (time(10), time(10, 30), time(17))),
+        ("A3", "TAMAR", (time(10), time(10, 30), time(17))),
+    ):
+        session = sessions.session_for(market, product)
+        assert session is not None, (market, product)
+        assert session.source == "https://a3mercados.com.ar/info-de-mercado/datos-de-mercado"
+        assert (session.preopen_start, session.regular_open, session.regular_close) == clocks
+
+
+def test_a3_reference_requires_a_product_when_segment_hours_differ():
+    for label in (
+        "AGRO", "FUTUROS_OPCIONES_AGRO", "OTROS", "FUTUROS_OPCIONES_OTROS",
+        "FUTUROS", "RFX20/OCT26", "DLR/OCT26",
+    ):
+        assert sessions.session_for("A3", label) is None, label
 
 
 def test_exit_policy_uses_same_regular_session():

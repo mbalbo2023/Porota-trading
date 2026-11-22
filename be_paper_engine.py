@@ -582,16 +582,20 @@ class PaperStore:
                        json.dumps(asdict(q.contract), default=str) if q.contract else None,
                        q.metadata_source, q.opening_block_reason))
 
-    def latest_quote(self, position):
-        if any(not position.get(k) or position[k] == "UNKNOWN" for k in
-               ("symbol", "asset_class", "settlement", "currency", "market")):
+    @staticmethod
+    def latest_quote_row(connection, position):
+        identity = tuple(position.get(k) for k in
+                         ("symbol", "asset_class", "settlement", "currency", "market"))
+        if any(not value or value == "UNKNOWN" for value in identity):
             return None
         # La última respuesta recibida gana: una respuesta vacía/no válida no
         # permite rescatar silenciosamente una punta anterior que ya desapareció.
-        with self.connect() as c:
-            row = c.execute("""SELECT * FROM market_snapshots WHERE symbol=? AND asset_class=?
+        return connection.execute("""SELECT * FROM market_snapshots WHERE symbol=? AND asset_class=?
               AND settlement=? AND currency=? AND market=? ORDER BY id DESC LIMIT 1""",
-              tuple(position[k] for k in ("symbol", "asset_class", "settlement", "currency", "market"))).fetchone()
+              identity).fetchone()
+
+    @staticmethod
+    def quote_from_snapshot(row):
         if not row:
             return None
         values = dict(row)
@@ -599,7 +603,12 @@ class PaperStore:
         return Quote(**{k: values[k] for k in ("symbol", "asset_class", "settlement", "observed_at", "currency", "market",
                                              "book_at", "trade_at", "last_kind", "metadata_source", "opening_block_reason")},
                      **{k: D(values[k]) for k in ("last", "bid", "ask", "bid_size", "ask_size")},
-                     contract=InstrumentContract(**spec) if spec else None)
+                     contract=InstrumentContract(**spec) if spec is not None else None)
+
+    def latest_quote(self, position):
+        with self.connect() as c:
+            row = self.latest_quote_row(c, position)
+        return self.quote_from_snapshot(row)
 
     def signal_prices(self, q, as_of, limit=20, window_minutes=30):
         """Distinct source events known at cutoff, from the exact five-part key."""
@@ -1021,6 +1030,28 @@ class PaperBroker:
         if factor <= 0:
             raise ValueError("Posición con factor monetario inválido")
         return factor
+
+    @staticmethod
+    def _position_spot_grid(position):
+        spec = json.loads(position.get("features_json") or "{}").get("financial_contract")
+        family = family_name(position["asset_class"])
+        if not spec or spec.get("price_tick") is None or family not in SPOT_FAMILIES:
+            return None
+        contract = InstrumentContract(**spec)
+        if contract.key != (position["symbol"], family,
+                            position["market"], position["currency"], position["settlement"]):
+            raise ValueError("SPOT_POSITION_PRICE_GRID_IDENTITY_MISMATCH")
+        return contract
+
+    def _spot_fill_price(self, price, *, side, contract=None, at=None):
+        raw = price * (1 + self.slippage if side == "BUY" else 1 - self.slippage)
+        if contract is None or contract.price_tick is None or contract.family not in SPOT_FAMILIES:
+            return raw.quantize(Decimal("0.0001"))
+        terms = contract.execution_price_terms()
+        decision = utc_microseconds(at)
+        if any(terms[clock] and utc_microseconds(terms[clock]) > decision for clock in ("known_at", "effective_at")):
+            raise ValueError("SPOT_EXECUTION_GRID_NOT_KNOWN_OR_EFFECTIVE")
+        return contract.executable_fill(raw, side=side)
 
     def _positions_at(self, at, connection):
         """Estado económico en la fecha consultada, sin paginar el ledger."""
@@ -1716,11 +1747,18 @@ class PaperBroker:
 
     def _economic_diagnostics(self, q):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
+        at = self.execution_time(q)
+        grid = q.contract and q.contract.price_tick is not None and q.contract.family in SPOT_FAMILIES
         entry = q.ask * (1 + self.slippage)
+        if grid:
+            entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
         stop = entry * (1 - self.stop_loss_pct)
         target = entry * (1 + self.target_gain_pct)
         stop_fill = stop * (1 - self.slippage)
         target_fill = target * (1 - self.slippage)
+        if grid:
+            stop_fill = self._spot_fill_price(stop, side="SELL", contract=q.contract, at=at)
+            target_fill = self._spot_fill_price(target, side="SELL", contract=q.contract, at=at)
         full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
         low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
         # La bonificacion corresponde a la operacion de menor valor. En una
@@ -1732,8 +1770,8 @@ class PaperBroker:
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
         from rc6_performance.costs import paper_cost_contract
-        costs = paper_cost_contract(q.asset_class, q.currency, self.execution_time(q))
-        cost_error = costs.binding_error(self.execution_time(q))
+        costs = paper_cost_contract(q.asset_class, q.currency, at)
+        cost_error = costs.binding_error(at)
         passed = not cost_error and net_reward > 0 and ratio >= self.min_net_reward_risk
         try:
             import rc6_cost_settlement_takeprofit_shadow as shadow_costs
@@ -2571,12 +2609,15 @@ class PaperBroker:
         if emergency_position_guard(len(opened_now) + len(self.store.active_future_positions()), emergency_cap=emergency_cap):
             self.store.event("REJECTED_PAPER", f"{q.symbol}: cap técnico anti-runaway")
             return False, "EMERGENCY_POSITION_CAP", None
-        entry = (q.ask * (1 + self.slippage)).quantize(Decimal("0.0001"))
+        try:
+            entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
+            stop = entry * (1 - self.stop_loss_pct)
+            modeled_stop_fill = self._spot_fill_price(stop, side="SELL", contract=q.contract, at=at)
+        except (ValueError, ArithmeticError) as exc:
+            return False, str(exc), None
         if entry <= 0:
             return False, "Precio de entrada no representable", None
-        stop = entry * (1 - self.stop_loss_pct)
         target = entry * (1 + self.target_gain_pct)
-        modeled_stop_fill = (stop * (1 - self.slippage)).quantize(Decimal("0.0001"))
         # Incluye ambos tramos y deslizamiento de salida, sin afirmar que un
         # stop garantice este precio ante gaps o falta de liquidez. La cantidad
         # se acota por el menor entre el riesgo por trade y la capacidad
@@ -2682,7 +2723,8 @@ class PaperBroker:
                            f"ejecutable en {limits[binding]}"), None
         candidate_risk_value = candidate_stop_risk(
             self, entry_price=entry, stop_price=stop, quantity=qty,
-            cash_multiplier=factor, asset_class=q.asset_class, currency=currency)
+            cash_multiplier=factor, asset_class=q.asset_class, currency=currency,
+            modeled_stop_fill=modeled_stop_fill)
         try:
             concurrent_preview = portfolio_capacity(
                 self, currency, at, candidate_risk=candidate_risk_value,
@@ -2711,6 +2753,16 @@ class PaperBroker:
             error = self.admission_error(q, at, connection=c)
             if error:
                 return False, error, None
+            if features.get("execution_style") == "SCALPING_PAPER":
+                from cf_intraday_scalping import scalping_book_spread
+                try:
+                    locked_quote = self.store.latest_quote_row(c, vars(q))
+                    if (locked_quote is None or locked_quote["id"] != features.get("scalping_book_snapshot_id")
+                            or self.store.quote_from_snapshot(locked_quote) != q):
+                        return False, "SCALPING_BOOK_CHANGED_BEFORE_FILL", None
+                    scalping_book_spread(q, at)
+                except (ValueError, TypeError, ArithmeticError) as exc:
+                    return False, str(exc), None
             error = self._economic_admission(q, features)
             if error:
                 return False, error, None
@@ -2871,6 +2923,9 @@ class PaperBroker:
                                  'lote de salida',positive=True)
             if q.contract and q.contract.quantity_step != step:
                 return False
+            execution_contract = q.contract
+            if not execution_contract or execution_contract.price_tick is None:
+                execution_contract = self._position_spot_grid(p)
         except (ValueError,TypeError):
             return False
         with self.store.connect() as c:
@@ -2921,7 +2976,10 @@ class PaperBroker:
                 D(root['quantity']), D(root['entry_cost']),
                 D(root['quantity']) - remaining,
                 D(root['entry_cost']) - D(current['entry_cost']), qty)
-            exit_price = (q.bid*(1-self.slippage)).quantize(Decimal('0.0001'))
+            try:
+                exit_price = self._spot_fill_price(q.bid, side="SELL", contract=execution_contract, at=at)
+            except (ValueError, ArithmeticError):
+                return False
             if exit_price <= 0:
                 return False
             exit_cost = self._cost(exit_price*factor,qty,p['asset_class'], currency=p['currency'])

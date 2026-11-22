@@ -60,13 +60,16 @@ def validate_stage(path):
         and '..' not in Path(path).parts, 'REMOTE_STAGE_INVALID')
 
 
-def validate_runtime_receipt(receipt, release, returncode):
+def validate_runtime_receipt(receipt, release, returncode, *, download=None):
     require(returncode == 0, 'HOST_COMMAND_FAILED')
     require(receipt.get('schema') == 'porota.rootless.deploy.v1'
             and receipt.get('state') == 'VALIDADO_RUNTIME' and receipt.get('phase') == 'COMPLETE',
             'RUNTIME_VALIDATION_INCOMPLETE')
     require(all(receipt.get(key) == release[key] for key in ('source_sha', 'source_tree', 'image_id')),
             'RUNTIME_RELEASE_MISMATCH')
+    if download:
+        require(all(receipt.get(key) == value for key, value in download.items()),
+                'RUNTIME_DEPLOYMENT_PROVENANCE_MISMATCH')
     require(receipt.get('operating_mode') == 'PRODUCTION_PAPER'
             and receipt.get('execution_mode') == 'SIMULATION'
             and type(receipt.get('real_orders_sent')) is int and receipt['real_orders_sent'] == 0,
@@ -153,14 +156,33 @@ def execute(operation, repository, release_dir=None, *, env=None):
             if operation in {'deploy', 'migrate'}:
                 require(release_dir is not None, 'RELEASE_DIRECTORY_REQUIRED')
                 release_dir = Path(release_dir)
+                require(release_dir.name == 'release', 'RELEASE_DIRECTORY_NAME_INVALID')
                 release = decode_receipt((release_dir/'release.json').read_bytes())
                 source = release_dir.parent/'source'
                 require(source.is_dir() and not source.is_symlink(), 'VERIFIED_SOURCE_REQUIRED')
+                from scripts.porota_actions_release import git, promotion_source
                 from scripts.porota_release import verify_release
+                from scripts.porota_rootless_host import Hold, download_evidence, read_regular
                 verify_release(release_dir, expected_sha=release['source_sha'], expected_tree=release['source_tree'])
+                try:
+                    raw_download = read_regular(release_dir.parent/'download.json', 4096)
+                    download = download_evidence(raw_download, release)
+                    # Reuse the tested-tree check from artifact acquisition and
+                    # attest the distinct deployment commit before any upload.
+                    require(promotion_source(repository, release['source_sha']) ==
+                            (release['source_sha'], release['source_tree'])
+                            and download['deployment_sha'] == git(repository, 'rev-parse', 'HEAD'),
+                            'DOWNLOAD_DEPLOYMENT_CHECKOUT_MISMATCH')
+                except Hold as exc:
+                    raise ValueError(str(exc)) from None
+                except subprocess.CalledProcessError:
+                    raise ValueError('DEPLOYMENT_CHECKOUT_UNVERIFIED') from None
+                verified_download = Path(temporary)/'download.json'
+                verified_download.write_bytes(raw_download)
                 required = (release['members']['porota-predeploy-image.tar.gz']['bytes']
                             + 2*release['image_size_bytes']
-                            + 2*release['members']['porota-deploy-bundle-v2.tgz']['bytes'] + 2147483648)
+                            + 2*release['members']['porota-deploy-bundle-v2.tgz']['bytes']
+                            + len(raw_download) + 2147483648)
             else:
                 source = Path(temporary)/'source'
                 (source/'scripts').mkdir(parents=True)
@@ -175,9 +197,8 @@ def execute(operation, repository, release_dir=None, *, env=None):
             validate_stage(stage)
             try:
                 upload = [str(source)]
-                if release_dir is not None:
-                    require(Path(release_dir).name == 'release', 'RELEASE_DIRECTORY_NAME_INVALID')
-                    upload.append(str(release_dir))
+                if operation in {'deploy', 'migrate'}:
+                    upload.extend((str(release_dir), str(verified_download)))
                 try:
                     sent = subprocess.run([*scp, '-r', *upload, target+':'+stage+'/'],
                                           capture_output=True, timeout=900)
@@ -208,7 +229,7 @@ def execute(operation, repository, release_dir=None, *, env=None):
                 result = decode_receipt(proc.stdout)
                 if operation in {'deploy', 'migrate'}:
                     try:
-                        validate_runtime_receipt(result, release, proc.returncode)
+                        validate_runtime_receipt(result, release, proc.returncode, download=download)
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
                 else:

@@ -168,6 +168,55 @@ def test_evidence_and_candidate_writer_use_the_same_identity_lkg():
     assert evidence.PPI_IDENTITY_LKG_SECONDS == PAPER_PPI_IDENTITY_LKG_SECONDS
 
 
+def test_running_candidate_refresh_and_allowlisted_pause_are_public(tmp_path):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE candidate_refresh_state(id,state,checked_at)")
+        conn.execute("INSERT INTO candidate_refresh_state VALUES(1,'RUNNING',?)", (NOW.isoformat(),))
+    exact_ledger(db, (*exact_ggal(ready=0)[:6], "PAUSED_EXPLICIT",
+                      "PAUSED_EXPLICIT:CATALOG_RECONCILIATION;private /some/local/path", NOW.isoformat()))
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=NOW,
+    )
+    evidence.validate_bundle(payload)
+    assert payload["status"] == "INCOMPLETE"
+    assert "CANDIDATE_REFRESH_IN_PROGRESS" in payload["gaps"]
+    assert payload["database"]["candidate_refresh"] == {"state": "RUNNING", "checked_at": NOW.isoformat()}
+    assert payload["database"]["candidate_readiness_source"] == "candidate_identity_v2"
+    assert payload["families"][0]["ready_paper"] == 0
+    assert payload["families"][0]["not_ready_reasons"] == {
+        "CANDIDATE_GATE:NO_GO": 1,
+        "CANDIDATE_REASON:CATALOG_RECONCILIATION": 1,
+        "CANDIDATE_STATUS:PAUSED_EXPLICIT": 1,
+    }
+
+
+def test_deployment_sha_uses_validated_download_evidence_and_keeps_watch_gap(tmp_path, monkeypatch):
+    db, mode, deploy, frozen, manifest = inputs(tmp_path)
+    marker = json.loads(deploy.read_text())
+    marker.pop("deploy_sha")
+    marker.update(deployment_sha="b" * 40, download_receipt_sha256="e" * 64,
+                  validation_status="VALIDATED_RUNTIME")
+    install_systemctl_fixture(monkeypatch, tmp_path, "", enumeration_returncode=1)
+    for legacy_sha in (None, "a" * 40):
+        if legacy_sha:
+            marker["deploy_sha"] = legacy_sha
+        json_file(deploy, marker)
+        payload = evidence.build_bundle(
+            db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+            frozen_path=frozen, manifest_path=manifest, previous_path=None,
+            freshness_seconds=3600, current=NOW,
+        )
+        evidence.validate_bundle(payload)
+        assert payload["status"] == "INCOMPLETE"
+        assert "PPI_WATCH_NO_VERIFICADO" in payload["gaps"]
+        assert payload["provenance"]["deploy_sha"] == ("NO_VERIFICADO" if legacy_sha else "b" * 40)
+        assert payload["provenance"]["download_receipt_sha256"] == "e" * 64
+        assert ("PROVENANCE_DEPLOYMENT_SHA_UNVERIFIED" in payload["gaps"]) is bool(legacy_sha)
+
+
 def test_documentary_freshness_is_not_a_candidate_ledger_contradiction(tmp_path):
     db, mode, deploy, frozen, manifest = inputs(
         tmp_path, last_seen="2026-09-20T16:59:00+00:00")

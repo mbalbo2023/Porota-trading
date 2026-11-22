@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from bl_candle_engine import Bar, CandleArchive, Series, init_schema
+from co_market_sessions_hf6 import byma_paper_spot_phase
 from cv_history_store_adapter_hf6 import HistoricalStore
 from rc6_local_eod_history import consolidate, RESERVE
 from rc6_shadow_runtime.persistence import EvidenceFiles, read_committed_generation
@@ -56,6 +57,39 @@ def test_local_eod_independent_idempotent_and_monetary(source,tmp_path):
         assert c.execute("SELECT count(*) FROM sqlite_master WHERE name='history_canonical_v2'").fetchone()[0]==0
     with source.connect() as c:
         assert c.execute("SELECT count(*) FROM sqlite_master WHERE name='local_eod_cursor_v1'").fetchone()[0]==0
+
+
+def test_local_eod_byma_t1_keeps_source_close_with_separate_ci_and_paper(source, tmp_path):
+    as_of = datetime.fromisoformat('2026-11-24T18:15:00-03:00')
+    with source.connect() as connection:
+        connection.execute('UPDATE observer_state SET heartbeat_at=?', (as_of.isoformat(),))
+    archive = CandleArchive(source)
+    for settlement in ('A-24HS', 'CI'):
+        series = Series('GGAL', 'ACCIONES', 'BYMA', 'ARS', settlement, '1m',
+                        'PRODUCTION_PAPER_SNAPSHOTS', 'RAW', 'OBSERVED_NOMINAL_PRICE',
+                        'TRADE_SAMPLES', 'UNKNOWN')
+        for clock, price in [('16:59', '100'), ('17:35', '101'), ('17:59', '102'), ('18:00', '103')]:
+            start = datetime.fromisoformat(f'2026-11-24T{clock}:00-03:00')
+            bar = Bar(start, *[Decimal(price)] * 4, samples=1, quality='SAMPLED')
+            archive.put(series, bar, known_at=start + timedelta(minutes=1))
+
+    cold = tmp_path / 'history.db'
+    result = consolidate(source.path, cold, as_of=as_of, free_bytes=RESERVE)
+    assert result['state'] == 'LOCAL_EOD_READY'
+    assert (result['imported'], result['rejected'], result['daily_groups']) == (4, 4, 2)
+    assert result['real_orders_sent'] == result['provider_requests'] == 0
+    assert byma_paper_spot_phase(as_of.replace(hour=17, minute=35)) == 'CLOSED'
+
+    with sqlite3.connect(cold) as connection:
+        rows = connection.execute('SELECT identity_json,body_json FROM history_local_daily_v1')
+        daily = {json.loads(identity)['settlement']: json.loads(body) for identity, body in rows}
+        assert connection.execute('SELECT COUNT(*) FROM local_eod_receipts_v1').fetchone()[0] == 8
+
+    t1, ci = daily['A-24HS'], daily['CI']
+    assert (t1['expected_minutes'], t1['captured_minutes'], t1['missing_minutes']) == (450, 3, 447)
+    assert (ci['expected_minutes'], ci['captured_minutes'], ci['missing_minutes']) == (390, 1, 389)
+    assert t1['close'] == '102' and ci['close'] == '100'
+    assert t1['coverage_state'] == ci['coverage_state'] == 'PARTIAL'
 
 
 def test_crash_does_not_publish_cursor_or_daily(source,tmp_path):

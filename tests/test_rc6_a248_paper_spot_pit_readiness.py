@@ -10,13 +10,21 @@ from types import SimpleNamespace
 import pytest
 
 import bf_production_paper_observer as observer
-from be_paper_engine import PaperStore, now_iso
+import be_paper_engine as paper
+import bv_paper_runtime as runtime
+import dj_caucion_live_ppi_rc6 as caucion_live
+import rc6_ppi_gateway_reader_adapter as gateway
+from be_paper_engine import D, PaperBroker, PaperStore, now_iso
+from bm_exit_supervisor import PositionExitSupervisor
 from rc6_dynamic_universe import promotion
+from tests.test_production_paper_v1634 import caucion_offer, quote
 
 
 FOCUS = ("GGAL", "ACCIONES", "A-24HS")
 ALTERNATE = ("ZTEST", "ACCIONES", "A-24HS")
 CEDEAR = ("XTEST", "CEDEARS", "A-24HS")
+POSITION_OPENED_AT = "2026-08-28T11:00:00-03:00"
+SCAN_AT = "2026-08-28T11:01:00-03:00"
 
 
 @pytest.fixture
@@ -58,6 +66,202 @@ def capacity(store, request):
     focus, symbols, _, _, _, feasibility = observer._runtime_readiness(store)
     return focus, symbols, feasibility, observer._scanner_opening_capacity(
         request, focus=focus, feasibility=feasibility)
+
+
+@pytest.fixture
+def scan_once(store, tmp_path, monkeypatch):
+    """Real scanner and Gateway adapter against SQLite and a fake owner wire."""
+    calls, maintenance, states = [], [], []
+    digest, generation = "a" * 64, "b" * 64
+    state = {
+        "state": "OPEN", "owner_pid": 123, "session_generation": generation,
+        "catalog_source_digest": digest, "login_invocations_by_owner": 1,
+        "guard_login_wire_attempts": 1, "guard_http_allowed": 0, "guard_http_blocked": 0,
+    }
+
+    def native(consumer, *, method, five_key, priority):
+        calls.append((consumer, method, five_key, priority))
+        ticker, family, market, currency, settlement = five_key
+        payload = {"ticker": ticker, "instrumentType": family, "market": market,
+                   "currency": currency, "settlement": settlement, "date": SCAN_AT}
+        if method == "current":
+            payload["price"] = 90
+        else:
+            assert method == "book"
+            payload.update(bids=[{"price": 89.8, "quantity": 1000}],
+                           offers=[{"price": 90.2, "quantity": 1000}])
+        return {"state": "OK", "receipt": {"raw_payload": payload}}
+
+    def attach(database, *, consumer):
+        assert database == store.path and consumer == "scanner"
+        reader = gateway.SharedPPIReaderAdapter(
+            client=SimpleNamespace(owner_status=lambda: state, acquire_native=native,
+                                   pull=lambda *_, **__: pytest.fail("Unexpected stream pull")),
+            consumer=consumer, catalog_source_digest=digest)
+        reader.login_once()
+        return reader
+
+    def pause(_):
+        with store.connect() as connection:
+            states.append(dict(connection.execute("SELECT * FROM observer_state").fetchone()))
+        monkeypatch.setattr(observer, "STOP", True)
+
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer, "DB_PATH", store.path)
+    monkeypatch.delenv("POROTA_RUNTIME_SCHEMA_READY", raising=False)
+    monkeypatch.setattr(observer, "runtime_store", lambda _: store)
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "OBSERVATION_ONLY")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("POROTA_PPI_DIRECT_REST_RECOVERY", raising=False)
+    monkeypatch.setattr(observer.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(observer, "_market_phase", lambda: "OPEN")
+    monkeypatch.setattr(observer, "_announce_phase", lambda *_: None)
+    monkeypatch.setattr(observer, "_daily_sync", lambda *_: maintenance.append("SYNC"))
+    monkeypatch.setattr(observer, "_public_probe", lambda *_, **__: maintenance.append("PUBLIC"))
+    monkeypatch.setattr(observer.operations, "service_tick", lambda *_: maintenance.append("SERVICE"))
+    monkeypatch.setattr(caucion_live, "collection_window", lambda *_: False)
+    monkeypatch.setattr(observer, "now_iso", lambda: SCAN_AT)
+    monkeypatch.setattr(paper, "now_iso", lambda: SCAN_AT)
+    monkeypatch.setattr(observer, "time", SimpleNamespace(
+        time=lambda: 100_000, monotonic=lambda: 100_000, perf_counter=lambda: 1, sleep=pause))
+    monkeypatch.setattr(gateway, "connect_paper_gateway_reader", attach)
+
+    def run(broker):
+        monkeypatch.setattr(runtime, "broker_from_environment", lambda *_, **__: broker)
+        assert observer.run() == 0
+        return calls, maintenance, states[0]
+
+    return run
+
+
+@pytest.mark.parametrize("dynamic", [False, True], ids=["base", "dynamic"])
+def test_scanner_dispatches_only_unique_full_requests(store, scan_once, monkeypatch, dynamic):
+    immediate = ("GGAL", "ACCIONES", "INMEDIATA")
+    identity(store, FOCUS)
+    identity(store, immediate, currency="USD")
+    identity(store, ALTERNATE)
+    identity(store, ALTERNATE, currency="USD", ledger_status="BLOCKED", can_simulate=0)
+    expected = {(*request[:2], "BYMA", currency, request[2])
+                for request, currency in ((FOCUS, "ARS"), (immediate, "USD"))}
+    if dynamic:
+        # Only the selection is mocked. The existing dynamic eligibility
+        # guard must veto the ambiguous full key before the real adapter.
+        proposed = [*sorted(expected), (*ALTERNATE[:2], "BYMA", "ARS", ALTERNATE[2])]
+        selection = {
+            "dynamic": True, "selected": proposed, "opened_priority": [],
+            "rows": {key: {"state": "WARM"} for key in proposed},
+            "entry_identities": [], "policy_state": {"fingerprint": "TEST"},
+            "cadence_seconds": 60, "limit": 20,
+        }
+        monkeypatch.setattr(promotion, "capacity_controller_from_environment", lambda *_:
+            SimpleNamespace(state=lambda *_: {"status": "APPROVED_DYNAMIC"},
+                            selection=lambda *_, **__: selection))
+    broker = PaperBroker(store)
+    calls, _, state = scan_once(broker)
+    assert len(calls) == 4
+    assert {(method, key, priority) for _, method, key, priority in calls} == {
+        (method, key, "WARM" if dynamic else "DISCOVERY")
+        for method in ("current", "book") for key in expected
+    }
+    assert state["process_state"] == "RUNNING"
+    assert state["real_orders_sent"] == 0
+    with store.connect() as connection:
+        row = connection.execute("""SELECT eligible_total,selected_count,successful_count,
+            failed_count,detail FROM universe_cycle_metrics""").fetchone()
+        assert tuple(row)[:4] == (2, 2, 2, 0)
+        assert json.loads(row[4][row[4].index("{"):])["observation_counts"] == {
+            "selected": 2, "instruments_dispatched": 2,
+            "identity_rejections": 0, "temporal_rejections": 0,
+        }
+        assert {tuple(row) for row in connection.execute(
+            "SELECT symbol,settlement,currency,market FROM market_snapshots")} == {
+            ("GGAL", "A-24HS", "ARS", "BYMA"), ("GGAL", "INMEDIATA", "USD", "BYMA"),
+        }
+
+
+def test_base_scanner_separates_empty_pit_from_sqlite_error(store, scan_once):
+    assert observer._cycle_plan(store)[-1]["catalog_status"] == "NO_ELIGIBLE_INSTRUMENTS"
+    broker = PaperBroker(store)
+    assert broker._open(quote(at=POSITION_OPENED_AT), D("0.8"), {})[0]
+    with store.connect() as connection:
+        connection.execute("ALTER TABLE candidate_identity_v2 DROP COLUMN can_simulate")
+    _, symbols, feasibility, reason = capacity(store, FOCUS)
+    assert symbols == (FOCUS,)  # Existing exposure stays observable.
+    assert feasibility["active_plan"]["catalog_status"] == "CATALOG_READ_ERROR"
+    assert feasibility["active_plan"]["catalog_error"] == "SQLITE_ERROR"
+    assert reason == (False, "CATALOG_READ_ERROR")
+    with store.connect() as connection:
+        state, detail = connection.execute("""SELECT state,detail FROM api_health
+            WHERE component='PAPER_SIGNAL_SAMPLING'""").fetchone()
+    assert state == "ROJO" and detail.startswith("CATALOG_READ_ERROR")
+    calls, _, scanner_state = scan_once(broker)
+    expected = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    assert calls == [("scanner", method, expected, "OPENED_CRITICAL") for method in ("current", "book")]
+    assert scanner_state["process_state"] == "DEGRADED"
+    q = store.latest_quote(store.open_positions()[0])
+    assert q.opening_block_reason == "CATALOG_READ_ERROR"
+    assert q.monetary_identity() == ("ARS", "BYMA")
+
+
+def test_invalid_caucion_keeps_exact_opened_book_for_independent_exit(store, scan_once, monkeypatch):
+    identity(store, FOCUS)
+    identity(store, ALTERNATE)
+    seed = PaperBroker(store, initial_cash="10000")
+    seed.place_caucion(caucion_offer(), "1000", "scanner-open-test", POSITION_OPENED_AT)
+    assert seed._open(quote(at=POSITION_OPENED_AT), D("0.8"), {})[0]
+    with store.connect() as connection:
+        connection.execute("UPDATE paper_cauciones SET total_fees='-1'")
+        before = tuple(connection.execute("SELECT * FROM paper_cauciones").fetchone())
+    broker = PaperBroker(store, initial_cash="10000", daily_loss_pct="2.5")
+    def forbidden(*_, **__):
+        pytest.fail("Quarantined scanner reached an entry or equity callback")
+    monkeypatch.setattr(broker, "mark_equity", forbidden)
+    monkeypatch.setattr(broker, "on_quote", forbidden)
+    calls, maintenance, state = scan_once(broker)
+    assert maintenance == []
+    assert state["process_state"] == "DEGRADED"
+    assert state["detail"].startswith("CAUCION_LEDGER_INVALID")
+    assert state["real_orders_sent"] == 0
+    position = store.open_positions()[0]
+    expected = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    assert calls[:2] == [("scanner", method, expected, "OPENED_CRITICAL") for method in ("current", "book")]
+    assert [call[3] for call in calls] == ["OPENED_CRITICAL"] * 2 + ["DISCOVERY"] * 2
+    q = store.latest_quote(position)
+    assert q.opening_block_reason == "CAUCION_LEDGER_INVALID"
+    assert not q.time_error(SCAN_AT)
+    with pytest.raises(ValueError, match="CAUCION_LEDGER_INVALID"):
+        broker._cash(SCAN_AT)
+
+    supervisor = PositionExitSupervisor(broker, clock_fn=lambda: SCAN_AT)
+    assert [verdict.state for verdict in supervisor.tick()] == ["CLOSED"]
+    assert store.recent_closed()[0]["close_reason"] == "STOP_PAPER"
+    with store.connect() as connection:
+        assert tuple(connection.execute("SELECT * FROM paper_cauciones").fetchone()) == before
+        assert [tuple(row) for row in connection.execute(
+            "SELECT side,COUNT(*) FROM paper_fills GROUP BY side ORDER BY side"
+        )] == [("BUY_SIMULATED", 1), ("SELL_SIMULATED", 1)]
+        assert connection.execute("SELECT COUNT(*) FROM paper_equity").fetchone()[0] == 0
+
+
+def test_caucion_failure_during_valuation_publishes_hold_without_restarting(store, scan_once, monkeypatch):
+    identity(store, FOCUS)
+    broker = PaperBroker(store, initial_cash="10000")
+    broker.place_caucion(caucion_offer(), "1000", "scanner-valuation-test", POSITION_OPENED_AT)
+    mark_equity = broker.mark_equity
+
+    def invalidate_during_cycle(quotes):
+        with store.connect() as connection:
+            connection.execute("UPDATE paper_cauciones SET total_fees='-1'")
+        return mark_equity(quotes)
+
+    monkeypatch.setattr(broker, "mark_equity", invalidate_during_cycle)
+    calls, _, state = scan_once(broker)
+    assert [call[1] for call in calls] == ["current", "book"]
+    assert state["process_state"] == "DEGRADED"
+    assert state["detail"].startswith("CAUCION_LEDGER_INVALID")
+    with store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM paper_equity").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM paper_fills").fetchone()[0] == 0
 
 
 def test_one_of_eight_exact_focus_ready_is_enough_for_its_own_spot(store):

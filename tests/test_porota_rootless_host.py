@@ -679,6 +679,8 @@ class AttemptsDirectoryTests(unittest.TestCase):
 class DeploymentFailureTests(unittest.TestCase):
     """Explicit fake Docker commands exercise host journaling, not real runtime."""
     def setUp(self):
+        from scripts.porota_release import _json
+
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "root"
@@ -700,7 +702,7 @@ class DeploymentFailureTests(unittest.TestCase):
                         "porota-deploy-bundle-v2.tgz": {"bytes": 1},
                         "porota-deploy-bundle-v2-manifest.json": {"sha256": hashlib.sha256(manifest).hexdigest()}}}
         self.verifier = patch.dict(sys.modules, {"scripts.porota_release": types.SimpleNamespace(
-            verify_release=lambda *args, **kwargs: copy.deepcopy(self.release))})
+            verify_release=lambda *args, **kwargs: copy.deepcopy(self.release), _json=_json)})
         self.verifier.start()
         self.addCleanup(self.verifier.stop)
         self.disk = patch.object(host.shutil, "disk_usage", return_value=types.SimpleNamespace(free=20 * 1024**3))
@@ -785,6 +787,28 @@ class DeploymentFailureTests(unittest.TestCase):
             docker.images.add(old["image_id"])
             host.write_json(self.identity.state / "current.json", old)
         return manager
+
+    def test_validated_host_projects_distinct_deployment_sha_from_download_receipt(self):
+        self.release.update(build_run_id=91, build_run_attempt=1)
+        download = {"schema": "porota.release.download.v1", "source_sha": SHA, "source_tree": TREE,
+                    "image_id": IMAGE, "deployment_sha": "f" * 40, "run_id": 91, "run_attempt": 1,
+                    "artifact_id": 500, "artifact_digest": "sha256:" + "e" * 64}
+        sidecar = self.root.parent / "download.json"
+        sidecar.write_text(json.dumps({**download, "run_id": 92}))
+        manager = self.manager(previous=True)
+        with self.assertRaisesRegex(host.Hold, "DOWNLOAD_RECEIPT_MISMATCH"):
+            manager.deploy(self.root, SHA, TREE, "next")
+        self.assertFalse(manager.docker.calls)
+        raw = json.dumps(download).encode()
+        sidecar.write_bytes(raw)
+        result = manager.deploy(self.root, SHA, TREE, "next")
+        marker = json.loads((self.root / "data/deploy/CURRENT_STATE_V2.json").read_text())
+        self.assertEqual(marker["candidate_sha"], SHA)
+        self.assertEqual(result["source_sha"], SHA)
+        self.assertEqual(marker["validation_status"], "VALIDATED_RUNTIME")
+        for record in (result, marker):
+            self.assertEqual(record["deployment_sha"], download["deployment_sha"])
+            self.assertEqual(record["download_receipt_sha256"], hashlib.sha256(raw).hexdigest())
 
     def test_partial_creation_is_cleaned_without_touching_legacy_runtime(self):
         manager = self.manager(failure="partial_create")

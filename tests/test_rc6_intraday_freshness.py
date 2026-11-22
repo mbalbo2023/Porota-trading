@@ -51,7 +51,8 @@ class IntradayFreshnessTests(unittest.TestCase):
                   settlement TEXT, currency TEXT, market TEXT, bid TEXT,
                   ask TEXT, book_at TEXT, last TEXT, bid_size TEXT,
                   ask_size TEXT, observed_at TEXT, metadata_source TEXT,
-                  opening_block_reason TEXT, trade_at TEXT, last_kind TEXT);
+                  opening_block_reason TEXT, trade_at TEXT, last_kind TEXT,
+                  contract_json TEXT);
                 CREATE TABLE paper_positions(
                   id INTEGER PRIMARY KEY, status TEXT, features_json TEXT);
             """)
@@ -81,10 +82,10 @@ class IntradayFreshnessTests(unittest.TestCase):
         with self.store.connect() as connection:
             connection.execute("DELETE FROM market_snapshots")
             connection.execute("""INSERT INTO market_snapshots
-              VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               ("GGAL", "ACCIONES", "A-24HS", "ARS", "BYMA", price,
                str(float(price) + .05), at, price, "1000", "1000", at,
-               "PPI_MARKETDATA", "", at, "TRADE"))
+               "PPI_MARKETDATA", "", at, "TRADE", None))
 
     def state(self):
         with self.store.connect() as connection:
@@ -107,18 +108,12 @@ class IntradayFreshnessTests(unittest.TestCase):
     def broker_modules(self):
         # A broker constructor is a visible side effect; rejected entries must
         # return before importing it or recording an opening decision.
-        class Quote:
-            def __init__(self, **kwargs):
-                self.__dict__.update(kwargs)
-
         broker = Mock()
         broker.admit_paper_candidate.return_value = (True, "OPENED_SIMULATED", "paper-1")
         factory = Mock(return_value=broker)
-        engine_module = types.ModuleType("be_paper_engine")
-        engine_module.Quote = Quote
         runtime_module = types.ModuleType("bv_paper_runtime")
         runtime_module.broker_from_environment = factory
-        return {"be_paper_engine": engine_module, "bv_paper_runtime": runtime_module}, factory, broker
+        return {"bv_paper_runtime": runtime_module}, factory, broker
 
     def assert_promotion_blocked(self, at, reason):
         modules, factory, broker = self.broker_modules()

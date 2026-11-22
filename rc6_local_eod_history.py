@@ -17,9 +17,8 @@ import sqlite3
 import time
 
 import ak_byma_calendar as calendar
-from ak_byma_t1_source_clock import estado_negociacion_fuente_byma
 from bl_candle_engine import Bar, CandleArchive, Series, canonical, fingerprint, init_schema, stamp
-from co_market_sessions_hf6 import TZ, session_for
+from co_market_sessions_hf6 import TZ, byma_source_session_for
 from cv_history_store_adapter_hf6 import HistoricalStore
 
 HEADROOM = 64 * 1024**2
@@ -259,7 +258,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     if time.monotonic()>write_deadline:
                         raise ValueError('LOCAL_EOD_COLD_WRITE_BUDGET')
                 final = {(r['series_id'],r['bar_start']):r['id'] for r in rows}
-                dirty = set()
+                dirty = {}
                 archive = CandleArchive(store)
                 imported = rejected = 0
                 for row in rows:
@@ -272,19 +271,17 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     if (series.key != row['series_id'] or fingerprint(body) != row['body_hash'] or
                             body.get('start') != row['bar_start'] or body.get('end') != row['bar_end']):
                         raise ValueError('LOCAL_EOD_SOURCE_DIGEST_MISMATCH')
-                    session = session_for(series.market,series.asset_class)
                     start = datetime.fromisoformat(stamp(row['bar_start'])).astimezone(TZ)
                     end = datetime.fromisoformat(stamp(row['bar_end'])).astimezone(TZ)
-                    valid = (session is not None and series.market=='BYMA' and
+                    session = byma_source_session_for(
+                        start.date(), market=series.market, family=series.asset_class,
+                        settlement=series.settlement)
+                    valid = (session is not None and
                         series.price_kind=='TRADE_SAMPLES' and series.resolution in {'1m','5m'} and
                         series.adjustment=='RAW' and series.adjustment_basis!='UNKNOWN' and
-                        start.year in calendar.ANIOS_AUDITADOS and
-                        estado_negociacion_fuente_byma(start.date(),market=series.market,
-                            family=series.asset_class,settlement=series.settlement)
-                            in {'REGULAR','LIMITED_T1_SOURCE_ONLY'} and
                         start.time().replace(tzinfo=None)>=session.regular_open and
                         end.time().replace(tzinfo=None)<=session.regular_close and
-                        start.date()==end.date() and end<=at.astimezone(TZ) and
+                        start.date()==end.date() and end<=local and
                         body.get('quality') in {'SAMPLED','CONFLICT'} and not body.get('synthetic'))
                     if valid and final[(row['series_id'],row['bar_start'])]==row['id']:
                         write.execute('INSERT INTO local_eod_provenance_v1 VALUES(?,?,?,?,?,?,?,?)',
@@ -294,7 +291,7 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                             quality=body['quality'])
                         archive.put(series,bar,known_at=at,connection=write)
                         if series.resolution=='1m':
-                            dirty.add((series.key,start.date().isoformat()))
+                            dirty[(series.key, start.date().isoformat())] = session
                         imported+=1
                     elif not valid:
                         rejected+=1
@@ -302,9 +299,8 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                         (source_id,row['id'],row['body_hash'],stamp(at),row['known_at'],
                          row['identity_json'],row['body_json']))
                     cursor=row['id']
-                # At most 500 dirty groups, each at most the 390 sampled minutes
-                # in the audited quote session. Late revisions append at NOW.
-                for series_id,day in sorted(dirty):
+                # At most 500 dirty groups. Late revisions append at NOW.
+                for (series_id, day), session in sorted(dirty.items()):
                     write_guard()
                     identity=json.loads(write.execute('SELECT identity_json FROM candle_series WHERE series_id=?',(series_id,)).fetchone()[0])
                     day_start=datetime.fromisoformat(day).replace(tzinfo=TZ)
@@ -317,9 +313,13 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     bars=[latest[k] for k in sorted(latest)]
                     if not bars:
                         continue
+                    expected_minutes = (
+                        datetime.combine(day_start.date(), session.regular_close)
+                        - datetime.combine(day_start.date(), session.regular_open)
+                    ) // timedelta(minutes=1)
                     body={'session':day,'quality':'CONFLICT' if any(b['quality']=='CONFLICT' for b in bars) else 'SAMPLED',
-                        'price_kind':'TRADE_SAMPLES','coverage_state':'PARTIAL','expected_minutes':390,
-                        'captured_minutes':len(bars),'missing_minutes':390-len(bars),
+                        'price_kind':'TRADE_SAMPLES','coverage_state':'PARTIAL','expected_minutes':expected_minutes,
+                        'captured_minutes':len(bars),'missing_minutes':expected_minutes-len(bars),
                         'samples':sum(b['samples'] for b in bars),'open':bars[0]['open'],'close':bars[-1]['close'],
                         'high':str(max(Decimal(b['high']) for b in bars)),
                         'low':str(min(Decimal(b['low']) for b in bars)),

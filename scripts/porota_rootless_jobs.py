@@ -53,13 +53,19 @@ PRESERVED_COMPANIONS = frozenset({
     "porota-critical-approval-rc6.service", "porota-critical-github-proxy-rc6.service",
 })
 
-# Only these fixed check names can leave the private preopen child. The nested
-# receipt may contain runtime/provider details and is never sent to journald.
+# Relay only fixed check names and BYMA reason codes. The child receipt may
+# contain runtime or provider details that must stay out of journald.
 PREOPEN_RED_KEYS = frozenset((
     "release_identity", "observer_container", "dashboard_container",
     "observer_db", "disk", "required_rc6_timers", "byma_morning_watch",
     "iol_reference_fallback", "history_quarantine", "foreign_market_policy",
     "paper_admission_receipt",
+))
+PREOPEN_BYMA_RED_REASONS = frozenset((
+    "BYMA_WATCH_TIMESTAMP_NAIVE", "BYMA_WATCH_TIMESTAMP_FUTURE",
+    "BYMA_PENDING_REVIEW_INVALID", "BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED",
+    "BYMA_WATCH_NOT_TODAY", "BYMA_DRY_VALIDATION_LATEST_NOT_SAFE",
+    "BYMA_WATCH_DEGRADED", "BYMA_WATCH_STATE_UNKNOWN", "BYMA_WATCH_UNAVAILABLE",
 ))
 PREOPEN_CAPTURE_LIMIT = 1024 * 1024
 
@@ -182,8 +188,8 @@ def publisher_command(arguments):
     return tuple(arguments[2:])
 
 
-def read_preopen_red_checks(output):
-    """Decode only bounded enum names; never publish raw stdout or traceback."""
+def read_preopen_red_receipt(output):
+    """Read the allowlisted portion of a bounded RED child receipt."""
     try:
         output.flush()
         size = output.tell()
@@ -198,7 +204,14 @@ def read_preopen_red_checks(output):
                 any(type(name) is not str or name not in PREOPEN_RED_KEYS for name in names) or
                 len(set(names)) != len(names)):
             return None
-        return names
+        summary = {"preopen_red_checks": names}
+        checks = receipt.get("checks")
+        byma = checks.get("byma_morning_watch") if type(checks) is dict else None
+        if "byma_morning_watch" in names and type(byma) is dict and byma.get("state") == "RED":
+            reason = byma.get("reason")
+            if type(reason) is str and reason in PREOPEN_BYMA_RED_REASONS:
+                summary["preopen_red_reasons"] = {"byma_morning_watch": reason}
+        return summary
     except (OSError, ValueError, TypeError, UnicodeDecodeError):
         return None
 
@@ -231,19 +244,19 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
             if unit == PREOPEN:
                 command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"), "--publish-paper-gate")
                 # The child already emits a typed JSON receipt and exit 2 for RED.
-                # Keep its complete output private; journal only allowlisted keys.
+                # Keep its complete output private; journal only allowlisted metadata.
                 with tempfile.TemporaryFile(dir=identity.state) as output:
                     result = run(command, cwd=root, env=env, check=False, stdout=output,
                                  stderr=subprocess.DEVNULL, timeout=600)
                     if result.returncode != 0:
-                        names = read_preopen_red_checks(output) if result.returncode == 2 else None
-                        signature = ("PREOPEN_RED_CHECKS" if names is not None else
+                        receipt = read_preopen_red_receipt(output) if result.returncode == 2 else None
+                        signature = ("PREOPEN_RED_CHECKS" if receipt is not None else
                                      "PREOPEN_CHILD_RECEIPT_UNVERIFIED" if result.returncode == 2 else
                                      "PREOPEN_CHILD_EXIT_" + str(result.returncode)
                                      if type(result.returncode) is int and 1 <= result.returncode <= 255 else
                                      "PREOPEN_CHILD_EXIT_UNVERIFIED")
                         preopen_failure = {"failure_signature": signature,
-                                           "preopen_red_checks": names or [],
+                                           **(receipt or {"preopen_red_checks": []}),
                                            "child_exit_code": result.returncode if type(result.returncode) is int else None,
                                            "exit_code": 2 if result.returncode == 2 else 1}
                     else:
