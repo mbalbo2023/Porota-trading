@@ -1148,6 +1148,61 @@ class ActionsBoundaryContracts(unittest.TestCase):
         self.assertEqual(env["XDG_RUNTIME_DIR"], "/run/user/1000")
         self.assertFalse({"DOCKER_CONTEXT", "DOCKER_HOST", "SSH_AUTH_SOCK", "PYTHONPATH"} & env.keys())
 
+    def test_history_loader_spills_an_actual_sqlite_sort_to_the_existing_data_volume(self):
+        probe = """
+import os
+from pathlib import Path
+import sqlite3
+import sys
+
+target = Path(os.environ['SQLITE_TMPDIR'])
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute('PRAGMA temp_store=FILE')
+    db.execute('PRAGMA cache_size=-64')
+    db.execute('CREATE TABLE history_versions_v2_legacy (id INTEGER, payload TEXT)')
+    db.executemany('INSERT INTO history_versions_v2_legacy VALUES (?,?)',
+                   ((i, 'x' * 16000 + str(i)) for i in range(900)))
+    cursor = db.execute('SELECT * FROM history_versions_v2_legacy ORDER BY payload, id')
+    cursor.fetchone()
+    sorter_files = []
+    for fd in Path('/proc/self/fd').iterdir():
+        try:
+            opened = os.readlink(fd)
+        except FileNotFoundError:
+            continue
+        if 'etilqs_' in opened:
+            sorter_files.append(opened)
+    assert sorter_files and all(Path(path).parent == target for path in sorter_files)
+"""
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            bundle = data / "reference.tar"
+            bundle.write_bytes(b"synthetic capture")
+            base_run = subprocess.run
+            used = []
+
+            def run_with_observed_container_env(argv, **_):
+                declared = dict(argv[index + 1].split("=", 1)
+                                for index, arg in enumerate(argv) if arg == "--env")
+                self.assertEqual(set(declared), {"SQLITE_TMPDIR", "TMPDIR"})
+                visible = Path(declared["SQLITE_TMPDIR"])
+                self.assertEqual(visible.parent, Path("/app/data"))
+                self.assertEqual(declared["SQLITE_TMPDIR"], declared["TMPDIR"])
+                scratch = data / visible.name
+                self.assertEqual(stat.S_IMODE(scratch.stat().st_mode), 0o700)
+                used.append(scratch)
+                env = dict(os.environ, SQLITE_TMPDIR=str(scratch), TMPDIR=str(scratch))
+                return base_run([sys.executable, "-B", "-c", probe, str(data / "probe.db")],
+                                env=env, check=True, capture_output=True, timeout=10)
+
+            operator = SimpleNamespace(pw_dir="/home/porotaadmin")
+            with patch.object(custody, "HISTORY", data / "market_history.db"), \
+                    patch.object(custody.subprocess, "run", side_effect=run_with_observed_container_env):
+                result = custody._execute_history_loader(operator, "a" * 64, bundle, "3:7")
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(len(used), 1)
+            self.assertFalse(used[0].exists())
+
 
 if __name__ == "__main__":
     unittest.main()

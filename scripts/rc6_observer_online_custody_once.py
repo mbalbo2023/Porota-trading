@@ -1525,6 +1525,9 @@ sys.excepthook = report_loader_failure
 from scripts.rc6_history_import_source_reported import import_iol_export
 
 destination = Path('/app/data/market_history.db')
+sqlite_scratch = Path(os.environ.get('SQLITE_TMPDIR', ''))
+if sqlite_scratch.parent != destination.parent or not sqlite_scratch.is_dir():
+    raise SystemExit('HISTORY_IMPORT_SQLITE_SCRATCH_UNBOUND')
 identity = tuple(map(int, sys.argv[1].split(':')))
 legacy = int(sys.argv[2])
 pins = json.loads(sys.argv[3])
@@ -1584,6 +1587,23 @@ def _history_loader_failure(returncode, stderr):
     return "HISTORY_IMPORT_DOCKER_FAILED"
 
 
+def _execute_history_loader(account, cid, bundle, identity):
+    # The authenticated bind has the existing disk budget. The Observer's
+    # 128 MiB /tmp still holds the small capture ZIPs, while SQLite's FILE
+    # sorter for the large legacy table uses this one-shot disk directory.
+    with tempfile.TemporaryDirectory(prefix=".rc6-history-sqlite-", dir=HISTORY.parent) as scratch, \
+            bundle.open("rb") as payload:
+        mounted = "/app/data/" + Path(scratch).name
+        return subprocess.run(
+            ["/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock",
+             "container", "exec", "--interactive", "--workdir", "/app",
+             "--env", "SQLITE_TMPDIR=" + mounted, "--env", "TMPDIR=" + mounted, cid,
+             "python", "-B", "-c", HISTORY_LOADER, identity, str(HISTORY_LEGACY_ROWS),
+             json.dumps(CAPTURE_PINS, separators=(",", ":"))],
+            stdin=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=450, env=_rootless_client_environment(account), cwd="/")
+
+
 def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
     account = _operator_identity_guard()
     if not RUN_ID.fullmatch(apply_run) or not HEX64.fullmatch(capsule_digest):
@@ -1628,14 +1648,7 @@ def apply_reference_history(prepare_run, apply_run, capsule_digest, release):
                     if not HEX64.fullmatch(cid) or current["source_sha"] != release[0]:
                         raise Hold("RUNTIME_DB_BINDING_NO_VERIFICADO")
                     identity = ":".join(map(str, capture["source"]["db"][:2]))
-                    with bundle.open("rb") as payload:
-                        result = subprocess.run(
-                            ["/usr/bin/docker", "--host", "unix:///run/user/1000/porota-rc6-docker.sock",
-                             "container", "exec", "--interactive", "--workdir", "/app", cid,
-                             "python", "-B", "-c", HISTORY_LOADER, identity, str(HISTORY_LEGACY_ROWS),
-                             json.dumps(CAPTURE_PINS, separators=(",", ":"))],
-                            stdin=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            timeout=450, env=_rootless_client_environment(account), cwd="/")
+                    result = _execute_history_loader(account, cid, bundle, identity)
                     if result.returncode:
                         raise Hold(_history_loader_failure(result.returncode, result.stderr))
                     if len(result.stdout) > 8192:
