@@ -38,6 +38,25 @@ ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger("paper_runtime")
 
 
+def _ppi_gateway_catalog(store, *, expected_publication=None):
+    from rc6_ppi_shared_session_owner import (
+        PrimaryPPICatalogAuthority, load_primary_ppi_catalog_snapshot,
+    )
+
+    rows, query_keys, digest, provider_attested_keys = load_primary_ppi_catalog_snapshot(
+        store.path, include_diagnostic_candidates=True,
+        expected_publication=expected_publication)
+    # Query-only settlement is never a PPI_FIELD contract or PAPER READY.
+    return dict(
+        catalog_authority=PrimaryPPICatalogAuthority(
+            provider_attested_keys, query_keys=query_keys),
+        ppi_catalog_rows=rows, catalog_five_keys=query_keys,
+        catalog_source_digest=digest,
+        consumer_five_keys={role: list(query_keys)
+                            for role in ("scanner", "exit_reader", "scalping")},
+    )
+
+
 def _make_ppi_gateway_owner(store):
     """Concreto owner PAPER0: una fábrica SDK, catálogo literal, guard real."""
     from bd_ppi_readonly_guard import ProductionMarketReader
@@ -46,14 +65,11 @@ def _make_ppi_gateway_owner(store):
     from rc6_ppi_gateway_reader_adapter import gateway_socket_path
     from rc6_ppi_shared_session_owner import (
         PPISharedSessionOwner, ObservedPaperCapacityAuthority,
-        PrimaryPPICatalogAuthority, load_primary_ppi_catalog_snapshot,
     )
 
     if os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") != "1":
         raise RuntimeError("PPI_OBSERVED_DIRECT_BUDGET_NOT_ENABLED")
-    rows, query_keys, digest, provider_attested_keys = (
-        load_primary_ppi_catalog_snapshot(
-            store.path, include_diagnostic_candidates=True))
+    catalog = _ppi_gateway_catalog(store)
     budget = PaperDirectReadBudget(store.path)
     capacity = ObservedPaperCapacityAuthority(budget)
 
@@ -74,14 +90,7 @@ def _make_ppi_gateway_owner(store):
         reader_factory=reader_factory, instrument_factory=sdk_instrument,
         stream_authority=_NoUnverifiedStreamPermit(),
         external_capacity_authority=capacity,
-        # Query-only settlement is never a PPI_FIELD contract or PAPER READY.
-        catalog_authority=PrimaryPPICatalogAuthority(
-            provider_attested_keys, query_keys=query_keys),
-        ppi_catalog_rows=rows, catalog_five_keys=query_keys,
-        catalog_source_digest=digest,
-        consumer_five_keys={role: list(query_keys)
-                            for role in ("scanner", "exit_reader", "scalping")},
-        socket_path=gateway_socket_path(store.path),
+        socket_path=gateway_socket_path(store.path), **catalog,
     )
 
 
@@ -168,9 +177,31 @@ def run_ppi_gateway_worker(store, stop):
         _run_ppi_gateway_owned_loop(store, stop)
 
 
+def _start_ppi_gateway_server(owner):
+    owner.start_gateway()
+    server_thread = threading.Thread(
+        target=owner.serve_gateway_forever,
+        name="ppi-single-owner-unix-server", daemon=True)
+    server_thread.start()
+    return server_thread
+
+
+def _close_ppi_gateway_server(owner, server_thread):
+    if server_thread is not None and server_thread.is_alive():
+        owner.shutdown_gateway()
+        server_thread.join(timeout=5)
+        if server_thread.is_alive():
+            # Never restore the guard while a listener can dispatch reads.
+            raise RuntimeError("PPI_GATEWAY_SOCKET_DRAIN_UNVERIFIED")
+    owner.close_gateway()  # refuses an in-flight wire executor
+
+
 def _run_ppi_gateway_owned_loop(store, stop):
     from rc6_scanner_login_interlock import ScannerLoginInterlock
-    interlock = ScannerLoginInterlock(store.path, 900)
+    from rc6_ppi_shared_session_owner import (
+        AUTH_COOLDOWN_SECONDS, complete_ppi_catalog_publication,
+    )
+    interlock = ScannerLoginInterlock(store.path, AUTH_COOLDOWN_SECONDS)
     next_attempt = 0.0
     while not stop.is_set():
         if time.monotonic() < next_attempt:
@@ -180,16 +211,13 @@ def _run_ppi_gateway_owned_loop(store, stop):
         server_thread = None
         try:
             # Validate source and PAPER identity BEFORE reserving a login.
+            observed_publication = complete_ppi_catalog_publication(store.path)
             owner = _make_ppi_gateway_owner(store)
             decision = interlock.reserve()
             if decision != "ALLOWED":
                 raise RuntimeError("PPI_GATEWAY_LOGIN_INTERLOCK_" + decision)
             owner.open_once()  # the only login_api in these four children
-            owner.start_gateway()
-            server_thread = threading.Thread(
-                target=owner.serve_gateway_forever,
-                name="ppi-single-owner-unix-server", daemon=True)
-            server_thread.start()
+            server_thread = _start_ppi_gateway_server(owner)
             status = owner.status()
             _best_effort_runtime_event(store, "PPI_GATEWAY_OWNER_OPEN",
                 "pid=" + str(status["owner_pid"]) +
@@ -198,21 +226,49 @@ def _run_ppi_gateway_owned_loop(store, stop):
             while not stop.wait(5):
                 if not server_thread.is_alive():
                     raise RuntimeError("PPI_GATEWAY_SERVER_THREAD_EXITED")
+                if owner.session_recovery_due():
+                    _best_effort_runtime_event(
+                        store, "PPI_GATEWAY_AUTH_RECOVERY", "PPI_HTTP_401")
+                    break
+                status = owner.status()
+                if status["session_recovery_pending"]:
+                    continue
+                try:
+                    publication = complete_ppi_catalog_publication(store.path)
+                    if publication is None or publication == observed_publication:
+                        continue
+                    catalog = _ppi_gateway_catalog(
+                        store, expected_publication=publication)
+                except ValueError as exc:
+                    if str(exc) in {"PPI_PRIMARY_CATALOG_UNAVAILABLE",
+                                    "PPI_PRIMARY_CATALOG_PUBLICATION_CHANGED"}:
+                        # Keep the existing complete snapshot on a transient
+                        # read or a newer catalog write. Check the marker again.
+                        continue
+                    _best_effort_runtime_event(
+                        store, "PPI_GATEWAY_CATALOG_HOLD", type(exc).__name__)
+                    raise
+                digest = catalog["catalog_source_digest"]
+                if digest != status["catalog_source_digest"]:
+                    if not owner.begin_gateway_catalog_refresh():
+                        continue
+                    _close_ppi_gateway_server(owner, server_thread)
+                    server_thread = None
+                    if stop.is_set():
+                        break
+                    owner.bind_refreshed_gateway_catalog(**catalog)
+                    server_thread = _start_ppi_gateway_server(owner)
+                    _best_effort_runtime_event(
+                        store, "PPI_GATEWAY_CATALOG_REFRESHED", digest)
+                observed_publication = publication
         except Exception as exc:
             LOG.warning("PPI_GATEWAY_HOLD:%s", type(exc).__name__)
             _best_effort_runtime_event(store, "PPI_GATEWAY_HOLD", type(exc).__name__)
-            next_attempt = time.monotonic() + 900
+            next_attempt = time.monotonic() + AUTH_COOLDOWN_SECONDS
         finally:
             if owner is not None:
-                if server_thread is not None:
-                    owner.shutdown_gateway()
-                    server_thread.join(timeout=5)
-                    if server_thread.is_alive():
-                        # Never restore the process-wide HTTP guard while a
-                        # listener could still dispatch a PPI GET.
-                        raise RuntimeError("PPI_GATEWAY_SOCKET_DRAIN_UNVERIFIED")
-                owner.close_gateway()  # refuses an in-flight wire executor
-                if owner.status()["state"] == "OPEN":
+                _close_ppi_gateway_server(owner, server_thread)
+                if owner.status()["state"] in {"OPEN", "CATALOG_REFRESH"}:
                     owner.close()
 
 
@@ -510,6 +566,7 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
     from bd_ppi_readonly_guard import retry_read, session_invalid
+    from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
     from rc6_paper_family_lifecycle import future_position_contract
@@ -551,7 +608,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
                 failures += 1
             q.monetary_identity()
         except Exception as exc:
-            if session_invalid(exc):
+            if session_invalid(exc) or (stage == "BROKER_BOOK"
+                                        and gateway_reader_needs_reattach(exc)):
                 raise
             failures += 1
             sqlite_code = str(getattr(exc, "sqlite_errorname", "") or "")
@@ -591,6 +649,7 @@ def run_reader(store, stop):
         _support_schema(store)
     policy = PaperSessionPolicy()
     reader, next_login = None, 0.0
+    pending_scope_reset = False
     def status(state,detail=""):
         return _reader_status_write(store, state, detail)
     try:
@@ -606,6 +665,9 @@ def run_reader(store, stop):
                     continue
                 try:
                     reader = connect_paper_gateway_reader(store.path, consumer="exit_reader")
+                    if pending_scope_reset:
+                        reader.discard_exit_round_scope()
+                        pending_scope_reset = False
                     store.event("PPI_GATEWAY_ATTACHED", "consumer=exit_reader;no_sdk_login")
                     status("READY", "Lector conectado al único gateway; sin órdenes")
                 except Exception as exc:
@@ -659,6 +721,12 @@ def run_reader(store, stop):
                     try:
                         reader.discard_exit_round_scope()
                     except Exception as exc:
+                        if gateway_reader_needs_reattach(exc):
+                            # A replacement may share the gateway PID and
+                            # a transient outage may keep the old router.
+                            # Verify reset on the next pin before any read.
+                            pending_scope_reset = True
+                            raise
                         # A sqlite3.OperationalError here must NOT be caught
                         # as recoverable book contention by the outer loop.
                         raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc

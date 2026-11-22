@@ -14,9 +14,11 @@ import os
 import shutil
 import sqlite3
 import tempfile
+from contextlib import nullcontext
 from decimal import Decimal, DecimalException
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
@@ -77,6 +79,8 @@ def connect(readonly=True):
     target = f"file:{DB}?mode=ro" if readonly else DB
     c = sqlite3.connect(target, uri=readonly, timeout=10)
     c.row_factory = sqlite3.Row
+    if readonly:
+        c.execute("PRAGMA query_only=ON")
     return c
 
 
@@ -91,6 +95,23 @@ def one(c, sql, params=(), default=0):
 
 def rows(c, sql, params=()):
     return [dict(r) for r in c.execute(sql, params)]
+
+
+def _caucion_offer_evidence(connection, now):
+    from di_caucion_cash_sweep_runtime_hf6 import offers_from_store
+
+    # The allocator only needs a connection for this read. Do not create a
+    # PaperStore or run any cash-sweep admission or execution path here.
+    snapshot = SimpleNamespace(connect=lambda: nullcontext(connection))
+    evidence = {"offer_checked_at": now.isoformat(), "complete_offers": None}
+    try:
+        offers, errors = offers_from_store(snapshot, now=now)
+    except sqlite3.Error:
+        return dict(evidence, state="NO_VERIFICADO")
+    if errors == ["CAUCION_LIVE_BOOK_MISSING"]:
+        return dict(evidence, state="CAUCION_LIVE_BOOK_MISSING")
+    return dict(evidence, complete_offers=len(offers), state=(
+        "CURRENT_OFFERS_OBSERVED" if offers else "NO_CURRENT_VALID_OFFER"))
 
 
 def _strict_pnl_sum(values):
@@ -224,6 +245,7 @@ def collect():
               "quick_check": "DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
               "quick_check_executed": False}
     with connect() as c:
+        c.execute("BEGIN")
         observer = dict(c.execute("SELECT * FROM observer_state WHERE id=1").fetchone() or {})
         result["observer"] = {k: observer.get(k) for k in (
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
@@ -391,24 +413,8 @@ def collect():
             "declared": coverage.get("declared"),
             "queries": coverage.get("queries", 0),
             "observed_contracts": observed_cauciones,
-            # SearchInstrument no contiene la oferta ejecutable completa. Hasta
-            # incorporar y validar una fuente de libro/términos, no hay una
-            # CaucionOffer apta que pueda entregarse al asignador.
-            "complete_offers": 0,
             "placed_today": placed_today,
-            "state": "MISSING_CURRENT_CONTRACT_TERMS" if (observed_cauciones or placed_today) else (
-                str(coverage.get("discovery_status") or "NOT_OBSERVED")),
-            "missing_offer_requirements": [
-                "instrument_id", "currency", "annual_rate_fraction", "start_date",
-                "maturity_at", "quoted_at", "available_principal", "minimum_principal",
-                "principal_step", "day_count_basis", "fee_payment", "metadata_source",
-            ],
-            "missing_policy_requirements": [
-                "frozen_at", "reserve_cash", "maximum_cash_fraction",
-                "maximum_principal", "liquidity_deadline", "maximum_quote_age_seconds",
-                "participation", "minimum_net_profit", "ranking",
-                "session_open_at", "session_close_at", "session_source",
-            ],
+            **_caucion_offer_evidence(c, now),
         }
         coverage_rows = rows(c, """SELECT instrument_type,declared,queries,observed_count,
           ready_paper_count,discovery_status,checked_at FROM catalog_family_coverage
@@ -422,6 +428,7 @@ def collect():
                 {"capability": item["capability"], "count": item["count"]})
         result["family_readiness"] = [
             dict(item, capabilities=capabilities.get(item["instrument_type"], []),
+                 ready_paper_count_scope="CATALOG_CENSUS_AT_CHECKED_AT",
                  excluded_by_default=False)
             for item in coverage_rows
         ]

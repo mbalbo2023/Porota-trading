@@ -18,6 +18,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from itertools import zip_longest
 from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -358,7 +359,8 @@ def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=N
 
 
 def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
-                        priority="DISCOVERY", identity=None, scanner_primary=None):
+                        priority="DISCOVERY", identity=None, scanner_primary=None,
+                        catalog_read_error=False):
     """Reuse one Current+Book GET pair for an optional private native Book1.
 
     A missing/ambiguous five-key cannot bind the diagnostic hash; it does not
@@ -368,10 +370,17 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     with scope:
         current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
-    metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
-        market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
+    metadata = None
+    if not catalog_read_error:
+        metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
+            market=identity[2], currency=identity[3]) if identity else financial_catalog.lookup(store, symbol, asset_class, settlement)
     quote = normalize_quote(symbol, asset_class, settlement, current, book,
         metadata=metadata, identity=identity)
+    if catalog_read_error:
+        # A verified Gateway request for an opened position can still supply
+        # an EXIT book when PIT metadata is unreadable. It grants no entry.
+        quote = replace(quote, market=identity[2], currency=identity[3],
+                        opening_block_reason="CATALOG_READ_ERROR")
     if scanner_primary is None or (priority == "OPENED_CRITICAL" and identity is None):
         return quote
     try:
@@ -1143,56 +1152,47 @@ def _release_idle_catalog_heap():
 
 
 def _eligible_symbols(store):
-    """Devuelve el universo completo de familias en rotación PAPER/SHADOW.
+    """Compatibilidad para consumidores de las solicitudes de tres campos."""
+    return tuple(_eligible_scanner_identities(store))
 
-    El catálogo puede contener más familias que el lote activo. La selección
-    posterior mantiene una ventana limitada y un cursor persistente; aquí no
-    se descartan familias por pertenecer a renta fija, cauciones o derivados.
-    """
-    core = []
+
+def _eligible_scanner_identities(store):
+    """Map scanner requests to their exact PIT identities in rotation order."""
     family_order = (
         "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
         "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
     )
-    allowed_sql = ",".join(f"'{family}'" for family in family_order)
-    try:
-        with store.connect() as c:
-            gate = "candidate_identity_v2" if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone() else "candidate_universe"
-            if gate == "candidate_identity_v2":
-                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
-                  FROM candidate_identity_v2
-                  WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  GROUP BY ticker,instrument_type,settlement
-                  HAVING COUNT(*)=1
-                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                           instrument_type,ticker,settlement""").fetchall()
-            else:
-                rows = c.execute(f"""SELECT ticker,instrument_type,settlement
-                  FROM candidate_universe
-                  WHERE can_simulate=1 AND status='AVAILABLE'
-                    AND UPPER(instrument_type) IN ({allowed_sql})
-                  ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
-                           instrument_type,ticker,settlement""").fetchall()
-        seen = set(core)
-        groups = {kind: [] for kind in family_order}
-        for ticker, kind, settlement in rows:
-            kind = str(kind or "").upper()
-            value = (str(ticker).strip().upper(), kind, settlement)
-            if value not in seen and kind in groups:
-                groups[kind].append(value)
-        # Round-robin por familia: evita que acciones/CEDEARs consuman todo
-        # el lote y garantiza que las familias nuevas entren en la rotación.
-        while any(groups.values()):
-            for kind in family_order:
-                if groups[kind]:
-                    value = groups[kind].pop(0)
-                    if value not in seen:
-                        core.append(value)
-                        seen.add(value)
-    except Exception:
-        pass
-    return tuple(core)
+    allowed_sql = ",".join("?" for _ in family_order)
+    with store.connect() as c:
+        full_keys = c.execute("""SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='candidate_identity_v2'""").fetchone()
+        if full_keys:
+            # Count the whole alias before filtering by readiness. A held
+            # sibling still makes the three-field provider request ambiguous.
+            rows = c.execute(f"""SELECT ticker,instrument_type,market,currency,settlement
+              FROM candidate_identity_v2
+              WHERE UPPER(TRIM(instrument_type)) IN ({allowed_sql})
+              GROUP BY UPPER(TRIM(ticker)),UPPER(TRIM(instrument_type)),UPPER(TRIM(settlement))
+              HAVING COUNT(*)=1 AND MAX(can_simulate)=1 AND MAX(status)='AVAILABLE'
+              ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                       instrument_type,ticker,settlement""", family_order).fetchall()
+        else:
+            rows = c.execute(f"""SELECT ticker,instrument_type,market,NULL,settlement
+              FROM candidate_universe
+              WHERE can_simulate=1 AND status='AVAILABLE'
+                AND UPPER(instrument_type) IN ({allowed_sql})
+              ORDER BY CASE WHEN ticker IN ('GGAL','AAPL') THEN 0 ELSE 1 END,
+                       instrument_type,ticker,settlement""", family_order).fetchall()
+    groups = {family: {} for family in family_order}
+    for row in rows:
+        key = tuple(str(part or "").strip().upper() for part in row)
+        ticker, family, _, _, settlement = key
+        # The old summary is preserved for diagnostics, without inventing CCY.
+        exact = key if all(v not in {"", "UNKNOWN", "NO_VERIFICADO"} for v in key) else None
+        groups[family][(ticker, family, settlement)] = exact
+    # Rotate all families in the existing order without repeatedly shifting lists.
+    return dict(item for turn in zip_longest(*(iter(group.items()) for group in groups.values()))
+                for item in turn if item is not None)
 
 
 def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
@@ -1913,12 +1913,21 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_plan(store, focus_candidates=None):
+def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
-    universe = list(_eligible_symbols(store))
+    catalog_error = None
+    try:
+        identities = _eligible_scanner_identities(store)
+    except sqlite3.Error as exc:
+        identities = {}
+        catalog_error = getattr(exc, "sqlite_errorname", type(exc).__name__)
+    exact = {request: key for request, key in identities.items() if key is not None}
+    legacy_catalog = bool(identities) and not exact
+    universe = list(identities if include_legacy_summary and legacy_catalog else exact)
+    positions = store.open_positions()
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
-                                for p in store.open_positions()))
+                                for p in positions))
     with store.connect() as c:
         row = c.execute("SELECT cursor_after,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
     previous = None
@@ -1935,18 +1944,36 @@ def _cycle_plan(store, focus_candidates=None):
         limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
         now=at, cursor=row[0] if row else 0, previous=previous)
-    from rc6_dynamic_universe.promotion import capacity_controller_from_environment
-    controller = capacity_controller_from_environment(store.path)
-    if controller.state(at)["status"] == "APPROVED_DYNAMIC":
-        full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
-            for p in store.open_positions() if p["asset_class"] in {"ACCIONES", "CEDEARS", "ETFS"}]
-        selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
-        if selected["dynamic"]:
-            symbols, plan = _approved_equity_selection(store, selected, plan)
+    if not catalog_error and not legacy_catalog:
+        from rc6_dynamic_universe.promotion import capacity_controller_from_environment
+        controller = capacity_controller_from_environment(store.path)
+        if controller.state(at)["status"] == "APPROVED_DYNAMIC":
+            full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
+                           for p in positions if p["asset_class"] in PAPER_SPOT_FAMILIES]
+            selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
+            if selected["dynamic"]:
+                try:
+                    symbols, plan = _approved_equity_selection(store, selected, plan, exact)
+                except sqlite3.Error as exc:
+                    catalog_error = getattr(exc, "sqlite_errorname", type(exc).__name__)
+    if catalog_error:
+        symbols = tuple(opened)
+        universe = []
+        plan.update(catalog_status="CATALOG_READ_ERROR", catalog_error=catalog_error,
+                    feasible=False, focus_feasible=False, opening_identities=[])
+    elif legacy_catalog:
+        plan.update(catalog_status="CATALOG_IDENTITY_UNVERIFIED",
+                    feasible=False, focus_feasible=False, opening_identities=[])
+    else:
+        plan["catalog_status"] = "ELIGIBLE_INSTRUMENTS" if exact else "NO_ELIGIBLE_INSTRUMENTS"
+    if not plan.get("dynamic_selection"):
+        plan["read_scopes"] = [
+            {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
+            for request in symbols if request in exact and not catalog_error]
     return symbols, len(universe), before, after, plan
 
 
-def _approved_equity_selection(store, selected, baseline_plan):
+def _approved_equity_selection(store, selected, baseline_plan, identities):
     """Reuse full-key readiness; financial ranking never becomes a BUY gate."""
     with store.connect() as c:
         rows = c.execute("""SELECT c.ticker,c.instrument_type,c.market,c.currency,c.settlement
@@ -1954,15 +1981,11 @@ def _approved_equity_selection(store, selected, baseline_plan):
             USING(ticker,instrument_type,market,currency,settlement)
             WHERE c.status='AVAILABLE' AND r.status='AVAILABLE' AND r.can_simulate=1
               AND c.capability LIKE 'READY_PAPER%' AND c.instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchall()
-    aliases = {}
-    for row in rows:
-        key = tuple(row)
-        aliases.setdefault((key[0], key[1], key[4]), []).append(key)
-    ready = {values[0] for values in aliases.values() if len(values) == 1}
+    ready = set(map(tuple, rows)).intersection(identities.values())
     opened = set(selected["opened_priority"])
     keys = [tuple(k) for k in selected["selected"] if tuple(k) in ready or tuple(k) in opened]
     request = lambda k: (k[0], k[1], k[4])
-    entry = [request(k) for k in keys if k in selected["entry_identities"]]
+    entry = [request(k) for k in keys if k in ready and k in selected["entry_identities"]]
     scope = []
     for k in keys:
         row = selected["rows"][k]
@@ -1972,14 +1995,15 @@ def _approved_equity_selection(store, selected, baseline_plan):
         configuration_fingerprint=selected["policy_state"]["fingerprint"],
         opening_identities=entry, feasible=True, focus_feasible=True,
         active_budget={"status": "FEASIBLE", "authority": "VERIFIED_OPEN_CAPACITY"},
-        dynamic_selection=True, dynamic_scopes=scope, cadence_seconds=selected["cadence_seconds"],
+        dynamic_selection=True, read_scopes=scope, cadence_seconds=selected["cadence_seconds"],
         approved_limit=selected["limit"], family_quota=False,
         deep_priority_authority="STRATEGY_TRADEABILITY_CAPACITY", catalog_effect="NONE")
-    return tuple(map(request, keys)), plan
+    return tuple(dict.fromkeys(map(request, keys))), plan
 
 
 def _cycle_symbols(store, focus_candidates=None):
-    return _cycle_plan(store, focus_candidates)[:4]
+    """Return the historical rotation summary, including legacy triples."""
+    return _cycle_plan(store, focus_candidates, include_legacy_summary=True)[:4]
 
 
 def _sampling_feasibility(selected_count, *, eligible_total=None, focus_count=None,
@@ -2085,6 +2109,7 @@ def _runtime_readiness(store, *, record_event=False):
     symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
         store, focus_candidates=priority
     )
+    catalog_read_error = active_plan["catalog_status"] == "CATALOG_READ_ERROR"
     if active_plan.get("dynamic_selection"):
         native_ready = list(active_plan["opening_identities"])
         focus = dict(focus, source="POINT_IN_TIME_TRADEABILITY_APPROVED_CAPACITY",
@@ -2098,14 +2123,15 @@ def _runtime_readiness(store, *, record_event=False):
         # Sólo la capacidad exacta de cada identidad seleccionada puede abrir
         # una señal Spot en fallback. El diagnóstico 4/8 ya no decide GO.
         selected_spot = [key for key in symbols if key[1] in PAPER_SPOT_FAMILIES]
-        native_ready = [key for key in selected_spot if key in ready_set]
+        native_ready = [key for key in selected_spot if not catalog_read_error and key in ready_set]
         focus = dict(focus, source="POINT_IN_TIME_EXACT_SPOT_FALLBACK",
             matched=native_ready, matched_count=len(native_ready),
             configured_count=len(selected_spot), minimum_for_openings=1,
             allow_new_openings=bool(native_ready),
             state="VERDE" if native_ready else "AMARILLO",
-            missing=[{"identity": key, "reason": "PIT_SPOT_EXACT_NOT_READY"}
-                for key in selected_spot if key not in ready_set])
+            missing=[{"identity": key,
+                      "reason": "CATALOG_READ_ERROR" if catalog_read_error else "PIT_SPOT_EXACT_NOT_READY"}
+                     for key in selected_spot if key not in native_ready])
     # La métrica existe tanto en fallback como en capacidad PIT dinámica;
     # nunca muestra NO_DATA permanente por usar el modo aprobado.
     _health(store, "PAPER_SPOT_PIT_READINESS", focus["state"],
@@ -2123,13 +2149,14 @@ def _runtime_readiness(store, *, record_event=False):
     feasibility["active_plan"] = active_plan
     feasibility["feasible"] = active_plan["feasible"]
     feasibility["focus_feasible"] = active_plan["focus_feasible"]
-    feasibility["rotation_feasible"] = active_plan["active_budget"]["status"] == "FEASIBLE"
+    feasibility["rotation_feasible"] = (not catalog_read_error and
+                                        active_plan["active_budget"]["status"] == "FEASIBLE")
     if not feasibility["feasible"]:
+        reason = "CATALOG_READ_ERROR" if catalog_read_error else "SAMPLING_INFEASIBLE"
         if record_event:
-            store.event("SAMPLING_INFEASIBLE", json.dumps(feasibility, sort_keys=True))
+            store.event(reason, json.dumps(feasibility, sort_keys=True))
         _health(store, "PAPER_SIGNAL_SAMPLING", "ROJO",
-                "La canasta activa no puede reunir la ventana mínima: " +
-                json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
+                reason + " " + json.dumps(feasibility, sort_keys=True), "Runtime PAPER")
     else:
         _health(store, "PAPER_SIGNAL_SAMPLING", "VERDE",
                 "Canasta activa con capacidad teórica suficiente; catálogo completo separado: " +
@@ -2149,6 +2176,8 @@ def _scanner_opening_capacity(request, *, focus, feasibility):
     READY. El broker mantiene sus gates por identidad, sesión, riesgo y PAPER/0.
     """
     plan = feasibility["active_plan"]
+    if plan.get("catalog_status") == "CATALOG_READ_ERROR":
+        return False, "CATALOG_READ_ERROR"
     if not feasibility["feasible"]:
         return False, "SCANNER_INFEASIBLE"
     if request not in {tuple(key) for key in plan["opening_identities"]}:
@@ -2945,7 +2974,7 @@ def _write_scanner_metrics(store, stage, values):
 CAUCION_LEDGER_RECHECK_SECONDS = 3600
 
 
-def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
+def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at, observe_only=False):
     """Reject stale trade for entry while preserving independent fresh-Book EXIT.
 
     A stale Book remains fully rejected. No entry path sees a rejected trade.
@@ -2956,13 +2985,14 @@ def _scanner_trade_temporal_rejection(q, broker, store, *, checked_at):
         max_trade_age_seconds=broker.trade_max_age_seconds)
     if not data_error:
         return ""
-    if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
-        broker.record_observation_rejection(q, data_error)
-    else:
-        broker.on_quote(
-            q, allow_new_openings=False,
-            opening_block_reason=data_error,
-            evaluate_when_blocked=False)
+    if not observe_only:
+        if q.time_error(checked_at, max_age_seconds=broker.quote_max_age_seconds):
+            broker.record_observation_rejection(q, data_error)
+        else:
+            broker.on_quote(
+                q, allow_new_openings=False,
+                opening_block_reason=data_error,
+                evaluate_when_blocked=False)
     store.event("DATA_REJECTED", f"{q.symbol}: {data_error}")
     return data_error
 
@@ -3076,12 +3106,14 @@ def run():
                                    "cost evidence requires reconciliation.")
                 last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
                     store, phase, last_complementary_reconcile)
-                time.sleep(max(30, COMMAND_POLL_SECONDS))
-                continue
+                if phase != "OPEN":
+                    time.sleep(max(30, COMMAND_POLL_SECONDS))
+                    continue
             # Autenticación, catálogo e históricos son útiles también durante
             # noches, fines de semana y feriados. Sólo current/book y la
             # estrategia quedan condicionados a rueda abierta.
-            if reader is None:
+            attached = reader is None
+            if attached:
                 if time.time() < next_login_at:
                     store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
                                 session_state=_cooldown_session_state(phase),
@@ -3110,12 +3142,6 @@ def run():
                                 session_state=phase, heartbeat_at=now_iso(),
                                 real_orders_sent=0,
                                 detail="Gateway único conectado; inicializando motor PAPER.")
-                    # La IA continúa OFF; este paso no envía órdenes ni llama
-                    # rutas operativas. Sólo prepara decisiones simuladas.
-                    broker = broker_from_environment(store, ai_gate=None, require_ai=False,
-                                                     ai_mode="OFF", context_fn=None,
-                                                     admission_guard=paper_admission_guard)
-                    _daily_sync(reader, store)
                 except Exception as exc:
                     _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
                             f"{type(exc).__name__}: {str(exc)[:300]}", "PPI Producción")
@@ -3130,27 +3156,42 @@ def run():
                         else LOGIN_COOLDOWN_SECONDS)
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
+            if broker is None:
+                broker = broker_from_environment(store, ai_gate=None, require_ai=False,
+                                                 ai_mode="OFF", context_fn=None,
+                                                 admission_guard=paper_admission_guard)
+                # Validate before the first strategy tick, including startup
+                # during OPEN with an already invalid historical ledger.
+                caucion_ledger_blocked, next_caucion_ledger_recheck = (
+                    _settle_cauciones_fail_closed(
+                        broker, caucion_ledger_blocked, next_caucion_ledger_recheck,
+                        time.monotonic()))
+                if caucion_ledger_blocked and phase != "OPEN":
+                    continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
-            operations.service_tick(store, phase)
-            if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
-                try:
-                    import dj_caucion_live_ppi_rc6 as caucion_live
-                    if caucion_live.collection_window(datetime.now(TZ)):
-                        result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
-                        store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
-                        last_caucion_live_refresh=time.time()
-                except Exception as exc:
-                    store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
-            if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
-                _public_probe(store)
-                last_public_check = time.time()
-            should_capture = phase == "OPEN" and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
-            closing_snapshot = previous_phase == "OPEN" and phase == "CLOSED"
-            if should_capture or closing_snapshot:
-                _public_probe(store, structured=True)
-                last_structured_capture = time.time()
-            last_complementary_reconcile = _periodic_complementary_reconcile(
-                store, phase, last_complementary_reconcile)
+            if not caucion_ledger_blocked:
+                if attached:
+                    _daily_sync(reader, store)
+                operations.service_tick(store, phase)
+                if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
+                    try:
+                        import dj_caucion_live_ppi_rc6 as caucion_live
+                        if caucion_live.collection_window(datetime.now(TZ)):
+                            result=caucion_live.refresh(reader,store,now=datetime.now(TZ))
+                            store.event("CAUCION_LIVE_BOOK_REFRESH", json.dumps(result,sort_keys=True))
+                            last_caucion_live_refresh=time.time()
+                    except Exception as exc:
+                        store.event("CAUCION_LIVE_BOOK_REFRESH_ERROR", type(exc).__name__)
+                if time.time() - last_public_check >= PUBLIC_CHECK_SECONDS:
+                    _public_probe(store)
+                    last_public_check = time.time()
+                should_capture = phase == "OPEN" and time.time() - last_structured_capture >= PUBLIC_STRUCTURED_CAPTURE_SECONDS
+                closing_snapshot = previous_phase == "OPEN" and phase == "CLOSED"
+                if should_capture or closing_snapshot:
+                    _public_probe(store, structured=True)
+                    last_structured_capture = time.time()
+                last_complementary_reconcile = _periodic_complementary_reconcile(
+                    store, phase, last_complementary_reconcile)
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
@@ -3175,7 +3216,11 @@ def run():
                 continue
             (focus, symbols, eligible_total, cursor_before, cursor_after,
              feasibility) = _runtime_readiness(store, record_event=True)
-            if (os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
+            active_plan = feasibility["active_plan"]
+            catalog_read_error = active_plan.get("catalog_status") == "CATALOG_READ_ERROR"
+            observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
+                                "CATALOG_READ_ERROR" if catalog_read_error else "")
+            if (not catalog_read_error and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
                     and time.monotonic() - last_direct_rest_probe >= 60):
                 # Do not let one READY equity suppress all nine other family
                 # diagnostics. Exactly one missing family per due interval,
@@ -3200,8 +3245,12 @@ def run():
             cycle_clock = time.perf_counter()
             cycle_ok = 0
             cycle_failures = 0
+            cycle_requested = 0
+            cycle_identity_rejections = 0
+            cycle_temporal_rejections = 0
             cycle_session_invalid = False
             latencies = []
+            scopes = {tuple(s["request"]): s for s in active_plan.get("read_scopes", [])}
             opened_identities = {}
             if getattr(reader, "budget_enabled", False):
                 for p in store.open_positions():
@@ -3213,13 +3262,25 @@ def run():
                 symbol_clock = time.perf_counter()
                 try:
                     request_key = (symbol, asset_class, settlement)
-                    dynamic_scope = next((s for s in feasibility["active_plan"].get("dynamic_scopes", [])
-                        if tuple(s["request"]) == request_key), {})
-                    priority = "OPENED_CRITICAL" if request_key in opened_identities else dynamic_scope.get("priority", "DISCOVERY")
+                    scope = scopes.get(request_key, {})
                     exact_opened = opened_identities.get(request_key, set())
-                    scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else dynamic_scope.get("identity") if not exact_opened else None
+                    priority, scope_identity = scope.get("priority", "DISCOVERY"), scope.get("identity")
+                    if exact_opened:
+                        priority = "OPENED_CRITICAL"
+                        scope_identity = next(iter(exact_opened)) if len(exact_opened) == 1 else None
+                    elif priority == "OPENED_CRITICAL":
+                        priority = "DISCOVERY"
+                    if scope_identity is None:
+                        cycle_identity_rejections += 1
+                        cycle_failures += 1
+                        store.event("DATA_REJECTED", f"{symbol}: PPI_GATEWAY_EXACT_IDENTITY_REQUIRED")
+                        continue
+                    cycle_requested += 1
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
-                        priority=priority, identity=scope_identity, scanner_primary=scanner_primary)
+                        priority=priority, identity=scope_identity, scanner_primary=scanner_primary,
+                        catalog_read_error=catalog_read_error)
+                    if observation_hold:
+                        q = replace(q, opening_block_reason=observation_hold)
                     try:
                         scanner_primary.capture(q, request=request_key)
                     except Exception as origin_error:
@@ -3232,24 +3293,26 @@ def run():
                     store.add_quote(q)
                     quotes[(symbol, asset_class, settlement, q.currency, q.market)] = q
                     if _scanner_trade_temporal_rejection(
-                            q, broker, store, checked_at=now_iso()):
+                            q, broker, store, checked_at=now_iso(), observe_only=bool(observation_hold)):
+                        cycle_temporal_rejections += 1
                         continue
-                    allow_openings, opening_reason = _scanner_opening_capacity(
-                        request_key, focus=focus, feasibility=feasibility)
-                    # Para CEDEARs se conserva la observación BYMA, pero la
-                    # apertura requiere también rueda regular del subyacente US.
-                    cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))
-                    if not cedear_allowed:
-                        allow_openings = False
-                        opening_reason = cedear_reason
-                    broker.on_quote(
-                        q, allow_new_openings=allow_openings,
-                        opening_block_reason=opening_reason,
-                        evaluate_when_blocked=(
-                            not allow_openings and
-                            (symbol, asset_class, settlement) in set(map(tuple, focus["matched"]))
-                        ),
-                    )
+                    # The independent EXIT supervisor can use the exact
+                    # persisted Book without granting a new entry or cash.
+                    if not observation_hold:
+                        allow_openings, opening_reason = _scanner_opening_capacity(
+                            request_key, focus=focus, feasibility=feasibility)
+                        # La apertura de CEDEAR exige rueda regular de su subyacente.
+                        cedear_allowed, cedear_reason = cedear_opening_gate(asset_class, datetime.now(TZ))
+                        if not cedear_allowed:
+                            allow_openings = False
+                            opening_reason = cedear_reason
+                        broker.on_quote(
+                            q, allow_new_openings=allow_openings,
+                            opening_block_reason=opening_reason,
+                            evaluate_when_blocked=(
+                                not allow_openings and request_key in set(map(tuple, focus["matched"]))
+                            ),
+                        )
                     cycle_ok += 1
                     store.state(last_market_data_at=q.observed_at)
                 except ReadOnlyPolicyViolation as exc:
@@ -3278,7 +3341,25 @@ def run():
             except Exception as origin_error:
                 print("PPI_SCANNER_PRIMARY_PUBLISH_ERROR=" + type(origin_error).__name__,
                       file=sys.stderr, flush=True)
-            broker.mark_equity(quotes)
+            if not observation_hold:
+                try:
+                    broker.mark_equity(quotes)
+                except ValueError as exc:
+                    if not str(exc).startswith("CAUCION_LEDGER_INVALID:"):
+                        raise
+                    # Another service can change the ledger during this cycle.
+                    # An invalid valuation must also enter the hourly hold.
+                    caucion_ledger_blocked = True
+                    next_caucion_ledger_recheck = time.monotonic() + CAUCION_LEDGER_RECHECK_SECONDS
+                    observation_hold = "CAUCION_LEDGER_INVALID"
+                    store.event(observation_hold, "Valuación PAPER suspendida hasta validar el ledger.")
+            feasibility["observation_counts"] = {
+                "selected": len(symbols), "instruments_dispatched": cycle_requested,
+                "identity_rejections": cycle_identity_rejections,
+                "temporal_rejections": cycle_temporal_rejections,
+            }
+            if observation_hold:
+                feasibility["opening_hold_reason"] = observation_hold
             duration = round(time.perf_counter() - cycle_clock, 3)
             avg_seconds = (statistics.fmean(latencies) / 1000) if latencies else INTERVAL
             budget = max(1.0, INTERVAL * 0.75)
@@ -3297,24 +3378,28 @@ def run():
                 cycle_session_invalid = True
                 metrics = None  # keep last physical owner HTTP counts, never false zeros
                 store.event("PPI_GATEWAY_METRICS_UNVERIFIED", type(exc).__name__)
-            store.state(process_state="DEGRADED" if cycle_session_invalid or not cycle_ok else "RUNNING",
+            store.state(process_state="DEGRADED" if observation_hold or cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
                         ppi_auth="ERROR" if cycle_session_invalid else "OK",
                         **({"http_allowed": metrics["http_allowed"],
                             "http_blocked": metrics["http_blocked"]} if metrics else {}),
                         real_orders_sent=0,
-                        detail=(f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
+                        detail=((f"{observation_hold}: observación sin nuevas aperturas PAPER. "
+                                 if observation_hold else "") +
+                                f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
                                 f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas."))
             _health(store, "PPI_PRODUCTION_MARKETDATA",
-                    "VERDE" if cycle_ok else "ROJO",
-                    f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil.",
+                    "VERDE" if cycle_ok else "ROJO" if cycle_requested else "AMARILLO",
+                    (f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
+                     if cycle_requested else
+                     f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."),
                     "PPI Producción", success=bool(cycle_ok))
             _publish_economic_shadow_health(store)
             if cycle_session_invalid:
                 reader.close()
                 reader = None
                 next_login_at = time.time() + 60
-            time.sleep(feasibility["active_plan"].get("cadence_seconds", INTERVAL))
+            time.sleep(active_plan.get("cadence_seconds", INTERVAL))
     finally:
         if reader:
             reader.close()

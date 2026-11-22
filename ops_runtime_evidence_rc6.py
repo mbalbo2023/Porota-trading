@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -59,6 +60,14 @@ EXACT_CANDIDATE_COLUMNS = (
     "ticker", "instrument_type", "market", "currency", "settlement",
     "can_simulate", "status", "detail", "checked_at",
 )
+CANDIDATE_REFRESH_COLUMNS = ("id", "state", "checked_at")
+EXPLICIT_CANDIDATE_REASONS = frozenset({
+    "CATALOG_RECONCILIATION",
+    "FUTURES_CONTRACT_OR_PAPER_MARGIN_UNRESOLVED",
+    "ON_CONTRACT_UNRESOLVED",
+    "ON_IDENTITY_AMBIGUOUS",
+    "OPTION_CONTRACT_UNRESOLVED",
+})
 # The candidate writer and the PAPER quote guard use a fourteen-day identity
 # LKG.  The bundle's shorter --freshness-seconds is an evidence-quality clock,
 # not the candidate admission contract.  A parity test guards against drift.
@@ -72,6 +81,7 @@ ALLOWED_TABLES = {
     "complementary_contract_retry": RETRY_COLUMNS,
     "candidate_universe": CANDIDATE_COLUMNS,
     "candidate_identity_v2": EXACT_CANDIDATE_COLUMNS,
+    "candidate_refresh_state": CANDIDATE_REFRESH_COLUMNS,
     "source_sync": SOURCE_SYNC_COLUMNS,
 }
 
@@ -345,6 +355,11 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                 issues.append("CANDIDATE_LEDGER_CONTRADICTION")
             elif candidate_applies and can_simulate == 0:
                 reasons.append("CANDIDATE_GATE:NO_GO")
+                detail = str(projected_row.get("detail") or "").partition(";")[0]
+                code = detail.removeprefix("PAUSED_EXPLICIT:")
+                if (candidate_status == "PAUSED_EXPLICIT" and code != detail
+                        and code in EXPLICIT_CANDIDATE_REASONS):
+                    reasons.append("CANDIDATE_REASON:" + code)
 
         readiness = "READY_PAPER" if not reasons else "NO_READY"
         if readiness == "READY_PAPER" and any(
@@ -474,6 +489,11 @@ def _summaries(instruments: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "instruments": len(rows),
             "ready_paper": sum(row["readiness"]["status"] == "READY_PAPER" for row in rows),
             "not_ready": sum(row["readiness"]["status"] != "READY_PAPER" for row in rows),
+            "not_ready_reasons": dict(sorted(Counter(
+                reason
+                for row in rows if row["readiness"]["status"] == "NO_READY"
+                for reason in row["readiness"]["reasons"]
+            ).items())),
             "ambiguous": sum(row["identity_flags"]["ambiguous"] for row in rows),
             "ymc_special": sum(row["identity_flags"]["ymc_special"] for row in rows),
         }
@@ -690,9 +710,9 @@ def _provenance(deploy: dict[str, Any], frozen: dict[str, Any], manifest: dict[s
         text = str(value or "").lower().removeprefix("sha256:")
         return text if SHA64.fullmatch(text) else "NO_VERIFICADO"
 
-    return {
+    provenance = {
         "candidate_sha": sha40(deploy.get("candidate_sha") or frozen.get("candidate_sha")),
-        "deploy_sha": sha40(deploy.get("deploy_sha")),
+        "deploy_sha": sha40(deploy.get("deployment_sha", deploy.get("deploy_sha"))),
         "tree_sha": sha40(frozen.get("candidate_tree_sha")),
         "image_identity": safe_text(deploy.get("image_id") or frozen.get("image_id")),
         "image_tar_sha256": sha64(frozen.get("image_tar_sha256")),
@@ -700,6 +720,14 @@ def _provenance(deploy: dict[str, Any], frozen: dict[str, Any], manifest: dict[s
         "manifest_schema_version": manifest.get("schema_version", "NO_VERIFICADO"),
         "deploy_state_recorded_at": iso(deploy.get("recorded_at")),
     }
+    if "deployment_sha" in deploy:
+        provenance["download_receipt_sha256"] = sha64(deploy.get("download_receipt_sha256"))
+        if (deploy.get("validation_status") != "VALIDATED_RUNTIME"
+                or provenance["download_receipt_sha256"] == "NO_VERIFICADO"
+                or (deploy.get("deploy_sha") is not None
+                    and sha40(deploy["deploy_sha"]) != provenance["deploy_sha"])):
+            provenance["deploy_sha"] = "NO_VERIFICADO"
+    return provenance
 
 
 def _provenance_gaps(deploy: dict[str, Any], frozen: dict[str, Any]) -> list[str]:
@@ -749,7 +777,9 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
                  current: datetime | None = None) -> dict[str, Any]:
     current = current or utcnow()
     gaps: list[str] = []
-    with connect_readonly(db_path) as conn:
+    refresh = {"state": "NO_VERIFICADO", "checked_at": None}
+    with closing(connect_readonly(db_path)) as conn, conn:
+        conn.execute("BEGIN")
         schema = _schema(conn)
         for table, columns in (
             ("observer_state", OBSERVER_COLUMNS),
@@ -777,6 +807,20 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             exact_candidates = (_rows(conn, "candidate_identity_v2", EXACT_CANDIDATE_COLUMNS)
                                 if exact_ledger_present else [])
             sync_rows = _rows(conn, "source_sync", SOURCE_SYNC_COLUMNS)
+        if "candidate_refresh_state" in schema:
+            refresh_gaps = _require_columns(schema, "candidate_refresh_state", CANDIDATE_REFRESH_COLUMNS)
+            gaps.extend(refresh_gaps)
+            if not refresh_gaps:
+                states = _rows(conn, "candidate_refresh_state", CANDIDATE_REFRESH_COLUMNS)
+                if (len(states) == 1 and states[0]["id"] == 1
+                        and states[0]["state"] in ("RUNNING", "COMPLETE")):
+                    checked_at = iso(states[0]["checked_at"])
+                    if checked_at:
+                        refresh = {"state": states[0]["state"], "checked_at": checked_at}
+                if refresh["state"] == "RUNNING":
+                    gaps.append("CANDIDATE_REFRESH_IN_PROGRESS")
+                elif refresh["state"] == "NO_VERIFICADO":
+                    gaps.append("CANDIDATE_REFRESH_STATE_NO_VERIFICADO")
     if len(observer_rows) != 1 or int(observer_rows[0].get("id") or 0) != 1:
         gaps.append("OBSERVER_STATE_CARDINALITY")
         observer = observer_rows[0] if observer_rows else {}
@@ -802,6 +846,8 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
         gaps.append("OPERATION_MODE_NO_VERIFICADO")
     provenance = _provenance(deploy, frozen, manifest)
     gaps.extend(_provenance_gaps(deploy, frozen))
+    if "deployment_sha" in deploy and provenance["deploy_sha"] == "NO_VERIFICADO":
+        gaps.append("PROVENANCE_DEPLOYMENT_SHA_UNVERIFIED")
     missing_provenance = sorted(key for key, value in provenance.items() if value in {None, "NO_VERIFICADO"})
     previous = _json_object(previous_path)
     source_sync = [
@@ -844,6 +890,8 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
             "catalog_rows": len(catalog),
             "candidate_rows": len(candidates),
             "exact_candidate_rows": len(exact_candidates) if exact_ledger_present else None,
+            "candidate_readiness_source": "candidate_identity_v2" if exact_ledger_present else "candidate_universe",
+            "candidate_refresh": refresh,
             # Compatibility alias: unlike the previous implementation this now
             # counts the actual candidate ledger, never catalog projections.
             "ledger_rows": len(candidates),

@@ -781,7 +781,7 @@ def required_timers(deploy_scheduler_candidate=None):
     return output
 
 
-def byma_morning_watch(today, *, allow_latest_safe=False):
+def byma_morning_watch(today, *, allow_latest_safe=False, now=None):
     """Require today's read-only BYMA authority check before preopen.
 
     Changes to hours/calendar are blocking until reviewed because they can
@@ -796,7 +796,9 @@ def byma_morning_watch(today, *, allow_latest_safe=False):
         if observed.tzinfo is None:
             return {'state':'RED','reason':'BYMA_WATCH_TIMESTAMP_NAIVE'}
         local=observed.astimezone(TZ)
-        age = (datetime.now(TZ) - observed.astimezone(TZ)).total_seconds()
+        age = ((now or datetime.now(TZ)) - local).total_seconds()
+        if local.date() == today and age < 0:
+            return {'state':'RED','reason':'BYMA_WATCH_TIMESTAMP_FUTURE'}
         state=str(payload.get('state') or '').upper()
         changed={str(x).upper() for x in payload.get('changed_components',[]) if x}
         pending=payload.get('pending_review') or {}
@@ -922,7 +924,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
                  'reason':'RUNTIME_RESERVE_BELOW_TARGET' if disk_state == 'AMBER' else None},
         'required_rc6_timers': required_timers(deploy_scheduler_candidate),
         'byma_morning_watch': byma_morning_watch(
-            today, allow_latest_safe=phase_override is not None),
+            today, allow_latest_safe=phase_override is not None, now=now),
         'iol_reference_fallback': iol_reference_state(today),
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),

@@ -892,6 +892,7 @@ class ReadOnlyUnixFeedServer:
         self.owner_status = owner_status
         self.socket_path = Path(socket_path)
         self._server = None
+        self._ever_listened = False
         self._owned_socket_dev_inode = None
         self._supervisor_pid = supervisor_pid
         self._supervisor_starttime = self.process_starttime(supervisor_pid)
@@ -920,6 +921,10 @@ class ReadOnlyUnixFeedServer:
         if self._native_router is None:
             raise RuntimeError("PPI_NATIVE_ROUTER_ACQUIRER_MISSING")
         self._native_router.start()
+
+    @property
+    def socket_bound(self) -> bool:
+        return self._server is not None
 
     def native_router_status(self) -> dict:
         return self._native_router.status() if self._native_router else {
@@ -1007,11 +1012,24 @@ class ReadOnlyUnixFeedServer:
                 elif request["op"] == "native_read":
                     result["schema"] = NATIVE_READ_SCHEMA
                 return result
+        if (self._ever_listened and isinstance(request, dict)
+                and request.get("op") in {"native_acquire", "aux_acquire"}):
+            status = self.owner_status() if callable(self.owner_status) else {}
+            generation = status.get("session_generation")
+            if (status.get("state") != "OPEN"
+                    or type(generation) is not str
+                    or request.get("session_generation") != generation):
+                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                        "state": "PPI_GATEWAY_OWNER_CHANGED", "provider_calls_by_rpc": 0,
+                        "owner_pid": status.get("owner_pid"),
+                        "session_generation": generation}
         if isinstance(request, dict) and request.get("op") == "native_acquire":
             denied = {"schema": NATIVE_ACQUIRE_SCHEMA,
                       "state": "PPI_NATIVE_DEMAND_DENIED", "provider_calls_by_rpc": 0}
-            if (set(request) != {"op", "consumer", "method", "ppi_five_key", "priority"}
-                    or not callable(self.native_acquirer)):
+            expected = {"op", "consumer", "method", "ppi_five_key", "priority"}
+            if self._ever_listened:
+                expected.add("session_generation")
+            if set(request) != expected or not callable(self.native_acquirer):
                 return denied
             try:
                 demand = {"_kind": "native", "consumer": request["consumer"], "method": request["method"],
@@ -1019,7 +1037,7 @@ class ReadOnlyUnixFeedServer:
                           "priority": request["priority"]}
                 if self._native_router and self._native_router.status()["running"]:
                     return self._native_router.demand(**demand)
-                if self._server is not None:
+                if self._ever_listened:
                     raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
                 # Pure offhost contract testing before any listener exists.
                 demand.pop("_kind")
@@ -1042,13 +1060,16 @@ class ReadOnlyUnixFeedServer:
         if isinstance(request, dict) and request.get("op") == "aux_acquire":
             denied = {"schema": NATIVE_ACQUIRE_SCHEMA,
                       "state": "PPI_AUX_DEMAND_DENIED", "provider_calls_by_rpc": 0}
-            if (set(request) != {"op", "consumer", "method", "args"}
+            expected = {"op", "consumer", "method", "args"}
+            if self._ever_listened:
+                expected.add("session_generation")
+            if (set(request) != expected
                     or not callable(self.auxiliary_acquirer)
                     or request.get("method") not in {
                         "search_instruments", "history", "market_configuration"}):
                 return denied
-            if (self._server is not None
-                    and request["method"] == "market_configuration"):
+            if (request["method"] == "market_configuration"
+                    and (self._server is not None or self._ever_listened)):
                 # The legacy SDK convenience method performs seven GETs
                 # within one Python call. The single owner router cannot
                 # overtake that in-flight batch for an EXIT book. Until it
@@ -1066,7 +1087,7 @@ class ReadOnlyUnixFeedServer:
             try:
                 if self._native_router and self._native_router.status()["running"]:
                     return self._native_router.demand(**demand)
-                if self._server is not None:
+                if self._ever_listened:
                     raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
                 return self.auxiliary_acquirer(
                     consumer=request["consumer"], method=request["method"],
@@ -1117,7 +1138,7 @@ class ReadOnlyUnixFeedServer:
             try:
                 if self._native_router and self._native_router.status()["running"]:
                     result = self._native_router.demand(**demand)
-                elif self._server is not None:
+                elif self._ever_listened:
                     raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
                 elif observe:
                     result = self.exit_round_observer(
@@ -1157,6 +1178,7 @@ class ReadOnlyUnixFeedServer:
         mode = parent.stat().st_mode
         if not stat.S_ISDIR(mode) or mode & 0o077 or self.socket_path.exists() or self.socket_path.is_symlink():
             raise PermissionError("PPI_UNIX_FEED_PRIVATE_PATH_REQUIRED")
+        self._ever_listened = True
         outer = self
 
         class _Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -1378,7 +1400,12 @@ class ReadOnlyUnixFeedClient:
         identity = _five(five_key)
         result = self._request({"op": "native_acquire", "consumer": consumer,
                                 "method": method, "ppi_five_key": list(identity),
-                                "priority": priority}, require_owner_identity=True)
+                                "priority": priority,
+                                "session_generation": self._pinned_owner[1]},
+                               require_owner_identity=True)
+        if (result.get("schema") == NATIVE_ACQUIRE_SCHEMA
+                and result.get("state") == "PPI_GATEWAY_OWNER_CHANGED"):
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
         if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
                 or type(result.get("state")) is not str
                 or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner):
@@ -1434,8 +1461,12 @@ class ReadOnlyUnixFeedClient:
         if not isinstance(args, dict):
             raise ValueError("PPI_AUX_CLIENT_ARGUMENTS_INVALID")
         result = self._request({"op": "aux_acquire", "consumer": consumer,
-                                "method": method, "args": args},
+                                "method": method, "args": args,
+                                "session_generation": self._pinned_owner[1]},
                                require_owner_identity=True)
+        if (result.get("schema") == NATIVE_ACQUIRE_SCHEMA
+                and result.get("state") == "PPI_GATEWAY_OWNER_CHANGED"):
+            raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
         if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
                 or type(result.get("state")) is not str
                 or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner):

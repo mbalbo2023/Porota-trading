@@ -290,7 +290,26 @@ def persist_release(identity, release_dir, release, manifest):
     return hashlib.sha256(raw).hexdigest()
 
 
-def publish_release_marker(root, release, *, validated, manifest=None):
+def download_evidence(raw, release):
+    """Bind the Actions download receipt to the same immutable release."""
+    from scripts.porota_release import _json
+
+    try:
+        receipt = _json(raw)
+    except ValueError as exc:
+        raise Hold("DOWNLOAD_RECEIPT_INVALID") from exc
+    require(isinstance(receipt, dict) and receipt.get("schema") == "porota.release.download.v1"
+            and all(receipt.get(key) == release[key] for key in ("source_sha", "source_tree", "image_id"))
+            and type(receipt.get("run_id")) is int and receipt["run_id"] == release["build_run_id"]
+            and type(receipt.get("run_attempt")) is int and receipt["run_attempt"] == release["build_run_attempt"]
+            and type(receipt.get("artifact_id")) is int and receipt["artifact_id"] > 0
+            and isinstance(receipt.get("artifact_digest"), str) and IMAGE_ID.fullmatch(receipt["artifact_digest"])
+            and isinstance(receipt.get("deployment_sha"), str) and SHA.fullmatch(receipt["deployment_sha"]),
+            "DOWNLOAD_RECEIPT_MISMATCH")
+    return {"deployment_sha": receipt["deployment_sha"], "download_receipt_sha256": hashlib.sha256(raw).hexdigest()}
+
+
+def publish_release_marker(root, release, *, validated, manifest=None, download=None):
     """Keep the existing operator rearm reader compatible and fail closed."""
     directory = no_alias(root / "data/deploy")
     directory.mkdir(mode=0o755, exist_ok=True)
@@ -305,6 +324,9 @@ def publish_release_marker(root, release, *, validated, manifest=None):
               "real_order_routes": "NOT_CALLED", "ppi_watch_untouched": True,
               "real_order_capability": "BLOCKED", "deployment_backend": "ROOTLESS_SPLIT",
               "recorded_at": datetime.now(timezone.utc).isoformat()}
+    if validated and download:
+        marker.update(deployment_sha=download["deployment_sha"],
+                      download_receipt_sha256=download["download_receipt_sha256"])
     if manifest is not None:
         require(hashlib.sha256(manifest).hexdigest() ==
                 release["members"]["porota-deploy-bundle-v2-manifest.json"]["sha256"], "MANIFEST_CHANGED")
@@ -942,11 +964,15 @@ class Host:
                 "RELEASE_COORDINATES_INVALID")
         release_dir = no_alias(release_dir)
         release = verify_release(release_dir, expected_sha=source_sha, expected_tree=source_tree)
+        download_path = release_dir.parent / "download.json"
+        download = (download_evidence(read_regular(download_path, 4096), release)
+                    if download_path.exists() or download_path.is_symlink() else {})
         manifest = read_regular(release_dir / "porota-deploy-bundle-v2-manifest.json", 2 * 1024**2)
         require(hashlib.sha256(manifest).hexdigest() ==
                 release["members"]["porota-deploy-bundle-v2-manifest.json"]["sha256"], "MANIFEST_CHANGED")
         require(IMAGE_ID.fullmatch(release["image_id"]), "IMAGE_ID_INVALID")
         self.receipt.update({key: release[key] for key in ("source_sha", "source_tree", "image_id")})
+        self.receipt.update(download)
         self.receipt["attempt"] = attempt
         private_dir(self.identity.state)
         with user_lock(self.identity.state / "deploy.lock"):
@@ -1049,7 +1075,7 @@ class Host:
                 if current:
                     self.receipt["cleanup_pending"] = {key: current[key] for key in
                         ("source_sha", "source_tree", "image_id", "attempt", "roles")}
-                publish_release_marker(self.root, release, validated=True, manifest=manifest)
+                publish_release_marker(self.root, release, validated=True, manifest=manifest, download=download)
                 write_json(current_path, self.receipt)
                 committed = True
                 self.receipt["phase"] = "CLEANUP"

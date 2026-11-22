@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import closing, nullcontext
 from collections import OrderedDict
+from dataclasses import asdict, replace
 
 import hashlib
 import json
@@ -21,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from bs_instrument_contracts import aware_datetime, family_name
+from bs_instrument_contracts import aware_datetime, family_name, utc_microseconds
 from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_signal_contracts import register_exact_time
 from co_market_sessions_hf6 import byma_paper_spot_open
@@ -539,6 +540,10 @@ def _identity(record):
                  ("ticker", "instrument_type", "market", "currency", "settlement"))
 
 
+def _quote_identity(record):
+    return dict(zip(("symbol", "asset_class", "market", "currency", "settlement"), _identity(record)))
+
+
 def _market_open(at):
     # Fuente única RC5: intervalo regular BYMA PAPER [10:30,17:00).
     return byma_paper_spot_open(aware_datetime(at))
@@ -853,6 +858,51 @@ def _intraday_freshness_reason(contract, *, at, latest_event_at):
     return ""
 
 
+def _book_time_error(quote, at):
+    reason = quote.time_error(at)
+    if reason in {"BOOK_STALE", "BOOK_TIME_FUTURE"}:
+        return "STALE_BOOK"
+    if reason == "RECEIPT_STALE_OR_FUTURE" and utc_microseconds(quote.observed_at) <= utc_microseconds(at):
+        return "STALE_BOOK"
+    if reason in {"BOOK_TIME_MISSING", "INVALID_OR_NAIVE_TIMESTAMP"}:
+        return "INVALID_BOOK_TIMESTAMP"
+    if reason:
+        return reason
+    try:
+        if quote.trade_at and utc_microseconds(quote.trade_at) > utc_microseconds(quote.observed_at):
+            return "TRADE_TIME_FUTURE"
+    except (ValueError, TypeError):
+        return "INVALID_BOOK_TIMESTAMP"
+    return ""
+
+
+def scalping_book_spread(quote, at):
+    """Validate the current executable book and return its spread fraction."""
+    reason = _book_time_error(quote, at) or quote.opening_block_reason
+    if reason:
+        raise ValueError(reason)
+    currency, market = quote.monetary_identity()
+    if quote.contract and quote.contract.key != (quote.symbol, family_name(quote.asset_class),
+                                                market, currency, quote.settlement):
+        raise ValueError("SCALPING_BOOK_CONTRACT_IDENTITY_MISMATCH")
+    if quote.bid <= 0 or quote.ask <= 0:
+        raise ValueError("INVALID_SCALPING_BOOK")
+    if quote.ask < quote.bid:
+        raise ValueError("CROSSED_BOOK")
+    if quote.bid_size <= 0 or quote.ask_size <= 0:
+        raise ValueError("SCALPING_BOOK_DEPTH_UNAVAILABLE")
+    spread = quote.ask / quote.bid - 1
+    max_spread = _decimal(os.getenv("PAPER_SCALPING_MAX_SPREAD", "0.005"), nonnegative=True)
+    if spread > max_spread:
+        raise ValueError("SPREAD_TOO_WIDE")
+    return spread
+
+
+def _contract_digest(quote):
+    from rc6_dynamic_universe.common import digest
+    return digest(asdict(quote.contract)) if quote.contract else None
+
+
 def evaluate_candidate(store, record, *, at):
     identity = _identity(record)
     contract = _state(store, identity) or {}
@@ -862,6 +912,7 @@ def evaluate_candidate(store, record, *, at):
     action = "HOLD"
     score = Decimal("0")
     economics = {"binding": True, "execution_enabled": False, "passed": False}
+    from be_paper_engine import PaperStore
     from rc6_signal_contracts import event_window_contract, volume_contract, quantity_activity
     with store.connect() as connection:
         register_exact_time(connection)
@@ -874,11 +925,7 @@ def evaluate_candidate(store, record, *, at):
           ORDER BY event_at DESC LIMIT 30""",
           (*identity, _stamp(aware_datetime(at)-timedelta(minutes=45)), _stamp(at), _stamp(at), _stamp(at),
            warmup_after, warmup_after)).fetchall()
-        quote = connection.execute("""SELECT * FROM market_snapshots
-          WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
-          ORDER BY id DESC LIMIT 1""",
-          (record["ticker"],record["instrument_type"],record["settlement"],
-           record["currency"],record["market"])).fetchone()
+        quote = PaperStore.latest_quote_row(connection, _quote_identity(record))
     points = list(reversed(points))
     temporal = event_window_contract(points, at)
     economics["temporal_contract"] = temporal
@@ -904,20 +951,15 @@ def evaluate_candidate(store, record, *, at):
         reason = "NO_CURRENT_BOOK"
     else:
         try:
+            executable_quote = PaperStore.quote_from_snapshot(quote)
+            spread = scalping_book_spread(executable_quote, at)
             prices = [_decimal(row["price"], positive=True) for row in points]
             explicit_volume = volume_contract(record, at)
             volumes = quantity_activity([row["volume"] for row in points], explicit_volume)
             economics["volume_contract"] = explicit_volume
-            bid, ask = _decimal(quote["bid"], positive=True), _decimal(quote["ask"], positive=True)
-            if ask < bid:
-                raise ValueError("CROSSED_BOOK")
-            quote_age = (aware_datetime(at)-aware_datetime(quote["book_at"])).total_seconds()
-            if not 0 <= quote_age <= 120:
-                raise ValueError("STALE_BOOK")
             short = sum(prices[-3:]) / 3
             long = sum(prices[-15:]) / 15
             momentum = short / long - 1
-            spread = ask / bid - 1
             observed_range = max(prices[-15:]) / min(prices[-15:]) - 1
             import au_fee_schedule
             one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
@@ -934,8 +976,6 @@ def evaluate_candidate(store, record, *, at):
             })
             if sum(volumes[-5:]) <= 0:
                 reason = "NO_RECENT_VOLUME"
-            elif spread > Decimal(os.getenv("PAPER_SCALPING_MAX_SPREAD", "0.005")):
-                reason = "SPREAD_TOO_WIDE"
             elif observed_range <= required_move:
                 reason = "ECONOMICS_BINDING_RANGE_BELOW_COST"
             elif score < Decimal(os.getenv("PAPER_SCALPING_SCORE_THRESHOLD", "0.68")):
@@ -958,6 +998,9 @@ def evaluate_candidate(store, record, *, at):
             "market": record["market"], "currency": record["currency"],
             "settlement": record["settlement"], "observed_at": evaluated,
             "metadata_source": "NO_CURRENT_BOOK; IDENTITY_ONLY"}
+        if action == "BUY_CANDIDATE":
+            quote_evidence["market_snapshot_id"] = quote["id"]
+            quote_evidence["financial_contract_sha256"] = _contract_digest(executable_quote)
         _record_native_entry_snapshot(connection, record, points, quote_evidence, contract,
             action=action, score=score, reason=reason, economics=economics, evaluated=evaluated)
     return action
@@ -966,7 +1009,6 @@ def evaluate_candidate(store, record, *, at):
 def _record_native_entry_snapshot(connection, record, points, quote, contract, *,
                                   action, score, reason, economics, evaluated):
     """Same native writer/input vector; telemetry has no execution callback."""
-    import hashlib
     from rc6_dynamic_universe.common import digest
     from rc6_shadow_runtime.entry_signals import native_entry_snapshot, NATIVE_INPUT_SCHEMA
     key = "scalping-native:" + digest(_identity(record)) + ":" + evaluated + ":" + str(quote.get("book_at"))
@@ -988,7 +1030,8 @@ def _record_native_entry_snapshot(connection, record, points, quote, contract, *
             "volume_unit": (economics.get("volume_contract") or {}).get("unit", "NO_VERIFICADO"),
             "volume_contract": economics.get("volume_contract"), "rvol_status": "NO_VERIFICADO"}}
     exact_quote = {name: quote.get(name) for name in ("symbol", "asset_class", "settlement", "currency", "market",
-        "bid", "ask", "bid_size", "ask_size", "last", "book_at", "trade_at", "observed_at")}
+        "bid", "ask", "bid_size", "ask_size", "last", "book_at", "trade_at", "observed_at",
+        "market_snapshot_id", "financial_contract_sha256")}
     exact_quote["metadata_source"] = quote.get("metadata_source") or quote.get("source")
     from bq_exit_policy import PaperSessionPolicy
     policy = PaperSessionPolicy()
@@ -1027,6 +1070,7 @@ def promote_paper_candidate(store, record, *, at):
     # weekend/holiday/after-close caller tries to promote that evidence.
     if not _market_open(at):
         return "OUTSIDE_SCALPING_PAPER_SESSION"
+    from be_paper_engine import PaperStore
     contract = _state(store, _identity(record)) or {}
     with store.connect() as connection:
         register_exact_time(connection)
@@ -1038,11 +1082,7 @@ def promote_paper_candidate(store, record, *, at):
                 continue
         if scalp_open >= int(os.getenv("PAPER_SCALPING_MAX_OPEN_POSITIONS", "1")):
             return "SCALPING_POSITION_LIMIT"
-        quote_row = connection.execute("""SELECT * FROM market_snapshots
-          WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
-          ORDER BY id DESC LIMIT 1""",
-          (record["ticker"],record["instrument_type"],record["settlement"],
-           record["currency"],record["market"])).fetchone()
+        quote_row = PaperStore.latest_quote_row(connection, _quote_identity(record))
         candidate = connection.execute("""SELECT * FROM scalping_candidates
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
           ORDER BY id DESC LIMIT 1""", _identity(record)).fetchone()
@@ -1069,24 +1109,13 @@ def promote_paper_candidate(store, record, *, at):
     if not 0 <= candidate_age <= INTRADAY_SOURCE_MAX_AGE_SECONDS:
         return "STALE_SCALPING_CANDIDATE"
     try:
-        quote_age = (aware_datetime(at)-aware_datetime(quote_row["book_at"])).total_seconds()
+        q = PaperStore.quote_from_snapshot(quote_row)
     except (ValueError, TypeError):
-        return "INVALID_BOOK_TIMESTAMP"
-    if not 0 <= quote_age <= 120:
-        return "STALE_BOOK"
-    from be_paper_engine import Quote
-    from bv_paper_runtime import broker_from_environment
-    from rc6_paper_admission_gate import paper_admission_guard
-    q = Quote(
-        symbol=quote_row["symbol"], asset_class=quote_row["asset_class"],
-        settlement=quote_row["settlement"], last=_decimal(quote_row["last"],nonnegative=True),
-        bid=_decimal(quote_row["bid"],positive=True), ask=_decimal(quote_row["ask"],positive=True),
-        bid_size=_decimal(quote_row["bid_size"],nonnegative=True),
-        ask_size=_decimal(quote_row["ask_size"],nonnegative=True),
-        observed_at=quote_row["observed_at"], currency=quote_row["currency"],
-        market=quote_row["market"], metadata_source=quote_row["metadata_source"],
-        opening_block_reason=quote_row["opening_block_reason"], book_at=quote_row["book_at"],
-        trade_at=quote_row["trade_at"], last_kind=quote_row["last_kind"])
+        return "SCALPING_BOOK_CONTRACT_INVALID"
+    try:
+        spread = scalping_book_spread(q, at)
+    except (ValueError, TypeError, InvalidOperation) as exc:
+        return str(exc)
     from rc6_dynamic_universe.common import digest
     prefix = "scalping-native:" + digest(_identity(record)) + ":" + str(candidate["evaluated_at"]) + ":"
     with store.connect() as connection:
@@ -1097,7 +1126,26 @@ def promote_paper_candidate(store, record, *, at):
     frozen = dict(frozen_rows[0])
     if hashlib.sha256(frozen["payload_json"].encode()).hexdigest() != frozen["payload_sha256"]:
         return "SCALPING_NATIVE_EVIDENCE_HASH_INVALID"
-    native = json.loads(frozen["payload_json"])
+    try:
+        native = json.loads(frozen["payload_json"])
+        signal_quote = native["quote_used"]
+        signal_inputs = native["inputs_used"]["entry_signal_inputs"]
+        if (not isinstance(signal_quote, dict) or not isinstance(signal_inputs, dict)
+                or native["decision_key"] != frozen["decision_key"]
+                or native["decision"]["action"] != "BUY_CANDIDATE"
+                or native["decision"]["score"] != candidate["score"]):
+            return "SCALPING_NATIVE_EVIDENCE_MISMATCH"
+    except (KeyError, TypeError, ValueError):
+        return "SCALPING_NATIVE_EVIDENCE_MISMATCH"
+    if any(signal_quote.get(name) != value for name, value in _quote_identity(record).items()):
+        return "SCALPING_NATIVE_EVIDENCE_IDENTITY_MISMATCH"
+    if _book_time_error(replace(q, observed_at=signal_quote.get("observed_at"),
+                                book_at=signal_quote.get("book_at"), trade_at=signal_quote.get("trade_at")),
+                        candidate_at):
+        return "SCALPING_NATIVE_EVIDENCE_CLOCK_INVALID"
+    contract_sha = _contract_digest(q)
+    if signal_quote.get("financial_contract_sha256") != contract_sha:
+        return "SCALPING_BOOK_CONTRACT_CHANGED"
     economics = json.loads(candidate["economics_json"] or "{}")
     # Range screening is retrospective; the shared broker recomputes actual
     # net reward/risk for its Stop/TP and complete PAPER cost contract.
@@ -1109,13 +1157,17 @@ def promote_paper_candidate(store, record, *, at):
         "candidate_reason": candidate["reason"], "economics": economics,
         "scalping_range_screen": dict(economics),
         "signal_snapshot_key": frozen["decision_key"], "signal_snapshot_sha256": frozen["payload_sha256"],
-        "entry_signal_inputs": native["inputs_used"]["entry_signal_inputs"],
+        "scalping_book_snapshot_id": quote_row["id"], "scalping_book_contract_sha256": contract_sha,
+        "scalping_book_spread_fraction": str(spread),
+        "entry_signal_inputs": signal_inputs,
     }
     key = "SCALPING:" + ":".join(_identity(record)) + ":" + str(candidate["evaluated_at"])
     features["native_decision_key"] = key
     if not store.record_decision(key, q, "BUY", Decimal(candidate["score"]),
                                  "Candidato scalping validado", features):
         return "DUPLICATE_DECISION"
+    from bv_paper_runtime import broker_from_environment
+    from rc6_paper_admission_gate import paper_admission_guard
     broker = broker_from_environment(
         store, risk_pct=os.getenv("PAPER_SCALPING_RISK_PER_TRADE", "0.001"),
         stop_loss_pct=os.getenv("PAPER_SCALPING_STOP_LOSS_PCT", "0.008"),

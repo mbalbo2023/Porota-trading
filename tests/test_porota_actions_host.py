@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from contextlib import nullcontext
 from pathlib import Path
@@ -35,6 +36,55 @@ class HostTransportTests(unittest.TestCase):
     def test_nonzero_ssh_exit_is_failure_even_with_green_json(self):
         with self.assertRaises(ValueError):
             host.validate_runtime_receipt(self.receipt, self.release, 79)
+
+    def test_promote_sends_only_the_verified_download_receipt(self):
+        release = {**self.release, 'build_run_id': 70, 'build_run_attempt': 1, 'image_size_bytes': 1,
+                   'members': {'porota-predeploy-image.tar.gz': {'bytes': 1},
+                               'porota-deploy-bundle-v2.tgz': {'bytes': 1}}}
+        download = {**self.release, 'schema': 'porota.release.download.v1',
+                    'deployment_sha': 'd'*40, 'run_id': 70, 'run_attempt': 1,
+                    'artifact_id': 88, 'artifact_digest': 'sha256:'+'e'*64}
+        raw = json.dumps(download).encode()
+        runtime = {**self.receipt, 'deployment_sha': download['deployment_sha'],
+                   'download_receipt_sha256': hashlib.sha256(raw).hexdigest()}
+        calls = []
+
+        def remote(_connection, command, **_kwargs):
+            calls.append(command)
+            if host.STAGE_CREATE in command:
+                return subprocess.CompletedProcess(command, 0,
+                    b'/home/porotaadmin/.local/state/porota-rc6/stage.A12bc\n', b'')
+            return subprocess.CompletedProcess(command, 0, json.dumps(runtime).encode(), b'')
+
+        def transfer(command, **_kwargs):
+            self.assertEqual(Path(command[-2]).name, 'download.json')
+            self.assertEqual(Path(command[-2]).read_bytes(), raw)
+            return subprocess.CompletedProcess(command, 0, b'', b'')
+
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            (repo/'source').mkdir()
+            release_dir = repo/'release'
+            release_dir.mkdir()
+            (release_dir/'release.json').write_text(json.dumps(release))
+            (repo/'download.json').write_bytes(raw)
+            env = {'GITHUB_RUN_ID': '99', 'GITHUB_RUN_ATTEMPT': '1'}
+            with patch.object(host, 'connection', return_value=nullcontext((['ssh'], ['scp'], 'user@host'))), \
+                 patch.object(host, 'ssh_run', side_effect=remote), \
+                 patch.object(host.subprocess, 'run', side_effect=transfer), \
+                 patch('scripts.porota_release.verify_release', return_value=release), \
+                 patch('scripts.porota_actions_release.promotion_source',
+                       return_value=(release['source_sha'], release['source_tree'])), \
+                 patch('scripts.porota_actions_release.git', return_value='f'*40) as head:
+                with self.assertRaisesRegex(ValueError, 'DOWNLOAD_DEPLOYMENT_CHECKOUT_MISMATCH'):
+                    host.execute('deploy', repo, release_dir, env=env)
+                self.assertEqual(calls, [])
+                head.return_value = download['deployment_sha']
+                observed = host.execute('deploy', repo, release_dir, env=env)
+                self.assertEqual(observed, {**runtime, 'transfer_cleanup': 'COMPLETE'})
+                runtime.pop('download_receipt_sha256')
+                with self.assertRaisesRegex(host.HostFailure, 'RUNTIME_DEPLOYMENT_PROVENANCE_MISMATCH'):
+                    host.execute('deploy', repo, release_dir, env=env)
 
     def test_credentials_validate_without_echoing_their_values(self):
         env = {'DO_HOST': 'host.example.com', 'DO_USER': 'porotaadmin',

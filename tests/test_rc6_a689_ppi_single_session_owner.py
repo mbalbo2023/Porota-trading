@@ -78,6 +78,7 @@ def harness(monkeypatch):
     # Synthetic SDK/HTTP/socket fixture only; production login continues
     # through the newer guarded SDK path, not the obsolete Watch auth gate.
     counts = {"clients": 0, "logins": 0, "gets": 0, "connect_attempts": 0}
+    wire = types.SimpleNamespace(status=200, body=None)
     native_book = {
         "date": (datetime.now(timezone.utc) - timedelta(milliseconds=100))
         .isoformat().replace("+00:00", "Z"),
@@ -119,9 +120,10 @@ def harness(monkeypatch):
         assert budget.in_wire_scope is True
         counts["gets"] += 1
         reply = requests.Response()
-        reply.status_code = 200
+        reply.status_code = wire.status
         reply.url = request.url
-        reply._content = json.dumps(native_book, sort_keys=True).encode("utf-8")
+        reply._content = (wire.body if wire.body is not None else
+                          json.dumps(native_book, sort_keys=True).encode("utf-8"))
         reply.headers["Content-Type"] = "application/json"
         reply.request = request
         return reply
@@ -153,7 +155,7 @@ def harness(monkeypatch):
 
     try:
         yield types.SimpleNamespace(make_owner=make_owner, counts=counts,
-                                    native_book=native_book, budget=budget)
+                                    native_book=native_book, budget=budget, wire=wire)
     finally:
         session.close()
 
@@ -497,8 +499,309 @@ def test_aux_observed_429_retry_after_blocks_next_get_without_claiming_quota(har
         assert attempts == ["GET"]
         assert owner.status()["provider_quota"] == "UNKNOWN"
         assert owner.status()["aux_retry_after_seconds_observed"] == 120
+        assert owner.status()["session_recovery_pending"] is False
+        assert not owner.session_recovery_due()
     finally:
         owner.close()
+
+
+@pytest.mark.parametrize("http_status", [401, 403, 429])
+def test_owner_uses_guarded_status_when_sdk_retry_hides_http_error(
+        harness, monkeypatch, http_status):
+    import rc6_ppi_shared_session_owner as owner_module
+
+    now = [1000.0]
+    monkeypatch.setattr(owner_module, "time", types.SimpleNamespace(
+        monotonic=lambda: now[0]))
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_NATIVE_ACQUIRE", "REST_AUXILIARY_ACQUIRE"}))
+    try:
+        owner.open_once()
+        generation = owner.status()["session_generation"]
+        harness.wire.status = http_status
+        # The retry hits the guard before another wire send and does not
+        # carry an HTTP response on the exception raised by the SDK call.
+        owner._reader._ProductionMarketReader__client.marketdata.two_reads = True
+        with pytest.raises(SessionOwnerBlocked, match=f"PPI_NATIVE_HTTP_{http_status}"):
+            owner.capture_native("book", FIVE, priority="EXIT_CRITICAL")
+        assert harness.counts["gets"] == 1
+        assert owner.status()["native_last_http_status"] == http_status
+        assert owner.status()["session_recovery_pending"] == (http_status == 401)
+        if http_status == 401:
+            blocked = "PPI_GATEWAY_SESSION_RECOVERY_PENDING"
+            with pytest.raises(SessionOwnerBlocked, match=blocked):
+                owner.dispatch_auxiliary_acquire(
+                    consumer="scanner", method="market_configuration", args={})
+        else:
+            blocked = "PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE"
+        with pytest.raises(SessionOwnerBlocked, match=blocked):
+            owner.capture_native("book", FIVE, priority="EXIT_CRITICAL")
+        assert harness.counts["gets"] == 1
+        assert owner.status()["session_generation"] == generation
+        now[0] += owner_module.AUTH_COOLDOWN_SECONDS - 1
+        assert not owner.session_recovery_due()
+        now[0] += 1
+        assert owner.session_recovery_due() == (http_status == 401)
+        assert harness.counts["logins"] == 1
+    finally:
+        owner.close()
+
+
+def test_aux_sdk_response_401_preserves_active_retry_after(harness, monkeypatch):
+    import rc6_ppi_shared_session_owner as owner_module
+
+    now = [1000.0]
+    monkeypatch.setattr(owner_module, "time", types.SimpleNamespace(
+        monotonic=lambda: now[0]))
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_NATIVE_ACQUIRE", "REST_AUXILIARY_ACQUIRE"}))
+    try:
+        owner.open_once()
+        limited = requests.Response()
+        limited.status_code = 429
+        limited.headers["Retry-After"] = "1200"
+        unauthorized = requests.Response()
+        unauthorized.status_code = 401
+        responses = iter((limited, unauthorized))
+
+        def sdk_failure(*_args, **_kwargs):
+            raise Exception(next(responses))
+
+        monkeypatch.setattr(owner._rest, "capture", sdk_failure)
+        monkeypatch.setattr(owner._reader, "market_configuration", sdk_failure)
+        with pytest.raises(SessionOwnerBlocked, match="PPI_NATIVE_HTTP_429"):
+            owner.capture_native("book", FIVE, priority="EXIT_CRITICAL")
+        with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_HTTP_401"):
+            owner.dispatch_auxiliary_acquire(
+                consumer="scanner", method="market_configuration", args={})
+        now[0] += 1199
+        assert not owner.session_recovery_due()
+        now[0] += 1
+        assert owner.session_recovery_due()
+        assert harness.counts["logins"] == 1
+    finally:
+        owner.close()
+
+
+@pytest.mark.parametrize(("http_status", "body"), [
+    (401, b""), (401, b"SYNTHETIC_PRIVATE_AUTH_BODY"),
+    (403, b"Unauthorized"), (429, b"Unauthorized"),
+])
+def test_aux_sdk_130_text_exception_uses_the_guarded_http_status(
+        harness, monkeypatch, http_status, body):
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE"}))
+    try:
+        owner.open_once()
+        market = owner._reader._ProductionMarketReader__client.marketdata
+
+        def sdk_130_search(ticker, name, market_code, family):
+            response = market.session.get(
+                "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/SearchInstrument",
+                params={"Ticker": ticker, "Name": name, "Market": market_code, "Type": family})
+            # Pinned PPIClient.get can raise just a message without attaching
+            # the Response. The empty 401 uses the special Unauthorized term.
+            if response.status_code == 401 and not response.content:
+                raise Exception("Unauthorized")
+            raise Exception(response.content.decode())
+
+        monkeypatch.setattr(market, "search_instrument", sdk_130_search, raising=False)
+        harness.wire.status, harness.wire.body = http_status, body
+        with pytest.raises(SessionOwnerBlocked, match=f"^PPI_AUX_HTTP_{http_status}$"):
+            owner.dispatch_auxiliary_acquire(
+                consumer="scanner", method="search_instruments",
+                args={"ticker": FIVE[0], "name": FIVE[0],
+                      "instrument_type": FIVE[1], "market": FIVE[2]})
+        assert harness.counts["gets"] == 1
+        assert owner.status()["session_recovery_pending"] == (http_status == 401)
+    finally:
+        owner.close()
+
+
+def test_aux_does_not_reuse_stale_401_or_an_unauthorized_without_wire(harness, monkeypatch):
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE"}))
+    args = {"ticker": FIVE[0], "name": FIVE[0],
+            "instrument_type": FIVE[1], "market": FIVE[2]}
+    try:
+        owner.open_once()
+        market = owner._reader._ProductionMarketReader__client.marketdata
+        send = True
+
+        def sdk_search(*_args):
+            if send:
+                market.session.get(
+                    "https://clientapi.portfoliopersonal.com/api/1.0/MarketData/SearchInstrument")
+            raise Exception("Unauthorized")
+
+        monkeypatch.setattr(market, "search_instrument", sdk_search, raising=False)
+        # Seed the legacy thread-local state via the guarded fake SDK without
+        # sending this first failure through the owner's classifier.
+        harness.wire.status = 401
+        with pytest.raises(Exception, match="Unauthorized"):
+            owner._reader.search_instruments(**args)
+        assert owner._reader.last_read_error_code == "PPI_HTTP_401"
+        harness.wire.status = 200
+        for send in (False, True):
+            with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_PROVIDER_FAILURE_UNVERIFIED"):
+                owner.dispatch_auxiliary_acquire(
+                    consumer="scanner", method="search_instruments", args=args)
+            assert owner.status()["session_recovery_pending"] is False
+        assert harness.counts["gets"] == 2
+    finally:
+        owner.close()
+
+
+def test_runtime_refreshes_completed_catalog_under_one_guarded_login(
+        harness, tmp_path, monkeypatch):
+    import bv_paper_runtime as runtime
+    import rc6_scanner_login_interlock as login_lock
+    from be_paper_engine import PaperStore
+    from bu_instrument_catalog import init_schema
+    from rc6_ppi_shared_feed import SharedFeedUnavailable
+
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    new_key = ("GGAL", "ACCIONES", "BYMA", "ARS", "INMEDIATA")
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_NATIVE_ACQUIRE", "REST_AUXILIARY_ACQUIRE"}))
+    starts, reservations = [], []
+    searches = []
+    pid = os.getpid()
+    birth = ReadOnlyUnixFeedServer.process_starttime(pid)
+
+    def persist(connection, key):
+        ticker, family, market, currency, _ = key
+        connection.execute("INSERT INTO financial_instrument_catalog VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (*key, "REQUEST_CANDIDATE", "OFFHOST", "2026-11-22T13:00:00Z",
+             "RUN_TEST", "STALE", "NOT_READY", json.dumps({
+                 "_discovery_source": "PPI_PRIMARY", "ticker": ticker,
+                 "type": family, "market": market, "currency": currency})))
+
+    with store.connect() as connection:
+        connection.execute("""CREATE TABLE IF NOT EXISTS candidate_refresh_state(
+            id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL, checked_at TEXT NOT NULL)""")
+        connection.execute("INSERT INTO candidate_refresh_state VALUES(1,'COMPLETE','generation-1')")
+        persist(connection, FIVE)
+
+    class Interlock:
+        def __init__(self, database, cooldown):
+            assert database == store.path and cooldown == 900
+
+        def reserve(self):
+            reservations.append("ALLOWED")
+            return "ALLOWED"
+
+    class SocketThread:
+        live = True
+
+        def is_alive(self):
+            return self.live
+
+        def join(self, timeout):
+            assert timeout == 5
+            self.live = False
+
+    # Lifetime and socket binding are covered by the existing Linux tests.
+    # This fixture uses the real client codec and the real role/router logic,
+    # injecting only the unavailable AF_UNIX transport in this environment.
+    def start_gateway(instance):
+        assert instance is owner
+        rpc = instance._rpc
+        rpc._supervisor_pid = pid
+        rpc._supervisor_starttime = birth
+        rpc._ever_listened = True
+        rpc.start_native_priority_router()
+        instance._reader.search_instruments = (
+            lambda ticker, *_args, **_kwargs: searches.append(ticker) or [])
+        starts.append((instance._reader, instance.status()["session_generation"], rpc))
+        return SocketThread()
+
+    def attach():
+        client = ReadOnlyUnixFeedClient(socket_path=tmp_path / "not-bound.sock")
+        status = client.owner_status()
+        client.register_client("exit_reader", pid=pid, proc_starttime=birth)
+        client.register_client("scanner", pid=pid, proc_starttime=birth)
+        return client, status
+
+    def acquire(client, key):
+        return client.acquire_native("exit_reader", method="book", five_key=key,
+                                     priority="EXIT_CRITICAL")
+
+    def search(client):
+        return client.acquire_auxiliary("scanner", method="search_instruments",
+            args={"ticker": new_key[0], "name": new_key[0],
+                  "market": new_key[2], "instrument_type": new_key[1]})
+
+    def local_exchange(_client, packet, *, require_owner_identity):
+        assert require_owner_identity is True
+        return owner._rpc.dispatch(packet, peer_pid=pid)
+
+    class Stop:
+        tick = 0
+        clients = []
+
+        def is_set(self):
+            return self.tick == 4
+
+        def wait(self, seconds):
+            assert seconds == 5
+            self.tick += 1
+            if self.tick == 1:
+                old, status = attach()
+                self.clients.append((old, status))
+                assert acquire(old, FIVE)["state"] == "OK"
+                with store.connect() as connection:
+                    connection.execute("""UPDATE candidate_refresh_state
+                        SET state='RUNNING', checked_at='generation-2'""")
+                    persist(connection, new_key)
+            elif self.tick == 2:
+                old, status = self.clients[0]
+                assert old.owner_status()["session_generation"] == status["session_generation"]
+                assert acquire(old, new_key)["state"] == "PPI_NATIVE_DEMAND_IDENTITY_DENIED"
+                with store.connect() as connection:
+                    connection.execute("UPDATE candidate_refresh_state SET state='COMPLETE'")
+            elif self.tick == 3:
+                fresh, status = attach()
+                old, old_status = self.clients[0]
+                assert status["session_generation"] != old_status["session_generation"]
+                assert status["catalog_source_digest"] != old_status["catalog_source_digest"]
+                assert status["login_invocations_by_owner"] == 1
+                assert starts[0][0] is starts[1][0]
+                assert not starts[0][2].native_router_status()["running"]
+                with pytest.raises(SharedFeedUnavailable, match="PPI_GATEWAY_OWNER_CHANGED"):
+                    acquire(old, new_key)
+                with pytest.raises(SharedFeedUnavailable, match="PPI_GATEWAY_OWNER_CHANGED"):
+                    search(old)
+                assert searches == []
+                assert search(fresh)["state"] == "OK"
+                assert searches == [new_key[0]]
+                assert harness.counts["gets"] == 1  # stale pin never reaches the wire
+                stale_rpc = starts[0][2].dispatch({
+                    "op": "native_acquire", "consumer": "exit_reader",
+                    "method": "book", "ppi_five_key": list(FIVE),
+                    "priority": "EXIT_CRITICAL",
+                    "session_generation": status["session_generation"]}, peer_pid=pid)
+                assert stale_rpc["state"] == "PPI_NATIVE_ROUTER_NOT_RUNNING"
+                assert harness.counts["gets"] == 1  # no direct path from retired listener
+                assert acquire(fresh, new_key)["state"] == "OK"
+                assert owner._catalog_authority.permits(
+                    "PPI_FIVE_KEY_CATALOG_ATTESTED", five_key=new_key) is False
+                with store.connect() as connection:
+                    connection.execute("""UPDATE candidate_refresh_state
+                        SET checked_at='generation-3'""")
+            return self.is_set()
+
+    monkeypatch.setattr(login_lock, "ScannerLoginInterlock", Interlock)
+    monkeypatch.setattr(runtime, "_make_ppi_gateway_owner", lambda _store: owner)
+    monkeypatch.setattr(runtime, "_start_ppi_gateway_server", start_gateway)
+    monkeypatch.setattr(ReadOnlyUnixFeedClient, "_request", local_exchange)
+    runtime._run_ppi_gateway_owned_loop(store, Stop())
+    assert owner.status()["state"] == "CLOSED"
+    assert len(starts) == 2  # same digest did not start another listener
+    assert reservations == ["ALLOWED"]
+    assert harness.counts == {"clients": 1, "logins": 1, "gets": 2,
+                              "connect_attempts": 0}
 
 
 def test_no_external_capacity_or_stream_entitlement_means_no_provider_io(harness):

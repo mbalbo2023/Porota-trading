@@ -82,7 +82,7 @@ def sanitize(report):
             })
     cauciones = _pick(report.get("caucion_readiness"), (
         "declared", "queries", "observed_contracts", "complete_offers",
-        "placed_today", "state",
+        "placed_today", "state", "offer_checked_at",
     ))
     for field in ("missing_offer_requirements", "missing_policy_requirements"):
         cauciones[field] = [
@@ -140,7 +140,7 @@ def sanitize(report):
             {
                 **_pick(item, ("instrument_type", "declared", "queries", "observed_count",
                                "ready_paper_count", "discovery_status", "checked_at",
-                               "excluded_by_default")),
+                               "ready_paper_count_scope", "excluded_by_default")),
                 "capabilities": _named_counts(item.get("capabilities"), "capability", "count"),
             }
             for item in (report.get("family_readiness") or [])[:30]

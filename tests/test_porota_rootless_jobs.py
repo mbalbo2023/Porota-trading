@@ -10,8 +10,10 @@ import tempfile
 import types
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime
 from unittest.mock import patch
 
+import rc6_preopen as preopen
 from scripts import porota_rootless_host as host
 from scripts import porota_rootless_jobs as jobs
 from scripts import porota_rootless_setup as setup
@@ -66,8 +68,13 @@ class DispatcherTests(unittest.TestCase):
             self.assertNotEqual(kwargs["stdout"], subprocess.DEVNULL)
             self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
             body = {"schema": "POROTA_RC6_PREOPEN_V3", "status": "RED",
-                    "red_checks": ["observer_db", "required_rc6_timers"],
-                    "checks": {"observer_db": {"private": private}}}
+                    "red_checks": ["observer_db", "byma_morning_watch"],
+                    "checks": {
+                        "observer_db": {"state": "RED", "reason": private},
+                        "byma_morning_watch": {"state": "RED",
+                                               "reason": "BYMA_WATCH_DEGRADED",
+                                               "errors": [private]},
+                    }}
             kwargs["stdout"].write(json.dumps(body).encode("utf-8"))
             return subprocess.CompletedProcess(command, 2)
         with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
@@ -75,10 +82,50 @@ class DispatcherTests(unittest.TestCase):
             result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
         self.assertEqual(result["state"], "BLOQUEADO")
         self.assertEqual(result["failure_signature"], "PREOPEN_RED_CHECKS")
-        self.assertEqual(result["preopen_red_checks"], ["observer_db", "required_rc6_timers"])
+        self.assertEqual(result["preopen_red_checks"], ["observer_db", "byma_morning_watch"])
+        self.assertEqual(result["preopen_red_reasons"], {"byma_morning_watch": "BYMA_WATCH_DEGRADED"})
         self.assertEqual(result["child_exit_code"], 2)
         self.assertEqual(result["exit_code"], 2)
         self.assertNotIn(private, json.dumps(result))
+
+    def test_preopen_ignores_unverified_byma_subreason_but_records_red_check(self):
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+        private = "BYMA_WATCH_PRIVATE_ERROR_NOT_FOR_JOURNAL"
+        for details in ({"state": "RED", "reason": private},
+                        {"state": "RED", "reason": [private]},
+                        {"state": "GREEN", "reason": "BYMA_WATCH_DEGRADED"}):
+            with self.subTest(details=details):
+                def run(command, **kwargs):
+                    body = {"schema": "POROTA_RC6_PREOPEN_V3", "status": "RED",
+                            "red_checks": ["byma_morning_watch"],
+                            "checks": {"byma_morning_watch": details}}
+                    kwargs["stdout"].write(json.dumps(body).encode("utf-8"))
+                    return subprocess.CompletedProcess(command, 2)
+                with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+                     patch.object(jobs, "database_snapshot", return_value={}):
+                    result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
+                self.assertEqual(result["failure_signature"], "PREOPEN_RED_CHECKS")
+                self.assertEqual(result["preopen_red_checks"], ["byma_morning_watch"])
+                self.assertNotIn("preopen_red_reasons", result)
+                self.assertNotIn(private, json.dumps(result))
+
+    def test_preopen_rejects_a_future_byma_receipt_dated_today(self):
+        at = datetime(2026, 11, 24, 10, 20, tzinfo=preopen.TZ)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz):
+                return at.astimezone(tz)
+
+        latest = self.root / "byma_morning_watch_latest.json"
+        latest.write_text(json.dumps({"state": "NO_CHANGE",
+                                      "observed_at": "2026-11-24T14:00:00Z"}), encoding="utf-8")
+        with patch.object(preopen, "datetime", FixedDateTime), \
+             patch.object(preopen, "BYMA_MORNING_WATCH", latest):
+            result = preopen.byma_morning_watch(at.date())
+        self.assertEqual(result["state"], "RED")
+        self.assertEqual(result["reason"], "BYMA_WATCH_TIMESTAMP_FUTURE")
 
     def test_preopen_untrusted_child_receipt_never_publishes_raw_values(self):
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"

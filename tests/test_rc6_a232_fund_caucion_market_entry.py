@@ -4,6 +4,7 @@ These SQLite/PPI records are explicitly *synthetic fixtures*, NOT evidence of
 authenticated external PPI availability, real account fees or production GO.
 """
 from dataclasses import asdict, replace
+from datetime import datetime, timedelta
 from decimal import Decimal
 import json
 
@@ -207,6 +208,48 @@ def _live_ppi_fixture(store, at):
     offers, errors = offers_from_store(store, now=at)
     assert not errors and len(offers) == 1
     return offers[0]
+
+
+def test_introspection_reports_current_caucion_book_and_keeps_census_as_of(tmp_path, monkeypatch):
+    import ops_introspection_rc6 as introspection
+    from ops_publish_introspection_rc6 import sanitize
+
+    store, _ = _runtime(tmp_path, monkeypatch)
+    at = "2026-10-05T16:40:00-03:00"
+    tested_at = datetime.fromisoformat(at)
+    census_at = "2026-09-01T14:00:00-03:00"
+    _live_ppi_fixture(store, at)
+    with store.connect() as conn:
+        conn.execute("INSERT INTO catalog_family_coverage VALUES(?,?,?,?,?,?,?,?)",
+                     ("CAUCIONES", "census", 1, 1, 1, 0, "OBSERVED", census_at))
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return tested_at.astimezone(tz)
+
+    monkeypatch.setattr(introspection, "datetime", Clock)
+    monkeypatch.setattr(introspection, "DB", str(tmp_path / "effective_paper.sqlite"))
+    with introspection.connect() as conn:
+        assert conn.execute("PRAGMA query_only").fetchone()[0] == 1
+    published = sanitize(introspection.collect())
+    assert published["caucion_readiness"]["complete_offers"] == 1
+    assert published["caucion_readiness"]["state"] == "CURRENT_OFFERS_OBSERVED"
+    assert published["caucion_readiness"]["placed_today"] == 0
+    assert published["caucion_readiness"]["offer_checked_at"] == at
+    assert published["family_readiness"][0]["checked_at"] == census_at
+    assert published["family_readiness"][0]["ready_paper_count_scope"] == "CATALOG_CENSUS_AT_CHECKED_AT"
+    tested_at += timedelta(seconds=91)
+    stale = introspection.collect()["caucion_readiness"]
+    assert stale["state"] == "NO_CURRENT_VALID_OFFER"
+    assert stale["complete_offers"] == 0
+
+    with store.connect() as conn:
+        conn.execute("DROP TABLE paper_caucion_live_book")
+    missing = introspection.collect()["caucion_readiness"]
+    assert missing["state"] == "CAUCION_LIVE_BOOK_MISSING"
+    assert missing["complete_offers"] is None
+    assert missing["placed_today"] == 0
 
 
 def test_runtime_caucion_monday_requires_reconstructed_live_ppi_book_and_is_idempotent(

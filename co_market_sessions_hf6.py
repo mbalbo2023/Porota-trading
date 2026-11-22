@@ -9,14 +9,16 @@ La página pública actual de horarios apunta a un PDF ajeno (INFORME BYMA 2026)
 por lo que RC5 no infiere subastas/cierres especiales desde ese adjunto roto.
 Para el PAPER spot que POROTA ya simula se promueve únicamente la ventana
 regular 10:30 <= t < 17:00, consistente con la extensión de negociación vigente
-y con páginas operativas actuales de BYMA. Sesiones especiales/extendidas no
-quedan habilitadas por este módulo.
+y con páginas operativas actuales de BYMA. El archivo local usa un reloj de
+fuente separado para las series T+1 auditadas.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
+
+from ak_byma_t1_source_clock import BYMA_T1_EXACT_SETTLEMENTS, estado_negociacion_fuente_byma
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 
@@ -41,9 +43,10 @@ BYMA_HOURS_SOURCE_DATE = date(2026, 9, 22)
 BYMA_HOURS_COMMUNICATION = "19024"
 BYMA_CURRENT_HOURS_PAGE = "https://www.byma.com.ar/mercado/horarios"
 
-# Source-history publication floor from COM19031 (effective 02-Nov-2026).
+# Source-history clocks from COM19031 (effective 02-Nov-2026).
 # This informational clock does not extend the conservative PAPER session.
 BYMA_EOD_FLOOR_EFFECTIVE_DATE = date(2026, 11, 2)
+BYMA_T1_SOURCE_REVIEWED_THROUGH = date(2026, 12, 31)
 
 # Ventana operacional RC5 del simulador spot. Intervalo half-open: 17:00 ya no
 # admite nuevas evaluaciones regulares. El warm-up 10:15 es interno de POROTA,
@@ -72,23 +75,51 @@ BYMA_PAPER_SPOT = MarketSession(
     ),
 )
 
+BYMA_T1_EQUITY_SOURCE = MarketSession(
+    market="BYMA",
+    family="T1_EQUITY_SOURCE",
+    regular_open=BYMA_PAPER_SPOT_OPEN,
+    regular_close=time(18, 0),
+    preopen_start=None,
+    source="https://www.byma.com.ar/comunicados/com19031-horarios",
+    source_date=date(2026, 10, 28),
+    notes="Regular trading window for exact T+1 equities and CEDEARs.",
+)
+
 
 # ---- A3 / MATBA-ROFEX -----------------------------------------------------
-# Fuente oficial verificada 2026-09-02. No se extrapola a BYMA.
-A3_SOURCE = "https://matbarofex.com.ar/horario_de_negociacion"
-A3_SOURCE_DATE = date(2026, 9, 2)
+# Referencia oficial por producto verificada el 22-Nov-2026.
+A3_SOURCE = "https://a3mercados.com.ar/info-de-mercado/datos-de-mercado"
+A3_SOURCE_DATE = date(2026, 11, 22)
 
+# AGRO y OTROS requieren el producto o una variante con horario común.
 A3_SESSIONS = {
-    "FUTUROS_OPCIONES_MONEDAS": MarketSession(
-        "A3", "FUTUROS_OPCIONES_MONEDAS", time(10, 0), time(15, 0), time(9, 30),
-        A3_SOURCE, A3_SOURCE_DATE, "Dólar/Yuan"),
-    "FUTUROS_OPCIONES_AGRO": MarketSession(
-        "A3", "FUTUROS_OPCIONES_AGRO", time(10, 30), time(17, 0), time(10, 0),
-        A3_SOURCE, A3_SOURCE_DATE, "Agro general; mini/Chicago tienen excepciones"),
-    "FUTUROS_OPCIONES_OTROS": MarketSession(
-        "A3", "FUTUROS_OPCIONES_OTROS", time(10, 30), time(17, 0), time(10, 0),
-        A3_SOURCE, A3_SOURCE_DATE,
-        "RFX20, acciones individuales, BTC, Oro, WTI, Títulos Públicos, CER, CAUC"),
+    **dict.fromkeys(
+        ("DLR", "MONEDAS", "FUTUROS_OPCIONES_MONEDAS"),
+        MarketSession("A3", "FUTUROS_OPCIONES_MONEDAS", time(10), time(15), time(9, 30),
+                      A3_SOURCE, A3_SOURCE_DATE, "Dólar/Yuan"),
+    ),
+    **dict.fromkeys(
+        ("AGRO_ESTANDAR", "AGRO_MINI", "SOJA", "GIRASOL", "TRIGO", "CEBADA", "MAIZ",
+         "MAÍZ", "SORGO", "SOJA_MINI", "TRIGO_MINI", "MAIZ_MINI", "MAÍZ_MINI"),
+        MarketSession("A3", "AGRO_ESTANDAR_MINI", time(11), time(17), time(10, 30),
+                      A3_SOURCE, A3_SOURCE_DATE, "Agro estándar y Mini"),
+    ),
+    **dict.fromkeys(
+        ("AGRO_CHICAGO", "SOJA_CHICAGO", "MAIZ_CHICAGO", "MAÍZ_CHICAGO"),
+        MarketSession("A3", "AGRO_CHICAGO", time(11), time(16, 20), time(10, 30),
+                      A3_SOURCE, A3_SOURCE_DATE, "Soja y Maíz Chicago"),
+    ),
+    **dict.fromkeys(
+        ("RFX20", "ACCIONES"),
+        MarketSession("A3", "RFX20_ACCIONES", time(10, 30), time(18), time(10),
+                      A3_SOURCE, A3_SOURCE_DATE, "RFX20 y acciones individuales"),
+    ),
+    **dict.fromkeys(
+        ("BTC", "ORO", "WTI", "TITULOS_PUBLICOS", "CER", "CAUC", "TAMAR"),
+        MarketSession("A3", "OTROS", time(10, 30), time(17), time(10),
+                      A3_SOURCE, A3_SOURCE_DATE, "BTC, Oro, WTI, Títulos, CER y TAMAR"),
+    ),
 }
 
 
@@ -98,21 +129,24 @@ def session_for(market: str, family: str) -> MarketSession | None:
     if market == "BYMA":
         return BYMA_PAPER_SPOT if family in BYMA_PAPER_SPOT_FAMILIES else None
     if market in {"A3", "MATBA_ROFEX", "ROFEX"}:
-        aliases = {
-            "DLR": "FUTUROS_OPCIONES_MONEDAS",
-            "MONEDAS": "FUTUROS_OPCIONES_MONEDAS",
-            "AGRO": "FUTUROS_OPCIONES_AGRO",
-            "RFX20": "FUTUROS_OPCIONES_OTROS",
-            "ACCIONES": "FUTUROS_OPCIONES_OTROS",
-            "BTC": "FUTUROS_OPCIONES_OTROS",
-            "ORO": "FUTUROS_OPCIONES_OTROS",
-            "WTI": "FUTUROS_OPCIONES_OTROS",
-            "TITULOS_PUBLICOS": "FUTUROS_OPCIONES_OTROS",
-            "CER": "FUTUROS_OPCIONES_OTROS",
-            "CAUC": "FUTUROS_OPCIONES_OTROS",
-        }
-        return A3_SESSIONS.get(aliases.get(family, family))
+        return A3_SESSIONS.get(family)
     return None
+
+
+def byma_source_session_for(day: date, *, market: str, family: str,
+                            settlement: str) -> MarketSession | None:
+    """Observed BYMA spot window for the archive's exact series and date."""
+    base_session = session_for(market, family)
+    state = estado_negociacion_fuente_byma(
+        day, market=market, family=family, settlement=settlement)
+    if base_session is None or state not in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}:
+        return None
+    if (state == "REGULAR"
+            and BYMA_EOD_FLOOR_EFFECTIVE_DATE <= day <= BYMA_T1_SOURCE_REVIEWED_THROUGH
+            and family.upper() in {"ACCIONES", "CEDEARS"}
+            and str(settlement or "").strip().upper() in BYMA_T1_EXACT_SETTLEMENTS):
+        return BYMA_T1_EQUITY_SOURCE
+    return base_session
 
 
 def phase_for(session: MarketSession | None, now: datetime | None = None) -> str:

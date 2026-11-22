@@ -38,9 +38,35 @@ from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 
 
 SCHEMA = "rc6.ppi.single-market-session.offhost.v1"
+AUTH_COOLDOWN_SECONDS = 900
+_GUARDED_HTTP_ERRORS = {f"PPI_HTTP_{status}": status for status in (401, 403, 429)}
 
 
-def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates=False):
+def _complete_catalog_publication(connection):
+    if connection.execute("""SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='candidate_refresh_state'""").fetchone() is None:
+        return None
+    row = connection.execute("""SELECT checked_at FROM candidate_refresh_state
+        WHERE id=1 AND state='COMPLETE' AND typeof(checked_at)='text'
+          AND length(checked_at) BETWEEN 1 AND 64""").fetchone()
+    return row[0] if row else None
+
+
+def complete_ppi_catalog_publication(database):
+    """Poll the existing completed catalog marker without scanning identities."""
+    from cg_paper_workspace import checked_path
+
+    path = checked_path(database)
+    try:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True,
+                                     timeout=.15)) as connection:
+            return _complete_catalog_publication(connection)
+    except (sqlite3.Error, OSError) as exc:
+        raise ValueError("PPI_PRIMARY_CATALOG_UNAVAILABLE") from exc
+
+
+def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates=False,
+                                      expected_publication=None):
     """Read PPI-primary identities without equating a GET request to a contract.
 
     Default preserves the existing PPI_FIELD-only certified-key contract.
@@ -67,6 +93,9 @@ def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates
                                      timeout=.15)) as connection:
             connection.execute("PRAGMA query_only=ON")
             connection.execute("BEGIN")
+            if (expected_publication is not None
+                    and expected_publication != _complete_catalog_publication(connection)):
+                raise ValueError("PPI_PRIMARY_CATALOG_PUBLICATION_CHANGED")
             identity_from_connection(connection)
             state = connection.execute(
                 "SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
@@ -330,39 +359,18 @@ class PPISharedSessionOwner:
         # No provided external quota witness: fail closed BEFORE any SDK/login.
         if not callable(getattr(external_capacity_authority, "permits", None)):
             raise SessionOwnerBlocked("PPI_EXTERNAL_CAPACITY_AUTHORITY_MISSING")
-        if not callable(getattr(catalog_authority, "permits", None)):
-            raise SessionOwnerBlocked("PPI_PPI_CATALOG_AUTHORITY_MISSING")
-        if not isinstance(consumer_five_keys, dict) or not consumer_five_keys:
-            raise SessionOwnerBlocked("PPI_SESSION_CONSUMERS_MISSING")
 
         self._reader_factory = reader_factory
         self._instrument_factory = instrument_factory
         self._stream_authority = stream_authority
         self._capacity = external_capacity_authority
-        self._catalog_authority = catalog_authority
-        self._composite_stream_authority = _CompositeStreamAuthority(
-            stream=stream_authority, capacity=external_capacity_authority,
-            catalog=catalog_authority)
-        self._feed = PPISharedMarketFeed(
-            ppi_catalog_rows=ppi_catalog_rows,
-            catalog_source_digest=catalog_source_digest,
-            max_subscriptions=max_subscriptions,
-        )
-        self._stream_feed = _CapacityCheckedStreamFeed(
-            feed=self._feed, authority=self._composite_stream_authority)
-        self._native = PPIReadOnlyNativeReceiptStore(self._feed)
-        for consumer, keys in consumer_five_keys.items():
-            self._feed.register_consumer(consumer, watched_five_keys=keys)
-        self._rpc = ReadOnlyUnixFeedServer(
-            self._feed, socket_path=Path(socket_path), native_receipts=self._native,
-            native_acquirer=self.dispatch_native_acquire, owner_status=self.status,
-            auxiliary_acquirer=self.dispatch_auxiliary_acquire,
-            exit_round_observer=self.observe_exit_round,
-            exit_round_discarder=self.discard_exit_round_scope,
-            supervisor_pid=os.getppid(),
-        )
-        self._catalog_five_keys = catalog_five_keys
-        self._catalog_source_digest = catalog_source_digest
+        self._socket_path = Path(socket_path)
+        self._max_subscriptions = max_subscriptions
+        self._set_catalog(catalog_authority=catalog_authority,
+                          ppi_catalog_rows=ppi_catalog_rows,
+                          catalog_five_keys=catalog_five_keys,
+                          catalog_source_digest=catalog_source_digest,
+                          consumer_five_keys=consumer_five_keys)
         self._reader = None
         self._rest = None
         self._stream = None
@@ -374,9 +382,45 @@ class PPISharedSessionOwner:
         self._native_hold_until = 0.0
         self._native_retry_after = None
         self._native_last_http_status = None
+        self._session_recovery_at = None
         self._stream_invoked = False
         self._state = "NOT_OPEN"
         self._lock = threading.RLock()
+
+    def _set_catalog(self, *, catalog_authority, ppi_catalog_rows,
+                     catalog_five_keys, catalog_source_digest, consumer_five_keys):
+        if not callable(getattr(catalog_authority, "permits", None)):
+            raise SessionOwnerBlocked("PPI_PPI_CATALOG_AUTHORITY_MISSING")
+        if not isinstance(consumer_five_keys, dict) or not consumer_five_keys:
+            raise SessionOwnerBlocked("PPI_SESSION_CONSUMERS_MISSING")
+        composite = _CompositeStreamAuthority(
+            stream=self._stream_authority, capacity=self._capacity,
+            catalog=catalog_authority)
+        feed = PPISharedMarketFeed(
+            ppi_catalog_rows=ppi_catalog_rows,
+            catalog_source_digest=catalog_source_digest,
+            max_subscriptions=self._max_subscriptions,
+        )
+        stream_feed = _CapacityCheckedStreamFeed(feed=feed, authority=composite)
+        native = PPIReadOnlyNativeReceiptStore(feed)
+        for consumer, keys in consumer_five_keys.items():
+            feed.register_consumer(consumer, watched_five_keys=keys)
+        rpc = ReadOnlyUnixFeedServer(
+            feed, socket_path=self._socket_path, native_receipts=native,
+            native_acquirer=self.dispatch_native_acquire, owner_status=self.status,
+            auxiliary_acquirer=self.dispatch_auxiliary_acquire,
+            exit_round_observer=self.observe_exit_round,
+            exit_round_discarder=self.discard_exit_round_scope,
+            supervisor_pid=os.getppid(),
+        )
+        self._catalog_authority = catalog_authority
+        self._composite_stream_authority = composite
+        self._feed = feed
+        self._stream_feed = stream_feed
+        self._native = native
+        self._rpc = rpc
+        self._catalog_five_keys = catalog_five_keys
+        self._catalog_source_digest = catalog_source_digest
 
     @staticmethod
     def _aux_word(value):
@@ -452,23 +496,8 @@ class PPISharedSessionOwner:
                     raise SessionOwnerBlocked("PPI_GUARDED_BUDGETED_READER_REQUIRED")
                 self._login_invocations += 1
                 source.login_once()  # exactly once, never by consumers/stream
-                transport = source.market_only_sdk_transport(
-                    instrument_factory=self._instrument_factory)
-                stream = PPISharedSDKProducer(
-                    feed=self._stream_feed, transport=transport,
-                    stream_authority=self._composite_stream_authority,
-                )
-                local_generation = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
-                rest = MarketOnlyRESTProducer(
-                    guarded_source=source, receipt_sink=self._native,
-                    catalog_five_keys=self._catalog_five_keys,
-                    catalog_source_digest=self._catalog_source_digest,
-                    session_fingerprint=local_generation,
-                )
+                self._bind_authenticated_reader(source)
                 self._reader = source
-                self._stream = stream
-                self._rest = rest
-                self._local_generation = local_generation
                 self._state = "OPEN"
                 return self
             except BaseException:
@@ -486,6 +515,48 @@ class PPISharedSessionOwner:
                         PPISharedSessionOwner._active_owner = None
                 raise
 
+    def _bind_authenticated_reader(self, reader):
+        transport = reader.market_only_sdk_transport(
+            instrument_factory=self._instrument_factory)
+        stream = PPISharedSDKProducer(
+            feed=self._stream_feed, transport=transport,
+            stream_authority=self._composite_stream_authority,
+        )
+        generation = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
+        rest = MarketOnlyRESTProducer(
+            guarded_source=reader, receipt_sink=self._native,
+            catalog_five_keys=self._catalog_five_keys,
+            catalog_source_digest=self._catalog_source_digest,
+            session_fingerprint=generation,
+        )
+        self._stream = stream
+        self._rest = rest
+        self._local_generation = generation
+
+    def begin_gateway_catalog_refresh(self) -> bool:
+        """Wait for the current read, then stop admission on the old bundle."""
+        with self._lock:
+            self._require_open()
+            if self._session_recovery_at is not None:
+                return False  # a new guarded login will read the latest catalog
+            if self._stream_invoked or self._feed.active_subscriptions():
+                raise SessionOwnerBlocked("PPI_STREAM_CATALOG_REFRESH_UNVERIFIED")
+            self._state = "CATALOG_REFRESH"
+            return True
+
+    def bind_refreshed_gateway_catalog(self, **catalog):
+        """Replace all catalog-bound state after the old socket has drained."""
+        with self._lock:
+            if self._state != "CATALOG_REFRESH" or self._rpc.socket_bound:
+                raise SessionOwnerBlocked("PPI_CATALOG_GATEWAY_DRAIN_UNVERIFIED")
+            self._set_catalog(**catalog)
+            if not self._permits_native_query():
+                raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
+            # Still the same authenticated SDK reader. Reset the AF_UNIX pin,
+            # role registry and receipt namespace together with the digest.
+            self._bind_authenticated_reader(self._reader)
+            self._state = "OPEN"
+
     def _require_open(self):
         if self._state != "OPEN" or self._reader is None:
             raise SessionOwnerBlocked("PPI_SINGLE_SESSION_NOT_OPEN")
@@ -493,9 +564,15 @@ class PPISharedSessionOwner:
     @staticmethod
     def _observed_http_error(error):
         """Extract only status+bounded Retry-After; never return SDK body."""
+        from requests import Response
+
         current = error
         for _ in range(6):
             response = getattr(current, "response", None)
+            if (response is None and len(current.args) == 1
+                    and isinstance(current.args[0], Response)):
+                # The SDK can raise Exception(response) in non-2xx responses.
+                response = current.args[0]
             status = getattr(response, "status_code", None)
             if type(status) is int and 100 <= status <= 599:
                 raw = getattr(response, "headers", {}).get("Retry-After")
@@ -518,25 +595,57 @@ class PPISharedSessionOwner:
                 break
         return None, None
 
+    def _require_active_rest_session(self) -> None:
+        if self._session_recovery_at is not None:
+            raise SessionOwnerBlocked("PPI_GATEWAY_SESSION_RECOVERY_PENDING")
+
+    def session_recovery_due(self) -> bool:
+        """The runtime may drain and replace this REST owner after its holds."""
+        recover_at = self._session_recovery_at
+        # Read-only and lock-free like status(). No new provider request is
+        # admitted once authentication is invalidated under the owner lock.
+        return (recover_at is not None and not self._stream_invoked
+                and time.monotonic() >= max(recover_at, self._native_hold_until,
+                                            self._aux_hold_until))
+
+    def _provider_hold(self, status, retry_after):
+        deadline = time.monotonic() + max(
+            AUTH_COOLDOWN_SECONDS if status in {401, 403} else 60, retry_after or 0)
+        if status == 401:
+            self._session_recovery_at = deadline
+        return deadline
+
+    def _guarded_wire_advanced(self, before):
+        after = getattr(self._reader, "metrics", {}).get("http_allowed")
+        return type(before) is int and type(after) is int and after > before
+
     def capture_native(self, method: str, five_key: Any, *, priority: str):
         """Only owner path to guarded PPI REST; no consumer-facing GET."""
         with self._lock:
             self._require_open()
+            self._require_active_rest_session()
             if not self._permits_native_query(five_key):
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             if not self._permits_capacity("REST_NATIVE_ACQUIRE", five_key):
                 raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
             if time.monotonic() < self._native_hold_until:
                 raise SessionOwnerBlocked("PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE")
+            wire_calls = getattr(self._reader, "metrics", {}).get("http_allowed")
             try:
                 return self._rest.capture(method, five_key, priority=priority)
             except Exception as exc:
                 status, retry_after = self._observed_http_error(exc)
+                # SDK retry exceptions can hide the first HTTP response. The
+                # guard records that status on this GET worker's thread.
+                if self._guarded_wire_advanced(wire_calls):
+                    guarded_status = _GUARDED_HTTP_ERRORS.get(
+                        getattr(self._reader, "last_read_error_code", None))
+                    if guarded_status is not None and guarded_status != status:
+                        status, retry_after = guarded_status, None
                 if status in {401, 403, 429}:
                     self._native_last_http_status = status
                     self._native_retry_after = retry_after if status == 429 else None
-                    self._native_hold_until = time.monotonic() + max(
-                        900 if status in {401, 403} else 60, retry_after or 0)
+                    self._native_hold_until = self._provider_hold(status, retry_after)
                     raise SessionOwnerBlocked(f"PPI_NATIVE_HTTP_{status}") from None
                 raise
 
@@ -586,6 +695,7 @@ class PPISharedSessionOwner:
             self._require_open()
             if consumer != "scanner":
                 raise SessionOwnerBlocked("PPI_AUX_ROLE_DENIED")
+            self._require_active_rest_session()
             if method not in {"search_instruments", "history", "market_configuration"}:
                 raise SessionOwnerBlocked("PPI_AUX_METHOD_DENIED")
             if not isinstance(args, dict):
@@ -631,6 +741,8 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_AUX_PAPER_CAPACITY_UNVERIFIED")
             if time.monotonic() < self._aux_hold_until:
                 raise SessionOwnerBlocked("PPI_AUX_PROVIDER_BACKOFF_ACTIVE")
+            wire_calls = getattr(self._reader, "metrics", {}).get("http_allowed")
+            prior_guard_code = getattr(self._reader, "last_read_error_code", None)
             try:
                 if method == "market_configuration":
                     result = self._reader.market_configuration()
@@ -644,11 +756,21 @@ class PPISharedSessionOwner:
                         args["settlement"], first, last)
             except Exception as exc:
                 status, retry_after = self._observed_http_error(exc)
+                if status is None and self._guarded_wire_advanced(wire_calls):
+                    guard_code = getattr(self._reader, "last_read_error_code", None)
+                    # The auxiliary SDK methods do not clear this diagnostic.
+                    # An unchanged HTTP code may belong to another RPC.
+                    if guard_code != prior_guard_code:
+                        status = _GUARDED_HTTP_ERRORS.get(guard_code)
+                    if (guard_code is None and type(exc) is Exception
+                            and exc.args == ("Unauthorized",)):
+                        # PPIClient.get in SDK 1.3.0 uses this exact exception
+                        # for an empty 401. Never override a guarded HTTP code.
+                        status = 401
                 if status in {401, 403, 429}:
                     self._aux_last_http_status = status
                     self._aux_retry_after = retry_after if status == 429 else None
-                    self._aux_hold_until = time.monotonic() + max(
-                        900 if status in {401, 403} else 60, retry_after or 0)
+                    self._aux_hold_until = self._provider_hold(status, retry_after)
                     raise SessionOwnerBlocked(f"PPI_AUX_HTTP_{status}") from None
                 # SDK exceptions can embed provider text/credentials.
                 raise SessionOwnerBlocked("PPI_AUX_PROVIDER_FAILURE_UNVERIFIED") from None
@@ -766,6 +888,7 @@ class PPISharedSessionOwner:
         reader = self._reader
         stream = self._stream
         generation = self._local_generation
+        catalog_digest = self._catalog_source_digest
         try:
             guard_metrics = getattr(reader, "metrics", None) if reader else None
         except Exception:
@@ -777,17 +900,19 @@ class PPISharedSessionOwner:
             return value if type(value) is int and value >= 0 else None
 
         stable = (state == self._state and reader is self._reader
-                  and stream is self._stream and generation == self._local_generation)
+                  and stream is self._stream and generation == self._local_generation
+                  and catalog_digest == self._catalog_source_digest)
         if not stable:
             state = "TRANSITION_UNVERIFIED"
         return {"schema": SCHEMA, "state": state,
                 "owner_pid": os.getpid(),
                 "session_generation": generation if stable else None,
-                "catalog_source_digest": self._catalog_source_digest,
+                "catalog_source_digest": catalog_digest if stable else None,
                 "aux_retry_after_seconds_observed": self._aux_retry_after,
                 "aux_last_http_status": self._aux_last_http_status,
                 "native_retry_after_seconds_observed": self._native_retry_after,
                 "native_last_http_status": self._native_last_http_status,
+                "session_recovery_pending": self._session_recovery_at is not None,
                 "login_invocations_by_owner": self._login_invocations,
                 # Guard counts come from the single real HTTP transport,
                 # not one-per-RPC guesses or consumer-local zeros. The
@@ -806,7 +931,7 @@ class PPISharedSessionOwner:
 
     def close(self) -> None:
         with self._lock:
-            if self._state != "OPEN":
+            if self._state not in {"OPEN", "CATALOG_REFRESH"}:
                 raise SessionOwnerBlocked("PPI_SESSION_OWNER_NOT_OPEN")
             if self._stream_invoked:
                 # SDK lacks proven stop/unsubscribe. Closing the process-wide
