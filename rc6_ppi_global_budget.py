@@ -98,10 +98,16 @@ def native_ppi_response_settlement(payload):
     values = [value for index, value in _native_ppi_response_identity_items(payload) if index == 4]
     if not values:
         return "ABSENT", ""
-    first = values[0]
-    if type(first) is str and first in NATIVE_PPI_SETTLEMENT_LITERALS and all(
-            type(value) is str and value == first for value in values):
-        return "EXPLICIT", first
+    meanings = set()
+    for value in values:
+        if type(value) is not str or not value.isascii() or len(value) > 24:
+            return "UNVERIFIED", ""
+        term = value.strip(" ").upper()
+        if term not in NATIVE_PPI_SETTLEMENT_LITERALS:
+            return "UNVERIFIED", ""
+        meanings.add(TERM_ALIAS.get(term, term))
+    if len(meanings) == 1:
+        return "EXPLICIT", values[0]
     return "UNVERIFIED", ""
 
 

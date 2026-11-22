@@ -10,7 +10,7 @@ exec 9>"$LOCK"
 flock -n 9 || exit 0
 PYTHONPATH="$ROOT" python3 - "$OUT" <<'PY'
 from __future__ import annotations
-import json,os,stat,subprocess,sys,time
+import json,os,re,stat,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
 from rc6_scheduler_snapshot import CLOSED_REUSE_SECONDS, instant, monotonic_target, snapshot_phase
@@ -56,13 +56,17 @@ if rc==0:
         if not parts: continue
         unit=parts[0]
         if not unit.startswith("porota-") or not unit.endswith(".timer"): continue
-        t=props(unit,["Id","Description","ActiveState","SubState","UnitFileState","LastTriggerUSec","NextElapseUSecRealtime","NextElapseUSecMonotonic","WakeSystem","Triggers"])
+        t=props(unit,["Id","Description","ActiveState","SubState","UnitFileState","LastTriggerUSec","NextElapseUSecRealtime","NextElapseUSecMonotonic","WakeSystem","Unit","Triggers"])
         observed=datetime.now(timezone.utc)
         tick_clock = time.CLOCK_BOOTTIME if t.get("WakeSystem")=="yes" else time.CLOCK_MONOTONIC
         elapsed_deadline = monotonic_target(t.get("NextElapseUSecMonotonic"),
                                            wall=observed,monotonic=time.clock_gettime(tick_clock))
-        service=unit[:-6]+".service"
-        s=props(service,["Id","Description","ActiveState","SubState","Result","ExecMainCode","ExecMainStatus","ActiveEnterTimestamp","InactiveExitTimestamp"])
+        targets = [t.get("Unit", ""), *t.get("Triggers", "").split()]
+        service = next((target for target in targets
+                        if re.fullmatch(r"porota-[A-Za-z0-9_.@-]+\.service", target)),
+                       unit[:-6] + ".service")
+        s=props(service,["Id","Description","LoadState","ActiveState","SubState","Result","ExecMainCode","ExecMainStatus","ActiveEnterTimestamp","InactiveExitTimestamp"])
+        ran = s.get("LoadState") == "loaded" and s.get("ExecMainCode") not in (None, "", "0")
         timers.append({"unit":unit,"description":t.get("Description") or "",
             "active_state":t.get("ActiveState") or "unknown","sub_state":t.get("SubState") or "unknown",
             "enabled_state":t.get("UnitFileState") or (parts[1] if len(parts)>1 else "unknown"),
@@ -71,8 +75,10 @@ if rc==0:
             "next_elapse_monotonic_at":elapsed_deadline.isoformat() if elapsed_deadline else None,
             "triggers":t.get("Triggers") or service,"service":service,
             "service_description":s.get("Description") or "","service_active_state":s.get("ActiveState") or "unknown",
-            "service_sub_state":s.get("SubState") or "unknown","last_result":s.get("Result") or "unknown",
-            "exec_main_code":s.get("ExecMainCode") or None,"exec_main_status":s.get("ExecMainStatus") or None,
+            "service_sub_state":s.get("SubState") or "unknown",
+            "last_result":(s.get("Result") or "unknown") if ran else "unknown",
+            "exec_main_code":s.get("ExecMainCode") if ran else None,
+            "exec_main_status":s.get("ExecMainStatus") if ran else None,
             "service_active_enter":s.get("ActiveEnterTimestamp") or None,"service_inactive_exit":s.get("InactiveExitTimestamp") or None})
 payload={"schema":"porota-scheduler-systemd-v1","recorded_at":datetime.now(timezone.utc).isoformat(),
          "state":"OK" if rc==0 else "ERROR","error":"" if rc==0 else (stderr.strip()[:500] or "systemctl list-unit-files failed"),
