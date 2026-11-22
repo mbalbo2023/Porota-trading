@@ -31,27 +31,53 @@ def tick(store, phase, last_attempt):
 
 
 def _blocked_branch():
-    tree = DECLARATIONS["run"]
-    return next(
-        node for node in ast.walk(tree)
+    loop = next(node for node in ast.walk(DECLARATIONS["run"]) if isinstance(node, ast.While))
+    blocked = next(
+        node for node in loop.body
         if isinstance(node, ast.If)
         and isinstance(node.test, ast.Name)
         and node.test.id == "caucion_ledger_blocked"
-        and any(isinstance(item, ast.Continue) for item in node.body)
     )
+    return loop, blocked
+
+
+def _call_names(statements):
+    names = set()
+    for statement in statements:
+        for node in ast.walk(statement):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                names.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                names.add(node.func.attr)
+    return names
 
 
 def test_global_caucion_hold_still_has_local_closed_maintenance_before_continue():
-    blocked = _blocked_branch()
-    assert isinstance(blocked.body[-1], ast.Continue)
-    calls = [
-        node.func.id for statement in blocked.body[:-1]
-        for node in ast.walk(statement)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    ]
-    assert "_caucion_blocked_closed_catalog_tick" in calls
-    assert not ({"ProductionMarketReader", "login_once", "broker_from_environment"}
-                & set(calls))
+    loop, blocked = _blocked_branch()
+    phase_guard = blocked.body[-1]
+    assert isinstance(phase_guard, ast.If)
+    assert isinstance(phase_guard.body[-1], ast.Continue)
+    assert not phase_guard.orelse
+    phase_check = compile(ast.Expression(phase_guard.test), str(SOURCE), "eval")
+    namespace = {"__builtins__": {}}
+    for phase in ("CLOSED", "PREOPEN", "EQUITY_T1_READONLY"):
+        assert eval(phase_check, namespace, {"phase": phase})
+    assert not eval(phase_check, namespace, {"phase": "OPEN"})
+
+    local_maintenance = blocked.body[:-1]
+    assert "_caucion_blocked_closed_catalog_tick" in _call_names(local_maintenance)
+    assert not any(isinstance(node, ast.Continue)
+                   for statement in local_maintenance for node in ast.walk(statement))
+    assert "sleep" in _call_names(phase_guard.body[:-1])
+
+    cut = loop.body.index(blocked)
+    gated_calls = {"connect_paper_gateway_reader", "broker_from_environment",
+                   "service_tick", "_read_scanner_quote", "on_quote", "mark_equity"}
+    assert gated_calls <= _call_names(loop.body[cut + 1:])
+    assert _call_names(loop.body[:cut + 1]).isdisjoint(
+        gated_calls | {"ProductionMarketReader", "login_once"})
 
 
 def test_closed_blocked_ledger_runs_only_local_reconcile_and_preserves_gate():
