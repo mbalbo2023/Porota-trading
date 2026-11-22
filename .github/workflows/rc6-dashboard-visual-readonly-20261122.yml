@@ -35,7 +35,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$POROTA_QA_SHA"
-          grep -E '^(fastapi|uvicorn|python-multipart|python-dotenv|apscheduler|requests)==.* requirements.lock.txt > "$RUNNER_TEMP/browser-dependencies.txt"
+          grep -E '^(fastapi|uvicorn|python-multipart|python-dotenv|apscheduler|requests)==.*$' requirements.lock.txt > "$RUNNER_TEMP/browser-dependencies.txt"
           python -m pip install -q -r "$RUNNER_TEMP/browser-dependencies.txt" 'playwright==1.55.0'
           PYTHONPATH="$GITHUB_WORKSPACE/candidate" python -B "$GITHUB_WORKSPACE/diagnostic/scripts/dashboard_visual_audit/verify_candidate.py" "$RUNNER_TEMP"
       - name: Preserve focused browser evidence
@@ -45,14 +45,3 @@ jobs:
           path: ${{ runner.temp }}/playwright.json
           if-no-files-found: error
           retention-days: 30
- requirements.lock.txt > "$RUNNER_TEMP/browser-dependencies.txt"
-          python -m pip install -q -r "$RUNNER_TEMP/browser-dependencies.txt" 'playwright==1.55.0'
-          PYTHONPATH="$GITHUB_WORKSPACE/candidate" python -B "$GITHUB_WORKSPACE/diagnostic/scripts/dashboard_visual_audit/verify_candidate.py" "$RUNNER_TEMP"
-      - name: Preserve focused browser evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation-candidate-playwright
-          path: ${{ runner.temp }}/playwright.json
-          if-no-files-found: error
-          retention-days: 30
-
