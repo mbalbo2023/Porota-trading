@@ -90,19 +90,21 @@ def refresh_identities(targets: Iterable[tuple[str, str, str, str, str]],
     if batch_limit is not None:
         normalized = normalized[:max(0, int(batch_limit))]
 
-    hstore = history_store or default_history_store()
-    if not hstore.source_reported_only:
-        hstore = hstore.for_source_reported_history()
-    if hstore.existing_history_identity is None:
-        history_v2.init_schema(hstore)
-    else:
-        with hstore.connect() as connection:
-            history_v2.require_current_history(connection)
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
-    client = data912._session()
     started_at = datetime.now(timezone.utc).isoformat()
     successful = empty = failed = versions = canonical = protected = 0
     results = []
+
+    if normalized:
+        hstore = history_store if history_store is not None else default_history_store()
+        if not hstore.source_reported_only:
+            hstore = hstore.for_source_reported_history()
+        if hstore.existing_history_identity is None:
+            history_v2.init_schema(hstore)
+        else:
+            with hstore.connect() as connection:
+                history_v2.require_current_history(connection)
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        client = data912._session()
 
     for identity in normalized:
         symbol, family, _, _, _ = identity
