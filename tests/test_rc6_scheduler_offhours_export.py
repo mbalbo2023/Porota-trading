@@ -39,8 +39,14 @@ def test_scheduler_snapshot_closed_skip_and_corrupt_fail_open(tmp_path):
 echo "$1" >> "$RC6_TEST_SYSTEMCTL_LOG"
 if [ "$1" = list-unit-files ]; then
     for n in $(seq 1 20); do printf 'porota-%s.timer enabled\\n' "$n"; done
+elif [ "$2" = porota-1.timer ]; then
+    printf 'ActiveState=active\\nUnitFileState=enabled\\nUnit=porota-history@DAILY.service\\nTriggers=porota-history@DAILY.service\\n'
+elif [ "$2" = porota-history@DAILY.service ]; then
+    printf 'LoadState=loaded\\nActiveState=failed\\nResult=exit-code\\nExecMainCode=1\\nExecMainStatus=2\\n'
+elif [ "$2" = porota-2.service ]; then
+    printf 'LoadState=not-found\\nResult=success\\nExecMainCode=0\\nExecMainStatus=0\\n'
 else
-    printf 'ActiveState=active\\nUnitFileState=enabled\\nResult=success\\n'
+    printf 'LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled\\nResult=success\\nExecMainCode=1\\nExecMainStatus=0\\n'
 fi
 ''')
     fake.chmod(0o755)
@@ -87,4 +93,11 @@ fi
         assert output.read_text() == '{corrupt'
     invoke()
     assert 'list-unit-files' in log.read_text()
-    assert json.loads(output.read_text())['state'] == 'OK'
+    snapshot = json.loads(output.read_text())
+    assert snapshot['state'] == 'OK'
+    rows = {row['unit']: row for row in snapshot['timers']}
+    assert rows['porota-1.timer']['service'] == 'porota-history@DAILY.service'
+    assert rows['porota-1.timer']['last_result'] == 'exit-code'
+    assert rows['porota-1.timer']['exec_main_status'] == '2'
+    assert rows['porota-2.timer']['last_result'] == 'unknown'
+    assert rows['porota-3.timer']['last_result'] == 'success'

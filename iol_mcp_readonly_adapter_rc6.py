@@ -49,6 +49,7 @@ FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
 })
 ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
+IOL_CLIENT_USER_AGENT = "Porota-Trading-RC6/1.0 (IOL MCP read-only)"
 DEFAULT_REFRESH_SKEW_SECONDS = max(60, int(os.environ.get("POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS", "60")))
 
 
@@ -156,13 +157,15 @@ class OAuthStoreReadOnlyMCP:
             raise IOLMCPError("IOL_MCP_OAUTH_NOT_READY")
         return {
             "Authorization": "Bearer " + token, "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream", "_issuer": issuer,
+            "Accept": "application/json, text/event-stream", "User-Agent": IOL_CLIENT_USER_AGENT,
+            "_issuer": issuer,
         }
 
     def _read_json(self, url: str) -> dict[str, Any]:
         try:
             with urllib.request.urlopen(
-                urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=self.timeout_seconds
+                urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": IOL_CLIENT_USER_AGENT}),
+                timeout=self.timeout_seconds,
             ) as response:
                 value = json.loads(response.read().decode(errors="replace"))
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
@@ -287,7 +290,10 @@ class OAuthStoreReadOnlyMCP:
         }
         secret = registration.get("client_secret")
         auth_method = registration.get("token_endpoint_auth_method")
-        request_headers = {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}
+        request_headers = {
+            "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json",
+            "User-Agent": IOL_CLIENT_USER_AGENT,
+        }
         if isinstance(secret, str) and secret:
             if auth_method == "client_secret_basic":
                 encoded = base64.b64encode((client_id + ":" + secret).encode()).decode()

@@ -919,6 +919,17 @@ def test_complementary_duplicate_does_not_suppress_unique_primary_ppi_probe(cata
     # blocked by the existing GGAL/ARS versus GGAL/USD fixture.
 
 
+@pytest.mark.parametrize("payload,expected", [
+    ({"settlement": "a-24hs", "instrument": {"settlement": "T1"}}, ("EXPLICIT", "a-24hs")),
+    ({"Settlement": "CI", "identity": {"term": "INMEDIATA"}}, ("EXPLICIT", "CI")),
+    ({"settlement": "CI", "instrument": {"settlement": "T1"}}, ("UNVERIFIED", "")),
+    ({"settlement": "CI\n"}, ("UNVERIFIED", "")),
+    ({"date": "2026-11-20T14:00:00Z", "price": 123.4}, ("ABSENT", "")),
+])
+def test_native_settlement_preserves_literal_and_compares_alias_meaning(payload, expected):
+    assert observer.native_ppi_response_settlement(payload) == expected
+
+
 @pytest.mark.parametrize("family,ticker,expected", [
     ("FCI", "FUNDX", "FCI_CURRENT_REFERENCE_OBSERVED"),
     ("CAUCIONES", "PESOS1", "CAUCION_CURRENT_REFERENCE_OBSERVED"),
