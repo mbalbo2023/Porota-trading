@@ -48,6 +48,14 @@ FORBIDDEN_ACCOUNT_OR_EXECUTION_TOOLS = frozenset({
     "validate_fci_redemption", "redeem_fci",
 })
 ALLOWED_TOOLS = READ_ONLY_MARKET_TOOLS
+IOL_READ_ONLY_INVENTORY = ALLOWED_TOOLS | frozenset({
+    "get_access_mode", "get_activities", "get_aum_evolution", "get_balance", "get_ddjj",
+    "get_order_status", "get_portfolio", "get_return_evolution", "get_stop_loss_and_take_profit",
+    "show_aum_evolution", "show_portfolio_treemap", "show_return_evolution",
+})
+IOL_MCP_ISSUER = "https://mcp.invertironline.com"
+MCP_PROTOCOL_VERSION = "2025-06-18"
+MAX_TOOL_PAGES = 8
 DEFAULT_STORE = Path("/root/.config/porota/iol_mcp_oauth_bootstrap.json")
 IOL_CLIENT_USER_AGENT = "Porota-Trading-RC6/1.0 (IOL MCP read-only)"
 DEFAULT_REFRESH_SKEW_SECONDS = max(60, int(os.environ.get("POROTA_IOL_OAUTH_REFRESH_SKEW_SECONDS", "60")))
@@ -132,13 +140,22 @@ def _resource_metadata_url(headers: dict[str, str]) -> str | None:
     return _https_url(value)
 
 
+def _mcp_headers(issuer: str, token: str) -> dict[str, str]:
+    return {
+        "Authorization": "Bearer " + token, "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream", "User-Agent": IOL_CLIENT_USER_AGENT,
+        "_issuer": issuer,
+    }
+
+
 class OAuthStoreReadOnlyMCP:
-    """Small session client. It refreshes a stored read-only OAuth session only after 401."""
+    """Read-only session client with proactive refresh and one 401 retry."""
 
     def __init__(self, store: Path | str = DEFAULT_STORE, *, timeout_seconds: int = 20) -> None:
         self.store, self.timeout_seconds = Path(store), timeout_seconds
         self._request_id = 0
         self._headers: dict[str, str] | None = None
+        self._initialized = False
 
     def _load_store(self) -> dict[str, Any]:
         try:
@@ -155,11 +172,7 @@ class OAuthStoreReadOnlyMCP:
         issuer = data.get("issuer")
         if not isinstance(token, str) or not token or not isinstance(issuer, str) or not _https_url(issuer):
             raise IOLMCPError("IOL_MCP_OAUTH_NOT_READY")
-        return {
-            "Authorization": "Bearer " + token, "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream", "User-Agent": IOL_CLIENT_USER_AGENT,
-            "_issuer": issuer,
-        }
+        return _mcp_headers(issuer, token)
 
     def _read_json(self, url: str) -> dict[str, Any]:
         try:
@@ -351,19 +364,25 @@ class OAuthStoreReadOnlyMCP:
         self._write_store(data)
         self._headers = None
 
-    def _rpc(self, method: str, params: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    def _rpc(self, method: str, params: dict[str, Any], *, notification: bool = False
+             ) -> tuple[dict[str, Any], dict[str, str]]:
         headers = self._headers or self._load_headers()
         self._headers = headers
-        self._request_id += 1
+        message = {"jsonrpc": "2.0", "method": method, "params": params}
+        if not notification:
+            self._request_id += 1
+            message["id"] = self._request_id
         outgoing = {key: value for key, value in headers.items() if key != "_issuer"}
         request = urllib.request.Request(
             headers["_issuer"],
-            data=json.dumps({"jsonrpc": "2.0", "id": self._request_id, "method": method, "params": params}).encode(),
+            data=json.dumps(message).encode(),
             headers=outgoing, method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-                return _json_from_mcp_body(response.read().decode(errors="replace")), dict(response.headers)
+                body = response.read().decode(errors="replace")
+                result = {} if notification and not body.strip() else _json_from_mcp_body(body)
+                return result, dict(response.headers)
         except urllib.error.HTTPError as exc:
             exc.read()  # Consume the response without ever propagating its body.
             response_headers = dict(exc.headers)
@@ -375,24 +394,58 @@ class OAuthStoreReadOnlyMCP:
             raise IOLMCPError("IOL_MCP_TRANSPORT_UNAVAILABLE") from exc
 
     def _initialize(self) -> None:
-        _, headers = self._rpc("initialize", {
-            "protocolVersion": "2025-06-18", "capabilities": {},
+        self._initialized = False
+        if self._headers is not None:
+            self._headers.pop("Mcp-Session-Id", None)
+            self._headers.pop("MCP-Protocol-Version", None)
+        result, headers = self._rpc("initialize", {
+            "protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {},
             "clientInfo": {"name": "porota-rc6-iol-shadow", "version": "1.0"},
         })
-        session_id = headers.get("Mcp-Session-Id") or headers.get("mcp-session-id")
+        version = result.get("protocolVersion")
+        if not isinstance(version, str) or version not in {"2025-03-26", MCP_PROTOCOL_VERSION, "2025-11-25"}:
+            raise IOLMCPError("IOL_MCP_PROTOCOL_VERSION_UNVERIFIED")
+        assert self._headers is not None
+        self._headers["MCP-Protocol-Version"] = version
+        session_id = next((value for name, value in headers.items() if name.lower() == "mcp-session-id"), None)
         if session_id:
-            assert self._headers is not None
             self._headers["Mcp-Session-Id"] = session_id
+        self._rpc("notifications/initialized", {}, notification=True)
+        self._initialized = True
+
+    def _list_tool_pages(self) -> dict[str, Any]:
+        tools = []
+        names: set[str] = set()
+        cursors: set[str] = set()
+        params = {}
+        for _ in range(MAX_TOOL_PAGES):
+            page, _ = self._rpc("tools/list", params)
+            entries = page.get("tools")
+            if not isinstance(entries, list):
+                raise IOLMCPError("IOL_MCP_TOOL_INVENTORY_INVALID")
+            for tool in entries:
+                name = tool.get("name") if isinstance(tool, dict) else None
+                if not isinstance(name, str) or not name or name in names:
+                    raise IOLMCPError("IOL_MCP_TOOL_INVENTORY_INVALID")
+                names.add(name)
+            tools.extend(entries)
+            cursor = page.get("nextCursor")
+            if cursor is None:
+                return {**page, "tools": tools}
+            if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                raise IOLMCPError("IOL_MCP_TOOL_CURSOR_INVALID")
+            cursors.add(cursor)
+            params = {"cursor": cursor}
+        raise IOLMCPError("IOL_MCP_TOOL_PAGE_LIMIT")
 
     def list_tools(self) -> dict[str, Any]:
         """Discover server capabilities without invoking any tool."""
         for attempt in range(2):
             try:
                 self._refresh_if_due()
-                if self._headers is None:
+                if self._headers is None or not self._initialized:
                     self._initialize()
-                result, _ = self._rpc("tools/list", {})
-                return result if isinstance(result, dict) else {}
+                return self._list_tool_pages()
             except IOLMCPError as exc:
                 if attempt == 0 and exc.status_code == 401:
                     self._refresh_after_401(exc.response_headers)
@@ -406,7 +459,7 @@ class OAuthStoreReadOnlyMCP:
         for attempt in range(2):
             try:
                 self._refresh_if_due()
-                if self._headers is None:
+                if self._headers is None or not self._initialized:
                     self._initialize()
                 result, _ = self._rpc("tools/call", {"name": tool_name, "arguments": dict(arguments)})
                 return result
@@ -416,3 +469,23 @@ class OAuthStoreReadOnlyMCP:
                     continue
                 raise
         raise AssertionError("unreachable")
+
+
+def verify_read_only_token(access_token: str, *, timeout_seconds: int = 6) -> dict[str, Any]:
+    """Prove the proposed IOL token's mode and inventory before storing it."""
+    if not isinstance(access_token, str) or not access_token or access_token != access_token.strip():
+        raise IOLMCPError("IOL_MCP_OAUTH_NOT_READY")
+    client = OAuthStoreReadOnlyMCP(timeout_seconds=timeout_seconds)
+    client._headers = _mcp_headers(IOL_MCP_ISSUER, access_token)
+    client._initialize()
+    names = {tool["name"] for tool in client._list_tool_pages()["tools"]}
+    if not names <= IOL_READ_ONLY_INVENTORY:
+        raise IOLMCPError("IOL_MCP_NON_READ_TOOL_INVENTORY")
+    if "get_access_mode" not in names:
+        raise IOLMCPError("IOL_MCP_ACCESS_MODE_UNAVAILABLE")
+    if not {"get_asset_quote", "get_price_history"} <= names:
+        raise IOLMCPError("IOL_MCP_MARKET_TOOL_INVENTORY_INCOMPLETE")
+    mode, _ = client._rpc("tools/call", {"name": "get_access_mode", "arguments": {}})
+    if mode.get("mode") != "read_only" or mode.get("saved_mode", "read_only") != "read_only":
+        raise IOLMCPError("IOL_MCP_ACCESS_MODE_UNVERIFIED")
+    return {"mode": "read_only", "read_only_tool_count": len(names)}

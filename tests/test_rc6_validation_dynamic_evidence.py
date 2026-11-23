@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+import json
 import sqlite3
 
 import rc6_validation_dynamic as dynamic
+from rc6_validation_runtime import EXPORT_UNIT, POSTCLOSE_UNIT, scheduler_status
 
 
 def test_validation_does_not_present_bounded_old_data_as_current_evidence(tmp_path, monkeypatch):
@@ -62,3 +65,26 @@ def test_daily_db_probe_avoids_quick_check_but_explicit_deep_check_keeps_it(tmp_
 
     assert dynamic._db_ok(deep=False) == (True, "OBSERVER_ROW_READ_ONLY")
     assert dynamic._db_ok(deep=True) == (True, "ok")
+
+
+def test_m0_requires_current_scheduled_export_evidence(tmp_path):
+    path = tmp_path / "scheduler" / "systemd_timers.json"
+    path.parent.mkdir()
+    captured = datetime(2026, 11, 23, 1, 18, 16, tzinfo=timezone.utc)
+    active = {"active_state": "active", "enabled_state": "enabled"}
+    exporter = {**active, "unit": EXPORT_UNIT, "service": "porota-scheduler-export-rc6.service",
+                "execution_state": "RUNNING", "service_sub_state": "start",
+                "service_started_at": "Mon 2026-11-23 01:18:14 UTC",
+                "last_trigger": "Mon 2026-11-23 01:18:14 UTC", "last_result": "unknown"}
+
+    def observe(**updates):
+        path.write_text(json.dumps({"schema": "porota-scheduler-systemd-v1", "state": "OK",
+                                   "recorded_at": captured.isoformat(),
+                                   "timers": [{**exporter, **updates}, {**active, "unit": POSTCLOSE_UNIT}]}))
+        return scheduler_status(tmp_path, captured)
+
+    assert observe() == "VERIFICADO"
+    assert observe(last_trigger="Mon 2026-11-23 01:17:14 UTC") == "NO_VERIFICADO"
+    assert observe(service="porota-other.service") == "NO_VERIFICADO"
+    assert observe(execution_state="NO_EXECUTION_OBSERVED") == "NO_VERIFICADO"
+    assert observe(last_result="exit-code") == "NO_VERIFICADO"

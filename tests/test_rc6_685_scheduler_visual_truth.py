@@ -15,13 +15,13 @@ from rc6_trader_dashboard.projection import Projection, Store
 NOW = datetime(2026, 10, 21, 20, 30, tzinfo=timezone.utc)
 
 
-def page(recorded_at, result="success", *, payload_state="OK"):
+def page(recorded_at, result="success", *, payload_state="OK", **row):
     payload = {"state": payload_state, "recorded_at": recorded_at,
                "timers": [{"unit": "porota-scheduler-export-rc6.timer",
                            "enabled_state": "enabled", "active_state": "active",
                            "last_result": result, "exec_main_status": "203" if result != "success" else "0",
                            "last_trigger": "Wed 2026-10-21 20:25:49 UTC",
-                           "next_elapse": "Wed 2026-10-21 20:50:08 UTC"}]}
+                           "next_elapse": "Wed 2026-10-21 20:50:08 UTC", **row}]}
     projection = SimpleNamespace(now=NOW, offset=0,
                                  bounded_file=lambda name, root=None: (payload, "AVAILABLE"))
     return artifact(projection, "scheduler")
@@ -60,6 +60,19 @@ def test_scheduler_service_uses_explicit_interpreter_for_readable_nonexecutables
     unit = Path("systemd/porota-scheduler-export-rc6.service").read_text()
     assert "ExecStart=/usr/bin/bash /opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh" in unit
     assert "ExecStart=/opt/porota-trading/scripts/porota_export_scheduler_state_rc6.sh" not in unit
+
+
+def test_scheduler_explains_absent_run_and_identifies_own_live_publication():
+    recent = (NOW - timedelta(minutes=2)).isoformat()
+    no_run = page(recent, "unknown", execution_state="NO_EXECUTION_OBSERVED")
+    assert no_run.rows[0]["execution_label"] == "Sin ejecución observada"
+    assert no_run.rows[0]["state"] == "NO_VERIFICADO"
+
+    published = page(recent, "unknown", execution_state="RUNNING",
+                     service_sub_state="start", service_started_at="Wed 2026-10-21 20:25:49 UTC",
+                     service="porota-scheduler-export-rc6.service")
+    assert published.rows[0]["state"] == "Instantánea publicada"
+    assert published.rows[0]["last_result"] == "unknown"
 
 
 def capacity_page(now, *, phase="OPEN", capacity_changes=None, fresh=True):

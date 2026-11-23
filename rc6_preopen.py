@@ -825,8 +825,8 @@ def byma_morning_watch(today, *, allow_latest_safe=False, now=None):
                     digest=page.get('sha256')
                     assert page.get('status') == 'OK' and page.get('scope') == 'h1-to-footer-v2'
                     assert page.get('url') == expected.get('url')
-                    assert isinstance(digest,str) and len(digest) == 64
-                    assert digest == expected.get('sha256')
+                    assert isinstance(digest, str) and re.fullmatch(r'[0-9a-f]{64}', digest)
+                    assert digest in (expected.get('sha256'), expected.get('previous_reviewed_sha256'))
                     if name in pending:
                         assert pending[name].get('sha256') == digest
             except (OSError,ValueError,TypeError,KeyError,AssertionError,AttributeError):

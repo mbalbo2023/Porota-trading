@@ -13,7 +13,7 @@ from __future__ import annotations
 import json,os,re,stat,subprocess,sys,time
 from datetime import datetime,timezone
 from pathlib import Path
-from rc6_scheduler_snapshot import CLOSED_REUSE_SECONDS, instant, monotonic_target, snapshot_phase
+from rc6_scheduler_snapshot import CLOSED_REUSE_SECONDS, execution_state, instant, monotonic_target, snapshot_phase
 out=Path(sys.argv[1])
 # Use the existing timer cadence. In CLOSED, reuse a recent complete snapshot.
 # Unknown calendar, missing/untrusted output or clock skew takes the original
@@ -65,20 +65,25 @@ if rc==0:
         service = next((target for target in targets
                         if re.fullmatch(r"porota-[A-Za-z0-9_.@-]+\.service", target)),
                        unit[:-6] + ".service")
-        s=props(service,["Id","Description","LoadState","ActiveState","SubState","Result","ExecMainCode","ExecMainStatus","ActiveEnterTimestamp","InactiveExitTimestamp"])
-        ran = s.get("LoadState") == "loaded" and s.get("ExecMainCode") not in (None, "", "0")
+        s=props(service,["Id","Description","LoadState","ActiveState","SubState","Result","ExecMainCode","ExecMainStatus","ExecMainStartTimestamp","ExecMainExitTimestamp","ActiveEnterTimestamp","InactiveExitTimestamp"])
+        trigger=t.get("LastTriggerUSec") or None
+        execution=execution_state(s, trigger)
+        completed=execution=="COMPLETED"
         timers.append({"unit":unit,"description":t.get("Description") or "",
             "active_state":t.get("ActiveState") or "unknown","sub_state":t.get("SubState") or "unknown",
             "enabled_state":t.get("UnitFileState") or (parts[1] if len(parts)>1 else "unknown"),
-            "last_trigger":t.get("LastTriggerUSec") or None,"next_elapse":t.get("NextElapseUSecRealtime") or None,
+            "last_trigger":trigger,"next_elapse":t.get("NextElapseUSecRealtime") or None,
             "next_elapse_monotonic":t.get("NextElapseUSecMonotonic") or None,
             "next_elapse_monotonic_at":elapsed_deadline.isoformat() if elapsed_deadline else None,
             "triggers":t.get("Triggers") or service,"service":service,
             "service_description":s.get("Description") or "","service_active_state":s.get("ActiveState") or "unknown",
             "service_sub_state":s.get("SubState") or "unknown",
-            "last_result":(s.get("Result") or "unknown") if ran else "unknown",
-            "exec_main_code":s.get("ExecMainCode") if ran else None,
-            "exec_main_status":s.get("ExecMainStatus") if ran else None,
+            "execution_state":execution,
+            "last_result":(s.get("Result") or "unknown") if completed else "unknown",
+            "exec_main_code":s.get("ExecMainCode") if completed else None,
+            "exec_main_status":s.get("ExecMainStatus") if completed else None,
+            "service_started_at":s.get("ExecMainStartTimestamp") or None,
+            "service_finished_at":s.get("ExecMainExitTimestamp") or None,
             "service_active_enter":s.get("ActiveEnterTimestamp") or None,"service_inactive_exit":s.get("InactiveExitTimestamp") or None})
 payload={"schema":"porota-scheduler-systemd-v1","recorded_at":datetime.now(timezone.utc).isoformat(),
          "state":"OK" if rc==0 else "ERROR","error":"" if rc==0 else (stderr.strip()[:500] or "systemctl list-unit-files failed"),
