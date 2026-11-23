@@ -1,4 +1,4 @@
-name: RC6 compare Scheduler and effective IOL client on Droplet
+name: RC6 Scheduler execution evidence regression
 on:
   push:
     branches: [diagnostic/rc6-dashboard-visual-20261122]
@@ -6,43 +6,38 @@ on:
 permissions:
   contents: read
 jobs:
-  inspect:
+  check:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 64f1474b724b9a7aa6fcf9f2fa7c3427172c0107
+          ref: 966a67283fc6197fb9ca7d865bf9e31bd66648f7
           persist-credentials: false
-      - name: Read Scheduler, systemd states and IOL client identity
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-        run: |
-          python3 -B - <<'PY'
-          import hashlib,json,os
-          from pathlib import Path
-          from scripts.porota_actions_host import connection,ssh_run
-          source="import ast\nfrom datetime import datetime, timezone\nimport hashlib\nimport json\nfrom pathlib import Path\nimport re\nimport shlex\nimport stat\nimport subprocess\nimport urllib.error\nimport urllib.request\n\n\nROOT = Path('/opt/porota-trading')\nISSUER = 'https://mcp.invertironline.com'\nADAPTER = 'iol_mcp_readonly_adapter_rc6.py'\nEXPECTED_DEPLOYMENT = '64f1474b724b9a7aa6fcf9f2fa7c3427172c0107'\nSERVICE_PROPS = ('LoadState', 'ActiveState', 'SubState', 'Result', 'ExecMainCode',\n                 'ExecMainStatus', 'ExecMainStartTimestamp', 'ExecMainExitTimestamp')\n\n\ndef regular(path, limit=1024 * 1024):\n    try:\n        metadata = path.lstat()\n        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > limit:\n            return None\n        return path.read_bytes()\n    except OSError:\n        return None\n\n\ndef object_file(path):\n    try:\n        data = json.loads(regular(path) or b'{}')\n        return data if isinstance(data, dict) else {}\n    except ValueError:\n        return {}\n\n\ndef clean(value):\n    if isinstance(value, str) and value not in ('', 'n/a', '(null)'):\n        if re.fullmatch(r'[A-Za-z0-9_ @:.+/-]{1,100}', value):\n            return value\n    return None\n\n\ndef show(unit, names):\n    cmd = ['/usr/bin/systemctl', 'show', '--no-pager', *('-p' + k for k in names), unit]\n    result = subprocess.run(cmd, text=True, capture_output=True, check=False, timeout=6,\n                            env={'TZ': 'UTC', 'LC_ALL': 'C'})\n    return dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)\n\n\ndef watch_entry(unit, script):\n    data = show(unit, ('LoadState', 'ActiveState', 'ExecStart', 'WorkingDirectory', 'Environment', 'User'))\n    is_host = bool(re.search(r'(?<!\\S)' + re.escape(str(ROOT / script)) + r'(?=\\s|;|$)', data.get('ExecStart', '')))\n    environment = shlex.split(data.get('Environment') or '')\n    return {'load': clean(data.get('LoadState')), 'active': clean(data.get('ActiveState')),\n            'uses_checkout_script': is_host, 'working_directory_matches': data.get('WorkingDirectory') == str(ROOT),\n            'pythonpath_is_checkout': [line for line in environment if line.startswith('PYTHONPATH=')] == [f'PYTHONPATH={ROOT}'],\n            'runs_as_root': data.get('User') in ('', 'root', '0')}\n\n\ndef source(path):\n    raw = regular(ROOT / path)\n    if raw is None:\n        return {'sha256': None}\n    result = {'sha256': hashlib.sha256(raw).hexdigest(), 'mode': oct((ROOT / path).stat().st_mode & 0o777)}\n    if path == ADAPTER:\n        module = ast.parse(raw)\n        result['explicit_porota_user_agent'] = any(isinstance(node, ast.Constant) and isinstance(node.value, str)\n             and node.value.startswith('Porota-Trading-RC6/') for node in ast.walk(module))\n    return result\n\n\ndef store_summary(now):\n    path = Path('/root/.config/porota/iol_mcp_oauth_bootstrap.json')\n    data = object_file(path)\n    if not data:\n        return {'readable': False}\n    tokens = data.get('tokens') or {}\n    registration = data.get('client_registration') or {}\n    obtained = data.get('token_obtained_at_epoch')\n    lifetime = tokens.get('expires_in')\n    expires = data.get('token_expires_at_epoch')\n    if not isinstance(expires, (float, int)) and isinstance(obtained, (float, int)) and isinstance(lifetime, (float, int)):\n        expires = obtained + lifetime\n    expiry = datetime.fromtimestamp(expires, timezone.utc) if isinstance(expires, (float, int)) and 0 < expires < 4_102_444_800 else None\n    method = registration.get('token_endpoint_auth_method')\n    return {'readable': True, 'mode': oct(path.stat().st_mode & 0o777),\n            'last_modified_at': datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(),\n            'access_token_present': bool(tokens.get('access_token')), 'refresh_token_present': bool(tokens.get('refresh_token')),\n            'client_id_present': bool(registration.get('client_id')), 'client_secret_present': bool(registration.get('client_secret')),\n            'auth_method': method if method in ('none', 'client_secret_post', 'client_secret_basic') else None,\n            'issuer_is_iol': str(data.get('issuer', '')).rstrip('/') == ISSUER,\n            'token_endpoint_is_iol': data.get('token_endpoint') == ISSUER + '/token',\n            'estimated_expiry_at': expiry.isoformat() if expiry else None,\n            'expired': expiry <= now if expiry else None}\n\n\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n    def redirect_request(self, *args, **kwargs):\n        return None\n\n\ndef public_metadata():\n    request = urllib.request.Request(ISSUER + '/.well-known/oauth-authorization-server',\n             headers={'User-Agent': 'Porota-Trading-RC6/1.0 (IOL MCP read-only)', 'Accept': 'application/json'})\n    try:\n        with urllib.request.build_opener(NoRedirect()).open(request, timeout=8) as response:\n            try:\n                data = json.loads(response.read(65536))\n            except ValueError:\n                data = {}\n            if not isinstance(data, dict):\n                data = {}\n            return {'http': response.status, 'token_endpoint_is_iol': data.get('token_endpoint') == ISSUER + '/token',\n                    'pkce_s256_advertised': 'S256' in (data.get('code_challenge_methods_supported') or []),\n                    'public_client_advertised': 'none' in (data.get('token_endpoint_auth_methods_supported') or [])}\n    except urllib.error.HTTPError as error:\n        error.close()\n        return {'http': error.code}\n    except (urllib.error.URLError, TimeoutError):\n        return {'http': None, 'transport_unavailable': True}\n\n\ndef scheduler_rows(snapshot):\n    safe_fields = ('unit', 'service', 'enabled_state', 'active_state', 'last_trigger', 'last_result',\n                   'service_active_state', 'service_sub_state', 'exec_main_code', 'exec_main_status')\n    for row in snapshot.get('timers', []):\n        unit = row.get('unit', '')\n        if not re.fullmatch(r'porota-[A-Za-z0-9_.@-]+\\.timer', unit):\n            continue\n        timer = show(unit, ('Unit', 'Triggers', 'LastTriggerUSec', 'UnitFileState', 'ActiveState'))\n        candidates = [timer.get('Unit', ''), *timer.get('Triggers', '').split(), row.get('service', '')]\n        service = next((name for name in candidates if isinstance(name, str)\n                        and re.fullmatch(r'porota-[A-Za-z0-9_.@-]+\\.service', name)), None)\n        current = show(service, SERVICE_PROPS) if service else {}\n        yield {'snapshot': {k: clean(row.get(k)) for k in safe_fields},\n               'live_trigger': clean(timer.get('LastTriggerUSec')), 'live_service': service,\n               'live_timer_state': clean(timer.get('UnitFileState')),\n               'systemd': {k: clean(current.get(k)) for k in SERVICE_PROPS}}\n\n\ndef main():\n    now = datetime.now(timezone.utc)\n    marker = object_file(ROOT / 'data/deploy/CURRENT_STATE_V2.json')\n    assert marker.get('deployment_sha') == EXPECTED_DEPLOYMENT\n    assert marker.get('real_orders_sent') == 0 and marker.get('validation_status') == 'VALIDATED_RUNTIME'\n    snapshot = object_file(ROOT / 'data/scheduler/systemd_timers.json')\n    assert snapshot.get('schema') == 'porota-scheduler-systemd-v1' and snapshot.get('state') == 'OK'\n    rows = list(scheduler_rows(snapshot))\n    assert 0 < len(rows) <= 70\n    guardian = object_file(ROOT / 'data/market/iol_oauth_guardian_state.json')\n    result = {'state': 'READ_ONLY', 'observed_at': now.isoformat(), 'deployment_sha': EXPECTED_DEPLOYMENT,\n              'snapshot_recorded_at': clean(snapshot.get('recorded_at')), 'services': rows,\n              'exporter': source('scripts/porota_export_scheduler_state_rc6.sh'),\n              'iol': {'guardian': watch_entry('porota-iol-oauth-health-rc6.service', 'scripts/rc6_iol_oauth_health.py'),\n                      'collector': watch_entry('porota-iol-shadow-collector-rc6.service', 'scripts/rc6_source_cycle_dispatch.py'),\n                      'host_adapter': source(ADAPTER), 'guardian_source': source('scripts/rc6_iol_oauth_health.py'),\n                      'check': {k: clean(guardian.get(k)) for k in ('checked_at', 'state', 'reason', 'failure_class')},\n                      'http_status': guardian.get('http_status') if type(guardian.get('http_status')) is int else None,\n                      'credential_metadata': store_summary(now), 'public_discovery': public_metadata()},\n              'default_sale_policy_present': (ROOT / 'data/paper_v17/fixed-income-evidence/market-sale-policy.json').is_file(),\n              'host_writes': 0, 'ppi_requests': 0, 'oauth_exchanges': 0, 'real_orders_sent': 0}\n    print(json.dumps(result, sort_keys=True))\n\n\nif __name__ == '__main__':\n    main()\n"
-          with connection(os.environ) as (ssh,_,_):
-              result=ssh_run(ssh,['sudo','-n','/usr/bin/python3','-B','-'],data=source.encode(),timeout=100)
-          if result.returncode:
-              raise SystemExit("HANDOFF_HOST_READ_UNVERIFIED")
-          receipt=json.loads(result.stdout)
-          assert all(receipt[key]==0 for key in ("host_writes","ppi_requests","oauth_exchanges","real_orders_sent"))
-          adapter=Path("iol_mcp_readonly_adapter_rc6.py").read_bytes()
-          receipt["iol"]["deployed_source_adapter_sha256"]=hashlib.sha256(adapter).hexdigest()
-          receipt["iol"]["deployed_source_has_client_id_header"]=b'Porota-Trading-RC6/' in adapter
-          data=json.dumps(receipt,sort_keys=True)
-          print("HANDOFF_HOST_EVIDENCE="+data)
-          Path(os.environ["RUNNER_TEMP"],"handoff-scheduler-iol.json").write_text(data+"\n")
-          PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: handoff-scheduler-iol
-          path: ${{ runner.temp }}/handoff-scheduler-iol.json
+          python-version: '3.11'
+      - name: Run exact-change Scheduler, Dashboard and M0 tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "966a67283fc6197fb9ca7d865bf9e31bd66648f7"
+          test "$(git rev-parse HEAD^{tree})" = "112dbeb0dac29dd4cba9291f160389925339f8d9"
+          bash -n scripts/porota_export_scheduler_state_rc6.sh
+          python -m pip install --disable-pip-version-check -q pytest==9.1.1
+          python -m pytest -q \
+            tests/test_rc6_scheduler_offhours_export.py \
+            tests/test_rc6_679_scheduler_projection.py \
+            tests/test_rc6_685_scheduler_visual_truth.py \
+            tests/test_rc6_validation_dynamic_evidence.py \
+            tests/test_rc6_postclose_validation_publish.py \
+            tests/test_rc6_scheduler_operational_scope.py \
+            tests/test_scheduler_dashboard_hf6.py | tee "$RUNNER_TEMP/scheduler-tests.txt"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: scheduler-execution-tested-966a672
+          path: ${{ runner.temp }}/scheduler-tests.txt
           if-no-files-found: error
           retention-days: 30
