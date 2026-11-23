@@ -562,7 +562,7 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
 
 
 def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
-                       pause=lambda: None, beat=lambda: None):
+                       pause=lambda: None, beat=lambda: None, sale_witness=None):
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
     from dataclasses import replace
@@ -591,15 +591,27 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
             native_book_reader = getattr(reader, "book_with_native_receipt", None)
             native_book = None
+            decision = None
+            native_sale = (p["asset_class"] in {"BONOS", "OBLIGACIONES"}
+                           and os.getenv(POLICY_PIN) and callable(native_book_reader))
+            if native_sale and sale_witness:
+                try:
+                    decision = sale_witness.acknowledge(p["paper_id"])
+                except (OSError, ValueError, sqlite3.Error) as exc:
+                    LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
             with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
-                if (p["asset_class"] in {"BONOS", "OBLIGACIONES"} and os.getenv(POLICY_PIN)
-                        and callable(native_book_reader)):
+                if native_sale:
                     native_book = retry_read(lambda: native_book_reader(
                         p["symbol"], p["asset_class"], p["settlement"]), retries=1)
                     book = native_book["raw_payload"]
                 else:
                     book = retry_read(lambda: reader.book(
                         p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+            if decision:
+                try:
+                    sale_witness.witness_first_later_book(decision)
+                except (OSError, ValueError, sqlite3.Error) as exc:
+                    LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
             stage = "CATALOG_LOOKUP"
             metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
                                       market=p["market"], currency=p["currency"])
@@ -665,9 +677,11 @@ def run_reader(store, stop):
     from rc6_ppi_gateway_reader_adapter import (
         connect_paper_gateway_reader, gateway_reader_needs_reattach)
     from rc6_dynamic_universe.promotion import DEFAULT_POLICY
+    from rc6_fixed_income_sale_witness import exit_reader_witness_from_environment
     if os.getenv("POROTA_RUNTIME_SCHEMA_READY", "").strip() != "1":
         _support_schema(store)
     policy = PaperSessionPolicy()
+    sale_witness = exit_reader_witness_from_environment(store)
     reader, next_login = None, 0.0
     pending_scope_reset = False
     def status(state,detail=""):
@@ -705,6 +719,7 @@ def run_reader(store, stop):
                 try:
                     failures = collect_exit_books(
                         reader, store, policy, now_iso(), should_stop=stop.is_set,
+                        sale_witness=sale_witness,
                         pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
                         beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
                     elapsed=time.monotonic()-round_started

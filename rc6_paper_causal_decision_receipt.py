@@ -72,6 +72,8 @@ def _paper_row_document(row: Any) -> dict[str, Any]:
 
 def init_schema(store: Any) -> None:
     """Parent migration owner only; never called on a hot child connection."""
+    from rc6_fixed_income_sale_witness import init_schema as init_sale_handoff
+
     with store.connect() as connection:
         connection.executescript("""
           CREATE TABLE IF NOT EXISTS paper_causal_decision_freezes (
@@ -112,6 +114,7 @@ def init_schema(store: Any) -> None:
                         WHERE sequence=NEW.sequence OR decision_key=NEW.decision_key)
             BEGIN SELECT RAISE(ABORT,'RC6_CAUSAL_RECEIPT_IMMUTABLE'); END;
         """)
+        init_sale_handoff(connection)
 
 
 def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
@@ -173,6 +176,10 @@ def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
     connection.execute("INSERT INTO paper_causal_decision_freezes "
                        "(decision_key,freeze_payload_json,freeze_sha256,prepared_before_commit_at) "
                        "VALUES(?,?,?,?)", (decision_key, raw, digest, _now()))
+    if "fixed_income_market_sale" in freeze:
+        from rc6_fixed_income_sale_witness import stage_in_decision_transaction
+
+        stage_in_decision_transaction(connection, decision_key, freeze["fixed_income_market_sale"])
     return digest
 
 
@@ -223,7 +230,8 @@ def _private_ed25519_key(path: Path):
 
 def attest_after_commit(db_path: Path, *, decision_key: str,
                         signing_key_path: Path | None,
-                        expected_release_sha256: str | None) -> dict[str, Any]:
+                        expected_release_sha256: str | None,
+                        expected_signer_key_sha256: str | None = None) -> dict[str, Any]:
     """Independent observer: read already COMMITTED decision, sign at *read* time.
 
     Never invoke from be_paper_engine. A missing key or release binding leaves
@@ -243,6 +251,8 @@ def attest_after_commit(db_path: Path, *, decision_key: str,
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw)
         key_id = _sha(public_key)
+        if expected_signer_key_sha256 is not None and key_id != expected_signer_key_sha256:
+            return {**failed, "reason": "CAUSAL_SIGNER_KEY_UNPINNED"}
         with closing(sqlite3.connect(str(db_path), timeout=5)) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")

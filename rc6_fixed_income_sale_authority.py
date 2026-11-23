@@ -19,22 +19,67 @@ from rc6_ppi_shared_feed import NATIVE_READ_SCHEMA, ReadOnlyUnixFeedClient, _sha
 
 
 SALE_FAMILIES = frozenset({"BONOS", "OBLIGACIONES"})
-POLICY_SCHEMA = "rc6.fi-market-sale-policy.v1"
+POLICY_SCHEMA = "rc6.fi-market-sale-policy.v2"
+ECONOMICS_SCHEMA = "rc6.fi-market-sale-ppi-economics.v1"
 WITNESS_SCHEMA = "rc6.fi-market-sale-book2-ed25519.v1"
 POLICY_PIN = "POROTA_FI_MARKET_SALE_POLICY_SHA256"
 MAX_BOOK_BYTES = 20_000
 
 
-def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
-    """Require a release-pinned economic policy for the exact PPI identity."""
+def _reviewed_row(source_bytes, at, valid_until):
+    """Bind one released per-variant model to reviewed PPI economics bytes."""
+    from bu_instrument_catalog import normalize_record, ppi_full_key_evidence_reason
     from rc6_performance.costs import paper_cost_contract
 
+    source = _json(source_bytes)
+    identity = source.get("identity")
+    raw = source.get("ppi_identity")
+    known_at = source.get("known_at")
+    if (source.get("schema") != ECONOMICS_SCHEMA or not isinstance(identity, list)
+            or len(identity) != 5 or identity[1] not in SALE_FAMILIES
+            or not isinstance(raw, dict) or not aware_datetime(known_at) <= at < valid_until
+            or source.get("quantity_unit") != "VN" or source.get("bid_size_unit") != "VN"):
+        raise ValueError("FI_MARKET_SALE_PPI_ECONOMICS_UNVERIFIED")
+    record = normalize_record(raw, None, known_at, "FI_RELEASE_POLICY_EVIDENCE")
+    observed = [record[field] for field in ("ticker", "instrument_type", "market", "currency", "settlement")]
+    if observed != identity or ppi_full_key_evidence_reason(record):
+        raise ValueError("FI_MARKET_SALE_PPI_VARIANT_OR_TERM_UNVERIFIED")
+    _digest(source.get("ppi_capture_sha256"))
+    costs = paper_cost_contract(identity[1], identity[3], at, symbol=identity[0],
+                                market=identity[2], settlement=identity[4])
+    if costs.binding_error(at):
+        raise ValueError("FI_MARKET_SALE_PAPER_COST_UNVERIFIED")
+    terms = {field: str(decimal_value(source[field], field, positive=True))
+             for field in ("cash_multiplier", "minimum_quantity", "quantity_step")}
+    if Decimal(terms["minimum_quantity"]) % Decimal(terms["quantity_step"]):
+        raise ValueError("FI_MARKET_SALE_PPI_QUANTITY_GRID_INVALID")
+    return {"identity": identity, "known_at": aware_datetime(known_at).isoformat(),
+            "valid_until": valid_until.isoformat(), "quantity_unit": "VN",
+            "fee_currency": identity[3], "settlement_model": "PAPER_CONSERVATIVE_BYMA_SPOT",
+            **terms, "fee_policy_sha256": costs.diagnostic()["policy_sha256"],
+            "minimum_post_ack_ms": 0, "ppi_economics_source_sha256": causal._sha(source_bytes)}, costs
+
+
+def build_market_sale_policy(sources, *, release_sha256, at, valid_until):
+    """Prepare release policy bytes from reviewed sources, one row per five-key."""
+    release = _digest(release_sha256)
+    now, until = aware_datetime(at), aware_datetime(valid_until)
+    rows = [_reviewed_row(raw, now, until)[0] for raw in sources]
+    if not rows or len({tuple(row["identity"]) for row in rows}) != len(rows):
+        raise ValueError("FI_MARKET_SALE_POLICY_IDENTITY_UNBOUND")
+    return causal._json({"schema": POLICY_SCHEMA, "paper_only": True,
+        "release_sha256": release, "review_authority": "RELEASE_REVIEWED_PPI_UNITS_AND_PAPER_COST",
+        "instruments": sorted(rows, key=lambda row: row["identity"])}).encode()
+
+
+def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
+    """Require a release-pinned economic policy for the exact PPI identity."""
     pin = _digest(os.getenv(POLICY_PIN))
+    root = Path(os.getenv("POROTA_FI_EVIDENCE_DIRECTORY",
+                          str(Path(store.path).parent / "fixed-income-evidence")))
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("FI_MARKET_SALE_POLICY_DIRECTORY_UNAVAILABLE")
     if policy_bytes is None:
-        root = Path(os.getenv("POROTA_FI_EVIDENCE_DIRECTORY",
-                              str(Path(store.path).parent / "fixed-income-evidence")))
-        if root.is_symlink() or not root.is_dir():
-            raise ValueError("FI_MARKET_SALE_POLICY_DIRECTORY_UNAVAILABLE")
         policy_bytes = _read(root, "market-sale-policy.json", pin)
     if not isinstance(policy_bytes, bytes) or causal._sha(policy_bytes) != pin:
         raise ValueError("FI_MARKET_SALE_POLICY_HASH_MISMATCH")
@@ -50,20 +95,15 @@ def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
     if len(rows) != 1 or identity[1] not in SALE_FAMILIES:
         raise ValueError("FI_MARKET_SALE_POLICY_IDENTITY_UNBOUND")
     row = rows[0]
-    costs = paper_cost_contract(identity[1], identity[3], at, symbol=identity[0],
-                                market=identity[2], settlement=identity[4])
-    latency = row.get("minimum_post_ack_ms")
-    if (not aware_datetime(row["known_at"]) <= at < aware_datetime(row["valid_until"])
-            or row.get("quantity_unit") != "VN" or row.get("fee_currency") != identity[3]
-            or row.get("settlement_model") != "PAPER_CONSERVATIVE_BYMA_SPOT"
+    source_pin = _digest(row.get("ppi_economics_source_sha256"))
+    source = _read(root, f"ppi-economics-{source_pin}.json", source_pin)
+    reviewed, costs = _reviewed_row(source, at, aware_datetime(row["valid_until"]))
+    if (row != reviewed
             or contract.key != identity or contract.minimum_quantity is None
             or decimal_value(row["cash_multiplier"], "price basis", positive=True) != contract.cash_multiplier
             or decimal_value(row["minimum_quantity"], "VN minimum", positive=True) != contract.minimum_quantity
-            or decimal_value(row["quantity_step"], "VN step", positive=True) != contract.quantity_step
-            or _digest(row.get("fee_policy_sha256")) != costs.diagnostic()["policy_sha256"]
-            or costs.binding_error(at) or type(latency) is not int or not 0 <= latency <= 1_000):
+            or decimal_value(row["quantity_step"], "VN step", positive=True) != contract.quantity_step):
         raise ValueError("FI_MARKET_SALE_UNITS_COST_OR_SETTLEMENT_UNVERIFIED")
-    _digest(row.get("ppi_economics_source_sha256"))
     return row, costs, pin
 
 
@@ -100,6 +140,8 @@ def native_book_fields(receipt, identity):
 
 def prepare_market_sale(store, position, quote, cause, at):
     """Record the ordinary PAPER decision and A620 freeze in one transaction."""
+    from rc6_fixed_income_sale_witness import active_decision, sale_scope
+
     at = aware_datetime(at)
     identity = tuple(position[key] for key in ("symbol", "asset_class", "market", "currency", "settlement"))
     identity = (identity[0], family_name(identity[1]), *identity[2:])
@@ -114,16 +156,21 @@ def prepare_market_sale(store, position, quote, cause, at):
             or aware_datetime(fields["observed_at"]) > aware_datetime(quote.observed_at)):
         raise ValueError("FI_MARKET_SALE_INTENT_BOOK1_MISMATCH")
     quantity = quote.contract.quantity(position["quantity"])
-    request = causal._sha(causal._json([position["paper_id"], cause, book["receipt_sha256"], str(quantity)]))
-    intent = {"paper_id": position["paper_id"], "request_id": request, "cause": cause,
+    intent = {"paper_id": position["paper_id"], "cause": cause,
               "identity": list(identity), "maximum_vn": str(quantity), "book1": book,
               "policy_sha256": pin, "minimum_post_ack_ms": policy["minimum_post_ack_ms"]}
+    scope = sale_scope(intent)
+    active = active_decision(store, position["paper_id"], scope)
+    if active:
+        return active
+    request = causal._sha(causal._json([position["paper_id"], scope, book["receipt_sha256"]]))
+    intent["request_id"] = request
     key = "FI_SELL:" + request
     store.record_decision(key, quote, "SELL", Decimal(0), cause, {
         "family": identity[1], "paper_only": True, "real_routes_used": [],
         "performance_lineage": {"decision_at": at.isoformat()}, "fixed_income_market_sale": intent,
     })
-    return key
+    return active_decision(store, position["paper_id"], scope) or key
 
 
 def _ack(db_path, decision_key, public_key, release):

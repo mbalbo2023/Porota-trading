@@ -277,24 +277,33 @@ class PositionExitSupervisor:
             return verdict("OPEN", "Dentro de parámetros")
         if size * self.broker.participation <= 0:
             return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
-        # BONOS/ON must not fall into the generic spot close callback. The
-        # engine deliberately has no authorized native FI sale ledger here.
+        # BONOS/ON settle through the signed native FI path.
         if family in {"BONOS", "OBLIGACIONES"}:
             if q.ppi_native_rest_book is not None:
                 from rc6_fixed_income_sale_authority import prepare_market_sale
+                from rc6_fixed_income_sale_witness import read_witness, replan
+
+                key = None
                 try:
                     key = prepare_market_sale(self.store, p, q, cause, at)
-                    witness = self.market_sale_witness(key) if self.market_sale_witness else None
+                    witness = (self.market_sale_witness(key) if self.market_sale_witness
+                               else read_witness(self.store, key))
                     if witness:
                         from rc6_fixed_income_paper_market_sale import apply_paper_market_sale
                         result = apply_paper_market_sale(self.store, self.broker,
-                            paper_id=p["paper_id"], applied_at=self.clock_fn(), witness=witness)
+                            paper_id=p["paper_id"], request_id=key.removeprefix("FI_SELL:"),
+                            applied_at=self.clock_fn(), witness=witness)
                         if result["closed_paper"]:
                             return Verdict(p["paper_id"], "CLOSED", cause, result["reason"])
                         return verdict("EXIT_PARTIAL", "FI_NATIVE_MARKET_SALE_PARTIAL")
                     return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_SIGNED_BOOK2_PENDING")
                 except (OSError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
-                    return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", str(exc)[:180])
+                    reason = str(exc)
+                    if key and reason in {"FI_NATIVE_SALE_EXACT_PPI_BOOK_PIT_REQUIRED",
+                                          "FI_NATIVE_SALE_STEP_OR_SHARED_BOOK_DEPTH_EXCEEDED",
+                                          "FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH"}:
+                        replan(self.store, key, reason)
+                    return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", reason[:180])
             return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_EVIDENCE_REQUIRED")
         verdict("EXIT_DUE", "Salida decidida; pendiente de fill")
         reason = "El ejecutor no confirmó un cierre"

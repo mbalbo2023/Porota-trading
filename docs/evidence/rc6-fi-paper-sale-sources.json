@@ -1,0 +1,322 @@
+{
+  "schema": "rc6.fi-market-sale-historical-replay-input.v1",
+  "purpose": "PAPER replay of retained market data; reconstructed native envelopes and simulated decision clocks have no live authority",
+  "catalogue_receipt": {
+    "action": "https://github.com/mbalbo2023/Porota-trading/actions/runs/45253122314",
+    "artifact_id": 14857301994,
+    "observation_at": "2026-11-23T19:50:53.187808+00:00"
+  },
+  "wheel_books_receipt": {
+    "action": "https://github.com/mbalbo2023/Porota-trading/actions/runs/45254065519",
+    "artifact_id": 14856504411,
+    "artifact_digest": "sha256:7bd737ec757aeb700f0f155d0e668902ce8f99248c7ff4952a8a0aabf2dd6f63",
+    "observation_at": "2026-11-23T19:56:14.826702+00:00"
+  },
+  "references": [
+    {
+      "source": "PPI",
+      "url": "https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/",
+      "finding": "SearchInstrument documents no settlement field. MarketData/Book requires Settlement in the request and its quantity has no unit field in the documented reply."
+    },
+    {
+      "source": "Secretaría de Finanzas y Secretaría de Hacienda",
+      "url": "https://www.argentina.gob.ar/normativa/nacional/norma-414311/texto",
+      "finding": "GD30 price per 100 original face value is documented for the cited peso transaction."
+    },
+    {
+      "source": "YPF",
+      "url": "https://inversores.ypf.com/documents/emisiones/internacionales/Clase-XVIII-Aviso-de-Suscripcion-Enmendado-2021Jan25.pdf",
+      "finding": "The Class XVIII issuance denomination is USD 1 and integer multiples."
+    }
+  ],
+  "variants": {
+    "GD30": {
+      "identity": [
+        "GD30",
+        "BONOS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Pesos",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30",
+        "type": "BONOS"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "8d02a7cfb5ec19262cf3eac072e7f31dd1bb717dbfb997794f1873bd0aa77cfb",
+      "seen_at": "2026-11-19T03:00:03.184956+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "ARS",
+        "family": "BONOS",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "87370",
+          "ask_size": "672",
+          "bid": "87350",
+          "bid_size": "9044",
+          "book_at": "2026-10-29T16:18:21.683-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:18:28.890623+00:00"
+        },
+        {
+          "ask": "87330",
+          "ask_size": "5604",
+          "bid": "87300",
+          "bid_size": "611",
+          "book_at": "2026-10-29T16:29:01.632-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:29:02.494968+00:00"
+        }
+      ]
+    },
+    "GD30C": {
+      "identity": [
+        "GD30C",
+        "BONOS",
+        "BYMA",
+        "USD_CCL",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares divisa | CCL",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30C",
+        "type": "BONOS"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "a49d3e03ca66dedecce05307ba2dbcde63936463353980cc8ed779c3ecd4049b",
+      "seen_at": "2026-11-19T03:00:03.184956+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "USD_CCL",
+        "family": "BONOS",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "52.88",
+          "ask_size": "11662",
+          "bid": "52.83",
+          "bid_size": "191",
+          "book_at": "2026-10-29T16:08:26.167-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:08:27.256488+00:00"
+        },
+        {
+          "ask": "52.89",
+          "ask_size": "3445",
+          "bid": "52.84",
+          "bid_size": "192",
+          "book_at": "2026-10-29T16:29:07.646-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:29:08.930249+00:00"
+        }
+      ]
+    },
+    "GD30D": {
+      "identity": [
+        "GD30D",
+        "BONOS",
+        "BYMA",
+        "USD_MEP",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares billete | MEP",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30D",
+        "type": "BONOS"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "8427f4049ae6577daee1176726c6442dcfd4a1ca3e6a5f467e2ce8812c2df336",
+      "seen_at": "2026-11-19T03:00:03.184956+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "USD_MEP",
+        "family": "BONOS",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "55.86",
+          "ask_size": "11463",
+          "bid": "55.8",
+          "bid_size": "16486",
+          "book_at": "2026-10-29T16:18:41.86-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:18:42.074975+00:00"
+        },
+        {
+          "ask": "55.85",
+          "ask_size": "2253",
+          "bid": "55.81",
+          "bid_size": "1",
+          "book_at": "2026-10-29T16:29:09.636-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-10-29T19:29:14.910179+00:00"
+        }
+      ]
+    },
+    "YMCJC": {
+      "identity": [
+        "YMCJC",
+        "OBLIGACIONES",
+        "BYMA",
+        "USD_CCL",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares divisa | CCL",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJC",
+        "type": "ON"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "a06944da1fd429d7f95df108a149914bdc29e6784ee6e72f648b5aa730e5e4da",
+      "seen_at": "2026-11-17T03:00:02.693625+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "USD_CCL",
+        "family": "OBLIGACIONES",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "101.5",
+          "ask_size": "29504",
+          "bid": "101.4",
+          "bid_size": "358",
+          "book_at": "2026-09-16T11:34:01.141-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T14:34:05.955900+00:00"
+        },
+        {
+          "ask": "101.35",
+          "ask_size": "30233",
+          "bid": "100.9",
+          "bid_size": "4892",
+          "book_at": "2026-09-16T14:37:54.823-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T17:37:56.214507+00:00"
+        }
+      ]
+    },
+    "YMCJD": {
+      "identity": [
+        "YMCJD",
+        "OBLIGACIONES",
+        "BYMA",
+        "USD_MEP",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares billete | MEP",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJD",
+        "type": "ON"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "7c85491d2cf657b480d143ebd4e0c5d11648cf8e73ba8fa60fd24875f68f3d83",
+      "seen_at": "2026-11-17T03:00:02.693625+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "USD_MEP",
+        "family": "OBLIGACIONES",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "105.65",
+          "ask_size": "30458",
+          "bid": "105.45",
+          "bid_size": "1176",
+          "book_at": "2026-09-16T11:34:29.384-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T14:35:41.269139+00:00"
+        },
+        {
+          "ask": "105.35",
+          "ask_size": "429",
+          "bid": "105.2",
+          "bid_size": "2446",
+          "book_at": "2026-09-16T14:39:20.402-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T17:39:20.906654+00:00"
+        }
+      ]
+    },
+    "YMCJO": {
+      "identity": [
+        "YMCJO",
+        "OBLIGACIONES",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Pesos",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJO",
+        "type": "ON"
+      },
+      "catalogue_term_source": "REQUEST_CANDIDATE",
+      "catalogue_metadata_sha256": "3a7e0b75ee8e41014ffe30902e6847645cd411bd3868ded9c7c2d8a4d5661e80",
+      "seen_at": "2026-11-17T03:00:02.693625+00:00",
+      "normalized_model": {
+        "cash_multiplier": "0.01",
+        "currency": "ARS",
+        "family": "OBLIGACIONES",
+        "market": "BYMA",
+        "minimum_quantity": "1",
+        "quantity_step": "1",
+        "settlement": "A-24HS"
+      },
+      "archived_books": [
+        {
+          "ask": "161910",
+          "ask_size": "12638",
+          "bid": "161620",
+          "bid_size": "348",
+          "book_at": "2026-09-16T11:34:31.48-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T14:35:45.576394+00:00"
+        },
+        {
+          "ask": "161880",
+          "ask_size": "498",
+          "bid": "161370",
+          "bid_size": "3231",
+          "book_at": "2026-09-16T14:39:21.815-03:00",
+          "has_native_receipt": false,
+          "observed_at": "2026-09-16T17:39:25.256221+00:00"
+        }
+      ]
+    }
+  }
+}
