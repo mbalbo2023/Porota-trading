@@ -72,6 +72,8 @@ def _paper_row_document(row: Any) -> dict[str, Any]:
 
 def init_schema(store: Any) -> None:
     """Parent migration owner only; never called on a hot child connection."""
+    from rc6_fixed_income_sale_witness import init_schema as init_sale_handoff
+
     with store.connect() as connection:
         connection.executescript("""
           CREATE TABLE IF NOT EXISTS paper_causal_decision_freezes (
@@ -112,6 +114,7 @@ def init_schema(store: Any) -> None:
                         WHERE sequence=NEW.sequence OR decision_key=NEW.decision_key)
             BEGIN SELECT RAISE(ABORT,'RC6_CAUSAL_RECEIPT_IMMUTABLE'); END;
         """)
+        init_sale_handoff(connection)
 
 
 def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
@@ -139,6 +142,10 @@ def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
     lineage = features.get("performance_lineage") if isinstance(features, dict) else None
     claimed_decision_at = lineage.get("decision_at") if isinstance(lineage, dict) else None
     release_claim = _digest_or_none(os.environ.get("POROTA_RC6_RELEASE_SHA256"))
+    market_sale = features.get("fixed_income_market_sale")
+    if (action == "SELL" and isinstance(market_sale, dict) and market_sale.get("release_sha256")
+            and market_sale["release_sha256"] == PINNED_RELEASE_SHA256):
+        release_claim = market_sale["release_sha256"]
     book1_claim = _digest_or_none(features.get("ppi_book1_event_sha256"))
     identity = [getattr(quote, name, None) for name in
                 ("symbol", "asset_class", "market", "currency", "settlement")]
@@ -164,8 +171,8 @@ def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
         "features_json_sha256": _sha(features_json),
         "score": score,
     }
-    if action == "SELL" and isinstance(features.get("fixed_income_market_sale"), dict):
-        freeze["fixed_income_market_sale"] = features["fixed_income_market_sale"]
+    if action == "SELL" and isinstance(market_sale, dict):
+        freeze["fixed_income_market_sale"] = market_sale
     raw = _json(freeze)
     if len(raw.encode("utf-8")) > MAX_RECEIPT_BYTES:
         raise ValueError("CAUSAL_DECISION_FREEZE_CAPACITY_HOLD")
@@ -173,6 +180,10 @@ def freeze_in_decision_transaction(connection: sqlite3.Connection, *,
     connection.execute("INSERT INTO paper_causal_decision_freezes "
                        "(decision_key,freeze_payload_json,freeze_sha256,prepared_before_commit_at) "
                        "VALUES(?,?,?,?)", (decision_key, raw, digest, _now()))
+    if "fixed_income_market_sale" in freeze:
+        from rc6_fixed_income_sale_witness import stage_in_decision_transaction
+
+        stage_in_decision_transaction(connection, decision_key, freeze["fixed_income_market_sale"])
     return digest
 
 
@@ -222,8 +233,10 @@ def _private_ed25519_key(path: Path):
 
 
 def attest_after_commit(db_path: Path, *, decision_key: str,
-                        signing_key_path: Path | None,
-                        expected_release_sha256: str | None) -> dict[str, Any]:
+                        signing_key_path: Path | None = None,
+                        expected_release_sha256: str | None,
+                        expected_signer_key_sha256: str | None = None,
+                        exit_signer=None) -> dict[str, Any]:
     """Independent observer: read already COMMITTED decision, sign at *read* time.
 
     Never invoke from be_paper_engine. A missing key or release binding leaves
@@ -233,16 +246,23 @@ def attest_after_commit(db_path: Path, *, decision_key: str,
               "signature_created": False, "fill_accredited": False,
               "real_orders_sent": 0}
     if (not isinstance(decision_key, str) or not decision_key
-            or signing_key_path is None
+            or (signing_key_path is None) == (exit_signer is None)
             or _digest_or_none(expected_release_sha256) is None):
         return {**failed, "reason": "CAUSAL_SIGNER_OR_RELEASE_TRUST_UNAVAILABLE"}
     try:
-        signer = _private_ed25519_key(Path(signing_key_path))
         from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        if exit_signer is not None and (not isinstance(exit_signer, Ed25519PrivateKey)
+                or not decision_key.startswith("FI_SELL:") or expected_signer_key_sha256 is None):
+            return {**failed, "reason": "CAUSAL_EXIT_SIGNER_SCOPE_HOLD"}
+        signer = exit_signer if exit_signer is not None else _private_ed25519_key(Path(signing_key_path))
         public_key = signer.public_key().public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw)
         key_id = _sha(public_key)
+        if expected_signer_key_sha256 is not None and key_id != expected_signer_key_sha256:
+            return {**failed, "reason": "CAUSAL_SIGNER_KEY_UNPINNED"}
         with closing(sqlite3.connect(str(db_path), timeout=5)) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")
@@ -250,7 +270,9 @@ def attest_after_commit(db_path: Path, *, decision_key: str,
             if error:
                 connection.rollback()
                 return {**failed, "reason": error}
-            if (frozen.get("release_sha256_claim") != expected_release_sha256
+            if (exit_signer is not None and (frozen.get("action") != "SELL"
+                    or not isinstance(frozen.get("fixed_income_market_sale"), dict))
+                    or frozen.get("release_sha256_claim") != expected_release_sha256
                     or frozen.get("action") not in {"BUY", "SELL"}
                     or len(frozen.get("identity") or []) != 5
                     or any(not isinstance(v, str) or not v.strip()

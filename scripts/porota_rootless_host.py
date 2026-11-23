@@ -549,6 +549,7 @@ def runtime_environments(config, dashboard, sha, tree):
     observer.update({key: config.get(key, "") for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")})
     observer.update({"PAPER_T1_FULL_DATE_RELEASE": "true",
                      "PPI_PRODUCTION_SECRET_FILE": "/run/secrets/ppi_production.json",
+                     "POROTA_FI_HISTORICAL_PAPER_SALE": "1",
                      "POROTA_CONTRACT_EVIDENCE_MODE": config.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED")})
     safe = {key: value for key, value in dashboard.items()
             if key.startswith(("DASHBOARD_", "COOKIE_", "SESSION_")) and
@@ -670,6 +671,11 @@ def read_controller_health(path):
         return None
     result = {key: health.get(key) for key in (
         "schema", "source_sha", "candidate_tree_sha", "recorded_at")}
+    sale = health.get("fixed_income_sale")
+    if isinstance(sale, dict):
+        result["fixed_income_sale"] = {key: sale.get(key) for key in (
+            "state", "model", "variants", "release_sha256", "policy_sha256",
+            "signer_key_sha256", "signer_pid")}
     result["roles_match"] = set(health["children"]) == set(CONTROLLER_CHILDREN)
     result["children"] = {}
     for name in CONTROLLER_CHILDREN:
@@ -690,7 +696,7 @@ def read_controller_health(path):
     return result
 
 
-def classify_controller(health, *, source_sha, source_tree, now, started):
+def classify_controller(health, *, source_sha, source_tree, now, started, expected_sale=None):
     """Startup may retain an older file; only fresh current live children pass."""
     def pending(reason, **details):
         return {"status": "PENDING", "reason": reason, **details}
@@ -726,8 +732,20 @@ def classify_controller(health, *, source_sha, source_tree, now, started):
             pids.add(pid)
     if waiting:
         return pending("CONTROLLER_CHILDREN_NOT_RUNNING", children=sorted(waiting))
-    return {"status": "READY", "entrypoint": "bv_paper_runtime.py", "recorded_at": stamp.isoformat(),
-            "source_sha": source_sha, "source_tree": source_tree, "children": sorted(children)}
+    result = {"status": "READY", "entrypoint": "bv_paper_runtime.py", "recorded_at": stamp.isoformat(),
+              "source_sha": source_sha, "source_tree": source_tree, "children": sorted(children)}
+    if expected_sale is not None:
+        sale = health.get("fixed_income_sale")
+        if (not isinstance(sale, dict) or not expected_sale
+                or sale.get("state") != "ACTIVE_PAPER"
+                or sale.get("model") != "NORMALIZED_HISTORICAL_PPI_VN"
+                or sale.get("signer_pid") != children["exit_reader"]["pid"]
+                or not re.fullmatch(r"[0-9a-f]{64}", str(sale.get("signer_key_sha256") or ""))
+                or any(sale.get(key) != expected_sale.get(key) for key in (
+                    "release_sha256", "policy_sha256", "variants"))):
+            return pending("FI_PAPER_SALE_ACTIVATION_PENDING")
+        result["fixed_income_sale"] = sale
+    return result
 
 
 def validate_container(item, *, role, image_id, source_sha, source_tree, attempt, root, operator=None):
@@ -751,6 +769,8 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
             env.get("DASHBOARD_OPERATION_MODE") == "PRODUCTION_PAPER" and
             env.get("EXECUTION_MODE") == "SIMULATION" and env.get("REAL_ORDER_CAPABILITY") == "BLOCKED",
             "RUNTIME_PAPER_CONFIG")
+    require(role == "observer" or "POROTA_FI_HISTORICAL_PAPER_SALE" not in env,
+            "RUNTIME_FI_SALE_ROLE_BOUNDARY")
     settings = item.get("HostConfig") or {}
     require(settings.get("ReadonlyRootfs") is True and settings.get("Privileged") is False and
             settings.get("CapDrop") == ["ALL"] and not settings.get("CapAdd") and
@@ -793,7 +813,7 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
     return item["Id"]
 
 
-RUNTIME_PROBE = '''import json,sqlite3
+RUNTIME_PROBE = '''import json,os,sqlite3
 from bd_ppi_readonly_guard import ReadOnlyTransportGuard,ReadOnlyPolicyViolation
 from scripts.porota_rootless_host import read_controller_health
 guard=ReadOnlyTransportGuard()
@@ -808,6 +828,11 @@ rows=c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_stat
 assert len(rows)==1
 result=dict(rows[0])
 result['controller']=read_controller_health('/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+if os.getenv('POROTA_FI_HISTORICAL_PAPER_SALE')=='1':
+    from rc6_fixed_income_sale_authority import deployed_sale_model
+    sale=deployed_sale_model()
+    result['expected_fixed_income_sale']={'release_sha256':sale['release'],
+        'policy_sha256':sale['policy'],'variants':len(sale['rows'])}
 print(json.dumps(result))
 c.close()
 '''
@@ -939,6 +964,7 @@ class Host:
         config = parse_env(read_regular(self.root / ".env").decode())
         dashboard = parse_env(read_regular(self.root / "data/diagnosticos/dashboard_preview_v1633.env").decode())
         observer, dashboard = runtime_environments(config, dashboard, release["source_sha"], release["source_tree"])
+        self.receipt["fixed_income_sale_requested"] = observer.get("POROTA_FI_HISTORICAL_PAPER_SALE") == "1"
         for role, values in (("observer", observer), ("dashboard", dashboard)):
             require(all("\n" not in v and "\r" not in v for v in values.values()), "ENV_INVALID")
             atomic_write(directory / (role + ".env"),
@@ -1018,8 +1044,10 @@ class Host:
                                    "python", "-c", RUNTIME_PROBE)
             now = datetime.now(timezone.utc)
             status = classify_runtime(row, now=now, started=started)
+            expected_sale = (row.get("expected_fixed_income_sale") or {}
+                             if document.get("fixed_income_sale_requested") else None)
             controller = classify_controller(row.get("controller"), source_sha=document["source_sha"],
-                source_tree=document["source_tree"], now=now, started=started)
+                source_tree=document["source_tree"], now=now, started=started, expected_sale=expected_sale)
             self.receipt["controller"] = controller
             health = dashboard["State"].get("Health", {}).get("Status")
             if health == "healthy" and status["status"] == "READY" and controller["status"] == "READY":

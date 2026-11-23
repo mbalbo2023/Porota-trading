@@ -362,6 +362,8 @@ def apply_paper_market_sale(store, broker, *, paper_id, request_id=None, nominal
     max_qty = contract.quantity(intent["maximum_vn"])
     by_book = ((fields["bid_size"] * broker.participation) / contract.quantity_step).to_integral_value(
         rounding=ROUND_DOWN) * contract.quantity_step
+    if nominal is None and by_book < contract.minimum_quantity:
+        raise ValueError("FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH")
     qty = contract.quantity(nominal if nominal is not None else min(max_qty, by_book))
     if qty > max_qty:
         raise ValueError("FI_NATIVE_SALE_SIGNED_VN_EXCEEDED")
@@ -392,6 +394,8 @@ def apply_paper_market_sale(store, broker, *, paper_id, request_id=None, nominal
                    "book2_sha256": proof["book2"]["receipt_sha256"], "policy_sha256": policy_pin,
                    "fee_policy_sha256": policy["fee_policy_sha256"],
                    "witness": witness}
+    if "economic_policy_authority" in policy:
+        causal_sale["economic_policy_authority"] = policy["economic_policy_authority"]
     return _commit_reviewed_sale(store, broker, paper_id=paper_id, request_id=request_id,
         nominal=qty, quote=observed, book_bytes=verified_book, approved_book_sha256=_hash(verified_book),
         fee_bytes=verified_fee, approved_fee_sha256=_hash(verified_fee), applied_at=applied_at,

@@ -138,11 +138,13 @@ class RootlessContracts(unittest.TestCase):
         self.assertEqual(observer["PAPER_MAX_OPEN_POSITIONS"], "5")
         self.assertEqual(observer["PAPER_V17_DB_PATH"], "/app/data/paper_v17/observer_v17.db")
         self.assertEqual(observer["REAL_ORDER_CAPABILITY"], "BLOCKED")
+        self.assertEqual(observer["POROTA_FI_HISTORICAL_PAPER_SALE"], "1")
         self.assertEqual(dashboard["DASHBOARD_OPERATION_MODE"], "PRODUCTION_PAPER")
         self.assertEqual(dashboard["DASHBOARD_ACCESS_TOKEN"], "auth")
         self.assertNotIn("PPI_TOKEN", dashboard)
         self.assertNotIn("TELEGRAM_BOT_TOKEN", dashboard)
         self.assertNotIn("PYTHONPATH", dashboard)
+        self.assertNotIn("POROTA_FI_HISTORICAL_PAPER_SALE", dashboard)
 
     def test_real_configuration_is_refused_before_any_command(self):
         for values in ({"ALLOW_REAL_ORDERS": "true"}, {"REAL_ORDER_CAPABILITY": "ENABLED"},
@@ -423,6 +425,30 @@ class RootlessContracts(unittest.TestCase):
         value["Config"]["Cmd"] = ["python", "bf_production_paper_observer.py"]
         with self.assertRaisesRegex(host.Hold, "RUNTIME_COMMAND_MISMATCH"):
             host.validate_container(value, **kwargs)
+
+    def test_requested_fi_activation_requires_live_exit_reader_and_exact_policy(self):
+        now = datetime.now(timezone.utc)
+        started = now - timedelta(seconds=10)
+        children = {name: {"state": "RUNNING", "pid": number + 10,
+                           "alive": True, "started_at": started.isoformat()}
+                    for number, name in enumerate(host.CONTROLLER_CHILDREN)}
+        health = {"schema": "rc6.runtime-child-health.v1", "source_sha": SHA,
+                  "candidate_tree_sha": TREE, "recorded_at": now.isoformat(),
+                  "roles_match": True, "children": children}
+        expected = {"release_sha256": "a" * 64, "policy_sha256": "b" * 64, "variants": 6}
+        kwargs = dict(source_sha=SHA, source_tree=TREE, now=now, started=started, expected_sale=expected)
+        self.assertEqual(host.classify_controller(health, **kwargs)["reason"],
+                         "FI_PAPER_SALE_ACTIVATION_PENDING")
+        proved = dict(expected, state="ACTIVE_PAPER", model="NORMALIZED_HISTORICAL_PPI_VN",
+                      signer_pid=children["exit_reader"]["pid"], signer_key_sha256="c" * 64)
+        health["fixed_income_sale"] = proved
+        result = host.classify_controller(health, **kwargs)
+        self.assertEqual((result["status"], result["fixed_income_sale"]), ("READY", proved))
+        for change in ({"signer_pid": children["scanner"]["pid"]}, {"policy_sha256": "d" * 64},
+                       {"signer_key_sha256": None}):
+            health["fixed_income_sale"] = dict(proved, **change)
+            self.assertEqual(host.classify_controller(health, **kwargs)["reason"],
+                             "FI_PAPER_SALE_ACTIVATION_PENDING")
 
     def test_postflight_starting_is_bounded_and_timeout_never_becomes_validated(self):
         identity = host.Identity(os.getuid(), os.getgid(), "test", self.base)
