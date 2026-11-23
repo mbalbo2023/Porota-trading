@@ -1,288 +1,106 @@
-name: RC6 release replay of PAPER fixed-income exit and preopen
+name: RC6 IOL fresh public registration and one-time read-only consent
 on:
   push:
     branches: [diagnostic/rc6-iol-oauth-tablet-20261122]
     paths: [.github/workflows/rc6-iol-oauth-tablet-20261122.yml]
 permissions:
   contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
 jobs:
-  replay:
+  consent:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 24
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: 08cfa083b0a060b6e503894c793a150bb948693c
           persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Prepare only the locked test and transport dependencies
+      - name: Register a new public OAuth client for the same verified loopback callback
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -euo pipefail
-          sed -n -E '/^(certifi|cffi|charset-normalizer|cryptography|idna|iniconfig|packaging|pluggy|pycparser|pygments|pytest|requests|urllib3)==/Ip' requirements.lock.txt > "$RUNNER_TEMP/rc6-replay-deps.txt"
-          python -m pip install --disable-pip-version-check -r "$RUNNER_TEMP/rc6-replay-deps.txt"
-      - name: Run the exact release code using temporary databases and a network namespace
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = 08cfa083b0a060b6e503894c793a150bb948693c
-          test "$(git rev-parse 'HEAD^{tree}')" = e65f48c089aa22c91747eed114cd6ea74367724c
-          TEMP_REPLAY="$(mktemp -d /tmp/rc6.XXXXXX)"
-          trap 'rm -rf -- "$TEMP_REPLAY"' EXIT
-          cat > "$TEMP_REPLAY/test_release_replay.py" <<'PY_REPLAY'
-          """Run the deployed-source BONOS/ON and preopen paths with temporary fixtures."""
-          from contextlib import redirect_stdout
-          from datetime import datetime, timedelta
-          from decimal import Decimal
-          import hashlib
-          import io
-          import json
-          import multiprocessing
-          import os
+          python3 -B - <<'PY'
+          import base64, json, os, subprocess, tempfile
           from pathlib import Path
-          import socket
-          import threading
-          from types import SimpleNamespace
-
-          import pytest
-
-          from be_paper_engine import PaperBroker
-          from bm_exit_supervisor import PositionExitSupervisor
-          from bq_exit_policy import PaperSessionPolicy
-          from bv_paper_runtime import broker_from_environment
-          import rc6_fixed_income_sale_authority as authority
-          import rc6_paper_causal_decision_receipt as causal
-          import rc6_preopen as preopen
-          from rc6_ppi_gateway_reader_adapter import gateway_socket_path
-          from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer
-          import test_porota_preopen_rootless as preopen_fixtures
-          import test_rc6_fi_market_sale_authority as sale_fixtures
-
-          ARCHIVE = Path("docs/evidence/ws_motor_11_before_after.json")
-          POLICY = Path("ops/policy/rc6-byma-reviewed-authority-v1.json")
-          DAY = (2026, 11, 24)
-
-
-          def signer_process(pipe, db_path, key, decision):
-              """Sign after reading the supervisor's committed freeze from another process."""
-              with pipe:
-                  assert pipe.recv() == "sign"
-                  ack = causal.attest_after_commit(db_path, decision_key=decision,
-                      signing_key_path=key, expected_release_sha256=sale_fixtures.RELEASE)
-                  assert ack["signature_created"], ack
-                  pipe.send(authority.attest_market_sale_book2(db_path, decision_key=decision,
-                      signing_key_path=key, release=sale_fixtures.RELEASE))
-
-
-          def can_open_unix_socket():
+          from scripts.porota_actions_host import connection, ssh_run
+          code = "STAGE=\"prepare\"\nSESSION=\"rc6-deploy200-20261123-fresh-venonlwx\"\n\"\"\"One-time IOL consent using the existing loopback redirect and token store.\"\"\"\n\nimport base64\nimport fcntl\nimport hashlib\nimport hmac\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\nimport json\nimport os\nfrom pathlib import Path\nimport re\nimport secrets\nimport socket\nimport stat\nimport sys\nimport tempfile\nimport time\nfrom urllib.error import HTTPError\nfrom urllib.parse import parse_qs, urlencode, urlsplit\nfrom urllib.request import HTTPRedirectHandler, Request, build_opener\n\n\nISSUER = \"https://mcp.invertironline.com\"\nUSER_AGENT = \"Porota-Trading-RC6/1.0 (IOL MCP read-only)\"\nPORT = 8765\nREDIRECT = f\"http://127.0.0.1:{PORT}/callback\"\nSTORE = Path(\"/root/.config/porota/iol_mcp_oauth_bootstrap.json\")\nPENDING = STORE.with_name(\"iol_mcp_oauth_tablet_pending_\" + SESSION + \".json\")\nLIFETIME = 1200\n\nclass NoRedirect(HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\n\nclass ProviderHTTPError(Exception):\n    def __init__(self, stage, response):\n        self.stage, self.status = stage, response.code\n        kind = response.headers.get_content_type()\n        self.format = \"json\" if kind.endswith(\"json\") else \"html\" if kind==\"text/html\" else \"other\"\n        trace = response.headers.get(\"CF-Ray\", \"\")\n        self.trace = trace if re.fullmatch(r\"[a-fA-F0-9]{8,32}-[A-Z0-9]{2,8}\", trace) else None\n        self.provider_error = None\n        self.edge_code = None\n        self.edge_challenge = False\n        self.html_marker = None\n        try:\n            raw = response.read(8193)\n            body = json.loads(raw) if self.format == \"json\" else {}\n            self.edge_challenge = response.headers.get(\"cf-mitigated\",\"\").lower() == \"challenge\"\n            self.html_marker = None\n            if self.format == \"html\":\n                html = raw.decode(\"utf-8\",errors=\"replace\").lower()\n                for marker, phrase in ((\"CF_CHALLENGE\", \"cdn-cgi/challenge-platform\"),\n                    (\"CF_ACCESS_DENIED\", \"cloudflare ray id\"),\n                    (\"COUNTRY_RESTRICTION\", \"not available in your country\"),\n                    (\"GENERIC_403\", \"<title>403 forbidden</title>\")):\n                    if phrase in html:\n                        self.html_marker = marker\n                        break\n        except (OSError, ValueError):\n            body = {}\n        if isinstance(body,dict):\n            known = (\"invalid_redirect_uri\", \"invalid_client_metadata\", \"invalid_request\", \"invalid_grant\", \"invalid_client\", \"unauthorized_client\", \"invalid_scope\",\n                     \"invalid_target\", \"access_denied\", \"forbidden\", \"insufficient_scope\", \"country_block\",\n                     \"country_challenge\", \"waf_block\", \"ip_block\", \"unsupported_grant_type\", \"rate_limited\")\n            for key in (\"error\", \"error_name\", \"error_type\", \"error_code\", \"code\"):\n                item = body.get(key)\n                if isinstance(item,str) and item.lower() in known:\n                    self.provider_error = item.lower()\n                if self.trace and (type(item) is int or (isinstance(item,str) and re.fullmatch(r\"1\\d{3}\",item))) and 1000<=int(item)<=1200:\n                    self.edge_code = int(item)\n        super().__init__(stage)\n\n    def receipt(self):\n        return {\"stage\":self.stage,\"http\":self.status,\"format\":self.format,\n                \"provider_error\":self.provider_error,\"edge_code\":self.edge_code,\"trace_id\":self.trace,\n                \"edge_challenge\":self.edge_challenge,\"html_marker\":self.html_marker}\n\n\ndef exchange(path, data, headers, *, stage):\n    assert path in (\"/register\", \"/token\", \"\")\n    req = Request(ISSUER + path, data=data,\n                  headers={**headers, \"User-Agent\":USER_AGENT}, method=\"POST\")\n    try:\n        with build_opener(NoRedirect).open(req, timeout=15) as response:\n            body = response.read(512_001)\n            if len(body) > 512_000:\n                raise ValueError(\"IOL_PROVIDER_RESPONSE_LIMIT\")\n            return body, response.headers\n    except HTTPError as error:\n        with error:\n            raise ProviderHTTPError(stage,error) from None\n\n\ndef confirm_read_only(token):\n    source = Path(\"/var/lib/porota-rc6-iol/08cfa083b0a060b6e503894c793a150bb948693c\")\n    adapter = source / \"iol_mcp_readonly_adapter_rc6.py\"\n    meta = adapter.lstat()\n    if (adapter.resolve() != adapter or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0\n            or meta.st_nlink != 1 or meta.st_mode & 0o022 or meta.st_size > 128000\n            or hashlib.sha256(adapter.read_bytes()).hexdigest()\n                != \"7446edfa73383a2feeb5672a50a63a335f4b7d912d19c88424924e1fb3777ea0\"):\n        raise ValueError(\"IOL_EFFECTIVE_ADAPTER_UNVERIFIED\")\n    sys.path.insert(0, str(source))\n    from iol_mcp_readonly_adapter_rc6 import IOLMCPError, verify_read_only_token\n    try:\n        proof = verify_read_only_token(token)\n    except IOLMCPError as error:\n        name = str(error)\n        if re.fullmatch(r\"IOL_MCP_[A-Z0-9_]{1,70}\", name) is None:\n            name = \"IOL_MCP_CONSENT_SCOPE_UNVERIFIED\"\n        raise ValueError(name) from None\n    return proof[\"read_only_tool_count\"]\n\n\ndef write_private(path, data):\n    fd, file = tempfile.mkstemp(prefix=\"iol-consent-\", dir=path.parent)\n    try:\n        with os.fdopen(fd,\"w\",encoding=\"utf-8\") as f:\n            json.dump(data,f,sort_keys=True)\n            f.flush()\n            os.fsync(f.fileno())\n        os.replace(file,path)\n    finally:\n        if os.path.exists(file):\n            os.unlink(file)\n\n\ndef current_digest():\n    meta = STORE.lstat()\n    if (STORE.resolve() != STORE or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0\n            or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_nlink != 1 or meta.st_size > 128_000):\n        raise ValueError(\"IOL_STORE_UNVERIFIED\")\n    return hashlib.sha256(STORE.read_bytes()).hexdigest()\n\n\ndef require_paper():\n    marker=Path(\"/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json\")\n    state=json.loads(marker.read_text())\n    if (state.get(\"mode\") != \"PRODUCTION_PAPER\" or type(state.get(\"real_orders_sent\")) is not int\n            or state[\"real_orders_sent\"] != 0 or state.get(\"validation_status\") != \"VALIDATED_RUNTIME\"\n            or state.get(\"real_order_capability\") != \"BLOCKED\"\n            or state.get(\"candidate_sha\") != \"08cfa083b0a060b6e503894c793a150bb948693c\"\n            or state.get(\"deployment_sha\") != \"3f2fdd1bc2ebf697f799d4c715cadbe7a67fcef1\"):\n        raise ValueError(\"IOL_PAPER_RUNTIME_UNVERIFIED\")\n\n\ndef prepare():\n    require_paper()\n    with socket.socket() as sock:\n        sock.bind((\"127.0.0.1\",PORT))\n    before=current_digest()\n    prior=json.loads(STORE.read_bytes())\n    if prior.get(\"issuer\") != ISSUER or prior.get(\"redirect_uri\") != REDIRECT:\n        raise ValueError(\"IOL_EXISTING_REGISTRATION_REDIRECT_UNVERIFIED\")\n    client=prior.get(\"client_registration\",{})\n    client_id=client.get(\"client_id\")\n    if not isinstance(client_id,str) or not 0<len(client_id)<256:\n        raise ValueError(\"IOL_REGISTRATION_UNVERIFIED\")\n    if client.get(\"redirect_uris\") is not None and REDIRECT not in client[\"redirect_uris\"]:\n        raise ValueError(\"IOL_REDIRECT_UNVERIFIED\")\n    registration_request = {\"client_name\": \"Porota RC6\", \"redirect_uris\": [REDIRECT],\n        \"response_types\": [\"code\"], \"grant_types\": [\"authorization_code\", \"refresh_token\"],\n        \"token_endpoint_auth_method\": \"none\"}\n    registered, _ = exchange(\"/register\", json.dumps(registration_request).encode(),\n        {\"Content-Type\": \"application/json\", \"Accept\": \"application/json\"}, stage=\"OAUTH_CLIENT_REGISTRATION\")\n    registration = json.loads(registered)\n    if not isinstance(registration, dict):\n        raise ValueError(\"IOL_NEW_REGISTRATION_FORMAT_UNVERIFIED\")\n    registered_id = registration.get(\"client_id\")\n    if (not isinstance(registered_id, str) or not re.fullmatch(r\"[A-Za-z0-9._-]{1,200}\", registered_id)\n            or registered_id == client_id or registration.get(\"client_secret\")\n            or registration.get(\"token_endpoint_auth_method\", \"none\") != \"none\"\n            or registration.get(\"redirect_uris\", [REDIRECT]) != [REDIRECT]):\n        raise ValueError(\"IOL_NEW_PUBLIC_REGISTRATION_UNVERIFIED\")\n    new_client = {**registration_request, \"client_id\": registered_id}\n    client_id = registered_id\n    verifier=secrets.token_urlsafe(64)\n    challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b\"=\").decode()\n    state=secrets.token_urlsafe(32)\n    write_private(PENDING,{\"state\":state,\"verifier\":verifier,\"client_id\":client_id,\n                           \"client_registration\":new_client,\n                           \"expires\":time.time()+LIFETIME,\"store_digest\":before})\n    q={\"response_type\":\"code\",\"client_id\":client_id,\"redirect_uri\":REDIRECT,\"code_challenge\":challenge,\n       \"code_challenge_method\":\"S256\",\"state\":state,\"resource\":ISSUER}\n    print(json.dumps({\"url\":ISSUER+\"/authorize?\"+urlencode(q),\"expires\":int(time.time()+LIFETIME)}))\n\n\ndef apply(code,pending):\n    require_paper()\n    if current_digest()!=pending[\"store_digest\"]:\n        raise ValueError(\"IOL_STORE_CHANGED\")\n    client=pending[\"client_registration\"]\n    if client.get(\"client_id\") != pending[\"client_id\"] or client.get(\"token_endpoint_auth_method\") != \"none\":\n        raise ValueError(\"IOL_PENDING_REGISTRATION_UNVERIFIED\")\n    fields={\"grant_type\":\"authorization_code\",\"code\":code,\"redirect_uri\":REDIRECT,\n            \"client_id\":pending[\"client_id\"],\"code_verifier\":pending[\"verifier\"],\"resource\":ISSUER}\n    headers={\"Content-Type\":\"application/x-www-form-urlencoded\",\"Accept\":\"application/json\"}\n    secret=client.get(\"client_secret\")\n    if secret:\n        if client.get(\"token_endpoint_auth_method\")==\"client_secret_basic\":\n            encoded=base64.b64encode((fields.pop(\"client_id\")+\":\"+secret).encode()).decode()\n            headers[\"Authorization\"]=\"Basic \"+encoded\n        elif client.get(\"token_endpoint_auth_method\")==\"client_secret_post\":\n            fields[\"client_secret\"]=secret\n        else:\n            raise ValueError(\"IOL_REGISTRATION_AUTH_UNVERIFIED\")\n    raw, _ = exchange(\"/token\",urlencode(fields).encode(),headers,stage=\"OAUTH_TOKEN_EXCHANGE\")\n    tokens=json.loads(raw)\n    if any(not isinstance(tokens.get(k),str) or not tokens[k] for k in (\"access_token\",\"refresh_token\")):\n        raise ValueError(\"IOL_TOKEN_RESPONSE_UNVERIFIED\")\n    count=confirm_read_only(tokens[\"access_token\"])\n    lock=STORE.with_suffix(STORE.suffix+\".refresh.lock\")\n    fd=os.open(lock,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)\n    try:\n        fcntl.flock(fd,fcntl.LOCK_EX)\n        if current_digest()!=pending[\"store_digest\"]:\n            raise ValueError(\"IOL_STORE_CHANGED\")\n        require_paper()\n        write_private(STORE,{\"issuer\":ISSUER,\"resource\":ISSUER,\"redirect_uri\":REDIRECT,\n            \"token_endpoint\":ISSUER+\"/token\",\n            \"client_registration\":client,\n            \"tokens\":tokens,\"token_obtained_at_epoch\":time.time()})\n    finally:\n        os.close(fd)\n    return count\n\n\ndef receive():\n    pending=json.loads(PENDING.read_text())\n    result={\"state\":\"CONSENT_EXPIRED\",\"session\":SESSION}\n    class Callback(BaseHTTPRequestHandler):\n        timeout = 5\n\n        def log_message(self,*args):\n            pass\n\n        def reply(self, status, title):\n            self.send_response(status)\n            self.send_header(\"Content-Type\",\"text/plain; charset=utf-8\")\n            self.send_header(\"Cache-Control\",\"no-store\")\n            self.send_header(\"Referrer-Policy\",\"no-referrer\")\n            self.end_headers()\n            self.wfile.write(title.encode(\"utf-8\"))\n\n        def do_GET(self):\n            parsed=urlsplit(self.path)\n            params=parse_qs(parsed.query,max_num_fields=12)\n            states=params.get(\"state\", [])\n            codes=params.get(\"code\",[])\n            if (parsed.path!=\"/callback\" or len(states)!=1\n                    or not hmac.compare_digest(states[0],pending[\"state\"])):\n                self.send_error(400,\"Callback invalido\")\n                return\n            if len(codes)!=1 or not 0<len(codes[0])<=2048:\n                result[\"state\"]=\"CONSENT_NO_CODE\"\n                self.send_error(400,\"IOL no devolvio autorizacion\")\n                return\n            try:\n                result.update(state=\"AUTHENTICATED_READ_ONLY\",tools=apply(codes[0],pending))\n            except ProviderHTTPError as error:\n                result.update(state=\"IOL_UPSTREAM_REJECTED\",**error.receipt())\n                step = \"el canje del código OAuth\" if error.stage==\"OAUTH_TOKEN_EXCHANGE\" else \"la verificación de permisos MCP\"\n                self.reply(502,f\"IOL rechazó {step} (HTTP {error.status}). Podés cerrar esta página.\")\n            except Exception as error:\n                result[\"state\"]=\"OAUTH_CALLBACK_UNVERIFIED\"\n                result[\"class\"]=type(error).__name__\n                if isinstance(error,ValueError) and str(error).startswith((\"MCP_\",\"IOL_\")):\n                    result[\"reason\"]=str(error)\n                self.reply(500,\"Porota no pudo verificar el acceso Solo lectura. Podés cerrar esta página.\")\n            else:\n                self.reply(200,\"IOL autorizado en Solo lectura para Porota. Podés cerrar esta página.\")\n    try:\n        with HTTPServer((\"127.0.0.1\",PORT),Callback) as server:\n            server.timeout=2\n            while time.time()<pending[\"expires\"] and result[\"state\"]==\"CONSENT_EXPIRED\":\n                server.handle_request()\n    finally:\n        PENDING.unlink(missing_ok=True)\n    result.update(registration=\"FRESH_PUBLIC\", store_updated=result[\"state\"] == \"AUTHENTICATED_READ_ONLY\")\n    print(json.dumps(result,sort_keys=True))\n\n\nif __name__==\"__main__\":\n    try:\n        {\"prepare\":prepare,\"receive\":receive}[STAGE]()\n    except ProviderHTTPError as error:\n        print(json.dumps({\"state\":\"IOL_CALLBACK_SETUP_FAILED\",\"session\":SESSION,\n                          \"store_updated\":False,**error.receipt()}))\n        sys.exit(1)\n    except (ValueError, OSError, HTTPError) as error:\n        reason = str(error) if type(error) is ValueError and str(error).startswith(\"IOL_\") else type(error).__name__\n        print(json.dumps({\"state\":\"IOL_CALLBACK_SETUP_FAILED\",\"reason\":reason,\n                          \"http\":error.code if isinstance(error,HTTPError) else None}))\n        sys.exit(1)\n"
+          with connection(os.environ) as (ssh, _, _):
+              response = ssh_run(ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'],
+                                 data=code.encode(), timeout=35)
+          if response.returncode:
               try:
-                  with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM):
-                      return True
-              except PermissionError:
-                  if os.getenv("RC6_EXPECT_UNIX_SOCKET") == "yes":
-                      raise
-                  return False
-
-
-          @pytest.mark.parametrize(("ticker", "family"), [("GD30", "BONOS"), ("YMCJO", "OBLIGACIONES")])
-          def test_active_position_end_to_end(tmp_path, monkeypatch, ticker, family):
-              native_reader = authority._read_first_book2
-              # Reuse the release's lot, signed policy and feed fixtures. This run
-              # records its decision and ACK through the supervisor instead of pre-seeding.
-              with monkeypatch.context() as fixture_scope:
-                  fixture_scope.setattr(authority, "prepare_market_sale", lambda *_: None)
-                  fixture_scope.setattr(causal, "attest_after_commit", lambda *_, **__: {"signature_created": True})
-                  store, paper_id, key, _, book, cache, _ = sale_fixtures.setup(
-                      tmp_path, monkeypatch, ticker=ticker, family=family)
-
-              source = ARCHIVE.read_bytes()
-              history = {row["field"]: row for row in json.loads(source)["field_matrix"]
-                         if row["ticker"] == ticker and row["settlement"] == "A-24HS"}
-              for field, expected in {"currency": "ARS", "settlement": "A-24HS"}.items():
-                  assert history[field]["primary_source"] == "PPI_STRUCTURED_API"
-                  assert history[field]["value"] == expected
-              policy_path = tmp_path / "market-sale-policy.json"
-              policy = json.loads(policy_path.read_bytes())
-              economics = policy["instruments"][0]
-              for archived, policy_key in (("cash_multiplier", "cash_multiplier"),
-                    ("quantity_min", "minimum_quantity"), ("quantity_step", "quantity_step")):
-                  row = history[archived]
-                  if row["status_after"] == "EVIDENCED":
-                      economics[policy_key] = str(row["value"])
-                  elif ticker == "YMCJO":
-                      assert row["status_after"] == "UNRESOLVED" and economics[policy_key] == "1"
-                  else:
-                      pytest.fail(f"Missing historic field {ticker}/{archived}")
-              economics["ppi_economics_source_sha256"] = hashlib.sha256(source).hexdigest()
-              economics["known_at"] = history["currency"]["capture_timestamp"]
-              raw = json.dumps(policy, sort_keys=True).encode()
-              policy_path.write_bytes(raw)
-              monkeypatch.setenv(authority.POLICY_PIN, hashlib.sha256(raw).hexdigest())
-
-              at = sale_fixtures.AT
-              ms = sale_fixtures.MILLISECOND
-              decision_at = (at + 10 * ms).isoformat()
-              applied_at = at + 50 * ms
-              # Frozen process time during the decision, distinct read time in the signer.
-              monkeypatch.setattr(causal, "_now", lambda: (at + 9 * ms).isoformat())
-              default = broker_from_environment(store, clock_fn=lambda: applied_at.isoformat())
-              supervisor = PositionExitSupervisor(default, clock_fn=default.clock_fn,
-                  session_policy=default.session_policy, max_hold_minutes=360)
-              monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "false")
-              position, = store.open_positions()
-              quote = store.latest_quote(position)
-              assert position["status"] == "OPEN" and position["quantity"] == "100"
-
-              no_witness = supervisor.supervise(position, quote, decision_at)
-              assert (no_witness.state, no_witness.reason) == (
-                  "EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_SIGNED_BOOK2_PENDING")
-              assert store.open_positions()[0]["quantity"] == "100"
-
-              with store.connect() as db:
-                  decision, = db.execute("SELECT decision_key FROM paper_decisions WHERE action='SELL'").fetchone()
-                  assert db.execute("SELECT COUNT(*) FROM paper_causal_decision_receipts").fetchone()[0] == 0
-              assert decision.startswith("FI_SELL:")
-              # A pre-ACK book, the first eligible bid and a later more favorable bid.
-              book(20, 101)
-              chosen = book(30, 100)
-              book(40, 130)
-
-              real_unix = can_open_unix_socket()
-              server = None
-              if real_unix:
-                  monkeypatch.setattr(authority, "_read_first_book2", native_reader)
-                  path = gateway_socket_path(store.path)
-                  path.parent.mkdir(parents=True, mode=0o700)
-                  server = ReadOnlyUnixFeedServer(cache.feed, socket_path=path, native_receipts=cache,
-                      supervisor_pid=os.getpid(), owner_status=lambda: {"state": "OPEN",
-                          "owner_pid": os.getpid(), "session_generation": sale_fixtures.SESSION,
-                          "login_invocations_by_owner": 1})
-                  server.start()
-                  serve = threading.Thread(target=server.serve_forever, daemon=True)
-                  serve.start()
-
-              monkeypatch.setattr(causal, "_now", lambda: (at + 20 * ms).isoformat())
-              context = multiprocessing.get_context("fork")
-              broker_end, signer_end = context.Pipe()
-              # Gate on enrollment before either version of the replay reads the cache.
-              process = context.Process(target=signer_process, args=(signer_end, store.path, key, decision))
-              with broker_end, signer_end:
-                  process.start()
-                  try:
-                      if server:
-                          client = ReadOnlyUnixFeedClient(socket_path=server.socket_path, timeout_seconds=2)
-                          client.owner_status()
-                          client.register_client("exit_reader", pid=process.pid,
-                                                 proc_starttime=server.process_starttime(process.pid))
-                      broker_end.send("sign")
-                      assert broker_end.poll(8), "independent signer did not produce a witness"
-                      witness = broker_end.recv()
-                      assert witness["payload"]["book2"] == chosen
-                      broker = PaperBroker(store, clock_fn=lambda: applied_at.isoformat(),
-                          session_policy=PaperSessionPolicy(), market_sale_witness=lambda key: witness if key == decision else None)
-                      with_witness = PositionExitSupervisor(broker, clock_fn=broker.clock_fn,
-                                                            session_policy=broker.session_policy)
-                      result = with_witness.supervise(position, quote, applied_at.isoformat())
-                      assert result.state == "CLOSED", result
-                  finally:
-                      process.join(3)
-                      if process.is_alive():
-                          process.terminate()
-                          process.join(3)
-                      if server is not None:
-                          server.shutdown()
-                          serve.join(3)
-                          server.close()
-              assert process.exitcode == 0
-              assert store.open_positions() == []
-              with store.connect() as db:
-                  fills = db.execute("SELECT quantity FROM paper_fills WHERE side='SELL_SIMULATED'").fetchall()
-                  assert len(fills) == 1 and fills[0][0] == "100"
-                  sale, = db.execute("SELECT price,net_proceeds,available_at,settlement_basis FROM paper_fi_native_sales").fetchall()
-                  assert Decimal(sale[0]) < 100 and Decimal(sale[1]) > 0
-                  assert (sale[2], sale[3]) == (None, "PENDING_CONFIRMATION")
-                  count, = db.execute("SELECT real_orders_sent FROM observer_state").fetchone()
-                  assert count == 0
-              print(json.dumps({"scenario": ticker, "family": family, "clock": applied_at.isoformat(),
-                  "without_witness": no_witness.reason, "with_witness": result.state,
-                  "book_transport": "AF_UNIX_WITH_PID_ENROLLMENT" if real_unix else "IN_PROCESS_FIXTURE_TRANSPORT",
-                  "book_at_ms": 30, "book_bid": 100, "fill_nominal": fills[0][0], "fill_price": sale[0],
-                  "net_ars": sale[1], "settlement": sale[3], "available_at": sale[2], "real_orders_sent": count,
-                  "historic_minimum_and_step": ticker == "GD30"}, sort_keys=True))
-
-
-          @pytest.mark.parametrize(("date_at", "watch_case", "phase", "status", "go"), [
-              ((2026, 11, 23, 10, 20), "missing", None, "NOT_DUE", False),
-              ((*DAY, 9, 45), "unchanged", "T_MINUS_45", "GREEN", False),
-              ((*DAY, 10, 20), "reviewed_calendar", "T_MINUS_10", "GREEN", True),
-              ((*DAY, 10, 20), "stale", "T_MINUS_10", "RED", False),
-              ((*DAY, 10, 20), "invalid_calendar", "T_MINUS_10", "RED", False),
-              ((*DAY, 10, 30), "unchanged", "MANUAL_OR_OUTSIDE_SCHEDULE", "GREEN", False),
-          ])
-          def test_preopen_with_release_calendar(request, monkeypatch, tmp_path, date_at, watch_case, phase, status, go):
-              request.getfixturevalue("operator")
-              now = datetime(*date_at, tzinfo=preopen.TZ)
-
-              class ReplayClock(datetime):
-                  @classmethod
-                  def now(cls, tz=None):
-                      return now.astimezone(tz) if tz else now
-
-              monkeypatch.setattr(preopen, "datetime", ReplayClock)
-              monkeypatch.setattr(preopen.shutil, "disk_usage", lambda _: SimpleNamespace(free=preopen.TARGET_FREE_BYTES))
-              # A fixture substitutes offhost OS/DB health reads, preserving PAPER gate policy.
-              for check in ("observer_db", "required_timers", "blocked_history_timers", "iol_reference_state"):
-                  monkeypatch.setattr(preopen, check, lambda *args, **kwargs: {"state": "GREEN"})
-              monkeypatch.setattr(preopen, "DB", tmp_path / "isolated-preopen.db")
-              path = tmp_path / "byma-watch.json"
-              monkeypatch.setattr(preopen, "BYMA_MORNING_WATCH", path)
-              if watch_case != "missing":
-                  watch_state = "NO_CHANGE"
-                  observed = datetime(*DAY, 8, 31, 38, tzinfo=preopen.TZ)
-                  if watch_case == "stale":
-                      observed = datetime(2026, 11, 20, 8, 31, 38, tzinfo=preopen.TZ)
-                  watch = {"observed_at": observed.isoformat(), "state": watch_state}
-                  if watch_case in {"reviewed_calendar", "invalid_calendar"}:
-                      pages = json.loads(POLICY.read_bytes())["pages"]
-                      digest = pages["CALENDAR"]["sha256"] if watch_case == "reviewed_calendar" else "9" * 64
-                      watch.update(state="CHANGED_REVIEW_REQUIRED", changed_components=["CALENDAR"],
-                          pages={"CALENDAR": {"url": pages["CALENDAR"]["url"], "sha256": digest,
-                              "scope": "h1-to-footer-v2", "status": "OK"}})
-                  path.write_text(json.dumps(watch), encoding="utf-8")
-
-              output = io.StringIO()
-              with redirect_stdout(output):
-                  code = preopen.main(publish_paper_gate=True)
-              result = json.loads(output.getvalue())
-              operator = request.getfixturevalue("operator")
-              receipt = json.loads((operator["identity"].operator / "paper-preopen-v2.json").read_bytes())
-              assert (result["status"], result.get("phase"), code) == (status, phase, 2 if status == "RED" else 0), result
-              assert (receipt["status"] == "GO_PAPER_SCALPING") is go, receipt
-              assert result["network_order_test_performed"] is False
-              expected_reason = {"missing": "BYMA_NON_OPERATIONAL_DAY", "stale": "BYMA_WATCH_NOT_TODAY",
-                  "invalid_calendar": "BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED",
-                  "reviewed_calendar": "BYMA_CRITICAL_REVIEWED_EXACT", "unchanged": "NO_CHANGE"}
-              reason = result.get("reason") or result["checks"]["byma_morning_watch"]["reason"]
-              assert reason == expected_reason[watch_case]
-              print(json.dumps({"scenario": watch_case, "clock": result["generated_at_ar"], "phase": phase,
-                  "checks": status, "byma_reason": reason, "paper_gate": receipt["status"], "exit": code}, sort_keys=True))
-
-
-          pytest_plugins = ("test_porota_preopen_rootless",)
-          PY_REPLAY
-          sha256sum "$TEMP_REPLAY/test_release_replay.py" > "$RUNNER_TEMP/replay-script-sha256.txt"
-          PYTHON_BIN="$(command -v python)"
-          sudo -n unshare --net --setgid "$(id -g)" --setuid "$(id -u)" env \
-            PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/tests" RC6_EXPECT_UNIX_SOCKET=yes \
-            "$PYTHON_BIN" -m pytest -o addopts= -q -s --tb=short --basetemp="$TEMP_REPLAY/t" \
-            "$TEMP_REPLAY/test_release_replay.py" 2>&1 | tee "$RUNNER_TEMP/replay-output.txt"
+                  result = json.loads(response.stdout)
+                  assert result.get('state') == 'IOL_CALLBACK_SETUP_FAILED'
+              except (ValueError, AssertionError):
+                  result = {'state': 'IOL_CALLBACK_PREPARE_UNVERIFIED'}
+              Path(os.environ['RUNNER_TEMP'], 'iol-registration-failure.json').write_text(json.dumps(result))
+              print(json.dumps(result))
+              raise SystemExit(1)
+          payload = json.loads(response.stdout)
+          assert payload['url'].startswith('https://mcp.invertironline.com/authorize?')
+          with tempfile.NamedTemporaryFile(mode='w') as file:
+              file.write("-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAiWyeI8Q6tuGVmUFiHUNP\nnDG9DsbzW9tMgzHUcyGeNibwbuohP3Cji29xBVO8KFfjdA+ittqvvvZistOoFn0L\n/aNEnuXyXGcirJ+Mp16pglVw4VymWZz2caBmH3MH8Q7wIBZUxVzyZYONWuLnzHxI\nh4b5Qi8nJeVGQfEsT4j9zj2/4Dd+Zx1tgmz6+zvx+hRdrTbNHbDGxaq5bFuHkJBE\nIXdqW5mAc4lhyA74KQhDCJak+nOV0e0PcfYPF0OJYwxZfpApsr/m7JdCAHYEMrEz\nJj2ghrk2/toVaEkwZ0/1ZNByBHJh3jayDJoTfYjBM6wXgj5qBATAhpow2pwIFgOE\ngyIZbgWsMMcMtPgsqPl0PJqs52KIaTiSr3WZwNko5TgmuhpcoY5s44fIPzPeCqci\nskdjUQkvp31Ra5BnLkCUytxDJzpeXXW0BO1FKCFYZrWdAtBlNWU3OzEhV2/SyHCz\nh8Z1oggf/T2UoeEzzYhp5A7I/pw/BZIfrmD4+K+ffIyro2J69HMa57wF0EnoVcrQ\nyVTxR7MvVRFJQfpNE4Stku3abEqJqlMGF1TC1iEfSCGhOB/yTtDpqwMPbjekTJ1j\nBJRxZTKF3gdOcosnYs7X9r0dhe3U00UxcszFKbr6paD5mA2mA+/6go1F+VyEzFrZ\nhQ9RvkEiknWEcsAQiqZVhUkCAwEAAQ==\n-----END PUBLIC KEY-----\n")
+              file.flush()
+              encrypted = []
+              for start in range(0, len(response.stdout), 300):
+                  result = subprocess.run(['openssl','pkeyutl','-encrypt','-pubin','-inkey',file.name,
+                      '-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],
+                      input=response.stdout[start:start+300],capture_output=True,check=True)
+                  encrypted.append(base64.b64encode(result.stdout).decode())
+          Path(os.environ['RUNNER_TEMP'], 'iol-consent.json').write_text(
+              json.dumps({'blocks': encrypted, 'expires': payload['expires']}))
+          print('IOL_CONSENT_ENCRYPTED')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iol-consent-encrypted
+          path: ${{ runner.temp }}/iol-consent.json
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: iol-registration-failure
+          path: ${{ runner.temp }}/iol-registration-failure.json
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Receive one callback and verify its read-only market capability
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          python3 -B - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.porota_actions_host import connection, ssh_run
+          code = "STAGE=\"receive\"\nSESSION=\"rc6-deploy200-20261123-fresh-venonlwx\"\n\"\"\"One-time IOL consent using the existing loopback redirect and token store.\"\"\"\n\nimport base64\nimport fcntl\nimport hashlib\nimport hmac\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\nimport json\nimport os\nfrom pathlib import Path\nimport re\nimport secrets\nimport socket\nimport stat\nimport sys\nimport tempfile\nimport time\nfrom urllib.error import HTTPError\nfrom urllib.parse import parse_qs, urlencode, urlsplit\nfrom urllib.request import HTTPRedirectHandler, Request, build_opener\n\n\nISSUER = \"https://mcp.invertironline.com\"\nUSER_AGENT = \"Porota-Trading-RC6/1.0 (IOL MCP read-only)\"\nPORT = 8765\nREDIRECT = f\"http://127.0.0.1:{PORT}/callback\"\nSTORE = Path(\"/root/.config/porota/iol_mcp_oauth_bootstrap.json\")\nPENDING = STORE.with_name(\"iol_mcp_oauth_tablet_pending_\" + SESSION + \".json\")\nLIFETIME = 1200\n\nclass NoRedirect(HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\n\nclass ProviderHTTPError(Exception):\n    def __init__(self, stage, response):\n        self.stage, self.status = stage, response.code\n        kind = response.headers.get_content_type()\n        self.format = \"json\" if kind.endswith(\"json\") else \"html\" if kind==\"text/html\" else \"other\"\n        trace = response.headers.get(\"CF-Ray\", \"\")\n        self.trace = trace if re.fullmatch(r\"[a-fA-F0-9]{8,32}-[A-Z0-9]{2,8}\", trace) else None\n        self.provider_error = None\n        self.edge_code = None\n        self.edge_challenge = False\n        self.html_marker = None\n        try:\n            raw = response.read(8193)\n            body = json.loads(raw) if self.format == \"json\" else {}\n            self.edge_challenge = response.headers.get(\"cf-mitigated\",\"\").lower() == \"challenge\"\n            self.html_marker = None\n            if self.format == \"html\":\n                html = raw.decode(\"utf-8\",errors=\"replace\").lower()\n                for marker, phrase in ((\"CF_CHALLENGE\", \"cdn-cgi/challenge-platform\"),\n                    (\"CF_ACCESS_DENIED\", \"cloudflare ray id\"),\n                    (\"COUNTRY_RESTRICTION\", \"not available in your country\"),\n                    (\"GENERIC_403\", \"<title>403 forbidden</title>\")):\n                    if phrase in html:\n                        self.html_marker = marker\n                        break\n        except (OSError, ValueError):\n            body = {}\n        if isinstance(body,dict):\n            known = (\"invalid_redirect_uri\", \"invalid_client_metadata\", \"invalid_request\", \"invalid_grant\", \"invalid_client\", \"unauthorized_client\", \"invalid_scope\",\n                     \"invalid_target\", \"access_denied\", \"forbidden\", \"insufficient_scope\", \"country_block\",\n                     \"country_challenge\", \"waf_block\", \"ip_block\", \"unsupported_grant_type\", \"rate_limited\")\n            for key in (\"error\", \"error_name\", \"error_type\", \"error_code\", \"code\"):\n                item = body.get(key)\n                if isinstance(item,str) and item.lower() in known:\n                    self.provider_error = item.lower()\n                if self.trace and (type(item) is int or (isinstance(item,str) and re.fullmatch(r\"1\\d{3}\",item))) and 1000<=int(item)<=1200:\n                    self.edge_code = int(item)\n        super().__init__(stage)\n\n    def receipt(self):\n        return {\"stage\":self.stage,\"http\":self.status,\"format\":self.format,\n                \"provider_error\":self.provider_error,\"edge_code\":self.edge_code,\"trace_id\":self.trace,\n                \"edge_challenge\":self.edge_challenge,\"html_marker\":self.html_marker}\n\n\ndef exchange(path, data, headers, *, stage):\n    assert path in (\"/register\", \"/token\", \"\")\n    req = Request(ISSUER + path, data=data,\n                  headers={**headers, \"User-Agent\":USER_AGENT}, method=\"POST\")\n    try:\n        with build_opener(NoRedirect).open(req, timeout=15) as response:\n            body = response.read(512_001)\n            if len(body) > 512_000:\n                raise ValueError(\"IOL_PROVIDER_RESPONSE_LIMIT\")\n            return body, response.headers\n    except HTTPError as error:\n        with error:\n            raise ProviderHTTPError(stage,error) from None\n\n\ndef confirm_read_only(token):\n    source = Path(\"/var/lib/porota-rc6-iol/08cfa083b0a060b6e503894c793a150bb948693c\")\n    adapter = source / \"iol_mcp_readonly_adapter_rc6.py\"\n    meta = adapter.lstat()\n    if (adapter.resolve() != adapter or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0\n            or meta.st_nlink != 1 or meta.st_mode & 0o022 or meta.st_size > 128000\n            or hashlib.sha256(adapter.read_bytes()).hexdigest()\n                != \"7446edfa73383a2feeb5672a50a63a335f4b7d912d19c88424924e1fb3777ea0\"):\n        raise ValueError(\"IOL_EFFECTIVE_ADAPTER_UNVERIFIED\")\n    sys.path.insert(0, str(source))\n    from iol_mcp_readonly_adapter_rc6 import IOLMCPError, verify_read_only_token\n    try:\n        proof = verify_read_only_token(token)\n    except IOLMCPError as error:\n        name = str(error)\n        if re.fullmatch(r\"IOL_MCP_[A-Z0-9_]{1,70}\", name) is None:\n            name = \"IOL_MCP_CONSENT_SCOPE_UNVERIFIED\"\n        raise ValueError(name) from None\n    return proof[\"read_only_tool_count\"]\n\n\ndef write_private(path, data):\n    fd, file = tempfile.mkstemp(prefix=\"iol-consent-\", dir=path.parent)\n    try:\n        with os.fdopen(fd,\"w\",encoding=\"utf-8\") as f:\n            json.dump(data,f,sort_keys=True)\n            f.flush()\n            os.fsync(f.fileno())\n        os.replace(file,path)\n    finally:\n        if os.path.exists(file):\n            os.unlink(file)\n\n\ndef current_digest():\n    meta = STORE.lstat()\n    if (STORE.resolve() != STORE or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0\n            or stat.S_IMODE(meta.st_mode) != 0o600 or meta.st_nlink != 1 or meta.st_size > 128_000):\n        raise ValueError(\"IOL_STORE_UNVERIFIED\")\n    return hashlib.sha256(STORE.read_bytes()).hexdigest()\n\n\ndef require_paper():\n    marker=Path(\"/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json\")\n    state=json.loads(marker.read_text())\n    if (state.get(\"mode\") != \"PRODUCTION_PAPER\" or type(state.get(\"real_orders_sent\")) is not int\n            or state[\"real_orders_sent\"] != 0 or state.get(\"validation_status\") != \"VALIDATED_RUNTIME\"\n            or state.get(\"real_order_capability\") != \"BLOCKED\"\n            or state.get(\"candidate_sha\") != \"08cfa083b0a060b6e503894c793a150bb948693c\"\n            or state.get(\"deployment_sha\") != \"3f2fdd1bc2ebf697f799d4c715cadbe7a67fcef1\"):\n        raise ValueError(\"IOL_PAPER_RUNTIME_UNVERIFIED\")\n\n\ndef prepare():\n    require_paper()\n    with socket.socket() as sock:\n        sock.bind((\"127.0.0.1\",PORT))\n    before=current_digest()\n    prior=json.loads(STORE.read_bytes())\n    if prior.get(\"issuer\") != ISSUER or prior.get(\"redirect_uri\") != REDIRECT:\n        raise ValueError(\"IOL_EXISTING_REGISTRATION_REDIRECT_UNVERIFIED\")\n    client=prior.get(\"client_registration\",{})\n    client_id=client.get(\"client_id\")\n    if not isinstance(client_id,str) or not 0<len(client_id)<256:\n        raise ValueError(\"IOL_REGISTRATION_UNVERIFIED\")\n    if client.get(\"redirect_uris\") is not None and REDIRECT not in client[\"redirect_uris\"]:\n        raise ValueError(\"IOL_REDIRECT_UNVERIFIED\")\n    registration_request = {\"client_name\": \"Porota RC6\", \"redirect_uris\": [REDIRECT],\n        \"response_types\": [\"code\"], \"grant_types\": [\"authorization_code\", \"refresh_token\"],\n        \"token_endpoint_auth_method\": \"none\"}\n    registered, _ = exchange(\"/register\", json.dumps(registration_request).encode(),\n        {\"Content-Type\": \"application/json\", \"Accept\": \"application/json\"}, stage=\"OAUTH_CLIENT_REGISTRATION\")\n    registration = json.loads(registered)\n    if not isinstance(registration, dict):\n        raise ValueError(\"IOL_NEW_REGISTRATION_FORMAT_UNVERIFIED\")\n    registered_id = registration.get(\"client_id\")\n    if (not isinstance(registered_id, str) or not re.fullmatch(r\"[A-Za-z0-9._-]{1,200}\", registered_id)\n            or registered_id == client_id or registration.get(\"client_secret\")\n            or registration.get(\"token_endpoint_auth_method\", \"none\") != \"none\"\n            or registration.get(\"redirect_uris\", [REDIRECT]) != [REDIRECT]):\n        raise ValueError(\"IOL_NEW_PUBLIC_REGISTRATION_UNVERIFIED\")\n    new_client = {**registration_request, \"client_id\": registered_id}\n    client_id = registered_id\n    verifier=secrets.token_urlsafe(64)\n    challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b\"=\").decode()\n    state=secrets.token_urlsafe(32)\n    write_private(PENDING,{\"state\":state,\"verifier\":verifier,\"client_id\":client_id,\n                           \"client_registration\":new_client,\n                           \"expires\":time.time()+LIFETIME,\"store_digest\":before})\n    q={\"response_type\":\"code\",\"client_id\":client_id,\"redirect_uri\":REDIRECT,\"code_challenge\":challenge,\n       \"code_challenge_method\":\"S256\",\"state\":state,\"resource\":ISSUER}\n    print(json.dumps({\"url\":ISSUER+\"/authorize?\"+urlencode(q),\"expires\":int(time.time()+LIFETIME)}))\n\n\ndef apply(code,pending):\n    require_paper()\n    if current_digest()!=pending[\"store_digest\"]:\n        raise ValueError(\"IOL_STORE_CHANGED\")\n    client=pending[\"client_registration\"]\n    if client.get(\"client_id\") != pending[\"client_id\"] or client.get(\"token_endpoint_auth_method\") != \"none\":\n        raise ValueError(\"IOL_PENDING_REGISTRATION_UNVERIFIED\")\n    fields={\"grant_type\":\"authorization_code\",\"code\":code,\"redirect_uri\":REDIRECT,\n            \"client_id\":pending[\"client_id\"],\"code_verifier\":pending[\"verifier\"],\"resource\":ISSUER}\n    headers={\"Content-Type\":\"application/x-www-form-urlencoded\",\"Accept\":\"application/json\"}\n    secret=client.get(\"client_secret\")\n    if secret:\n        if client.get(\"token_endpoint_auth_method\")==\"client_secret_basic\":\n            encoded=base64.b64encode((fields.pop(\"client_id\")+\":\"+secret).encode()).decode()\n            headers[\"Authorization\"]=\"Basic \"+encoded\n        elif client.get(\"token_endpoint_auth_method\")==\"client_secret_post\":\n            fields[\"client_secret\"]=secret\n        else:\n            raise ValueError(\"IOL_REGISTRATION_AUTH_UNVERIFIED\")\n    raw, _ = exchange(\"/token\",urlencode(fields).encode(),headers,stage=\"OAUTH_TOKEN_EXCHANGE\")\n    tokens=json.loads(raw)\n    if any(not isinstance(tokens.get(k),str) or not tokens[k] for k in (\"access_token\",\"refresh_token\")):\n        raise ValueError(\"IOL_TOKEN_RESPONSE_UNVERIFIED\")\n    count=confirm_read_only(tokens[\"access_token\"])\n    lock=STORE.with_suffix(STORE.suffix+\".refresh.lock\")\n    fd=os.open(lock,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)\n    try:\n        fcntl.flock(fd,fcntl.LOCK_EX)\n        if current_digest()!=pending[\"store_digest\"]:\n            raise ValueError(\"IOL_STORE_CHANGED\")\n        require_paper()\n        write_private(STORE,{\"issuer\":ISSUER,\"resource\":ISSUER,\"redirect_uri\":REDIRECT,\n            \"token_endpoint\":ISSUER+\"/token\",\n            \"client_registration\":client,\n            \"tokens\":tokens,\"token_obtained_at_epoch\":time.time()})\n    finally:\n        os.close(fd)\n    return count\n\n\ndef receive():\n    pending=json.loads(PENDING.read_text())\n    result={\"state\":\"CONSENT_EXPIRED\",\"session\":SESSION}\n    class Callback(BaseHTTPRequestHandler):\n        timeout = 5\n\n        def log_message(self,*args):\n            pass\n\n        def reply(self, status, title):\n            self.send_response(status)\n            self.send_header(\"Content-Type\",\"text/plain; charset=utf-8\")\n            self.send_header(\"Cache-Control\",\"no-store\")\n            self.send_header(\"Referrer-Policy\",\"no-referrer\")\n            self.end_headers()\n            self.wfile.write(title.encode(\"utf-8\"))\n\n        def do_GET(self):\n            parsed=urlsplit(self.path)\n            params=parse_qs(parsed.query,max_num_fields=12)\n            states=params.get(\"state\", [])\n            codes=params.get(\"code\",[])\n            if (parsed.path!=\"/callback\" or len(states)!=1\n                    or not hmac.compare_digest(states[0],pending[\"state\"])):\n                self.send_error(400,\"Callback invalido\")\n                return\n            if len(codes)!=1 or not 0<len(codes[0])<=2048:\n                result[\"state\"]=\"CONSENT_NO_CODE\"\n                self.send_error(400,\"IOL no devolvio autorizacion\")\n                return\n            try:\n                result.update(state=\"AUTHENTICATED_READ_ONLY\",tools=apply(codes[0],pending))\n            except ProviderHTTPError as error:\n                result.update(state=\"IOL_UPSTREAM_REJECTED\",**error.receipt())\n                step = \"el canje del código OAuth\" if error.stage==\"OAUTH_TOKEN_EXCHANGE\" else \"la verificación de permisos MCP\"\n                self.reply(502,f\"IOL rechazó {step} (HTTP {error.status}). Podés cerrar esta página.\")\n            except Exception as error:\n                result[\"state\"]=\"OAUTH_CALLBACK_UNVERIFIED\"\n                result[\"class\"]=type(error).__name__\n                if isinstance(error,ValueError) and str(error).startswith((\"MCP_\",\"IOL_\")):\n                    result[\"reason\"]=str(error)\n                self.reply(500,\"Porota no pudo verificar el acceso Solo lectura. Podés cerrar esta página.\")\n            else:\n                self.reply(200,\"IOL autorizado en Solo lectura para Porota. Podés cerrar esta página.\")\n    try:\n        with HTTPServer((\"127.0.0.1\",PORT),Callback) as server:\n            server.timeout=2\n            while time.time()<pending[\"expires\"] and result[\"state\"]==\"CONSENT_EXPIRED\":\n                server.handle_request()\n    finally:\n        PENDING.unlink(missing_ok=True)\n    result.update(registration=\"FRESH_PUBLIC\", store_updated=result[\"state\"] == \"AUTHENTICATED_READ_ONLY\")\n    print(json.dumps(result,sort_keys=True))\n\n\nif __name__==\"__main__\":\n    try:\n        {\"prepare\":prepare,\"receive\":receive}[STAGE]()\n    except ProviderHTTPError as error:\n        print(json.dumps({\"state\":\"IOL_CALLBACK_SETUP_FAILED\",\"session\":SESSION,\n                          \"store_updated\":False,**error.receipt()}))\n        sys.exit(1)\n    except (ValueError, OSError, HTTPError) as error:\n        reason = str(error) if type(error) is ValueError and str(error).startswith(\"IOL_\") else type(error).__name__\n        print(json.dumps({\"state\":\"IOL_CALLBACK_SETUP_FAILED\",\"reason\":reason,\n                          \"http\":error.code if isinstance(error,HTTPError) else None}))\n        sys.exit(1)\n"
+          with connection(os.environ) as (ssh, _, _):
+              response = ssh_run(ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'],
+                                 data=code.encode(), timeout=1250)
+          try:
+              result = json.loads(response.stdout)
+              assert result.get('session') == 'rc6-deploy200-20261123-fresh-venonlwx' or result.get('state') == 'IOL_CALLBACK_SETUP_FAILED'
+              assert 'url' not in result
+          except (ValueError, AssertionError):
+              result = {'state': 'IOL_CALLBACK_RECEIPT_UNVERIFIED'}
+          data = json.dumps(result, sort_keys=True)
+          print(data)
+          Path(os.environ['RUNNER_TEMP'], 'iol-consent-receipt.json').write_text(data+'\n')
+          if result.get('state') != 'AUTHENTICATED_READ_ONLY':
+              raise SystemExit(1)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-paper-release-replay
-          path: |
-            ${{ runner.temp }}/replay-output.txt
-            ${{ runner.temp }}/replay-script-sha256.txt
+          name: iol-consent-receipt
+          path: ${{ runner.temp }}/iol-consent-receipt.json
+          if-no-files-found: warn
           retention-days: 14
-          if-no-files-found: error
