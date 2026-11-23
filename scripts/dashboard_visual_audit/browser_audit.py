@@ -15,7 +15,7 @@ from rc6_trader_dashboard.navigation import CANONICAL_PATHS
 
 PRIORITY = ("/en-vivo", "/sistema", "/sistema/salud", "/sistema/workers",
             "/sistema/integraciones", "/sistema/scheduler", "/sistema/evidencia",
-            "/sistema/scheduler?offset=20", "/validacion")
+            "/sistema/scheduler?offset=20", "/validacion", "/sistema/validacion?channel=campaign")
 TABLET = {"width": 1280, "height": 800}
 PHONE = {"width": 390, "height": 844}
 CLOCK = re.compile(r"^\d{2}/\d{2} \d{2}:\d{2}:\d{2} ART$")
@@ -52,22 +52,8 @@ SCREEN_MASK = r"""() => {
     el.style.visibility = 'hidden';
   });
 }"""
-VALIDATION_CONTRAST = """() => Array.from(document.querySelectorAll('details.paper-trade > summary')).slice(0, 2).map(item => {
-   const badge = item.querySelector('.paper-status');
-   if (!badge) return null;
-   const get = (e, prop) => getComputedStyle(e)[prop];
-   const rgb = text => (text.match(/[0-9.]+/g) || []).map(Number);
-   const foreground = get(badge, 'color');
-   let el = badge, background = get(el, 'backgroundColor');
-   while (el.parentElement && ((rgb(background).length >= 4 && rgb(background)[3] === 0) || background === 'transparent')) {
-     el = el.parentElement; background = get(el, 'backgroundColor');
-   }
-   const luminance = color => rgb(color).slice(0, 3).map(v => v / 255)
-     .map(v => v <= 0.04045 ? v / 12.92 : Math.pow((v+0.055)/1.055, 2.4))
-     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-   const lum = [luminance(foreground), luminance(background)].sort((a,b) => b - a);
-   return {foreground, background, contrast: Number(((lum[0]+0.05)/(lum[1]+0.05)).toFixed(2))};
-})"""
+VALIDATION_ROUTE = "/sistema/validacion"
+VALIDATION_CAMPAIGN = VALIDATION_ROUTE + "?channel=campaign"
 
 
 def normalize(value):
@@ -159,41 +145,36 @@ def validation(page, path, report):
             observe = lambda response: targets.append((urlsplit(response.url).path, response.status)) if response.request.is_navigation_request() else None
             page.on("response", observe)
             link.click(timeout=5000)
-            page.wait_for_url("**/validacion", timeout=7000)
+            page.wait_for_url("**/sistema/validacion", timeout=7000)
             page.wait_for_load_state("domcontentloaded", timeout=7000)
             report["validation_navigation"] = {"path": urlsplit(page.url).path, "responses": targets,
                                                "terminal_shell": page.locator("#terminal-content").count() == 1}
             page.remove_listener("response", observe)
         return None
-    cards = page.locator("details.paper-trade > summary")
-    output = {"hitos": cards.count(), "details": [], "contrast": page.evaluate(VALIDATION_CONTRAST),
-              "legacy_shell": page.locator("#terminal-content").count() == 0}
-    output["legacy_main"] = page.locator("#porota-main-content").count() == 1
-    output["m4_current_text"] = ("VERIFICADO ACTUAL" in cards.nth(4).text_content()) if cards.count() > 4 else None
-    output["m11_blocked"] = ("BLOQUEADO POR POLÍTICA" in cards.nth(11).text_content()) if cards.count() > 11 else None
-    for n in range(min(12, cards.count())):
-        summary = cards.nth(n)
-        title = normalize(summary.text_content())
-        if n not in {0, 1, 4, 11}:
-            continue
-        summary.evaluate("(s) => { s.scrollIntoView({block:'center'}); s.focus(); }")
-        summary.press("Enter", timeout=2000)
-        dialog = page.locator("dialog.paper-detail-dialog")
-        dialog.wait_for(state="visible", timeout=2000)
-        body = dialog.locator(".paper-detail-content")
-        visible = body.inner_text()
-        recorded = {"milestone": f"M{n}", "summary_status": BADGE.findall(title),
-                    "percentages": re.findall(r"\d{1,3}%", title),
-                    "opened": dialog.evaluate("(d) => d.open && d.matches(':modal')"),
-                    "title_matches": normalize(dialog.locator("h2").inner_text()) == title,
-                    "exit_criteria": body.locator("li").count(),
-                    "details_include_blocker": "Blocker:" in visible,
-                    "details_include_ref": "Referencia:" in visible}
-        page.keyboard.press("Escape")
-        dialog.wait_for(state="hidden", timeout=2000)
-        page.wait_for_function("(n) => document.activeElement === document.querySelectorAll('details.paper-trade > summary')[n]", arg=n, timeout=2500)
-        recorded["focus_restored"] = True
-        output["details"].append(recorded)
+    main = page.locator("main#terminal-content")
+    output = {"terminal_shell": main.count() == 1,
+              "canonical_view": main.get_attribute("data-view") if main.count() else None,
+              "real_orders_blocked_visible": page.get_by_text("Dinero real bloqueado por política RC6", exact=True).count() == 1}
+    if path != VALIDATION_ROUTE:
+        return output
+
+    milestones = main.locator("button[data-detail-dialog^='validation-M']")
+    output.update(hitos=milestones.count(), details=[])
+    for number in range(12):
+        name = f"M{number}"
+        target = f"validation-{name}-dialog"
+        trigger = main.locator(f"button[data-detail-dialog='{target}']")
+        dialog = main.locator(f"dialog[id='{target}']")
+        detail = {"milestone": name, "opened": False, "focus_restored": False}
+        if trigger.count() == 1 and dialog.count() == 1:
+            trigger.click(timeout=2000)
+            detail["opened"] = dialog.evaluate("(node) => node.open && node.matches(':modal')")
+            fields = dialog.locator("dt")
+            detail["exit_criteria_visible"] = any("criterios de salida" in field.lower() for field in fields.all_text_contents())
+            page.keyboard.press("Escape")
+            dialog.wait_for(state="hidden", timeout=2000)
+            detail["focus_restored"] = trigger.evaluate("(node) => node === document.activeElement")
+        output["details"].append(detail)
     return output
 
 
@@ -239,7 +220,7 @@ def run(base, token, output, live=False, focused=False):
             page.screenshot(path=str(output / filename), animations="disabled", timeout=5000)
             results["snapshots"].append(filename)
 
-        targets = ("/validacion",) if focused else [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]
+        targets = (VALIDATION_ROUTE,) if focused else [*dict.fromkeys((*PRIORITY, *CANONICAL_PATHS))]
         for path in targets:
             info = {"page_errors": 0}
             page_errors.clear()
@@ -256,13 +237,14 @@ def run(base, token, output, live=False, focused=False):
                         info.update(row_details(page, path, max_rows=100))
                         if path in PRIORITY:
                             info["header_states"] = view_states(page)
-                    if path in ("/validacion", "/sistema/evidencia"):
+                    if path in ("/validacion", VALIDATION_ROUTE, VALIDATION_CAMPAIGN, "/sistema/evidencia"):
                         report = validation(page, path, results)
                         if report:
                             info["validation"] = report
-                    if path in ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler", "/sistema/scheduler?offset=20", "/validacion"):
-                        if path == "/validacion":
-                            page.locator("details.paper-trade > summary").first.evaluate("(s) => s.scrollIntoView({block:'center'})")
+                    if path in ("/en-vivo", "/sistema/integraciones", "/sistema/scheduler",
+                                "/sistema/scheduler?offset=20", VALIDATION_ROUTE):
+                        if path == VALIDATION_ROUTE:
+                            page.locator("button[data-detail-dialog='validation-M0-dialog']").scroll_into_view_if_needed(timeout=2000)
                         elif not page.locator("tr[data-row='true']").count():
                             page.evaluate("window.scrollTo(0, 0)")
                         else:

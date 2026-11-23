@@ -1,52 +1,60 @@
-name: RC6 recover retained BYMA preopen input
+name: RC6 Playwright READ_ONLY del release 202
+
 on:
   push:
     branches: [diagnostic/rc6-dashboard-visual-20261122]
-    paths: [.github/workflows/rc6-dashboard-visual-readonly-20261122.yml]
+    paths:
+      - .github/workflows/rc6-dashboard-visual-readonly-20261122.yml
+      - scripts/dashboard_visual_audit/live_probe.py
+      - scripts/dashboard_visual_audit/browser_audit.py
+
 permissions:
   contents: read
-concurrency:
-  group: rc6-unified-paper-deploy
-  cancel-in-progress: false
+
 jobs:
   inspect:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkout the isolated diagnostic
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 64f1474b724b9a7aa6fcf9f2fa7c3427172c0107
+          path: diagnostic
           persist-credentials: false
-      - name: Read the already collected BYMA preopen evidence
+      - name: Read the route inventory from the exact product tree
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 28f8337e9026fcfea6dace798d5c9e7267f85d8a
+          path: product
+          persist-credentials: false
+      - name: Start Chromium in the Actions runner
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check 'playwright==1.55.0'
+          command -v google-chrome >/dev/null
+          python3 -B - <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as playwright:
+              browser = playwright.chromium.launch(channel='chrome', headless=True)
+              print('CHROMIUM_START=OK ' + browser.version)
+              browser.close()
+          PY
+      - name: Inspect the authenticated PAPER dashboard with only GET and HEAD
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          python3 -B - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          from scripts.porota_actions_host import connection, ssh_run
-          source = "import hashlib\nimport json\nimport os\nimport re\nimport stat\nimport subprocess\nfrom datetime import datetime, timezone\nfrom importlib.machinery import PathFinder\nfrom pathlib import Path\n\nROOT = Path(\"/opt/porota-trading\")\nADAPTER = \"iol_mcp_readonly_adapter_rc6\"\nPREOPEN = \"porota-preopen-rc6.service\"\nPRODUCT = \"64f1474b724b9a7aa6fcf9f2fa7c3427172c0107\"\nSOURCE = \"19f0afb64dde8263ebe87766452570ee733fb1db\"\nTREE = \"2060ae859be488992228a6d32ea488ae09e9da2b\"\nCHECKS = frozenset({\n    \"release_identity\", \"observer_container\", \"dashboard_container\", \"observer_db\", \"disk\",\n    \"required_rc6_timers\", \"byma_morning_watch\", \"iol_reference_fallback\",\n    \"history_quarantine\", \"foreign_market_policy\", \"paper_admission_receipt\",\n})\nSTATES = frozenset({\"GREEN\", \"AMBER\", \"RED\", \"PAUSED_NO_GO\", \"SKIP\", \"NO_GO_PAPER_SCALPING\", \"GO_PAPER_SCALPING\"})\n\n\ndef read_small(path, limit=1024 * 1024):\n    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), \"rb\") as stream:\n        info = os.fstat(stream.fileno())\n        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:\n            raise ValueError(\"UNSAFE_EVIDENCE\")\n        data = stream.read(limit + 1)\n        if len(data) > limit:\n            raise ValueError(\"OVERSIZE_EVIDENCE\")\n        return data\n\n\ndef file_evidence(path):\n    try:\n        observed = path.lstat()\n        usable = path.resolve() == path and stat.S_ISREG(observed.st_mode)\n        return {\n            \"regular_no_alias\": usable,\n            \"root_owned\": observed.st_uid == 0,\n            \"writable_by_group_or_other\": bool(observed.st_mode & 0o022),\n            \"sha256\": hashlib.sha256(read_small(path)).hexdigest() if usable else None,\n        }\n    except (OSError, ValueError):\n        return {\"regular_no_alias\": False}\n\n\ndef systemd(unit, *keys):\n    arguments = [item for key in keys for item in (\"--property\", key)]\n    result = subprocess.run([\"/usr/bin/systemctl\", \"show\", \"--no-pager\", *arguments, unit],\n                            capture_output=True, text=True, timeout=8, check=False)\n    if result.returncode:\n        return {}\n    return dict(line.split(\"=\", 1) for line in result.stdout.splitlines() if \"=\" in line)\n\n\ndef safe_reason(value):\n    if value in (\"PermissionError\", \"FileNotFoundError\", \"ValueError\", \"OSError\"):\n        return value\n    return value if isinstance(value, str) and re.fullmatch(r\"[A-Z][A-Z0-9_]{3,80}\", value) else None\n\n\ndef watch_projection(doc):\n    stamp = str(doc.get(\"observed_at\", \"\"))\n    if re.fullmatch(r\"\\d{4}-\\d{2}-\\d{2}T[\\d:.]+(?:Z|[+-]\\d{2}:\\d{2})\", stamp) is None:\n        return None\n    protected = {\"HOURS\", \"CALENDAR\"}\n    pages = doc.get(\"pages\") or {}\n    pending = doc.get(\"pending_review\") or {}\n    known = protected | {\"PUBLICATIONS\", \"OPEN_DATA\", \"SETTLEMENT\", \"COMMUNICATIONS\"}\n    return {\"observed_at\": stamp,\n            \"state\": safe_reason(doc.get(\"state\")),\n            \"changed_components\": sorted(set(doc.get(\"changed_components\") or []) & known),\n            \"pending_review\": {name: next((value for value in [str(pending[name].get(\"sha256\", \"\"))]\n                                          if re.fullmatch(\"[a-f0-9]{64}\", value)), None)\n                               for name in sorted(protected & pending.keys()) if isinstance(pending[name], dict)},\n            \"page_state\": {name: safe_reason((pages.get(name) or {}).get(\"status\")) for name in sorted(protected)},\n            \"page_sha\": {name: next((value for value in [str((pages.get(name) or {}).get(\"sha256\", \"\"))]\n                                      if re.fullmatch(\"[a-f0-9]{64}\", value)), None) for name in sorted(protected)},\n            \"errors_count\": len(doc.get(\"errors\") or [])}\n\n\ndef inspect_watch_book():\n    base = ROOT / \"data/market\"\n    result = {\"last\": None, \"friday\": []}\n    try:\n        result[\"last\"] = watch_projection(json.loads(read_small(base / \"byma_morning_watch_latest.json\", 2 * 1024 * 1024)))\n    except (OSError, ValueError, TypeError):\n        pass\n    try:\n        path = base / \"byma_morning_watch_history.jsonl\"\n        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), \"rb\") as stream:\n            info = os.fstat(stream.fileno())\n            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:\n                return result\n            stream.seek(max(info.st_size - 262144, 0))\n            for line in stream.read(262144).splitlines():\n                try:\n                    doc = json.loads(line)\n                    at = datetime.fromisoformat(doc.get(\"observed_at\", \"\").replace(\"Z\", \"+00:00\"))\n                    if at.tzinfo is not None and at.astimezone(timezone.utc).date().isoformat() in {\n                            \"2026-11-19\", \"2026-11-20\"}:\n                        row = watch_projection(doc)\n                        if row is not None:\n                            result[\"friday\"].append(row)\n                except (AttributeError, TypeError, ValueError):\n                    continue\n            result[\"friday\"] = result[\"friday\"][-12:]\n    except (OSError, ValueError):\n        pass\n    service = systemd(\"porota-byma-morning-watch-rc6.service\", \"ExecMainStatus\", \"ExecMainStartTimestamp\", \"Result\")\n    result[\"byma_service\"] = {key: service.get(key) for key in (\"ExecMainStatus\", \"ExecMainStartTimestamp\", \"Result\")}\n    return result\n\n\nmarker = json.loads(read_small(ROOT / \"data/deploy/CURRENT_STATE_V2.json\"))\nif not (marker.get(\"deployment_sha\") == PRODUCT and marker.get(\"mode\") == \"PRODUCTION_PAPER\"\n        and type(marker.get(\"real_orders_sent\")) is int and marker[\"real_orders_sent\"] == 0\n        and marker.get(\"candidate_sha\") == SOURCE):\n    raise SystemExit(\"PAPER_RELEASE_IDENTITY_UNVERIFIED\")\nreceipt = {\"state\": \"READ_ONLY\", \"observed_at\": datetime.now(timezone.utc).isoformat(),\n           \"deployment_sha\": PRODUCT, \"source_sha\": SOURCE, \"expected_tree\": TREE,\n           \"mode\": marker[\"mode\"], \"real_orders_sent\": marker[\"real_orders_sent\"],\n           \"host_writes\": 0, \"ppi_requests\": 0, \"iol_requests\": 0,\n           \"byma_morning_evidence\": inspect_watch_book()}\nprint(json.dumps(receipt, sort_keys=True))\n"
-          with connection(os.environ) as (ssh, _, _):
-              response = ssh_run(ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'],
-                                 data=source.encode(), timeout=50)
-          if response.returncode:
-              raise SystemExit('IOL_PREOPEN_HOST_RECEIPT_UNVERIFIED')
-          proof = json.loads(response.stdout)
-          for path in ('iol_mcp_readonly_adapter_rc6.py', 'rc6_preopen.py'):
-              proof.setdefault('release_source_hashes', {})[path] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
-          data = json.dumps(proof, sort_keys=True)
-          print(data)
-          Path(os.environ['RUNNER_TEMP'], 'byma-preopen-input.json').write_text(data + '\n')
-          PY
-      - uses: actions/upload-artifact@v4
+          set -Eeuo pipefail
+          test "$(git -C product rev-parse 'HEAD^{tree}')" = ae8d1932a78f378634b1fa325f18bc71654aee32
+          PYTHONPATH="$GITHUB_WORKSPACE/product" python3 -B diagnostic/scripts/dashboard_visual_audit/live_probe.py
+      - name: Preserve only the sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: byma-preopen-input
-          path: ${{ runner.temp }}/byma-preopen-input.json
-          retention-days: 30
-          if-no-files-found: error
+          name: rc6-dashboard-visual-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/porota-dashboard-audit/
+          retention-days: 7
+          if-no-files-found: warn

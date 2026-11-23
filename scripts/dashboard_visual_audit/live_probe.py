@@ -11,9 +11,9 @@ from urllib.request import Request, urlopen
 from browser_audit import run
 from scripts.porota_actions_host import connection, ssh_run
 
-DEPLOYMENT = "bad732511a7cc60981c730699e8527be03f7aa5b"
-IMAGE = "sha256:8e59367f73d632363c73fa3e7ce814aad1f6752223c779e54effe164abcc9d4c"
-SOURCE = "c328a21bc585f6a3fa9f1d28add156616b17bfe3"
+DEPLOYMENT = "28f8337e9026fcfea6dace798d5c9e7267f85d8a"
+IMAGE = "sha256:8fa64b29c93d7e2cf39db8e3a505da4bbaf633494f8e73c038ce73df3f15df12"
+SOURCE = "969980989a414791e78c7c36f98b59c4e1be161d"
 PORT = "18085"
 BASE = "http://127.0.0.1:" + PORT
 REMOTE = r"""
@@ -81,6 +81,7 @@ marker_meta, marker = record(root / "deploy" / "CURRENT_STATE_V2.json")
 assert marker.get("deployment_sha") == deployment and marker.get("image_id") == image
 assert marker.get("candidate_sha") == candidate and marker.get("validation_status") == "VALIDATED_RUNTIME"
 assert marker.get("mode") == "PRODUCTION_PAPER" and marker.get("real_order_capability") == "BLOCKED"
+assert type(marker.get("real_orders_sent")) is int and marker["real_orders_sent"] == 0
 docker = ["/usr/bin/docker","--host",f"unix:///run/user/{uid}/porota-rc6-docker.sock"]
 containers = {}
 for role in ("dashboard","observer"):
@@ -93,9 +94,13 @@ for role in ("dashboard","observer"):
     assert len(identity) == 3 and identity[0] == image
     expected = "o_dashboard.py" if role == "dashboard" else "bv_paper_runtime.py"
     assert identity[2] == expected
-    containers[role] = {"cid":cid,"entrypoint":expected}
+    data_mount = observe([*docker,"container","inspect","--format",
+        '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.RW}}{{end}}{{end}}',cid])
+    assert data_mount in {"true", "false"}
+    containers[role] = {"cid":cid,"entrypoint":expected,"data_mount_rw":data_mount == "true"}
 receipt = {"captured_at":datetime.datetime.now(datetime.timezone.utc).isoformat(),"source_sha":candidate,
-           "deployment_sha":deployment,"image_id":image,"containers":containers}
+           "deployment_sha":deployment,"image_id":image,"containers":containers,
+           "real_orders_sent":marker["real_orders_sent"],"orders_guard":marker["real_order_capability"]}
 if mode == "before":
     # One ephemeral, read-only process in the already-running dashboard.
     # Output is captured only inside the Actions Python process.
@@ -199,7 +204,7 @@ def main():
                     time.sleep(.3)
             else:
                 raise SystemExit("RC6_DASHBOARD_HEALTH_UNAVAILABLE")
-            run(BASE, token, output, live=True, focused=True)
+            run(BASE, token, output, live=True)
         finally:
             forwarding.terminate()
             try:
