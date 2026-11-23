@@ -1,4 +1,4 @@
-name: RC6 IOL private egress evidence for provider support
+name: RC6 observe next-session IOL fallback and PAPER gates
 on:
   push:
     branches: [diagnostic/rc6-iol-oauth-tablet-20261122]
@@ -9,16 +9,16 @@ concurrency:
   group: rc6-unified-paper-deploy
   cancel-in-progress: false
 jobs:
-  capture:
+  observe:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: 08cfa083b0a060b6e503894c793a150bb948693c
           persist-credentials: false
-      - name: Verify PAPER deployment and encrypt the egress detected by IOL
+      - name: Read exact deployed state without publishing preopen or contacting providers
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -26,55 +26,24 @@ jobs:
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
           python3 -B - <<'PY'
-          import base64
-          import ipaddress
           import json
           import os
           from pathlib import Path
-          import subprocess
-          import tempfile
           from scripts.porota_actions_host import connection, decode_receipt, ssh_run
-
-          host_probe = "import datetime\nimport ipaddress\nimport json\nfrom pathlib import Path\nimport re\nfrom urllib.error import HTTPError\nfrom urllib.request import HTTPRedirectHandler, Request, build_opener\n\nmarker = json.loads(Path(\"/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json\").read_bytes())\nassert marker.get(\"deployment_sha\") == \"3f2fdd1bc2ebf697f799d4c715cadbe7a67fcef1\"\nassert marker.get(\"mode\") == \"PRODUCTION_PAPER\" and marker.get(\"real_order_capability\") == \"BLOCKED\"\nassert type(marker.get(\"real_orders_sent\")) is int and marker[\"real_orders_sent\"] == 0\n\nclass NoRedirect(HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\nurl = \"https://mcp.invertironline.com/cdn-cgi/trace\"\nrequest = Request(url, headers={\"Accept\":\"text/plain\",\"User-Agent\":\"Porota-Trading-RC6/1.0 (IOL MCP read-only)\"})\ntry:\n    with build_opener(NoRedirect).open(request, timeout=9) as response:\n        raw = response.read(8193)\n        assert len(raw) <= 8192 and response.headers.get_content_type() == \"text/plain\"\n        fields = dict(item.split(\"=\", 1) for item in raw.decode(\"ascii\").splitlines() if \"=\" in item)\n        assert fields.get(\"h\") == \"mcp.invertironline.com\"\n        ip = ipaddress.ip_address(fields[\"ip\"])\n        mapped = getattr(ip, \"ipv4_mapped\", None)\n        ip = mapped or ip\n        assert ip.is_global and not ip.is_multicast\n        colo = fields.get(\"colo\")\n        ray = response.headers.get(\"CF-Ray\", \"\")\n        assert not colo or re.fullmatch(r\"[A-Z0-9]{2,8}\", colo)\n        if not re.fullmatch(r\"[0-9a-fA-F]{8,32}-[A-Z0-9]{2,8}\", ray):\n            ray = None\n        evidence = {\"ip\":str(ip), \"source\":\"IOL_CLOUDFLARE_TRACE\", \"colo\":colo, \"ray_id\":ray}\nexcept HTTPError as exc:\n    print(json.dumps({\"state\":\"TRACE_UNAVAILABLE\",\"status\":exc.code}))\n    raise SystemExit(2)\nevidence[\"utc\"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec=\"seconds\")\nprint(json.dumps(evidence,sort_keys=True))\n"
+          probe = "from datetime import datetime, timedelta\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport pwd\nimport stat\nimport subprocess\nimport sys\n\nroot = Path(\"/opt/porota-trading\")\nsource_sha = \"08cfa083b0a060b6e503894c793a150bb948693c\"\ndeploy_sha = \"3f2fdd1bc2ebf697f799d4c715cadbe7a67fcef1\"\naccount = pwd.getpwuid(os.getuid())\nassert account.pw_uid == os.geteuid() and account.pw_uid > 0\nmarker = json.loads((root / \"data/deploy/CURRENT_STATE_V2.json\").read_bytes())\nassert marker.get(\"deployment_sha\") == deploy_sha and marker.get(\"candidate_sha\") == source_sha\nassert marker.get(\"mode\") == \"PRODUCTION_PAPER\" and marker.get(\"real_order_capability\") == \"BLOCKED\"\nassert type(marker.get(\"real_orders_sent\")) is int and marker[\"real_orders_sent\"] == 0\nsource = Path(account.pw_dir) / \".local/state/porota-rc6/releases\" / source_sha / \"source\"\nfor path in (source, source.parent, source.parent.parent):\n    meta = path.lstat()\n    assert stat.S_ISDIR(meta.st_mode) and meta.st_uid == account.pw_uid and not meta.st_mode & 0o022\npreopen_path = source / \"rc6_preopen.py\"\nassert not preopen_path.is_symlink()\nassert hashlib.sha256(preopen_path.read_bytes()).hexdigest() == \"5bd5c9b9da54ad7585330b41f8b9fce38530a9a7b03950d3954dd83066b55a23\"\nos.environ[\"POROTA_RUNTIME_BACKEND\"] = \"ROOTLESS\"\nos.environ[\"PAPER_V17_DB_PATH\"] = str(root / \"data/paper_v17/observer_v17.db\")\nsys.path.insert(0, str(source))\n\nimport rc6_preopen as preopen\nfrom scripts.rc6_operator_paper_rearm import evaluate_rearm, trusted_operator_pause\n\ndef select(obj, names):\n    return {key: obj.get(key) for key in names}\n\ndef show(unit, props):\n    argv = [\"/usr/bin/systemctl\", \"show\", \"--no-pager\", unit]\n    for name in props:\n        argv += [\"--property\", name]\n    result = subprocess.run(argv, text=True, capture_output=True, timeout=4, check=False)\n    if result.returncode:\n        return {\"state\": \"UNVERIFIED\"}\n    return {k:v for k,v in (line.split(\"=\",1) for line in result.stdout.splitlines() if \"=\" in line) if k in props}\n\nnow = datetime.now(preopen.TZ)\ntomorrow = (now + timedelta(days=1)).replace(hour=10, minute=20, second=0, microsecond=0)\nrearm, rearm_reason, _ = evaluate_rearm(now=tomorrow, context=\"host\")\nexplicit_pause = trusted_operator_pause(now=tomorrow, context=\"host\") is not None\niol = preopen.paper_optional_iol_reference_availability(preopen.iol_reference_state(now.date()))\nbyma = preopen.byma_morning_watch(now.date(), now=now)\ndb = preopen.observer_db()\nruntime = db.get(\"runtime_contracts\") or {}\nstate = db.get(\"observer_state\") or {}\ntimers = {}\nfor unit in (\"porota-byma-morning-watch-rc6.timer\",\"porota-preopen-rc6.timer\",\n             \"porota-iol-oauth-health-rc6.timer\",\"porota-iol-shadow-collector-rc6.timer\"):\n    timers[unit] = show(unit, (\"ActiveState\",\"UnitFileState\",\"NextElapseUSecRealtime\"))\nservices = {}\nfor unit in (\"porota-preopen-rc6.service\",\"porota-iol-oauth-health-rc6.service\"):\n    services[unit] = show(unit, (\"Result\",\"ExecMainStatus\",\"ExecMainExitTimestamp\"))\nreceipt = {\n    \"schema\":\"RC6_NEXT_SESSION_IOL_IMPACT_V1\", \"source_sha\":source_sha, \"deployment_sha\":deploy_sha,\n    \"observed_at_ar\":now.isoformat(timespec=\"seconds\"), \"checked_for_ar\":tomorrow.isoformat(),\n    \"target_market_day\":preopen.byma.es_dia_habil_operativo(tomorrow.date()),\n    \"mode\":marker[\"mode\"], \"real_order_capability\":marker[\"real_order_capability\"],\n    \"operator\":{\"current_intent_authorizes_rearm_at_target\":rearm,\"reason\":rearm_reason,\"explicit_pause\":explicit_pause},\n    \"iol\":select(iol, (\"state\",\"reason\",\"effective_cache_state\",\"refreshed_at\",\"last_known_good_at\",\n                      \"caucion_ars_state\",\"caucion_ars_records\",\"paper_effect\",\"scope\")),\n    \"byma_today\":select(byma, (\"state\",\"reason\",\"observed_at\")),\n    \"observer_db\":select(db, (\"state\",\"reason\")),\n    \"observer_state\":select(state, (\"mode\",\"ppi_auth\",\"session_state\",\"process_state\",\"heartbeat_at\",\"real_orders_sent\")),\n    \"runtime\":select(runtime, (\"state\",\"workers\",\"scalping_eligible_identities\",\"unclassified_residuals\")),\n    \"timers\":timers,\"services\":services\n}\nprint(json.dumps(receipt,sort_keys=True))\n"
           with connection(os.environ) as (ssh, _, _):
-              result = ssh_run(ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'],
-                               data=host_probe.encode(), timeout=24)
+              result = ssh_run(ssh, ['/usr/bin/python3', '-B', '-'], data=probe.encode(), timeout=44)
           if result.returncode:
-              try:
-                  error = decode_receipt(result.stdout)
-                  status = error.get('status')
-                  if error.get('state') == 'TRACE_UNAVAILABLE' and type(status) is int and 400 <= status <= 599:
-                      print('TRACE_HTTP_' + str(status))
-              except Exception:
-                  pass
-              raise SystemExit('IOL_EGRESS_UNVERIFIED')
-          try:
-              receipt = decode_receipt(result.stdout)
-              ip = ipaddress.ip_address(receipt.get('ip'))
-              assert ip.is_global and not ip.is_multicast and receipt.get('source') == 'IOL_CLOUDFLARE_TRACE'
-              try:
-                  configured = ipaddress.ip_address(os.environ['DO_HOST'])
-              except ValueError:
-                  configured = None
-              receipt['same_as_configured_host_ipv4_or_ipv6'] = (configured == ip) if configured else None
-              content = json.dumps(receipt, separators=(',',':')).encode()
-              if len(content) > 300:
-                  raise ValueError('oversize')
-              with tempfile.NamedTemporaryFile(mode='w') as public_file:
-                  public_file.write("-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAmrnYTKb6p8hM8Uzwobjf\n3H3iQD0tWIwyKFSi4sN9QyK3Ih56HfqTXoqT9PGq6WZgSBX1xphWqZpbQQmThorT\nNisl5+bUmk7DFzuHIJSkEMnd8eNyRpqegXdGzCPea7Tl1MEYqGJLWIlkn0GaKKuy\n8HnSEzG8/IuaAgdqJ0CUC91X+vHTX0aidSBpBZu8Xb1fXCUhnnMuhx8NHFJNTnH9\nujzeo3mRhutr17ClOoKf3j5HCmSlsiVjV+jSCgLaCdZCRSyfVL0JrT7r+ek+eniW\n6nKiBkWByXdH6Uzi4r5avqcnDgFs65dyUqL1b1LX56YzM4k60pSL6ziz3d+QuqFX\nlOL91LlRSjqgRCB80hWQPXqZKwpJbOm7FOXl84ouA/iZTjcSQoTUYc81X2hvD5m4\nqMIGVYammoIXx/HUE5XDBBXGBeEQPqhQZG+oX8fL1WO+9OA9rSx0VrjB13SE5DiM\n+5v6ZpIpUXXdDrmeBp9nxmOk5d5M5w5Fxx0XnHeH0jw48xwobKUHaYq7UXar1sal\nb71bKxI3ussWYf3HaRHUJQlgPx2qdaLsxQRTrrOXcJLY8VQ/e+TDD7eRjgAO+gPd\nKmZA5KLqEcyjp3KDbhBcn5sJH/kNC/uoLTh+4SsBOZkbhz75DphxfLnMSoWp6vCe\nF2CSGBgRWiiRXBWuizwDK50CAwEAAQ==\n-----END PUBLIC KEY-----\n")
-                  public_file.flush()
-                  sealed = subprocess.run(['openssl','pkeyutl','-encrypt','-pubin',
-                      '-inkey',public_file.name,'-pkeyopt','rsa_padding_mode:oaep',
-                      '-pkeyopt','rsa_oaep_md:sha256'],input=content,capture_output=True,check=True)
-              Path(os.environ['RUNNER_TEMP'], 'egress.json').write_text(
-                  json.dumps({'encrypted':base64.b64encode(sealed.stdout).decode()}))
-          except Exception:
-              raise SystemExit('IOL_EGRESS_RECEIPT_UNVERIFIED') from None
-          print('IOL_EGRESS_ENCRYPTED')
+              raise SystemExit('PHYSICAL_READ_UNVERIFIED')
+          report = decode_receipt(result.stdout)
+          assert report['schema'] == 'RC6_NEXT_SESSION_IOL_IMPACT_V1'
+          payload = json.dumps(report,sort_keys=True)
+          print(payload)
+          Path(os.environ['RUNNER_TEMP'], 'iol-paper-tomorrow.json').write_text(payload)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: iol-egress-encrypted
-          path: ${{ runner.temp }}/egress.json
+          name: rc6-iol-next-session-impact
+          path: ${{ runner.temp }}/iol-paper-tomorrow.json
+          retention-days: 14
           if-no-files-found: error
-          retention-days: 1
