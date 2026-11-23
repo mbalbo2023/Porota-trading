@@ -1,43 +1,52 @@
-name: RC6 Scheduler execution evidence regression
+name: RC6 inspect IOL source custody and the preopen exit
 on:
   push:
     branches: [diagnostic/rc6-dashboard-visual-20261122]
     paths: [.github/workflows/rc6-dashboard-visual-readonly-20261122.yml]
 permissions:
   contents: read
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
 jobs:
-  check:
+  inspect:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 966a67283fc6197fb9ca7d865bf9e31bd66648f7
+          ref: 64f1474b724b9a7aa6fcf9f2fa7c3427172c0107
           persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Run exact-change Scheduler, Dashboard and M0 tests
-        shell: bash
+      - name: Read the audited services and exact preopen invocation
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         run: |
-          set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "966a67283fc6197fb9ca7d865bf9e31bd66648f7"
-          test "$(git rev-parse HEAD^{tree})" = "112dbeb0dac29dd4cba9291f160389925339f8d9"
-          bash -n scripts/porota_export_scheduler_state_rc6.sh
-          python -m pip install --disable-pip-version-check -q pytest==9.1.1
-          python -m pytest -q \
-            tests/test_rc6_scheduler_offhours_export.py \
-            tests/test_rc6_679_scheduler_projection.py \
-            tests/test_rc6_685_scheduler_visual_truth.py \
-            tests/test_rc6_validation_dynamic_evidence.py \
-            tests/test_rc6_postclose_validation_publish.py \
-            tests/test_rc6_scheduler_operational_scope.py \
-            tests/test_scheduler_dashboard_hf6.py | tee "$RUNNER_TEMP/scheduler-tests.txt"
+          python3 -B - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from scripts.porota_actions_host import connection, ssh_run
+          source = "import hashlib\nimport json\nimport os\nimport re\nimport stat\nimport subprocess\nfrom datetime import datetime, timezone\nfrom importlib.machinery import PathFinder\nfrom pathlib import Path\n\nROOT = Path(\"/opt/porota-trading\")\nADAPTER = \"iol_mcp_readonly_adapter_rc6\"\nPREOPEN = \"porota-preopen-rc6.service\"\nPRODUCT = \"64f1474b724b9a7aa6fcf9f2fa7c3427172c0107\"\nSOURCE = \"19f0afb64dde8263ebe87766452570ee733fb1db\"\nTREE = \"2060ae859be488992228a6d32ea488ae09e9da2b\"\nCHECKS = frozenset({\n    \"release_identity\", \"observer_container\", \"dashboard_container\", \"observer_db\", \"disk\",\n    \"required_rc6_timers\", \"byma_morning_watch\", \"iol_reference_fallback\",\n    \"history_quarantine\", \"foreign_market_policy\", \"paper_admission_receipt\",\n})\nSTATES = frozenset({\"GREEN\", \"AMBER\", \"RED\", \"PAUSED_NO_GO\", \"SKIP\", \"NO_GO_PAPER_SCALPING\", \"GO_PAPER_SCALPING\"})\n\n\ndef read_small(path, limit=1024 * 1024):\n    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), \"rb\") as stream:\n        info = os.fstat(stream.fileno())\n        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:\n            raise ValueError(\"UNSAFE_EVIDENCE\")\n        data = stream.read(limit + 1)\n        if len(data) > limit:\n            raise ValueError(\"OVERSIZE_EVIDENCE\")\n        return data\n\n\ndef file_evidence(path):\n    try:\n        observed = path.lstat()\n        usable = path.resolve() == path and stat.S_ISREG(observed.st_mode)\n        return {\n            \"regular_no_alias\": usable,\n            \"root_owned\": observed.st_uid == 0,\n            \"writable_by_group_or_other\": bool(observed.st_mode & 0o022),\n            \"sha256\": hashlib.sha256(read_small(path)).hexdigest() if usable else None,\n        }\n    except (OSError, ValueError):\n        return {\"regular_no_alias\": False}\n\n\ndef systemd(unit, *keys):\n    arguments = [item for key in keys for item in (\"--property\", key)]\n    result = subprocess.run([\"/usr/bin/systemctl\", \"show\", \"--no-pager\", *arguments, unit],\n                            capture_output=True, text=True, timeout=8, check=False)\n    if result.returncode:\n        return {}\n    return dict(line.split(\"=\", 1) for line in result.stdout.splitlines() if \"=\" in line)\n\n\ndef safe_reason(value):\n    if value in (\"PermissionError\", \"FileNotFoundError\", \"ValueError\", \"OSError\"):\n        return value\n    return value if isinstance(value, str) and re.fullmatch(r\"[A-Z][A-Z0-9_]{3,80}\", value) else None\n\n\ndef summarize_preopen(raw):\n    decoder = json.JSONDecoder()\n    for match in re.finditer(r\"\\{\\s*\\\"schema\\\"\\s*:\\s*\\\"POROTA_RC6_PREOPEN_V3\\\"\", raw):\n        try:\n            value, _ = decoder.raw_decode(raw[match.start():])\n        except ValueError:\n            continue\n        if value.get(\"phase\") != \"T_MINUS_10\" or not str(value.get(\"generated_at_ar\", \"\")).startswith(\"2026-11-20T10:20:\"):\n            continue\n        reds = sorted(set(value.get(\"red_checks\") or []) & CHECKS)\n        checks = value.get(\"checks\") or {}\n        result = {\"status\": value.get(\"status\") if value.get(\"status\") in STATES else None,\n                  \"red_checks\": reds, \"reasons\": {}, \"generated_at_ar\": value[\"generated_at_ar\"]}\n        for name in reds:\n            info = checks.get(name) or {}\n            detail = info.get(\"detail\")\n            result[\"reasons\"][name] = safe_reason(info.get(\"reason\")) or (\n                safe_reason(detail.split(\":\", 1)[0]) if isinstance(detail, str) else None)\n        publication = value.get(\"paper_admission_receipt\")\n        if isinstance(publication, dict):\n            result[\"paper_gate_status\"] = publication.get(\"status\") if publication.get(\"status\") in STATES else None\n            result[\"paper_gate_reason\"] = safe_reason(publication.get(\"reason\"))\n        result[\"associated_checks\"] = {\n            name: safe_reason((checks.get(name) or {}).get(\"reason\"))\n            for name in (\"byma_morning_watch\", \"iol_reference_fallback\", \"release_identity\")\n        }\n        return result\n    return None\n\n\ndef inspect_preopen():\n    props = systemd(PREOPEN, \"InvocationID\", \"ExecMainStartTimestamp\", \"ExecMainExitTimestamp\",\n                    \"ExecMainStatus\", \"ExecStart\", \"User\")\n    result = {\n        \"host_source\": file_evidence(ROOT / \"rc6_preopen.py\"),\n        \"exec_uses_host_source\": str(ROOT / \"rc6_preopen.py\") in props.get(\"ExecStart\", \"\"),\n        \"current_exec_status\": props.get(\"ExecMainStatus\"),\n        \"current_exec_start\": props.get(\"ExecMainStartTimestamp\"),\n    }\n    journal = subprocess.run(\n        [\"/usr/bin/journalctl\", \"--quiet\", \"--no-pager\", \"--output=json\", \"--lines=280\",\n         \"-u\", PREOPEN, \"--since\", \"2026-11-20 13:20:10 UTC\", \"--until\", \"2026-11-20 13:20:25 UTC\"],\n        capture_output=True, text=True, timeout=12, check=False)\n    service_entries = []\n    if journal.returncode == 0:\n        for line in journal.stdout.splitlines():\n            try:\n                item = json.loads(line)\n            except ValueError:\n                continue\n            if item.get(\"_SYSTEMD_UNIT\") != PREOPEN or not isinstance(item.get(\"MESSAGE\"), str):\n                continue\n            invocation = item.get(\"_SYSTEMD_INVOCATION_ID\")\n            if (str(props.get(\"ExecMainStartTimestamp\", \"\")).startswith(\"Fri 2026-11-20 13:20:15\")\n                    and props.get(\"InvocationID\", \"\").strip(\"0\") and invocation != props[\"InvocationID\"]):\n                continue\n            service_entries.append(item[\"MESSAGE\"])\n    transcript = \"\\n\".join(service_entries)\n    result[\"journal_lines\"] = len(service_entries)\n    result[\"receipt\"] = summarize_preopen(transcript)\n    result[\"exception_classes\"] = sorted(set(re.findall(\n        r\"(?m)^(ModuleNotFoundError|ImportError|FileNotFoundError|PermissionError|\"\n        r\"ValueError|TypeError|KeyError|OperationalError):\", transcript)))\n    for key in (\"PREOPEN_SOURCE_MANIFEST_UNVERIFIED\", \"PAPER_ROOTLESS_CANONICAL_PATH_REQUIRED\"):\n        if key in transcript:\n            result.setdefault(\"known_failure_codes\", []).append(key)\n    return result\n\n\ndef inspect_iol():\n    adapter_path = ROOT / (ADAPTER + \".py\")\n    result = {\"adapter\": file_evidence(adapter_path), \"root_custody\": {}}\n    for location in (Path(\"/opt\"), ROOT, ROOT / \"scripts\"):\n        info = location.lstat()\n        result[\"root_custody\"][location.name] = bool(\n            location.resolve() == location and stat.S_ISDIR(info.st_mode)\n            and info.st_uid == 0 and not info.st_mode & 0o022)\n    for label, unit, entry in (\n        (\"guardian\", \"porota-iol-oauth-health-rc6.service\", \"rc6_iol_oauth_health.py\"),\n        (\"collector\", \"porota-iol-shadow-collector-rc6.service\", \"rc6_source_cycle_dispatch.py\"),\n    ):\n        info = systemd(unit, \"User\", \"LoadState\", \"ActiveState\", \"WorkingDirectory\", \"Environment\", \"ExecStart\", \"FragmentPath\")\n        env_python = re.findall(r\"(?:^|\\s)PYTHONPATH=([^\\s]+)\", info.get(\"Environment\", \"\"))\n        spec = PathFinder.find_spec(ADAPTER, [str(ROOT / \"scripts\"), str(ROOT)])\n        result[label] = {\n            \"loaded\": info.get(\"LoadState\") == \"loaded\",\n            \"root\": info.get(\"User\") in (\"\", \"root\", \"0\") if info else None,\n            \"runs_checkout\": info.get(\"WorkingDirectory\") == str(ROOT) and\n                             str(ROOT / \"scripts\" / entry) in info.get(\"ExecStart\", \"\"),\n            \"pythonpath_matches_checkout\": env_python == [str(ROOT)],\n            \"adapter_import_matches\": getattr(spec, \"origin\", None) == str(adapter_path),\n            \"unit_custody\": file_evidence(Path(info[\"FragmentPath\"])) if info.get(\"FragmentPath\") else None,\n        }\n    store = Path(\"/root/.config/porota/iol_mcp_oauth_bootstrap.json\")\n    meta = store.lstat()\n    result[\"store_root_0600_regular\"] = (store.resolve() == store and stat.S_ISREG(meta.st_mode)\n                                         and meta.st_uid == 0 and meta.st_nlink == 1\n                                         and stat.S_IMODE(meta.st_mode) == 0o600)\n    return result\n\n\nmarker = json.loads(read_small(ROOT / \"data/deploy/CURRENT_STATE_V2.json\"))\nif not (marker.get(\"deployment_sha\") == PRODUCT and marker.get(\"mode\") == \"PRODUCTION_PAPER\"\n        and type(marker.get(\"real_orders_sent\")) is int and marker[\"real_orders_sent\"] == 0\n        and marker.get(\"candidate_sha\") == SOURCE):\n    raise SystemExit(\"PAPER_RELEASE_IDENTITY_UNVERIFIED\")\nreceipt = {\"state\": \"READ_ONLY\", \"observed_at\": datetime.now(timezone.utc).isoformat(),\n           \"deployment_sha\": PRODUCT, \"source_sha\": SOURCE, \"expected_tree\": TREE,\n           \"mode\": marker[\"mode\"], \"real_orders_sent\": marker[\"real_orders_sent\"],\n           \"host_writes\": 0, \"ppi_requests\": 0, \"iol_requests\": 0,\n           \"iol\": inspect_iol(), \"preopen\": inspect_preopen()}\nprint(json.dumps(receipt, sort_keys=True))\n"
+          with connection(os.environ) as (ssh, _, _):
+              response = ssh_run(ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'],
+                                 data=source.encode(), timeout=50)
+          if response.returncode:
+              raise SystemExit('IOL_PREOPEN_HOST_RECEIPT_UNVERIFIED')
+          proof = json.loads(response.stdout)
+          for path in ('iol_mcp_readonly_adapter_rc6.py', 'rc6_preopen.py'):
+              proof.setdefault('release_source_hashes', {})[path] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          data = json.dumps(proof, sort_keys=True)
+          print(data)
+          Path(os.environ['RUNNER_TEMP'], 'iol-preopen-readonly.json').write_text(data + '\n')
+          PY
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: scheduler-execution-tested-966a672
-          path: ${{ runner.temp }}/scheduler-tests.txt
-          if-no-files-found: error
+          name: iol-preopen-readonly
+          path: ${{ runner.temp }}/iol-preopen-readonly.json
           retention-days: 30
+          if-no-files-found: error
