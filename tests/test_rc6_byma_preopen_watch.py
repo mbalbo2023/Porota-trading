@@ -108,6 +108,9 @@ def test_observed_20261020_host_transition_requires_exact_review(tmp_path,monkey
     replay=watch.persist(tmp_path,dict(current,observed_at="2026-10-20T06:30:00+00:00"))
     assert replay["state"]=="NO_CHANGE"
     assert preopen.byma_morning_watch(today)["reviewed_critical_components"]==["CALENDAR","HOURS"]
+    current["pages"]["CALENDAR"]["sha256"] = review["pages"]["CALENDAR"]["previous_reviewed_sha256"]
+    watch.persist(tmp_path, dict(current, observed_at="2026-10-20T06:30:15+00:00"))
+    assert preopen.byma_morning_watch(today)["reason"] == "BYMA_CRITICAL_REVIEWED_EXACT"
     current["pages"]["CALENDAR"]["sha256"]="d"*64
     watch.persist(tmp_path,dict(current,observed_at="2026-10-20T06:31:00+00:00"))
     assert preopen.byma_morning_watch(today)["reason"]=="BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED"

@@ -13,7 +13,7 @@ import iol_mcp_readonly_adapter_rc6 as adapter
 
 class Response:
     def __init__(self, payload, headers=None):
-        self.payload = json.dumps(payload).encode()
+        self.payload = b"" if payload is None else json.dumps(payload).encode()
         self.headers = headers or {}
 
     def read(self):
@@ -52,7 +52,10 @@ def test_401_refreshes_once_discovers_endpoint_and_reinitializes(tmp_path, monke
         if url == "https://mcp.example/rpc":
             body = json.loads(request.data)
             if body["method"] == "initialize":
-                return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+                return Response({"result": {"protocolVersion": adapter.MCP_PROTOCOL_VERSION}},
+                                {"Mcp-Session-Id": "session"})
+            if body["method"] == "notifications/initialized":
+                return Response(None)
             assert request.get_header("Authorization") == "Bearer fresh"
             return Response({"result": {"content": [{"text": '{"unit_price": 123}'}]}})
         raise AssertionError(url)
@@ -103,7 +106,10 @@ def test_proactive_refreshes_before_expiry_without_waiting_for_401(tmp_path, mon
             assert request.get_header("Authorization") == "Bearer fresh"
             body = json.loads(request.data)
             if body["method"] == "initialize":
-                return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+                return Response({"result": {"protocolVersion": adapter.MCP_PROTOCOL_VERSION}},
+                                {"Mcp-Session-Id": "session"})
+            if body["method"] == "notifications/initialized":
+                return Response(None)
             assert body["method"] == "tools/list"
             return Response({"result": {"tools": []}})
         raise AssertionError(url)
@@ -143,7 +149,10 @@ def test_proactive_refresh_uses_store_mtime_for_legacy_token_store(tmp_path, mon
             assert request.get_header("Authorization") == "Bearer fresh"
             body = json.loads(request.data)
             if body["method"] == "initialize":
-                return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+                return Response({"result": {"protocolVersion": adapter.MCP_PROTOCOL_VERSION}},
+                                {"Mcp-Session-Id": "session"})
+            if body["method"] == "notifications/initialized":
+                return Response(None)
             return Response({"result": {"tools": []}})
         raise AssertionError(request.full_url)
 
@@ -174,7 +183,10 @@ def test_fresh_token_does_not_refresh_early(tmp_path, monkeypatch):
         assert request.get_header("Authorization") == "Bearer fresh-enough"
         body = json.loads(request.data)
         if body["method"] == "initialize":
-            return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+            return Response({"result": {"protocolVersion": adapter.MCP_PROTOCOL_VERSION}},
+                            {"Mcp-Session-Id": "session"})
+        if body["method"] == "notifications/initialized":
+            return Response(None)
         return Response({"result": {"tools": []}})
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
@@ -201,7 +213,10 @@ def test_token_with_one_hundred_seconds_remaining_does_not_rotate(tmp_path, monk
         assert request.get_header("Authorization") == "Bearer still-valid"
         body = json.loads(request.data)
         if body["method"] == "initialize":
-            return Response({"result": {}}, {"Mcp-Session-Id": "session"})
+            return Response({"result": {"protocolVersion": adapter.MCP_PROTOCOL_VERSION}},
+                            {"Mcp-Session-Id": "session"})
+        if body["method"] == "notifications/initialized":
+            return Response(None)
         return Response({"result": {"tools": []}})
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
@@ -235,3 +250,50 @@ def test_refresh_http_failure_exposes_only_status_not_body_or_tokens(
     assert exc.retry_after==1 and exc.__cause__ is None
     assert 'secret' not in str(exc)
     assert json.loads(store.read_text())==original
+
+
+@pytest.mark.parametrize("last_page,mode,reason", [
+    ("market", "read_only", None),
+    ("market", "auto", "IOL_MCP_ACCESS_MODE_UNVERIFIED"),
+    ("execution", "read_only", "IOL_MCP_NON_READ_TOOL_INVENTORY"),
+    ("repeat_cursor", "read_only", "IOL_MCP_TOOL_CURSOR_INVALID"),
+])
+def test_staged_token_checks_the_complete_session_before_persisting(
+        monkeypatch, last_page, mode, reason):
+    seen = []
+
+    def fake_urlopen(request, timeout):
+        assert request.full_url == adapter.IOL_MCP_ISSUER
+        assert request.get_header("Authorization") == "Bearer fixture-token"
+        body = json.loads(request.data)
+        method = body["method"]
+        seen.append(method)
+        if method == "initialize":
+            assert body["params"]["protocolVersion"] == adapter.MCP_PROTOCOL_VERSION
+            return Response({"result": {"protocolVersion": "2025-03-26"}}, {"MCP-Session-ID": "session"})
+        assert request.get_header("Mcp-protocol-version") == "2025-03-26"
+        assert request.get_header("Mcp-session-id") == "session"
+        if method == "notifications/initialized":
+            assert "id" not in body
+            return Response(None)
+        if method == "tools/list":
+            if not body["params"]:
+                return Response({"result": {"tools": [{"name": "get_access_mode"}], "nextCursor": "page2"}})
+            assert body["params"] == {"cursor": "page2"}
+            page = {"tools": [{"name": "get_asset_quote"}, {"name": "get_price_history"}]}
+            if last_page == "execution":
+                page["tools"].append({"name": "place_order"})
+            if last_page == "repeat_cursor":
+                page["nextCursor"] = "page2"
+            return Response({"result": page})
+        assert method == "tools/call" and body["params"] == {"name": "get_access_mode", "arguments": {}}
+        return Response({"result": {"structuredContent": {"mode": mode, "saved_mode": mode}}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    if reason:
+        with pytest.raises(adapter.IOLMCPError, match="^" + reason + "$"):
+            adapter.verify_read_only_token("fixture-token")
+    else:
+        assert adapter.verify_read_only_token("fixture-token") == {"mode": "read_only", "read_only_tool_count": 3}
+    assert seen[:4] == ["initialize", "notifications/initialized", "tools/list", "tools/list"]
+    assert seen[4:] == (["tools/call"] if last_page == "market" else [])

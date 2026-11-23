@@ -1,6 +1,6 @@
 {
   "schema": "porota-byma-authority-review-v1",
-  "reviewed_at_utc": "2026-10-20T06:25:30Z",
+  "reviewed_at_utc": "2026-11-23T02:02:01Z",
   "reviewed_for": "2026 calendar, PAPER/SHADOW only",
   "valid_through_ar": "2026-12-31",
   "decision_effect": "OBSERVE_ONLY",
@@ -8,20 +8,22 @@
   "pages": {
     "HOURS": {
       "url": "https://www.byma.com.ar/mercado/horarios",
-      "sha256": "3a1b451f8443f72db186dff37ecd0a0fa16fb884c2b6b6f8d4bb9ecc23cbad3a",
-      "review": "Página oficial con horario GMT-3 y PDF de negociación COM19024 del 22/09/2026; la revisión no detectó una excepción del 20/10. El hash v2 incluye el destino del PDF."
+      "sha256": "d78278d176415e433339b1a0b19e607e42a4a87d632f820612d1e54e74316c4f",
+      "review": "Página oficial GMT−3 con el PDF COM19031 del 28/10/2026, vigente desde el 02/11. El hash h1-to-footer-v2 coincide con la captura del 20/11 y el PDF con el usado para el contrato horario del código."
     },
     "CALENDAR": {
       "url": "https://www.byma.com.ar/mercado/calendario-bursatil",
-      "sha256": "0528f4478e194ca394809f8a848d5327010ecd92f7faeb1ab772d161b77eb17d",
-      "review": "La lista oficial de fechas no operativas no incluye 20/10/2026. La actualización de 9 y 10/11 y otras excepciones futuras ya consta en ak_byma_calendar.py (auditado 14/10/2026)."
+      "sha256": "c7505c671d8db938b593c54bb8f4912dd74f82b30626b8d61814b907e07612c2",
+      "previous_reviewed_sha256": "0528f4478e194ca394809f8a848d5327010ecd92f7faeb1ab772d161b77eb17d",
+      "review": "Cotejo del calendario oficial de 2026 con ak_byma_calendar.py, incluido el feriado del 23/11 y las jornadas de diciembre. El hash anterior conserva el respaldo de la revisión del 20/10 y coincide con la captura del 20/11."
     }
   },
   "evidence": {
     "official_hours": "https://www.byma.com.ar/mercado/horarios",
     "official_calendar": "https://www.byma.com.ar/mercado/calendario-bursatil",
-    "official_hours_communication": "https://www.byma.com.ar/comunicados/com19024-horarios",
-    "diagnostic_run": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39380263307",
-    "failed_deploy_run": "https://github.com/mbalbo2023/Porota-trading/actions/runs/39373845951"
+    "official_hours_communication": "https://www.byma.com.ar/comunicados/com19031-horarios",
+    "official_hours_pdf_sha256": "fe31c7baf8c51692e4bbbcc9138455563025964e9ae7178337c3c55990df6af0",
+    "diagnostic_run": "https://github.com/mbalbo2023/Porota-trading/actions/runs/45097669964",
+    "preopen_red_run": "https://github.com/mbalbo2023/Porota-trading/actions/runs/45097237720"
   }
 }
