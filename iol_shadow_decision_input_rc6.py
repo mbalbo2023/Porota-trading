@@ -73,11 +73,14 @@ def read_for_decision(symbol: str, *, root: Path | str | None = None,
                 str(item.get("symbol") or "").upper().strip() == normalized), None)
     if row is None:
         return _unavailable(normalized, "SYMBOL_NOT_COVERED", coverage)
+    source = row.get("source") or payload.get("source") or SOURCE
+    quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
     captured_at = _as_utc(row.get("captured_at"))
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    age = (reference - captured_at).total_seconds() if captured_at else None
+    provenance_at = _as_utc(quote.get("provider_observed_at")) if source == "IOL_REST" else captured_at
+    age = ((reference - provenance_at).total_seconds()
+           if provenance_at and captured_at and provenance_at <= captured_at <= reference else None)
     freshness = "FRESH" if age is not None and 0 <= age <= max_age_seconds else ("STALE" if age is not None else "UNKNOWN")
-    quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
     state = str(row.get("state") or "UNAVAILABLE")
     has_last = quote.get("last") is not None
     quality = "GOOD" if state == "READY" and has_last and freshness == "FRESH" else ("DEGRADED" if state == "READY" and has_last else "UNKNOWN")
@@ -96,7 +99,7 @@ def read_for_decision(symbol: str, *, root: Path | str | None = None,
                      if value is not None and (not isinstance(value, str) or value.strip()))
     missing = sorted(set(field_values) - set(present))
     return {
-        "source": SOURCE,
+        "source": source,
         "mode": MODE,
         "decision_effect": DECISION_EFFECT,
         "symbol": normalized,

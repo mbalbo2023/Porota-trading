@@ -14,14 +14,14 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from iol_mcp_readonly_adapter_rc6 import (ALLOWED_TOOLS as IOL_READ_ONLY_TOOLS,
-                                          IOLMCPError, OAuthStoreReadOnlyMCP)
-from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _safe_call,
+from iol_rest_readonly_rc6 import IOLRestReadOnly, SOURCE as REST_SOURCE
+from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _atomic_json,
                                       is_late_observation_window,
                                       is_operational_market_window,
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
 from rc6_source_consolidation import consolidate
+from scripts.porota_rootless_host import Identity
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
@@ -29,51 +29,6 @@ DEFAULT_DB = os.getenv("POROTA_IOL_OPERATIONAL_DB", "/opt/porota-trading/data/pa
 BATCH_SIZE = 12
 PRIMARY_MAX_AGE_SECONDS = 300
 LATE_CATALOG_MAX_ROWS = 20000
-
-
-class LateNoOAuthRefreshMCP(OAuthStoreReadOnlyMCP):
-    """Late-session reference reads cannot rotate or reauthorize IOL OAuth.
-
-    A stale/403 session is an optional-provider AMBER, never permission to
-    mutate tokens, start authorization or bypass a browser security decision.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._late_auth_terminal = False
-
-    def _refresh_if_due(self) -> None:
-        if self._refresh_due(self._load_store()):
-            raise IOLMCPError("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION")
-
-    def _refresh_after_401(self, headers) -> None:
-        raise IOLMCPError("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION", status_code=401)
-
-    def _write_store(self, data) -> None:
-        raise IOLMCPError("IOL_LATE_OAUTH_WRITE_FORBIDDEN")
-
-    def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if tool_name not in IOL_READ_ONLY_TOOLS:
-            raise PermissionError("IOL_SHADOW_TOOL_DENIED:" + tool_name)
-        if self._late_auth_terminal:
-            raise IOLMCPError("IOL_LATE_AUTH_TERMINAL_NO_RETRY")
-        try:
-            return super().call(tool_name, arguments)
-        except IOLMCPError as exc:
-            if (exc.status_code in {401, 403}
-                    or str(exc).startswith("IOL_LATE_REFRESH_REQUIRED_NO_MUTATION")):
-                # One provider rejection per process is enough evidence; a
-                # 12-symbol rotating batch must not bombard a WAF/OAuth wall.
-                self._late_auth_terminal = True
-            raise
-
-
-def _atomic_json(path: Path, value: dict[str, Any]) -> None:
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    os.chmod(temporary, 0o644)
-    temporary.replace(path)
 
 
 AUDIT_FAMILIES = frozenset({
@@ -274,7 +229,8 @@ def _rotation(universe: list[str], fingerprint: str) -> tuple[list[str], int, di
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {}
-    if state.get("universe_fingerprint") != fingerprint or int(state.get("universe_size") or 0) != len(universe):
+    if (state.get("universe_fingerprint") != fingerprint or state.get("transport") != REST_SOURCE
+            or int(state.get("universe_size") or 0) != len(universe)):
         state = {"schema_version": 3, "cycle_id": 1, "next_index": 0, "seen": []}
     universe_set = set(universe)
     seen = {str(x).upper() for x in state.get("seen", []) if str(x).upper() in universe_set}
@@ -305,6 +261,7 @@ def _commit_rotation(universe: list[str], fingerprint: str, start: int, selected
     seen.update(str(symbol).upper() for symbol in selected)
     committed = {
         "schema_version": 3,
+        "transport": REST_SOURCE,
         "universe_size": len(universe),
         "universe_fingerprint": fingerprint,
         "cycle_id": int(state.get("cycle_id") or 1),
@@ -479,12 +436,13 @@ def _publish_progress(universe: list[str] | int, batch: list[str], source: str, 
     cycle_source_fresh = sum(provider_fresh(by_symbol[symbol]) for symbol in cycle_seen)
     cycle_capture_fresh = sum(capture_recent(by_symbol[symbol]) for symbol in cycle_seen)
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
+    rest = payload.get("source") == REST_SOURCE
     payload["progress"] = {
         "scheduled": total,
         "completed": len(cycle_seen),
         "ready": ready,
         "unavailable": unavailable,
-        "fresh": capture_fresh,
+        "fresh": source_fresh if rest else capture_fresh,
         "provider_fresh": source_fresh,
         "provider_timestamped": source_timestamped,
         "capture_recent": capture_fresh,
@@ -493,7 +451,7 @@ def _publish_progress(universe: list[str] | int, batch: list[str], source: str, 
         "cache_ready": cache_ready,
         "cache_symbols": len(cache_seen),
         "cache_stale_or_unavailable": len(cache_seen) - source_fresh,
-        "freshness_basis": "IOL_PROVIDER_TRADE_TIMESTAMP",
+        "freshness_basis": "IOL_REST_PROVIDER_LAST_UPDATED" if rest else "IOL_PROVIDER_TRADE_TIMESTAMP",
         "freshness_max_age_seconds": 120,
         "batch_size": len(batch),
         "cycle_id": cycle.get("cycle_id"),
@@ -531,28 +489,21 @@ def main(now: datetime | None = None) -> int:
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
-    client = LateNoOAuthRefreshMCP() if late else OAuthStoreReadOnlyMCP()
-    # Reserve a deterministic part of IOL's 40-call/minute budget for family
-    # contracts.  Twelve quote symbols cost at most 24 calls when every
-    # metadata TTL expires; family enrichment is bounded to at most 15 calls.
-    # This removes the previous starvation mode where a 20-symbol quote batch
-    # consumed the entire minute and contract promotion never ran.
+    # Book, quote, metadata, auth and family enrichment share the same wire
+    # budget even when one logical observation requires several REST calls.
     policy = CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40)
     governor = RateGovernor(policy)
-
-    class GovernedClient:
-        def call(self, tool_name, arguments):
-            return _safe_call(client, tool_name, arguments, governor, policy)
-
-    family_reference_state = "NOT_DUE_LATE_T1_SCOPE" if late else "UPDATED"
-    if not late:
-        try:
-            family_reference.collect(GovernedClient(), root=DEFAULT_ROOT, db_path=DEFAULT_DB)
-        except Exception as exc:
-            family_reference_state = "ERROR:" + type(exc).__name__
+    client = IOLRestReadOnly(Identity.current().state / "iol-rest", allow_renew=not late, governor=governor)
 
     run_batch(batch, client, root=DEFAULT_ROOT, primary_last_by_symbol=primary,
               policy=policy, governor=governor)
+    family_reference_state = "NOT_DUE_LATE_T1_SCOPE" if late else "UPDATED"
+    if not late:
+        try:
+            family_reference.collect(client, root=DEFAULT_ROOT, db_path=DEFAULT_DB)
+        except Exception as exc:
+            family_reference_state = "ERROR:" + type(exc).__name__
+
     cycle = _commit_rotation(universe, fingerprint, rotation_start, batch, prior_cycle)
     payload = _publish_progress(universe, batch, universe_source, fingerprint, cycle, primary_contract)
     ppi_rows = []
@@ -570,6 +521,8 @@ def main(now: datetime | None = None) -> int:
             continue
         quote = row.get("quote") if isinstance(row.get("quote"), dict) else {}
         merged = {**quote, **{key: row.get(key) for key in ("family", "symbol", "market", "term", "asset_type", "currency", "units_per_lot")}}
+        merged.update(source=row.get("source", payload.get("source")), state=row.get("state"),
+                      captured_at=row.get("captured_at"))
         iol_rows.append(merged)
     official_rows = []
     try:

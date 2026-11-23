@@ -1,4 +1,4 @@
-"""Bounded IOL MCP collector for RC6 observation-only SHADOW validation.
+"""Bounded IOL collector for RC6 observation-only SHADOW validation.
 
 The collector never imports PPI, execution, portfolio, or order modules. Credentials
 remain inside an injected adapter. IOL data is recorded separately and cannot alter
@@ -129,7 +129,7 @@ def is_verified_late_contract_window(now: datetime | None = None, *,
             and str(settlement_source).strip().upper() == "PPI_FIELD")
 
 
-class ReadOnlyMCP(Protocol):
+class ReadOnlyMarketData(Protocol):
     """Credential-owning adapter. OAuth refresh is internal and never logged here."""
     def call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -208,6 +208,7 @@ def _atomic_json(path: Path, value: dict) -> None:
     with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=".iol-shadow-", suffix=".tmp", delete=False) as h:
         json.dump(value, h, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         h.write("\n"); h.flush(); os.fsync(h.fileno()); temporary = Path(h.name)
+        os.fchmod(h.fileno(), 0o644)
     os.replace(temporary, path)
 
 
@@ -222,7 +223,8 @@ def _load_json(path: Path) -> dict:
 def _cache_state(row: dict[str, Any], observed_at: datetime,
                  ttl_seconds: int = QUOTE_CACHE_TTL_SECONDS) -> str:
     """Classify cached dynamic data without expiring its static metadata."""
-    stamp = row.get("captured_at")
+    quote = row.get("quote") or {}
+    stamp = quote.get("provider_observed_at") if row.get("source") == "IOL_REST" else row.get("captured_at")
     try:
         parsed = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
@@ -275,16 +277,20 @@ def _retry_after(exc: Exception) -> float | None:
         return None
 
 
-def _safe_call(client: ReadOnlyMCP, tool_name: str, arguments: dict[str, Any],
+def _safe_call(client: ReadOnlyMarketData, tool_name: str, arguments: dict[str, Any],
                governor: RateGovernor, policy: CollectionPolicy) -> dict[str, Any]:
     if tool_name not in ALLOWED_TOOLS:
         raise PermissionError(f"IOL_SHADOW_TOOL_DENIED:{tool_name}")
+    wire_budget = getattr(client, "uses_wire_budget", False)
     for attempt in range(policy.retry_attempts + 1):
-        governor.acquire()
+        if not wire_budget:
+            governor.acquire()
         try:
             result = client.call(tool_name, arguments)
             return result if isinstance(result, dict) else {}
         except Exception as exc:
+            if wire_budget and _is_rate_limited(exc):
+                raise  # The REST client already applied Retry-After to the shared wire budget.
             if not _is_transient(exc) or attempt >= policy.retry_attempts:
                 if _is_rate_limited(exc):
                     governor.trip(_retry_after(exc))
@@ -308,10 +314,11 @@ def _metadata_from(info: dict[str, Any]) -> dict[str, Any]:
         "asset_type": str(payload.get("type") or payload.get("asset_type") or ""),
         "currency": str(payload.get("currency") or ""),
         "units_per_lot": payload.get("units_per_lot") or payload.get("lot_size"),
+        **{key: payload[key] for key in ("provider_asset_type", "provider_trading_info") if key in payload},
     }
 
 
-def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str | None = None,
+def run_batch(symbols: Iterable[str], client: ReadOnlyMarketData, *, root: Path | str | None = None,
               market: str = DEFAULT_MARKET, term: str = DEFAULT_TERM,
               primary_last_by_symbol: dict[str, Any] | None = None,
               policy: CollectionPolicy = CollectionPolicy(), run_id: str | None = None,
@@ -325,16 +332,17 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     if term != DEFAULT_TERM:
         raise ValueError("IOL_SHADOW_UNSUPPORTED_TERM")
     active_run_id = run_id or f"IOL-SHADOW-{now().strftime('%Y%m%dT%H%M%S')}-{uuid4().hex[:8]}"
+    source = getattr(client, "source", SOURCE)
     checkpoint_file = _checkpoint_path(root)
     prior = _load_json(checkpoint_file)
-    state = prior if (resume and run_id and prior.get("run_id") == active_run_id and
+    state = prior if (resume and run_id and prior.get("run_id") == active_run_id and prior.get("source") == source and
                       prior.get("symbols") == universe and prior.get("market") == market and
                       prior.get("term") == term) else {"schema_version": CHECKPOINT_SCHEMA_VERSION, "run_id": active_run_id,
-                      "source": SOURCE, "mode": MODE, "decision_effect": DECISION_EFFECT, "market": market,
+                      "source": source, "mode": MODE, "decision_effect": DECISION_EFFECT, "market": market,
                       "term": term, "symbols": universe, "completed": {}, "status": "RUNNING",
                       "real_money_authorized": False, "live_decision_authority": False}
     metadata_store = _load_json(_metadata_path(root))
-    metadata_entries = dict(metadata_store.get("entries") or {})
+    metadata_entries = dict(metadata_store.get("entries") or {}) if metadata_store.get("source", SOURCE) == source else {}
     completed, primary = dict(state.get("completed") or {}), primary_last_by_symbol or {}
     rate_governor = governor or RateGovernor(policy)
 
@@ -344,8 +352,9 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
             continue
         capture_started_at = now().isoformat()
         try:
-            quote = _quote_summary(_safe_call(client, "get_asset_quote",
-                {"symbol": symbol, "market": market, "term": term}, rate_governor, policy))
+            raw = _safe_call(client, "get_asset_quote", {"symbol": symbol, "market": market, "term": term},
+                             rate_governor, policy)
+            quote = _quote_summary(raw)
             if quote.get("last") is None:
                 raise RuntimeError("IOL_EMPTY_UNEXPECTED")
             # Capture completion records when the response became available.
@@ -358,17 +367,28 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 cached = {**_metadata_from(info), "fetched_at": captured_at,
                           "expires_at": datetime.fromtimestamp(now().timestamp() + policy.metadata_ttl_seconds, timezone.utc).isoformat()}
                 metadata_entries[key] = cached
-            completed[symbol] = {"symbol": symbol, "market": market, "term": term,
+            metadata = _metadata_from(cached)
+            if raw.get("currency") and metadata.get("currency") != raw["currency"]:
+                raise ValueError("IOL_QUOTE_ASSET_CURRENCY_MISMATCH")
+            source_state = "LIVE_FRESH"
+            if source == "IOL_REST":
+                stamp = quote.get("provider_observed_at")
+                source_state = ("REFERENCE_ONLY" if not stamp else
+                                "LIVE_FRESH" if _cache_state({"source": source, "quote": quote}, now(), 120) == "CACHE_FRESH"
+                                else "CACHE_STALE")
+            completed[symbol] = {"symbol": symbol, "market": market, "term": term, "source": source,
                 "state": "READY" if quote.get("last") is not None else "UNAVAILABLE",
-                "source_state": "LIVE_FRESH",
+                "source_state": source_state,
                 "capture_started_at": capture_started_at, "captured_at": captured_at,
-                "quote": quote, **_metadata_from(cached),
+                "quote": quote, **metadata,
                 "primary_comparison": _comparison(primary.get(symbol), quote, policy.tolerance_pct),
                 "decision_effect": DECISION_EFFECT}
         except Exception as exc:
             errors_total += 1
-            prior_row = next((row for row in (_load_json(cache_path(root)).get("symbols") or [])
-                              if isinstance(row, dict) and str(row.get("symbol") or "").upper() == symbol), None)
+            prior_snapshot = _load_json(cache_path(root))
+            prior_row = next((row for row in (prior_snapshot.get("symbols") or [])
+                              if isinstance(row, dict) and str(row.get("symbol") or "").upper() == symbol
+                              and row.get("source", prior_snapshot.get("source", SOURCE)) == source), None)
             failure_state = ("EMPTY_UNEXPECTED" if "EMPTY_UNEXPECTED" in str(exc).upper()
                              else "SOURCE_UNAVAILABLE")
             failed_at = now()
@@ -376,14 +396,14 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
                 "source_state": failure_state, "last_refresh_failed_at": failed_at.isoformat(),
                 "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
                 "decision_effect": DECISION_EFFECT} if prior_row else {
-                "symbol": symbol, "market": market, "term": term, "state": failure_state,
+                "symbol": symbol, "market": market, "term": term, "source": source, "state": failure_state,
                 "capture_started_at": capture_started_at, "captured_at": now().isoformat(),
                 "reason": f"{type(exc).__name__}:{str(exc)[:160]}",
                 "decision_effect": DECISION_EFFECT})
         state["completed"], state["status"] = completed, "RUNNING"
         _atomic_json(checkpoint_file, state)
 
-    metadata_store = {"schema_version": 1, "source": SOURCE, "mode": MODE, "entries": metadata_entries}
+    metadata_store = {"schema_version": 1, "source": source, "mode": MODE, "entries": metadata_entries}
     _atomic_json(_metadata_path(root), metadata_store)
     state["status"], state["completed_at"] = "COMPLETE", now().isoformat()
     _atomic_json(checkpoint_file, state)
@@ -391,11 +411,14 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMCP, *, root: Path | str |
     # of replacing the dashboard with only the latest batch.
     prior_cache = _load_json(cache_path(root))
     prior_rows = {
-        str(row.get("symbol") or "").upper(): row
+        str(row.get("symbol") or "").upper(): (
+            row if row.get("source", prior_cache.get("source", SOURCE)) == source else
+            {**row, "source": row.get("source", prior_cache.get("source", SOURCE)),
+             "state": "CACHE_STALE", "source_state": "PREVIOUS_TRANSPORT_REFERENCE"})
         for row in (prior_cache.get("symbols") or []) if isinstance(row, dict) and row.get("symbol")
     }
     prior_rows.update({symbol: completed[symbol] for symbol in universe if symbol in completed})
-    payload = {"schema_version": CACHE_SCHEMA_VERSION, "source": SOURCE, "mode": MODE,
+    payload = {"schema_version": CACHE_SCHEMA_VERSION, "source": source, "mode": MODE,
         "decision_effect": DECISION_EFFECT, "live_decision_authority": False, "real_money_authorized": False,
         "run_id": active_run_id, "market": market, "term": term, "refreshed_at": state["completed_at"],
         "telemetry": {"batch_symbols": len(universe), "attempted_in_batch": len(universe), "ready_in_batch": sum(

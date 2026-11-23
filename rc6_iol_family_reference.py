@@ -12,6 +12,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+from iol_rest_readonly_rc6 import SOURCE as REST_SOURCE
 from rc6_multisource_discovery import canonical_family, canonical_market, canonical_settlement
 
 SCHEMA="rc6-iol-family-reference-v1"
@@ -496,12 +497,15 @@ def _sanitize_prior_option(row:dict):
 def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None):
     # An OAuth 403, long Retry-After or exhausted transient budget cannot
     # fan out into dozens of equivalent refresh attempts across family tools.
+    transport = getattr(client, "source", "IOL_MCP")
+    rest = transport == REST_SOURCE
     client=_CycleReadClient(client)
     root=Path(root) if root is not None else DEFAULT_ROOT
     db=db_path or DEFAULT_DB
     at=(now or datetime.now(timezone.utc)).isoformat()
     path=root/"iol_family_reference_latest.json"
     prior=_load(path)
+    prior_transport = prior.get("source", "IOL_MCP")
     state=dict(prior.get("rotation") or {})
     section_states={}
     section_observed_at=dict(prior.get("section_observed_at") or {})
@@ -540,12 +544,16 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     option_underlyings=(underlyings[start:]+underlyings[:start])[:MAX_OPTION_UNDERLYINGS]
     state["option_underlying_index"]=(start+len(option_underlyings))%max(1,len(underlyings))
 
-    records=[(_sanitize_prior_option(r) if canonical_family(r.get("instrument_type"))=="OPCIONES" else r)
+    records=[{**(_sanitize_prior_option(r) if canonical_family(r.get("instrument_type"))=="OPCIONES" else r),
+              "transport": r.get("transport", prior_transport)}
              for r in prior.get("records",[]) if isinstance(r,dict)]
     by_key={(r.get("instrument_type"),r.get("ticker"),r.get("market"),r.get("currency"),r.get("settlement")):r for r in records}
     errors=[]
 
-    if fixed_symbol:
+    successful_sections = []
+    if rest:
+        section_states["fixed_income"] = "REST_ANALYTICS_UNVERIFIED"
+    elif fixed_symbol:
         identity=fixed_by_identity[fixed_key]
         try:
             family=canonical_family(identity.get("instrument_type"))
@@ -657,9 +665,10 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
                     if not (canonical_family(row.get("instrument_type"))=="OPCIONES"
                             and str((row.get("option_chain_evidence") or {}).get("underlying") or "").upper()==underlying)}
             for row in option_rows:
-                by_key[("OPCIONES",row["ticker"],row["market"],row["currency"],row["settlement"])]=row
-            successful_sections.append("options:"+underlying)
-            section_states["options:"+underlying]="LIVE_FRESH"
+                by_key[("OPCIONES",row["ticker"],row["market"],row["currency"],row["settlement"])]=dict(row, transport=transport)
+            if not rest:
+                successful_sections.append("options:"+underlying)
+            section_states["options:"+underlying]="REST_CHAIN_REFERENCE_ONLY" if rest else "LIVE_FRESH"
             section_observed_at["options:"+underlying]=at
         except Exception as exc:
             errors.append("OPTIONS:"+underlying+":"+type(exc).__name__)
@@ -673,23 +682,39 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     # Broad family discovery/reference calls. They do not authorize execution.
     fci=prior.get("fci",[])
     cauciones=prior.get("cauciones",{})
-    try:
-        fresh=_response_rows(_brief_call(client,"get_fci_funds",{}))
-        if fresh:
-            fci=fresh; successful_sections.append("fci")
-            section_states["fci"]="LIVE_FRESH";section_observed_at["fci"]=at
-        else:
-            errors.append("FCI:EMPTY_UNEXPECTED");section_states["fci"]="EMPTY_UNEXPECTED"
-    except Exception as exc:
-        errors.append("FCI:"+type(exc).__name__);section_states["fci"]=_lkg_section_state(
-            prior,"fci",bool(fci),now or datetime.now(timezone.utc))
+    if rest:
+        fci=[{**row, "transport": row.get("transport", prior_transport)}
+             for row in fci if isinstance(row, dict)]
+        cauciones={currency: [{**row, "transport": row.get("transport", prior_transport)}
+                             for row in rows if isinstance(row, dict)]
+                   for currency, rows in cauciones.items() if isinstance(rows, list)}
+    if rest:
+        # The official panel inventory is reachable, but its screener is not
+        # proven to return an operable FCI universe. Keep historical references.
+        section_states["fci"] = "REST_CATALOGUE_UNVERIFIED"
+    else:
+        try:
+            fresh=_response_rows(_brief_call(client,"get_fci_funds",{}))
+            if fresh:
+                fci=fresh; successful_sections.append("fci")
+                section_states["fci"]="LIVE_FRESH";section_observed_at["fci"]=at
+            else:
+                errors.append("FCI:EMPTY_UNEXPECTED");section_states["fci"]="EMPTY_UNEXPECTED"
+        except Exception as exc:
+            errors.append("FCI:"+type(exc).__name__);section_states["fci"]=_lkg_section_state(
+                prior,"fci",bool(fci),now or datetime.now(timezone.utc))
     for currency in ("ARS","USD"):
         try:
             fresh=_response_rows(_brief_call(client,"get_caucion_rates",{"currency":currency,"caucion_type":"colocadora"}))
             key="caucion:"+currency
             if fresh:
-                cauciones[currency]=fresh; successful_sections.append(key)
-                section_states[key]="LIVE_FRESH";section_observed_at[key]=at
+                cauciones[currency]=fresh
+                section_observed_at[key]=at
+                if rest:
+                    section_states[key] = "REST_BOOK_REFERENCE_ONLY"
+                else:
+                    successful_sections.append(key)
+                    section_states[key]="LIVE_FRESH"
             else:
                 errors.append("CAUCION_"+currency+":EMPTY_UNEXPECTED");section_states[key]="EMPTY_UNEXPECTED"
         except Exception as exc:
@@ -712,7 +737,7 @@ def collect(client, *, root:Path|str|None=None, db_path:str|None=None, now=None)
     cache_state=("LIVE_FRESH" if successful_sections else
                  "CACHE_FRESH" if prior and prior_age is not None and 0<=prior_age<=86400 else
                  "CACHE_STALE" if prior_usable and prior_good else "SOURCE_UNAVAILABLE")
-    payload={"schema":SCHEMA,"refreshed_at":at,"source":"IOL_MCP","decision_effect":"OBSERVE_ONLY",
+    payload={"schema":SCHEMA,"refreshed_at":at,"source":transport,"decision_effect":"OBSERVE_ONLY",
              "real_money_authorized":False,"rotation":state,"records":list(by_key.values()),
              "fci":fci if isinstance(fci,list) else [],"cauciones":cauciones if isinstance(cauciones,dict) else {},
              "cache_state":cache_state,"live_sections":successful_sections,

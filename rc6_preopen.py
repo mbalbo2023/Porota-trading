@@ -450,6 +450,10 @@ def iol_reference_state(today):
                 cache not in {'LIVE_FRESH','CACHE_FRESH','CACHE_STALE','SOURCE_UNAVAILABLE'}):
             state = 'RED'
             effective = 'SOURCE_UNAVAILABLE'
+        elif payload.get('source') == 'IOL_REST':
+            state = 'AMBER'
+            reason = 'IOL_REST_COMPLEMENTARY_REFERENCE_WITH_PPI_BYMA'
+            effective = 'CACHE_STALE' if recent_lkg else 'SOURCE_UNAVAILABLE'
         elif (cache == 'LIVE_FRESH' and payload.get('source') == 'IOL_MCP'
               and isinstance(payload.get('live_sections'), list)
               and any(sections.get(key) == 'LIVE_FRESH'
@@ -471,7 +475,7 @@ def iol_reference_state(today):
             state = 'AMBER'
             reason = 'IOL_UNAVAILABLE_WITH_PPI_BYMA_ALTERNATIVES'
             effective = 'SOURCE_UNAVAILABLE'
-        return {'state':state,'cache_state':cache,
+        return {'state':state,'cache_state':cache,'source':payload.get('source'),
                 'reason':reason if state != 'RED' else 'IOL_FAILSAFE_CONTRACT_INVALID',
                 'refreshed_at':payload.get('refreshed_at'),
                 'age_seconds':round(age,1) if age is not None else None,

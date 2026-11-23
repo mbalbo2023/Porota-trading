@@ -48,6 +48,9 @@ PREOPEN = "porota-preopen-rc6.service"
 PUBLISH = "porota-introspection-publish-rc6.service"
 INMARKET = "porota-rc6-candle-inmarket-verify.service"
 INTROSPECTION = "porota-introspection-rc6.service"
+IOL_COLLECTOR = "porota-iol-shadow-collector-rc6.service"
+IOL_HEALTH = "porota-iol-oauth-health-rc6.service"
+IOL_JOBS = frozenset({IOL_COLLECTOR, IOL_HEALTH})
 ADAPTED_SERVICES = frozenset((*DOCKER_JOBS, PREOPEN, PUBLISH, INMARKET))
 PRESERVED_SERVICES = frozenset({
     "porota-runtime-evidence-rc6.service", "porota-iol-shadow-collector-rc6.service",
@@ -254,9 +257,38 @@ def publish_validation(manager, current, root, identity):
     return entry
 
 
-def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subprocess.run):
+def run_iol_job(unit, root, identity, current, *, verify_rest=False, run=subprocess.run):
+    from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SOURCE
+    from scripts.rc6_source_cycle_dispatch import phase_status, run_cycle
+
+    db = root / DB_RELATIVE
+    sealed_db = current.get("database")
+    require(sealed_db == database_snapshot(db), "IOL_RELEASE_DATABASE_IDENTITY_UNVERIFIED")
+    if unit == IOL_COLLECTOR:
+        env = {**identity.environment(), "POROTA_IOL_SHADOW_MODE": "OBSERVE_ONLY",
+               "POROTA_IOL_SHADOW_SCOPE": "AUDIT_ALL", "PYTHONDONTWRITEBYTECODE": "1",
+               "PYTHONPATH": str(source_directory(identity, current))}
+        cycle = run_cycle(db=db, market_root=root / "data/market", lock=identity.state / "iol-source-cycle.lock",
+                          release_database=sealed_db, environment=env, runner=run)
+        code = 0 if cycle["status"] in {"NOT_DUE", "COMPLETE"} else 2
+        return {"source": SOURCE, "source_cycle": cycle, "exit_code": code}
+
+    late, _ = phase_status(datetime.now(timezone.utc), "late_source")
+    client = IOLRestReadOnly(identity.state / "iol-rest", config=root / ".env", allow_renew=not late)
+    try:
+        client.authenticate()
+        if verify_rest:
+            asset = client.call("get_asset_info", {"symbol": "GD30", "market": "BCBA"})
+            require(asset["type"] == "BONOS" and asset["currency"] == "ARS" and asset["term"] == "T1",
+                    "IOL_REST_REFERENCE_IDENTITY_UNVERIFIED")
+    except IOLRestError as exc:
+        return {"source": SOURCE, "result": str(exc), "http_status": exc.status_code, "exit_code": 2}
+    return {"source": SOURCE, "result": "REFERENCE_GD30_VERIFIED" if verify_rest else "AUTHENTICATED", "exit_code": 0}
+
+
+def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_rest=False, run=subprocess.run):
     identity = identity or Identity.current()
-    require(unit in ADAPTED_SERVICES, "SCHEDULER_UNIT_SCOPE")
+    require(unit in ADAPTED_SERVICES | IOL_JOBS and (not verify_rest or unit == IOL_HEALTH), "SCHEDULER_UNIT_SCOPE")
     with scheduler_lock(identity):
         manager, current, _ = verified_host(root, identity)
         if unit in DOCKER_JOBS:
@@ -266,6 +298,8 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
                 classified_critical=unit == INTROSPECTION)
             if unit == POSTCLOSE:
                 commands_result.append(publish_validation(manager, current, root, identity))
+        elif unit in IOL_JOBS:
+            commands_result = [run_iol_job(unit, root, identity, current, verify_rest=verify_rest, run=run)]
         elif unit == INMARKET:
             baseline_path = identity.state / "inmarket-baseline-20260917"
             if not baseline_path.exists():
@@ -311,7 +345,9 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
                 require(result.returncode == 0, "SCHEDULER_HOST_JOB_FAILED")
                 preopen_failure = None
             commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
-        database_snapshot(root / DB_RELATIVE)
+        observed_database = database_snapshot(root / DB_RELATIVE)
+        if unit in IOL_JOBS:
+            require(observed_database == current.get("database"), "IOL_RELEASE_DATABASE_IDENTITY_CHANGED")
         if unit == PREOPEN and preopen_failure is not None:
             return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "BLOQUEADO",
                     "source_sha": current["source_sha"], "image_id": current["image_id"],
@@ -324,7 +360,8 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, run=subpro
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--unit", choices=sorted(ADAPTED_SERVICES))
+    parser.add_argument("--unit", choices=sorted(ADAPTED_SERVICES | IOL_JOBS))
+    parser.add_argument("--verify-iol-rest", action="store_true")
     parser.add_argument("--docker-bridge", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
@@ -336,7 +373,7 @@ def main(argv=None):
                 execute_commands(manager, current, "observer", (command,))
             return 0
         require(args.unit is not None, "SCHEDULER_UNIT_REQUIRED")
-        result = run_job(args.unit, identity=identity)
+        result = run_job(args.unit, identity=identity, verify_rest=args.verify_iol_rest)
         print(json.dumps(result, sort_keys=True))
         return result["exit_code"]
     except Exception as exc:

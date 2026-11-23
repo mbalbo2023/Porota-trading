@@ -123,6 +123,7 @@ def test_rotation_cycle_resets_seen_and_advances_cursor(monkeypatch, tmp_path):
     fingerprint = runtime._fingerprint(universe)
     (tmp_path / "iol_shadow_rotation.json").write_text(json.dumps({
         "schema_version": 2,
+        "transport": "IOL_REST",
         "universe_size": len(universe),
         "universe_fingerprint": fingerprint,
         "cycle_id": 7,

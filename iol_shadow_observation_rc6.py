@@ -57,7 +57,7 @@ def _quote_summary(payload: dict) -> dict:
                        payload.get("unit_price"),trade.get("last"),trade.get("price"),
                        trade.get("unit_price"),trade.get("lot_price"))
     provider_observed_at=None
-    for raw_time in (payload.get("timestamp"),payload.get("observed_at"),payload.get("date"),
+    for raw_time in (payload.get("provider_observed_at"),payload.get("timestamp"),payload.get("observed_at"),payload.get("date"),
                      trade.get("timestamp"),trade.get("observed_at"),trade.get("date")):
         try:
             parsed=datetime.fromisoformat(str(raw_time).replace("Z","+00:00"))
@@ -74,11 +74,12 @@ def _quote_summary(payload: dict) -> dict:
     # behavior; family-specific contract code must choose the explicit basis.
     unit_price=_first_number(payload.get("unit_price"),trade.get("unit_price"))
     lot_price=_first_number(payload.get("lot_price"),trade.get("lot_price"))
+    native_book = payload.get("provider_book_at")
     return {"last":last,"bid":bid,"ask":ask,"bid_size":bid_size,"ask_size":ask_size,"spread_pct":spread,
             "unit_price":unit_price,"lot_price":lot_price,
             "variation_pct":_first_number(payload.get("variation"),payload.get("variation_pct"),trade.get("variation")),
             "cash_volume":_first_number(payload.get("cash_volume"),payload.get("volume_amount"),trade.get("cash_volume")),
-            "provider_observed_at":provider_observed_at}
+            "provider_observed_at":provider_observed_at, **({"provider_book_at":native_book} if native_book else {})}
 
 def refresh(symbols: Iterable[str], call_tool: Callable[[str,dict],dict], *, root: Path | str | None=None,
             market: str=DEFAULT_MARKET, primary_last_by_symbol: dict[str,float] | None=None,
@@ -107,5 +108,5 @@ def collect(root: Path | str | None=None) -> dict:
     except (FileNotFoundError,OSError,json.JSONDecodeError): payload={}
     if payload.get("schema_version") not in (SCHEMA_VERSION,2,3):
         return {"source":SOURCE,"mode":MODE,"state":"UNAVAILABLE","decision_effect":DECISION_EFFECT,"live_decision_authority":False,"real_money_authorized":False,"symbols":[],"reason":"CACHE_MISSING_OR_INVALID"}
-    return {"source":SOURCE,"mode":MODE,"state":"READY" if payload.get("symbols") else "INSUFFICIENT_DATA","decision_effect":DECISION_EFFECT,
+    return {"source":payload.get("source",SOURCE),"mode":MODE,"state":"READY" if payload.get("symbols") else "INSUFFICIENT_DATA","decision_effect":DECISION_EFFECT,
             "live_decision_authority":False,"real_money_authorized":False,"refreshed_at":payload.get("refreshed_at"),"progress":payload.get("progress") if isinstance(payload.get("progress"),dict) else {},"telemetry":payload.get("telemetry") if isinstance(payload.get("telemetry"),dict) else {},"primary_comparison_contract":payload.get("primary_comparison_contract") if isinstance(payload.get("primary_comparison_contract"),dict) else {},"symbols":payload.get("symbols") or []}
