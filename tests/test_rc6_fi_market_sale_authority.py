@@ -4,8 +4,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
+import time
 from types import SimpleNamespace
 
 from cryptography.hazmat.primitives import serialization
@@ -32,7 +36,7 @@ ARCHIVE = json.loads((Path(__file__).resolve().parents[1]
 
 
 def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
-          currency="ARS", bid_qty=1_000, initial=None, prepare=True):
+          currency="ARS", bid_qty=1_000, initial=None, prepare=True, scenario_at=AT):
     store, _ = lot(tmp_path)
     paper_id = "PAPER-AL30"
     identity = (ticker, family, "BYMA", currency, settlement)
@@ -43,7 +47,7 @@ def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
     provider = {"ticker": ticker, "type": "ON" if family == "OBLIGACIONES" else family,
                 "market": "BYMA", "currency": currency, "settlement": settlement,
                 "_discovery_source": "PPI_PRIMARY"}
-    record = normalize_record(provider, None, AT.isoformat(), "SYNTHETIC_PPI_FIXTURE")
+    record = normalize_record(provider, None, scenario_at.isoformat(), "SYNTHETIC_PPI_FIXTURE")
     init_catalogue(store)
     with store.connect() as db:
         features = json.loads(db.execute("SELECT features_json FROM paper_positions").fetchone()[0])
@@ -63,14 +67,14 @@ def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
     monkeypatch.setenv("POROTA_RC6_RELEASE_SHA256", RELEASE)
     monkeypatch.setenv("POROTA_FI_EVIDENCE_DIRECTORY", str(tmp_path))
     source = {"schema": authority.ECONOMICS_SCHEMA, "identity": list(identity),
-              "ppi_identity": provider, "known_at": (AT - timedelta(days=1)).isoformat(),
+              "ppi_identity": provider, "known_at": (scenario_at - timedelta(days=1)).isoformat(),
               "quantity_unit": "VN", "bid_size_unit": "VN", "cash_multiplier": "0.01",
               "minimum_quantity": "1", "quantity_step": "1",
               "ppi_capture_sha256": hashlib.sha256(b"Synthetic PPI units only").hexdigest()}
     source_bytes = causal._json(source).encode()
     (tmp_path / f"ppi-economics-{causal._sha(source_bytes)}.json").write_bytes(source_bytes)
     raw = authority.build_market_sale_policy([source_bytes], release_sha256=RELEASE,
-        at=AT, valid_until=AT + timedelta(days=14))
+        at=scenario_at, valid_until=scenario_at + timedelta(days=14))
     (tmp_path / "market-sale-policy.json").write_bytes(raw)
     monkeypatch.setenv(authority.POLICY_PIN, hashlib.sha256(raw).hexdigest())
     feed = PPISharedMarketFeed(ppi_catalog_rows=[{"ticker": ticker, "type": family,
@@ -78,11 +82,11 @@ def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
     feed.register_consumer("exit_reader", watched_five_keys=[identity])
     clock = {"ms": 50}
     cache = PPIReadOnlyNativeReceiptStore(feed, max_receipts=8, max_age_seconds=5,
-        clock=lambda: AT + clock["ms"] * MILLISECOND,
+        clock=lambda: scenario_at + clock["ms"] * MILLISECOND,
         monotonic_ns=lambda: 1_000_000_000 + clock["ms"] * 1_000_000)
 
     def book(ms, price, *, generation=SESSION, quantity=bid_qty, ask=None, offer_quantity=1000):
-        at = AT + ms * MILLISECOND
+        at = scenario_at + ms * MILLISECOND
         return cache.publish_native_rest_receipt(method="book", five_key=identity,
             raw_payload={"date": at.isoformat(), "bids": [{"position": 0, "price": price, "quantity": quantity}],
                          "offers": [{"position": 0, "price": ask if ask is not None else price + 1,
@@ -104,12 +108,12 @@ def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
             commit_monotonic_ns=clock_ns)
 
     monkeypatch.setattr(authority, "_read_first_book2", read_book2)
-    monkeypatch.setattr(causal, "_now", lambda: (AT + 20 * MILLISECOND).isoformat())
+    monkeypatch.setattr(causal, "_now", lambda: (scenario_at + 20 * MILLISECOND).isoformat())
     monkeypatch.setattr(causal, "time", SimpleNamespace(monotonic_ns=lambda: 1_020_000_000))
     if not prepare:
         return store, paper_id, key, None, book, cache, clock
     decision = authority.prepare_market_sale(store, position, store.latest_quote(position), "MAX_HOLD_PAPER",
-                                             AT + 10 * MILLISECOND)
+                                             scenario_at + 10 * MILLISECOND)
     ack = causal.attest_after_commit(store.path, decision_key=decision, signing_key_path=key,
                                     expected_release_sha256=RELEASE)
     assert ack["signature_created"]
@@ -248,16 +252,21 @@ def test_exit_reader_and_supervisor_replay_archived_wheel_books(tmp_path, monkey
     from rc6_fixed_income_sale_witness import ExitReaderSaleWitness, read_witness
 
     variant = ARCHIVE["variants"][ticker]
-    _, family, _, currency, term = variant["identity"]
+    identity = tuple(variant["identity"])
+    _, family, _, currency, term = identity
     first, later = variant["archived_books"]
     assert variant["normalized_model"] == {"currency": currency, "settlement": term,
         "market": "BYMA", "family": family, "minimum_quantity": "1",
         "quantity_step": "1", "cash_multiplier": "0.01"}
     assert first["has_native_receipt"] is later["has_native_receipt"] is False
+    at = datetime(2026, 11, 24, 14, tzinfo=timezone.utc)
     store, paper_id, key, _, book, _, _ = setup(tmp_path, monkeypatch, ticker=ticker,
-        family=family, currency=currency, settlement=term, initial=first, prepare=False)
+        family=family, currency=currency, settlement=term, initial=first, prepare=False, scenario_at=at)
+    model = configure_activated_model(monkeypatch)
+    monkeypatch.setattr(causal, "PINNED_RELEASE_SHA256", model["release"])
+    monkeypatch.delenv("POROTA_RC6_RELEASE_SHA256")
     policy = PaperSessionPolicy()
-    clock = {"at": (AT + 10 * MILLISECOND).isoformat()}
+    clock = {"at": (at + 10 * MILLISECOND).isoformat()}
     broker = PaperBroker(store, clock_fn=lambda: clock["at"], session_policy=policy, slippage_bps=0)
     supervisor = PositionExitSupervisor(broker, clock_fn=lambda: clock["at"], session_policy=policy)
     position, = store.exit_positions()[0]
@@ -282,11 +291,12 @@ def test_exit_reader_and_supervisor_replay_archived_wheel_books(tmp_path, monkey
                     quantity=1000)
 
     roles = {}
-    clock["at"] = (AT + 50 * MILLISECOND).isoformat()
+    clock["at"] = (at + 50 * MILLISECOND).isoformat()
     monkeypatch.setattr("bf_production_paper_observer.now_iso", lambda: clock["at"])
     reader = SimpleNamespace(book_with_native_receipt=capture_once)
+    test_signer = Ed25519PrivateKey.from_private_bytes(key.read_bytes())
     assert collect_exit_books(reader, store, policy, clock["at"],
-                              sale_witness=ExitReaderSaleWitness(store, key)) == 0
+                              sale_witness=ExitReaderSaleWitness(store, exit_signer=test_signer)) == 0
     witness = read_witness(store, decision)
     assert witness["payload"]["book2"] == roles["first_eligible"]
     next_quote = store.latest_quote(position)
@@ -300,9 +310,60 @@ def test_exit_reader_and_supervisor_replay_archived_wheel_books(tmp_path, monkey
         if nominal:
             assert tuple(map(Decimal, sell)) == (nominal, Decimal(later["bid"]))
             assert result.state == ("CLOSED" if nominal == 100 else "EXIT_PARTIAL")
+            saved = json.loads(db.execute("SELECT result_json FROM paper_fi_native_sales").fetchone()[0])
+            assert saved["causal_sale"]["economic_policy_authority"] == "NORMALIZED_HISTORICAL_PPI_PAPER_ASSUMPTIONS"
         else:
             assert sell is None
             assert result.reason == "FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH"
+
+
+def configure_activated_model(monkeypatch):
+    deployment = {"POROTA_FI_HISTORICAL_PAPER_SALE": "1", "POROTA_BUILD_SHA": "3" * 40,
+                  "POROTA_CANDIDATE_TREE_SHA": "4" * 40, "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
+                  "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED",
+                  "ALLOW_REAL_ORDERS": "false"}
+    for key, value in deployment.items():
+        monkeypatch.setenv(key, value)
+    return authority.deployed_sale_model()
+
+
+def test_paper_activation_pins_only_the_spawned_reader_and_revokes_on_exit(monkeypatch):
+    from rc6_fixed_income_sale_witness import ExitReaderKeyChannel
+
+    model = configure_activated_model(monkeypatch)
+    monkeypatch.setattr(causal, "PINNED_RELEASE_SHA256", None)
+    monkeypatch.setattr(causal, "PINNED_DECISION_SIGNER_KEY_SHA256", None)
+    channel = ExitReaderKeyChannel(model)
+    assert channel.status()["state"] == "SIGNER_PENDING"
+    root = Path(authority.__file__).resolve().parent
+    previous_pin = None
+    for _ in range(2):
+        command = [sys.executable, "-c", (
+            "from rc6_fixed_income_sale_witness import exit_reader_witness_from_environment\n"
+            "import sys\n"
+            "witness = exit_reader_witness_from_environment(None)\n"
+            "assert witness.key_file is None and witness.exit_signer is not None\n"
+            "sys.stdin.buffer.read(1)\n")]
+        child = channel.launch(lambda *a, **k: subprocess.Popen(*a, **k, stdin=subprocess.PIPE), command, cwd=root)
+        try:
+            deadline = time.monotonic() + 5
+            while channel.status()["state"] == "SIGNER_PENDING" and time.monotonic() < deadline:
+                channel.poll(child)
+                time.sleep(.01)
+            status = channel.status()
+            assert status["state"] == "ACTIVE_PAPER" and status["variants"] == 6
+            assert status["signer_pid"] == child.pid and status["signer_pid"] != os.getpid()
+            assert status["signer_key_sha256"] == causal.PINNED_DECISION_SIGNER_KEY_SHA256
+            assert status["signer_key_sha256"] != previous_pin
+            previous_pin = status["signer_key_sha256"]
+        finally:
+            child.communicate(input=b"x", timeout=5)
+            channel.poll(child)
+        assert child.returncode == 0 and causal.PINNED_DECISION_SIGNER_KEY_SHA256 is None
+        assert causal.PINNED_RELEASE_SHA256 is None
+    monkeypatch.setenv("REAL_ORDER_CAPABILITY", "OPEN")
+    with pytest.raises(ValueError, match="FI_PAPER_HISTORICAL_MODEL_MODE_BLOCKED"):
+        authority.deployed_sale_model()
 
 
 def test_release_policy_rejects_request_only_term_and_cannot_self_attest_source(tmp_path, monkeypatch):
@@ -319,6 +380,29 @@ def test_release_policy_rejects_request_only_term_and_cannot_self_attest_source(
     path.write_bytes(altered)
     with pytest.raises(ValueError, match="FI_EVIDENCE_HASH_MISMATCH"):
         authority.market_sale_policy(store, quote.contract.key, quote.contract, AT)
+
+
+def test_signer_rotation_replans_without_rewriting_the_previous_ack(tmp_path, monkeypatch):
+    from rc6_fixed_income_sale_witness import ExitReaderSaleWitness
+
+    store, paper_id, _, decision, book, _, _ = setup(
+        tmp_path, monkeypatch, ticker="GD30", family="BONOS")
+    signer = Ed25519PrivateKey.generate()
+    public = signer.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    monkeypatch.setattr(causal, "PINNED_DECISION_SIGNER_KEY_SHA256", causal._sha(public))
+    reader = ExitReaderSaleWitness(store, exit_signer=signer)
+    assert reader.acknowledge(paper_id) is None
+    later = book(30, 100)
+    position, = store.open_positions()
+    old = store.latest_quote(position)
+    from dataclasses import replace
+    new = replace(old, ppi_native_rest_book=later, **authority.native_book_fields(later, old.contract.key))
+    new_decision = authority.prepare_market_sale(store, position, new, "MAX_HOLD_PAPER",
+                                                 AT + 40 * MILLISECOND)
+    assert new_decision != decision
+    with store.connect() as db:
+        assert db.execute("SELECT decision_key FROM paper_causal_decision_receipts").fetchone()[0] == decision
+        assert db.execute("SELECT decision_key FROM paper_fi_sale_witness_handoff").fetchone()[0] == new_decision
 
 
 def test_fi_exit_during_holiday_and_next_preopen_stays_read_only(tmp_path, monkeypatch):

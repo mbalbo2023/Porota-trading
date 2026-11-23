@@ -301,7 +301,8 @@ class PositionExitSupervisor:
                     reason = str(exc)
                     if key and reason in {"FI_NATIVE_SALE_EXACT_PPI_BOOK_PIT_REQUIRED",
                                           "FI_NATIVE_SALE_STEP_OR_SHARED_BOOK_DEPTH_EXCEEDED",
-                                          "FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH"}:
+                                          "FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH",
+                                          "FI_MARKET_SALE_BOOK2_TRUST_UNBOUND"}:
                         replan(self.store, key, reason)
                     return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", reason[:180])
             return verdict("EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_EVIDENCE_REQUIRED")

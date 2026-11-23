@@ -371,6 +371,11 @@ class ChildProcesses:
         self._gateway_registered = {}
         self._gateway_generation = None
         self._gateway_registration_due = started
+        from rc6_fixed_income_sale_authority import deployed_sale_model
+        from rc6_fixed_income_sale_witness import ExitReaderKeyChannel
+
+        model = deployed_sale_model() if "exit_reader" in commands else None
+        self.exit_sale = ExitReaderKeyChannel(model) if model else None
         self.health = {name: {"state": "STARTUP_WAIT", "pid": None,
             "restarts": 0, "spawn_failures": 0, "started_at": None,
             "last_exit_at": None, "last_error": None} for name in commands}
@@ -388,6 +393,8 @@ class ChildProcesses:
         for name, command in self.commands.items():
             process = self.processes.get(name)
             if process is not None and process.poll() is not None:
+                if name == "exit_reader" and self.exit_sale:
+                    self.exit_sale.clear()
                 self.processes.pop(name)
                 self.next_start[name] = now + self.cooldown
                 self.health[name].update(state="CRASH_BACKOFF", pid=None,
@@ -395,7 +402,8 @@ class ChildProcesses:
                     last_exit_at=now_iso(), last_error="CHILD_EXITED")
             if name not in self.processes and now >= self.next_start.get(name, 0):
                 try:
-                    self.processes[name] = self.spawn(command, cwd=ROOT)
+                    self.processes[name] = (self.exit_sale.launch(self.spawn, command, cwd=ROOT)
+                        if name == "exit_reader" and self.exit_sale else self.spawn(command, cwd=ROOT))
                     self.health[name].update(state="RUNNING",
                         pid=getattr(self.processes[name], "pid", None),
                         started_at=now_iso(), last_error=None)
@@ -411,6 +419,8 @@ class ChildProcesses:
                         last_error="CHILD_SPAWN_FAILED")
         if "ppi_gateway" in self.commands and now >= self._gateway_registration_due:
             self._register_gateway_clients(now)
+        if self.exit_sale:
+            self.exit_sale.poll(self.processes.get("exit_reader"))
 
     def _register_gateway_clients(self, now):
         """Only runtime parent registers real child PID + Linux start tick.
@@ -459,6 +469,8 @@ class ChildProcesses:
         return {name: dict(value) for name, value in self.health.items()}
 
     def close(self):
+        if self.exit_sale:
+            self.exit_sale.clear()
         for process in self.processes.values():
             if process.poll() is None:
                 process.terminate()
@@ -501,6 +513,8 @@ def publish_child_health(store, children, *, recorded_at):
         "source_sha": sha, "candidate_tree_sha": tree,
         "children": children.snapshot(), "mode": "PRODUCTION_PAPER",
         "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
+    if getattr(children, "exit_sale", None):
+        payload["fixed_income_sale"] = children.exit_sale.status()
     root = artifact_root(store.path)
     root.mkdir(parents=True, exist_ok=True)
     target = root / "runtime-health.json"
@@ -567,7 +581,7 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from bf_production_paper_observer import normalize_quote
     from dataclasses import replace
     from bs_instrument_contracts import contract_from_metadata
-    from rc6_fixed_income_sale_authority import POLICY_PIN, native_book_fields
+    from rc6_fixed_income_sale_authority import SALE_FAMILIES, native_book_fields, native_market_sale_enabled
     from bd_ppi_readonly_guard import retry_read, session_invalid
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
@@ -592,8 +606,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             native_book_reader = getattr(reader, "book_with_native_receipt", None)
             native_book = None
             decision = None
-            native_sale = (p["asset_class"] in {"BONOS", "OBLIGACIONES"}
-                           and os.getenv(POLICY_PIN) and callable(native_book_reader))
+            native_sale = (p["asset_class"] in SALE_FAMILIES and callable(native_book_reader)
+                           and native_market_sale_enabled(identity))
             if native_sale and sale_witness:
                 try:
                     decision = sale_witness.acknowledge(p["paper_id"])

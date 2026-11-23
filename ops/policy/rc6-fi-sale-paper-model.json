@@ -1,0 +1,142 @@
+{
+  "schema": "rc6.fi-sale-historical-paper-model.v1",
+  "paper_only": true,
+  "known_at": "2026-11-23T19:50:53.187808+00:00",
+  "catalogue_receipt": 14857301994,
+  "quantity_model": "NORMALIZED_HISTORICAL_PPI_VN",
+  "settlement_model": "PAPER_CONSERVATIVE_BYMA_SPOT",
+  "instruments": [
+    {
+      "identity": [
+        "GD30",
+        "BONOS",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Pesos",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30",
+        "type": "BONOS"
+      },
+      "ppi_discovery_at": "2026-11-19T03:00:03.184956+00:00",
+      "ppi_metadata_sha256": "8d02a7cfb5ec19262cf3eac072e7f31dd1bb717dbfb997794f1873bd0aa77cfb",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    },
+    {
+      "identity": [
+        "GD30C",
+        "BONOS",
+        "BYMA",
+        "USD_CCL",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares divisa | CCL",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30C",
+        "type": "BONOS"
+      },
+      "ppi_discovery_at": "2026-11-19T03:00:03.184956+00:00",
+      "ppi_metadata_sha256": "a49d3e03ca66dedecce05307ba2dbcde63936463353980cc8ed779c3ecd4049b",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    },
+    {
+      "identity": [
+        "GD30D",
+        "BONOS",
+        "BYMA",
+        "USD_MEP",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares billete | MEP",
+        "isin": "US040114HS26",
+        "market": "BYMA",
+        "ticker": "GD30D",
+        "type": "BONOS"
+      },
+      "ppi_discovery_at": "2026-11-19T03:00:03.184956+00:00",
+      "ppi_metadata_sha256": "8427f4049ae6577daee1176726c6442dcfd4a1ca3e6a5f467e2ce8812c2df336",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    },
+    {
+      "identity": [
+        "YMCJC",
+        "OBLIGACIONES",
+        "BYMA",
+        "USD_CCL",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares divisa | CCL",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJC",
+        "type": "ON"
+      },
+      "ppi_discovery_at": "2026-11-17T03:00:02.693625+00:00",
+      "ppi_metadata_sha256": "a06944da1fd429d7f95df108a149914bdc29e6784ee6e72f648b5aa730e5e4da",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    },
+    {
+      "identity": [
+        "YMCJD",
+        "OBLIGACIONES",
+        "BYMA",
+        "USD_MEP",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Dolares billete | MEP",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJD",
+        "type": "ON"
+      },
+      "ppi_discovery_at": "2026-11-17T03:00:02.693625+00:00",
+      "ppi_metadata_sha256": "7c85491d2cf657b480d143ebd4e0c5d11648cf8e73ba8fa60fd24875f68f3d83",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    },
+    {
+      "identity": [
+        "YMCJO",
+        "OBLIGACIONES",
+        "BYMA",
+        "ARS",
+        "A-24HS"
+      ],
+      "ppi_discovery": {
+        "currency": "Pesos",
+        "isin": "USP989MJBT72",
+        "market": "BYMA",
+        "ticker": "YMCJO",
+        "type": "ON"
+      },
+      "ppi_discovery_at": "2026-11-17T03:00:02.693625+00:00",
+      "ppi_metadata_sha256": "3a7e0b75ee8e41014ffe30902e6847645cd411bd3868ded9c7c2d8a4d5661e80",
+      "settlement_evidence": "REQUEST_CANDIDATE",
+      "cash_multiplier": "0.01",
+      "minimum_quantity": "1",
+      "quantity_step": "1"
+    }
+  ]
+}

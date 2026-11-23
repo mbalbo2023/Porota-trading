@@ -9,8 +9,10 @@ from __future__ import annotations
 import base64
 from datetime import timedelta
 from decimal import Decimal
+from functools import lru_cache
 import os
 from pathlib import Path
+import re
 
 from bs_instrument_contracts import aware_datetime, decimal_value, family_name
 from rc6_fixed_income_runtime import _digest, _json, _read
@@ -23,7 +25,96 @@ POLICY_SCHEMA = "rc6.fi-market-sale-policy.v2"
 ECONOMICS_SCHEMA = "rc6.fi-market-sale-ppi-economics.v1"
 WITNESS_SCHEMA = "rc6.fi-market-sale-book2-ed25519.v1"
 POLICY_PIN = "POROTA_FI_MARKET_SALE_POLICY_SHA256"
+HISTORICAL_PAPER_ENABLE = "POROTA_FI_HISTORICAL_PAPER_SALE"
+HISTORICAL_MODEL = "rc6.fi-sale-historical-paper-model.v1"
+HISTORICAL_PATH = Path(__file__).resolve().parent / "ops/policy/rc6-fi-sale-paper-model.json"
 MAX_BOOK_BYTES = 20_000
+
+
+def sale_release_anchor(source_sha, source_tree):
+    """Bind PAPER policy and signer to the exact sealed Deploy V2 coordinates."""
+    if not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value)
+               for value in (source_sha, source_tree)):
+        raise ValueError("FI_PAPER_RELEASE_COORDINATES_UNAVAILABLE")
+    return causal._sha(causal._json([HISTORICAL_MODEL, source_sha, source_tree]))
+
+
+@lru_cache(maxsize=1)
+def packaged_historical_model():
+    """Read the immutable operator-approved PAPER assumptions in the image."""
+    from bu_instrument_catalog import normalize_record
+
+    raw = HISTORICAL_PATH.read_bytes()
+    source = _json(raw)
+    if (source.get("schema") != HISTORICAL_MODEL or source.get("paper_only") is not True
+            or source.get("quantity_model") != "NORMALIZED_HISTORICAL_PPI_VN"
+            or source.get("settlement_model") != "PAPER_CONSERVATIVE_BYMA_SPOT"
+            or type(source.get("catalogue_receipt")) is not int):
+        raise ValueError("FI_PAPER_HISTORICAL_MODEL_UNVERIFIED")
+    known_at = aware_datetime(source["known_at"])
+    rows = {}
+    for row in source["instruments"]:
+        identity = tuple(row["identity"])
+        if (len(identity) != 5 or identity[1] not in SALE_FAMILIES or identity in rows
+                or row["settlement_evidence"] != "REQUEST_CANDIDATE"):
+            raise ValueError("FI_PAPER_HISTORICAL_IDENTITY_UNBOUND")
+        discovery = normalize_record(row["ppi_discovery"], identity[4],
+            row["ppi_discovery_at"], "FI_HISTORICAL_PAPER_SALE")
+        observed = tuple(discovery[field] for field in (
+            "ticker", "instrument_type", "market", "currency", "settlement"))
+        if (observed != identity or discovery["settlement_source"] != "REQUEST_CANDIDATE"
+                or aware_datetime(row["ppi_discovery_at"]) > known_at):
+            raise ValueError("FI_PAPER_HISTORICAL_PPI_DISCOVERY_CONFLICT")
+        _digest(row["ppi_metadata_sha256"])
+        values = {name: decimal_value(row[name], name, positive=True)
+                  for name in ("cash_multiplier", "minimum_quantity", "quantity_step")}
+        if values["minimum_quantity"] % values["quantity_step"]:
+            raise ValueError("FI_PAPER_HISTORICAL_QUANTITY_GRID_INVALID")
+        rows[identity] = values
+    if not rows:
+        raise ValueError("FI_PAPER_HISTORICAL_MODEL_EMPTY")
+    return rows, known_at, causal._sha(raw)
+
+
+def deployed_sale_model():
+    if os.getenv(HISTORICAL_PAPER_ENABLE) != "1":
+        return None
+    if (os.getenv("DASHBOARD_OPERATION_MODE") != "PRODUCTION_PAPER"
+            or os.getenv("EXECUTION_MODE") != "SIMULATION"
+            or os.getenv("REAL_ORDER_CAPABILITY") != "BLOCKED"
+            or os.getenv("ALLOW_REAL_ORDERS", "").lower() not in {"", "false", "0"}):
+        raise ValueError("FI_PAPER_HISTORICAL_MODEL_MODE_BLOCKED")
+    release = sale_release_anchor(os.getenv("POROTA_BUILD_SHA"), os.getenv("POROTA_CANDIDATE_TREE_SHA"))
+    rows, known_at, source_sha = packaged_historical_model()
+    pin = causal._sha(causal._json([release, source_sha]))
+    return {"release": release, "policy": pin, "source": source_sha,
+            "known_at": known_at, "rows": rows}
+
+
+def native_market_sale_enabled(identity):
+    model = deployed_sale_model()
+    return identity in model["rows"] if model else bool(os.getenv(POLICY_PIN))
+
+
+def _historical_market_sale_policy(model, identity, contract, at):
+    from rc6_performance.costs import paper_cost_contract
+
+    if (causal.PINNED_RELEASE_SHA256 != model["release"]
+            or causal._digest_or_none(causal.PINNED_DECISION_SIGNER_KEY_SHA256) is None):
+        raise ValueError("FI_PAPER_EXIT_SIGNER_PENDING")
+    if identity not in model["rows"] or aware_datetime(at) < model["known_at"]:
+        raise ValueError("FI_MARKET_SALE_POLICY_IDENTITY_UNBOUND")
+    terms = model["rows"][identity]
+    if contract.key != identity or any(getattr(contract, field) != value for field, value in terms.items()):
+        raise ValueError("FI_MARKET_SALE_UNITS_COST_OR_SETTLEMENT_UNVERIFIED")
+    costs = paper_cost_contract(identity[1], identity[3], at, symbol=identity[0],
+                                market=identity[2], settlement=identity[4])
+    if costs.binding_error(at):
+        raise ValueError("FI_MARKET_SALE_PAPER_COST_UNVERIFIED")
+    row = {"minimum_post_ack_ms": 0, "fee_policy_sha256": costs.diagnostic()["policy_sha256"],
+           "economic_policy_authority": "NORMALIZED_HISTORICAL_PPI_PAPER_ASSUMPTIONS",
+           "release_sha256": model["release"]}
+    return row, costs, model["policy"]
 
 
 def _reviewed_row(source_bytes, at, valid_until):
@@ -74,6 +165,9 @@ def build_market_sale_policy(sources, *, release_sha256, at, valid_until):
 
 def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
     """Require a release-pinned economic policy for the exact PPI identity."""
+    model = deployed_sale_model()
+    if model is not None:
+        return _historical_market_sale_policy(model, identity, contract, at)
     pin = _digest(os.getenv(POLICY_PIN))
     root = Path(os.getenv("POROTA_FI_EVIDENCE_DIRECTORY",
                           str(Path(store.path).parent / "fixed-income-evidence")))
@@ -159,6 +253,8 @@ def prepare_market_sale(store, position, quote, cause, at):
     intent = {"paper_id": position["paper_id"], "cause": cause,
               "identity": list(identity), "maximum_vn": str(quantity), "book1": book,
               "policy_sha256": pin, "minimum_post_ack_ms": policy["minimum_post_ack_ms"]}
+    if "release_sha256" in policy:
+        intent["release_sha256"] = policy["release_sha256"]
     scope = sale_scope(intent)
     active = active_decision(store, position["paper_id"], scope)
     if active:
@@ -221,11 +317,14 @@ def _check_book2(proof, book2):
     return fields
 
 
-def attest_market_sale_book2(db_path, *, decision_key, signing_key_path, release):
+def attest_market_sale_book2(db_path, *, decision_key, signing_key_path=None, release,
+                             exit_signer=None):
     """Existing independent observer, acting through the registered gateway reader."""
     from cryptography.hazmat.primitives import serialization
 
-    signer = causal._private_ed25519_key(Path(signing_key_path))
+    if (signing_key_path is None) == (exit_signer is None):
+        raise ValueError("FI_MARKET_SALE_WITNESS_SIGNER_UNBOUND")
+    signer = exit_signer if exit_signer is not None else causal._private_ed25519_key(Path(signing_key_path))
     public = signer.public_key().public_bytes(encoding=serialization.Encoding.Raw,
                                                format=serialization.PublicFormat.Raw)
     proof = _ack(db_path, decision_key, public, release)

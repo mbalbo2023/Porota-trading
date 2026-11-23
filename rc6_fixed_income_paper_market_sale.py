@@ -394,6 +394,8 @@ def apply_paper_market_sale(store, broker, *, paper_id, request_id=None, nominal
                    "book2_sha256": proof["book2"]["receipt_sha256"], "policy_sha256": policy_pin,
                    "fee_policy_sha256": policy["fee_policy_sha256"],
                    "witness": witness}
+    if "economic_policy_authority" in policy:
+        causal_sale["economic_policy_authority"] = policy["economic_policy_authority"]
     return _commit_reviewed_sale(store, broker, paper_id=paper_id, request_id=request_id,
         nominal=qty, quote=observed, book_bytes=verified_book, approved_book_sha256=_hash(verified_book),
         fee_bytes=verified_fee, approved_fee_sha256=_hash(verified_fee), applied_at=applied_at,
