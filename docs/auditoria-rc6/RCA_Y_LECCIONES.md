@@ -1,6 +1,28 @@
 # RCA y lecciones de Porota RC6
 
-Corte observado el 22/11/2026. Base desplegada `223725e2860b295533d480d6ad24aee46f098b8e`. Usar en conjunto [el índice vigente](README.md), [los 32 timers](TIMERS.md) y el [PR de correcciones #1251](https://github.com/mbalbo2023/Porota-trading/pull/1251).
+## RCA del corte posterior al Deploy V2 #202
+
+El [handoff del 23/11](HANDOFF.md) enlaza los SHAs, artefactos y recibos. El estado de cada RCA se limita al alcance comprobado.
+
+| Incidente | Causa comprobada | Corrección, defensa y evidencia |
+| --- | --- | --- |
+| Venta PAPER sin autoridad en el #200 | Faltaban política, anclajes del release y del firmante e inyección del testigo. El supervisor podía crear otra decisión si cambiaba el último libro mientras esperaba la prueba de la anterior. La primera condición se observó en el Droplet y la segunda se reprodujo con una prueba de código. | [#1255](https://github.com/mbalbo2023/Porota-trading/pull/1255) conserva una decisión por posición y alcance, registra ACK de una transacción ya comprometida y verifica el primer libro posterior. Ante una clave revocada preserva el ACK y rearma con otro libro. Las pruebas cubren idempotencia, rotación, identidad y profundidad. El [recibo #202](https://github.com/mbalbo2023/Porota-trading/actions/runs/45273533386/artifacts/14866098686) acredita política y firmante activos. Primera ejecución en rueda `NO_VERIFICADO`. [Hallazgo físico #200](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7100580224) · [replay de seis claves](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7112589354) |
+| IOL MCP completaba el consentimiento y fallaba el canje | El canje OAuth recibió HTTP 403 HTML con desafío de Cloudflare, antes de iniciar la sesión MCP. La petición incompleta sí recibió un 400 JSON. La regla exacta del proveedor queda `NO_VERIFICADO`. | Se derivó el caso al soporte y se adoptó el REST oficial para el recolector secundario. [#1254](https://github.com/mbalbo2023/Porota-trading/pull/1254) fija la identidad SQLite PAPER y las lecturas de mercado en el despachador del release. El [recibo #201](https://github.com/mbalbo2023/Porota-trading/actions/runs/45224047602/artifacts/14843870280) acredita cliente REST, timers y ficha GD30. [Diagnóstico del canje](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7100580224) · [derivación a soporte](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7101111981) |
+| Scheduler mostraba resultado sin ejecución acreditada | El exportador deducía el servicio del nombre del timer. Las plantillas A3 declaran otro destino en `Unit=`. El valor `Result=success` de systemd puede ser el valor por defecto si falta evidencia de invocación. | La corrección usa el servicio efectivo, su registro de ejecución y el estado del exportador. La regresión cubre destino ausente, servicio nunca ejecutado y servicio que salió con código 2. Quedó integrada antes del #202. [PR #1253](https://github.com/mbalbo2023/Porota-trading/pull/1253) · [pruebas del Scheduler](https://github.com/mbalbo2023/Porota-trading/actions/runs/45095184150/artifacts/14782069284) |
+| Gate de preopen con autoridad de horario pendiente | El recibo del 20/11 señaló `byma_morning_watch`. Se cotejó el digest de la página COM19031 y se verificó el PDF contra el contrato horario existente. | [#1253](https://github.com/mbalbo2023/Porota-trading/pull/1253) admite los digests revisados dentro del contrato de URL, alcance y vigencia. El replay conserva cerrada la salida en feriado y preapertura. El nuevo recibo en ventana hábil queda por observar. [Preopen del 20/11](https://github.com/mbalbo2023/Porota-trading/actions/runs/45097237720/artifacts/14783284041) |
+| CI #1254 intermitente al copiar SQLite | El fixture A207 podía cerrar sus conexiones durante el inventario. Se reprodujo la desaparición de WAL/SHM y el estado `SOURCE_SNAPSHOT_BUSY`. | Conservar la fuente sintética durante el snapshot y probar la recolección de conexiones en esa fase. La corrección y su prueba quedaron en #1254. [RCA y regresión](https://github.com/mbalbo2023/Porota-trading/pull/1254#issuecomment-7107810015) |
+
+## Lecciones incorporadas al handoff
+
+- **Autoridad del testigo.** Fijar la clave pública del lector EXIT al proceso realmente iniciado y al release exacto. La propia fila del ledger aporta evidencia de la decisión. La clave pública recibida por el supervisor permite comprobar su firma. Verificar ambos relojes y la generación PPI antes de aceptar el libro posterior.
+- **Identidad y economía.** Conservar ticker, familia, mercado, moneda y plazo. Etiquetar el plazo de la consulta como `REQUEST_CANDIDATE` si el cuerpo de PPI omite ese dato. Registrar el modelo histórico de VN, base de precio y costos como supuestos de la simulación.
+- **Resultados reproducibles.** Guardar un único intento pendiente por alcance y exigir firma antes de reservar profundidad o contabilizar el fill. Un reinicio del firmante conserva los recibos comprometidos. El replay usa libros archivados y relojes de prueba: acreditar la próxima ejecución física en su propia rueda.
+- **Deploy verificable.** Separar el SHA del candidato, el árbol probado, el merge y la imagen. La solicitud iniciada desde la UI sólo queda confirmada cuando aparece el run de producto. Comprobar rama y SHA antes de reintentar. El [run #202](https://github.com/mbalbo2023/Porota-trading/actions/runs/45273533386) fue la única promoción física del candidato.
+- **Continuidad de fuentes.** Tratar la sesión, el transporte y la cobertura por separado. IOL REST acredita lecturas complementarias en su propio recibo. PPI aporta el libro y su identidad. Un proveedor degradado deja pendiente su verificación por instrumento.
+
+## Registro histórico del 22/11
+
+Corte observado el 22/11/2026. Base desplegada `223725e2860b295533d480d6ad24aee46f098b8e`. Este registro conserva el resultado de [los 32 timers](TIMERS.md) y el estado de [#1251](https://github.com/mbalbo2023/Porota-trading/pull/1251) en ese corte.
 
 | Hallazgo | Causa y evidencia | Defensa, prueba y estado |
 | --- | --- | --- |
@@ -12,7 +34,7 @@ Corte observado el 22/11/2026. Base desplegada `223725e2860b295533d480d6ad24aee4
 | Running no es ausencia de solapamientos | A las 19:54:15 ART salud ligera y exportador estuvieron activos simultáneamente durante 2 s. Los 13 pares nominales de calendario de la rueda prevista no equivalen a carreras sobre un mismo recurso. | Salud usa SQLite read-only. El exportador usa lock y reemplazo atómico. El dispatcher usa lock compartido contra deploy; distintos jobs pueden coexistir. EOD local protege destino con lock propio. [Medición](https://github.com/mbalbo2023/Porota-trading/actions/runs/45080576897/artifacts/14777037929). |
 | Deuda histórica y rutas de soporte | El análisis de referencias reduce 28 módulos Python a lista de revisión. Hay timers legados, pruebas retiradas por manifiesto y rutas de compatibilidad. Un token inicial en query se canjea por cookie, aunque el request inicial merece cobertura de logs y proxies, según comentario de `o_dashboard.py`. | Ver dependencias de artefacto y uso dinámico antes de retirar código. Auditar acceso legado desde el borde y su canje por sesión. Fuente auditable CI y verdad de rutas del SHA exacto. |
 
-## Lecciones aplicadas
+### Lecciones del corte histórico
 
 - Separar la autoridad económica por instrumento de la disponibilidad de una cotización y de su cálculo. El resultado de un replay demuestra la lógica bajo entradas conocidas.
 - Conservar tres cosas de una lectura PPI: clave solicitada, literal reportado cuando existe y evidencia del transporte. Comparar versiones normalizadas y preservar el valor de origen.

@@ -1,6 +1,6 @@
 # Porota RC6 — procedimiento de trabajo y release
 
-**Corte operativo vigente 22/11/2026.** Seguir la [auditoría vigente](auditoria-rc6/README.md), los [RCA y lecciones](auditoria-rc6/RCA_Y_LECCIONES.md) y el [checkpoint de Deploy V2 #198](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7087064703). Reconciliar el HEAD productivo con el recibo físico y luego consultar [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). Este corte da contexto a las adendas anteriores.
+**Continuidad operativa.** Partir del [handoff del Deploy V2 #202](auditoria-rc6/HANDOFF.md), reconciliarlo con el último recibo de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y consultar [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). El [registro RCA](auditoria-rc6/RCA_Y_LECCIONES.md) y el [índice de auditoría](auditoria-rc6/README.md) indican la época y el alcance de cada evidencia.
 
 
 **Antecedente de continuidad 20-Nov-2026 22:25 ART (21-Nov UTC):** el punto de entrada de release es la [ADENDA PRIORITARIA A678 y camino G0–G8 del handoff existente](RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md), luego últimos comentarios de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). [Predeploy #44849786845](https://github.com/mbalbo2023/Porota-trading/actions/runs/44849786845) del SHA 20c91228 de #1213 **FAILED** en la primera lectura AF_UNIX A678 (AssertionError, línea813, OOM0), sin artifact. No es una nueva autorización de promover un SHA rojo; usar el MISMO #1213 y owner existente para RCA/fix-forward. No abrir otro runner, Gateway, reparador ni PR producto. Documentos anteriores al corte mantienen evidencia histórica, no estado vivo.
@@ -13,11 +13,9 @@ estables están en [AGENTS.md](../AGENTS.md) y la
 investigar un problema concreto; sus checkpoints, aprobaciones y pendientes no
 se convierten en puertas automáticas de una tarea nueva.
 
-**Continuidad actual:** [handoff del 19-Nov-2026](RC6_HANDOFF_2026-11-19.md)
-y último comentario de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).
-Incluye el censo físico A385 de fuentes STALE y el inventario A729 con WAL
-no reconciliado, posteriores al corte anterior. No reejecutar el deploy P0
-ya validado: corresponde QA de rueda e históricos con backup/owner independiente.
+**Antecedente de históricos.** El [handoff del 19-Nov-2026](RC6_HANDOFF_2026-11-19.md)
+conserva el censo físico A385 de fuentes STALE y el inventario A729. Para
+históricos, reconciliar contrato, fuente y custodia antes de intervenir.
 
 ## Incidente P0 PPI REST — corte 18-Nov-2026
 
