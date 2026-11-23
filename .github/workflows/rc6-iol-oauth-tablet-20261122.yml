@@ -1,54 +1,288 @@
-name: RC6 IOL OAuth provider and effective client read-only probe
+name: RC6 release replay of PAPER fixed-income exit and preopen
 on:
   push:
     branches: [diagnostic/rc6-iol-oauth-tablet-20261122]
     paths: [.github/workflows/rc6-iol-oauth-tablet-20261122.yml]
 permissions:
   contents: read
-concurrency:
-  group: rc6-unified-paper-deploy
-  cancel-in-progress: false
 jobs:
-  metadata:
+  replay:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: 08cfa083b0a060b6e503894c793a150bb948693c
           persist-credentials: false
-      - name: Compare provider metadata and incomplete token request from both networks
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare only the locked test and transport dependencies
         run: |
-          python3 -B - <<'PY'
-          from concurrent.futures import ThreadPoolExecutor
+          set -euo pipefail
+          sed -n -E '/^(certifi|cffi|charset-normalizer|cryptography|idna|iniconfig|packaging|pluggy|pycparser|pygments|pytest|requests|urllib3)==/Ip' requirements.lock.txt > "$RUNNER_TEMP/rc6-replay-deps.txt"
+          python -m pip install --disable-pip-version-check -r "$RUNNER_TEMP/rc6-replay-deps.txt"
+      - name: Run the exact release code using temporary databases and a network namespace
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 08cfa083b0a060b6e503894c793a150bb948693c
+          test "$(git rev-parse 'HEAD^{tree}')" = e65f48c089aa22c91747eed114cd6ea74367724c
+          TEMP_REPLAY="$(mktemp -d /tmp/rc6.XXXXXX)"
+          trap 'rm -rf -- "$TEMP_REPLAY"' EXIT
+          cat > "$TEMP_REPLAY/test_release_replay.py" <<'PY_REPLAY'
+          """Run the deployed-source BONOS/ON and preopen paths with temporary fixtures."""
+          from contextlib import redirect_stdout
+          from datetime import datetime, timedelta
+          from decimal import Decimal
+          import hashlib
+          import io
           import json
+          import multiprocessing
           import os
           from pathlib import Path
-          import subprocess
-          from scripts.porota_actions_host import connection, decode_receipt, ssh_run
-          probe = "import ast\nfrom datetime import datetime, timezone\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\nimport re\nimport stat\nfrom urllib.error import HTTPError, URLError\nfrom urllib.parse import urlencode, urlsplit\nfrom urllib.request import HTTPRedirectHandler, Request, build_opener\n\nSITE = \"https://mcp.invertironline.com\"\nUA = \"Porota-Trading-RC6/1.0 (IOL MCP read-only)\"\nEXPECTED_SOURCE = \"08cfa083b0a060b6e503894c793a150bb948693c\"\nEXPECTED_DEPLOY = \"3f2fdd1bc2ebf697f799d4c715cadbe7a67fcef1\"\nEXPECTED_HASH = \"7446edfa73383a2feeb5672a50a63a335f4b7d912d19c88424924e1fb3777ea0\"\nAUTH = {\"none\", \"client_secret_post\", \"client_secret_basic\", \"private_key_jwt\"}\nGRANTS = {\"authorization_code\", \"refresh_token\", \"client_credentials\"}\nERRORS = {\"invalid_request\", \"invalid_grant\", \"invalid_client\", \"unauthorized_client\",\n          \"unsupported_grant_type\", \"invalid_target\", \"access_denied\", \"forbidden\",\n          \"country_block\", \"ip_block\", \"waf_block\", \"invalid_scope\", \"rate_limited\"}\n\nclass NoRedirect(HTTPRedirectHandler):\n    def redirect_request(self, req, fp, code, msg, headers, newurl):\n        return None\n\ndef own_endpoint(value):\n    if not isinstance(value, str):\n        return None\n    parsed = urlsplit(value)\n    if (parsed.scheme == \"https\" and parsed.netloc == \"mcp.invertironline.com\"\n        and not parsed.query and not parsed.fragment\n        and re.fullmatch(r\"/[a-zA-Z0-9./_-]{0,100}\", parsed.path or \"/\")):\n        return SITE + parsed.path\n    return None\n\ndef response(path, *, data=None):\n    headers = {\"Accept\": \"application/json\", \"User-Agent\": UA}\n    if data is not None:\n        headers[\"Content-Type\"] = \"application/x-www-form-urlencoded\"\n    try:\n        received = build_opener(NoRedirect).open(Request(SITE + path, data=data, headers=headers), timeout=8)\n    except HTTPError as error:\n        received = error\n    except (URLError, TimeoutError, OSError) as error:\n        return {\"transport\": type(error).__name__}, {}\n    with received:\n        result = {\"http\": received.code, \"format\": received.headers.get_content_type()}\n        trace = received.headers.get(\"CF-Ray\", \"\")\n        if re.fullmatch(r\"[a-fA-F0-9]{8,32}-[A-Z0-9]{2,8}\", trace):\n            result[\"trace_id\"] = trace\n        mitigated = received.headers.get(\"cf-mitigated\", \"\")\n        if mitigated.lower() == \"challenge\":\n            result[\"edge_challenge\"] = True\n        raw = received.read(16_385)\n        if len(raw) > 16_384:\n            return {**result, \"body_limit\": True}, {}\n        if result[\"format\"].endswith(\"json\"):\n            try:\n                payload = json.loads(raw)\n            except (UnicodeError, ValueError):\n                payload = None\n            if isinstance(payload, dict):\n                err = payload.get(\"error\")\n                if isinstance(err, str) and err in ERRORS:\n                    result[\"oauth_error\"] = err\n                return result, payload\n        if result[\"format\"] == \"text/html\":\n            html = raw.decode(\"utf-8\", errors=\"replace\").lower()\n            signatures = {\n                \"CLOUDFLARE_CHALLENGE\": (\"cdn-cgi/challenge-platform\", \"just a moment\"),\n                \"CLOUDFLARE_ACCESS_DENIED\": (\"cloudflare ray id\", \"attention required\"),\n                \"COUNTRY_RESTRICTION_TEXT\": (\"not available in your country\", \"not available in your region\",\n                    \"no está disponible en tu país\", \"no disponible en tu región\"),\n                \"ORIGIN_GENERIC_FORBIDDEN\": (\"<title>403 forbidden</title>\",),\n            }\n            result[\"html_markers\"] = [key for key, phrases in signatures.items()\n                                      if any(phrase in html for phrase in phrases)]\n            ids = re.findall(r\"(?:error code|error)\\s*[:#]?\\s*(10[0-9]{2}|11[0-9]{2})\\b\", html)\n            if ids and \"trace_id\" in result:\n                result[\"edge_error_code\"] = int(ids[0])\n        return result, {}\n\ndef allowed_list(payload, key, allowed):\n    values = payload.get(key)\n    return sorted({i for i in values if isinstance(i, str) and i in allowed}) if isinstance(values, list) else []\n\ndef metadata():\n    rs, resource = response(\"/.well-known/oauth-protected-resource\")\n    as_status, server = response(\"/.well-known/oauth-authorization-server\")\n    endpoints = {key: own_endpoint(server.get(key)) for key in (\"issuer\", \"authorization_endpoint\",\n                    \"token_endpoint\", \"registration_endpoint\")}\n    auth_servers = resource.get(\"authorization_servers\")\n    check = {\n        \"resource_metadata\": rs, \"authorization_metadata\": as_status,\n        \"public_resource_matches\": isinstance(auth_servers, list) and SITE in auth_servers,\n        \"endpoints\": endpoints,\n        \"pkce_s256\": \"S256\" in allowed_list(server, \"code_challenge_methods_supported\", {\"S256\"}),\n        \"token_auth_methods\": allowed_list(server, \"token_endpoint_auth_methods_supported\", AUTH),\n        \"grant_types\": allowed_list(server, \"grant_types_supported\", GRANTS),\n    }\n    endpoint = endpoints[\"token_endpoint\"]\n    # One deliberately incomplete, credential-free OAuth request. No valid code or account is used.\n    token, _ = response(urlsplit(endpoint).path if endpoint else \"/token\",\n                        data=urlencode({\"grant_type\": \"authorization_code\"}).encode())\n    return {**check, \"public_token_probe\": token}\n\ndef key_state(path):\n    observed = path.lstat()\n    assert path.resolve() == path and stat.S_ISREG(observed.st_mode) and observed.st_uid == 0\n    assert stat.S_IMODE(observed.st_mode) == 0o600 and observed.st_nlink == 1 and observed.st_size < 128_000\n    return json.loads(path.read_bytes())\n\ndef droplet():\n    marker = json.loads(Path(\"/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json\").read_bytes())\n    assert marker.get(\"candidate_sha\") == EXPECTED_SOURCE and marker.get(\"deployment_sha\") == EXPECTED_DEPLOY\n    assert marker.get(\"mode\") == \"PRODUCTION_PAPER\" and marker.get(\"real_order_capability\") == \"BLOCKED\"\n    assert type(marker.get(\"real_orders_sent\")) is int and marker[\"real_orders_sent\"] == 0\n    adapter = Path(\"/var/lib/porota-rc6-iol\") / EXPECTED_SOURCE / \"iol_mcp_readonly_adapter_rc6.py\"\n    observed = adapter.lstat()\n    assert adapter.resolve() == adapter and stat.S_ISREG(observed.st_mode) and observed.st_uid == 0\n    assert not observed.st_mode & 0o022 and observed.st_nlink == 1 and observed.st_size < 128_000\n    archive = adapter.read_bytes()\n    digest = hashlib.sha256(archive).hexdigest()\n    assert digest == EXPECTED_HASH\n    declared = next(n.value.value for n in ast.parse(archive).body\n                    if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name)\n                    and t.id == \"MCP_PROTOCOL_VERSION\" for t in n.targets)\n                    and isinstance(n.value, ast.Constant))\n    profile = key_state(Path(\"/root/.config/porota/iol_mcp_oauth_bootstrap.json\"))\n    registration = profile.get(\"client_registration\") or {}\n    method = registration.get(\"token_endpoint_auth_method\")\n    endpoint = own_endpoint(profile.get(\"token_endpoint\"))\n    redirect = profile.get(\"redirect_uri\") == \"http://127.0.0.1:8765/callback\"\n    return {\"source_sha\": EXPECTED_SOURCE, \"deployment_sha\": EXPECTED_DEPLOY,\n            \"adapter_sha256\": digest, \"mcp_initialize_protocol\": declared,\n            \"registration_auth_method\": method if isinstance(method, str) and method in AUTH else\n                        \"absent\" if method is None else \"unsupported\",\n            \"has_client_secret\": bool(registration.get(\"client_secret\")),\n            \"callback_loopback_matches\": redirect, \"stored_token_endpoint\": endpoint,\n            \"mode\": marker[\"mode\"], \"real_orders_sent\": marker[\"real_orders_sent\"]}\n\nwhere = \"DROPLET\" if os.geteuid() == 0 else \"GITHUB_RUNNER\"\npayload = {\"schema\": \"RC6_IOL_OAUTH_METADATA_V1\", \"domain\": where, \"utc\": datetime.now(timezone.utc).isoformat()}\nif where == \"DROPLET\":\n    payload[\"effective_client\"] = droplet()\npayload.update(metadata())\nprint(json.dumps(payload, sort_keys=True))\n"
-          with connection(os.environ) as (ssh, _, _), ThreadPoolExecutor(2) as workers:
-              remote = workers.submit(ssh_run, ssh, ['sudo', '-n', '/usr/bin/python3', '-B', '-'], data=probe.encode(), timeout=38)
-              local = workers.submit(subprocess.run, ['python3', '-B', '-'], input=probe.encode(), capture_output=True, timeout=36)
-              results = [remote.result(), local.result()]
-          evidence = [decode_receipt(r.stdout) if r.returncode == 0 else
-                      {'domain': domain, 'probe_state': 'FAILED', 'exit': r.returncode}
-                      for r, domain in zip(results, ('DROPLET', 'GITHUB_RUNNER'))]
-          print(json.dumps(evidence, indent=2, sort_keys=True))
-          Path(os.environ['RUNNER_TEMP'], 'iol-provider-probe.json').write_text(json.dumps(evidence, indent=2))
-          if any(p.get('probe_state') == 'FAILED' for p in evidence):
-              raise SystemExit(1)
-          PY
+          import socket
+          import threading
+          from types import SimpleNamespace
+
+          import pytest
+
+          from be_paper_engine import PaperBroker
+          from bm_exit_supervisor import PositionExitSupervisor
+          from bq_exit_policy import PaperSessionPolicy
+          from bv_paper_runtime import broker_from_environment
+          import rc6_fixed_income_sale_authority as authority
+          import rc6_paper_causal_decision_receipt as causal
+          import rc6_preopen as preopen
+          from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+          from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer
+          import test_porota_preopen_rootless as preopen_fixtures
+          import test_rc6_fi_market_sale_authority as sale_fixtures
+
+          ARCHIVE = Path("docs/evidence/ws_motor_11_before_after.json")
+          POLICY = Path("ops/policy/rc6-byma-reviewed-authority-v1.json")
+          DAY = (2026, 11, 24)
+
+
+          def signer_process(pipe, db_path, key, decision):
+              """Sign after reading the supervisor's committed freeze from another process."""
+              with pipe:
+                  assert pipe.recv() == "sign"
+                  ack = causal.attest_after_commit(db_path, decision_key=decision,
+                      signing_key_path=key, expected_release_sha256=sale_fixtures.RELEASE)
+                  assert ack["signature_created"], ack
+                  pipe.send(authority.attest_market_sale_book2(db_path, decision_key=decision,
+                      signing_key_path=key, release=sale_fixtures.RELEASE))
+
+
+          def can_open_unix_socket():
+              try:
+                  with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM):
+                      return True
+              except PermissionError:
+                  if os.getenv("RC6_EXPECT_UNIX_SOCKET") == "yes":
+                      raise
+                  return False
+
+
+          @pytest.mark.parametrize(("ticker", "family"), [("GD30", "BONOS"), ("YMCJO", "OBLIGACIONES")])
+          def test_active_position_end_to_end(tmp_path, monkeypatch, ticker, family):
+              native_reader = authority._read_first_book2
+              # Reuse the release's lot, signed policy and feed fixtures. This run
+              # records its decision and ACK through the supervisor instead of pre-seeding.
+              with monkeypatch.context() as fixture_scope:
+                  fixture_scope.setattr(authority, "prepare_market_sale", lambda *_: None)
+                  fixture_scope.setattr(causal, "attest_after_commit", lambda *_, **__: {"signature_created": True})
+                  store, paper_id, key, _, book, cache, _ = sale_fixtures.setup(
+                      tmp_path, monkeypatch, ticker=ticker, family=family)
+
+              source = ARCHIVE.read_bytes()
+              history = {row["field"]: row for row in json.loads(source)["field_matrix"]
+                         if row["ticker"] == ticker and row["settlement"] == "A-24HS"}
+              for field, expected in {"currency": "ARS", "settlement": "A-24HS"}.items():
+                  assert history[field]["primary_source"] == "PPI_STRUCTURED_API"
+                  assert history[field]["value"] == expected
+              policy_path = tmp_path / "market-sale-policy.json"
+              policy = json.loads(policy_path.read_bytes())
+              economics = policy["instruments"][0]
+              for archived, policy_key in (("cash_multiplier", "cash_multiplier"),
+                    ("quantity_min", "minimum_quantity"), ("quantity_step", "quantity_step")):
+                  row = history[archived]
+                  if row["status_after"] == "EVIDENCED":
+                      economics[policy_key] = str(row["value"])
+                  elif ticker == "YMCJO":
+                      assert row["status_after"] == "UNRESOLVED" and economics[policy_key] == "1"
+                  else:
+                      pytest.fail(f"Missing historic field {ticker}/{archived}")
+              economics["ppi_economics_source_sha256"] = hashlib.sha256(source).hexdigest()
+              economics["known_at"] = history["currency"]["capture_timestamp"]
+              raw = json.dumps(policy, sort_keys=True).encode()
+              policy_path.write_bytes(raw)
+              monkeypatch.setenv(authority.POLICY_PIN, hashlib.sha256(raw).hexdigest())
+
+              at = sale_fixtures.AT
+              ms = sale_fixtures.MILLISECOND
+              decision_at = (at + 10 * ms).isoformat()
+              applied_at = at + 50 * ms
+              # Frozen process time during the decision, distinct read time in the signer.
+              monkeypatch.setattr(causal, "_now", lambda: (at + 9 * ms).isoformat())
+              default = broker_from_environment(store, clock_fn=lambda: applied_at.isoformat())
+              supervisor = PositionExitSupervisor(default, clock_fn=default.clock_fn,
+                  session_policy=default.session_policy, max_hold_minutes=360)
+              monkeypatch.setenv("PAPER_T1_FULL_DATE_RELEASE", "false")
+              position, = store.open_positions()
+              quote = store.latest_quote(position)
+              assert position["status"] == "OPEN" and position["quantity"] == "100"
+
+              no_witness = supervisor.supervise(position, quote, decision_at)
+              assert (no_witness.state, no_witness.reason) == (
+                  "EXIT_PENDING_FI_NATIVE_EVIDENCE", "FI_NATIVE_SIGNED_BOOK2_PENDING")
+              assert store.open_positions()[0]["quantity"] == "100"
+
+              with store.connect() as db:
+                  decision, = db.execute("SELECT decision_key FROM paper_decisions WHERE action='SELL'").fetchone()
+                  assert db.execute("SELECT COUNT(*) FROM paper_causal_decision_receipts").fetchone()[0] == 0
+              assert decision.startswith("FI_SELL:")
+              # A pre-ACK book, the first eligible bid and a later more favorable bid.
+              book(20, 101)
+              chosen = book(30, 100)
+              book(40, 130)
+
+              real_unix = can_open_unix_socket()
+              server = None
+              if real_unix:
+                  monkeypatch.setattr(authority, "_read_first_book2", native_reader)
+                  path = gateway_socket_path(store.path)
+                  path.parent.mkdir(parents=True, mode=0o700)
+                  server = ReadOnlyUnixFeedServer(cache.feed, socket_path=path, native_receipts=cache,
+                      supervisor_pid=os.getpid(), owner_status=lambda: {"state": "OPEN",
+                          "owner_pid": os.getpid(), "session_generation": sale_fixtures.SESSION,
+                          "login_invocations_by_owner": 1})
+                  server.start()
+                  serve = threading.Thread(target=server.serve_forever, daemon=True)
+                  serve.start()
+
+              monkeypatch.setattr(causal, "_now", lambda: (at + 20 * ms).isoformat())
+              context = multiprocessing.get_context("fork")
+              broker_end, signer_end = context.Pipe()
+              # Gate on enrollment before either version of the replay reads the cache.
+              process = context.Process(target=signer_process, args=(signer_end, store.path, key, decision))
+              with broker_end, signer_end:
+                  process.start()
+                  try:
+                      if server:
+                          client = ReadOnlyUnixFeedClient(socket_path=server.socket_path, timeout_seconds=2)
+                          client.owner_status()
+                          client.register_client("exit_reader", pid=process.pid,
+                                                 proc_starttime=server.process_starttime(process.pid))
+                      broker_end.send("sign")
+                      assert broker_end.poll(8), "independent signer did not produce a witness"
+                      witness = broker_end.recv()
+                      assert witness["payload"]["book2"] == chosen
+                      broker = PaperBroker(store, clock_fn=lambda: applied_at.isoformat(),
+                          session_policy=PaperSessionPolicy(), market_sale_witness=lambda key: witness if key == decision else None)
+                      with_witness = PositionExitSupervisor(broker, clock_fn=broker.clock_fn,
+                                                            session_policy=broker.session_policy)
+                      result = with_witness.supervise(position, quote, applied_at.isoformat())
+                      assert result.state == "CLOSED", result
+                  finally:
+                      process.join(3)
+                      if process.is_alive():
+                          process.terminate()
+                          process.join(3)
+                      if server is not None:
+                          server.shutdown()
+                          serve.join(3)
+                          server.close()
+              assert process.exitcode == 0
+              assert store.open_positions() == []
+              with store.connect() as db:
+                  fills = db.execute("SELECT quantity FROM paper_fills WHERE side='SELL_SIMULATED'").fetchall()
+                  assert len(fills) == 1 and fills[0][0] == "100"
+                  sale, = db.execute("SELECT price,net_proceeds,available_at,settlement_basis FROM paper_fi_native_sales").fetchall()
+                  assert Decimal(sale[0]) < 100 and Decimal(sale[1]) > 0
+                  assert (sale[2], sale[3]) == (None, "PENDING_CONFIRMATION")
+                  count, = db.execute("SELECT real_orders_sent FROM observer_state").fetchone()
+                  assert count == 0
+              print(json.dumps({"scenario": ticker, "family": family, "clock": applied_at.isoformat(),
+                  "without_witness": no_witness.reason, "with_witness": result.state,
+                  "book_transport": "AF_UNIX_WITH_PID_ENROLLMENT" if real_unix else "IN_PROCESS_FIXTURE_TRANSPORT",
+                  "book_at_ms": 30, "book_bid": 100, "fill_nominal": fills[0][0], "fill_price": sale[0],
+                  "net_ars": sale[1], "settlement": sale[3], "available_at": sale[2], "real_orders_sent": count,
+                  "historic_minimum_and_step": ticker == "GD30"}, sort_keys=True))
+
+
+          @pytest.mark.parametrize(("date_at", "watch_case", "phase", "status", "go"), [
+              ((2026, 11, 23, 10, 20), "missing", None, "NOT_DUE", False),
+              ((*DAY, 9, 45), "unchanged", "T_MINUS_45", "GREEN", False),
+              ((*DAY, 10, 20), "reviewed_calendar", "T_MINUS_10", "GREEN", True),
+              ((*DAY, 10, 20), "stale", "T_MINUS_10", "RED", False),
+              ((*DAY, 10, 20), "invalid_calendar", "T_MINUS_10", "RED", False),
+              ((*DAY, 10, 30), "unchanged", "MANUAL_OR_OUTSIDE_SCHEDULE", "GREEN", False),
+          ])
+          def test_preopen_with_release_calendar(request, monkeypatch, tmp_path, date_at, watch_case, phase, status, go):
+              request.getfixturevalue("operator")
+              now = datetime(*date_at, tzinfo=preopen.TZ)
+
+              class ReplayClock(datetime):
+                  @classmethod
+                  def now(cls, tz=None):
+                      return now.astimezone(tz) if tz else now
+
+              monkeypatch.setattr(preopen, "datetime", ReplayClock)
+              monkeypatch.setattr(preopen.shutil, "disk_usage", lambda _: SimpleNamespace(free=preopen.TARGET_FREE_BYTES))
+              # A fixture substitutes offhost OS/DB health reads, preserving PAPER gate policy.
+              for check in ("observer_db", "required_timers", "blocked_history_timers", "iol_reference_state"):
+                  monkeypatch.setattr(preopen, check, lambda *args, **kwargs: {"state": "GREEN"})
+              monkeypatch.setattr(preopen, "DB", tmp_path / "isolated-preopen.db")
+              path = tmp_path / "byma-watch.json"
+              monkeypatch.setattr(preopen, "BYMA_MORNING_WATCH", path)
+              if watch_case != "missing":
+                  watch_state = "NO_CHANGE"
+                  observed = datetime(*DAY, 8, 31, 38, tzinfo=preopen.TZ)
+                  if watch_case == "stale":
+                      observed = datetime(2026, 11, 20, 8, 31, 38, tzinfo=preopen.TZ)
+                  watch = {"observed_at": observed.isoformat(), "state": watch_state}
+                  if watch_case in {"reviewed_calendar", "invalid_calendar"}:
+                      pages = json.loads(POLICY.read_bytes())["pages"]
+                      digest = pages["CALENDAR"]["sha256"] if watch_case == "reviewed_calendar" else "9" * 64
+                      watch.update(state="CHANGED_REVIEW_REQUIRED", changed_components=["CALENDAR"],
+                          pages={"CALENDAR": {"url": pages["CALENDAR"]["url"], "sha256": digest,
+                              "scope": "h1-to-footer-v2", "status": "OK"}})
+                  path.write_text(json.dumps(watch), encoding="utf-8")
+
+              output = io.StringIO()
+              with redirect_stdout(output):
+                  code = preopen.main(publish_paper_gate=True)
+              result = json.loads(output.getvalue())
+              operator = request.getfixturevalue("operator")
+              receipt = json.loads((operator["identity"].operator / "paper-preopen-v2.json").read_bytes())
+              assert (result["status"], result.get("phase"), code) == (status, phase, 2 if status == "RED" else 0), result
+              assert (receipt["status"] == "GO_PAPER_SCALPING") is go, receipt
+              assert result["network_order_test_performed"] is False
+              expected_reason = {"missing": "BYMA_NON_OPERATIONAL_DAY", "stale": "BYMA_WATCH_NOT_TODAY",
+                  "invalid_calendar": "BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED",
+                  "reviewed_calendar": "BYMA_CRITICAL_REVIEWED_EXACT", "unchanged": "NO_CHANGE"}
+              reason = result.get("reason") or result["checks"]["byma_morning_watch"]["reason"]
+              assert reason == expected_reason[watch_case]
+              print(json.dumps({"scenario": watch_case, "clock": result["generated_at_ar"], "phase": phase,
+                  "checks": status, "byma_reason": reason, "paper_gate": receipt["status"], "exit": code}, sort_keys=True))
+
+
+          pytest_plugins = ("test_porota_preopen_rootless",)
+          PY_REPLAY
+          sha256sum "$TEMP_REPLAY/test_release_replay.py" > "$RUNNER_TEMP/replay-script-sha256.txt"
+          PYTHON_BIN="$(command -v python)"
+          sudo -n unshare --net --setgid "$(id -g)" --setuid "$(id -u)" env \
+            PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/tests" RC6_EXPECT_UNIX_SOCKET=yes \
+            "$PYTHON_BIN" -m pytest -o addopts= -q -s --tb=short --basetemp="$TEMP_REPLAY/t" \
+            "$TEMP_REPLAY/test_release_replay.py" 2>&1 | tee "$RUNNER_TEMP/replay-output.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: iol-provider-probe
-          path: ${{ runner.temp }}/iol-provider-probe.json
+          name: rc6-paper-release-replay
+          path: |
+            ${{ runner.temp }}/replay-output.txt
+            ${{ runner.temp }}/replay-script-sha256.txt
           retention-days: 14
           if-no-files-found: error
