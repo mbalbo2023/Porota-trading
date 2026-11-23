@@ -64,6 +64,7 @@ def test_401_refreshes_once_discovers_endpoint_and_reinitializes(tmp_path, monke
     assert saved["tokens"]["access_token"] == "fresh"
     assert saved["tokens"]["refresh_token"] == "rotated"
     assert len([r for r in calls if r.full_url == "https://auth.example/token"]) == 1
+    assert {request.get_header("User-agent") for request in calls} == {"Porota-Trading-RC6/1.0 (IOL MCP read-only)"}
 
 
 def test_execution_tools_remain_denied(tmp_path):
