@@ -1,5 +1,6 @@
 """A207 independent 20-session proof: an administrative void is not a trade."""
 from datetime import datetime, timedelta
+import gc
 import hashlib
 import json
 from pathlib import Path
@@ -69,6 +70,9 @@ def _void(partial_spot, *, days_after_open=1, seal=True):
 
 
 def _export(broker, destination, end_at):
+    # Committed fixture connections can await GC. Finish their SQLite
+    # checkpoint before the exporter inventories a quiescent main and WAL.
+    gc.collect()
     return export_package(broker.store.path, destination, sessions=_sessions(end_at),
                           pseudonym_key=b'a207-test-seed-' + bytes(range(32)))
 
