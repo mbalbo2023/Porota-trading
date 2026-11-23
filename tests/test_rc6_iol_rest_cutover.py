@@ -10,6 +10,7 @@ import pytest
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
 from iol_shadow_collector_rc6 import run_batch
 from iol_shadow_decision_input_rc6 import read_for_decision
+from rc6_broker_parity_evidence import iol_structured_records
 from rc6_source_consolidation import consolidate
 from scripts import rc6_iol_rest_units as units
 from scripts import rc6_source_cycle_dispatch as dispatch
@@ -82,6 +83,17 @@ def test_rest_fallback_needs_exact_ppi_and_field_native_clock():
     for row in (ppi, rest):
         row.update(symbol="GD30", family="BONOS")
     assert consolidate([ppi], [rest], as_of=NOW)["rows"][0]["validated_effective_fields"]["bid"]["value"] is None
+
+
+@pytest.mark.parametrize(("transport", "expected"), [("IOL_MCP", "IOL_PREVIOUS_TRANSPORT_REFERENCE"),
+                                                   ("IOL_REST", "IOL_REST_REPO_BOOK_CLOCK_UNVERIFIED")])
+def test_reference_rates_cannot_inherit_new_rest_capture_clock(transport, expected):
+    rate = {"transport": transport, "term_days": 1, "tna": 30, "minimum_amount": 100000}
+    payload = {"source": "IOL_REST", "schema": "rc6-iol-family-reference-v1",
+               "refreshed_at": NOW.isoformat(), "cauciones": {"ARS": [rate]}}
+    result = iol_structured_records(payload, [])
+    assert result["accepted"] == []
+    assert result["blocked"][0]["blocker"] == expected
 
 
 def test_source_dispatch_requires_release_database_identity_before_children(tmp_path):

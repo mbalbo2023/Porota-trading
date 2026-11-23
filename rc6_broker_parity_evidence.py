@@ -190,6 +190,7 @@ def _ppi_caucion_identity(ppi, currency, term_days, side):
 
 def _caucion_records(payload, ppi):
     accepted, blocked = [], []
+    rest_cache = payload.get("source") == "IOL_REST"
     for currency, rows in (payload.get("cauciones") or {}).items():
         source_state = str((payload.get("section_states") or {}).get("caucion:"+str(currency))
                            or payload.get("cache_state") or "UNKNOWN")
@@ -201,9 +202,11 @@ def _caucion_records(payload, ppi):
             term_days = _first(row, "term_days", "term", "days", "plazo")
             side = str(_first(row, "side", "caucion_type") or "COLOCADORA").upper()
             identity = _ppi_caucion_identity(ppi, str(currency).upper(), term_days, side)
-            if row.get("reference_only") is True:
+            if rest_cache or row.get("reference_only") is True:
+                reason = ("IOL_REST_REPO_BOOK_CLOCK_UNVERIFIED" if row.get("transport") == "IOL_REST"
+                          else "IOL_PREVIOUS_TRANSPORT_REFERENCE")
                 blocked.append({"identity": identity.__dict__ if identity is not None else None,
-                                "blocker": "IOL_REST_REPO_BOOK_CLOCK_UNVERIFIED",
+                                "blocker": reason,
                                 "source_section": "cauciones", "term_days": term_days})
                 continue
             if identity is None:
