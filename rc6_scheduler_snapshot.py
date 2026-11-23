@@ -28,6 +28,40 @@ def systemd_clock(value):
         return None
 
 
+def execution_state(properties, trigger):
+    """Interpret systemd's execution evidence independently of timer state."""
+    load = properties.get("LoadState")
+    if load in {"not-found", "masked"}:
+        return "UNIT_UNAVAILABLE"
+    if load != "loaded":
+        return "UNKNOWN"
+    code = properties.get("ExecMainCode")
+    if code in {"1", "2", "3"}:
+        return "COMPLETED"
+    started = systemd_clock(properties.get("ExecMainStartTimestamp"))
+    if started and properties.get("SubState") in {"start", "running"}:
+        return "RUNNING"
+    finished = systemd_clock(properties.get("ExecMainExitTimestamp"))
+    if (code == "0" and not started and not finished and not systemd_clock(trigger)
+            and properties.get("ActiveState") == "inactive"):
+        return "NO_EXECUTION_OBSERVED"
+    return "UNKNOWN"
+
+
+def scheduled_export_published(row, captured):
+    """A current export proves publication during the scheduled invocation."""
+    if (row.get("unit") != EXPORT_UNIT or row.get("service") != EXPORT_UNIT[:-6] + ".service"
+            or row.get("execution_state") != "RUNNING"
+            or row.get("service_sub_state") != "start"
+            or row.get("last_result") != "unknown"):
+        return False
+    trigger = systemd_clock(row.get("last_trigger"))
+    started = systemd_clock(row.get("service_started_at"))
+    return bool(captured and trigger and started
+                and 0 <= (started - trigger).total_seconds() <= ACCURACY_SECONDS
+                and 0 <= (captured - started).total_seconds() <= INTERVAL_SECONDS)
+
+
 def snapshot_phase(now):
     if now.tzinfo is None:
         return "UNKNOWN"

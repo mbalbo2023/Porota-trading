@@ -7,7 +7,7 @@ import stat
 from pathlib import Path
 import hashlib
 from co_market_sessions_hf6 import byma_paper_spot_phase
-from rc6_scheduler_snapshot import freshness_budget, instant, systemd_clock
+from rc6_scheduler_snapshot import freshness_budget, instant, scheduled_export_published, systemd_clock
 
 from .projection import Page, UNKNOWN, age, freshness, json_object, contract_labels, validated_metrics
 
@@ -222,7 +222,8 @@ def artifact(p, kind):
     result = []
     captured = (payload.get("recorded_at") if kind == "scheduler" else
                 payload.get("captured_at") or payload.get("recorded_at") or payload.get("as_of"))
-    budget = freshness_budget(instant(captured), p.now, len(rows)) if kind == "scheduler" else 3600
+    capture_time = instant(captured)
+    budget = freshness_budget(capture_time, p.now, len(rows)) if kind == "scheduler" else 3600
     snapshot_freshness = freshness(captured, p.now, budget)
     snapshot_fresh = snapshot_freshness == "FRESH"
 
@@ -234,10 +235,26 @@ def artifact(p, kind):
             # a failed service. It proves scheduling, not work completion.
             enabled, active = row.get("enabled_state"), row.get("active_state")
             outcome = row.get("last_result")
+            execution = row.get("execution_state")
             current = state == "AVAILABLE" and payload.get("state") == "OK" and snapshot_fresh
-            row_state = ("SERVICE_FAILED" if outcome not in {None, "", "success", "unknown"} else
-                         "TIMER_ACTIVE" if enabled == "enabled" and active == "active" and outcome == "success" else
-                         "SUSPENDED" if enabled in {"masked", "disabled"} and active == "inactive" else UNKNOWN)
+            if outcome not in {None, "", "success", "unknown"}:
+                row_state, reason = "SERVICE_FAILED", "Service result: " + str(outcome)[:64]
+            elif enabled in {"masked", "disabled"} and active == "inactive":
+                row_state, reason = "SUSPENDED", None
+            elif enabled == "enabled" and active == "active" and scheduled_export_published(row, capture_time):
+                row_state, reason = "Instantánea publicada", "La captura se publicó durante la ejecución del exportador"
+            elif execution == "RUNNING":
+                row_state, reason = "En ejecución al capturar", None
+            elif enabled == "enabled" and active == "active" and outcome == "success":
+                row_state, reason = "TIMER_ACTIVE", None
+            else:
+                row_state, reason = UNKNOWN, "Service result: unknown" if outcome == "unknown" else None
+            execution_label = {
+                "RUNNING": "En ejecución al capturar",
+                "COMPLETED": "Ejecución terminada",
+                "NO_EXECUTION_OBSERVED": "Sin ejecución observada",
+                "UNIT_UNAVAILABLE": "Unidad de servicio no disponible",
+            }.get(execution if isinstance(execution, str) else None, "Sin evidencia de ejecución")
             wall_next = systemd_clock(row.get("next_elapse"))
             mono_next = instant(row.get("next_elapse_monotonic_at"))
             deadlines = [stamp for stamp in (wall_next, mono_next) if stamp is not None]
@@ -249,7 +266,7 @@ def artifact(p, kind):
                    "next_monotonic": mono_next.isoformat() if mono_next else None,
                    "last_run": last_trigger.isoformat() if last_trigger else None,
                    "description": row.get("description"),
-                   "reason": ("Service result: " + str(outcome)[:64]) if outcome not in {None, "success"} else None}
+                   "execution_label": execution_label, "reason": reason}
         # No arbitrary recursive payload dump: detail columns are allowlisted.
         row_clock = captured if kind == "scheduler" else row.get("as_of") or captured
         result.append({**row, "as_of": row_clock, "source": files[kind],

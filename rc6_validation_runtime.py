@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import re
 
-from rc6_scheduler_snapshot import EXPORT_UNIT, freshness_budget, instant
+from rc6_scheduler_snapshot import EXPORT_UNIT, freshness_budget, instant, scheduled_export_published
 
 
 POSTCLOSE_UNIT = "porota-snapshot-postclose-rc6.timer"
@@ -61,12 +61,14 @@ def scheduler_status(data, now):
         row = matches[0]
         if row.get("enabled_state") != "enabled" or row.get("active_state") != "active":
             return "NO_VERIFICADO"
-        # The export must have run successfully. The postclose service can
-        # be in progress at this observation, so its outcome is separate.
-        if unit == EXPORT_UNIT and (row.get("last_result") != "success"
-                                    or str(row.get("exec_main_status")) != "0"
-                                    or not row.get("last_trigger")):
-            return "NO_VERIFICADO"
+        if unit == EXPORT_UNIT:
+            # Older snapshots can report a completed exporter run. New ones
+            # also bind publication directly to the current scheduled run.
+            completed_export = (row.get("last_result") == "success"
+                                and str(row.get("exec_main_status")) == "0"
+                                and bool(row.get("last_trigger")))
+            if not (completed_export or scheduled_export_published(row, captured)):
+                return "NO_VERIFICADO"
     return "VERIFICADO"
 
 

@@ -36,8 +36,8 @@ def render(p, destination, tab):
                             (*WORKER_DETAIL, *fields("failures|Fallos|number;lag|Lag (s)|number")))
     if tab == "scheduler":
         return render_table(p, destination, tab, artifact(p, "scheduler"), "Scheduler · snapshot read-only",
-                            fields("unit|Unidad / job;state|Estado|status;freshness|Snapshot freshness|status;next_run|Próxima ejecución|time;last_run|Última ejecución|time"),
-                            fields("enabled|Habilitado;active|Activo;last_result|Resultado informado por systemd;exec_main_status|Exit status;next_calendar|Próxima por calendario|time;next_monotonic|Próxima por reloj monotónico|time;next_elapse_monotonic|Lectura monotónica original;description|Descripción;reason|Excepción"),
+                            fields("unit|Unidad / job;state|Estado|status;freshness|Snapshot freshness|status;next_run|Próximo disparo|time;last_run|Último disparo|time"),
+                            fields("enabled|Habilitado;active|Activo;execution_label|Ejecución observada;last_result|Resultado informado por systemd;exec_main_status|Exit status;next_calendar|Próxima por calendario|time;next_monotonic|Próxima por reloj monotónico|time;next_elapse_monotonic|Lectura monotónica original;description|Descripción;reason|Detalle"),
                             identity=False,
                             note="El próximo disparo usa el primero de los relojes disponibles. Los tiempos de un snapshot vencido se conservan como evidencia histórica.")
     if tab == "evidencia":
