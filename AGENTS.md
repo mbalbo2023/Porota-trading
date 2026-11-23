@@ -1,12 +1,18 @@
 # Porota Trading RC6 — instrucciones para agentes
 
-## Corte operativo vigente · 22/11/2026
+## Continuidad operativa · Deploy V2 #202
 
-El producto `223725e2860b295533d480d6ad24aee46f098b8e` está acreditado por [Deploy V2 #198](https://github.com/mbalbo2023/Porota-trading/actions/runs/45078550557/artifacts/14776396505). Modo `PRODUCTION_PAPER / SIMULATION`, guard real bloqueado y 0 órdenes reales en el recibo. Para iniciar o retomar, usar el [corte de auditoría y fuentes verificables](docs/auditoria-rc6/README.md), el [registro RCA](docs/auditoria-rc6/RCA_Y_LECCIONES.md), el [inventario físico de timers](docs/auditoria-rc6/TIMERS.md) y [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). Los cortes anteriores son historia de continuidad.
+[Handoff del 23/11/2026](docs/auditoria-rc6/HANDOFF.md) para retomar RC6. Reconciliar el HEAD de producto y el último recibo físico en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y consultar el ownership en [#980](https://github.com/mbalbo2023/Porota-trading/issues/980) antes de escribir. El [Deploy V2 #202](https://github.com/mbalbo2023/Porota-trading/actions/runs/45273533386/artifacts/14866098686) acredita seis variantes de BONOS/ON en `ACTIVE_PAPER` y cero órdenes reales. El handoff indica la comprobación pendiente en rueda, el [registro RCA](docs/auditoria-rc6/RCA_Y_LECCIONES.md) y la fecha de cada [insumo de auditoría](docs/auditoria-rc6/README.md). `main` es la rama de control documental.
+
+El procedimiento está en [docs/RUNBOOK.md](docs/RUNBOOK.md). El
+[índice histórico](docs/history/README.md) reúne los documentos retirados.
 
 - Distinguir `PPI_FIELD`, `REQUEST_CANDIDATE`, respuesta nativa vinculada a una consulta y readiness de la clave completa. Ante un literal explícito preservar el valor observado y normalizar su significado. La ausencia de eco de plazo tiene el estado `ABSENT` en una respuesta nativa válida.
 - Registrar cantidad instalada, activa, deshabilitada y enmascarada de timers por separado. Para el estado de un job usar su unidad `Unit=`, evidencia de ejecución y horario ART/UTC.
 - Las simulaciones se ejecutan con proveedor y almacén aislados; el testigo sintético acredita la lógica temporal, los cálculos y las transacciones de prueba. La habilitación PAPER nativa se audita con sus fuentes, autoridad independiente, riesgo y release específico.
+- Para la salida PAPER, verificar por separado la política y el firmante activos, el libro nativo estrictamente posterior al ACK y el asiento contable. Si una venta pendiente lleva el ACK de una clave revocada, conservar ese ACK y rearmar con otro libro.
+
+## Antecedentes del 19 al 21 de noviembre
 
 > **Fix-forward histórico #1203, 21-Nov-2026.** El [head `8b73250a`](https://github.com/mbalbo2023/Porota-trading/commit/8b73250af5d121a53e3ba3306f5c0873bbdf3e48) incluye el 21/11/2025 como rueda histórica T+1 para ACCIONES/CEDEARs y admite fragmentos de archivo dentro del corte aun si terminan antes del 21/09/2026. Pasaron 121 pruebas focalizadas. Quedan tres modalidades limitadas pendientes, el inventario por clave y rueda sobre las copias restauradas y el lote acreditado por el proveedor. #1203 conserva DRAFT y la importación HOLD. [Pruebas, piloto y alcance](docs/RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md#fix-forward-de-1203--21-nov-2026).
 
@@ -43,7 +49,7 @@ El producto `223725e2860b295533d480d6ad24aee46f098b8e` está acreditado por [Dep
 > **Orden de los gates:** CI exacto GREEN + manifest/digest → owner global libre + Preflight técnico real → Deploy V2 único build-once → postflight imagen/roles/DB/PAPER0/real routes/Watch → QA de instrumentos en runtime. No pedir que el futuro proceso ya exista antes de instalarlo. **PPI Watch NO TOCAR; órdenes reales bloqueadas; FIX-FORWARD ONLY.** Una duda se etiqueta NO_VERIFICADO con dueño y prueba pendiente.
 
 
-> **Corte vigente 20-Nov-2026, Gateway/familias:** leer primero [handoff actualizado](docs/RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md), últimos comentarios [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980). Este corte desplaza las afirmaciones históricas inferiores donde discrepen; sólo GitHub/Actions/runtime actualizados acreditan estados posteriores.
+> **Corte histórico del 20-Nov-2026, Gateway/familias.** Ver [handoff de ese corte](docs/RC6_20261119_GATEWAY_RELEASE_BLOCKERS_HANDOFF.md), [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).
 >
 > Producto `63ba3de6` sigue siendo último código productivo observado; **candidato único [#1213](https://github.com/mbalbo2023/Porota-trading/pull/1213) HEAD `36740582`**, Predeploy [#44783447120](https://github.com/mbalbo2023/Porota-trading/actions/runs/44783447120) **EN_EJECUCION al corte**, build completo, suite en curso, sin artifact/digest/runtime certificado. No inferir que el run siga activo ni que terminó GREEN: releer el job.
 >
@@ -54,18 +60,9 @@ El producto `223725e2860b295533d480d6ad24aee46f098b8e` está acreditado por [Dep
 > **Regla de confianza:** alta sólo con fuente+SHA+test+recibo del nivel afirmado; ante duda `NO_VERIFICADO`, con dueño, evidencia faltante y siguiente acción. Documentar cambios en el mismo handoff/#1093, no duplicar código/PR ni repetir runs sin nueva RCA.
 
 
-Este es el único punto de entrada de trabajo. El procedimiento está en
-[docs/RUNBOOK.md](docs/RUNBOOK.md); los documentos retirados se consultan desde
-[el índice histórico](docs/history/README.md). La documentación describe reglas;
-el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
-
-**Handoff más reciente:** [RC6 post-P0, 19-Nov-2026](docs/RC6_HANDOFF_2026-11-19.md).
-Al continuar, leerlo junto al último comentario de [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093)
-y ownership [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).
-El deploy P0 ya fue validado; sus ocho hijos no acreditan por sí solos
-Current/Book frescos, histórico completo ni todos los timers. A385 halló un
-export STALE y A729 un WAL del observador no reconciliado. No repetir el
-deploy P0 ni habilitar writers históricos antes de la custodia y tests allí.
+El [handoff post-P0 del 19-Nov-2026](docs/RC6_HANDOFF_2026-11-19.md) conserva
+la evidencia de A385 sobre el export STALE y de A729 sobre la custodia SQLite.
+La admisión de históricos requiere su propia evidencia de contrato y custodia.
 
 ## Alcance y autonomía
 
@@ -90,11 +87,10 @@ deploy P0 ni habilitar writers históricos antes de la custodia y tests allí.
 - PAPER/SHADOW ONLY; modo esperado `PRODUCTION_PAPER / SIMULATION`.
 - Órdenes reales bloqueadas. `real_orders_sent=0` es un requisito; sólo declararlo
   medido con evidencia del runtime correspondiente.
-- No modificar procesos, cuentas, contenedores ni datos ajenos al ownership
-  comprobado, salvo autorización concreta del usuario. **«PPI Watch intocable»
-  no es una regla del usuario** (corrección expresa del 18-Nov-2026): ese nombre
-  no justifica veto general, cuota supuesta ni prohibición de revisar o corregir
-  su integración. Verificar identidad, tráfico y ownership antes de mutaciones.
+- PPI Watch queda fuera del alcance de cambios salvo autorización explícita
+  y concreta del usuario. Verificar identidad, tráfico y ownership al inspeccionar
+  su integración. Documentar cuotas sólo con evidencia. Aplicar el mismo cuidado
+  a procesos, cuentas, contenedores y datos ajenos al scope.
 - FIX-FORWARD ONLY: no rollback de runtime.
 - GitHub y GitHub Actions son el control normal. SSH/manual es break-glass;
   Codespaces no es el entorno operativo. Evitar tareas manuales rutinarias para

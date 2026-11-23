@@ -1,5 +1,9 @@
 # Auditoría técnica y funcional de Porota RC6
 
+El [handoff del 23/11](HANDOFF.md) reúne la evidencia del Deploy V2 #202, la activación PAPER de BONOS/ON y las comprobaciones pendientes en rueda. Los [RCA y lecciones](RCA_Y_LECCIONES.md) recogen los cambios de los releases #200 a #202. Consultar [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) para cortes posteriores.
+
+## Auditoría histórica del Deploy V2 #198
+
 Corte físico del **22/11/2026**. La captura de timers y esquema comenzó a las **19:57:50 ART / 22:57:50 UTC**. La lectura de los calendarios y recibos de salud fue a las **20:08:47 ART / 23:08:47 UTC**.
 
 | Capa | Autoridad |
@@ -19,7 +23,7 @@ Corte físico del **22/11/2026**. La captura de timers y esquema comenzó a las 
 - [Runbook de desarrollo y release](../RUNBOOK.md).
 - [Checkpoint anterior, ownership y recibos](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7087064703).
 
-## Estado de la auditoría
+## Hallazgos al corte del 22/11
 
 - **PPI.** La [API REST](https://itatppi.github.io/ppi-official-api-docs/api/documentacionRest/) pide `Settlement` en Current/Book. El cuerpo documentado de esas respuestas no lista el plazo. Capturar la respuesta con su consulta sellada, y conservar un valor literal sólo al observarlo en el cuerpo. El criterio de admisión de la clave PPI sigue en `bu_instrument_catalog.ppi_full_key_evidence_reason`. El [PR #1251](https://github.com/mbalbo2023/Porota-trading/pull/1251) corrige representaciones equivalentes y conserva el literal observado.
 - **BONOS/ON.** Los ensayos aislados cubren identidad, VN, costos, libro posterior, firma y aplicación idempotente o parcial. El modo de venta nativa aún requiere proveedor de testigo, huella de clave/release, política económica y Book2 causal. Las dos huellas están sin fijar en el código productivo y el runtime no conecta el proveedor de testigo.
@@ -35,9 +39,9 @@ Partir del checkout fijado arriba. `bl_candle_engine.py` toma muestras `TRADE` d
 
 `rc6_shadow_runtime/funnel.py` enlaza catálogo, descubrimiento, señal evaluada y candidata, economía, riesgo, apertura PAPER, salida y P&L. Las evaluaciones, los inputs distintos, los instrumentos y las posiciones tienen contadores propios. El funnel cruza evidencias nativas por versión, cohorte, identidad, reloj y moneda. `be_paper_engine.py`, `cf_intraday_scalping.py` y los motores por familia mantienen sus decisiones y motivos de admisión reproducibles.
 
-### Recuperación del acceso complementario IOL
+### Transporte complementario IOL
 
-El operador consiente en la tablet con el callback `http://127.0.0.1:8765/callback` por el túnel ya configurado. Actions prepara state y PKCE nuevos con el cliente existente. Elegir **Solo lectura** en IOL. El proceso temporal confirma la lista de herramientas de lectura y actualiza la credencial de forma atómica. Revisar el recibo `AUTHENTICATED_READ_ONLY` para acreditar la autorización. La continuidad del pipeline y de PPI conserva su evidencia propia. [Documentación oficial de IOL MCP](https://mcp.invertironline.com/documentacion-tecnica).
+El recolector secundario SHADOW usa la API REST de IOL desde el Deploy V2 #201. El recibo físico acredita los dos timers, sus servicios bajo el despachador rootless y una consulta a GD30. La comprobación del recolector en rueda y el alcance del catálogo se describen en el [handoff](HANDOFF.md). El diagnóstico OAuth del corte anterior permanece en el [registro RCA](RCA_Y_LECCIONES.md). [Recibo REST y alcance](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7108327492)
 
 ### Generadores
 
