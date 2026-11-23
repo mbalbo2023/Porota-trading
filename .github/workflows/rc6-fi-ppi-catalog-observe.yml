@@ -1,4 +1,4 @@
-name: RC6 FI exact PPI variants (physical read-only)
+name: RC6 FI historical PPI book levels (physical read-only)
 on:
   push:
     branches: [diagnostic/rc6-fi-ppi-catalog-20261123]
@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Inspect retained PPI catalogue and market snapshots
+      - name: Extract six normalized historical order-book series
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -44,15 +44,10 @@ jobs:
               if side.is_symlink() or side.exists() and side.stat().st_nlink != 1:
                   raise SystemExit("PAPER_DATABASE_SIDECAR_HOLD")
 
-          public_fields = set("ticker symbol type instrumenttype family market currency currencycode settlement term isin status denomination lot lotmin lotstep lotsize minimumquantity minquantity quantityincrement quantitystep quantityunit step minsize minimumtradingquantity pricemultiplier cashmultiplier pricedenomination quotationbasis pricetick pricescale contractsizemultiplier".split())
-          def public(data):
-              return {key: value for key, value in data.items()
-                      if key.lower().replace("_", "") in public_fields
-                      and type(value) in (str, int, float)
-                      and len(str(value)) < 100}
-
           data = {"state": "OBSERVED", "observed_at": datetime.now(timezone.utc).isoformat(),
                   "provider_calls_by_job": 0, "host_writes_by_job": 0, "variants": {}}
+          currencies = {"GD30": "ARS", "GD30D": "USD_MEP", "GD30C": "USD_CCL",
+                        "YMCJO": "ARS", "YMCJD": "USD_MEP", "YMCJC": "USD_CCL"}
           with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=3)) as db:
               db.execute("PRAGMA query_only=ON")
               db.execute("BEGIN")
@@ -61,44 +56,19 @@ jobs:
                   raise SystemExit("PAPER_MODE_ZERO_UNVERIFIED")
               data["runtime_mode"], data["real_orders_sent"] = state
               for symbol in symbols:
-                  rows = db.execute("""SELECT ticker,instrument_type,market,currency,settlement,
-                      settlement_source,status,capability,last_seen_at,metadata_json
-                      FROM financial_instrument_catalog WHERE ticker=? LIMIT 13""", (symbol,)).fetchall()
-                  if len(rows) > 12:
-                      raise SystemExit("CATALOG_VARIANT_CARDINALITY_HOLD")
-                  variants = []
-                  for *fields, raw in rows:
-                      payload = json.loads(raw)
-                      source = payload.get("_discovery_source")
-                      origin = source if source in ("PPI_PRIMARY", "PPI", "IOL_REST", "IOL") else None
-                      contract = payload.get("financial_contract_v17")
-                      contract_source = payload.get("_contract_complement_source")
-                      variants.append({"identity": fields[:5], "term_source": fields[5],
-                          "status": fields[6], "capability": fields[7], "catalogue_seen_at": fields[8],
-                          "discovery_source": origin, "retained_fields": public(payload),
-                          "normalized_contract": public(contract) if isinstance(contract, dict) else None,
-                          "complement_source": contract_source if contract_source in ("IOL_REST", "IOL", "BYMA") else None,
-                          "db_metadata_sha256": hashlib.sha256(raw.encode()).hexdigest()})
-                  quotes = db.execute("""SELECT source,settlement,book_at,observed_at,market,currency,
-                      ppi_native_rest_book FROM market_snapshots WHERE symbol=?
-                      ORDER BY id DESC LIMIT 12""", (symbol,)).fetchall()
-                  books = []
-                  for source, term, book_at, observed_at, market, currency, native in quotes:
-                      if source != "PRODUCTION_PAPER":
-                          continue
-                      item = {"term": term, "market": market, "currency": currency,
-                              "book_at": book_at, "observed_at": observed_at}
-                      if native:
-                          book = json.loads(native)
-                          payload = book.get("raw_payload", {})
-                          item["retained_native_ppi"] = {"receipt_sha256": book.get("receipt_sha256"),
-                              "provider_date": payload.get("date"),
-                              "bid_fields": sorted(payload["bids"][0]) if payload.get("bids") else [],
-                              "offer_fields": sorted(payload["offers"][0]) if payload.get("offers") else [],
-                              "wire_fields": sorted(payload)}
-                      if not any(x["term"] == term and x["market"] == market and x["currency"] == currency for x in books):
-                          books.append(item)
-                  data["variants"][symbol] = {"catalogue": variants, "existing_quotes": books}
+                  rows = db.execute("""SELECT book_at,observed_at,bid,ask,bid_size,ask_size,
+                           ppi_native_rest_book IS NOT NULL
+                      FROM market_snapshots WHERE symbol=? AND source='PRODUCTION_PAPER'
+                         AND market='BYMA' AND currency=? AND settlement='A-24HS' AND book_at IS NOT NULL
+                      ORDER BY id DESC LIMIT 80""", (symbol, currencies[symbol])).fetchall()
+                  books = {}
+                  for book_at, observed_at, bid, ask, bid_size, ask_size, has_native in rows:
+                      values = [bid, ask, bid_size, ask_size]
+                      if all(isinstance(v, str) and len(v)<32 and v.replace(".","",1).isdecimal() for v in values):
+                          books.setdefault(book_at, {"book_at": book_at, "observed_at": observed_at,
+                              "bid": bid, "ask": ask, "bid_size": bid_size, "ask_size": ask_size,
+                              "has_native_receipt": bool(has_native)})
+                  data["variants"][symbol] = list(books.values())[:4]
           print(json.dumps(data, sort_keys=True))
           '''
           with connection(os.environ) as (ssh, _, _):
@@ -107,13 +77,13 @@ jobs:
           receipt = decode_receipt(result.stdout) if result.stdout else {
               "state": "NO_VERIFICADO", "reason": "NO_TYPED_HOST_RECEIPT"}
           print(json.dumps(receipt, sort_keys=True))
-          Path(os.environ["RUNNER_TEMP"], "fi-ppi-variants.json").write_text(json.dumps(receipt, sort_keys=True))
+          Path(os.environ["RUNNER_TEMP"], "fi-ppi-wheel-books.json").write_text(json.dumps(receipt, sort_keys=True))
           assert result.returncode == 0 and receipt["state"] == "OBSERVED"
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-fi-ppi-variants
-          path: ${{ runner.temp }}/fi-ppi-variants.json
+          name: rc6-fi-ppi-wheel-books
+          path: ${{ runner.temp }}/fi-ppi-wheel-books.json
           if-no-files-found: error
           retention-days: 14
