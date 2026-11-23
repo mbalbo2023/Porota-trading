@@ -1,4 +1,4 @@
-name: RC6 FI historical PPI book levels (physical read-only)
+name: RC6 PAPER fixed-income replay on the exact candidate
 on:
   push:
     branches: [diagnostic/rc6-fi-ppi-catalog-20261123]
@@ -6,84 +6,41 @@ on:
 permissions:
   contents: read
 jobs:
-  observe:
+  replay:
     if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: fce4337023a23eb969792f87008bc4bcd15b40b3
           persist-credentials: false
-      - name: Extract six normalized historical order-book series
-        env:
-          DO_HOST: ${{ secrets.DO_HOST }}
-          DO_USER: ${{ secrets.DO_USER }}
-          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirm the exact candidate and install dependencies under its lock
         run: |
-          python3 -B - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          from scripts.porota_actions_host import connection, decode_receipt, ssh_run
-
-          source = r'''
-          import hashlib
-          import json
-          import sqlite3
-          from contextlib import closing
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          symbols = ("GD30", "GD30D", "GD30C", "YMCJO", "YMCJD", "YMCJC")
-          path = Path("/opt/porota-trading/data/paper_v17/observer_v17.db")
-          if path.resolve(strict=True) != path or path.stat().st_nlink != 1:
-              raise SystemExit("PAPER_DATABASE_PATH_HOLD")
-          for suffix in ("-wal", "-shm"):
-              side = path.with_name(path.name + suffix)
-              if side.is_symlink() or side.exists() and side.stat().st_nlink != 1:
-                  raise SystemExit("PAPER_DATABASE_SIDECAR_HOLD")
-
-          data = {"state": "OBSERVED", "observed_at": datetime.now(timezone.utc).isoformat(),
-                  "provider_calls_by_job": 0, "host_writes_by_job": 0, "variants": {}}
-          currencies = {"GD30": "ARS", "GD30D": "USD_MEP", "GD30C": "USD_CCL",
-                        "YMCJO": "ARS", "YMCJD": "USD_MEP", "YMCJC": "USD_CCL"}
-          with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=3)) as db:
-              db.execute("PRAGMA query_only=ON")
-              db.execute("BEGIN")
-              state = db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
-              if state != ("PRODUCTION_PAPER", 0):
-                  raise SystemExit("PAPER_MODE_ZERO_UNVERIFIED")
-              data["runtime_mode"], data["real_orders_sent"] = state
-              for symbol in symbols:
-                  rows = db.execute("""SELECT book_at,observed_at,bid,ask,bid_size,ask_size,
-                           ppi_native_rest_book IS NOT NULL
-                      FROM market_snapshots WHERE symbol=? AND source='PRODUCTION_PAPER'
-                         AND market='BYMA' AND currency=? AND settlement='A-24HS' AND book_at IS NOT NULL
-                      ORDER BY id DESC LIMIT 80""", (symbol, currencies[symbol])).fetchall()
-                  books = {}
-                  for book_at, observed_at, bid, ask, bid_size, ask_size, has_native in rows:
-                      values = [bid, ask, bid_size, ask_size]
-                      if all(isinstance(v, str) and len(v)<32 and v.replace(".","",1).isdecimal() for v in values):
-                          books.setdefault(book_at, {"book_at": book_at, "observed_at": observed_at,
-                              "bid": bid, "ask": ask, "bid_size": bid_size, "ask_size": ask_size,
-                              "has_native_receipt": bool(has_native)})
-                  data["variants"][symbol] = list(books.values())[:4]
-          print(json.dumps(data, sort_keys=True))
-          '''
-          with connection(os.environ) as (ssh, _, _):
-              result = ssh_run(ssh, ['/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', '-B', '-'],
-                               data=source.encode(), timeout=80)
-          receipt = decode_receipt(result.stdout) if result.stdout else {
-              "state": "NO_VERIFICADO", "reason": "NO_TYPED_HOST_RECEIPT"}
-          print(json.dumps(receipt, sort_keys=True))
-          Path(os.environ["RUNNER_TEMP"], "fi-ppi-wheel-books.json").write_text(json.dumps(receipt, sort_keys=True))
-          assert result.returncode == 0 and receipt["state"] == "OBSERVED"
-          PY
+          test "$(git rev-parse HEAD)" = "fce4337023a23eb969792f87008bc4bcd15b40b3"
+          test "$(git rev-parse HEAD^{tree})" = "eef6387be8173243acb1ee4ac7ed5bb47aee11e8"
+          python -m pip install --disable-pip-version-check -c requirements.lock.txt pytest pytest-cov requests PyYAML python-dotenv cryptography fastapi pandas ta google-genai anthropic ppi-client hypothesis responses vcrpy
+      - name: Replay six contracts and verify gateway and preopen
+        env:
+          PYTHONPATH: .:tests
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -B -m pytest -o addopts='' --junitxml="$RUNNER_TEMP/fi-replay.xml" -q -rs \
+            tests/test_rc6_fi_market_sale_authority.py \
+            tests/test_rc6_a620_paper_causal_decision_receipt.py \
+            tests/test_rc6_fixed_income_event_ledger.py \
+            tests/test_rc6_fixed_income_risk_projection.py \
+            tests/test_rc6_ppi_global_gateway_runtime.py \
+            tests/test_rc6_paper_preopen_gate.py \
+            tests/test_porota_preopen_rootless.py \
+            tests/test_byma_schedule_rc5.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-fi-ppi-wheel-books
-          path: ${{ runner.temp }}/fi-ppi-wheel-books.json
+          name: rc6-fi-witness-exact-sha
+          path: ${{ runner.temp }}/fi-replay.xml
           if-no-files-found: error
           retention-days: 14
