@@ -190,6 +190,7 @@ def _ppi_caucion_identity(ppi, currency, term_days, side):
 
 def _caucion_records(payload, ppi):
     accepted, blocked = [], []
+    rest_cache = payload.get("source") == "IOL_REST"
     for currency, rows in (payload.get("cauciones") or {}).items():
         source_state = str((payload.get("section_states") or {}).get("caucion:"+str(currency))
                            or payload.get("cache_state") or "UNKNOWN")
@@ -201,6 +202,13 @@ def _caucion_records(payload, ppi):
             term_days = _first(row, "term_days", "term", "days", "plazo")
             side = str(_first(row, "side", "caucion_type") or "COLOCADORA").upper()
             identity = _ppi_caucion_identity(ppi, str(currency).upper(), term_days, side)
+            if rest_cache or row.get("reference_only") is True:
+                reason = ("IOL_REST_REPO_BOOK_CLOCK_UNVERIFIED" if row.get("transport") == "IOL_REST"
+                          else "IOL_PREVIOUS_TRANSPORT_REFERENCE")
+                blocked.append({"identity": identity.__dict__ if identity is not None else None,
+                                "blocker": reason,
+                                "source_section": "cauciones", "term_days": term_days})
+                continue
             if identity is None:
                 blocked.append({"identity": {"family": "CAUCIONES", "ticker": "UNBOUND",
                                 "market": "BYMA", "currency": str(currency).upper(),
@@ -272,7 +280,8 @@ def iol_structured_records(payload: dict, ppi_catalog: Iterable[dict]):
             continue
         # The collector timestamp is capture time.  Static terms may be stored
         # with that provenance, but it must not certify a live quote/session.
-        row_observed = row.get("observed_at") or capture_timestamp
+        rest = row.get("transport") == "IOL_REST"
+        row_observed = row.get("observed_at") or (None if rest else capture_timestamp)
         mapped.update({
             "provider_timestamp": None,
             "capture_timestamp": row_observed,
@@ -280,7 +289,7 @@ def iol_structured_records(payload: dict, ppi_catalog: Iterable[dict]):
         })
         accepted.append({
             **identity.__dict__, "source_class": "IOL_STRUCTURED_API",
-            "source_ref": f"iol-mcp-cache:{cache_state}:{payload.get('schema')}:{identity.ticker}",
+            "source_ref": f"{'iol-rest-cache' if rest else 'iol-mcp-cache'}:{cache_state}:{payload.get('schema')}:{identity.ticker}",
             "observed_at": row_observed, "evidence": mapped,
         })
     fci_accepted, fci_blocked = _fci_records(payload, ppi)

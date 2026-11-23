@@ -119,13 +119,23 @@ def phase_status(instant: datetime, phase: str) -> tuple[bool, str]:
     raise SourceCycleBlocked("UNKNOWN_PHASE")
 
 
-def _paper_zero(db: Path) -> None:
+def _paper_zero(db: Path, *, release_database: dict | None = None) -> None:
     """Read negative PAPER evidence; do not certify DB/WAL ownership from a row.
 
     An independent identity/seal must attest the actual SQLite handle and
     its WAL before any successful source cycle. Existing path checks and a
     PRODUCTION_PAPER/zero value are necessary, never sufficient.
     """
+    if release_database is not None:
+        from scripts.porota_rootless_host import Hold, database_snapshot
+
+        try:
+            observed = database_snapshot(db)
+        except Hold as exc:
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED") from exc
+        if observed != release_database:
+            raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
+        return
     if not db.is_absolute() or not db.is_file() or db.is_symlink():
         raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
     try:
@@ -138,8 +148,7 @@ def _paper_zero(db: Path) -> None:
         raise SourceCycleBlocked("PAPER_DATABASE_UNVERIFIED") from exc
     if row != ("PRODUCTION_PAPER", 0):
         raise SourceCycleBlocked("PAPER_ZERO_REQUIRED")
-    # A866 fail-closed until separately reviewed physical SQLite identity
-    # authority exists; no env switch or local row may discharge this hold.
+    # The legacy entrypoint only sees a local row and cannot attest ownership.
     raise SourceCycleBlocked("PAPER_DATABASE_IDENTITY_UNVERIFIED")
 
 
@@ -249,7 +258,7 @@ def _published_file_identity(path: Path) -> tuple[int, ...] | None:
             metadata.st_mtime_ns, metadata.st_ctime_ns)
 
 
-def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
+def _child_environment(market_root: Path, db: Path, environment=None) -> dict[str, str]:
     """One canonical output/DB identity for all three already-existing jobs.
 
     An operator override pointing at another root must not silently create
@@ -263,16 +272,17 @@ def _child_environment(market_root: Path, db: Path) -> dict[str, str]:
         "POROTA_IOL_OPERATIONAL_DB": db,
         "POROTA_OBSERVER_DB": db,
     }
+    environment = os.environ if environment is None else environment
     for key, target in canonical.items():
-        configured = os.getenv(key)
+        configured = environment.get(key)
         if configured is not None and Path(configured) != target:
             raise SourceCycleBlocked("SOURCE_CYCLE_PATH_OVERRIDE_DIVERGED:" + key)
-    return {**os.environ, **{key: str(value) for key, value in canonical.items()}}
+    return {**environment, **{key: str(value) for key, value in canonical.items()}}
 
 
 def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               market_root: Path = DEFAULT_MARKET_ROOT, lock: Path = DEFAULT_LOCK,
-              runner=subprocess.run) -> dict:
+              runner=subprocess.run, release_database: dict | None = None, environment=None) -> dict:
     now = now or datetime.now(timezone.utc)
     regular, reason = phase_status(now, "open")
     late, _ = phase_status(now, "late_source")
@@ -282,8 +292,11 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
         raise SourceCycleBlocked("OBSERVE_ONLY_REQUIRED")
     if not market_root.is_absolute() or market_root.is_symlink():
         raise SourceCycleBlocked("SOURCE_CYCLE_OUTPUT_ROOT_UNSAFE")
-    _paper_zero(db)
-    child_env = _child_environment(market_root, db)
+    if release_database is None:
+        _paper_zero(db)
+    else:
+        _paper_zero(db, release_database=release_database)
+    child_env = _child_environment(market_root, db, environment)
     state_path = market_root / "rc6_source_cycle_dispatch_state.json"
     with _exclusive_lock(lock):
         state = _state_read(state_path, now)

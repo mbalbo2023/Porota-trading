@@ -137,6 +137,42 @@ shutil.rmtree(p)
 '''
 
 
+IOL_UNIT_PROBE = '''import os,pathlib,pwd,sys
+account=pwd.getpwuid(os.getuid())
+assert account.pw_uid==os.geteuid()>0 and len(sys.argv)==2
+roles={'collector':'porota-iol-shadow-collector-rc6.service','health':'porota-iol-oauth-health-rc6.service'}
+unit=sys.argv[1]
+launcher=pathlib.Path(account.pw_dir)/'.local/state/porota-rc6/scheduler-dispatch.py'
+args=['/usr/bin/python3','-B',str(launcher),'--unit',roles[unit]]
+if unit=='health': args.append('--verify-iol-rest')
+os.chdir('/opt/porota-trading')
+os.execve(args[0],args,{'HOME':account.pw_dir,'USER':account.pw_name,'LOGNAME':account.pw_name,
+           'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','POROTA_RUNTIME_BACKEND':'ROOTLESS','PYTHONDONTWRITEBYTECODE':'1'})
+'''
+
+
+def iol_rest_units(ssh, installer, mode):
+    result = ssh_run(ssh, ['/usr/bin/sudo', '-n', '--', '/usr/bin/python3', '-I', '-B', '-', mode],
+                     data=installer, timeout=120)
+    receipt = decode_receipt(result.stdout) if result.stdout else {}
+    require(result.returncode == 0 and receipt.get('source') == 'IOL_REST'
+            and receipt.get('state') == ('EFFECTIVE' if mode == 'install' else 'PREFLIGHT_OK'),
+            receipt.get('reason', 'IOL_UNIT_' + mode.upper() + '_UNVERIFIED'))
+    return receipt
+
+
+def iol_rest_probe(ssh, release, role):
+    proc = ssh_run(ssh, ['/usr/bin/python3', '-I', '-B', '-c', IOL_UNIT_PROBE, role], timeout=220)
+    receipt = decode_receipt(proc.stdout)
+    commands = receipt.get('commands') or []
+    require(proc.returncode in (0, 2) and receipt.get('state') == 'EXECUTED'
+            and receipt.get('source_sha') == release['source_sha'] and receipt.get('image_id') == release['image_id']
+            and type(receipt.get('real_orders_sent')) is int and receipt['real_orders_sent'] == 0
+            and len(commands) == 1 and commands[0].get('source') == 'IOL_REST'
+            and commands[0].get('exit_code') == proc.returncode, 'IOL_REST_RELEASE_PROBE_UNVERIFIED')
+    return commands[0]
+
+
 def execute(operation, repository, release_dir=None, *, env=None):
     env = env or os.environ
     require(operation in {'inspect', 'prepare', 'deploy', 'migrate'}, 'HOST_OPERATION_INVALID')
@@ -151,6 +187,7 @@ def execute(operation, repository, release_dir=None, *, env=None):
             return result
         stage = None
         result = None
+        iol_installer = None
         host_started = host_finished = False
         with tempfile.TemporaryDirectory(prefix='porota-control-source-') as temporary:
             if operation in {'deploy', 'migrate'}:
@@ -179,6 +216,14 @@ def execute(operation, repository, release_dir=None, *, env=None):
                     raise ValueError('DEPLOYMENT_CHECKOUT_UNVERIFIED') from None
                 verified_download = Path(temporary)/'download.json'
                 verified_download.write_bytes(raw_download)
+                installer_path = source/'scripts/rc6_iol_rest_units.py'
+                if installer_path.is_file():
+                    iol_installer = read_regular(installer_path, 65536)
+                    try:
+                        iol_rest_units(ssh, iol_installer, 'preflight')
+                    except ValueError as exc:
+                        raise HostFailure(str(exc), {'state': 'BLOQUEADO', 'phase': 'IOL_UNIT_PREFLIGHT',
+                                                     'failure_signature': str(exc)}) from exc
                 required = (release['members']['porota-predeploy-image.tar.gz']['bytes']
                             + 2*release['image_size_bytes']
                             + 2*release['members']['porota-deploy-bundle-v2.tgz']['bytes']
@@ -232,6 +277,15 @@ def execute(operation, repository, release_dir=None, *, env=None):
                         validate_runtime_receipt(result, release, proc.returncode, download=download)
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
+                    if iol_installer is not None:
+                        try:
+                            result['iol_rest'] = iol_rest_units(ssh, iol_installer, 'install')
+                            result['iol_rest']['collector'] = iol_rest_probe(ssh, release, 'collector')
+                            result['iol_rest']['health'] = iol_rest_probe(ssh, release, 'health')
+                        except ValueError as exc:
+                            current = result.get('iol_rest', {})
+                            result['iol_rest'] = {**current, 'state': 'NO_VERIFICADO', 'failure_signature': str(exc)}
+                            raise HostFailure(str(exc), result) from exc
                 else:
                     if proc.returncode != 0:
                         raise HostFailure('ROOTLESS_PREPARATION_FAILED', result)

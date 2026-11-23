@@ -28,7 +28,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import iol_shadow_collector_rc6 as windows
-from iol_mcp_readonly_adapter_rc6 import IOLMCPError
+from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
 from scripts import rc6_iol_shadow_collect as collector
 from scripts import rc6_source_cycle_dispatch as dispatch
 
@@ -123,8 +123,7 @@ class BymaLateSourceTest(unittest.TestCase):
 
     def test_no_catalog_or_verified_identity_means_no_oauth_construction(self):
         with patch.object(collector, "DEFAULT_DB", str(self.db)), patch.object(
-                collector, "OAuthStoreReadOnlyMCP", side_effect=AssertionError("provider used")), patch.object(
-                collector, "LateNoOAuthRefreshMCP", side_effect=AssertionError("oauth used")):
+                collector, "IOLRestReadOnly", side_effect=AssertionError("provider used")):
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(collector.main(local(2, 17)), 0)
@@ -138,7 +137,8 @@ class BymaLateSourceTest(unittest.TestCase):
 
         def no_network_batch(symbols, client, **kwargs):
             observed.append((list(symbols), type(client).__name__, kwargs.get("root")))
-            self.assertIsInstance(client, collector.LateNoOAuthRefreshMCP)
+            self.assertIsInstance(client, IOLRestReadOnly)
+            self.assertFalse(client.allow_renew)
             return {"symbols": [], "progress": {"ready": 1, "completed": 1}}
 
         with patch.object(collector, "DEFAULT_DB", str(self.db)), patch.object(
@@ -151,37 +151,34 @@ class BymaLateSourceTest(unittest.TestCase):
                 collector, "_publish_progress", return_value={
                     "symbols": [], "progress": {"ready": 1, "completed": 1}}), patch.object(
                 collector, "consolidate", return_value={"decision_effect": "OBSERVE_ONLY"}), patch.object(
-                collector.family_reference, "collect", side_effect=AssertionError("family calls not allowed")):
+                collector.family_reference, "collect", side_effect=AssertionError("family calls not allowed")), patch.object(
+                collector.Identity, "current", return_value=SimpleNamespace(state=self.root)):
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(collector.main(local(2, 17)), 0)
-        self.assertEqual(observed, [(["AAA"], "LateNoOAuthRefreshMCP", self.market)])
+        self.assertEqual(observed, [(["AAA"], "IOLRestReadOnly", self.market)])
         self.assertIn("LATE_T1_ONLY=true", output.getvalue())
 
     def test_late_oauth_client_denies_refresh_write_and_401_rotation(self):
-        token = self.root / "oauth.json"
-        token.write_text(json.dumps({"issuer": "https://example.invalid",
-            "tokens": {"access_token": "masked", "expires_in": 1},
-            "token_obtained_at_epoch": 1}), encoding="utf-8")
+        client = IOLRestReadOnly(self.root, allow_renew=False, clock=lambda: 100)
+        token = client.store
+        token.write_text(json.dumps({"access_token": "fixture-access-token", "renew_at": 1}), encoding="utf-8")
+        token.chmod(0o600)
         before = token.read_bytes()
-        client = collector.LateNoOAuthRefreshMCP(token)
-        with self.assertRaisesRegex(IOLMCPError, "IOL_LATE_REFRESH_REQUIRED_NO_MUTATION"):
-            client._refresh_if_due()
-        with self.assertRaisesRegex(IOLMCPError, "IOL_LATE_REFRESH_REQUIRED_NO_MUTATION"):
-            client._refresh_after_401({})
-        with self.assertRaisesRegex(IOLMCPError, "IOL_LATE_OAUTH_WRITE_FORBIDDEN"):
-            client._write_store({})
+        with patch.object(client, "_request", side_effect=AssertionError("renewal forbidden")):
+            with self.assertRaisesRegex(IOLRestError, "IOL_REST_AUTH_ON_HOLD"):
+                client.authenticate()
         self.assertEqual(token.read_bytes(), before)
 
     def test_late_403_circuit_allows_at_most_one_transport_attempt_per_process(self):
-        client = collector.LateNoOAuthRefreshMCP(self.root / "no-real-token.json")
-        with patch.object(client, "_refresh_if_due", return_value=None), patch.object(
-                client, "_rpc", side_effect=IOLMCPError("IOL_MCP_HTTP_403", status_code=403)) as rpc:
-            with self.assertRaisesRegex(IOLMCPError, "IOL_MCP_HTTP_403"):
+        client = IOLRestReadOnly(self.root, allow_renew=False, clock=lambda: 100)
+        client.active = {"access_token": "fixture-access-token", "renew_at": 200}
+        with patch.object(client, "_request", side_effect=IOLRestError("IOL_REST_HTTP_ERROR", status_code=403)) as rpc:
+            with self.assertRaisesRegex(IOLRestError, "IOL_REST_HTTP_ERROR"):
                 client.call("get_asset_quote", {"symbol": "AAA", "term": "t1"})
-            with self.assertRaisesRegex(IOLMCPError, "IOL_LATE_AUTH_TERMINAL_NO_RETRY"):
+            with self.assertRaisesRegex(IOLRestError, "IOL_REST_AUTH_ON_HOLD"):
                 client.call("get_asset_quote", {"symbol": "BBB", "term": "t1"})
-            with self.assertRaisesRegex(PermissionError, "IOL_SHADOW_TOOL_DENIED"):
+            with self.assertRaisesRegex(IOLRestError, "IOL_REST_CAPABILITY_UNVERIFIED"):
                 client.call("place_order", {})
             self.assertEqual(rpc.call_count, 1)
 

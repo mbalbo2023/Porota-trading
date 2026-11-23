@@ -207,16 +207,19 @@ def consolidate(ppi_rows: list[dict[str, Any]], iol_rows: list[dict[str, Any]],
                         continue
                     quote_time = native_time(candidate)
                     origin = candidate.get("source") or source
-                    if source == "PPI" and field in {"bid", "ask", "bid_size", "ask_size"}:
+                    if (source == "PPI" or origin == "IOL_REST") and field in {"bid", "ask", "bid_size", "ask_size"}:
                         quote_time = candidate.get("book_at") or candidate.get("provider_book_at")
                     unit = candidate.get(field+"_unit")
                     if field in {"last", "bid", "ask", "vwap"}:
                         unit = unit or candidate.get("price_unit")
+                    rest_eligible = (origin != "IOL_REST" or primary_authoritative and
+                                     (key[0] not in {"BONOS", "LETRAS", "OBLIGACIONES"}
+                                      or field not in {"last", "bid", "ask", "vwap", "bid_size", "ask_size"}))
                     evidence.append({"value": _num(candidate.get(field)), "source": origin,
                         "source_path": candidate.get("source_path") or origin,
                         "source_at": quote_time, "received_at": receipt_time(candidate),
                         "unit": unit,
-                        "valid": str(candidate.get("state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY"},
+                        "valid": rest_eligible and str(candidate.get("state") or "READY").upper() in {"READY", "LIVE_FRESH", "FRESH", "OBSERVE_ONLY"},
                         "native_reason": candidate.get("reason")})
             resolved = resolve_field(evidence, as_of=collected, tolerance_fraction=.02)
             provenance[field] = resolved
