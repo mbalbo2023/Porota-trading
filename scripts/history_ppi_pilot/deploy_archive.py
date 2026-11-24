@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from scripts.porota_actions_host import connection, ssh_run
@@ -71,6 +72,8 @@ import json
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+from types import ModuleType
+from hashlib import sha256
 
 from cv_history_store_adapter_hf6 import HistoricalStore
 from cu_history_store_v2_hf6 import PPI_REPORTED
@@ -118,13 +121,13 @@ def append_references(store):
     return outcomes
 
 
-def inventory(archive):
+def inventory():
     reference = defaultdict(list)
-    for row in archive["series"]:
-        if row["days"]:
-            symbol, family, term, literal = row["series"]
-            reference[symbol, family, term].append([literal, row["days"], row["last_date"]])
     with closing(read(history)) as db:
+        for symbol,family,term,basis,count,last in db.execute("""SELECT symbol,instrument_type,settlement,
+            adjustment_basis,count(*),max(date) FROM history_canonical_v2
+            WHERE price_basis='SOURCE_REPORTED' AND source=? GROUP BY 1,2,3,4""",(PPI_REPORTED,)):
+            reference[symbol,family,term].append([basis.removeprefix("UNKNOWN:"+PPI_REPORTED+":"),count,last])
         alternate = {(symbol,family): [count,last] for symbol,family,count,last in db.execute("""
             SELECT symbol,instrument_type,count(DISTINCT date),max(date) FROM history_canonical_v2
             WHERE price_basis='SOURCE_REPORTED' AND source<>? GROUP BY 1,2""", (PPI_REPORTED,))}
@@ -140,18 +143,30 @@ def inventory(archive):
              exact_rows.get(tuple(row[:5]), [])] for row in catalog]
 
 
+def recover(store):
+    if ARCHIVE_COMPATIBILITY is None:
+        return import_ppi_archive(store)
+    # Run the pinned operator program in this temporary Python process. The
+    # deployed modules, their source policy and the archive are left intact.
+    operator = ModuleType("porota_history_legacy_closeout")
+    exec(compile(ARCHIVE_COMPATIBILITY, "rc6_history_import_ppi_archive.py", "exec"), operator.__dict__)
+    result = operator.import_ppi_archive(store, legacy_closeout=True)
+    result["operator_script_sha256"] = sha256(ARCHIVE_COMPATIBILITY.encode()).hexdigest()
+    return result
+
+
 try:
     paper()
     with (root / ".rc6-history-cutoff-repair.lock").open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = existing()
         store = HistoricalStore(str(history)).for_source_reported_history()
-        result = import_ppi_archive(store)
+        result = recover(store)
         after = existing()
         assert before == after and result["stored_rows"] > 0
         result["additional_references"] = append_references(store)
     paper()
-    result["catalog_coverage"] = inventory(result)
+    result["catalog_coverage"] = inventory()
     result.update(preserved_rows_reconciled=True, preserved_rows=after, destination="LIVE_HISTORY_V2")
     print(json.dumps(result, separators=(",", ":")))
 except (OSError, ValueError, sqlite3.Error, AssertionError) as error:
@@ -188,6 +203,8 @@ def supplemental_references():
 
 
 def main():
+    legacy = sys.argv[1:] == ["--legacy-closeout"]
+    assert legacy or len(sys.argv) == 1
     folder = Path(os.environ["RUNNER_TEMP"]) / "porota"
     deployed = json.loads((folder / "runtime.json").read_text())
     download = json.loads((folder / "download.json").read_text())
@@ -201,7 +218,12 @@ def main():
     assert deployed["operating_mode"] == "PRODUCTION_PAPER" and deployed["execution_mode"] == "SIMULATION"
     assert type(deployed["real_orders_sent"]) is int and deployed["real_orders_sent"] == 0
     assert deployed["ppi_watch_touched"] is False and deployed["health"]["orders_guard"] == "BLOCKED"
-    source = ("REFERENCES = " + repr(supplemental_references()) + "\n" + CONTAINER).encode()
+    override = None
+    if legacy:
+        override = (Path(__file__).resolve().parents[1] / "rc6_history_import_ppi_archive.py").read_text()
+    references = [] if legacy else supplemental_references()
+    source = ("REFERENCES = " + repr(references) + "\nARCHIVE_COMPATIBILITY = " + repr(override)
+              + "\n" + CONTAINER).encode()
     assert len(source) <= 4_194_304
     with connection(os.environ) as (ssh, _, _):
         response = ssh_run(ssh, ["python3", "-B", "-c", HOST, deployed["deployment_sha"],

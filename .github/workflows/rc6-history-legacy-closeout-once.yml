@@ -1,0 +1,72 @@
+name: RC6 recover retained closeout archive dates
+
+on:
+  push:
+    branches: [diagnostic/rc6-history-ppi-pilot-20261123]
+    paths: [scripts/history_ppi_pilot/legacy-recovery.json]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: operation
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: bf496483e739c5a2be61d28aba6ad5fdd486c0e1
+          path: product
+          persist-credentials: false
+      - name: Prove the precedents and test only the new legacy compatibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          control="../operation/scripts/history_ppi_pilot/legacy-recovery.json"
+          [[ "$(jq -er '.deployment_sha' "$control")" == "$(git rev-parse HEAD)" ]]
+          [[ "$(jq -er '.previous_run' "$control")" == "45303731515" ]]
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45303731515 |
+            jq -e '.conclusion == "success" and
+                   .head_sha == "2968fe4e8151aff0ea6623878f65a823967b873b"'
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45307617940 |
+            jq -e '.conclusion == "success" and
+                   .head_sha == "13b5fa1157deda062830fa99b1941f8d6be035d8"'
+          mkdir -p "$RUNNER_TEMP/porota"
+          gh run download 45303731515 --repo mbalbo2023/Porota-trading \
+            --name rc6-history-v2-runtime-45303731515 --dir "$RUNNER_TEMP/porota"
+          cp ../operation/scripts/rc6_history_import_ppi_archive.py scripts/
+          cp ../operation/tests/test_rc6_history_import_ppi_archive.py tests/
+          PYTHONPATH="$PWD:$PWD/tests" python3 -B -m unittest \
+            test_rc6_history_import_ppi_archive.ArchiveImportTest.test_closeout_recovers_new_dates_and_cafci_like_symbols_without_replacing_prior_days
+      - name: Append only dates missing from the previously verified PPI series
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        working-directory: product
+        run: PYTHONPATH="$PWD" python3 -B ../operation/scripts/history_ppi_pilot/deploy_archive.py --legacy-closeout
+      - name: Publish incremental and cumulative per-instrument evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-history-legacy-closeout-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/porota/history-import.json
+            ${{ runner.temp }}/porota/history-coverage.jsonl
+          if-no-files-found: warn
+          retention-days: 30
