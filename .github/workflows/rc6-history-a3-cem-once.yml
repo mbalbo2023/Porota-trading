@@ -1,0 +1,46 @@
+name: RC6 recover A3 CEM historical prices once
+
+on:
+  push:
+    branches: [diagnostic/rc6-history-ppi-pilot-20261123]
+    paths: [scripts/history_ppi_pilot/a3_history_once.py]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  a3:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify the preceding physical recovery run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45303731515 |
+            jq -e '.conclusion == "success" and
+                   .head_sha == "2968fe4e8151aff0ea6623878f65a823967b873b"'
+      - name: Run the existing exact-identity CEM backfill
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: PYTHONPATH="$GITHUB_WORKSPACE" python3 -B scripts/history_ppi_pilot/a3_history_once.py
+      - name: Preserve the actual historical CEM receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-history-a3-cem-${{ github.run_id }}
+          path: ${{ runner.temp }}/a3-history.json
+          retention-days: 30
+          if-no-files-found: warn
