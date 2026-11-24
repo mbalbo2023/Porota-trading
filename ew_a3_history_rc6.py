@@ -93,7 +93,7 @@ def _payload_rows(payload):
     return []
 
 
-def _resolve_source_identity(symbol,family,by_identity):
+def _resolve_source_identity(symbol,family,by_identity,*,reference_only=False):
     """Resolve only direct identities or the proven simple DLR grammar.
 
     The mapper is used only to address the read-only A3 source.  The verified
@@ -116,9 +116,10 @@ def _resolve_source_identity(symbol,family,by_identity):
         aligned=align_dlr(porota_symbol=symbol,a3_symbol=source_symbol)
     except A3IdentityError:
         return None,None,'ALIGNMENT_UNVERIFIED'
-    # The parser proves the contract month and year. Keep the literal PPI
-    # ticker when the mapper displays DEC/JAN for DIC/ENE.
-    if aligned.a3_symbol!=source_symbol:
+    # The reference path preserves the literal PPI ticker for DIC/ENE aliases.
+    if aligned.a3_symbol != source_symbol or (
+        not reference_only and aligned.porota_symbol != symbol
+    ):
         return None,None,'ALIGNMENT_UNVERIFIED'
     return meta,source_symbol,aligned.alignment_status
 
@@ -218,7 +219,9 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
     per_target=[]
     for target in targets:
         symbol,family,market,currency,settlement=target
-        meta,source_symbol,alignment_status=_resolve_source_identity(symbol,family,by_identity)
+        meta,source_symbol,alignment_status=_resolve_source_identity(
+            symbol,family,by_identity,reference_only=reference_only,
+        )
         if meta is None or source_symbol is None:
             stats['unmatched']+=1
             _record(store,target,ledger_source,status='ALIGNMENT_UNVERIFIED',day=None,rows=0,error='CEM_SYMBOL_FAMILY_NOT_EXACT')

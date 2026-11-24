@@ -110,6 +110,11 @@ def test_cem_reference_uses_daily_label_and_exact_ppi_ticker_without_paper_readi
                               'open': 100, 'high': 110, 'low': 95, 'close': 105, 'volume': 10}]}
 
     client = DailyCEM()
+    source = a3.normalize_symbols(client.symbols())[0]
+    _, _, raw_alignment = a3._resolve_source_identity(
+        'DLR/DIC26', 'FUTUROS', {(source.symbol, source.family): source},
+    )
+    assert raw_alignment == 'ALIGNMENT_UNVERIFIED'
     result = a3.run(state, client=client, history_store=history, now=NOW,
                     mode='BOOTSTRAP', reference_only=True)
     assert result['selected'] == result['complete'] == result['canonical_updates'] == 1
