@@ -86,7 +86,7 @@ jobs:
           assert type(prior.get("real_orders_sent")) is int and prior["real_orders_sent"] == 0, "RC6_PPI_EXISTING_REAL_COUNT_UNVERIFIED"
           print("RC6_PPI_EXISTING_RELEASE_BASE_VERIFIED")
           PY
-          python3 -B -m scripts.porota_actions_host deploy \
+          PYTHONPATH="$PWD" python3 -B ../operation/scripts/rc6_ppi_deploy_wait.py \
             --release-dir "$RUNNER_TEMP/porota/release" --receipt "$RUNNER_TEMP/porota/runtime.json"
       - name: Preserve the exact Deploy V2 receipt
         if: always()
