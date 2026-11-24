@@ -1,4 +1,4 @@
-name: RC6 Deploy V2 operational exact promotion
+name: RC6 Deploy V2 operational timer coordination
 
 on:
   push:
@@ -42,6 +42,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           control="../operation/scripts/rc6-ppi-release-promotion-20261124.json"
+          jq -e '.lock_coordination == "IOL_TIMER_DRAIN" and .previous_preflight_run_id == "45447980060"' "$control" >/dev/null
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45447980060 |
+            jq -e '.status == "completed" and .conclusion == "failure" and .head_sha == "53dcae6485c7929113c7931f56aceb5af3bcd877"' >/dev/null
           candidate="$(jq -er '.candidate_sha' "$control")"
           run_id="$(jq -er '.predeploy_run_id' "$control")"
           deployed="$(jq -er '.deployment_sha' "$control")"
@@ -86,7 +89,7 @@ jobs:
           assert type(prior.get("real_orders_sent")) is int and prior["real_orders_sent"] == 0, "RC6_PPI_EXISTING_REAL_COUNT_UNVERIFIED"
           print("RC6_PPI_EXISTING_RELEASE_BASE_VERIFIED")
           PY
-          python3 -B -m scripts.porota_actions_host deploy \
+          PYTHONPATH="$PWD" python3 -B ../operation/scripts/rc6_coordinated_promote.py \
             --release-dir "$RUNNER_TEMP/porota/release" --receipt "$RUNNER_TEMP/porota/runtime.json"
       - name: Preserve the exact Deploy V2 receipt
         if: always()

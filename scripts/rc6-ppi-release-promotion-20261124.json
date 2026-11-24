@@ -3,5 +3,7 @@
   "predeploy_run_id": "45444667372",
   "deployment_sha": "f97b7bd55e89409aecd5556b97849227ca1570aa",
   "artifact_id": 14943959809,
-  "artifact_digest": "sha256:70aab5cbd965c8a85f24c7eebdadf3055dfe689638084825a95055dd9ee8a07d"
+  "artifact_digest": "sha256:70aab5cbd965c8a85f24c7eebdadf3055dfe689638084825a95055dd9ee8a07d",
+  "lock_coordination": "IOL_TIMER_DRAIN",
+  "previous_preflight_run_id": "45447980060"
 }
