@@ -18,6 +18,8 @@ jobs:
       github.run_attempt == 1
     runs-on: ubuntu-24.04
     timeout-minutes: 3
+    outputs:
+      kind: ${{ steps.dispatch.outputs.kind }}
     permissions:
       contents: read
       actions: write
@@ -25,6 +27,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Send an allowlisted read-only request
+        id: dispatch
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -50,6 +53,56 @@ jobs:
             -H 'X-GitHub-Api-Version: 2026-03-10' \
             "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches" --input -)
           run_id=$(jq -er '.workflow_run_id | select(type == "number" and . > 0)' <<<"$response")
+          printf 'kind=%s\n' "$kind" >> "$GITHUB_OUTPUT"
           printf 'RC6_SUPERVISION_DISPATCH kind=%s run_id=%s\n' "$kind" "$run_id"
           printf '[RC6 %s run %s](https://github.com/%s/actions/runs/%s)\n' \
             "$kind" "$run_id" "$GITHUB_REPOSITORY" "$run_id" >> "$GITHUB_STEP_SUMMARY"
+
+  funnel-current-readonly:
+    needs: dispatch-readonly
+    if: needs.dispatch-readonly.outputs.kind == 'funnel'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the diagnostic request
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: diagnostic
+          persist-credentials: false
+      - name: Check out the verified runtime transport
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: de1798fdb645f41fa6c8c9a6832f0d59fd080d65
+          path: trusted
+          persist-credentials: false
+      - name: Read the current runtime funnel and exported timer states
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          printf '%s\n' '{"schema":"rc6.supervision-current-readonly.v1","status":"NO_VERIFICADO","reason":"RUNTIME_PROBE_NOT_EXECUTED","read_only":true}' > evidence/current-funnel-scheduler.json
+          [[ "$(TZ=America/Argentina/Buenos_Aires date +%F)" == "2026-11-24" ]]
+          product=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/deploy/rc6-pr69-isolated-20260915" --jq '.object.sha')
+          [[ "$product" =~ ^[a-f0-9]{40}$ ]]
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$product" --jq '.tree.sha')
+          [[ "$tree" =~ ^[a-f0-9]{40}$ ]]
+          PYTHONPATH="$GITHUB_WORKSPACE/trusted" python3 -B diagnostic/scripts/rc6_supervision_supplement_20261124.py \
+            --watch-source trusted/scripts/rc6_market_watch_readonly.py \
+            --expected-product "$product" --expected-tree "$tree" > evidence/current-funnel-scheduler.json
+      - name: Preserve sanitized current runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-current-funnel-scheduler-${{ github.run_id }}
+          path: evidence/current-funnel-scheduler.json
+          if-no-files-found: warn
+          retention-days: 14
