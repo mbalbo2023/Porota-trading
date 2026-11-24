@@ -10,6 +10,7 @@ from rc6_counterfactual_learning import read_bounded
 from rc6_shadow_runtime.persistence import EvidenceFiles, read_committed_generation
 from rc6_shadow_runtime.worker import durable_exit_observations
 from rc6_trader_dashboard import counterfactuals as cf
+from rc6_trader_dashboard.datasets import instrument_market
 from rc6_trader_dashboard.projection import Projection, Store
 from tests.test_rc6_issue600_regressions import committed
 from tests.test_ws_dash_trader_terminal_08 import database, client, NOW, STAMP
@@ -168,20 +169,35 @@ def test_live_generation_liveness_uses_measured_cadence_and_source_cap(database,
         assert p.shadow_liveness['budget_seconds']<=120
 
 
-def test_global_fresh_heartbeat_does_not_hide_stale_identity_book(database):
-    old=(NOW-timedelta(minutes=5)).isoformat()
+@pytest.mark.parametrize(
+    ("receipt", "receipt_state"),
+    [(STAMP, "FRESH"), ((NOW - timedelta(minutes=3)).isoformat(), "STALE"),
+     ("invalid", "NO_VERIFICADO"), (None, "NO_VERIFICADO")],
+)
+def test_quote_receipt_and_book_keep_independent_clocks(database, receipt, receipt_state):
+    old = (NOW - timedelta(minutes=5)).isoformat()
     with sqlite3.connect(database) as c:
-        c.execute('INSERT INTO market_snapshots(id,symbol,asset_class,market,currency,settlement,observed_at,book_at,trade_at,received_at) VALUES(1,?,?,?,?,?,?,?,?,?)',
-                  ('T000','ACCIONES','BYMA','ARS','INMEDIATA',STAMP,old,old,STAMP))
-        c.execute('INSERT INTO market_snapshots(id,symbol,asset_class,market,currency,settlement,observed_at,book_at,trade_at,received_at) VALUES(2,?,?,?,?,?,?,?,?,?)',
-                  ('T000','ACCIONES','BYMA','USD','INMEDIATA',STAMP,STAMP,STAMP,STAMP))
-    with Store(database,now=NOW) as store:
-        p=Projection(store)
-        assert p.runtime['market_freshness']=='FRESH'
-        rows=p.market_freshness_cohort().rows
-    ars,usd=rows[0],rows[1]
-    assert ars['currency']=='ARS' and ars['book_freshness']=='STALE' and ars['receipt_freshness']=='FRESH'
-    assert usd['currency']=='USD' and usd['book_freshness']=='FRESH'
+        # PAPER persists the receipt as observed_at, with no received_at column.
+        c.execute("ALTER TABLE market_snapshots DROP COLUMN received_at")
+        c.executemany("""
+            INSERT INTO market_snapshots
+            (id,symbol,asset_class,market,currency,settlement,observed_at,book_at,trade_at)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, [(1, "T000", "ACCIONES", "BYMA", "ARS", "INMEDIATA", receipt, old, old),
+              (2, "T000", "ACCIONES", "BYMA", "USD", "INMEDIATA", STAMP, STAMP, STAMP)])
+    with Store(database, now=NOW) as store:
+        identity = json.dumps(["T000", "ACCIONES", "BYMA", "ARS", "INMEDIATA"])
+        p = Projection(store, {"identity": identity})
+        assert p.runtime["market_freshness"] == "FRESH"
+        rows = p.market_freshness_cohort().rows
+        detail = instrument_market(p).rows[0]
+    ars, usd = rows
+    assert ars["currency"] == "ARS" and ars["book_freshness"] == "STALE"
+    assert ars["received_at"] == detail["receipt_clock"] == receipt
+    assert ars["receipt_freshness"] == detail["receipt_freshness"] == receipt_state
+    assert detail["book_freshness"] == "STALE" and detail["provider_clock"] == old
+    assert usd["currency"] == "USD" and usd["book_freshness"] == "FRESH"
+    assert usd["received_at"] == STAMP
 
 
 def test_recent_ingestion_cannot_refresh_old_history_session(database):
