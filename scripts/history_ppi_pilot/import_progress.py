@@ -40,7 +40,7 @@ print(json.dumps(output))
 """
 
 
-SQL = r"""
+SQL = r'''
 from contextlib import closing
 from datetime import datetime, timezone
 import json
@@ -50,6 +50,14 @@ import time
 with closing(sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=3)) as db:
     db.execute("PRAGMA query_only=ON")
     paper = db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+    db.execute("BEGIN")
+    fci_count = db.execute("SELECT count(*) FROM financial_instrument_catalog WHERE instrument_type='FCI'").fetchone()[0]
+    bindings = dict(db.execute("""SELECT lower(field.key),count(DISTINCT f.ticker)
+        FROM financial_instrument_catalog f, json_tree(
+          CASE WHEN json_valid(f.metadata_json) THEN f.metadata_json ELSE '{}' END) field
+        WHERE f.instrument_type='FCI' AND lower(field.key) IN
+          ('cafci_class_id','cafciclassid','idclasecafci','codigo_clase_cafci','cnv_fund_id','cnvfundid')
+          AND field.type IN ('text','integer') AND length(field.atom)>0 GROUP BY 1"""))
 assert paper == ("PRODUCTION_PAPER",0)
 with closing(sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=3)) as db:
     db.execute("PRAGMA query_only=ON")
@@ -58,10 +66,13 @@ with closing(sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True
     journal = db.execute("PRAGMA journal_mode").fetchone()[0]
     db.execute("BEGIN")
     count = db.execute("SELECT count(*) FROM history_versions_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'").fetchone()[0]
+    canonical = db.execute("SELECT count(*) FROM history_canonical_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'").fetchone()[0]
 print(json.dumps({"schema":"rc6.history.live-progress.v1","committed_ppi_versions":count,
+                  "committed_ppi_canonical":canonical,"fci_catalog_identities":fci_count,
+                  "fcis_with_catalog_binding_markers":bindings,
                   "journal_mode":journal,"real_orders_sent":0,"production_sql_writes":0,
                   "observed_at":datetime.now(timezone.utc).isoformat()}))
-"""
+'''
 
 
 def main():
