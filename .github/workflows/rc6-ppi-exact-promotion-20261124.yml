@@ -1,0 +1,100 @@
+name: RC6 Deploy V2 PPI exact promotion
+
+on:
+  push:
+    branches: [diagnostic/rc6-ppi-current-book-promote-20261124]
+    paths: [scripts/rc6-ppi-release-promotion-20261124.json]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Checkout the one-time operation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: operation
+          persist-credentials: false
+      - name: Retrieve the exact merged product tree
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: deploy/rc6-pr69-isolated-20260915
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify ordered merge and acquire the exact Predeploy V2 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          control="../operation/scripts/rc6-ppi-release-promotion-20261124.json"
+          candidate="$(jq -er '.candidate_sha' "$control")"
+          run_id="$(jq -er '.predeploy_run_id' "$control")"
+          deployed="$(jq -er '.deployment_sha' "$control")"
+          [[ "$candidate" =~ ^[0-9a-f]{40}$ && "$deployed" =~ ^[0-9a-f]{40}$ && "$run_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$deployed" == "$(git rev-parse HEAD)" ]]
+          gh api "repos/mbalbo2023/Porota-trading/actions/runs?head_sha=$deployed&per_page=30" |
+            jq -e '[.workflow_runs[] | select(.path == ".github/workflows/porota-deploy-v2-promote.yml")] | length == 0'
+          gh api repos/mbalbo2023/Porota-trading/pulls/1261 |
+            jq -e --arg c "$candidate" --arg d "$deployed" \
+              '.merged == true and .head.sha == $c and .merge_commit_sha == $d and
+               .base.ref == "deploy/rc6-pr69-isolated-20260915"'
+          python3 -B -m scripts.porota_actions_release \
+            --directory "$RUNNER_TEMP/porota/release" --candidate-sha "$candidate" --run-id "$run_id"
+          jq -e --slurpfile expected "$control" \
+            '.artifact_id == $expected[0].artifact_id and .artifact_digest == $expected[0].artifact_digest' \
+            "$RUNNER_TEMP/porota/download.json" >/dev/null
+      - name: Promote with the versioned rootless Deploy V2 procedure
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          python3 -B - <<'PY'
+          import json
+          import os
+          from scripts.porota_actions_host import connection, ssh_run
+
+          with connection(os.environ) as (ssh, _, _):
+              result = ssh_run(
+                  ssh, ["cat", "/opt/porota-trading/data/deploy/CURRENT_STATE_V2.json"],
+                  timeout=15,
+              )
+          assert result.returncode == 0 and 0 < len(result.stdout) < 1048576, "RC6_PPI_EXISTING_RELEASE_UNVERIFIED"
+          prior = json.loads(result.stdout)
+          assert prior.get("deployment_sha") == "a7b1bb9f4c508b301fe44252972fdcac70904226", "RC6_PPI_EXISTING_RELEASE_MOVED"
+          assert prior.get("validation_status") == "VALIDATED_RUNTIME", "RC6_PPI_EXISTING_RELEASE_UNVERIFIED"
+          assert prior.get("mode") == "PRODUCTION_PAPER", "RC6_PPI_EXISTING_PAPER_MODE_UNVERIFIED"
+          assert prior.get("real_order_capability") == "BLOCKED", "RC6_PPI_EXISTING_REAL_GUARD_UNVERIFIED"
+          assert type(prior.get("real_orders_sent")) is int and prior["real_orders_sent"] == 0, "RC6_PPI_EXISTING_REAL_COUNT_UNVERIFIED"
+          print("RC6_PPI_EXISTING_RELEASE_BASE_VERIFIED")
+          PY
+          python3 -B -m scripts.porota_actions_host deploy \
+            --release-dir "$RUNNER_TEMP/porota/release" --receipt "$RUNNER_TEMP/porota/runtime.json"
+      - name: Preserve the exact Deploy V2 receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: porota-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/porota/download.json
+            ${{ runner.temp }}/porota/runtime.json
+          if-no-files-found: warn
+          retention-days: 30
