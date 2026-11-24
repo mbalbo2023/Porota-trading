@@ -5,6 +5,8 @@ import sqlite3
 from zoneinfo import ZoneInfo
 
 import ew_a3_history_rc6 as a3
+from cu_history_store_v2_hf6 import SOURCE_REPORTED, init_schema, read_as_of
+from cv_history_store_adapter_hf6 import HistoricalStore
 
 TZ=ZoneInfo('America/Argentina/Buenos_Aires')
 NOW=datetime(2026,9,5,20,0,tzinfo=TZ)
@@ -74,6 +76,54 @@ def test_compact_a3_dlr_maps_deterministically_but_persists_porota_identity(tmp_
         assert metadata['a3_source_symbol']=='DLR102026'
         assert metadata['porota_canonical_symbol']=='DLR/OCT26'
         assert metadata['identity_alignment']=='EXACT_DETERMINISTIC'
+
+
+def test_cem_reference_uses_daily_label_and_exact_ppi_ticker_without_paper_readiness(tmp_path):
+    state = make_store(tmp_path)
+    with state.connect() as db:
+        db.executescript("""
+            CREATE TABLE candidate_identity_v2(
+                ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
+                settlement TEXT, status TEXT, can_simulate INT);
+            INSERT INTO candidate_identity_v2
+                VALUES('DLR/DIC26','FUTUROS','A3','ARS','INMEDIATA','AVAILABLE',0);
+            CREATE TABLE financial_instrument_catalog(
+                ticker TEXT, instrument_type TEXT, market TEXT, currency TEXT,
+                settlement TEXT, status TEXT, metadata_json TEXT);
+            INSERT INTO financial_instrument_catalog
+                VALUES('DLR/DIC26','FUTUROS','A3','ARS','INMEDIATA','AVAILABLE',
+                       '{"_discovery_source":"PPI_PRIMARY"}'),
+                      ('DLR/ENE27','FUTUROS','A3','ARS','INMEDIATA','AVAILABLE',
+                       '{"_discovery_source":"A3_COMPLEMENTARY"}');
+            """)
+    assert a3.load_targets(state) == []
+    history = HistoricalStore(str(tmp_path / 'history.sqlite'))
+    init_schema(history)
+
+    class DailyCEM(Client):
+        def symbols(self):
+            return {'data': [{'symbol': 'DLR122026', 'cfiCode': 'FXXXSX', 'currency': 'ARS'}]}
+
+        def closing_prices(self, **kwargs):
+            self.calls.append(kwargs)
+            return {'data': [{'symbol': 'DLR122026', 'dateTime': '2026-09-04T00:00:00.000Z',
+                              'open': 100, 'high': 110, 'low': 95, 'close': 105, 'volume': 10}]}
+
+    client = DailyCEM()
+    result = a3.run(state, client=client, history_store=history, now=NOW,
+                    mode='BOOTSTRAP', reference_only=True)
+    assert result['selected'] == result['complete'] == result['canonical_updates'] == 1
+    assert client.calls[0]['symbol'] == 'DLR122026'
+    with history.connect() as db:
+        rows = read_as_of(db, symbol='DLR/DIC26', instrument_type='FUTUROS',
+                           market='A3', currency='UNKNOWN', settlement='UNKNOWN', as_of=NOW,
+                           price_basis=SOURCE_REPORTED, adjustment_basis='UNKNOWN:A3_CEM_CLOSING')
+        assert len(rows) == 1
+        row = rows[0]
+        assert (row['date'], row['price_basis'], row['provider_at']) == ('2026-09-04', SOURCE_REPORTED, None)
+        assert db.execute("SELECT COUNT(*) FROM history_canonical_v2 WHERE price_basis='RAW'").fetchone()[0] == 0
+    with state.connect() as db:
+        assert db.execute("SELECT source FROM a3_history_ingest_state_rc6_v2").fetchone()[0] == 'A3_CEM_REFERENCE'
 
 
 def test_dlr_spread_or_variant_stays_fail_closed(tmp_path):

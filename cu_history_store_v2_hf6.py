@@ -28,7 +28,8 @@ SERIES = (*IDENTITY,"date","price_basis","adjustment_basis")
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 SOURCE_REPORTED = "SOURCE_REPORTED"
 PPI_REPORTED = "PPI_PRODUCTION_HISTORY_REPORTED"
-SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912", "BYMA_INTERVALORES", PPI_REPORTED}
+A3_REPORTED = "A3_CEM_CLOSING"
+SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912", "BYMA_INTERVALORES", PPI_REPORTED, A3_REPORTED}
 PPI_REPORTED_SETTLEMENTS = frozenset({"INMEDIATA", "A-24HS", "A-48HS", "A-72HS"})
 PPI_REPORTED_SELECTOR = re.compile(r"[A-Z0-9][A-Z0-9 ._/+()-]{0,79}")
 DDL = """
@@ -118,9 +119,11 @@ def _reported_series(market, currency, settlement, adjustment):
     if isinstance(adjustment, str) and adjustment.startswith(ppi_prefix):
         return (market == "PPI" and settlement in PPI_REPORTED_SETTLEMENTS
                 and bool(PPI_REPORTED_SELECTOR.fullmatch(adjustment.removeprefix(ppi_prefix))))
+    if adjustment == source_reported_adjustment(A3_REPORTED):
+        return market == "A3" and settlement == "UNKNOWN"
     return (market == "BCBA" and settlement == "UNKNOWN" and adjustment in
             {source_reported_adjustment(source) for source in SOURCE_REPORTED_PROVIDERS
-             if source != PPI_REPORTED})
+             if source not in {PPI_REPORTED, A3_REPORTED}})
 
 
 def validate_daily_values(*, date, open, high, low, close, volume, known_at, market,
