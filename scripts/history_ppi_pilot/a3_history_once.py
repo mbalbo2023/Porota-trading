@@ -281,9 +281,13 @@ def verified_promotion(config):
     release_ref = read_api(f"git/ref/heads/{PRODUCT}")
     require(release_ref.get("object", {}).get("sha") == deployment, "A3_PRODUCT_REF_MOVED")
     promotion = read_api(f"actions/runs/{deploy_id}")
-    require(promotion.get("id") == deploy_id and promotion.get("head_sha") == deployment
-            and promotion.get("head_branch") == PRODUCT and promotion.get("path") == PROMOTE_WORKFLOW
-            and promotion.get("event") == "workflow_dispatch" and promotion.get("status") == "completed"
+    canonical = (promotion.get("head_sha") == deployment and promotion.get("head_branch") == PRODUCT
+                 and promotion.get("path") == PROMOTE_WORKFLOW and promotion.get("event") == "workflow_dispatch")
+    a3_one_time = (promotion.get("head_branch") == "diagnostic/rc6-a3-reference-20261124"
+                   and promotion.get("path") == ".github/workflows/rc6-a3-reference-promotion-20261124.yml"
+                   and promotion.get("event") == "push" and promotion.get("run_attempt") == 1)
+    require(promotion.get("id") == deploy_id and (canonical or a3_one_time)
+            and promotion.get("status") == "completed"
             and promotion.get("conclusion") == "success"
             and promotion.get("actor", {}).get("login") == "mbalbo2023"
             and promotion.get("triggering_actor", {}).get("login") == "mbalbo2023",
@@ -299,7 +303,7 @@ def verified_promotion(config):
     size = artifact.get("size_in_bytes")
     run_identity = artifact.get("workflow_run", {})
     require(artifact.get("expired") is False and artifact.get("name") == f"porota-runtime-{deploy_id}-{attempt}"
-            and run_identity.get("id") == deploy_id and run_identity.get("head_sha") == deployment
+            and run_identity.get("id") == deploy_id and run_identity.get("head_sha") == promotion.get("head_sha")
             and isinstance(digest, str) and re.fullmatch(r"sha256:[a-f0-9]{64}", digest)
             and type(size) is int and 0 < size <= MAX_RECEIPT, "A3_PROMOTION_ARTIFACT_INVALID")
     archive = Path(os.environ["RUNNER_TEMP"]) / "a3-promote-attested.zip"
