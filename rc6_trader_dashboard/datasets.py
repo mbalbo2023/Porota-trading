@@ -187,12 +187,13 @@ def instrument_market(p):
     page = p.store.page("market_snapshots", where="symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?",
                         params=(r["symbol"], r["family"], r["market"], r["currency"], r["settlement"]), order="id DESC", limit=1)
     for row in page.rows:
+        received_at = row.get("received_at") or row.get("observed_at")
         row.update(family=row.get("asset_class"), as_of=row.get("book_at") or row.get("observed_at"),
-                   provider_clock=row.get("book_at"), receipt_clock=row.get("received_at") or row.get("observed_at"),
+                   provider_clock=row.get("book_at"), receipt_clock=received_at,
                    freshness=freshness(row.get("book_at"), p.now, 120),
-                   book_freshness=freshness(row.get('book_at'),p.now,120),
-                   trade_freshness=freshness(row.get('trade_at'),p.now,120),
-                   receipt_freshness=freshness(row.get('received_at'),p.now,120),entry_authority=UNKNOWN)
+                   book_freshness=freshness(row.get("book_at"), p.now, 120),
+                   trade_freshness=freshness(row.get("trade_at"), p.now, 120),
+                   receipt_freshness=freshness(received_at, p.now, 120), entry_authority=UNKNOWN)
     return page
 
 

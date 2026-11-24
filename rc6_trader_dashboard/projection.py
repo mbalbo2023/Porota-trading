@@ -754,14 +754,15 @@ class Projection:
         rows = []
         for key in keys[:10]:
             quote = latest.get(key, {})
+            received_at = quote.get('received_at') or quote.get('observed_at')
             row = dict(zip(identity, key))
             row.update(family=row.pop('asset_class'), source=quote.get('source'),
                        as_of=quote.get('observed_at'),
                        book_at=quote.get('book_at'), trade_at=quote.get('trade_at'),
-                       received_at=quote.get('received_at'),
+                       received_at=received_at,
                        book_freshness=freshness(quote.get('book_at'), self.now, 120),
                        trade_freshness=freshness(quote.get('trade_at'), self.now, 120),
-                       receipt_freshness=freshness(quote.get('received_at'), self.now, 120),
+                       receipt_freshness=freshness(received_at, self.now, 120),
                        entry_authority='NONE · diagnostics only')
             rows.append(row)
         return Page('Latest500 local records /10 identities; OPEN priority', rows,
