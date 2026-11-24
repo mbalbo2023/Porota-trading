@@ -97,3 +97,5 @@ print(json.dumps(receipt, separators=(",", ":")))
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# Persistence check of the same validated release after normal retry cadence.
