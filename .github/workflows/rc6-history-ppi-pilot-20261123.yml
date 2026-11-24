@@ -1,0 +1,38 @@
+name: RC6 HISTORY pilot from existing PPI archive
+
+on:
+  push:
+    branches: [diagnostic/rc6-history-ppi-pilot-20261123]
+    paths:
+      - .github/workflows/rc6-history-ppi-pilot-20261123.yml
+      - scripts/history_ppi_pilot/**
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: rc6-unified-paper-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compare the production cut and replay the archived rows in memory
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: PYTHONPATH="$GITHUB_WORKSPACE" python3 -B scripts/history_ppi_pilot/run.py
+      - name: Publish the sanitized pilot receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-history-ppi-pilot-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-history-ppi-pilot.json
+          retention-days: 7
+          if-no-files-found: error
