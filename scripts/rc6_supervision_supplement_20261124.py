@@ -143,6 +143,165 @@ for name, probe in (("funnel", counts_by_stage), ("scheduler", timers)):
 print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
 '''
 
+DASHBOARD_PROBE = r'''
+from datetime import datetime, timedelta, timezone
+import json
+import os
+from urllib.error import HTTPError
+from urllib.request import build_opener, HTTPRedirectHandler, ProxyHandler, Request
+from zoneinfo import ZoneInfo
+
+from rc6_action4_audit import published_audit_is_safe
+
+now = datetime.now(timezone.utc)
+art = ZoneInfo("America/Argentina/Buenos_Aires")
+day = now.astimezone(art).date()
+token = os.getenv("DASHBOARD_ACCESS_TOKEN", "")
+
+
+class NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+opener = build_opener(ProxyHandler({}), NoRedirects())
+
+
+def get(path):
+    if not token:
+        raise ValueError("LOCAL_DASHBOARD_AUTH_UNAVAILABLE")
+    req = Request("http://127.0.0.1:8000" + path, headers={
+        "Authorization": "Bearer " + token, "Cache-Control": "no-cache"})
+    with opener.open(req, timeout=2) as response:
+        data = response.read(524289)
+        if response.status != 200 or len(data) > 524288 or response.headers.get_content_type() != "application/json":
+            raise ValueError("DASHBOARD_RECEIPT_INVALID")
+    payload = json.loads(data)
+    if not isinstance(payload, dict):
+        raise ValueError("DASHBOARD_RECEIPT_INVALID")
+    return payload
+
+
+def stamp(value, observed):
+    if not isinstance(value, str) or len(value) > 48:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo and parsed <= observed else None
+    except ValueError:
+        return None
+
+
+def bounded(value):
+    return value if type(value) is int and 0 <= value <= 1_000_000 else None
+
+
+def dashboard():
+    payload = get("/api/dashboard/truth")
+    observed = datetime.now(timezone.utc)
+    heartbeat = stamp(payload.get("heartbeat_at"), observed)
+    try:
+        interval = int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60"))
+    except ValueError:
+        interval = 0
+    budget = interval + 15 if 15 <= interval <= 120 else 30
+    if (payload.get("projection_schema") != "rc6-dashboard-truth-v1"
+            or payload.get("mode") != "PRODUCTION_PAPER" or payload.get("execution") != "SIMULATED"
+            or type(payload.get("real_orders_sent")) is not int or payload["real_orders_sent"] != 0
+            or heartbeat is None or observed - heartbeat > timedelta(seconds=budget)):
+        return {"state": "NO_VERIFICADO", "reason": "DASHBOARD_RUNTIME_IDENTITY_OR_HEARTBEAT_UNVERIFIED"}
+    readiness = payload.get("readiness", {})
+    if readiness.get("source") != "candidate_identity_v2" or not readiness.get("families"):
+        return {"state": "NO_VERIFICADO", "reason": "CANDIDATE_READINESS_NOT_PUBLISHED"}
+    families = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES",
+                "FUTUROS", "CAUCIONES", "FCI", "INDICES", "USA", "DIVISAS"}
+    result = {"state": "OBSERVED", "heartbeat_at": heartbeat.isoformat(), "source": "candidate_identity_v2",
+              "art_day": day.isoformat(), "real_orders_sent": 0, "families": []}
+    open_phase = payload.get("session_state") == "MARKET_OPEN" and payload.get("market_open") is True
+    result["market_open"] = open_phase
+    result["ready_total"] = bounded(readiness.get("ready"))
+    result["candidate_total"] = bounded(readiness.get("total"))
+    if not result["candidate_total"]:
+        return {"state": "NO_VERIFICADO", "reason": "CANDIDATE_DENOMINATOR_UNAVAILABLE"}
+    result["excluded_families"] = 0
+    for row in readiness["families"][:64]:
+        count = bounded(row.get("candidate_total"))
+        ready = bounded(row.get("runtime_ready"))
+        if row.get("family") not in families or count is None or ready is None or ready > count:
+            result["excluded_families"] += 1
+            result["state"] = "PARTIAL"
+            continue
+        checked_at = stamp(row.get("readiness_as_of"), observed)
+        result["families"].append({"family": row["family"], "candidate_total": count, "runtime_ready": ready,
+                                   "readiness_as_of": checked_at.isoformat() if checked_at else None,
+                                   "latest_row_current_art_day": bool(checked_at and checked_at.astimezone(art).date() == day)})
+    if (result["candidate_total"] is None or result["ready_total"] is None or
+            sum(row["candidate_total"] for row in result["families"]) != result["candidate_total"] or
+            sum(row["runtime_ready"] for row in result["families"]) != result["ready_total"]):
+        result["state"] = "PARTIAL"
+    result["readiness_scope"] = "CURRENT_CANDIDATE_PROJECTION_NO_SESSION_ROW_FILTER"
+    gates = payload.get("strategy_eligibility", {})
+    last_gate = stamp(gates.get("as_of"), observed)
+    if gates.get("source") == "trade_gate_evaluations" and last_gate and last_gate.astimezone(art).date() == day:
+        result["gate_projection"] = {"source": gates["source"], "as_of": last_gate.isoformat(),
+            "scope": "DB_TIMESTAMP_DATE_PREFIX_NOT_EXACT_ART_SESSION",
+            **{key: bounded(gates.get(key)) for key in ("evaluated_today", "blocked_today", "opened_simulated_today")}}
+    else:
+        result["gate_projection"] = {"state": "NO_VERIFICADO", "reason": "NO_GATES_WITH_CURRENT_ART_CLOCK"}
+    return result
+
+
+def action4():
+    output = {"state": "NO_VERIFICADO", "art_day": day.isoformat()}
+    try:
+        payload = get("/api/reports/action4")
+    except HTTPError as error:
+        if error.code != 404:
+            raise
+        output["reason"] = "DAILY_RECEIPT_NOT_PUBLISHED"
+        return output
+    observed = datetime.now(timezone.utc)
+    if (type(payload.get("schema_version")) is not int or payload["schema_version"] != 1
+            or payload.get("status") != "PAPER_READ_ONLY" or not published_audit_is_safe(payload)):
+        output["reason"] = "PUBLISHED_DAILY_PAPER_RECEIPT_UNVERIFIED"
+        return output
+    window = payload.get("window", {})
+    daily = payload.get("dashboard_daily_report", {})
+    start, end, issued = (stamp(window.get("from_local"), observed), stamp(window.get("to_local"), observed),
+                          stamp(payload.get("generated_at_utc"), observed))
+    if issued:
+        output["published_art_day"] = issued.astimezone(art).date().isoformat()
+    if not (start and end and issued and start <= end <= issued and
+            start.astimezone(art).date() == end.astimezone(art).date() == issued.astimezone(art).date() == day and
+            start.astimezone(art).strftime("%H:%M:%S") == "00:00:00" and daily.get("periodo") == day.isoformat()):
+        output["reason"] = "PUBLISHED_RECEIPT_OUTSIDE_CURRENT_ART_DAY"
+        return output
+    output.update(window_from=start.isoformat(), window_to=end.isoformat(), generated_at_utc=issued.isoformat(),
+                  age_seconds=int((observed - end).total_seconds()))
+    if observed - end > timedelta(hours=1):
+        output["reason"] = "PUBLISHED_DAILY_RECEIPT_STALE"
+        return output
+    raw = daily.get("gate_final_counts")
+    if not isinstance(raw, dict) or len(raw) > 40 or any(bounded(value) is None for value in raw.values()):
+        output["reason"] = "PUBLISHED_GATE_COUNTS_UNAVAILABLE"
+        return output
+    enums = {"APPROVE", "BLOCKED", "BUY", "CLOSE", "ERROR", "HOLD", "NOT_EVALUATED", "OPENED_SIMULATED",
+             "REJECT", "REJECTED", "SELL", "SKIPPED", "VETO", "UNKNOWN"}
+    allowed = {key: value for key, value in raw.items() if key in enums}
+    output.update(state="OBSERVED", scope="PUBLISHED_ALL_FAMILIES_ART_DAY_TO_WINDOW_END",
+                  gate_final_counts=allowed, other_count=sum(raw.values()) - sum(allowed.values()))
+    return output
+
+
+result = {}
+for name, probe in (("dashboard_readiness", dashboard), ("action4", action4)):
+    try:
+        result[name] = probe()
+    except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError):
+        result[name] = {"state": "NO_VERIFICADO", "reason": "AUTHENTICATED_READ_RECEIPT_UNAVAILABLE"}
+print(json.dumps(result, separators=(",", ":")))
+'''
+
 
 def remote_source(watch_source, expected_tree, expected_product):
     return f'''
@@ -171,6 +330,21 @@ try:
     payload = json.loads(process.stdout)
     if set(payload) != {{"funnel", "scheduler"}} or any(not isinstance(row, dict) for row in payload.values()):
         raise ValueError("CONTAINER_RECEIPT_INVALID")
+    try:
+        if context.items["dashboard"]["State"].get("Running") is not True:
+            raise ValueError("DASHBOARD_NOT_RUNNING")
+        dashboard = context.host.docker.command_result(
+            "container", "exec", "-w", "/app", context.roles["dashboard"], "python", "-B", "-c",
+            {DASHBOARD_PROBE!r}, timeout=7)
+        if dashboard.returncode or len(dashboard.stdout) > 32000:
+            raise ValueError("DASHBOARD_RECEIPT_INVALID")
+        public = json.loads(dashboard.stdout)
+        if set(public) != {{"dashboard_readiness", "action4"}} or any(not isinstance(row, dict) for row in public.values()):
+            raise ValueError("DASHBOARD_RECEIPT_INVALID")
+        payload.update(public)
+    except Exception:
+        for name in ("dashboard_readiness", "action4"):
+            payload[name] = {{"state": "NO_VERIFICADO", "reason": "BOUND_DASHBOARD_READ_RECEIPT_UNAVAILABLE"}}
     identity = context.host.identity
     if monitor._read_private_current(identity.state / "current.json", identity.uid) != context.current:
         raise ValueError("RELEASE_CHANGED_DURING_READ")
@@ -179,7 +353,7 @@ try:
         "PARTIAL" if states & {{"OBSERVED", "PARTIAL"}} else "NO_VERIFICADO"),
         expected_product_sha={expected_product!r}, source_tree={expected_tree!r},
         source_sha=context.current["source_sha"], real_orders_sent_at_deploy=0,
-        host_mutations=0, provider_requests=0, database_opened=False)
+        host_mutations=0, provider_requests=0, database_opened_by_probe=False, dashboard_gets_only=True)
 except Exception as error:
     allowed = {{"PRODUCT_BINDING_UNVERIFIED", "CONTAINER_PROBE_UNAVAILABLE",
                 "RELEASE_CHANGED_DURING_READ", "CONTAINER_RECEIPT_INVALID"}}
@@ -202,7 +376,7 @@ def main():
     try:
         source = remote_source(args.watch_source.read_text(encoding="utf-8"), args.expected_tree, args.expected_product)
         with connection(os.environ) as (ssh, _, _):
-            result = ssh_run(ssh, ["timeout", "38", "/usr/bin/python3", "-B", "-"], data=source.encode(), timeout=50)
+            result = ssh_run(ssh, ["timeout", "43", "/usr/bin/python3", "-B", "-"], data=source.encode(), timeout=55)
         if result.returncode or len(result.stdout) > 180000:
             raise ValueError("SSH_RECEIPT_UNAVAILABLE")
         value = json.loads(result.stdout)
