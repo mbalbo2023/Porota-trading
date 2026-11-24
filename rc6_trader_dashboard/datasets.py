@@ -237,10 +237,13 @@ def artifact(p, kind):
             outcome = row.get("last_result")
             execution = row.get("execution_state")
             current = state == "AVAILABLE" and payload.get("state") == "OK" and snapshot_fresh
-            if outcome not in {None, "", "success", "unknown"}:
+            skipped = execution == "SKIPPED_BY_CONDITION" and outcome == "exec-condition"
+            if outcome not in {None, "", "success", "unknown"} and not skipped:
                 row_state, reason = "SERVICE_FAILED", "Service result: " + str(outcome)[:64]
             elif enabled in {"masked", "disabled"} and active == "inactive":
                 row_state, reason = "SUSPENDED", None
+            elif skipped:
+                row_state, reason = "Omitida por condición", "El timer disparó y la condición omitió el servicio"
             elif enabled == "enabled" and active == "active" and scheduled_export_published(row, capture_time):
                 row_state, reason = "Instantánea publicada", "La captura se publicó durante la ejecución del exportador"
             elif execution == "RUNNING":
@@ -254,6 +257,7 @@ def artifact(p, kind):
                 "COMPLETED": "Ejecución terminada",
                 "NO_EXECUTION_OBSERVED": "Sin ejecución observada",
                 "UNIT_UNAVAILABLE": "Unidad de servicio no disponible",
+                "SKIPPED_BY_CONDITION": "Ejecución omitida por condición",
             }.get(execution if isinstance(execution, str) else None, "Sin evidencia de ejecución")
             wall_next = systemd_clock(row.get("next_elapse"))
             mono_next = instant(row.get("next_elapse_monotonic_at"))

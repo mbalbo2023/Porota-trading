@@ -69,6 +69,7 @@ if rc==0:
         trigger=t.get("LastTriggerUSec") or None
         execution=execution_state(s, trigger)
         completed=execution=="COMPLETED"
+        classified=completed or execution=="SKIPPED_BY_CONDITION"
         timers.append({"unit":unit,"description":t.get("Description") or "",
             "active_state":t.get("ActiveState") or "unknown","sub_state":t.get("SubState") or "unknown",
             "enabled_state":t.get("UnitFileState") or (parts[1] if len(parts)>1 else "unknown"),
@@ -79,7 +80,7 @@ if rc==0:
             "service_description":s.get("Description") or "","service_active_state":s.get("ActiveState") or "unknown",
             "service_sub_state":s.get("SubState") or "unknown",
             "execution_state":execution,
-            "last_result":(s.get("Result") or "unknown") if completed else "unknown",
+            "last_result":(s.get("Result") or "unknown") if classified else "unknown",
             "exec_main_code":s.get("ExecMainCode") if completed else None,
             "exec_main_status":s.get("ExecMainStatus") if completed else None,
             "service_started_at":s.get("ExecMainStartTimestamp") or None,

@@ -36,6 +36,8 @@ def execution_state(properties, trigger):
     if load != "loaded":
         return "UNKNOWN"
     code = properties.get("ExecMainCode")
+    if code == "0" and properties.get("Result") == "exec-condition":
+        return "SKIPPED_BY_CONDITION"
     if code in {"1", "2", "3"}:
         return "COMPLETED"
     started = systemd_clock(properties.get("ExecMainStartTimestamp"))

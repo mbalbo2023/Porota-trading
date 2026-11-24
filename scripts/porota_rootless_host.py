@@ -37,6 +37,8 @@ ATTEMPT = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}\Z")
 ROLES = ("dashboard", "observer")
 PROJECT = "io.porota.project"
 DB_RELATIVE = Path("data/paper_v17/observer_v17.db")
+# The in-market IOL collector may hold the shared lock for up to 210 s.
+DEPLOY_LOCK_WAIT_SECONDS = 240
 # These existing non-privileged units run checkout files rather than the
 # versioned scheduler dispatcher. Install their narrowly scoped sources too.
 PRESERVED_SOURCE_UNITS = {
@@ -411,7 +413,7 @@ def publish_release_marker(root, release, *, validated, manifest=None, download=
 
 
 @contextmanager
-def user_lock(path):
+def user_lock(path, *, wait_seconds=0):
     path = no_alias(path)
     try:
         fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -421,10 +423,23 @@ def user_lock(path):
         meta = os.fstat(fd)
         require(stat.S_ISREG(meta.st_mode) and meta.st_uid == os.getuid() and
                 meta.st_nlink == 1 and not meta.st_mode & 0o077, "LOCK_UNSAFE")
+        deadline = time.monotonic() + wait_seconds if wait_seconds else None
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                remaining = deadline - time.monotonic() if deadline is not None else 0
+                if remaining <= 0:
+                    raise Hold("OWNER_BUSY") from exc
+                time.sleep(min(0.25, remaining))
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise Hold("OWNER_BUSY") from exc
+            named = path.lstat()
+        except OSError as exc:
+            raise Hold("LOCK_UNSAFE") from exc
+        require((meta.st_dev, meta.st_ino) == (named.st_dev, named.st_ino)
+                and named.st_nlink == 1 and named.st_uid == os.getuid()
+                and not named.st_mode & 0o077, "LOCK_UNSAFE")
         yield
     finally:
         os.close(fd)
@@ -1073,7 +1088,8 @@ class Host:
         self.receipt.update(download)
         self.receipt["attempt"] = attempt
         private_dir(self.identity.state)
-        with user_lock(self.identity.state / "deploy.lock"):
+        wait_seconds = DEPLOY_LOCK_WAIT_SECONDS if transition is None else 0
+        with user_lock(self.identity.state / "deploy.lock", wait_seconds=wait_seconds):
             if guard:
                 guard()
             daemon_id = self.boundary()

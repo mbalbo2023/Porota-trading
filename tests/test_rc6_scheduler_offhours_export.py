@@ -49,6 +49,8 @@ elif [ "$2" = porota-4.service ]; then
     printf 'LoadState=loaded\\nActiveState=inactive\\nResult=success\\nExecMainCode=0\\nExecMainStatus=0\\n'
 elif [ "$2" = porota-5.service ]; then
     printf 'LoadState=loaded\\nActiveState=activating\\nSubState=start\\nResult=success\\nExecMainCode=0\\nExecMainStartTimestamp=Mon 2026-11-23 01:18:14 UTC\\n'
+elif [ "$2" = porota-6.service ]; then
+    printf 'LoadState=loaded\\nActiveState=inactive\\nSubState=dead\\nResult=exec-condition\\nExecMainCode=0\\nExecMainStatus=0\\n'
 else
     printf 'LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled\\nResult=success\\nExecMainCode=1\\nExecMainStatus=0\\n'
 fi
@@ -112,3 +114,6 @@ fi
     assert rows['porota-4.timer']['exec_main_status'] is None
     assert rows['porota-5.timer']['execution_state'] == 'RUNNING'
     assert rows['porota-5.timer']['last_result'] == 'unknown'
+    assert rows['porota-6.timer']['execution_state'] == 'SKIPPED_BY_CONDITION'
+    assert rows['porota-6.timer']['last_result'] == 'exec-condition'
+    assert rows['porota-6.timer']['exec_main_status'] is None

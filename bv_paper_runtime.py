@@ -719,7 +719,7 @@ def run_reader(store, stop):
                         reader.discard_exit_round_scope()
                         pending_scope_reset = False
                     store.event("PPI_GATEWAY_ATTACHED", "consumer=exit_reader;no_sdk_login")
-                    status("READY", "Lector conectado al único gateway; sin órdenes")
+                    status("VERIFYING", "Lector conectado; verificando cobertura de salida")
                 except Exception as exc:
                     if reader:
                         reader.close()
@@ -737,7 +737,7 @@ def run_reader(store, stop):
                         reader, store, policy, now_iso(), should_stop=stop.is_set,
                         sale_witness=sale_witness,
                         pause=(lambda: None) if cadence is not None else (lambda: stop.wait(1)),
-                        beat=lambda: status("READY", "Recorriendo posiciones abiertas"))
+                        beat=lambda: status("VERIFYING", "Recorriendo posiciones abiertas"))
                     elapsed=time.monotonic()-round_started
                     # A completed producer traversal is the only place that
                     # may report factual EXIT coverage to the shared budget.

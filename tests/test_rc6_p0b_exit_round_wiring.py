@@ -55,7 +55,8 @@ class FakeExitReader:
         self.closed = True
 
 
-def run_one(collector, *, reader=None, clock=None, status_result=True, stop_after=1):
+def run_one(collector, *, reader=None, clock=None, status_result=True, stop_after=1,
+            exercise_beat=False):
     stop = StopAfterFirstRound(stop_after)
     reader = reader or FakeExitReader()
     statuses, events = [], []
@@ -83,7 +84,11 @@ def run_one(collector, *, reader=None, clock=None, status_result=True, stop_afte
             "bf_production_paper_observer": observer,
             "rc6_ppi_gateway_reader_adapter": gateway,
         }))
-        stack.enter_context(patch.object(runtime, "collect_exit_books", lambda *a, **kw: collector(stop)))
+        def collect_with_heartbeat(*args, **kwargs):
+            if exercise_beat:
+                kwargs["beat"]()
+            return collector(stop)
+        stack.enter_context(patch.object(runtime, "collect_exit_books", collect_with_heartbeat))
         stack.enter_context(patch.object(runtime, "exit_reader_cadence", lambda *a: 5.0))
         stack.enter_context(patch.object(runtime, "_reader_status_write", lambda s, state, detail="": (
             statuses.append((state, detail)), status_result)[1]))
@@ -132,6 +137,18 @@ class ExitRoundWiring(unittest.TestCase):
         self.assertEqual(len(reader.observations), 1)
         self.assertEqual(statuses[-2][0], "DEGRADED")
         self.assertIn("budget_round=DEGRADED", statuses[-2][1])
+
+    def test_no_ready_window_on_gateway_attach_or_an_unmeasured_round(self):
+        _, statuses, _, _ = run_one(lambda stop: 0,
+            reader=FakeExitReader(outcome="BASELINE_NOT_MEASURED"), exercise_beat=True)
+        self.assertNotIn("READY", [state for state, _ in statuses])
+        self.assertIn("VERIFYING", [state for state, _ in statuses])
+        self.assertIn("budget_round=BASELINE_NOT_MEASURED", statuses[-2][1])
+
+    def test_first_ready_is_only_published_after_complete_round(self):
+        _, statuses, _, _ = run_one(lambda stop: 0, exercise_beat=True)
+        self.assertEqual([state for state, _ in statuses].count("READY"), 1)
+        self.assertIn("budget_round=COMPLETE", statuses[-2][1])
 
     def test_timeout_forwards_real_elapsed_not_synthetic_deadline(self):
         reader, statuses, _, _ = run_one(lambda stop: 0,
