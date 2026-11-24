@@ -48,6 +48,10 @@ PAPER_DIRECT_GET_ENDPOINTS = frozenset(ENDPOINTS) | frozenset({
     "configuration/holidays",
     "configuration/islocalholiday",
 })
+PAPER_DIRECT_WIRE_BACKPRESSURE = frozenset({
+    "PPI_DIRECT_PROVIDER_429_BREAKER",
+    "PPI_DIRECT_SINGLE_WIRE_BUSY",
+})
 PRIORITIES = ("EXIT_CRITICAL", "OPENED_CRITICAL", "SCALPING_HOT", "STRATEGY_HOT", "WARM", "DISCOVERY")
 CONSUMERS = ("SCANNER", "SCALPING", "EXIT_READER", "TREASURY", "UNSCOPED")
 WINDOW_FIELDS = ("requested", "admitted", "used", "dropped", "borrowed_in", "borrowed_out", "coalesced")

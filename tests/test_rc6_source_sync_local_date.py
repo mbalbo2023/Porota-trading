@@ -1,6 +1,6 @@
 """A145: UTC persistence must not multiply after-hours PPI history/catalog jobs."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -52,6 +52,37 @@ def test_source_sync_advances_at_local_midnight_not_utc_midnight(tmp_path):
                                 datetime(2026, 10, 27, 23, 59, tzinfo=ART))
     assert _source_sync_due(store, "PPI_PRODUCTION_CATALOG",
                             datetime(2026, 10, 28, 0, 1, tzinfo=ART))
+
+
+def test_deferred_catalog_and_history_keep_independent_retry_policies(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    _support_schema(store)
+    with store.connect() as connection:
+        connection.executemany(
+            "INSERT INTO source_sync VALUES(?,?,?,NULL,0,'provider hold')",
+            [(source, observer.CATALOG_DEFERRED_STATUS, NIGHT_IN_ARGENTINA.isoformat())
+             for source in ("PPI_PRODUCTION_CATALOG", "PPI_PRODUCTION_HISTORY")],
+        )
+    retry = NIGHT_IN_ARGENTINA + timedelta(seconds=observer.LOGIN_COOLDOWN_SECONDS)
+    assert not _source_sync_due(store, "PPI_PRODUCTION_CATALOG", retry - timedelta(seconds=1))
+    assert _source_sync_due(store, "PPI_PRODUCTION_CATALOG", retry)
+    assert not _source_sync_due(store, "PPI_PRODUCTION_HISTORY", retry)
+
+
+def test_failed_catalog_can_retry_once_after_the_same_session_closes(tmp_path):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    _support_schema(store)
+    source = "PPI_PRODUCTION_CATALOG"
+    close = NIGHT_IN_ARGENTINA.replace(hour=17, minute=0)
+    with store.connect() as connection:
+        connection.execute("INSERT INTO source_sync VALUES(?,'ROJO',?,NULL,0,'failure')",
+                           (source, close.replace(hour=0).isoformat()))
+    assert not _source_sync_due(store, source, close - timedelta(seconds=1))
+    assert _source_sync_due(store, source, close)
+    with store.connect() as connection:
+        connection.execute("UPDATE source_sync SET last_attempt_at=? WHERE source=?",
+                           (close.isoformat(), source))
+    assert not _source_sync_due(store, source, NIGHT_IN_ARGENTINA)
 
 
 @pytest.mark.parametrize("local_day", [

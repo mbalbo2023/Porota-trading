@@ -38,8 +38,12 @@ def test_persisted_gate_is_fail_closed_across_restart_and_release(tmp_path):
                                   state_path=release, receipt_path=receipt)
     assert issued["status"] == "GO_PAPER_SCALPING"
     assert gate.admission_status(now=DAY + timedelta(hours=1), candidate_sha=SHA, receipt_path=receipt) == (True, "")
-    for date, candidate in [(DAY + timedelta(days=1), SHA), (DAY, "b" * 40)]:
-        assert gate.admission_status(now=date, candidate_sha=candidate, receipt_path=receipt)[0] is False
+    assert gate.admission_status(now=DAY + timedelta(days=1), candidate_sha=SHA,
+                                 receipt_path=receipt) == (False, "PAPER_PREOPEN_TRADE_DAY_MISMATCH")
+    assert gate.admission_status(now=DAY, candidate_sha="b" * 40,
+                                 receipt_path=receipt) == (False, "PAPER_PREOPEN_RELEASE_MISMATCH")
+    assert gate.admission_status(now=DAY + timedelta(hours=8), candidate_sha=SHA,
+                                 receipt_path=receipt) == (False, "PAPER_PREOPEN_WINDOW_INVALID")
     receipt.write_text('{"status":"GO_PAPER_SCALPING"}')
     assert gate.admission_status(now=DAY, candidate_sha=SHA, receipt_path=receipt)[0] is False
 
