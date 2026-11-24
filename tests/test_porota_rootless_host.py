@@ -205,6 +205,32 @@ class RootlessContracts(unittest.TestCase):
             with host.user_lock(alias):
                 self.fail("symlink lock entered")
 
+    def test_promotion_lock_waits_for_a_shared_scheduler_reader(self):
+        path = self.base / "deploy.lock"
+        path.touch(mode=0o600)
+        with path.open("rb") as scheduler:
+            host.fcntl.flock(scheduler, host.fcntl.LOCK_SH)
+
+            def finish_scheduler(_seconds):
+                host.fcntl.flock(scheduler, host.fcntl.LOCK_UN)
+
+            with patch.object(host.time, "sleep", side_effect=finish_scheduler) as pause:
+                with host.user_lock(path, wait_seconds=1):
+                    with self.assertRaises(BlockingIOError):
+                        host.fcntl.flock(scheduler, host.fcntl.LOCK_SH | host.fcntl.LOCK_NB)
+                pause.assert_called_once()
+            host.fcntl.flock(scheduler, host.fcntl.LOCK_SH | host.fcntl.LOCK_NB)
+
+    def test_promotion_lock_wait_expires_without_entering_transaction(self):
+        path = self.base / "deploy.lock"
+        path.touch(mode=0o600)
+        with path.open("rb") as scheduler:
+            host.fcntl.flock(scheduler, host.fcntl.LOCK_SH)
+            with patch.object(host.time, "monotonic", side_effect=[100, 101]):
+                with self.assertRaisesRegex(host.Hold, "OWNER_BUSY"):
+                    with host.user_lock(path, wait_seconds=1):
+                        self.fail("promotion entered while the scheduler still held the lock")
+
     def test_docker_calls_always_pin_private_socket_without_ambient_context(self):
         calls = []
         def command(args, **kwargs):
