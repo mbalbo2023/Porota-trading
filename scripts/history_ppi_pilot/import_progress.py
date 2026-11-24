@@ -97,8 +97,9 @@ def key_shape(value, wrapper, recorded):
 
 rejected = Counter()
 examples = {}
+suffixes = Counter()
 with closing(_manifest(exact.manifest_path())) as db:
-    rows = db.execute("""SELECT row_key,body_hash,recorded_at,quality,
+    rows = db.execute("""SELECT row_key,body_hash,inner_sha256,recorded_at,quality,
         CASE WHEN length(CAST(wrapper_json AS BLOB))<=65536 THEN wrapper_json END wrapper_json
         FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' LIMIT 1000001""")
     for index, row in enumerate(rows):
@@ -113,6 +114,18 @@ with closing(_manifest(exact.manifest_path())) as db:
             shape = key_shape(row["row_key"], wrapper, row["recorded_at"]) if isinstance(wrapper, dict) else "UNKNOWN"
             key = (family,reason,shape)
             rejected[key] += 1
+            if reason == "HISTORY_ARCHIVE_KEY_CONFLICT" and shape.endswith('"text:12"]'):
+                suffix = json.loads(row["row_key"])[-1]
+                if suffix == row["inner_sha256"][:12]:
+                    suffixes["INNER_SHA256_PREFIX"] += 1
+                elif suffix == row["body_hash"][:12]:
+                    suffixes["BODY_SHA256_PREFIX"] += 1
+                elif suffix.isascii() and all(value.isupper() or value in "-_" for value in suffix):
+                    suffixes[suffix] += 1
+                elif all(value in "0123456789abcdefABCDEF" for value in suffix):
+                    suffixes["UNMATCHED_HEX"] += 1
+                else:
+                    suffixes["UNRECOGNIZED_MARKER"] += 1
             if key not in examples and family == "FCI" and row["quality"] == "VALID_PAYLOAD":
                 try:
                     bars, _, digest = _body(db, (instant(row["recorded_at"]),row["row_key"],row["body_hash"]),None)
@@ -124,6 +137,7 @@ with closing(_manifest(exact.manifest_path())) as db:
 print(json.dumps({"schema":"rc6.history.live-progress.v1","committed_ppi_versions":count,
                   "committed_ppi_canonical":canonical,"fci_catalog_identities":fci_count,
                   "fcis_with_catalog_binding_markers":bindings,
+                  "historical_key_markers":dict(suffixes),
                   "manifest_rejections":[{"family":k[0],"reason":k[1],"shape":k[2],"count":v,
                                           "example":examples.get(k)} for k,v in rejected.most_common()],
                   "journal_mode":journal,"real_orders_sent":0,"production_sql_writes":0,
