@@ -1,0 +1,149 @@
+{
+  "by_family": {
+    "ACCIONES": {
+      "active": 171,
+      "active_raw": 0,
+      "active_with_reference": 131,
+      "active_without_reference": 40,
+      "any_reference": 166,
+      "other": 124,
+      "ppi": 165,
+      "raw": 0,
+      "total": 206
+    },
+    "BONOS": {
+      "active": 2491,
+      "active_raw": 0,
+      "active_with_reference": 250,
+      "active_without_reference": 2241,
+      "any_reference": 431,
+      "other": 27,
+      "ppi": 431,
+      "raw": 0,
+      "total": 3095
+    },
+    "CAUCIONES": {
+      "active": 10,
+      "active_raw": 0,
+      "active_with_reference": 10,
+      "active_without_reference": 0,
+      "any_reference": 10,
+      "other": 0,
+      "ppi": 10,
+      "raw": 0,
+      "total": 10
+    },
+    "CEDEARS": {
+      "active": 1330,
+      "active_raw": 0,
+      "active_with_reference": 1133,
+      "active_without_reference": 197,
+      "any_reference": 1952,
+      "other": 1799,
+      "ppi": 1801,
+      "raw": 0,
+      "total": 2496
+    },
+    "FCI": {
+      "active": 1084,
+      "active_raw": 0,
+      "active_with_reference": 1007,
+      "active_without_reference": 77,
+      "any_reference": 1007,
+      "other": 0,
+      "ppi": 1007,
+      "raw": 0,
+      "total": 1085
+    },
+    "FUTUROS": {
+      "active": 141,
+      "active_raw": 0,
+      "active_with_reference": 0,
+      "active_without_reference": 141,
+      "any_reference": 36,
+      "other": 0,
+      "ppi": 36,
+      "raw": 0,
+      "total": 236
+    },
+    "INDICES": {
+      "any_reference": 0,
+      "other": 0,
+      "ppi": 0,
+      "raw": 0,
+      "total": 1
+    },
+    "LETRAS": {
+      "active": 39,
+      "active_raw": 0,
+      "active_with_reference": 20,
+      "active_without_reference": 19,
+      "any_reference": 26,
+      "other": 3,
+      "ppi": 25,
+      "raw": 0,
+      "total": 58
+    },
+    "OBLIGACIONES": {
+      "active": 3732,
+      "active_raw": 0,
+      "active_with_reference": 861,
+      "active_without_reference": 2871,
+      "any_reference": 1481,
+      "other": 20,
+      "ppi": 1481,
+      "raw": 0,
+      "total": 5157
+    },
+    "ON": {
+      "any_reference": 33,
+      "other": 3,
+      "ppi": 33,
+      "raw": 0,
+      "total": 91
+    },
+    "OPCIONES": {
+      "active": 1458,
+      "active_raw": 0,
+      "active_with_reference": 73,
+      "active_without_reference": 1385,
+      "any_reference": 625,
+      "other": 68,
+      "ppi": 595,
+      "raw": 0,
+      "total": 4916
+    }
+  },
+  "catalog": 17351,
+  "deployment_sha": "bf496483e739c5a2be61d28aba6ad5fdd486c0e1",
+  "intervalores_rows": 2,
+  "iol_first_rows": 5000,
+  "iol_gap_rows": 1902,
+  "ppi_fund_symbol_additional_rows": 964,
+  "ppi_initial_rejected_manifest_rows": {
+    "HISTORY_ARCHIVE_MANIFEST_ENTRY_INVALID": 12647
+  },
+  "ppi_legacy_additional_rows": 388243,
+  "ppi_legacy_rejected_manifest_rows": {
+    "HISTORY_ARCHIVE_MANIFEST_ENTRY_INVALID": 6
+  },
+  "ppi_legacy_script_sha256": "98d60afc34fa7296920a857d2eb8407556043e5aae5102d111382c5a465bb85e",
+  "ppi_reference_rows": 577302,
+  "preserved_rows": {
+    "history_canonical_v2": 152052,
+    "history_canonical_v2_legacy": 439833,
+    "history_versions_v2": 152052,
+    "history_versions_v2_legacy": 596196
+  },
+  "records_sha256": "bdb4248aec1cbaa00a6cbd86bb735c4cab9fb095d6cde3d69351dd6f2fd0e1ff",
+  "total_by_status": {
+    "active": 10456,
+    "active_with_reference": 3485,
+    "active_without_reference": 6971,
+    "any_reference": 5767,
+    "other": 2044,
+    "ppi": 5584,
+    "total": 17351
+  },
+  "total_source_reported": 736258
+}
