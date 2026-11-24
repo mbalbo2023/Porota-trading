@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from scripts.porota_actions_host import connection, ssh_run
 
@@ -55,7 +55,7 @@ if run.returncode != 0:
     raise SystemExit(2)
 assert len(run.stdout) <= 4_194_304 and verify_deployment() == observer
 payload = json.loads(run.stdout)
-assert payload["schema"] == "rc6.history.ppi-reference-import.v1"
+assert payload["schema"] in {"rc6.history.ppi-reference-import.v1", "rc6.history.reference-gap-import.v1"}
 assert payload["quick_check"] == "ok" and payload["preserved_rows_reconciled"] is True
 payload.update(deployment_sha=deployment, candidate_sha=candidate,
                image_id=image, same_runtime=True, real_orders_sent=0, order_guard="BLOCKED")
@@ -155,19 +155,37 @@ def recover(store):
     return result
 
 
+def recover_reference_gaps(store, before):
+    references = append_references(store)
+    assert set(references) == {"IOL_MCP"}
+    changes = references["IOL_MCP"]
+    after = existing()
+    assert after["history_canonical_v2"] - before["history_canonical_v2"] == changes["canonical_updates"]
+    assert after["history_versions_v2"] - before["history_versions_v2"] == changes["versions_appended"]
+    assert all(before[name] == after[name] for name in
+               ("history_canonical_v2_legacy", "history_versions_v2_legacy"))
+    return {"schema": "rc6.history.reference-gap-import.v1", "source": "IOL_MCP",
+            "stored_rows": changes["canonical_rows"], "new_rows": changes["canonical_updates"],
+            "additional_references": references, "quick_check": changes["quick_check"],
+            "preserved_rows": before, "provider_requests": 0}
+
+
 try:
     paper()
     with (root / ".rc6-history-cutoff-repair.lock").open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = existing()
         store = HistoricalStore(str(history)).for_source_reported_history()
-        result = recover(store)
-        after = existing()
-        assert before == after and result["stored_rows"] > 0
-        result["additional_references"] = append_references(store)
+        if REFERENCE_GAPS:
+            result = recover_reference_gaps(store, before)
+        else:
+            result = recover(store)
+            after = existing()
+            assert before == after and result["stored_rows"] > 0
+            result.update(additional_references=append_references(store), preserved_rows=after)
     paper()
     result["catalog_coverage"] = inventory()
-    result.update(preserved_rows_reconciled=True, preserved_rows=after, destination="LIVE_HISTORY_V2")
+    result.update(preserved_rows_reconciled=True, destination="LIVE_HISTORY_V2")
     print(json.dumps(result, separators=(",", ":")))
 except (OSError, ValueError, sqlite3.Error, AssertionError) as error:
     code = str(error)
@@ -177,11 +195,13 @@ except (OSError, ValueError, sqlite3.Error, AssertionError) as error:
 '''
 
 
-def supplemental_references():
+def supplemental_references(*, gaps=False):
     from scripts.rc6_history_import_source_reported import INTERVALORES, INTERVALORES_MEMBER, MEMBER, SOURCE
     from scripts.rc6_history_import_source_reported import _capture_sha
 
     evidence = Path(__file__).with_name("evidence")
+    if gaps:
+        evidence /= "fixed-income-gaps"
     output = []
     for source, member, files in ((SOURCE, MEMBER, sorted(evidence.glob("iol-*.jsonl"))),
                                   (INTERVALORES, INTERVALORES_MEMBER, sorted(evidence.glob("intervalores-*.jsonl")))):
@@ -195,8 +215,10 @@ def supplemental_references():
         if not rows:
             continue
         buffer = BytesIO()
-        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
-            archive.writestr(member, "\n".join(rows) + "\n")
+        entry = ZipInfo(member)
+        entry.compress_type = ZIP_DEFLATED
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr(entry, "\n".join(rows) + "\n")
         raw = buffer.getvalue()
         output.append((source, b64encode(raw).decode("ascii"), sha256(raw).hexdigest()))
     return output
@@ -204,7 +226,8 @@ def supplemental_references():
 
 def main():
     legacy = sys.argv[1:] == ["--legacy-closeout"]
-    assert legacy or len(sys.argv) == 1
+    gaps = sys.argv[1:] == ["--reference-gaps"]
+    assert legacy or gaps or len(sys.argv) == 1
     folder = Path(os.environ["RUNNER_TEMP"]) / "porota"
     deployed = json.loads((folder / "runtime.json").read_text())
     download = json.loads((folder / "download.json").read_text())
@@ -221,8 +244,9 @@ def main():
     override = None
     if legacy:
         override = (Path(__file__).resolve().parents[1] / "rc6_history_import_ppi_archive.py").read_text()
-    references = [] if legacy else supplemental_references()
+    references = [] if legacy else supplemental_references(gaps=gaps)
     source = ("REFERENCES = " + repr(references) + "\nARCHIVE_COMPATIBILITY = " + repr(override)
+              + "\nREFERENCE_GAPS = " + repr(gaps)
               + "\n" + CONTAINER).encode()
     assert len(source) <= 4_194_304
     with connection(os.environ) as (ssh, _, _):

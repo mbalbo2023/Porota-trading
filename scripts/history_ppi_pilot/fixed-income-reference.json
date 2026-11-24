@@ -1,0 +1,8 @@
+{
+  "deployment_sha": "bf496483e739c5a2be61d28aba6ad5fdd486c0e1",
+  "previous_run": 45303731515,
+  "source": "IOL_MCP",
+  "requested_symbols": 10,
+  "provider_rows": 2026,
+  "validated_in_private_copy": 1902
+}
