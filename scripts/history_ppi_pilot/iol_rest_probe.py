@@ -44,20 +44,33 @@ result = {"schema": "rc6.history.iol-rest-route.v1", "candidate_sha": candidate,
           "captured_at": datetime.now(timezone.utc).isoformat()}
 try:
     raw = client._get(f"/broker/market-data/{quote(symbol, safe='')}/bars", query)
-    if not isinstance(raw, dict) or (raw.get("symbol"), raw.get("market")) != (symbol, market):
-        raise ValueError("IOL_REST_HISTORY_IDENTITY_UNVERIFIED")
-    bars = raw.get("bars")
-    if not isinstance(bars, list) or raw.get("total_bars") != len(bars) or len(bars) > 2:
-        raise ValueError("IOL_REST_HISTORY_ENVELOPE_UNVERIFIED")
-    result.update(status="CAPTURED" if bars else "EMPTY", rows=len(bars),
-                  fields=sorted({key for bar in bars if isinstance(bar, dict) for key in bar}),
+    def field_names(keys):
+        return sorted(k for k in keys if isinstance(k, str) and re.fullmatch(r"[A-Za-z0-9_]{1,40}", k))
+    result.update(shape=type(raw).__name__,
                   payload_sha256=sha256(json.dumps(raw, sort_keys=True, separators=(",", ":"),
-                                                  allow_nan=False).encode()).hexdigest())
+                                                   allow_nan=False).encode()).hexdigest())
+    result["documented_fields"] = field_names(raw) if isinstance(raw, dict) else []
+    bars = raw.get("bars") if isinstance(raw, dict) else raw
+    result["bars_shape"] = type(bars).__name__
+    if isinstance(raw, dict):
+        result["identity_matches"] = (raw.get("symbol"), raw.get("market")) == (symbol, market)
+        result["reported_total_type"] = type(raw.get("total_bars")).__name__
+        result["reported_total"] = raw.get("total_bars") if type(raw.get("total_bars")) is int else None
+    if isinstance(bars, list):
+        result["rows"] = len(bars)
+        result["fields"] = field_names({key for row in bars[:5] if isinstance(row, dict) for key in row})
+        result["rows_in_requested_dates"] = sum(
+            type(row) is dict and str(row.get("datetime", ""))[:10] in {"2026-11-19", "2026-11-20"}
+            for row in bars)
+    if result.get("identity_matches") and result.get("reported_total") == result.get("rows") and "rows" in result:
+        result["status"] = "CAPTURED" if result["rows_in_requested_dates"] else "EMPTY_REQUESTED_WINDOW"
+    else:
+        result["status"] = "IOL_REST_HISTORY_ENVELOPE_UNVERIFIED"
 except IOLRestError as error:
     result.update(status="PROVIDER_DENIED", error=str(error), http_status=error.status_code,
                   retry_after=error.retry_after)
-except ValueError as error:
-    result.update(status="NO_VERIFICADO", error=type(error).__name__)
+except ValueError:
+    result.update(status="IOL_REST_HISTORY_RESPONSE_INVALID")
 result["provider_calls"] = gov.calls_total
 print(json.dumps(result))
 """
