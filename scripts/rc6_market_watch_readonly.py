@@ -247,7 +247,7 @@ def load_bounded(path, maximum=MAX_JSON_BYTES):
         return None
 
 
-def read_performance_report(path, maximum=524288):
+def read_performance_report(path, maximum=MAX_JSON_BYTES):
     """Classify a bounded report read without exporting its contents or file identity.
 
     File metadata is informational only; even VALID is not proof of a fresh
