@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import json
 import re
 import sqlite3
+import time
+from zoneinfo import ZoneInfo
 
 from cg_paper_workspace import database_path, identity_from_connection
 from rc6_ppi_gateway_reader_adapter import gateway_socket_path, local_gateway_owner_custody
@@ -12,7 +14,8 @@ from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient
 
 EVENTS = (
     "PPI_GATEWAY_OWNER_OPEN", "PPI_GATEWAY_ATTACHED", "PPI_GATEWAY_HOLD",
-    "PPI_GATEWAY_AUTH_RECOVERY", "PPI_GATEWAY_CATALOG_REFRESHED", "PPI_GATEWAY_CATALOG_HOLD",
+    "PPI_GATEWAY_AUTH_RECOVERY", "PPI_GATEWAY_AUTH_REFRESH",
+    "PPI_GATEWAY_CATALOG_REFRESHED", "PPI_GATEWAY_CATALOG_HOLD",
     "PPI_GATEWAY_REATTACH_REQUIRED", "PPI_DIRECT_REST_PROBE_HOLD",
     "PPI_DIRECT_REST_PROBE_OBSERVED", "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
     "PPI_DIRECT_REST_REFERENCE_HOLD", "PPI_DIRECT_REST_REFERENCE_OBSERVED",
@@ -29,6 +32,8 @@ REASON = re.compile(r"\b(?:PPI_[A-Z0-9_]{1,75}|NATIVE_CURRENT_OR_BOOK_STALE_OR_I
                     r"CatalogIdentityError|SharedFeedUnavailable|GatewayEvidenceRejected|BudgetBackpressure|"
                     r"OperationalError|TimeoutError|ConnectionError|ReadOnlyPolicyViolation)\b")
 STATE = re.compile(r"[A-Z][A-Z0-9_]{0,47}\Z")
+FAMILIES = {"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES",
+            "OPCIONES", "FUTUROS", "FCI", "CAUCIONES"}
 TELEGRAM_ERROR = re.compile(r"(?:[45][0-9]{2}|HTTPError|URLError|TimeoutError|ConnectionError|"
                             r"JSONDecodeError|INVALID_RESPONSE|MISSING_MESSAGE_ID|"
                             r"DELIVERY_UNKNOWN_AFTER_RESTART|NON_BUSINESS_DAY_ROUTINE)\Z")
@@ -54,8 +59,8 @@ database = database_path()
 with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.25)) as c:
     c.execute("PRAGMA query_only=ON")
     c.execute("BEGIN")
-    c.set_progress_handler(lambda: int(__import__("time").monotonic() > deadline), 1000)
-    deadline = __import__("time").monotonic() + 4
+    deadline = time.monotonic() + 4
+    c.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
     identity_from_connection(c)
     mode, real_orders, phase, auth, last_mark = c.execute(
         "SELECT mode,real_orders_sent,session_state,ppi_auth,last_market_data_at FROM observer_state WHERE id=1"
@@ -70,12 +75,15 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.
                         for component, state, detail, checked, success in c.execute(
                             f"SELECT component,state,detail,checked_at,last_success_at FROM api_health "
                             f"WHERE component IN ({placeholders})", HEALTH)}
-    today = datetime.now(timezone.utc).astimezone(__import__("zoneinfo").ZoneInfo(
-        "America/Argentina/Buenos_Aires")).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).replace(
+        hour=0, minute=0, second=0, microsecond=0)
     placeholders = ",".join("?" for _ in EVENTS)
     latest = {}
     counts = Counter()
     settlement_fields = Counter()
+    latest_native = {}
+    last_pair = None
     for kind, at, detail in c.execute(f"""
         SELECT event_type,event_at,substr(detail,1,610) FROM (
             SELECT event_type,event_at,detail FROM paper_events ORDER BY id DESC LIMIT 12000
@@ -87,9 +95,20 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.
         if kind == "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS":
             endpoint = re.search(r"endpoint=(current|book);http_status=200;", detail)
             presence = re.search(r"response_settlement_status=([A-Z_]{1,40});", detail)
-            if endpoint and presence and presence[1] in {"ABSENT", "LITERAL", "INVALID", "CONFLICT",
-                                                         "PRESENT", "MISSING", "MATCHED"}:
+            identity = re.search(r";identity5=[^;:]{1,64}:([A-Z]+):", detail)
+            if endpoint and presence and presence[1] in {"ABSENT", "EXPLICIT", "UNVERIFIED"}:
                 settlement_fields[(endpoint[1], presence[1])] += 1
+                if identity and identity[1] in FAMILIES:
+                    native_key = (identity[1], endpoint[1])
+                    current = latest_native.get(native_key)
+                    if current is None or current["event_at"] < stamp:
+                        source_at = re.search(r";market_timestamp_utc=([^;]{1,64});", detail)
+                        last = timestamp(source_at[1]) if source_at else None
+                        latest_native[native_key] = {"event_at": stamp, "market_timestamp_utc": last}
+        if kind == "PPI_DIRECT_REST_PROBE_OBSERVED":
+            parts = detail.split(":", 3)
+            if len(parts) == 4 and parts[1] in FAMILIES and (not last_pair or last_pair["event_at"] < stamp):
+                last_pair = {"family": parts[1], "event_at": stamp}
         code = reason(detail)
         counts[(kind, code)] += 1
         key = (kind, code)
@@ -103,6 +122,11 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.
         {"endpoint": key[0], "status": key[1], "count": value}
         for key, value in sorted(settlement_fields.items())
     ]
+    output["latest_native_witnesses_today"] = [
+        {"family": key[0], "endpoint": key[1], **data}
+        for key, data in sorted(latest_native.items())
+    ]
+    output["latest_fresh_pair_today"] = last_pair
     output["catalog_publication"] = [
         {"status": label(state), "checked_at": timestamp(at)}
         for state, at in c.execute("SELECT state,checked_at FROM candidate_refresh_state WHERE id=1")
@@ -111,7 +135,10 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=.
         {"state": label(state), "created_at": timestamp(at), "sent_at": timestamp(sent),
          "ack": bool(message_id) and state == "SENT" and timestamp(sent) is not None,
          "attempts": count(attempts), "error": error if TELEGRAM_ERROR.fullmatch(error or "") else None,
-         "reason_no_decisions": "no_decisions_during_open_market" in body}
+         "reason_no_decisions": "no_decisions_during_open_market" in body,
+         "ppi_rate_limit": "PPI devolvió HTTP 429" in body,
+         "ppi_stale_pair": "Falta un par Current/Book fresco" in body,
+         "ppi_auth_loss": "PPI perdió la sesión" in body}
         for state, at, sent, message_id, attempts, error, body in c.execute("""
             SELECT state,created_at,sent_at,message_id,attempts,last_error,substr(body,1,3100)
             FROM paper_notification_outbox WHERE kind='INTROSPECTION' ORDER BY id DESC LIMIT 8
@@ -123,7 +150,8 @@ try:
     local_gateway_owner_custody(status)
     output["gateway"] = {k: count(status.get(k)) for k in (
         "guard_login_wire_attempts", "guard_http_allowed", "guard_http_blocked",
-        "native_last_http_status", "aux_last_http_status")}
+        "native_last_http_status", "aux_last_http_status", "native_retry_after_seconds_observed",
+        "aux_retry_after_seconds_observed")}
     output["gateway"]["recovery_pending"] = status.get("session_recovery_pending") is True
     output["gateway"]["state"] = "LOCAL_OWNER_OBSERVED"
 except (OSError, RuntimeError, ValueError, TypeError) as error:
