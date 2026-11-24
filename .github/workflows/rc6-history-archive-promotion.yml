@@ -1,0 +1,87 @@
+name: RC6 Deploy V2 and recover the historical archive
+
+on:
+  push:
+    branches: [diagnostic/rc6-history-ppi-pilot-20261123]
+    paths: [scripts/history_ppi_pilot/promotion.json]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Checkout the one-time operation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: operation
+          persist-credentials: false
+      - name: Retrieve the exact merged product tree
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: deploy/rc6-pr69-isolated-20260915
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify ordered merge and acquire the exact Predeploy V2 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          control="../operation/scripts/history_ppi_pilot/promotion.json"
+          candidate="$(jq -er '.candidate_sha' "$control")"
+          run_id="$(jq -er '.predeploy_run_id' "$control")"
+          deployed="$(jq -er '.deployment_sha' "$control")"
+          [[ "$candidate" =~ ^[0-9a-f]{40}$ && "$deployed" =~ ^[0-9a-f]{40}$ && "$run_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$deployed" == "$(git rev-parse HEAD)" ]]
+          gh api repos/mbalbo2023/Porota-trading/pulls/1257 |
+            jq -e --arg c "$candidate" --arg d "$deployed" \
+              '.merged == true and .head.sha == $c and .merge_commit_sha == $d and
+               .base.ref == "deploy/rc6-pr69-isolated-20260915"'
+          python3 -B -m scripts.porota_actions_release \
+            --directory "$RUNNER_TEMP/porota/release" --candidate-sha "$candidate" --run-id "$run_id"
+      - name: Promote with the versioned rootless Deploy V2 procedure
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m scripts.porota_actions_host deploy \
+            --release-dir "$RUNNER_TEMP/porota/release" --receipt "$RUNNER_TEMP/porota/runtime.json"
+      - name: Import PPI observations into the validated runtime database
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        working-directory: product
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH="$PWD" python3 -B ../operation/scripts/history_ppi_pilot/deploy_archive.py
+      - name: Preserve physical runtime and per-series rows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-history-v2-runtime-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/porota/download.json
+            ${{ runner.temp }}/porota/runtime.json
+            ${{ runner.temp }}/porota/history-import.json
+          if-no-files-found: warn
+          retention-days: 30
