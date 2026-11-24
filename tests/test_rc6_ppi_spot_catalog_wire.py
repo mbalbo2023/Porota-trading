@@ -19,7 +19,7 @@ import bu_instrument_catalog as catalog
 from rc6_dynamic_universe import promotion
 import rc6_paper_admission_gate as gate
 from rc6_local_eod_history import RESERVE, consolidate
-from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
+from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected, SharedPPIReaderAdapter
 from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
 from tests.test_rc6_a680_ppi_guard_wire_receipt import FakeBudget
 
@@ -88,7 +88,7 @@ def replay(tmp_path, monkeypatch):
 
     def aux(_consumer, *, method, args):
         if method == "market_configuration":
-            result = public_config["configuration"]
+            result = public_config["configuration"][args["field"]]
         else:
             assert method == "search_instruments"
             result = wire_reader.search_instruments(**args)
@@ -139,6 +139,50 @@ def replay(tmp_path, monkeypatch):
         yield store, records, reader, clock, calls, scopes, refresh
     finally:
         wire_reader.close()
+
+
+def test_catalog_uses_the_available_ppi_market_literal(replay, monkeypatch):
+    store, records, reader, _, calls, _, refresh = replay
+    configuration = reader.market_configuration()
+    configuration["markets"] = ["BCBA"]
+    monkeypatch.setattr(reader, "market_configuration", lambda: configuration)
+    raw = dict(records["GGAL"], market="BCBA")
+    assert refresh("ACCIONES", [("G", raw)]) == 1
+    assert calls == [("SearchInstrument", {
+        "ticker": "G", "name": "G", "type": "ACCIONES", "market": "BCBA",
+    })]
+    assert _ledger(store)[("GGAL", "ACCIONES", "BYMA", "ARS", TERM)] == (
+        0, "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED")
+
+
+def test_provider_backpressure_stops_discovery_but_preserves_the_valid_rows(replay, monkeypatch):
+    store, records, reader, clock, calls, _, refresh = replay
+    acquire_auxiliary = reader._client.acquire_auxiliary
+    attempted = []
+
+    def provider(consumer, *, method, args):
+        if method == "search_instruments":
+            attempted.append(args["ticker"])
+            if args["ticker"] == "L":
+                raise GatewayEvidenceRejected("PPI_DIRECT_PROVIDER_429_BREAKER")
+        return acquire_auxiliary(consumer, method=method, args=args)
+
+    monkeypatch.setattr(reader._client, "acquire_auxiliary", provider)
+    raw = dict(records["GGAL"], settlement=TERM)
+    assert refresh("ACCIONES", [("G", raw), ("L", raw), ("P", raw)]) == 1
+    assert attempted == ["G", "L"]
+    assert [kind for kind, _ in calls] == ["SearchInstrument"]
+    key = ("GGAL", "ACCIONES", "BYMA", "ARS", TERM)
+    assert key in load_primary_ppi_catalog_snapshot(
+        store.path, include_diagnostic_candidates=True)[3]
+    with store.connect() as connection:
+        status, success_at = connection.execute(
+            "SELECT status,last_success_at FROM source_sync WHERE source='PPI_PRODUCTION_CATALOG'"
+        ).fetchone()
+    assert (status, success_at) == (observer.CATALOG_DEFERRED_STATUS, None)
+    assert not observer._source_sync_due(store, "PPI_PRODUCTION_CATALOG", clock.at)
+    assert observer._source_sync_due(store, "PPI_PRODUCTION_CATALOG",
+                                     clock.at + timedelta(seconds=observer.LOGIN_COOLDOWN_SECONDS))
 
 
 def _ledger(store):

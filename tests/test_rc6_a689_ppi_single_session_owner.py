@@ -507,7 +507,7 @@ def test_single_configuration_field_uses_the_same_guarded_http_transport(harness
 
 def test_aux_observed_429_retry_after_blocks_next_get_without_claiming_quota(harness):
     owner = harness.make_owner(capacity=FakeExternalCapacity({
-        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE"}))
+        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE", "REST_NATIVE_ACQUIRE"}))
     try:
         owner.open_once()
         attempts = []
@@ -527,6 +527,8 @@ def test_aux_observed_429_retry_after_blocks_next_get_without_claiming_quota(har
         with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_PROVIDER_BACKOFF_ACTIVE"):
             owner.dispatch_auxiliary_acquire(
                 consumer="scanner", method="market_configuration", args={})
+        with pytest.raises(SessionOwnerBlocked, match="PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE"):
+            owner.capture_native("book", FIVE, priority="EXIT_CRITICAL")
         assert attempts == ["GET"]
         assert owner.status()["provider_quota"] == "UNKNOWN"
         assert owner.status()["aux_retry_after_seconds_observed"] == 120
@@ -578,7 +580,7 @@ def test_owner_uses_guarded_status_when_sdk_retry_hides_http_error(
         owner.close()
 
 
-def test_aux_sdk_response_401_preserves_active_retry_after(harness, monkeypatch):
+def test_native_retry_after_blocks_aux_until_observed_deadline(harness, monkeypatch):
     import rc6_ppi_shared_session_owner as owner_module
 
     now = [1000.0]
@@ -602,14 +604,44 @@ def test_aux_sdk_response_401_preserves_active_retry_after(harness, monkeypatch)
         monkeypatch.setattr(owner._reader, "market_configuration", sdk_failure)
         with pytest.raises(SessionOwnerBlocked, match="PPI_NATIVE_HTTP_429"):
             owner.capture_native("book", FIVE, priority="EXIT_CRITICAL")
-        with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_HTTP_401"):
+        with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_PROVIDER_BACKOFF_ACTIVE"):
             owner.dispatch_auxiliary_acquire(
                 consumer="scanner", method="market_configuration", args={})
         now[0] += 1199
-        assert not owner.session_recovery_due()
+        with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_PROVIDER_BACKOFF_ACTIVE"):
+            owner.dispatch_auxiliary_acquire(
+                consumer="scanner", method="market_configuration", args={})
         now[0] += 1
+        with pytest.raises(SessionOwnerBlocked, match="PPI_AUX_HTTP_401"):
+            owner.dispatch_auxiliary_acquire(
+                consumer="scanner", method="market_configuration", args={})
+        now[0] += owner_module.AUTH_COOLDOWN_SECONDS
         assert owner.session_recovery_due()
         assert harness.counts["logins"] == 1
+    finally:
+        owner.close()
+
+
+def test_aux_propagates_only_known_off_wire_budget_causes(harness, monkeypatch):
+    from rc6_ppi_global_budget import BudgetBackpressure
+
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE"}))
+    try:
+        owner.open_once()
+        for reason, expected in (
+            ("PPI_DIRECT_PROVIDER_429_BREAKER", "PPI_DIRECT_PROVIDER_429_BREAKER"),
+            ("PRIVATE_UPSTREAM_DETAIL", "PPI_AUX_PROVIDER_FAILURE_UNVERIFIED"),
+        ):
+            def denied():
+                raise BudgetBackpressure(reason)
+
+            monkeypatch.setattr(owner._reader, "market_configuration", denied)
+            with pytest.raises(SessionOwnerBlocked, match=expected):
+                owner.dispatch_auxiliary_acquire(
+                    consumer="scanner", method="market_configuration", args={})
+        assert owner.status()["aux_last_http_status"] is None
+        assert harness.counts["gets"] == 0
     finally:
         owner.close()
 

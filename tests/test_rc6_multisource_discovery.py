@@ -18,6 +18,21 @@ def test_ppi_query_plan_uses_official_caucion_alias_instead_of_rotating_prefixes
     assert cauciones == [("CAUCION","CAUCIONES","INMEDIATA","BYMA",True,"CAUCIONES")]
     assert all(row[0] != "CAUCION" for row in plan if row[5] != "CAUCIONES")
 
+
+def test_catalog_rotation_does_not_spend_a_turn_on_weekends_or_byma_holidays():
+    def bond_prefixes(day):
+        return [row[0] for row in m.ppi_query_plan(day=day, prefixes_per_family=4)
+                if row[5] == "BONOS"]
+
+    friday = bond_prefixes(date(2026, 11, 20))
+    for day in (21, 22, 23):
+        assert not bond_prefixes(date(2026, 11, day))
+    tuesday = bond_prefixes(date(2026, 11, 24))
+    expected = (m.PREFIXES.index(friday[0]) + len(friday)) % len(m.PREFIXES)
+    assert tuesday[0] == m.PREFIXES[expected]
+    assert len(tuesday) == len(friday) == 4
+
+
 def test_complementary_discovery_includes_family_reference_and_fci(tmp_path: Path):
     (tmp_path/"iol_shadow_latest.json").write_text(json.dumps({"symbols":[]}),encoding="utf-8")
     (tmp_path/"rc6_public_sources_latest.json").write_text(json.dumps({"sources":[]}),encoding="utf-8")

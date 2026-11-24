@@ -6,11 +6,11 @@ fill metadata. Discovery does not itself authorize PAPER execution.
 """
 from __future__ import annotations
 import json, os
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from datetime import datetime
 from typing import Any
 
+from ak_byma_calendar import ANIOS_AUDITADOS, es_dia_habil_operativo
 from bs_instrument_contracts import family_name
 
 PREFIXES=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -61,15 +61,22 @@ def canonical_settlement(value: Any, family: str="") -> str:
     return DEFAULT_SETTLEMENT.get(canonical_family(family),"")
 
 def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
-    """Small rotating daily plan; full alphabet coverage accumulates automatically.
+    """Rotate on audited trading sessions, matching the catalog scheduler.
 
     Prefixes are generated code, never a ticker allowlist. A record returned by
     PPI is authoritative evidence of existence; the query prefix is not.
     """
     day=day or date.today()
+    if not es_dia_habil_operativo(day):
+        return []
     width=prefixes_per_family or int(os.getenv("PPI_DISCOVERY_PREFIXES_PER_FAMILY","4"))
     width=max(1,min(width,len(PREFIXES)))
-    start=(day.toordinal()*width)%len(PREFIXES)
+    calendar_start = date(min(ANIOS_AUDITADOS), 1, 1)
+    session_index = sum(
+        es_dia_habil_operativo(calendar_start + timedelta(days=offset))
+        for offset in range((day - calendar_start).days)
+    )
+    start = (session_index * width) % len(PREFIXES)
     out=[]
     families=tuple(PPI_QUERY_TYPES)
     for offset,family in enumerate(families):

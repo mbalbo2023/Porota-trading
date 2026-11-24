@@ -35,6 +35,7 @@ from rc6_ppi_shared_feed import (
 from rc6_ppi_shared_producer import PPISharedSDKProducer
 from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 from bd_ppi_readonly_guard import MARKET_CONFIGURATION_FIELDS
+from rc6_ppi_global_budget import BudgetBackpressure, PAPER_DIRECT_WIRE_BACKPRESSURE
 
 
 SCHEMA = "rc6.ppi.single-market-session.offhost.v1"
@@ -652,7 +653,7 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED")
             if not self._permits_capacity("REST_NATIVE_ACQUIRE", five_key):
                 raise SessionOwnerBlocked("PPI_PAPER_CAPACITY_OR_ENTITLEMENT_UNVERIFIED")
-            if time.monotonic() < self._native_hold_until:
+            if time.monotonic() < max(self._native_hold_until, self._rate_limit_until):
                 raise SessionOwnerBlocked("PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE")
             wire_calls = getattr(self._reader, "metrics", {}).get("http_allowed")
             try:
@@ -767,7 +768,7 @@ class PPISharedSessionOwner:
                 identity = candidates[0]
             if not self._permits_capacity("REST_AUXILIARY_ACQUIRE", identity):
                 raise SessionOwnerBlocked("PPI_AUX_PAPER_CAPACITY_UNVERIFIED")
-            if time.monotonic() < self._aux_hold_until:
+            if time.monotonic() < max(self._aux_hold_until, self._rate_limit_until):
                 raise SessionOwnerBlocked("PPI_AUX_PROVIDER_BACKOFF_ACTIVE")
             wire_calls = getattr(self._reader, "metrics", {}).get("http_allowed")
             prior_guard_code = getattr(self._reader, "last_read_error_code", None)
@@ -803,6 +804,10 @@ class PPISharedSessionOwner:
                     self._aux_retry_after = retry_after if status == 429 else None
                     self._aux_hold_until = self._provider_hold(status, retry_after)
                     raise SessionOwnerBlocked(f"PPI_AUX_HTTP_{status}") from None
+                if isinstance(exc, BudgetBackpressure):
+                    reason = str(exc)
+                    if reason in PAPER_DIRECT_WIRE_BACKPRESSURE:
+                        raise SessionOwnerBlocked(reason) from None
                 # SDK exceptions can embed provider text/credentials.
                 raise SessionOwnerBlocked("PPI_AUX_PROVIDER_FAILURE_UNVERIFIED") from None
             try:

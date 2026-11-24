@@ -31,12 +31,17 @@ import bi_operational_services as operations
 import bu_instrument_catalog as financial_catalog
 from _version import VERSION
 from am_us_equity_calendar_rc6 import cedear_opening_gate
-from rc6_multisource_discovery import ppi_query_plan, complementary_discovery, canonical_family
+from rc6_multisource_discovery import (
+    ppi_query_plan, complementary_discovery, canonical_family, canonical_market,
+)
+from rc6_ppi_global_budget import (
+    PAPER_DIRECT_WIRE_BACKPRESSURE,
+    assert_native_ppi_response_identity, native_ppi_response_settlement,
+)
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
 from rc6_ppi_scanner_provenance import ScannerPrimaryRecorder, FILENAME as PPI_SCANNER_RECEIPT_FILENAME
-from rc6_ppi_global_budget import assert_native_ppi_response_identity, native_ppi_response_settlement
 from co_market_sessions_hf6 import byma_eod_publication_floor
 from scripts.rc6_history_cutoff_repair_once import CUTOFF as HISTORY_CUTOFF
 
@@ -86,6 +91,13 @@ SIGNAL_MIN_SAMPLES = max(3, int(os.getenv("PAPER_SIGNAL_MIN_SAMPLES", "6")))
 SIGNAL_WINDOW_MINUTES = max(15, int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90")))
 HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
+CATALOG_DEFERRED_STATUS = "DEFERRED_PROVIDER"
+CATALOG_PROVIDER_BACKPRESSURE = PAPER_DIRECT_WIRE_BACKPRESSURE | {
+    "PPI_AUX_HTTP_401",
+    "PPI_AUX_HTTP_429",
+    "PPI_AUX_PROVIDER_BACKOFF_ACTIVE",
+    "PPI_GATEWAY_SESSION_RECOVERY_PENDING",
+}
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "10"))
 MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "30"))
 MARKET_CLOSE_HOUR = int(os.getenv("MARKET_CLOSE_HOUR", "17"))
@@ -673,16 +685,25 @@ def _download_catalog_generation(reader, store):
     run_id = uuid.uuid4().hex
     found, query_results = {}, []
     configuration = None
-    types_by_family = {}
+    types_by_family, markets_by_key = {}, {}
+    provider_queries = set()
+    deferred_reason = ""
     if hasattr(reader, "market_configuration"):
         try:
             configuration = financial_catalog.validate_configuration(reader.market_configuration())
         except Exception as exc:
-            store.event("CATALOG_CONFIGURATION_UNAVAILABLE", _scanner_ppi_error(exc))
+            reason = _scanner_ppi_error(exc)
+            store.event("CATALOG_CONFIGURATION_UNAVAILABLE", reason)
+            if reason in CATALOG_PROVIDER_BACKPRESSURE:
+                deferred_reason = reason
         else:
             for literal in configuration["instrument_types"]:
                 types_by_family.setdefault(canonical_family(literal), []).append(literal)
+            for literal in configuration["markets"]:
+                markets_by_key.setdefault(canonical_market(literal), []).append(literal)
     for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in _candidate_universe():
+        if deferred_reason:
+            break
         status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
         count = 0
         name_query = ticker_query
@@ -690,12 +711,19 @@ def _download_catalog_generation(reader, store):
             declared_types = types_by_family.get(instrument_type, [])
             if provider_type not in configuration["instrument_types"] and len(declared_types) == 1:
                 provider_type = declared_types[0]
+            declared_markets = markets_by_key.get(canonical_market(market_query), [])
+            if market_query not in configuration["markets"] and len(declared_markets) == 1:
+                market_query = declared_markets[0]
             missing = ('TYPE' if provider_type not in configuration['instrument_types'] else
                        'MARKET' if market_query not in configuration['markets'] else None)
             if missing:
                 query_results.append((run_id, ticker_query, name_query, instrument_type,
                     market_query, missing + '_NOT_ENUMERATED', 0, 'No se consultó: ausente de la configuración actual.'))
                 continue
+        query_key = (ticker_query, provider_type, market_query)
+        if query_key in provider_queries:
+            continue
+        provider_queries.add(query_key)
         try:
             payload = reader.search_instruments(
                 ticker_query, provider_type, name=name_query, market=market_query)
@@ -722,11 +750,19 @@ def _download_catalog_generation(reader, store):
                 status, detail = "INVALID_METADATA", "Respuestas sin ticker/clase verificables."
         except Exception as exc:
             failures += 1
-            status = "ERROR"
-            detail = f"{type(exc).__name__}: {str(exc)[:260]}"
+            detail = _scanner_ppi_error(exc)
+            if detail in CATALOG_PROVIDER_BACKPRESSURE:
+                deferred_reason = detail
+            status = CATALOG_DEFERRED_STATUS if deferred_reason else "ERROR"
         query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
-        if CATALOG_QUERY_SLEEP_SECONDS:
+        if CATALOG_QUERY_SLEEP_SECONDS and not deferred_reason:
             time.sleep(CATALOG_QUERY_SLEEP_SECONDS)
+    if deferred_reason:
+        store.event("CATALOG_DISCOVERY_DEFERRED", deferred_reason)
+        if not found:
+            _sync_state(store, "PPI_PRODUCTION_CATALOG", CATALOG_DEFERRED_STATUS, 0, deferred_reason)
+            _health(store, "PPI_PRODUCTION_CATALOG", "AMARILLO", deferred_reason, "PPI Producción")
+            return 0
     # PPI keeps identity authority.  Fresh complementary evidence may complete
     # a missing financial contract on that exact identity; otherwise it can only
     # widen the observed SHADOW universe.
@@ -811,10 +847,12 @@ def _download_catalog_generation(reader, store):
     detail = (f"{available} búsquedas con coincidencias; {total} identidades únicas; "
               f"{failures} búsquedas fallidas. Ticker y Name siempre no vacíos. "
               f"Configuración actual: {'verificada' if configuration is not None else 'no disponible'}.")
-    _sync_state(store, "PPI_PRODUCTION_CATALOG", state, total, detail,
-                success=bool(available))
+    if deferred_reason:
+        detail += f" Lote aplazado: {deferred_reason}."
+    _sync_state(store, "PPI_PRODUCTION_CATALOG", CATALOG_DEFERRED_STATUS if deferred_reason else state,
+                total, detail, success=bool(available) and not deferred_reason)
     _health(store, "PPI_PRODUCTION_CATALOG", state, detail, "PPI Producción",
-            success=bool(available))
+            success=bool(available) and not deferred_reason)
     rofex_state = "AMARILLO" if rofex_available else "GRIS"
     rofex_detail = (f"{rofex_available} contrato(s) visible(s); contexto únicamente. "
                     "No se simulan futuros sin multiplicador y margen atribuible."
@@ -2740,13 +2778,14 @@ def _source_sync_due(store, source, now=None):
         now = now.replace(tzinfo=TZ)
     today = now.astimezone(TZ).date()
     with store.connect() as connection:
-        row = connection.execute(
-            "SELECT last_attempt_at FROM source_sync WHERE source=?", (source,)
-        ).fetchone()
-    if not row or not row[0]:
+        cursor = connection.execute("SELECT * FROM source_sync WHERE source=?", (source,))
+        row = cursor.fetchone()
+        receipt = dict(zip((column[0] for column in cursor.description), row)) if row else {}
+    last_attempt = receipt.get("last_attempt_at")
+    if not last_attempt:
         return True
     try:
-        raw = str(row[0]).strip()
+        raw = str(last_attempt).strip()
         if len(raw) == 10:
             # Older local-day receipts predate the UTC timestamp format.
             attempted_date = date.fromisoformat(raw)
@@ -2756,7 +2795,20 @@ def _source_sync_due(store, source, now=None):
             # possibly different OS timezone.
             if attempt.tzinfo is None:
                 attempt = attempt.replace(tzinfo=TZ)
-            attempted_date = attempt.astimezone(TZ).date()
+            attempted_local = attempt.astimezone(TZ)
+            attempted_date = attempted_local.date()
+            status = receipt.get("status")
+            if status and source == "PPI_PRODUCTION_CATALOG" and attempted_date == today:
+                if status == CATALOG_DEFERRED_STATUS:
+                    # Any longer provider hold still applies at the gateway.
+                    return (now - attempt).total_seconds() >= LOGIN_COOLDOWN_SECONDS
+                if status == "ROJO":
+                    # Unclassified failures, including older releases, can be
+                    # revisited once after the same session closes.
+                    close = now.astimezone(TZ).replace(
+                        hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MINUTE,
+                        second=0, microsecond=0)
+                    return attempted_local < close <= now
         # A future receipt or clock skew does not authorize a provider storm.
         return attempted_date < today
     except (ValueError, TypeError):

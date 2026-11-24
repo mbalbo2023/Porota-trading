@@ -236,15 +236,21 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
         expected_schema = ("RC6_PAPER_PREOPEN_GATE_V2" if
                            now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
                            else "RC6_PAPER_PREOPEN_GATE_V1")
-        good = (receipt.get("schema") == expected_schema
-                and receipt.get("status") == "GO_PAPER_SCALPING"
-                and receipt.get("phase") == "T_MINUS_10"
-                and receipt.get("candidate_sha") == candidate_sha
-                and receipt.get("trade_day_ar") == now.date().isoformat()
-                and issued.date() == now.date()
-                and 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
-                and 0 <= (now - issued).total_seconds() <= 7 * 3600)
-        return (True, "") if good else (False, "NO_GO_PAPER_SCALPING")
+        if (receipt.get("schema") != expected_schema
+                or receipt.get("status") != "GO_PAPER_SCALPING"
+                or receipt.get("phase") != "T_MINUS_10"):
+            return False, "NO_GO_PAPER_SCALPING"
+        if receipt.get("trade_day_ar") != now.date().isoformat() or issued.date() != now.date():
+            return False, "PAPER_PREOPEN_TRADE_DAY_MISMATCH"
+        if (not 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
+                or not 0 <= (now - issued).total_seconds() <= 7 * 3600):
+            return False, "PAPER_PREOPEN_WINDOW_INVALID"
+        receipt_sha = receipt.get("candidate_sha")
+        if not isinstance(receipt_sha, str) or not SHA.fullmatch(receipt_sha):
+            return False, "PAPER_PREOPEN_RECEIPT_INVALID"
+        if receipt_sha != candidate_sha:
+            return False, "PAPER_PREOPEN_RELEASE_MISMATCH"
+        return True, ""
     except FileNotFoundError:
         return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):

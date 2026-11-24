@@ -302,10 +302,18 @@ def test_minimum_and_increment_are_distinct():
 
 def test_rotation_covers_every_prefix_without_33_day_gap():
     for width in range(1,37):
-        coverage=set()
-        for i in range((36+width-1)//width):
-            coverage.update(q[0] for q in ppi_query_plan(day=date(2026,9,28)+timedelta(days=i),prefixes_per_family=width) if q[5]=="BONOS")
-        assert len(coverage)==36
+        coverage = set()
+        sessions = 0
+        for offset in range(70):
+            plan = ppi_query_plan(day=date(2026, 9, 28) + timedelta(days=offset),
+                                  prefixes_per_family=width)
+            if plan:
+                coverage.update(row[0] for row in plan if row[5] == "BONOS")
+                sessions += 1
+            if sessions == (36 + width - 1) // width:
+                break
+        assert sessions == (36 + width - 1) // width
+        assert len(coverage) == 36
 
 
 def test_public_parser_keeps_more_than_500_and_rejects_provider_error():
