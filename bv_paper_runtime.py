@@ -80,7 +80,7 @@ def _make_ppi_gateway_owner(store):
     def reader_factory():
         return ProductionMarketReader(
             *_secret(), audit=store.audit_http, budget=budget,
-            consumer="SCANNER", priority="DISCOVERY")
+            consumer="SCANNER", priority="DISCOVERY", owner_managed_refresh=True)
 
     def sdk_instrument(ticker, family, settlement):
         from ppi_client.models.instrument import Instrument
@@ -226,12 +226,14 @@ def _run_ppi_gateway_owned_loop(store, stop):
             while not stop.wait(5):
                 if not server_thread.is_alive():
                     raise RuntimeError("PPI_GATEWAY_SERVER_THREAD_EXITED")
-                if owner.session_recovery_due():
-                    _best_effort_runtime_event(
-                        store, "PPI_GATEWAY_AUTH_RECOVERY", "PPI_HTTP_401")
-                    break
                 status = owner.status()
                 if status["session_recovery_pending"]:
+                    refresh = owner.refresh_invalid_session()
+                    if refresh:
+                        _best_effort_runtime_event(store, "PPI_GATEWAY_AUTH_REFRESH", refresh)
+                    if owner.session_recovery_due():
+                        _best_effort_runtime_event(store, "PPI_GATEWAY_AUTH_RECOVERY", "PPI_HTTP_401")
+                        break
                     continue
                 try:
                     publication = complete_ppi_catalog_publication(store.path)

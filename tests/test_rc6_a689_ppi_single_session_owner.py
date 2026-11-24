@@ -583,6 +583,33 @@ def test_aux_sdk_response_401_preserves_active_retry_after(harness, monkeypatch)
         owner.close()
 
 
+def test_single_owner_refresh_clears_401_and_preserves_live_generation(harness, monkeypatch):
+    import rc6_ppi_shared_session_owner as owner_module
+
+    now = [1000.0]
+    monkeypatch.setattr(owner_module, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    owner = harness.make_owner()
+    try:
+        owner.open_once()
+        generation = owner.status()["session_generation"]
+        count = []
+        monkeypatch.setattr(owner._reader, "refresh_market_session_once",
+                            lambda: count.append(1) or (True, 200, None))
+        owner._provider_hold(429, 120)
+        owner._native_hold_until = owner._provider_hold(401, None)
+        owner._native_last_http_status = 401
+        assert owner.refresh_invalid_session() is None
+        now[0] += 120
+        assert owner.refresh_invalid_session() == "PPI_OWNER_REFRESH_SUCCESS"
+        assert not owner.status()["session_recovery_pending"]
+        assert owner._native_hold_until == 0
+        assert owner.status()["session_generation"] == generation
+        assert owner.refresh_invalid_session() is None
+        assert len(count) == harness.counts["logins"] == 1
+    finally:
+        owner.close()
+
+
 @pytest.mark.parametrize(("http_status", "body"), [
     (401, b""), (401, b"SYNTHETIC_PRIVATE_AUTH_BODY"),
     (403, b"Unauthorized"), (429, b"Unauthorized"),

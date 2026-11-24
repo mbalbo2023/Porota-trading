@@ -10,6 +10,7 @@ import fcntl
 import json
 import math
 import os
+import re
 import signal
 import sqlite3
 import statistics
@@ -190,6 +191,16 @@ def _scanner_gateway_reader_lost(error):
     """Only a dead/rotated owner or auth loss needs a new local AF_UNIX pin."""
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     return gateway_reader_needs_reattach(error)
+
+
+def _scanner_ppi_error(error):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected, SharedFeedUnavailable
+
+    if isinstance(error, (GatewayEvidenceRejected, SharedFeedUnavailable)):
+        reason = str(error)
+        if re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", reason):
+            return reason
+    return classify_read_error(error)
 
 
 # Calendario BYMA RC6, fuente auditada: https://www.byma.com.ar/mercado/calendario-bursatil
@@ -1275,7 +1286,7 @@ def _safe_ppi_evidence_timestamp(value):
 
 
 def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None,
-                                  pre_wire=None):
+                                  pre_wire=None, update_market_clock=False):
     """Read genuine native evidence without inventing provider-side fields.
 
     Spot/market-book families need Current+Book to claim a fresh executable
@@ -1393,6 +1404,8 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                     "native_receipts": list(witnessed)}
         quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
         store.add_quote(quote)
+        if update_market_clock:
+            store.state(last_market_data_at=quote.observed_at)
         # Digest of the *actual* guarded GET body, never its raw JSON, URL
         # or broker credentials. Useful to reconcile with Deploy V2 evidence.
         store.event("PPI_DIRECT_REST_PROBE_OBSERVED",
@@ -1407,15 +1420,12 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
             store.event("PPI_DIRECT_REST_PROBE_HOLD", str(error))
             return {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
                     "reason": str(error), "native_receipts": list(witnessed)}
-        store.event("PPI_DIRECT_REST_PROBE_HOLD", classify_read_error(error))
-        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
-                "reason": classify_read_error(error),
-                "native_receipts": list(witnessed)}
+        reason = _scanner_ppi_error(error)
     except Exception as error:
-        store.event("PPI_DIRECT_REST_PROBE_HOLD", classify_read_error(error))
-        return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
-                "reason": classify_read_error(error),
-                "native_receipts": list(witnessed)}
+        reason = _scanner_ppi_error(error)
+    store.event("PPI_DIRECT_REST_PROBE_HOLD", reason)
+    return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+            "reason": reason, "native_receipts": list(witnessed)}
 
 
 _PPI_POSTCLOSE_COMMAND_PREFIX = "PPI_DIRECT_REST_POSTCLOSE_ONCE:"
@@ -3204,7 +3214,7 @@ def run():
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             if not caucion_ledger_blocked:
-                if attached:
+                if attached and phase != "OPEN":
                     _daily_sync(reader, store)
                 operations.service_tick(store, phase)
                 if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
@@ -3254,6 +3264,7 @@ def run():
             catalog_read_error = active_plan.get("catalog_status") == "CATALOG_READ_ERROR"
             observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
                                 "CATALOG_READ_ERROR" if catalog_read_error else "")
+            fresh_observation = False
             if (not catalog_read_error and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
                     and time.monotonic() - last_direct_rest_probe >= 60):
                 # Do not let one READY equity suppress all nine other family
@@ -3266,11 +3277,13 @@ def run():
                     last_direct_rest_probe = time.monotonic()
                     direct_probe_family_cursor = next_cursor
                     probe = _ppi_direct_rest_observe_only(
-                        reader, store, family=family)
+                        reader, store, family=family, update_market_clock=True)
+                    fresh_observation = probe["status"] == "FRESH_OBSERVED"
                     _health(store, "PPI_DIRECT_REST_RECOVERY",
-                            "VERDE" if probe["status"] == "FRESH_OBSERVED" else "AMARILLO",
-                            "Native observe-only family=" + family + ";status=" + probe["status"],
-                            "PPI Producción", success=probe["status"] == "FRESH_OBSERVED")
+                            "VERDE" if fresh_observation else "AMARILLO",
+                            "Native observe-only family=" + family + ";status=" + probe["status"]
+                            + (";reason=" + probe["reason"] if "reason" in probe else ""),
+                            "PPI Producción", success=fresh_observation)
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
@@ -3354,7 +3367,7 @@ def run():
                     store.state(process_state="DEGRADED", detail="La barrera bloqueo una ruta no permitida.")
                 except Exception as exc:
                     cycle_failures += 1
-                    store.event("DATA_ERROR", f"{symbol}: {classify_read_error(exc)}")
+                    store.event("DATA_ERROR", f"{symbol}: {_scanner_ppi_error(exc)}")
                     if session_invalid(exc) or _scanner_gateway_reader_lost(exc):
                         cycle_session_invalid = True
                         store.event("PPI_GATEWAY_REATTACH_REQUIRED",
@@ -3406,28 +3419,39 @@ def run():
                    f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             try:
                 metrics = reader.metrics
+                if metrics.get("authenticated") is False:
+                    cycle_session_invalid = True
             except Exception as exc:
                 if not _scanner_gateway_reader_lost(exc):
                     raise
                 cycle_session_invalid = True
                 metrics = None  # keep last physical owner HTTP counts, never false zeros
                 store.event("PPI_GATEWAY_METRICS_UNVERIFIED", type(exc).__name__)
+            if cycle_session_invalid:
+                _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
+                        "Sesión del gateway pendiente de recuperación o de nueva conexión local.",
+                        "PPI Producción")
+            cycle_detail = (f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
+                            f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas.")
+            if observation_hold:
+                cycle_detail = f"{observation_hold}: observación sin nuevas aperturas PAPER. " + cycle_detail
+            if cycle_session_invalid:
+                cycle_detail = "Login fallo: sesión del gateway pendiente o desconectada. " + cycle_detail
             store.state(process_state="DEGRADED" if observation_hold or cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
                         ppi_auth="ERROR" if cycle_session_invalid else "OK",
                         **({"http_allowed": metrics["http_allowed"],
                             "http_blocked": metrics["http_blocked"]} if metrics else {}),
                         real_orders_sent=0,
-                        detail=((f"{observation_hold}: observación sin nuevas aperturas PAPER. "
-                                 if observation_hold else "") +
-                                f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
-                                f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas."))
+                        detail=cycle_detail)
+            market_detail = f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."
+            if fresh_observation:
+                market_detail = "Par Current/Book nativo fresco en observación."
+            if cycle_requested:
+                market_detail = f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
             _health(store, "PPI_PRODUCTION_MARKETDATA",
-                    "VERDE" if cycle_ok else "ROJO" if cycle_requested else "AMARILLO",
-                    (f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
-                     if cycle_requested else
-                     f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."),
-                    "PPI Producción", success=bool(cycle_ok))
+                    "VERDE" if cycle_ok or fresh_observation else "ROJO" if cycle_requested else "AMARILLO",
+                    market_detail, "PPI Producción", success=bool(cycle_ok or fresh_observation))
             _publish_economic_shadow_health(store)
             if cycle_session_invalid:
                 reader.close()

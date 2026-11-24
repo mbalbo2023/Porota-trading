@@ -63,6 +63,22 @@ def test_open_clock_never_downgrades_stale_market_closed_label():
         c.close()
 
 
+def test_introspection_alerts_for_source_failure_and_warns_for_quiet_fresh_market():
+    now = datetime.fromisoformat("2026-11-24T11:35:00-03:00")
+    observer = {"session_state": "MARKET_OPEN", "ppi_auth": "OK",
+                "last_market_data_at": (now - timedelta(minutes=8)).isoformat()}
+    assert introspection.open_market_findings(observer, now=now, decisions=3, rate_limited=True) == (
+        ["ppi_current_book_rate_limited"], [])
+    assert introspection.open_market_findings(observer, now=now, decisions=0) == (
+        ["ppi_current_book_stale"], [])
+    observer["ppi_auth"] = "ERROR"
+    assert introspection.open_market_findings(observer, now=now, decisions=0) == (
+        ["ppi_auth_unavailable_during_open_market"], [])
+    observer.update(ppi_auth="OK", last_market_data_at=(now - timedelta(seconds=30)).isoformat())
+    assert introspection.open_market_findings(observer, now=now, decisions=0) == (
+        [], ["no_decisions_during_open_market"])
+
+
 def test_future_or_stale_safety_heartbeat_never_downgrades_hold():
     now=datetime.fromisoformat('2026-10-20T23:00:00-03:00')
     c,observer=fixture(now)

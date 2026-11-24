@@ -234,11 +234,14 @@ class SharedPPIReaderAdapter:
     def metrics(self) -> dict:
         with self._lock:
             guard_allowed = guard_blocked = 0
+            authenticated = self._gateway_pinned
             if self._gateway_pinned:
                 status = self._client.owner_status()
                 if ((status.get("owner_pid"), status.get("session_generation"))
                         != self._owner_identity):
                     raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
+                authenticated = (status.get("state") == "OPEN"
+                                 and status.get("session_recovery_pending") is not True)
                 guard_allowed = status.get("guard_http_allowed")
                 guard_blocked = status.get("guard_http_blocked")
                 if (type(guard_allowed) is not int or guard_allowed < 0
@@ -251,7 +254,7 @@ class SharedPPIReaderAdapter:
                 "cursor": self._cursor,
                 "retained": len(self._events),
                 "paper_authority": "NO_VERIFICADO",
-                "authenticated": self._gateway_pinned,
+                "authenticated": authenticated,
                 "authentication_witness": "LOCAL_OWNER_PID_GENERATION_ONLY",
                 "budget_enabled": self._gateway_pinned,
                 "provider_requests": "UNKNOWN" if self._gateway_pinned else 0,
@@ -318,6 +321,9 @@ class SharedPPIReaderAdapter:
         except SharedFeedUnavailable as exc:
             self._last_error = str(exc)
             raise
+        if isinstance(result, dict) and result.get("session_recovery_pending") is True:
+            self._last_error = "PPI_GATEWAY_SESSION_RECOVERY_PENDING"
+            raise GatewayEvidenceRejected(self._last_error)
         if (not isinstance(result, dict) or result.get("state") != "OPEN"
                 or result.get("catalog_source_digest") != self._source_digest
                 or type(result.get("owner_pid")) is not int

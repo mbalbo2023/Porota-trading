@@ -32,6 +32,8 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 DB = os.getenv("PAPER_V17_DB_PATH", "/app/data/paper_v17/observer_v17.db")
 OUT = Path(os.getenv("INTROSPECTION_DIR", "/app/data/introspection"))
 MAX_HOLD = int(os.getenv("PAPER_MAX_HOLD_MINUTES", "360"))
+# Same operational freshness window used by the Deploy V2 observer postflight.
+MARKET_DATA_FRESHNESS_SECONDS = 300
 HOTFIX_TAG = VERSION.rsplit("-", 1)[-1].upper()
 FILE_TAG = HOTFIX_TAG.lower()
 
@@ -73,6 +75,18 @@ def should_warn_no_usd_operations(session_state: str | None, currencies: list[di
         row.get("currency") in {"USD", "USD_MEP", "USD_CCL"}
         for row in (currencies or [])
     )
+
+
+def open_market_findings(observer, *, now, decisions, rate_limited=False):
+    if observer.get("session_state") != "MARKET_OPEN":
+        return [], []
+    if observer.get("ppi_auth") != "OK":
+        return ["ppi_auth_unavailable_during_open_market"], []
+    age = strict_age_seconds(now, observer.get("last_market_data_at"))
+    if age is None or age > MARKET_DATA_FRESHNESS_SECONDS:
+        reason = "ppi_current_book_rate_limited" if rate_limited else "ppi_current_book_stale"
+        return [reason], []
+    return [], ["no_decisions_during_open_market"] if decisions == 0 else []
 
 
 def connect(readonly=True):
@@ -250,6 +264,15 @@ def collect():
         result["observer"] = {k: observer.get(k) for k in (
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
             "last_market_data_at", "real_orders_sent", "http_allowed", "http_blocked")}
+        rate_limited = False
+        if observer.get("session_state") == "MARKET_OPEN" and table(c, "api_health"):
+            probe = c.execute("""SELECT checked_at,detail FROM api_health
+                WHERE component='PPI_DIRECT_REST_RECOVERY'""").fetchone()
+            if probe:
+                age = strict_age_seconds(now, probe[0])
+                rate_limited = (age is not None and age <= MARKET_DATA_FRESHNESS_SECONDS
+                    and str(probe[1]).rsplit(";reason=", 1)[-1] in {
+                        "PPI_NATIVE_HTTP_429", "PPI_DIRECT_PROVIDER_429_BREAKER"})
         manifest_path=Path(DB).parents[1]/"operation_mode.json"
         try: result["manifest"]=json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError,ValueError,TypeError): result["manifest"]={}
@@ -463,8 +486,10 @@ def collect():
     elif counter != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
     market_open = str(result["observer"].get("session_state") or "").upper() == "MARKET_OPEN"
-    if market_open and result["trading"]["decisions_1h"] == 0:
-        result["anomalies"].append("no_decisions_during_open_market")
+    anomalies, warnings = open_market_findings(result["observer"], now=now,
+        decisions=result["trading"]["decisions_1h"], rate_limited=rate_limited)
+    result["anomalies"].extend(anomalies)
+    result["warnings"].extend(warnings)
     if result["ppi_errors_1h"]:
         result["warnings"].append("ppi_errors_last_hour")
     if result["market_regime_observation"]["state"] == "BEARISH_BREADTH":
@@ -514,7 +539,13 @@ def verdict(result):
 def enqueue_critical(result, stamp):
     if result["verdict"] != "CRITICAL":
         return False
-    body = "🔴 POROTA — INTROSPECCIÓN CRÍTICA\n" + "\n".join(result["anomalies"][:8])
+    labels = {
+        "ppi_auth_unavailable_during_open_market": "PPI perdió la sesión durante la rueda.",
+        "ppi_current_book_rate_limited": "PPI devolvió HTTP 429 y falta un par Current/Book fresco.",
+        "ppi_current_book_stale": "Falta un par Current/Book fresco de PPI durante la rueda.",
+    }
+    body = "🔴 POROTA — INTROSPECCIÓN CRÍTICA\n" + "\n".join(
+        labels.get(code, code) for code in result["anomalies"][:8])
     with connect(readonly=False) as c:
         if not table(c, "paper_notification_outbox"):
             return False

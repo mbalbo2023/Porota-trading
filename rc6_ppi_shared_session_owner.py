@@ -21,7 +21,6 @@ import sqlite3
 import threading
 import time
 from datetime import date, datetime, timezone
-from email.utils import parsedate_to_datetime
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable
@@ -383,6 +382,9 @@ class PPISharedSessionOwner:
         self._native_retry_after = None
         self._native_last_http_status = None
         self._session_recovery_at = None
+        self._rate_limit_until = 0.0
+        self._next_owner_refresh = 0.0
+        self._refresh_attempted = False
         self._stream_invoked = False
         self._state = "NOT_OPEN"
         self._lock = threading.RLock()
@@ -565,6 +567,7 @@ class PPISharedSessionOwner:
     def _observed_http_error(error):
         """Extract only status+bounded Retry-After; never return SDK body."""
         from requests import Response
+        from bd_ppi_readonly_guard import ppi_retry_after_seconds
 
         current = error
         for _ in range(6):
@@ -575,21 +578,7 @@ class PPISharedSessionOwner:
                 response = current.args[0]
             status = getattr(response, "status_code", None)
             if type(status) is int and 100 <= status <= 599:
-                raw = getattr(response, "headers", {}).get("Retry-After")
-                seconds = None
-                if isinstance(raw, str) and 1 <= len(raw) <= 64:
-                    if raw.isascii() and raw.isdigit():
-                        seconds = int(raw)
-                    else:
-                        try:
-                            until = parsedate_to_datetime(raw)
-                            if until.tzinfo is not None:
-                                seconds = max(0, int((until - datetime.now(timezone.utc)).total_seconds()))
-                        except (TypeError, ValueError, OverflowError):
-                            pass
-                if seconds is not None and not 0 <= seconds <= 86400:
-                    seconds = None  # unsafe/unbounded upstream header
-                return status, seconds
+                return status, ppi_retry_after_seconds(getattr(response, "headers", {}))
             current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
             if current is None:
                 break
@@ -606,18 +595,52 @@ class PPISharedSessionOwner:
         # admitted once authentication is invalidated under the owner lock.
         return (recover_at is not None and not self._stream_invoked
                 and time.monotonic() >= max(recover_at, self._native_hold_until,
-                                            self._aux_hold_until))
+                                            self._aux_hold_until, self._rate_limit_until))
+
+    def refresh_invalid_session(self):
+        """Try one refresh on the current reader after a guarded 401."""
+        with self._lock:
+            now = time.monotonic()
+            if (self._session_recovery_at is None or self._stream_invoked or self._refresh_attempted
+                    or now < max(self._next_owner_refresh, self._rate_limit_until)):
+                return None
+            self._refresh_attempted = True
+            refresh = getattr(self._reader, "refresh_market_session_once", None)
+            if not callable(refresh) or not self._permits_capacity("OWNER_AUTHENTICATE"):
+                return "PPI_OWNER_REFRESH_UNAVAILABLE"
+            recovered, status, retry_after = refresh()
+            if recovered:
+                self._session_recovery_at = None
+                if self._native_last_http_status == 401:
+                    self._native_hold_until = 0.0
+                if self._aux_last_http_status == 401:
+                    self._aux_hold_until = 0.0
+                self._next_owner_refresh = now + AUTH_COOLDOWN_SECONDS
+                self._refresh_attempted = False
+                return "PPI_OWNER_REFRESH_SUCCESS"
+            if status == 429:
+                self._provider_hold(status, retry_after)
+            return f"PPI_OWNER_REFRESH_HTTP_{status}" if status in {401, 403, 429} else "PPI_OWNER_REFRESH_UNVERIFIED"
 
     def _provider_hold(self, status, retry_after):
         deadline = time.monotonic() + max(
             AUTH_COOLDOWN_SECONDS if status in {401, 403} else 60, retry_after or 0)
         if status == 401:
             self._session_recovery_at = deadline
+        if status == 429:
+            self._rate_limit_until = max(self._rate_limit_until, deadline)
         return deadline
 
     def _guarded_wire_advanced(self, before):
         after = getattr(self._reader, "metrics", {}).get("http_allowed")
         return type(before) is int and type(after) is int and after > before
+
+    def _guarded_provider_error(self, wire_calls):
+        if self._guarded_wire_advanced(wire_calls):
+            outcome = getattr(self._reader, "last_provider_response", None)
+            if isinstance(outcome, tuple) and len(outcome) == 2 and outcome[0] in {401, 403, 429}:
+                return outcome
+        return None
 
     def capture_native(self, method: str, five_key: Any, *, priority: str):
         """Only owner path to guarded PPI REST; no consumer-facing GET."""
@@ -635,9 +658,12 @@ class PPISharedSessionOwner:
                 return self._rest.capture(method, five_key, priority=priority)
             except Exception as exc:
                 status, retry_after = self._observed_http_error(exc)
+                guarded = self._guarded_provider_error(wire_calls)
+                if guarded is not None:
+                    status, retry_after = guarded
                 # SDK retry exceptions can hide the first HTTP response. The
                 # guard records that status on this GET worker's thread.
-                if self._guarded_wire_advanced(wire_calls):
+                elif self._guarded_wire_advanced(wire_calls):
                     guarded_status = _GUARDED_HTTP_ERRORS.get(
                         getattr(self._reader, "last_read_error_code", None))
                     if guarded_status is not None and guarded_status != status:
@@ -756,7 +782,10 @@ class PPISharedSessionOwner:
                         args["settlement"], first, last)
             except Exception as exc:
                 status, retry_after = self._observed_http_error(exc)
-                if status is None and self._guarded_wire_advanced(wire_calls):
+                guarded = self._guarded_provider_error(wire_calls)
+                if guarded is not None:
+                    status, retry_after = guarded
+                elif status is None and self._guarded_wire_advanced(wire_calls):
                     guard_code = getattr(self._reader, "last_read_error_code", None)
                     # The auxiliary SDK methods do not clear this diagnostic.
                     # An unchanged HTTP code may belong to another RPC.
