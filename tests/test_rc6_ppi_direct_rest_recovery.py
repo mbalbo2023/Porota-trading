@@ -4,9 +4,13 @@ No real PPI credentials/socket. This tests the original REST reader's guard,
 not the WebSocket gateway. There is no assumed numeric provider quota.
 """
 
+from datetime import datetime, timezone
+import json
+from types import SimpleNamespace
+from urllib.parse import urlsplit
+
 import pytest
 import requests
-from types import SimpleNamespace
 
 from bd_ppi_readonly_guard import (
     ProductionMarketReader, ReadOnlyPolicyViolation, ReadOnlyTransportGuard,
@@ -74,6 +78,83 @@ def test_actual_429_closes_wire_across_separate_budget_owners(paper, fake_wire):
     with pytest.raises(BudgetBackpressure, match="PPI_DIRECT_PROVIDER_429"):
         guarded_get(other)
     assert len(calls) == 1
+
+
+def test_wire_retry_after_remains_enforced_after_restarting_budget(paper, fake_wire, monkeypatch):
+    calls, status = fake_wire
+    status[0] = 429
+    send = requests.adapters.HTTPAdapter.send
+
+    def provider(adapter, request, **kwargs):
+        response = send(adapter, request, **kwargs)
+        response.headers["Retry-After"] = "125"
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", provider)
+    now = [1000.0]
+    assert guarded_get(PaperDirectReadBudget(paper.path, clock=lambda: now[0])) == 429
+    status[0] = 200
+    restarted = PaperDirectReadBudget(paper.path, clock=lambda: now[0])
+    now[0] = 1124.0
+    with pytest.raises(BudgetBackpressure, match="PPI_DIRECT_PROVIDER_429"):
+        guarded_get(restarted)
+    assert len(calls) == 1
+    now[0] = 1125.0
+    assert guarded_get(restarted) == 200
+    assert len(calls) == 2
+
+
+def test_sdk_401_renews_same_session_then_reads_native_pair(paper, monkeypatch):
+    """Use actual PPI 1.3.0 SDK against an entirely synthetic HTTP adapter."""
+    pytest.importorskip("ppi_client")
+    at = datetime.now(timezone.utc).isoformat()
+    key = ("GGAL", "ACCIONES", "BYMA", "ARS", "INMEDIATA")
+    calls = []
+
+    def provider(_adapter, request, **_kwargs):
+        path = urlsplit(request.url).path.rsplit("/", 1)[-1].lower()
+        calls.append((request.method, path))
+        response = requests.Response()
+        response.request, response.url = request, request.url
+        response.status_code = 200
+        if path == "loginapi":
+            data = {"accessToken": "synthetic-one", "refreshToken": "synthetic-refresh-one"}
+        elif path == "refreshtoken":
+            assert request.headers.get("Authorization") == "Bearer synthetic-one"
+            data = {"accessToken": "synthetic-two", "refreshToken": "synthetic-refresh-two"}
+        elif request.headers.get("Authorization") != "Bearer synthetic-two":
+            response.status_code = 401
+            response._content = b""
+            return response
+        elif path == "current":
+            data = {"date": at, "price": 101, "volume": 50}
+        else:
+            assert path == "book"
+            data = {"date": at, "bids": [{"position": 1, "price": 100, "quantity": 2}],
+                    "offers": [{"position": 1, "price": 102, "quantity": 3}]}
+        response._content = json.dumps(data).encode()
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", provider)
+    now = [1000.0]
+    budget = PaperDirectReadBudget(paper.path, clock=lambda: now[0])
+    reader = ProductionMarketReader("test-key", "test-secret", budget=budget,
+                                    consumer="SCANNER", owner_managed_refresh=True)
+    try:
+        reader.login_once()
+        with pytest.raises(Exception, match="Unauthorized"):
+            reader.capture_guarded_native("current", key, priority="DISCOVERY")
+        assert calls == [("POST", "loginapi"), ("GET", "current")]
+        assert reader.last_provider_response == (401, None)
+        assert reader.refresh_market_session_once() == (True, 200, None)
+        now[0] += 11  # the existing non-429 wire hold after the failed GET
+        for method in ("current", "book"):
+            witness = reader.capture_guarded_native(method, key, priority="DISCOVERY")
+            assert witness["guard_wire_receipt"]["http_status_code"] == 200
+        assert calls[2:] == [("POST", "refreshtoken"), ("GET", "current"), ("GET", "book")]
+        assert reader.metrics["login_calls"] == 1
+    finally:
+        reader.close()
 
 
 def test_exclusive_wire_lock_blocks_second_owner_before_network(paper, fake_wire):

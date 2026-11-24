@@ -16,7 +16,9 @@ import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from json import JSONDecodeError
+from math import ceil
 from typing import Callable, Optional
 from urllib.parse import parse_qsl, urlsplit
 
@@ -24,10 +26,11 @@ import requests
 
 
 PRODUCTION_HOST = "clientapi.portfoliopersonal.com"
+_REFRESH_PATH = "/api/1.0/account/refreshtoken"
 
 _POST_PATHS = {
     "/api/1.0/account/loginapi",
-    "/api/1.0/account/refreshtoken",
+    _REFRESH_PATH,
 }
 
 _GET_PATHS = {
@@ -71,6 +74,24 @@ def _ppi_get_budget_endpoint(checked_method: str, checked_path: str):
     if checked_path in _BUDGETED_MARKET_GET_PATHS:
         return checked_path.rsplit("/", 1)[-1]
     return checked_path[len("/api/1.0/"):]
+
+
+def ppi_retry_after_seconds(headers):
+    """Keep a bounded provider delay even when the SDK discards the response."""
+    raw = headers.get("Retry-After")
+    if not isinstance(raw, str) or not 1 <= len(raw) <= 64:
+        return None
+    if raw.isascii() and raw.isdigit():
+        seconds = int(raw)
+    else:
+        try:
+            until = parsedate_to_datetime(raw)
+            if until.tzinfo is None:
+                return None
+            seconds = max(0, ceil((until - datetime.now(timezone.utc)).total_seconds()))
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return seconds if 0 <= seconds <= 86400 else None
 
 
 # Optional per-read native wire witness. Keep this independent of budget
@@ -302,6 +323,7 @@ class ReadOnlyTransportGuard:
     budget: object = None
     consumer: str = "UNSCOPED"
     priority: str = "DISCOVERY"
+    owner_managed_refresh: bool = False
     _scope: threading.local = field(default_factory=threading.local)
 
     @contextmanager
@@ -356,6 +378,26 @@ class ReadOnlyTransportGuard:
                         if identity is not None and len(identity) == 5 else None)
             if _native_wire_request_identity(url) != expected:
                 raise ReadOnlyPolicyViolation("PPI_NATIVE_WIRE_RECEIPT_REQUEST_IDENTITY_MISMATCH")
+
+    @contextmanager
+    def owner_refresh_scope(self):
+        if (not self.owner_managed_refresh or getattr(self._scope, "owner_refresh", None) is not None
+                or getattr(self._scope, "native_wire_receipts", None) is not None):
+            raise ReadOnlyPolicyViolation("PPI_OWNER_REFRESH_SCOPE_INVALID")
+        attempt = {"sent": False, "status": None, "retry_after_seconds": None}
+        self._scope.owner_refresh = attempt
+        try:
+            yield attempt
+        finally:
+            self._scope.owner_refresh = None
+
+    def _require_refresh_scope(self, method, path):
+        refresh = getattr(self._scope, "owner_refresh", None)
+        if refresh is not None:
+            if method != "POST" or path != _REFRESH_PATH or refresh["sent"]:
+                raise ReadOnlyPolicyViolation("PPI_OWNER_REFRESH_SINGLE_POST_REQUIRED")
+        elif self.owner_managed_refresh and path == _REFRESH_PATH:
+            raise ReadOnlyPolicyViolation("PPI_OWNER_REFRESH_OUTSIDE_SCOPE")
 
     def _record(self, method: str, path: str, result: str) -> None:
         if self.audit:
@@ -448,6 +490,7 @@ class ReadOnlyTransportGuard:
             try:
                 checked_method, checked_path = guard.check(method, url)
                 guard._require_native_scope(checked_method, url)
+                guard._require_refresh_scope(checked_method, checked_path)
                 if kwargs.get("stream"):
                     raise ReadOnlyPolicyViolation("PPI_STREAMING_READ_NOT_OWNED")
             except ReadOnlyPolicyViolation:
@@ -475,6 +518,7 @@ class ReadOnlyTransportGuard:
                 # a slot; this evidence scope owns only its named market GET.
                 guard._require_native_scope(wire_request.method, wire_request.url,
                                              prepared=True)
+                guard._require_refresh_scope(wire_request.method, _normal_path(wire_request.url))
                 # Count login at the actual adapter boundary: Session.send()
                 # and a direct prepared send cannot bypass the same cooldown.
                 checked_method, checked_path = guard.check(
@@ -491,6 +535,7 @@ class ReadOnlyTransportGuard:
             budget = guard.budget if budget_endpoint is not None else None
             lease = None
             observed = getattr(guard._scope, "native_wire_receipts", None)
+            refresh = getattr(guard._scope, "owner_refresh", None)
             attempt_id = secrets.token_hex(16) if observed is not None else None
             if (observed is not None and endpoint in {"current", "book", "intraday"}
                     and guard._scope.native_wire_send_count >= 1):
@@ -531,6 +576,7 @@ class ReadOnlyTransportGuard:
             # native non-streaming read includes body completion and errors.
             with ownership:
                 response = None
+                retry_after = None
                 try:
                     if budget is not None:
                         budget.start(lease)
@@ -552,9 +598,16 @@ class ReadOnlyTransportGuard:
                         # Consume the one-wire allowance immediately BEFORE
                         # HTTPAdapter.send, even if it raises or returns 401.
                         guard._scope.native_wire_send_count += 1
+                    if refresh is not None:
+                        refresh["sent"] = True
+                    guard._scope.last_provider_response = None
                     response = original_send(adapter, wire_request, **kwargs)
                     if response.status_code >= 400:
+                        retry_after = ppi_retry_after_seconds(response.headers)
+                        guard._scope.last_provider_response = (response.status_code, retry_after)
                         guard._read_error(f"PPI_HTTP_{response.status_code}")
+                    if refresh is not None:
+                        refresh.update(status=response.status_code, retry_after_seconds=retry_after)
                     body = response.content
                     # The receive clock is captured before budget.finish()
                     # (which can take time), never fabricated from SDK cache.
@@ -575,10 +628,10 @@ class ReadOnlyTransportGuard:
                             response.close()
                     finally:
                         if budget is not None:
-                            budget.finish(lease, status_code=status, error_code=code)
+                            _finish_ppi_budget(budget, lease, status, retry_after, error_code=code)
                     raise
                 if budget is not None:
-                    budget.finish(lease, status_code=response.status_code)
+                    _finish_ppi_budget(budget, lease, response.status_code, retry_after)
                 # The single native wire attempt is observed *after* the
                 # existing guarded send/body/lease-finish sequence. A 429,
                 # retry, missing body or SDK cache cannot mint a valid witness.
@@ -639,6 +692,17 @@ class ReadOnlyTransportGuard:
             ReadOnlyTransportGuard._active_guard = None
 
 
+def _finish_ppi_budget(budget, lease, status, retry_after, *, error_code=None):
+    from rc6_ppi_global_budget import PaperDirectReadBudget
+
+    outcome = {"status_code": status}
+    if error_code is not None:
+        outcome["error_code"] = error_code
+    if status == 429 and retry_after is not None and isinstance(budget, PaperDirectReadBudget):
+        outcome["retry_after_seconds"] = retry_after
+    budget.finish(lease, **outcome)
+
+
 class _ReaderSDKFacet:
     """Narrow SDK calls bound to the owner's existing HTTP guard custody."""
 
@@ -670,7 +734,7 @@ class ProductionMarketReader:
 
     def __init__(self, api_key: str, api_secret: str,
                  audit: Optional[Callable[[str, str, str], None]] = None, *,
-                 budget=None, consumer="UNSCOPED", priority="DISCOVERY"):
+                 budget=None, consumer="UNSCOPED", priority="DISCOVERY", owner_managed_refresh=False):
         if not api_key or not api_secret:
             raise ValueError("Faltan credenciales productivas.")
         self.__api_key = api_key
@@ -679,7 +743,7 @@ class ProductionMarketReader:
             from rc6_ppi_global_budget import budget_from_environment
             budget = budget_from_environment()
         self.__guard = ReadOnlyTransportGuard(audit=audit, budget=budget,
-            consumer=consumer, priority=priority).install()
+            consumer=consumer, priority=priority, owner_managed_refresh=owner_managed_refresh).install()
         self.__client = None
         self.__authenticated = False
         self.__closed = False
@@ -733,6 +797,32 @@ class ProductionMarketReader:
     def last_read_error_code(self):
         """Sanitized current-read diagnosis; no response body or global LKG."""
         return getattr(self.__guard._scope, "read_error_code", None)
+
+    @property
+    def last_provider_response(self):
+        return getattr(self.__guard._scope, "last_provider_response", None)
+
+    def refresh_market_session_once(self):
+        """Ask the pinned SDK to renew the existing session with one guarded POST."""
+        with self._sdk_scope():
+            self._market()
+            if self.__stream_invoked:
+                raise ReadOnlyPolicyViolation("PPI_OWNER_REFRESH_STREAM_ACTIVE")
+            # PPI 1.3.0 exposes renew_token on the instance shared by its facets.
+            client = getattr(self.__client, "_PPI__apiClient", None)
+            renew = getattr(client, "renew_token", None)
+            token = getattr(client, "token", None)
+            if not callable(renew) or not token or not getattr(client, "refreshToken", None):
+                return False, None, None
+            with self.__guard.owner_refresh_scope() as attempt:
+                try:
+                    renew()
+                    updated = getattr(client, "token", None)
+                    renewed = (attempt["status"] == 200 and isinstance(updated, str)
+                               and bool(updated) and updated != token and bool(client.refreshToken))
+                except Exception:
+                    renewed = False
+            return renewed, attempt["status"], attempt["retry_after_seconds"]
 
     def login_once(self) -> None:
         with self._sdk_scope():

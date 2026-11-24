@@ -2870,7 +2870,7 @@ class PaperDirectReadBudget:
         self._require_paper()
         scope["started"] = True
 
-    def finish(self, lease, *, status_code=None, error_code=None):
+    def finish(self, lease, *, status_code=None, error_code=None, retry_after_seconds=None):
         scope = self._active(lease)
         if not scope["started"] or scope["finished"]:
             raise BudgetBackpressure("PPI_DIRECT_WIRE_FINISH_UNVERIFIED")
@@ -2878,7 +2878,10 @@ class PaperDirectReadBudget:
         now = self.clock()
         if status_code == 429:
             state["consecutive_429"] = min(5, state["consecutive_429"] + 1)
-            state["hold_until"] = now + min(900, 30 * 2**state["consecutive_429"])
+            minimum = min(900, 30 * 2**state["consecutive_429"])
+            provider_delay = (retry_after_seconds if type(retry_after_seconds) is int
+                              and 0 <= retry_after_seconds <= 86400 else 0)
+            state["hold_until"] = now + max(minimum, provider_delay)
         elif status_code == 200:
             state["consecutive_429"] = 0
             state["hold_until"] = 0
