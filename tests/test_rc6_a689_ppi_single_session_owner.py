@@ -436,9 +436,9 @@ def test_single_owner_serves_bounded_scanner_catalog_history_configuration(harne
             calls.append(("history", ticker, family, settlement, first, last))
             return [{"date": "2026-11-18", "close": 100}]
 
-        def configuration():
-            calls.append(("configuration",))
-            return {"instrument_types": ["ACCIONES"]}
+        def configuration(field=None):
+            calls.append(("configuration", field))
+            return {"instrument_types": ["ACCIONES"]} if field is None else ["ACCIONES"]
 
         owner._reader.search_instruments = search
         owner._reader.history = history
@@ -455,12 +455,21 @@ def test_single_owner_serves_bounded_scanner_catalog_history_configuration(harne
             "date_to": "2026-11-19"})
         configuration_result = owner.dispatch_auxiliary_acquire(consumer="scanner",
             method="market_configuration", args={})
+        single_enum = owner.dispatch_read_only({"op": "aux_acquire",
+            "consumer": "scanner", "method": "market_configuration",
+            "args": {"field": "instrument_types"}})
+        assert single_enum["state"] == "OK"
+        assert single_enum["result"] == ["ACCIONES"]
+        assert calls[-1] == ("configuration", "instrument_types")
+        with pytest.raises(SessionOwnerBlocked, match="AUX_ARGUMENTS_INVALID"):
+            owner.dispatch_auxiliary_acquire(consumer="scanner",
+                method="market_configuration", args={"field": "account"})
         assert all(value["state"] == "OK" for value in
                    (search_result, history_result, configuration_result))
         assert history_result["result"][0]["close"] == 100
         assert search_result["result"][0]["ticker"] == FIVE[0]
         assert configuration_result["result"]["instrument_types"] == ["ACCIONES"]
-        assert len(calls) == 4
+        assert len(calls) == 5
         assert harness.counts["logins"] == harness.counts["clients"] == 1
         assert harness.counts["gets"] == 0  # these fixture methods are fakes
         with pytest.raises(SessionOwnerBlocked, match="AUX_ROLE_DENIED"):
@@ -469,7 +478,29 @@ def test_single_owner_serves_bounded_scanner_catalog_history_configuration(harne
         with pytest.raises(SessionOwnerBlocked, match="AUX_METHOD_DENIED"):
             owner.dispatch_auxiliary_acquire(consumer="scanner",
                 method="account_balance", args={})
-        assert len(calls) == 4
+        assert len(calls) == 5
+    finally:
+        owner.close()
+
+
+def test_single_configuration_field_uses_the_same_guarded_http_transport(harness):
+    owner = harness.make_owner(capacity=FakeExternalCapacity({
+        "OWNER_AUTHENTICATE", "REST_AUXILIARY_ACQUIRE"}))
+    try:
+        owner.open_once()
+        harness.wire.body = b'["ETFS"]'
+        client = owner._reader._ProductionMarketReader__client
+        client.configuration = types.SimpleNamespace(
+            get_instrument_types=lambda: requests.get(
+                "https://clientapi.portfoliopersonal.com/api/1.0/Configuration/InstrumentTypes"
+            ).json())
+        result = owner.dispatch_read_only({"op": "aux_acquire", "consumer": "scanner",
+            "method": "market_configuration", "args": {"field": "instrument_types"}})
+        assert result["state"] == "OK"
+        assert result["result"] == ["ETFS"]
+        assert harness.counts == {"clients": 1, "logins": 1, "gets": 1, "connect_attempts": 0}
+        assert ("acquire", "configuration/instrumenttypes", "SCANNER", "EXIT_CRITICAL") in (
+            harness.budget.calls)
     finally:
         owner.close()
 

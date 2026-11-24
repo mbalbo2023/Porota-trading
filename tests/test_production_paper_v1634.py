@@ -455,6 +455,41 @@ def test_catalogo_real_preserva_clase_moneda_y_no_duplica_resultados(tmp_path, m
                             WHERE ticker='DLR/AGO26' AND instrument_type='FUTUROS'""").fetchone()[0] == 1
 
 
+@pytest.mark.parametrize("instrument_types,expected_types", [
+    (["ETFS"], ["ETFS"]),
+    (["ETF", "ETFS"], ["ETF"]),
+    (["ETFS", "FONDOS COTIZ."], []),
+])
+def test_catalogo_consulta_el_literal_etf_enumerado_sin_inventar_plazo(
+        tmp_path, monkeypatch, instrument_types, expected_types):
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setattr(observer, "CATALOG_QUERY_SLEEP_SECONDS", 0)
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [
+        ("A", "ETF", "A-24HS", "BYMA", True, "ETFS")])
+    monkeypatch.setattr(observer, "complementary_discovery", lambda *_args, **_kwargs: [])
+    provider_queries = []
+
+    class Reader:
+        def market_configuration(self):
+            return {"instrument_types": instrument_types, "markets": ["BYMA"],
+                    "settlements": [], "quantity_types": [], "operation_terms": [],
+                    "operation_types": [], "operations": []}
+
+        def search_instruments(self, ticker, provider_type, *, name, market):
+            provider_queries.append(provider_type)
+            return [{"ticker": "ATF", "type": provider_type, "market": market, "currency": "ARS"}]
+
+    observer._download_catalog(Reader(), store)
+    assert provider_queries == expected_types
+    with store.connect() as c:
+        rows = c.execute("""SELECT f.instrument_type,f.settlement_source,p.can_simulate
+          FROM financial_instrument_catalog f JOIN candidate_identity_v2 p
+          USING(ticker,instrument_type,market,currency,settlement)""").fetchall()
+        assert list(map(tuple, rows)) == (
+            [("ETFS", "REQUEST_CANDIDATE", 0)] if expected_types else [])
+
+
 def test_actualizacion_fallida_preserva_catalogo_fresco_y_no_inventa_disponibilidad(tmp_path, monkeypatch, real_catalog):
     store = PaperStore(str(tmp_path / "paper.db"))
     observer._support_schema(store)

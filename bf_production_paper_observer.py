@@ -673,16 +673,23 @@ def _download_catalog_generation(reader, store):
     run_id = uuid.uuid4().hex
     found, query_results = {}, []
     configuration = None
+    types_by_family = {}
     if hasattr(reader, "market_configuration"):
         try:
             configuration = financial_catalog.validate_configuration(reader.market_configuration())
         except Exception as exc:
-            store.event("CATALOG_CONFIGURATION_UNAVAILABLE", type(exc).__name__)
+            store.event("CATALOG_CONFIGURATION_UNAVAILABLE", _scanner_ppi_error(exc))
+        else:
+            for literal in configuration["instrument_types"]:
+                types_by_family.setdefault(canonical_family(literal), []).append(literal)
     for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in _candidate_universe():
         status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
         count = 0
         name_query = ticker_query
         if configuration is not None:
+            declared_types = types_by_family.get(instrument_type, [])
+            if provider_type not in configuration["instrument_types"] and len(declared_types) == 1:
+                provider_type = declared_types[0]
             missing = ('TYPE' if provider_type not in configuration['instrument_types'] else
                        'MARKET' if market_query not in configuration['markets'] else None)
             if missing:
@@ -701,8 +708,7 @@ def _download_catalog_generation(reader, store):
                 except (ValueError, TypeError):
                     continue
                 if configuration is not None:
-                    declared_families = {canonical_family(value) for value in configuration['instrument_types']}
-                    if record['instrument_type'] not in declared_families:
+                    if record['instrument_type'] not in types_by_family:
                         record['capability'] = 'TYPE_NOT_ENUMERATED'
                     elif market_query not in configuration['markets']:
                         record['capability'] = 'MARKET_NOT_ENUMERATED'
@@ -3187,10 +3193,11 @@ def run():
                                 real_orders_sent=0,
                                 detail="Gateway único conectado; inicializando motor PAPER.")
                 except Exception as exc:
+                    reason = _scanner_ppi_error(exc)
                     _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
-                            f"{type(exc).__name__}: {str(exc)[:300]}", "PPI Producción")
+                            f"{type(exc).__name__}: {reason}", "PPI Producción")
                     store.state(process_state="DEGRADED", ppi_auth="ERROR",
-                                heartbeat_at=now_iso(), detail=f"Login fallo: {type(exc).__name__}")
+                                heartbeat_at=now_iso(), detail=f"Gateway PPI: {reason}")
                     local_attach_failure = reader is None or _scanner_gateway_reader_lost(exc)
                     if reader is not None:
                         reader.close()

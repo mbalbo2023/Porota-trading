@@ -1072,11 +1072,11 @@ class ReadOnlyUnixFeedServer:
                         "search_instruments", "history", "market_configuration"}):
                 return denied
             if (request["method"] == "market_configuration"
+                    and request["args"] == {}
                     and (self._server is not None or self._ever_listened)):
-                # The legacy SDK convenience method performs seven GETs
-                # within one Python call. The single owner router cannot
-                # overtake that in-flight batch for an EXIT book. Until it
-                # has one-GET-per-task coverage, do not execute it live.
+                # Only individual fields may go through the live router.
+                # A legacy bulk request would monopolize the wire through
+                # several consecutive GETs while an EXIT book waits.
                 status = self.owner_status() if callable(self.owner_status) else {}
                 return {"schema": NATIVE_ACQUIRE_SCHEMA,
                         "state": "PPI_AUX_CONFIGURATION_MULTI_GET_UNPREEMPTIBLE",

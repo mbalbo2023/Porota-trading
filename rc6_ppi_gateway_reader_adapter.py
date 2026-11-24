@@ -29,6 +29,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from bd_ppi_readonly_guard import MARKET_CONFIGURATION_FIELDS
 from rc6_ppi_shared_feed import (
     SCHEMA, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer,
     SharedFeedUnavailable,
@@ -462,7 +463,10 @@ class SharedPPIReaderAdapter:
             "name": name or ticker, "market": market})
 
     def market_configuration(self):
-        return self._auxiliary("market_configuration", {})
+        # Each field is a separate router demand so ready EXIT work can
+        # overtake between the SDK's configuration GETs.
+        return {field: self._auxiliary("market_configuration", {"field": field})
+                for field in MARKET_CONFIGURATION_FIELDS}
 
     def estimate_bonds(self, parameters):
         return self._native_unavailable("ESTIMATE_BONDS")

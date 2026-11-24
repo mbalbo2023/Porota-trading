@@ -201,7 +201,7 @@ class SharedPPIReaderAdapterTests(unittest.TestCase):
                 return {"state": "OK", "result":
                         [{"date": "2026-11-04", "close": 100}] if method == "history"
                         else [{"ticker": "GGAL"}] if method == "search_instruments"
-                        else {"instrument_types": ["ACCIONES"]}}
+                        else ["ACCIONES"] if args.get("field") == "instrument_types" else []}
 
         client = AuxiliaryOwnerClient(bus())
         reader = SharedPPIReaderAdapter(
@@ -212,8 +212,13 @@ class SharedPPIReaderAdapterTests(unittest.TestCase):
         assert reader.history("GGAL", "ACCIONES", "A-48HS",
                               "2026-11-03", "2026-11-04")[0]["close"] == 100
         assert reader.market_configuration()["instrument_types"] == ["ACCIONES"]
-        self.assertEqual([item[1] for item in client.calls], [
-            "search_instruments", "history", "market_configuration"])
+        self.assertEqual([item[1] for item in client.calls[:2]], [
+            "search_instruments", "history"])
+        self.assertEqual(client.calls[2:], [
+            ("scanner", "market_configuration", {"field": field})
+            for field in ("instrument_types", "markets", "settlements", "quantity_types",
+                          "operation_terms", "operation_types", "operations")
+        ])
 
     def test_caucion_discovery_splits_sdk_multi_get_into_exit_interruptible_rpc(self):
         class OneSearchPerPacketClient(FakeClient):
