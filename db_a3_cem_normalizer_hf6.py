@@ -7,13 +7,13 @@ metadata and can never populate History Store `settlement` automatically.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from bs_instrument_contracts import cash_currency
-from cu_history_store_v2_hf6 import Candle,instant,ART
+from cu_history_store_v2_hf6 import A3_REPORTED, Candle, instant, ART
 
-CEM_HISTORY_SOURCE = "A3_CEM_CLOSING"
+CEM_HISTORY_SOURCE = A3_REPORTED
 CEM_EXECUTION_ALLOWED = False
 
 
@@ -118,7 +118,14 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
     if not symbol or not date_time:
         raise ValueError("CEM_CLOSING_IDENTITY_INCOMPLETE")
     try:
-        day = instant(date_time).astimezone(ART).date().isoformat()
+        provider_at = datetime.fromisoformat(date_time.replace("Z", "+00:00"))
+        observed_date = instant(date_time).astimezone(ART).date()
+        # CEM closing-prices labels the session at midnight UTC. Other
+        # timestamps retain the exchange-local observation date.
+        session_label = provider_at.utcoffset() == timedelta(0) and provider_at.time() == time.min
+        if session_label:
+            observed_date = provider_at.date()
+        day = observed_date.isoformat()
     except ValueError as exc:
         raise ValueError("CEM_CLOSING_DATE_INVALID") from exc
     close = row.get("close")
@@ -144,6 +151,8 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         "cem_reference_currency":row.get('currency'),
         "currency":currency,
     }
+    if session_label:
+        metadata["cem_session_label"] = date_time
     return Candle(
         symbol=symbol,
         instrument_type=str(instrument_type or "").upper(),
@@ -157,7 +166,7 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         volume=None if row.get("volume") is None else float(row.get("volume")),
         source=CEM_HISTORY_SOURCE,
         adjusted=False,
-        currency=currency,price_basis='RAW',provider_at=date_time,
+        currency=currency,price_basis='RAW',provider_at=None if session_label else date_time,
         volume_kind=str(row.get('volumeKind') or 'UNKNOWN').upper(),
         observed_at=observed_at,
         metadata=metadata,
