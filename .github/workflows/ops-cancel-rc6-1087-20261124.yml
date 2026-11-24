@@ -1,0 +1,88 @@
+name: Reconcile queued RC6 PR 1087 runs
+
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+    paths: ['.github/workflows/ops-cancel-rc6-1087-20261124.yml']
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'ops/rc6-cancel-queued-1087-20261124'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify and cancel the two historical runs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HISTORICAL_SHA: 9056387ef16c724429d00c8fc842473ea0b1b810
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          record() {
+            echo "$*" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+
+          request_cancel() {
+            local resource=$1 operation=$2 response
+            response="$RUNNER_TEMP/rc6-1087-cancel-response"
+            if gh api -i --method POST "$resource/$operation" >"$response" 2>&1; then
+              record "$resource $operation $(head -n1 "$response")"
+            else
+              record "$resource $operation $(head -n1 "$response")"
+              sed -n '/^x-github-request-id:/Ip' "$response" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          reconcile() {
+            local id=$1 expected_path=$2 resource run pending status
+            resource="repos/$GITHUB_REPOSITORY/actions/runs/$id"
+            run="$(gh api "$resource")" || return 1
+            if ! jq -e --arg sha "$HISTORICAL_SHA" --arg path "$expected_path"                 '.head_sha == $sha and .path == $path and .event == "pull_request"'                 <<<"$run" >/dev/null; then
+              record "$id TARGET_IDENTITY_MISMATCH"
+              return 1
+            fi
+            status="$(jq -r '.status + "/" + (.conclusion // "")' <<<"$run")"
+            if [[ "$status" == completed/cancelled ]]; then
+              record "$id $status"
+              return 0
+            fi
+            pending="$(gh api "$resource/jobs" --jq '.total_count')" || return 1
+            if [[ "$status" != queued/ || "$pending" != 0 ]] ||
+                [[ "$(gh api "$resource/artifacts" --jq '.total_count')" != 0 ]]; then
+              record "$id TARGET_STATE_CHANGED $status jobs=$pending"
+              return 1
+            fi
+            request_cancel "$resource" cancel
+            sleep 5
+            status="$(gh api "$resource" --jq '.status + "/" + (.conclusion // "")')" || return 1
+            if [[ "$status" == queued/ ]]; then
+              request_cancel "$resource" force-cancel
+            fi
+            for _ in {1..12}; do
+              status="$(gh api "$resource" --jq '.status + "/" + (.conclusion // "")')" || return 1
+              if [[ "$status" == completed/cancelled ]]; then
+                record "$id $status"
+                return 0
+              fi
+              if [[ "$status" == completed/* ]]; then
+                break
+              fi
+              sleep 4
+            done
+            record "$id FINAL_STATE $status"
+            return 1
+          }
+
+          failed=0
+          reconcile 43098410093 .github/workflows/porota-predeploy-v2.yml || failed=1
+          reconcile 43098410234 .github/workflows/rc6-r163-offhost-guard79-proof.yml || failed=1
+          exit "$failed"
