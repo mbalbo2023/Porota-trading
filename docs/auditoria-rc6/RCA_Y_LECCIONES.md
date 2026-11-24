@@ -1,5 +1,14 @@
 # RCA y lecciones de Porota RC6
 
+## RCA vigente de la rueda del 24/11
+
+El [RCA completo](RCA_RUEDA_2026-11-24.md) contiene la evidencia por fase y el criterio de cierre de cada frente. El [handoff vigente](HANDOFF.md) resume el camino crítico.
+
+- **Release y admisión.** El T−10 de la mañana habilitó el SHA de la mañana. El release nuevo rechazó el recibo anterior. Acreditar siempre la identidad vigente, READY por instrumento y capacidad de EXIT antes de abrir nuevas posiciones PAPER. [Postflight](https://github.com/mbalbo2023/Porota-trading/actions/runs/45457257511/artifacts/14951650853)
+- **Relojes PPI y sesión.** Conservar por separado último attach, HTTP, breaker, último par Current/Book válido, reloj global y sesión independiente. El censo de las 16:50 ya informó Auth OK con 0 READY. El reporte de las 16:35 había dado OK durante el desacuerdo de sesión porque la regla sólo evalúa alertas de PPI en `MARKET_OPEN`. Incorporar esa combinación a la prueba de regresión de alertas. [Censo de las 16:50](https://github.com/mbalbo2023/Porota-trading/commit/e9e35204b02b2e0da8092d31726aa4ce511e671e) · [Introspección de las 16:35](https://github.com/mbalbo2023/Porota-trading/blob/3ec1d8c1bce01b18af6712e5f1d7c044a4e996f3/runtime/introspection/latest.json)
+- **Trabajo útil.** Un rol puede estar vivo y completar ciclos con cero candidatos o sin avanzar el cursor. Registrar por separado catálogo, elegibilidad, tradeable, DISCOVERY, WARM, HOT, señal, economía, riesgo y asientos. [Embudo y ledger](https://github.com/mbalbo2023/Porota-trading/issues/1259#issuecomment-7143249175)
+- **Plazos, históricos y SQLite.** El literal del plazo en el cuerpo, el plazo pedido y la autoridad del contrato requieren campos separados. La referencia histórica admitida necesita su propio rótulo y el cutoff RAW necesita pruebas de cobertura y procedencia. La integridad de ejecución y la restauración de una copia también requieren recibos propios. [RCA histórico](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7118958757)
+
 ## RCA del corte posterior al Deploy V2 #202
 
 El [handoff del 23/11](HANDOFF.md) enlaza los SHAs, artefactos y recibos. El estado de cada RCA se limita al alcance comprobado.

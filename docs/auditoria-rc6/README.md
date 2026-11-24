@@ -1,6 +1,6 @@
 # Auditoría técnica y funcional de Porota RC6
 
-El [handoff del 23/11](HANDOFF.md) reúne la evidencia del Deploy V2 #202, la activación PAPER de BONOS/ON y las comprobaciones pendientes en rueda. Los [RCA y lecciones](RCA_Y_LECCIONES.md) recogen los cambios de los releases #200 a #202. Consultar [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) para cortes posteriores.
+El [RCA de la rueda PAPER del 24/11](RCA_RUEDA_2026-11-24.md) reconstruye el bloqueo, el embudo, los históricos y las alertas. El [handoff vigente](HANDOFF.md) resume el camino crítico y los [RCA y lecciones](RCA_Y_LECCIONES.md) conservan las defensas y antecedentes. Los recibos de la rueda están en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y la continuidad general en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).
 
 ## Auditoría histórica del Deploy V2 #198
 
@@ -18,7 +18,7 @@ Corte físico del **22/11/2026**. La captura de timers y esquema comenzó a las 
 
 ## Navegación
 
-- [Los 32 timers físicos, servicio, horarios, última ejecución y cruces](TIMERS.md).
+- [Los 32 timers físicos, corte histórico y enlace a la verificación del 24/11](TIMERS.md).
 - [RCA, revalidación y lecciones](RCA_Y_LECCIONES.md).
 - [Runbook de desarrollo y release](../RUNBOOK.md).
 - [Checkpoint anterior, ownership y recibos](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7087064703).

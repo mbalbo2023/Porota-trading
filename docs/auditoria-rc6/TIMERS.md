@@ -1,5 +1,7 @@
 # Scheduler instalado por Porota RC6
 
+El [inventario de runtime del 24/11 a las 17:04:05 ART](https://github.com/mbalbo2023/Porota-trading/issues/1259#issuecomment-7143249175) detalla los 32 timers del release posterior, incluida la falla `200/CHDIR` del servicio de salud IOL y los dos resultados sin acreditar. El [RCA de la rueda](RCA_RUEDA_2026-11-24.md#motores-timers-sqlite-fuentes-y-performance) cruza el exportador, las condiciones de systemd y la cadencia de GitHub. Los estados y horarios de la tabla siguiente corresponden al corte histórico del 22/11.
+
 Captura 2026-11-22T19:57:50.799506-03:00 (ART) · 2026-11-22T22:57:50.799506+00:00 (UTC) · release `223725e2860b295533d480d6ad24aee46f098b8e`.
 
 32 unidades · 16 activas · 11 deshabilitadas · 5 enmascaradas.
