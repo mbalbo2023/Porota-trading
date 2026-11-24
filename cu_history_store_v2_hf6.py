@@ -26,7 +26,7 @@ IDENTITY = ("symbol","instrument_type","market","currency","settlement")
 SERIES = (*IDENTITY,"date","price_basis","adjustment_basis")
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 SOURCE_REPORTED = "SOURCE_REPORTED"
-SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912"}
+SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912", "BYMA_INTERVALORES"}
 DDL = """
 CREATE TABLE IF NOT EXISTS history_versions_v2(
  id INTEGER PRIMARY KEY AUTOINCREMENT,symbol TEXT NOT NULL,instrument_type TEXT NOT NULL,

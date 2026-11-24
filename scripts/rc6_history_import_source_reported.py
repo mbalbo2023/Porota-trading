@@ -1,4 +1,4 @@
-"""Import a verified IOL capture into a private History V2 database for research."""
+"""Import a checked provider capture into History V2 as reference prices."""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +21,8 @@ from cv_history_store_adapter_hf6 import HistoricalStore, SOURCE_REPORTED_APPLIC
 
 MEMBER = "respuestas-mcp.jsonl"
 SOURCE = "IOL_MCP"
+INTERVALORES = "BYMA_INTERVALORES"
+INTERVALORES_MEMBER = "respuestas-intervalores.jsonl"
 FAMILIES = {"ACCIONES", "CEDEARS"}
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CAPTURE_ROWS = 1000
@@ -63,12 +65,20 @@ def _window(capture, observed_at):
     return start, end
 
 
-def _candles(capture, archive_sha):
+def _candles(capture, archive_sha, *, source=SOURCE):
     if capture["market"] != "BCBA" or capture["family"] not in FAMILIES:
         raise ValueError("HISTORY_CAPTURE_MARKET_OR_FAMILY_INVALID")
     symbol = capture["symbol"]
     if not isinstance(symbol, str) or not re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{0,39}", symbol):
         raise ValueError("HISTORY_CAPTURE_SYMBOL_INVALID")
+    provenance = {}
+    if source == INTERVALORES:
+        url = f"https://www.intervaloresgroup.com/Bursatil/Especie/{symbol}/MERVAL/24hs."
+        if (capture.get("source_url") != url or capture.get("quoted_currency") != "ARS"
+                or capture.get("quoted_settlement") != "A-24HS"):
+            raise ValueError("HISTORY_CAPTURE_INTERVALORES_SERIES_UNVERIFIED")
+        provenance = {"source_url": url, "reported_market": "BYMA",
+                      "reported_currency": "ARS", "reported_settlement": "A-24HS"}
     observed_at = instant(capture["received_at"])
     start, end = _window(capture, observed_at)
     payload = capture["payload"]
@@ -92,23 +102,28 @@ def _candles(capture, archive_sha):
                 raise ValueError("HISTORY_CAPTURE_ROW_OUTSIDE_WINDOW")
             if duplicates[row["date"]] != 1:
                 raise ValueError("HISTORY_CAPTURE_DUPLICATE_DATE")
-            if type(row["time"]) is not int:
-                raise ValueError("HISTORY_CAPTURE_TIMESTAMP_INVALID")
-            provider_at = datetime.fromtimestamp(row["time"], tz=timezone.utc)
-            if provider_at.astimezone(ART).date() != day or provider_at > observed_at:
-                raise ValueError("HISTORY_CAPTURE_TIMESTAMP_MISMATCH")
+            provider_at = None
+            if source == SOURCE:
+                if type(row["time"]) is not int:
+                    raise ValueError("HISTORY_CAPTURE_TIMESTAMP_INVALID")
+                provider_at = datetime.fromtimestamp(row["time"], tz=timezone.utc)
+                if provider_at.astimezone(ART).date() != day or provider_at > observed_at:
+                    raise ValueError("HISTORY_CAPTURE_TIMESTAMP_MISMATCH")
             values = validate_daily_values(
                 date=row["date"], open=row["open"], high=row["high"], low=row["low"],
-                close=row["close"], volume=row["volume"], known_at=observed_at, market="BCBA",
+                close=row["close"], volume=row["volume"] if source == SOURCE else None,
+                known_at=observed_at, market=provenance.get("reported_market", "BCBA"),
+                family=capture["family"], settlement=provenance.get("reported_settlement"),
             )
             candles.append(Candle(
                 symbol=symbol, instrument_type=capture["family"], market="BCBA",
                 currency="UNKNOWN", settlement="UNKNOWN", date=row["date"],
-                source=SOURCE, price_basis=SOURCE_REPORTED,
-                adjustment_basis=source_reported_adjustment(SOURCE),
+                source=source, price_basis=SOURCE_REPORTED,
+                adjustment_basis=source_reported_adjustment(source),
                 observed_at=observed_at, provider_at=provider_at, **values,
                 metadata={"archive_sha256": archive_sha, "provider_response_sha256": payload_sha,
-                          "reported_volume_unit": "UNKNOWN", "readiness_implication": "NONE"},
+                          "reported_volume_unit": "UNKNOWN", "readiness_implication": "NONE",
+                          **provenance},
             ))
         except (KeyError, OSError, OverflowError, TypeError, ValueError) as error:
             reason = str(error)
@@ -116,17 +131,20 @@ def _candles(capture, archive_sha):
                 reason = "HISTORY_CAPTURE_ROW_INVALID"
             rejected[reason] += 1
     candles.sort(key=lambda candle: candle.date)
-    attempt = _capture_sha([SOURCE, symbol, capture["family"], archive_sha, payload_sha])
+    attempt = _capture_sha([source, symbol, capture["family"], archive_sha, payload_sha])
     return candles, rejected, len(rows), attempt
 
 
-def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None,
-                      expected_legacy_versions=None):
+def import_reference_export(archive, destination, expected_sha256, *, source=SOURCE, symbols=(),
+                            existing_identity=None, expected_legacy_versions=None):
     """Load valid observations under provider-series keys and verify committed counts."""
     if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
         raise ValueError("HISTORY_CAPTURE_DIGEST_REQUIRED")
-    if expected_legacy_versions is not None and (existing_identity is None or symbols):
+    if source not in (SOURCE, INTERVALORES):
+        raise ValueError("HISTORY_CAPTURE_SOURCE_UNVERIFIED")
+    if expected_legacy_versions is not None and (existing_identity is None or symbols or source != SOURCE):
         raise ValueError("HISTORY_MIGRATION_EXISTING_FULL_CAPTURE_REQUIRED")
+    member_name = MEMBER if source == SOURCE else INTERVALORES_MEMBER
     selected = set(symbols)
     seen = set()
     totals = Counter()
@@ -140,7 +158,7 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=(), exis
             raise ValueError("HISTORY_CAPTURE_FILE_DIGEST_MISMATCH")
         capture_file.seek(0)
         with ZipFile(capture_file) as compressed:
-            members = [entry for entry in compressed.infolist() if entry.filename == MEMBER]
+            members = [entry for entry in compressed.infolist() if entry.filename == member_name]
             if len(members) != 1 or members[0].file_size > MAX_BYTES:
                 raise ValueError("HISTORY_CAPTURE_MEMBER_INVALID")
             with compressed.open(members[0]) as entries:
@@ -152,7 +170,7 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=(), exis
                     if key in seen:
                         raise ValueError("HISTORY_CAPTURE_DUPLICATE_SERIES")
                     seen.add(key)
-                    candles, invalid, delivered, attempt = _candles(capture, expected_sha256)
+                    candles, invalid, delivered, attempt = _candles(capture, expected_sha256, source=source)
                     totals.update(captures=1, received=delivered)
                     rejected.update(invalid)
                     if candles:
@@ -189,11 +207,19 @@ def import_iol_export(archive, destination, expected_sha256, *, symbols=(), exis
     }
 
 
+def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None,
+                      expected_legacy_versions=None):
+    return import_reference_export(archive, destination, expected_sha256, symbols=symbols,
+                                   existing_identity=existing_identity,
+                                   expected_legacy_versions=expected_legacy_versions)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--sha256", required=True)
+    parser.add_argument("--source", choices=(SOURCE, INTERVALORES), default=SOURCE)
     parser.add_argument("--symbol", action="append", default=[])
     parser.add_argument("--existing-history-id", metavar="DEVICE:INODE")
     parser.add_argument("--expected-legacy-versions", type=int,
@@ -204,9 +230,9 @@ def main():
         if not re.fullmatch(r"[0-9]+:[1-9][0-9]*", args.existing_history_id):
             parser.error("--existing-history-id requires numeric DEVICE:INODE")
         identity = tuple(map(int, args.existing_history_id.split(":")))
-    receipt = import_iol_export(args.archive, args.destination, args.sha256,
-                                symbols=args.symbol, existing_identity=identity,
-                                expected_legacy_versions=args.expected_legacy_versions)
+    receipt = import_reference_export(args.archive, args.destination, args.sha256, source=args.source,
+                                      symbols=args.symbol, existing_identity=identity,
+                                      expected_legacy_versions=args.expected_legacy_versions)
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
 
 
