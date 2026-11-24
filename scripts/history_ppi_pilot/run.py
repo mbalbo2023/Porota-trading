@@ -2,8 +2,41 @@
 import json
 import os
 from pathlib import Path
+import hashlib
+from datetime import datetime, timezone
+from http.client import HTTPException
+from urllib.request import Request, urlopen
 
 from scripts.porota_actions_host import connection, ssh_run
+
+
+MISSING_DATES = {"2026-04-21", "2026-06-05"}
+
+
+def data912_capture():
+    """Request the documented public endpoint and retain only the two gaps."""
+    request = Request("https://data912.com/historical/cedears/AAPL",
+                      headers={"User-Agent": "Porota-Trading/17.0 historical-pilot"})
+    try:
+        with urlopen(request, timeout=9) as response:
+            limit = 4 * 1024 * 1024
+            raw = response.read(limit + 1)
+            if len(raw) > limit:
+                return {"status": "RESPONSE_TOO_LARGE"}
+        series = json.loads(raw)
+        if not isinstance(series, list):
+            return {"status": "RESPONSE_SHAPE_UNVERIFIED"}
+        fields = ("date", "o", "h", "l", "c", "v", "currency", "volume_kind")
+        bars = [{key: row[key] for key in fields if key in row} for row in series
+                if isinstance(row, dict) and str(row.get("date", ""))[:10] in MISSING_DATES]
+        if len(bars) > 8:
+            return {"status": "DUPLICATE_SCOPE_UNVERIFIED"}
+        captured = {"status": "CAPTURED", "response_sha256": hashlib.sha256(raw).hexdigest(),
+                    "captured_at": datetime.now(timezone.utc).isoformat(), "bars": bars}
+        json.dumps(captured, allow_nan=False)
+        return captured
+    except (OSError, HTTPException, ValueError):
+        return {"status": "SOURCE_UNAVAILABLE"}
 
 
 HOST = r"""
@@ -59,6 +92,8 @@ print(json.dumps(result))
 
 def main():
     pilot = Path(__file__).with_name("pilot.py").read_text()
+    external = json.dumps(data912_capture(), allow_nan=False)
+    pilot = f"import json\nDATA912_CAPTURE = json.loads({external!r})\n" + pilot
     with connection(os.environ) as (ssh, _, _):
         result = ssh_run(ssh, ["python3", "-B", "-c", HOST], data=pilot.encode(), timeout=60)
     if result.returncode != 0:
@@ -69,6 +104,7 @@ def main():
     payload = json.loads(result.stdout)
     assert payload["same_runtime"] is True and payload["real_orders_sent"] == 0
     assert payload["provider_requests"] == payload["production_sql_writes"] == 0
+    payload["data912_http_attempts_from_runner"] = 1
     target = Path(os.environ["RUNNER_TEMP"]) / "rc6-history-ppi-pilot.json"
     target.write_text(json.dumps(payload, indent=2) + "\n")
     print("HISTORY_PPI_PILOT=COMPLETE")

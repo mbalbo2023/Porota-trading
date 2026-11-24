@@ -13,8 +13,10 @@ import time
 
 from ak_byma_t1_source_clock import estado_negociacion_historica_byma
 from bs_instrument_contracts import cash_currency
+import ba_data912_history as data912
 import ct_ppi_history_salvage_hf6 as salvage
 import cu_history_store_v2_hf6 as history
+from cw_data912_history_v2_sink import _candles as reference_candles
 import fb_raw_evidence_exact_v1 as exact
 from scripts import rc6_history_cutoff_repair_once as repair
 
@@ -91,6 +93,8 @@ def object_payload(row, wrapper):
 def fragments_for(manifest, symbol, family, result):
     found = []
     reasons = Counter()
+    market_labels = Counter()
+    incomplete = []
     nearest = None
     for prefix in (f'[["{symbol}",', f'["{symbol}",'):
         rows = manifest.execute("""SELECT body_bytes, recorded_at, quality,
@@ -116,6 +120,12 @@ def fragments_for(manifest, symbol, family, result):
                     continue
                 if wrapper.get("market") != "BYMA":
                     reasons["market_unverified"] += 1
+                    declared = wrapper.get("market") or wrapper.get("exchange")
+                    market_labels[str(declared) if declared in ("BCBA", "MERV", "MERVAL", "UNKNOWN", None)
+                                  else "OTHER"] += 1
+                    if (row["quality"] == "VALID_PAYLOAD" and first <= repair.CUTOFF and
+                            last >= repair.BOOTSTRAP_START):
+                        incomplete.append((observed, row, wrapper, first, last))
                     continue
                 try:
                     currency = cash_currency(wrapper.get("currency"))
@@ -141,19 +151,27 @@ def fragments_for(manifest, symbol, family, result):
                 result["index_metadata_rejected"] += 1
     result["eligible_manifest_rows"] = len(found)
     result["out_of_scope_by_reason"] = dict(reasons)
+    result["market_labels_without_exact_match"] = dict(market_labels)
+    result["market_unverified_overlapping_cutoff"] = len(incomplete)
+    result["market_unverified_samples"] = [describe_fragment(*item) for item in
+        sorted(incomplete, key=lambda item: item[0], reverse=True)[:2]]
     if nearest is not None and not found:
         _, observed, row, wrapper, first, last = nearest
-        sampled = {"request_from": first.isoformat(), "request_to": last.isoformat(),
-                   "captured_at": observed.isoformat(), "body_integrity": "NO_VERIFICADO"}
-        try:
-            bars = object_payload(row, wrapper)
-            sampled.update(body_integrity="VALID", bars=len(bars),
-                           provider_fields=sorted({key for bar in bars if isinstance(bar, dict)
-                               for key in bar if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,59}", key)}))
-        except (OSError, EOFError, ValueError, UnicodeError):
-            pass
-        result["nearest_other_window"] = sampled
+        result["nearest_other_window"] = describe_fragment(observed, row, wrapper, first, last)
     return sorted(found, key=lambda item: item[0], reverse=True)[:FRAGMENTS_PER_SYMBOL]
+
+
+def describe_fragment(observed, row, wrapper, first, last):
+    sampled = {"request_from": first.isoformat(), "request_to": last.isoformat(),
+               "captured_at": observed.isoformat(), "body_integrity": "NO_VERIFICADO"}
+    try:
+        bars = object_payload(row, wrapper)
+        sampled.update(body_integrity="VALID", bars=len(bars),
+                       provider_fields=sorted({key for bar in bars if isinstance(bar, dict)
+                           for key in bar if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,59}", key)}))
+    except (OSError, EOFError, ValueError, UnicodeError):
+        pass
+    return sampled
 
 
 def rehearse(manifest, observed, data, symbol, family):
@@ -221,6 +239,26 @@ def reference_gaps(db, symbol, family):
             "reference_dates_outside_calendar": sorted(observed - expected)}
 
 
+def rehearse_reference(store, dates):
+    capture = globals().get("DATA912_CAPTURE", {"status": "NOT_REQUESTED"})
+    if capture["status"] != "CAPTURED":
+        return {"status": capture["status"]}
+    selected = [row for row in capture["bars"] if str(row.get("date", ""))[:10] in dates]
+    known = history.instant(capture["captured_at"])
+    rows, rejected = data912._normalize(selected, repair.BOOTSTRAP_START.isoformat(),
+                                        as_of=known, return_rejections=True)
+    candles = reference_candles(("AAPL", "CEDEARS", "BYMA", "ARS", "A-24HS"), rows, known.isoformat())
+    store.source_reported_only = True
+    applied = history.append_many(store, candles)
+    retried = history.append_many(store, candles)
+    return {"status": "REFERENCE_PILOT", "dates_received": [str(row.get("date", ""))[:10] for row in selected],
+            "accepted_dates": [row[0] for row in rows], "rejected": rejected,
+            "canonical_updates_in_copy": applied["canonical_updates"],
+            "canonical_updates_on_retry": retried["canonical_updates"],
+            "versions_on_retry": retried["versions_appended"],
+            "response_sha256": capture["response_sha256"], "captured_at": known.isoformat()}
+
+
 def main():
     data, observed = MemoryStore(), MemoryStore()
     assert exact.manifest_path() == RELEASE_DATA / "evidence/ppi_history_exact_v1/manifest_exact_v1.db"
@@ -240,12 +278,13 @@ def main():
             manifest.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
             per_symbol[symbol] = rehearse(manifest, observed, data, symbol, family)
             per_symbol[symbol]["reference_calendar"] = reference_gaps(data.db, symbol, family)
+    reference = rehearse_reference(data, per_symbol["AAPL"]["reference_calendar"]["dates_missing_from_reference"])
     assert data.db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
     assert data.db.execute("PRAGMA foreign_key_check").fetchone() is None
     print(json.dumps({"schema": "rc6.history.ppi-cutoff-pilot.v1", "cutoff": repair.CUTOFF.isoformat(),
         "captured_at": datetime.now(timezone.utc).isoformat(), "provider_requests": 0, "production_sql_writes": 0,
         "store": "MEMORY_COPY_OF_LIVE_HISTORICAL_COHORT", "previous_cutoff_receipt": control,
-        "before": before, "after": cohort(data.db), "per_symbol": per_symbol, "quick_check": "ok",
+        "before": before, "after": cohort(data.db), "per_symbol": per_symbol, "quick_check": "ok", "data912": reference,
         "provider_contracts_reviewed": len(salvage.VERIFIED_PPI_HISTORY_CONTRACTS)}))
 
 
