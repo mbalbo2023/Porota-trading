@@ -29,8 +29,8 @@ ids = subprocess.check_output([*docker,"ps","--no-trunc","--filter","label=io.po
 assert len(ids) == 1
 assert subprocess.check_output([*docker,"inspect","--format","{{.Image}}",ids[0]],text=True,
                                timeout=8).strip() == release["image_id"]
-snippet = sys.stdin.buffer.read(8193)
-assert 0 < len(snippet) <= 8192
+snippet = sys.stdin.buffer.read(65537)
+assert 0 < len(snippet) <= 65536
 receipt = subprocess.run([*docker,"exec","-i",ids[0],"python","-B","-"],input=snippet,
                          capture_output=True,timeout=22)
 assert receipt.returncode == 0 and 0 < len(receipt.stdout) <= 65536
@@ -43,40 +43,71 @@ print(json.dumps(output))
 SQL = r'''
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
 import json
-import os
 import sqlite3
-import time
+from types import ModuleType
+
+import fb_raw_evidence_exact_v1 as exact
+from cu_history_store_v2_hf6 import instant, PPI_REPORTED_SELECTOR
+from rc6_multisource_discovery import canonical_family, canonical_settlement
 
 with closing(sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=3)) as db:
     db.execute("PRAGMA query_only=ON")
     paper = db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
 assert paper == ("PRODUCTION_PAPER",0)
-with closing(sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=3)) as db:
-    db.execute("PRAGMA query_only=ON")
-    timeout = time.monotonic() + 10
-    db.set_progress_handler(lambda: int(time.monotonic()>timeout),1000)
-    journal = db.execute("PRAGMA journal_mode").fetchone()[0]
-    db.execute("BEGIN")
-    count = db.execute("SELECT count(*) FROM history_versions_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'").fetchone()[0]
-    groups = db.execute("""SELECT instrument_type,count(*),max(date)
-        FROM history_canonical_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'
-        GROUP BY instrument_type ORDER BY instrument_type""").fetchall()
-sources = {name: bool(os.getenv("POROTA_"+name+"_HISTORICAL_URL","").strip())
-           for name in ("BYMA","CNV","MATBA_ROFEX")}
-print(json.dumps({"schema":"rc6.history.live-progress.v1","committed_ppi_versions":count,
-                  "committed_ppi_canonical":sum(group[1] for group in groups),
-                  "committed_by_family":groups,"official_historical_endpoints_configured":sources,
-                  "journal_mode":journal,"real_orders_sent":0,"production_sql_writes":0,
+operator = ModuleType("porota_verify_closeout_remainder")
+exec(compile(CLOSEOUT_SOURCE, "deployed-closeout-operator.py", "exec"), operator.__dict__)
+remaining = []
+with closing(operator._manifest(exact.manifest_path())) as db:
+    records = db.execute("""SELECT row_key,body_hash,recorded_at,quality,wrapper_json
+        FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' AND json_valid(row_key)
+        AND json_array_length(row_key) IN (5,6)""")
+    for row in records:
+        wrapper = json.loads(row["wrapper_json"])
+        try:
+            operator._series(row,wrapper,legacy_closeout=True)
+            continue
+        except (TypeError, ValueError) as error:
+            reject = str(error)
+        symbol = wrapper["symbol"]
+        family = wrapper.get("instrument_type") or wrapper["asset_class"]
+        term = wrapper["settlement"]
+        market = wrapper["market"]
+        at = instant(row["recorded_at"])
+        # Only inspect payloads with the previously verified identity prefix.
+        prefix = [symbol, family, market, term, row["recorded_at"]]
+        key_verified = json.loads(row["row_key"]) in (prefix,[*prefix,"API_CLOSEOUT"])
+        item = {"symbol_sha256":hashlib.sha256(symbol.encode()).hexdigest(),
+                "family":family,"reason":reject,"quality":row["quality"],
+                "symbol_outside_current_grammar":sorted(set("U+%04X"%ord(c)
+                    for c in symbol if c not in " ._/+()%-" and not ("A"<=c<="Z" or "0"<=c<="9")))}
+        if key_verified and PPI_REPORTED_SELECTOR.fullmatch(family):
+            try:
+                bars, wrapper, digest = operator._body(db,(at,row["row_key"],row["body_hash"]),None)
+            except (OSError,ValueError,EOFError):
+                item["payload_status"] = "UNVERIFIED"
+                remaining.append(item)
+                continue
+            from datetime import date
+            bounds = (date.fromisoformat(wrapper["date_from"]),date.fromisoformat(wrapper["date_to"]))
+            candidates, anomalies = operator._candles(bars,(symbol,canonical_family(family),
+                canonical_settlement(term),family),bounds,(at,row["row_key"],row["body_hash"]),wrapper,digest)
+            item.update(valid_ohlc_days=len(candidates),delivered_rows=len(bars),ohlc_rejections=dict(anomalies))
+        remaining.append(item)
+print(json.dumps({"schema":"rc6.history.live-progress.v1","rejected_closeout_entries":remaining,
+                  "real_orders_sent":0,"production_sql_writes":0,
                   "observed_at":datetime.now(timezone.utc).isoformat()}))
 '''
 
 
 def main():
     control = json.loads(Path(__file__).with_name("promotion.json").read_text())
+    file = Path(__file__).resolve().parents[1]/"rc6_history_import_ppi_archive.py"
+    snippet = ("CLOSEOUT_SOURCE = "+repr(file.read_text())+"\n"+SQL).encode()
     with connection(os.environ) as (ssh,_,_):
         result = ssh_run(ssh,["python3","-B","-c",PROBE,control["deployment_sha"],control["candidate_sha"]],
-                         data=SQL.encode(),timeout=45)
+                         data=snippet,timeout=45)
     if result.returncode != 0:
         raise SystemExit("HISTORY_LIVE_PROGRESS_UNVERIFIED")
     payload = json.loads(result.stdout)
