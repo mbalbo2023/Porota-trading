@@ -18,12 +18,14 @@ from cu_history_store_v2_hf6 import (
     upgrade_existing_history, validate_daily_values,
 )
 from cv_history_store_adapter_hf6 import HistoricalStore, SOURCE_REPORTED_APPLICATION_ID
+from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES, LEGACY_HISTORY_FAMILIES
 
 MEMBER = "respuestas-mcp.jsonl"
 SOURCE = "IOL_MCP"
 INTERVALORES = "BYMA_INTERVALORES"
 INTERVALORES_MEMBER = "respuestas-intervalores.jsonl"
-FAMILIES = {"ACCIONES", "CEDEARS"}
+FAMILIES = OPERATIONAL_HISTORY_FAMILIES | LEGACY_HISTORY_FAMILIES
+INTERVALORES_FAMILIES = {"ACCIONES", "CEDEARS"}
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CAPTURE_ROWS = 1000
 
@@ -73,6 +75,8 @@ def _candles(capture, archive_sha, *, source=SOURCE):
         raise ValueError("HISTORY_CAPTURE_SYMBOL_INVALID")
     provenance = {}
     if source == INTERVALORES:
+        if capture["family"] not in INTERVALORES_FAMILIES:
+            raise ValueError("HISTORY_CAPTURE_INTERVALORES_FAMILY_UNVERIFIED")
         url = f"https://www.intervaloresgroup.com/Bursatil/Especie/{symbol}/MERVAL/24hs."
         if (capture.get("source_url") != url or capture.get("quoted_currency") != "ARS"
                 or capture.get("quoted_settlement") != "A-24HS"):

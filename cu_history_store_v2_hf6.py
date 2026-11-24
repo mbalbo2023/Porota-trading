@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -26,7 +27,10 @@ IDENTITY = ("symbol","instrument_type","market","currency","settlement")
 SERIES = (*IDENTITY,"date","price_basis","adjustment_basis")
 ART = ZoneInfo("America/Argentina/Buenos_Aires")
 SOURCE_REPORTED = "SOURCE_REPORTED"
-SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912", "BYMA_INTERVALORES"}
+PPI_REPORTED = "PPI_PRODUCTION_HISTORY_REPORTED"
+SOURCE_REPORTED_PROVIDERS = {"IOL_MCP", "DATA912", "BYMA_INTERVALORES", PPI_REPORTED}
+PPI_REPORTED_SETTLEMENTS = frozenset({"INMEDIATA", "A-24HS", "A-48HS", "A-72HS"})
+PPI_REPORTED_SELECTOR = re.compile(r"[A-Z0-9][A-Z0-9 ._/+()-]{0,79}")
 DDL = """
 CREATE TABLE IF NOT EXISTS history_versions_v2(
  id INTEGER PRIMARY KEY AUTOINCREMENT,symbol TEXT NOT NULL,instrument_type TEXT NOT NULL,
@@ -94,11 +98,29 @@ def _canonical_json(value) -> str:
     return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(",",":"),allow_nan=False,default=str)
 
 
-def source_reported_adjustment(source):
+def source_reported_adjustment(source, request_family=None):
     if source not in SOURCE_REPORTED_PROVIDERS:
         raise ValueError("HISTORY_SOURCE_REPORTED_PROVIDER_UNVERIFIED")
+    if source == PPI_REPORTED:
+        if not isinstance(request_family, str) or not PPI_REPORTED_SELECTOR.fullmatch(request_family):
+            raise ValueError("HISTORY_SOURCE_REPORTED_REQUEST_FAMILY_REQUIRED")
+        return f"UNKNOWN:{source}:{request_family}"
+    if request_family is not None:
+        raise ValueError("HISTORY_SOURCE_REPORTED_REQUEST_FAMILY_UNEXPECTED")
     # The provider remains part of the key while the economic series is unknown.
     return f"UNKNOWN:{source}"
+
+
+def _reported_series(market, currency, settlement, adjustment):
+    if currency != "UNKNOWN":
+        return False
+    ppi_prefix = f"UNKNOWN:{PPI_REPORTED}:"
+    if isinstance(adjustment, str) and adjustment.startswith(ppi_prefix):
+        return (market == "PPI" and settlement in PPI_REPORTED_SETTLEMENTS
+                and bool(PPI_REPORTED_SELECTOR.fullmatch(adjustment.removeprefix(ppi_prefix))))
+    return (market == "BCBA" and settlement == "UNKNOWN" and adjustment in
+            {source_reported_adjustment(source) for source in SOURCE_REPORTED_PROVIDERS
+             if source != PPI_REPORTED})
 
 
 def validate_daily_values(*, date, open, high, low, close, volume, known_at, market,
@@ -209,8 +231,10 @@ class Candle:
         required = (*IDENTITY[:3], "source") if reported else (*IDENTITY, "source")
         if any(getattr(value,f) in {"","UNKNOWN"} for f in required):
             raise ValueError("HISTORY_IDENTITY_UNVERIFIED")
-        if reported and (value.market != "BCBA" or value.settlement != "UNKNOWN" or value.adjusted
-                         or value.adjustment_basis != source_reported_adjustment(value.source)):
+        if reported and (value.adjusted or value.adjustment_basis != source_reported_adjustment(
+                             value.source, value.metadata.get("request_family"))
+                         or not _reported_series(value.market, value.currency, value.settlement,
+                                                 value.adjustment_basis)):
             raise ValueError("HISTORY_SOURCE_REPORTED_KEY_INVALID")
         from cp_history_ingest_policy_hf6 import OPERATIONAL_HISTORY_FAMILIES,LEGACY_HISTORY_FAMILIES
         if value.instrument_type not in OPERATIONAL_HISTORY_FAMILIES | LEGACY_HISTORY_FAMILIES:
@@ -445,9 +469,8 @@ def read_as_of(connection,*,symbol,instrument_type,market,currency,settlement,as
     cut=utc(as_of)
     identity=tuple(str(x or "").strip().upper() for x in (symbol,instrument_type,market,currency,settlement))
     if price_basis == SOURCE_REPORTED:
-        allowed = {source_reported_adjustment(source) for source in SOURCE_REPORTED_PROVIDERS}
-        if (any(x in {"", "UNKNOWN"} for x in identity[:2]) or identity[2:] != ("BCBA", "UNKNOWN", "UNKNOWN")
-                or adjustment_basis not in allowed):
+        if (any(x in {"", "UNKNOWN"} for x in identity[:2])
+                or not _reported_series(*identity[2:], adjustment_basis)):
             raise ValueError("HISTORY_SOURCE_REPORTED_KEY_INVALID")
     elif any(x in {"","UNKNOWN"} for x in identity):
         raise ValueError("HISTORY_IDENTITY_UNVERIFIED")

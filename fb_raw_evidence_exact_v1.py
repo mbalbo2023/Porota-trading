@@ -108,15 +108,26 @@ def _put_inner(inner: str, environ=None) -> tuple[str, int, int, bool]:
     return digest, len(raw), path.stat().st_size, created
 
 
-def reconstruct(wrapper_json: str, inner_sha256: str, environ=None) -> str:
+def reconstruct(wrapper_json: str, inner_sha256: str, environ=None, *, max_body_bytes=None) -> str:
     wrapper = json.loads(wrapper_json)
+    if max_body_bytes is not None and (len(inner_sha256) != 64 or
+                                      any(char not in "0123456789abcdef" for char in inner_sha256)):
+        raise ValueError("PPI_HISTORY_EXACT_OBJECT_DIGEST_INVALID")
     path = object_path(inner_sha256, environ)
+    if max_body_bytes is not None:
+        if path.resolve(strict=True) != path or not path.is_file() or not 0 < path.stat().st_size <= max_body_bytes:
+            raise ValueError("PPI_HISTORY_EXACT_OBJECT_PATH_UNVERIFIED")
     with gzip.open(path, "rb") as h:
-        inner = h.read().decode("utf-8", "surrogatepass")
-    if hashlib.sha256(inner.encode("utf-8", "surrogatepass")).hexdigest() != inner_sha256:
+        raw = h.read() if max_body_bytes is None else h.read(max_body_bytes + 1)
+    if max_body_bytes is not None and len(raw) > max_body_bytes:
+        raise ValueError("PPI_HISTORY_EXACT_OBJECT_TOO_LARGE")
+    if hashlib.sha256(raw).hexdigest() != inner_sha256:
         raise ValueError("PPI_HISTORY_EXACT_OBJECT_HASH_MISMATCH")
-    wrapper["payload_json"] = inner
-    return canonical(wrapper)
+    wrapper["payload_json"] = raw.decode("utf-8", "surrogatepass")
+    body = canonical(wrapper)
+    if max_body_bytes is not None and len(body.encode("utf-8", "surrogatepass")) > max_body_bytes:
+        raise ValueError("PPI_HISTORY_EXACT_OBJECT_TOO_LARGE")
+    return body
 
 
 def archive_exact(*, origin: str, row_key: str, body_hash: str,
