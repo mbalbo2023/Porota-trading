@@ -150,7 +150,7 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(report_file["file_type"], "REGULAR_FILE")
         self.assertEqual(report_file["size_bytes"], self.performance_path.stat().st_size)
         self.assertEqual(report_file["mtime_ns"], self.performance_path.stat().st_mtime_ns)
-        self.assertEqual(report_file["limit_bytes"], 524288)
+        self.assertEqual(report_file["limit_bytes"], monitor.MAX_JSON_BYTES)
         self.assertTrue(report_file["read_only"])
 
     def test_performance_report_missing_is_not_conflated_with_invalid(self):
@@ -161,14 +161,28 @@ class MonitorContracts(unittest.TestCase):
         self.assertFalse(snapshot["performance"]["present"])
         self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
 
+    def test_performance_report_at_observed_size_preserves_staleness_and_redaction(self):
+        generated = NOW - timedelta(hours=1)
+        report = json.dumps({"generated_at": generated.isoformat(),
+                             "economic_edge_validated": False,
+                             "private": "PRIVATE_REPORT_DETAIL"}).encode()
+        self.performance_path.write_bytes(report.ljust(589623, b" "))
+        snapshot = self.capture()
+        self.assertEqual(snapshot["performance"]["report_file"]["size_bytes"], 589623)
+        self.assertEqual(snapshot["performance"]["report_file"]["status"], "VALID")
+        self.assertIn("PERFORMANCE_REPORT_STALE", self.codes(snapshot))
+        self.assertNotIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
+        self.assertNotIn("PRIVATE_REPORT_DETAIL", json.dumps(snapshot))
+
     def test_performance_report_oversize_is_metadata_only_and_does_not_open(self):
-        self.performance_path.write_bytes(b"X" * 524289)
+        over_limit = monitor.MAX_JSON_BYTES + 1
+        self.performance_path.write_bytes(b"X" * over_limit)
         with patch.object(monitor.os, "open",
                           side_effect=AssertionError("OVERSIZE_WAS_OPENED")):
             snapshot = self.capture()
         record = snapshot["performance"]["report_file"]
         self.assertEqual(record["status"], "OVERSIZE")
-        self.assertEqual(record["size_bytes"], 524289)
+        self.assertEqual(record["size_bytes"], over_limit)
         self.assertFalse(snapshot["performance"]["present"])
         self.assertIn("PERFORMANCE_REPORT_UNAVAILABLE", self.codes(snapshot))
         self.assertNotIn("OVERSIZE_WAS_OPENED", json.dumps(snapshot))
