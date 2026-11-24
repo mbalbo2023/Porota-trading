@@ -1,4 +1,5 @@
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
@@ -104,6 +105,20 @@ class ArchiveImportTest(unittest.TestCase):
         self.assertEqual([row["close"] for row in self.read(
             "GGAL", "ACCIONES", "ACCIONES", "A-24HS", "2025-09-26")], [12, 12])
         self.assertEqual(len(self.read("GCAP 100% A", "FCI", "FCI", "INMEDIATA", "2025-09-25")), 1)
+
+    def test_closeout_recovers_dollar_symbols_with_a_pinned_legacy_scope(self):
+        self.archive("FONDO $ A", "FCI", "INMEDIATA", "2025-09-25",
+                     [self.bar("2025-09-23")], legacy_marker="")
+        self.archive("FONDO $ B", "FCI", "INMEDIATA", "2025-09-25",
+                     [self.bar("2025-09-23")], legacy_marker="")
+        selection = [sha256(b"FONDO $ A").hexdigest()]
+        receipt = import_ppi_archive(self.store, environ=self.env, legacy_closeout=True,
+                                     symbol_digests=selection)
+        retry = import_ppi_archive(self.store, environ=self.env, legacy_closeout=True,
+                                   symbol_digests=selection)
+        self.assertEqual((receipt["stored_rows"], retry["stored_rows"]), (1, 1))
+        self.assertEqual(retry.get("versions_appended",0), 0)
+        self.assertEqual([row["series"][0] for row in receipt["series"]], ["FONDO $ A"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+{
+  "deployment_sha": "bf496483e739c5a2be61d28aba6ad5fdd486c0e1",
+  "audit_run": 45309998067,
+  "archive_rows_verified": 964,
+  "symbol_digests": [
+    "3e3a7c19359989c4895baadf730df77ab8b03e4babb98790785046e5f8c9ea0d",
+    "40df86bf15467696208df492b67823c6b6eb761996cfd11643dfadab9525ab6b",
+    "6129d4dc0dc27ffab5e71b6d30df9d8f36dd7d150f09819924e92aa59420091f",
+    "d5f6c207b0194f43ba9bc0f412e92658748b7718c8ec5818e7b1583edbab5fc8"
+  ]
+}

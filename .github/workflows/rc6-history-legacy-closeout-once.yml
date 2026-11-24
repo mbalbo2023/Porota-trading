@@ -3,7 +3,9 @@ name: RC6 recover retained closeout archive dates
 on:
   push:
     branches: [diagnostic/rc6-history-ppi-pilot-20261123]
-    paths: [scripts/history_ppi_pilot/legacy-recovery.json]
+    paths:
+      - scripts/history_ppi_pilot/legacy-recovery.json
+      - scripts/history_ppi_pilot/legacy-funds-recovery.json
 
 permissions:
   contents: read
@@ -45,13 +47,22 @@ jobs:
           gh api repos/mbalbo2023/Porota-trading/actions/runs/45307617940 |
             jq -e '.conclusion == "success" and
                    .head_sha == "13b5fa1157deda062830fa99b1941f8d6be035d8"'
-          mkdir -p "$RUNNER_TEMP/porota"
+          mkdir -p "$RUNNER_TEMP/porota" "$RUNNER_TEMP/history-proof"
           gh run download 45303731515 --repo mbalbo2023/Porota-trading \
-            --name rc6-history-v2-runtime-45303731515 --dir "$RUNNER_TEMP/porota"
+            --name rc6-history-v2-runtime-45303731515 --dir "$RUNNER_TEMP/history-proof"
+          cp "$RUNNER_TEMP/history-proof/runtime.json" "$RUNNER_TEMP/history-proof/download.json" "$RUNNER_TEMP/porota/"
           cp ../operation/scripts/rc6_history_import_ppi_archive.py scripts/
           cp ../operation/tests/test_rc6_history_import_ppi_archive.py tests/
+          regression="test_closeout_recovers_new_dates_and_cafci_like_symbols_without_replacing_prior_days"
+          if [[ -f ../operation/scripts/history_ppi_pilot/legacy-funds-recovery.json ]]; then
+            gh api repos/mbalbo2023/Porota-trading/actions/runs/45309998067 |
+              jq -e '.conclusion == "success" and .head_sha == "1f3bf35229888cde529d0498e25e32e10024be52"'
+            gh api repos/mbalbo2023/Porota-trading/actions/runs/45308141174 |
+              jq -e '.conclusion == "success" and .head_sha == "c12720d82752bb09f4c0a298703b02ce7e1eeb58"'
+            regression="test_closeout_recovers_dollar_symbols_with_a_pinned_legacy_scope"
+          fi
           PYTHONPATH="$PWD:$PWD/tests" python3 -B -m unittest \
-            test_rc6_history_import_ppi_archive.ArchiveImportTest.test_closeout_recovers_new_dates_and_cafci_like_symbols_without_replacing_prior_days
+            "test_rc6_history_import_ppi_archive.ArchiveImportTest.$regression"
       - name: Append only dates missing from the previously verified PPI series
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -59,7 +70,13 @@ jobs:
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
         working-directory: product
-        run: PYTHONPATH="$PWD" python3 -B ../operation/scripts/history_ppi_pilot/deploy_archive.py --legacy-closeout
+        run: |
+          set -Eeuo pipefail
+          mode="--legacy-closeout"
+          if [[ -f ../operation/scripts/history_ppi_pilot/legacy-funds-recovery.json ]]; then
+            mode="--legacy-closeout-funds"
+          fi
+          PYTHONPATH="$PWD" python3 -B ../operation/scripts/history_ppi_pilot/deploy_archive.py "$mode"
       - name: Publish incremental and cumulative per-instrument evidence
         if: always()
         uses: actions/upload-artifact@v4

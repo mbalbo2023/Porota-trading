@@ -150,7 +150,7 @@ def recover(store):
     # deployed modules, their source policy and the archive are left intact.
     operator = ModuleType("porota_history_legacy_closeout")
     exec(compile(ARCHIVE_COMPATIBILITY, "rc6_history_import_ppi_archive.py", "exec"), operator.__dict__)
-    result = operator.import_ppi_archive(store, legacy_closeout=True)
+    result = operator.import_ppi_archive(store, legacy_closeout=True, symbol_digests=SELECTED_SYMBOL_DIGESTS)
     result["operator_script_sha256"] = sha256(ARCHIVE_COMPATIBILITY.encode()).hexdigest()
     return result
 
@@ -225,7 +225,8 @@ def supplemental_references(*, gaps=False):
 
 
 def main():
-    legacy = sys.argv[1:] == ["--legacy-closeout"]
+    funds = sys.argv[1:] == ["--legacy-closeout-funds"]
+    legacy = funds or sys.argv[1:] == ["--legacy-closeout"]
     gaps = sys.argv[1:] == ["--reference-gaps"]
     assert legacy or gaps or len(sys.argv) == 1
     folder = Path(os.environ["RUNNER_TEMP"]) / "porota"
@@ -242,11 +243,18 @@ def main():
     assert type(deployed["real_orders_sent"]) is int and deployed["real_orders_sent"] == 0
     assert deployed["ppi_watch_touched"] is False and deployed["health"]["orders_guard"] == "BLOCKED"
     override = None
+    symbol_digests = []
     if legacy:
         override = (Path(__file__).resolve().parents[1] / "rc6_history_import_ppi_archive.py").read_text()
+    if funds:
+        control = json.loads(Path(__file__).with_name("legacy-funds-recovery.json").read_text())
+        assert control["deployment_sha"] == deployed["deployment_sha"]
+        symbol_digests = control["symbol_digests"]
+        assert len(symbol_digests) == len(set(symbol_digests)) == 4
     references = [] if legacy else supplemental_references(gaps=gaps)
     source = ("REFERENCES = " + repr(references) + "\nARCHIVE_COMPATIBILITY = " + repr(override)
               + "\nREFERENCE_GAPS = " + repr(gaps)
+              + "\nSELECTED_SYMBOL_DIGESTS = " + repr(symbol_digests)
               + "\n" + CONTAINER).encode()
     assert len(source) <= 4_194_304
     with connection(os.environ) as (ssh, _, _):

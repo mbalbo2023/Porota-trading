@@ -22,7 +22,7 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 MAX_MANIFEST_ROWS = 1_000_000
 MAX_BARS_PER_CAPTURE = 4096
 VALID_FAMILIES = policy.OPERATIONAL_HISTORY_FAMILIES | policy.LEGACY_HISTORY_FAMILIES
-PPI_ARCHIVE_SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9 ._/+()%\-]{0,79}")
+PPI_ARCHIVE_SYMBOL = re.compile(r"[A-Z0-9][A-Z0-9 ._/+()%$\-]{0,79}")
 
 
 def _manifest(path):
@@ -77,7 +77,7 @@ def _series(record, wrapper, *, legacy_closeout=False):
     return (symbol, family, settlement, provider_family), start, end, observed
 
 
-def _archive_index(db, *, legacy_closeout=False):
+def _archive_index(db, *, legacy_closeout=False, symbol_digests=()):
     series = defaultdict(dict)
     rejected = Counter()
     rows = db.execute("""SELECT row_key,body_hash,inner_sha256,recorded_at,
@@ -88,6 +88,8 @@ def _archive_index(db, *, legacy_closeout=False):
             raise ValueError("HISTORY_ARCHIVE_MANIFEST_BUDGET")
         try:
             wrapper = json.loads(record["wrapper_json"])
+            if symbol_digests and sha256(wrapper["symbol"].encode()).hexdigest() not in symbol_digests:
+                continue
             if legacy_closeout:
                 key = json.loads(record["row_key"])
                 if not isinstance(key, list) or len(key) not in (5, 6):
@@ -184,16 +186,21 @@ def _already_present(store, identity):
                 (symbol, family, settlement, history.PPI_REPORTED, history.SOURCE_REPORTED, adjustment))}
 
 
-def import_ppi_archive(store, *, environ=None, legacy_closeout=False):
+def import_ppi_archive(store, *, environ=None, legacy_closeout=False, symbol_digests=()):
     """Replay verified rows in acquisition order and emit coverage per selector."""
     if getattr(store, "source_reported_only", False) is not True:
         raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
+    if symbol_digests and (not legacy_closeout or not all(
+            isinstance(item, str) and re.fullmatch(r"[a-f0-9]{64}", item) for item in symbol_digests)):
+        raise ValueError("HISTORY_ARCHIVE_SYMBOL_SELECTION_INVALID")
     if getattr(store, "existing_history_identity", None) is None:
         history.init_schema(store)
     report = []
     totals = Counter()
     with closing(_manifest(exact.manifest_path(environ))) as db:
-        index, invalid = _archive_index(db, legacy_closeout=legacy_closeout)
+        index, invalid = _archive_index(db, legacy_closeout=legacy_closeout, symbol_digests=symbol_digests)
+        if symbol_digests and {sha256(identity[0].encode()).hexdigest() for identity in index} != set(symbol_digests):
+            raise ValueError("HISTORY_ARCHIVE_SELECTED_SYMBOL_NOT_FOUND")
         for identity, captures in sorted(index.items()):
             seen_days = {}
             observed_dates = set()
@@ -234,7 +241,8 @@ def import_ppi_archive(store, *, environ=None, legacy_closeout=False):
     return {"schema": "rc6.history.ppi-reference-import.v1", **totals, "stored_rows": committed,
             "manifests_rejected": dict(invalid), "series": report, "quick_check": "ok",
             "provider_requests": 0, "readiness_implication": "NONE",
-            "archive_selection": "LEGACY_CLOSEOUT" if legacy_closeout else "STANDARD"}
+            "archive_selection": "LEGACY_CLOSEOUT" if legacy_closeout else "STANDARD",
+            "selected_symbol_digests": list(symbol_digests)}
 
 
 def main():
