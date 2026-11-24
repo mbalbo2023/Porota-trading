@@ -1,8 +1,12 @@
 # Porota Trading RC6 — instrucciones para agentes
 
-## Continuidad operativa · Deploy V2 #202
+## Continuidad operativa · rueda PAPER del 24/11/2026
 
-[Handoff del 23/11/2026](docs/auditoria-rc6/HANDOFF.md) para retomar RC6. Reconciliar el HEAD de producto y el último recibo físico en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y consultar el ownership en [#980](https://github.com/mbalbo2023/Porota-trading/issues/980) antes de escribir. El [Deploy V2 #202](https://github.com/mbalbo2023/Porota-trading/actions/runs/45273533386/artifacts/14866098686) acredita seis variantes de BONOS/ON en `ACTIVE_PAPER` y cero órdenes reales. El handoff indica la comprobación pendiente en rueda, el [registro RCA](docs/auditoria-rc6/RCA_Y_LECCIONES.md) y la fecha de cada [insumo de auditoría](docs/auditoria-rc6/README.md). `main` es la rama de control documental.
+[Handoff vigente](docs/auditoria-rc6/HANDOFF.md) y [RCA de la rueda del 24/11](docs/auditoria-rc6/RCA_RUEDA_2026-11-24.md). Reconciliar el HEAD de producto y el último recibo físico en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093), el estado de rueda y las alertas en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y el ownership en [#980](https://github.com/mbalbo2023/Porota-trading/issues/980) antes de escribir. `main` es la rama de control documental.
+
+- El [Deploy V2 45450591718](https://github.com/mbalbo2023/Porota-trading/actions/runs/45450591718/artifacts/14948314337) acredita la instalación PAPER/0 de #1261/#1262. El [censo de rueda del mismo release](https://github.com/mbalbo2023/Porota-trading/commit/e9e35204b02b2e0da8092d31726aa4ce511e671e) observó 0/17.384 READY. La prioridad es recuperar identidad y Current/Book PPI, acreditar capacidad EXIT y verificar preopen del SHA que se esté ejecutando.
+- Reportar el primer gate por instrumento, la hora de la generación y las transiciones observadas de DISCOVERY, WARM, HOT, señal, economía, riesgo y asiento. Distinguir heartbeat de trabajo útil con último éxito, cursor y conteo procesado. Para Telegram, correlacionar la clasificación, el outbox y el ACK. Conservar ambos relojes ART y UTC.
+- El historial de referencia `SOURCE_REPORTED` recuperado ya tiene recibo. Para continuar, reusar el inventario de huecos por serie y rango. Exigir evidencia propia de precios RAW, moneda, plazo, resolución y base de ajuste antes de acreditar reconstrucción completa.
 
 El procedimiento está en [docs/RUNBOOK.md](docs/RUNBOOK.md). El
 [índice histórico](docs/history/README.md) reúne los documentos retirados.

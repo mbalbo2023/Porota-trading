@@ -1,5 +1,24 @@
 # Handoff de Porota Trading RC6
 
+## Corte de la rueda PAPER del 24/11/2026
+
+El [RCA de la rueda](RCA_RUEDA_2026-11-24.md) documenta la cadena causal, la cronología, las cinco alertas con ACK, los 32 timers, los históricos y las pruebas pendientes. La bitácora física está en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259). Ownership en [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).
+
+| Frente | Estado en el corte |
+| --- | --- |
+| Instalación | **VALIDADO_RUNTIME**. Producto `f97b7bd55e89409aecd5556b97849227ca1570aa`, fuente `60c02b9754d74d60a682ab2914237c0c0f7e055a`, árbol `31095040e3aef0027c0330dfa68ed267d2d75031`. PAPER/SHADOW, guard REAL bloqueado y `real_orders_sent=0`. [Recibo](https://github.com/mbalbo2023/Porota-trading/actions/runs/45450591718/artifacts/14948314337) |
+| Rueda | **BLOQUEADO**. 0/17.384 READY. Identidad PPI sin acreditar, Current/Book sin vigencia durante la mayor parte de los cortes, EXIT sin presupuesto medido y T−10 asociado al release anterior. Al cierre Auth estaba OK y el reloj de datos había avanzado a 16:55:50 ART, con 0 READY y 0 aperturas y cierres en la muestra. [Censo](https://github.com/mbalbo2023/Porota-trading/commit/e9e35204b02b2e0da8092d31726aa4ce511e671e) · [Postflight](https://github.com/mbalbo2023/Porota-trading/actions/runs/45457257511/artifacts/14951650853) · [Ronda de cierre](https://github.com/mbalbo2023/Porota-trading/issues/1259#issuecomment-7143732920) |
+| BONOS/ON y asientos | Seis variantes `ACTIVE_PAPER`. Decisión, ACK, Book2 y asiento nativo **NO_VERIFICADO** por variante. La lectura spot A655 de las 17:12:36 ART / `2026-11-24T20:12:36Z` observó 0 fills del día. [A655](https://github.com/mbalbo2023/Porota-trading/actions/runs/45478284088/artifacts/14961151613) |
+| Históricos | Cargas de referencia y sus conteos acreditados. Reconstrucción RAW completa **NO_VERIFICADO**, cutoff `INCOMPLETE` y RAW exacto nuevo 0 en la lectura A3. Usar huecos del inventario. [Cobertura y RCA](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7118958757) · [A3](https://github.com/mbalbo2023/Porota-trading/actions/runs/45395647061/artifacts/14920414408) |
+| Actions | Los dos runs históricos de #1087 siguen en cola desde el 11/11 sin jobs ni artefactos. Relojes, workflows, SHA y avance del PR están en el [RCA](RCA_RUEDA_2026-11-24.md#actions-y-pr-1087). |
+| Candidatos abiertos | [#1263 IOL](https://github.com/mbalbo2023/Porota-trading/pull/1263) con Predeploy aprobado y validación de timer pendiente. [#1216 ETF](https://github.com/mbalbo2023/Porota-trading/pull/1216) conserva el antecedente, con sus dos blobs ya presentes en el producto. [#1166 Performance](https://github.com/mbalbo2023/Porota-trading/pull/1166) sigue en borrador con alcance independiente. |
+
+## Instrucción para el agente entrante
+
+> Leé AGENTS.md, el RCA del 24/11 y los últimos recibos de #1259. Reconciliá HEAD y ownership en #980. Arrancá READ_ONLY por GitHub Actions. Prioridad P0 en acreditar identidad y Current/Book PPI por clave, capacidad de EXIT y GO T−10 del SHA activo. En rueda, seguí cada primer bloqueo hasta HOT y la secuencia BONOS/ON decisión → ACK → Book2 → asiento. Retomá sólo los huecos históricos acreditados. PAPER/SHADOW, real_orders_sent=0, PPI Watch fuera de cambios y fix-forward con un solo candidato si requiere Deploy V2.
+
+## Antecedente del Deploy V2 #202
+
 Corte del **23/11/2026 a las 18:54 ART**. El Deploy V2 #202 quedó `VALIDADO_RUNTIME` en el Droplet. La prioridad del agente entrante es observar la venta PAPER de BONOS/ON en la próxima rueda hábil y registrar por instrumento dónde llega el recorrido. Reconciliar este corte con los últimos [recibos en #1093](https://github.com/mbalbo2023/Porota-trading/issues/1093) y [ownership en #980](https://github.com/mbalbo2023/Porota-trading/issues/980).
 
 ## Release e instalación
@@ -44,7 +63,7 @@ El responsable de la primera comprobación es el agente entrante que retome este
 | [#1216 ETF](https://github.com/mbalbo2023/Porota-trading/pull/1216) | DRAFT, `SUPERSEDIDO_CON_REFERENCIA`. Sus dos blobs coinciden con el producto #202. Conservar el PR como evidencia hasta que su owner reconcilie el cierre. |
 | [#1166 Performance](https://github.com/mbalbo2023/Porota-trading/pull/1166) | DRAFT, `RETENER_CON_CAUSA`. Frente independiente excluido de este release. Mantener la revisión con su owner y evidencia propia. |
 
-## Instrucción para abrir el próximo chat
+## Instrucción del corte histórico del 23/11
 
 ```text
 Continuá Porota RC6 desde este handoff. Reconciliá HEAD y el recibo del Deploy V2 #202 con #1093 y ownership #980.
