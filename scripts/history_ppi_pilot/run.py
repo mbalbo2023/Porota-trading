@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import hashlib
+import sys
 from datetime import datetime, timezone
 from http.client import HTTPException
 from urllib.request import Request, urlopen
@@ -91,11 +92,21 @@ print(json.dumps(result))
 
 
 def main():
+    census = sys.argv[1:] == ["--census"]
+    assert census or len(sys.argv) == 1
     pilot = Path(__file__).with_name("pilot.py").read_text()
-    external = json.dumps(data912_capture(), allow_nan=False)
-    pilot = f"import json\nDATA912_CAPTURE = json.loads({external!r})\n" + pilot
+    host = HOST
+    if census:
+        pilot = pilot[:pilot.rindex('if __name__ == "__main__":')]
+        pilot += Path(__file__).with_name("census.py").read_text()
+        host = (host.replace('timeout=35', 'timeout=100')
+                    .replace('65_536', '4_194_304')
+                    .replace('rc6.history.ppi-cutoff-pilot.v1', 'rc6.history.archive-census.v1'))
+    else:
+        external = json.dumps(data912_capture(), allow_nan=False)
+        pilot = f"import json\nDATA912_CAPTURE = json.loads({external!r})\n" + pilot
     with connection(os.environ) as (ssh, _, _):
-        result = ssh_run(ssh, ["python3", "-B", "-c", HOST], data=pilot.encode(), timeout=60)
+        result = ssh_run(ssh, ["python3", "-B", "-c", host], data=pilot.encode(), timeout=125)
     if result.returncode != 0:
         code = result.stdout.decode(errors="replace").strip() if isinstance(result.stdout, bytes) else result.stdout.strip()
         if code.startswith("PILOT_ERROR:") and code.removeprefix("PILOT_ERROR:").replace("_", "").isalpha():
@@ -104,10 +115,11 @@ def main():
     payload = json.loads(result.stdout)
     assert payload["same_runtime"] is True and payload["real_orders_sent"] == 0
     assert payload["provider_requests"] == payload["production_sql_writes"] == 0
-    payload["data912_http_attempts_from_runner"] = 1
-    target = Path(os.environ["RUNNER_TEMP"]) / "rc6-history-ppi-pilot.json"
-    target.write_text(json.dumps(payload, indent=2) + "\n")
-    print("HISTORY_PPI_PILOT=COMPLETE")
+    payload["data912_http_attempts_from_runner"] = 0 if census else 1
+    name = "rc6-history-archive-census" if census else "rc6-history-ppi-pilot"
+    target = Path(os.environ["RUNNER_TEMP"]) / (name + ".json")
+    target.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
+    print(name.upper().replace("-", "_") + "=COMPLETE")
 
 
 if __name__ == "__main__":

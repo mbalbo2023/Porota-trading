@@ -22,17 +22,17 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Compare the production cut and replay the archived rows in memory
+      - name: Census the entire production catalog and retained historical archive
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
           DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-        run: PYTHONPATH="$GITHUB_WORKSPACE" python3 -B scripts/history_ppi_pilot/run.py
+        run: PYTHONPATH="$GITHUB_WORKSPACE" python3 -B scripts/history_ppi_pilot/run.py --census
       - name: Publish the sanitized pilot receipt
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-history-ppi-pilot-${{ github.run_id }}
-          path: ${{ runner.temp }}/rc6-history-ppi-pilot.json
+          name: rc6-history-archive-census-${{ github.run_id }}
+          path: ${{ runner.temp }}/rc6-history-archive-census.json
           retention-days: 7
           if-no-files-found: error
