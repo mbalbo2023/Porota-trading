@@ -83,5 +83,6 @@ jobs:
             ${{ runner.temp }}/porota/download.json
             ${{ runner.temp }}/porota/runtime.json
             ${{ runner.temp }}/porota/history-import.json
+            ${{ runner.temp }}/porota/history-coverage.jsonl
           if-no-files-found: warn
           retention-days: 30

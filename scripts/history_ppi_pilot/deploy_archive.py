@@ -1,8 +1,12 @@
 """Run the deployed archive importer once after a verified Deploy V2 promotion."""
+from base64 import b64encode
+from hashlib import sha256
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import re
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from scripts.porota_actions_host import connection, ssh_run
 
@@ -39,8 +43,8 @@ def verify_deployment():
     return ids[0]
 
 observer = verify_deployment()
-source = sys.stdin.buffer.read(16385)
-assert 0 < len(source) <= 16384
+source = sys.stdin.buffer.read(4_194_305)
+assert 0 < len(source) <= 4_194_304
 run = subprocess.run([*docker, "container", "exec", "-i", "-w", "/app", observer,
     "nice", "-n", "10", "python", "-B", "-"], input=source, capture_output=True, timeout=2100)
 if run.returncode != 0:
@@ -58,16 +62,21 @@ print(json.dumps(payload, separators=(",", ":")))
 """
 
 
-CONTAINER = r"""
+CONTAINER = r'''
+from base64 import b64decode
+from collections import defaultdict
 from contextlib import closing
 import fcntl
 import json
 from pathlib import Path
 import sqlite3
+from tempfile import TemporaryDirectory
 
 from cv_history_store_adapter_hf6 import HistoricalStore
 from cu_history_store_v2_hf6 import PPI_REPORTED
 from scripts.rc6_history_import_ppi_archive import import_ppi_archive
+from scripts.rc6_history_import_source_reported import import_reference_export
+from rc6_multisource_discovery import canonical_family
 
 root = Path("/app/data")
 history = root / "market_history.db"
@@ -97,15 +106,52 @@ def existing():
             ("history_canonical_v2_legacy", "history_versions_v2_legacy")}
 
 
+def append_references(store):
+    outcomes = {}
+    with TemporaryDirectory(prefix="porota-history-reference-") as temporary:
+        for source, data, digest in REFERENCES:
+            archive = Path(temporary) / (source + ".zip")
+            archive.write_bytes(b64decode(data, validate=True))
+            receipt = import_reference_export(archive, history, digest, source=source,
+                                                existing_identity=store.existing_history_identity)
+            outcomes[source] = receipt
+    return outcomes
+
+
+def inventory(archive):
+    reference = defaultdict(list)
+    for row in archive["series"]:
+        if row["days"]:
+            symbol, family, term, literal = row["series"]
+            reference[symbol, family, term].append([literal, row["days"], row["last_date"]])
+    with closing(read(history)) as db:
+        alternate = {(symbol,family): [count,last] for symbol,family,count,last in db.execute("""
+            SELECT symbol,instrument_type,count(DISTINCT date),max(date) FROM history_canonical_v2
+            WHERE price_basis='SOURCE_REPORTED' AND source<>? GROUP BY 1,2""", (PPI_REPORTED,))}
+        exact_rows = {tuple(item[:5]): list(item[5:]) for item in db.execute("""
+            SELECT symbol,instrument_type,market,currency,settlement,count(DISTINCT date),max(date)
+            FROM history_canonical_v2 WHERE price_basis='RAW' GROUP BY 1,2,3,4,5""")}
+    with closing(read(observer)) as db:
+        catalog = db.execute("""SELECT ticker,instrument_type,market,currency,settlement,status
+            FROM financial_instrument_catalog ORDER BY 1,2,3,4,5 LIMIT 50001""").fetchall()
+    assert len(catalog) <= 50000
+    return [[*row, reference.get((row[0],canonical_family(row[1]),row[4]), []),
+             alternate.get((row[0],canonical_family(row[1])), []) if row[2] == "BYMA" else [],
+             exact_rows.get(tuple(row[:5]), [])] for row in catalog]
+
+
 try:
     paper()
     with (root / ".rc6-history-cutoff-repair.lock").open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         before = existing()
-        result = import_ppi_archive(HistoricalStore(str(history)).for_source_reported_history())
+        store = HistoricalStore(str(history)).for_source_reported_history()
+        result = import_ppi_archive(store)
         after = existing()
+        assert before == after and result["stored_rows"] > 0
+        result["additional_references"] = append_references(store)
     paper()
-    assert before == after and result["stored_rows"] > 0
+    result["catalog_coverage"] = inventory(result)
     result.update(preserved_rows_reconciled=True, preserved_rows=after, destination="LIVE_HISTORY_V2")
     print(json.dumps(result, separators=(",", ":")))
 except (OSError, ValueError, sqlite3.Error, AssertionError) as error:
@@ -113,7 +159,32 @@ except (OSError, ValueError, sqlite3.Error, AssertionError) as error:
     print("HISTORY_APPLY:" + (code if code.isascii() and code.replace("_", "").isalnum()
           and code.startswith("HISTORY_") else type(error).__name__))
     raise SystemExit(2)
-"""
+'''
+
+
+def supplemental_references():
+    from scripts.rc6_history_import_source_reported import INTERVALORES, INTERVALORES_MEMBER, MEMBER, SOURCE
+    from scripts.rc6_history_import_source_reported import _capture_sha
+
+    evidence = Path(__file__).with_name("evidence")
+    output = []
+    for source, member, files in ((SOURCE, MEMBER, sorted(evidence.glob("iol-*.jsonl"))),
+                                  (INTERVALORES, INTERVALORES_MEMBER, sorted(evidence.glob("intervalores-*.jsonl")))):
+        rows = []
+        for path in files:
+            for record in path.read_text().splitlines():
+                capture = json.loads(record)
+                if capture["payload"]["bars"]:
+                    capture["payload_sha256"] = _capture_sha(capture["payload"])
+                    rows.append(json.dumps(capture, allow_nan=False, ensure_ascii=False))
+        if not rows:
+            continue
+        buffer = BytesIO()
+        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+            archive.writestr(member, "\n".join(rows) + "\n")
+        raw = buffer.getvalue()
+        output.append((source, b64encode(raw).decode("ascii"), sha256(raw).hexdigest()))
+    return output
 
 
 def main():
@@ -130,10 +201,12 @@ def main():
     assert deployed["operating_mode"] == "PRODUCTION_PAPER" and deployed["execution_mode"] == "SIMULATION"
     assert type(deployed["real_orders_sent"]) is int and deployed["real_orders_sent"] == 0
     assert deployed["ppi_watch_touched"] is False and deployed["health"]["orders_guard"] == "BLOCKED"
+    source = ("REFERENCES = " + repr(supplemental_references()) + "\n" + CONTAINER).encode()
+    assert len(source) <= 4_194_304
     with connection(os.environ) as (ssh, _, _):
         response = ssh_run(ssh, ["python3", "-B", "-c", HOST, deployed["deployment_sha"],
                            deployed["source_sha"], deployed["image_id"]],
-                           data=CONTAINER.encode(), timeout=2200)
+                           data=source, timeout=2200)
     if response.returncode != 0:
         reason = response.stdout.decode(errors="replace").strip()
         if re.fullmatch(r"HISTORY_APPLY:[A-Za-z0-9_]+", reason):
@@ -142,6 +215,17 @@ def main():
     payload = json.loads(response.stdout)
     assert payload["deployment_sha"] == deployed["deployment_sha"]
     assert payload["real_orders_sent"] == 0 and payload["provider_requests"] == 0
+    catalog = payload.pop("catalog_coverage")
+    with (folder / "history-coverage.jsonl").open("w", encoding="utf-8") as rows:
+        for row in catalog:
+            names = ("symbol", "family", "market", "currency", "settlement", "catalog_status",
+                     "ppi_reference_by_selector", "other_reference_days_and_latest",
+                     "raw_days_and_latest")
+            rows.write(json.dumps(dict(zip(names, row, strict=True)), separators=(",", ":")) + "\n")
+    payload["catalog_identities"] = len(catalog)
+    payload["catalog_identities_with_raw"] = sum(bool(row[8]) for row in catalog)
+    payload["catalog_identities_with_ppi_reference"] = sum(bool(row[6]) for row in catalog)
+    payload["catalog_identities_with_any_reference"] = sum(bool(row[6] or row[7]) for row in catalog)
     report = folder / "history-import.json"
     report.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
     print(json.dumps({key: payload[key] for key in ("schema", "stored_rows", "quick_check",
