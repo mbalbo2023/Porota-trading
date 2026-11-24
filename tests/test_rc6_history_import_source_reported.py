@@ -13,7 +13,10 @@ from cu_history_store_v2_hf6 import (
     SOURCE_REPORTED, Candle, append_many, read_as_of, source_reported_adjustment,
 )
 from cv_history_store_adapter_hf6 import HistoricalStore
-from scripts.rc6_history_import_source_reported import MEMBER, _capture_sha, import_iol_export
+from scripts.rc6_history_import_source_reported import (
+    INTERVALORES, INTERVALORES_MEMBER, MEMBER, _capture_sha, import_iol_export,
+    import_reference_export,
+)
 
 
 class SourceReportedImportTest(unittest.TestCase):
@@ -72,6 +75,44 @@ class SourceReportedImportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "HISTORY_REFERENCE_DESTINATION_REQUIRED"):
             mistyped_store.connect()
         self.assertEqual(self.destination.read_bytes(), original)
+
+    def test_intervalores_import_preserves_reported_identity_and_unknown_adjustment(self):
+        rows = {"bars": [{"date": "2025-09-22", "open": 10, "high": 15, "low": 8,
+                          "close": 8, "traded_amount_ars": 1000000}]}
+        url = "https://www.intervaloresgroup.com/Bursatil/Especie/AAPL/MERVAL/24hs."
+        capture = {"market": "BCBA", "family": "CEDEARS", "symbol": "AAPL",
+                   "from_date": "2025-09-22", "to_date": "2025-09-22",
+                   "payload": rows, "payload_sha256": _capture_sha(rows), "received_at": self.observed,
+                   "source_url": url, "quoted_currency": "ARS", "quoted_settlement": "A-24HS"}
+
+        def load(file, observation, destination):
+            with ZipFile(file, "w") as archive:
+                archive.writestr(INTERVALORES_MEMBER, json.dumps(observation) + "\n")
+            with file.open("rb") as archive:
+                digest = file_digest(archive, "sha256").hexdigest()
+            return import_reference_export(file, destination, digest, source=INTERVALORES)
+
+        with self.assertRaisesRegex(ValueError, "HISTORY_CAPTURE_INTERVALORES_SERIES_UNVERIFIED"):
+            load(self.archive, dict(capture, quoted_settlement="INMEDIATA"), self.destination)
+        self.assertFalse(self.destination.exists())
+        self.assertEqual(load(self.archive, capture, self.destination)["canonical_updates"], 1)
+        retried = load(self.archive, capture, self.destination)
+        self.assertEqual((retried["versions_appended"], retried["canonical_updates"]), (0, 0))
+        with HistoricalStore(str(self.destination)).connect() as connection:
+            keys = dict(symbol="AAPL", instrument_type="CEDEARS", market="BCBA", currency="UNKNOWN",
+                        settlement="UNKNOWN", price_basis=SOURCE_REPORTED,
+                        adjustment_basis=source_reported_adjustment(INTERVALORES), minimum_quality="FULL_OHLC")
+            self.assertEqual(read_as_of(connection, as_of="2025-10-01T21:00:00Z", **keys), [])
+            saved, = read_as_of(connection, as_of=self.observed, **keys)
+            self.assertEqual((saved["source"], saved["close"], saved["volume"], saved["provider_at"]),
+                             (INTERVALORES, 8, None, None))
+            metadata = json.loads(saved["metadata_json"])
+            self.assertEqual((metadata["source_url"], metadata["reported_currency"],
+                              metadata["reported_settlement"], metadata["readiness_implication"]),
+                             (url, "ARS", "A-24HS", "NONE"))
+            self.assertEqual(read_as_of(connection, symbol="AAPL", instrument_type="CEDEARS",
+                                        market="BYMA", currency="ARS", settlement="A-24HS",
+                                        as_of=self.observed), [])
 
     def test_regular_store_rejects_source_reported_candles(self):
         candle = Candle(symbol="GGAL", instrument_type="ACCIONES", market="BCBA",
