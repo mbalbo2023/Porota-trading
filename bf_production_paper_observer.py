@@ -2778,13 +2778,14 @@ def _source_sync_due(store, source, now=None):
         now = now.replace(tzinfo=TZ)
     today = now.astimezone(TZ).date()
     with store.connect() as connection:
-        row = connection.execute(
-            "SELECT last_attempt_at,status FROM source_sync WHERE source=?", (source,)
-        ).fetchone()
-    if not row or not row[0]:
+        cursor = connection.execute("SELECT * FROM source_sync WHERE source=?", (source,))
+        row = cursor.fetchone()
+        receipt = dict(zip((column[0] for column in cursor.description), row)) if row else {}
+    last_attempt = receipt.get("last_attempt_at")
+    if not last_attempt:
         return True
     try:
-        raw = str(row[0]).strip()
+        raw = str(last_attempt).strip()
         if len(raw) == 10:
             # Older local-day receipts predate the UTC timestamp format.
             attempted_date = date.fromisoformat(raw)
@@ -2796,11 +2797,12 @@ def _source_sync_due(store, source, now=None):
                 attempt = attempt.replace(tzinfo=TZ)
             attempted_local = attempt.astimezone(TZ)
             attempted_date = attempted_local.date()
-            if source == "PPI_PRODUCTION_CATALOG" and attempted_date == today:
-                if row[1] == CATALOG_DEFERRED_STATUS:
+            status = receipt.get("status")
+            if status and source == "PPI_PRODUCTION_CATALOG" and attempted_date == today:
+                if status == CATALOG_DEFERRED_STATUS:
                     # Any longer provider hold still applies at the gateway.
                     return (now - attempt).total_seconds() >= LOGIN_COOLDOWN_SECONDS
-                if row[1] == "ROJO":
+                if status == "ROJO":
                     # Unclassified failures, including older releases, can be
                     # revisited once after the same session closes.
                     close = now.astimezone(TZ).replace(
