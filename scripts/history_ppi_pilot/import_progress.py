@@ -41,28 +41,16 @@ print(json.dumps(output))
 
 
 SQL = r'''
-from collections import Counter
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+import os
 import sqlite3
 import time
-
-import fb_raw_evidence_exact_v1 as exact
-from scripts.rc6_history_import_ppi_archive import _body, _manifest, _series
-from cu_history_store_v2_hf6 import instant
 
 with closing(sqlite3.connect("file:/app/data/paper_v17/observer_v17.db?mode=ro",uri=True,timeout=3)) as db:
     db.execute("PRAGMA query_only=ON")
     paper = db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
-    db.execute("BEGIN")
-    fci_count = db.execute("SELECT count(*) FROM financial_instrument_catalog WHERE instrument_type='FCI'").fetchone()[0]
-    bindings = dict(db.execute("""SELECT lower(field.key),count(DISTINCT f.ticker)
-        FROM financial_instrument_catalog f, json_tree(
-          CASE WHEN json_valid(f.metadata_json) THEN f.metadata_json ELSE '{}' END) field
-        WHERE f.instrument_type='FCI' AND lower(field.key) IN
-          ('cafci_class_id','cafciclassid','idclasecafci','codigo_clase_cafci','cnv_fund_id','cnvfundid')
-          AND field.type IN ('text','integer') AND length(field.atom)>0 GROUP BY 1"""))
 assert paper == ("PRODUCTION_PAPER",0)
 with closing(sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True,timeout=3)) as db:
     db.execute("PRAGMA query_only=ON")
@@ -71,75 +59,14 @@ with closing(sqlite3.connect("file:/app/data/market_history.db?mode=ro",uri=True
     journal = db.execute("PRAGMA journal_mode").fetchone()[0]
     db.execute("BEGIN")
     count = db.execute("SELECT count(*) FROM history_versions_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'").fetchone()[0]
-    canonical = db.execute("SELECT count(*) FROM history_canonical_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'").fetchone()[0]
-
-
-def key_shape(value, wrapper, recorded):
-    try:
-        key = json.loads(value)
-    except (TypeError, ValueError):
-        return "INVALID_JSON"
-    if not isinstance(key, list):
-        return type(key).__name__
-    lookup = {wrapper[name]: name for name in ("symbol","asset_class","instrument_type",
-              "settlement","market","currency","date_from","date_to")
-              if isinstance(wrapper.get(name), str)}
-    lookup[recorded] = "recorded_at"
-
-    def member(item):
-        if isinstance(item, list):
-            return [member(part) for part in item]
-        if isinstance(item, str):
-            return lookup.get(item, "text:" + str(len(item)))
-        return type(item).__name__
-    return json.dumps(member(key), separators=(",", ":"))
-
-
-rejected = Counter()
-examples = {}
-suffixes = Counter()
-with closing(_manifest(exact.manifest_path())) as db:
-    rows = db.execute("""SELECT row_key,body_hash,inner_sha256,recorded_at,quality,
-        CASE WHEN length(CAST(wrapper_json AS BLOB))<=65536 THEN wrapper_json END wrapper_json
-        FROM exact_attempts_v1 WHERE origin='PPI_HISTORY' LIMIT 1000001""")
-    for index, row in enumerate(rows):
-        assert index < 1000000
-        wrapper = {}
-        try:
-            wrapper = json.loads(row["wrapper_json"])
-            _series(row, wrapper)
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            family = str(wrapper.get("instrument_type") or wrapper.get("asset_class") or "UNKNOWN") if isinstance(wrapper, dict) else "UNKNOWN"
-            reason = str(exc) if isinstance(exc, ValueError) and str(exc).startswith("HISTORY_ARCHIVE_") else type(exc).__name__
-            shape = key_shape(row["row_key"], wrapper, row["recorded_at"]) if isinstance(wrapper, dict) else "UNKNOWN"
-            key = (family,reason,shape)
-            rejected[key] += 1
-            if reason == "HISTORY_ARCHIVE_KEY_CONFLICT" and shape.endswith('"text:12"]'):
-                suffix = json.loads(row["row_key"])[-1]
-                if suffix == row["inner_sha256"][:12]:
-                    suffixes["INNER_SHA256_PREFIX"] += 1
-                elif suffix == row["body_hash"][:12]:
-                    suffixes["BODY_SHA256_PREFIX"] += 1
-                elif suffix.isascii() and all(value.isupper() or value in "-_" for value in suffix):
-                    suffixes[suffix] += 1
-                elif all(value in "0123456789abcdefABCDEF" for value in suffix):
-                    suffixes["UNMATCHED_HEX"] += 1
-                else:
-                    suffixes["UNRECOGNIZED_MARKER"] += 1
-            if key not in examples and family == "FCI" and row["quality"] == "VALID_PAYLOAD":
-                try:
-                    bars, _, digest = _body(db, (instant(row["recorded_at"]),row["row_key"],row["body_hash"]),None)
-                    examples[key] = {"symbol":wrapper.get("symbol"),"from":wrapper.get("date_from"),
-                                     "to":wrapper.get("date_to"),"provider_bars":len(bars),
-                                     "payload_sha256":digest}
-                except (OSError, ValueError):
-                    examples[key] = {"state":"BODY_UNVERIFIED"}
+    groups = db.execute("""SELECT instrument_type,count(*),max(date)
+        FROM history_canonical_v2 WHERE source='PPI_PRODUCTION_HISTORY_REPORTED'
+        GROUP BY instrument_type ORDER BY instrument_type""").fetchall()
+sources = {name: bool(os.getenv("POROTA_"+name+"_HISTORICAL_URL","").strip())
+           for name in ("BYMA","CNV","MATBA_ROFEX")}
 print(json.dumps({"schema":"rc6.history.live-progress.v1","committed_ppi_versions":count,
-                  "committed_ppi_canonical":canonical,"fci_catalog_identities":fci_count,
-                  "fcis_with_catalog_binding_markers":bindings,
-                  "historical_key_markers":dict(suffixes),
-                  "manifest_rejections":[{"family":k[0],"reason":k[1],"shape":k[2],"count":v,
-                                          "example":examples.get(k)} for k,v in rejected.most_common()],
+                  "committed_ppi_canonical":sum(group[1] for group in groups),
+                  "committed_by_family":groups,"official_historical_endpoints_configured":sources,
                   "journal_mode":journal,"real_orders_sent":0,"production_sql_writes":0,
                   "observed_at":datetime.now(timezone.utc).isoformat()}))
 '''
