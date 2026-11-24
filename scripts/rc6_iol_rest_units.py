@@ -14,13 +14,15 @@ import tempfile
 
 
 UNIT_ROOT = Path("/etc/systemd/system")
+PRODUCT_ROOT = Path("/opt/porota-trading")
 SYSTEMCTL = "/usr/bin/systemctl"
 OVERRIDE = "95-porota-iol-rest.conf"
+IOL_HEALTH = "porota-iol-oauth-health-rc6.service"
 LEGACY = {
     "porota-iol-shadow-collector-rc6.service": ("/scripts/rc6_source_cycle_dispatch.py", frozenset()),
-    "porota-iol-oauth-health-rc6.service": ("/scripts/rc6_iol_oauth_health.py", frozenset({"90-porota-iol-release.conf"})),
+    IOL_HEALTH: ("/scripts/rc6_iol_oauth_health.py", frozenset({"90-porota-iol-release.conf"})),
 }
-SERVICE_KEYS = "ActiveState,LoadState,FragmentPath,DropInPaths,NeedDaemonReload,ExecStart,User,Group,Conditions"
+SERVICE_KEYS = "ActiveState,LoadState,FragmentPath,DropInPaths,NeedDaemonReload,ExecStart,User,Group,Conditions,WorkingDirectory"
 TIMER_KEYS = "LoadState,ActiveState,UnitFileState,Triggers,TimersCalendar,TimersMonotonic,AccuracyUSec,Persistent"
 
 
@@ -52,9 +54,10 @@ def launcher_command(account, unit):
             f"/usr/bin/python3 -B {account.pw_dir}/.local/state/porota-rc6/scheduler-dispatch.py --unit {unit}")
 
 
-def definition(account, unit):
+def definition(account, unit, *, pin_directory=True):
+    directory = f"WorkingDirectory={PRODUCT_ROOT}\n" if pin_directory and unit == IOL_HEALTH else ""
     return ("[Unit]\nDescription=Porota RC6 IOL REST OBSERVE_ONLY\nConditionPathExists=\n\n"
-            f"[Service]\nUser={account.pw_name}\nGroup={account.pw_gid}\nExecStart=\n"
+            f"[Service]\nUser={account.pw_name}\nGroup={account.pw_gid}\n{directory}ExecStart=\n"
             f"ExecStart={launcher_command(account, unit)}\n").encode()
 
 
@@ -64,6 +67,10 @@ def effective(service, account, unit, path):
             and str(path) in service.get("DropInPaths", "").split() and service.get("NeedDaemonReload") == "no"
             and "iol_mcp_oauth_bootstrap.json" not in service.get("Conditions", "")
             and match is not None and match[1].strip() == launcher_command(account, unit))
+
+
+def working_directory_effective(service, unit):
+    return unit != IOL_HEALTH or service.get("WorkingDirectory") == str(PRODUCT_ROOT)
 
 
 def publish(path, content):
@@ -87,6 +94,7 @@ def reconcile(account, *, install):
     checked_path(state, account.pw_uid, directory=True)
     checked_path(state / "scheduler-dispatch.py", account.pw_uid)
     checked_path(UNIT_ROOT, 0, directory=True)
+    checked_path(PRODUCT_ROOT, account.pw_uid, directory=True)
     plans, timers = {}, {}
     for unit, (legacy_command, legacy_overrides) in LEGACY.items():
         timer = unit.removesuffix(".service") + ".timer"
@@ -109,28 +117,36 @@ def reconcile(account, *, install):
             checked_path(dropin, 0)
         content = definition(account, unit)
         present = path.exists() or path.is_symlink()
+        installed_content = None
         if present:
             checked_path(path, 0)
-            require(path.read_bytes() == content, "IOL_UNIT_OVERRIDE_DRIFT")
+            installed_content = path.read_bytes()
+            # Only replace the exact legacy drop-in published by the installer.
+            require(installed_content in {content, definition(account, unit, pin_directory=False)},
+                    "IOL_UNIT_OVERRIDE_DRIFT")
         already_effective = effective(service, account, unit, path)
         if not already_effective:
             require(service.get("User") in ("", "root") and legacy_command in service.get("ExecStart", ""),
                     "IOL_LEGACY_UNIT_UNREVIEWED")
-        plans[unit] = (path, content, not already_effective)
-    if install and any(change for _, _, change in plans.values()):
+        change = not already_effective or installed_content != content or not working_directory_effective(service, unit)
+        if change:
+            plans[unit] = (path, content)
+    if install and plans:
         systemctl("stop", *plans)
-        for path, content, change in plans.values():
-            if change:
-                path.parent.mkdir(mode=0o755, exist_ok=True)
-                checked_path(path.parent, 0, directory=True)
-                publish(path, content)
+        for path, content in plans.values():
+            path.parent.mkdir(mode=0o755, exist_ok=True)
+            checked_path(path.parent, 0, directory=True)
+            publish(path, content)
         systemctl("daemon-reload")
     if install:
-        require(all(effective(properties(unit, SERVICE_KEYS), account, unit, path)
-                    for unit, (path, _, _) in plans.items()), "IOL_REST_UNIT_NOT_EFFECTIVE")
+        for unit in LEGACY:
+            service = properties(unit, SERVICE_KEYS)
+            path = UNIT_ROOT / (unit + ".d") / OVERRIDE
+            require(effective(service, account, unit, path) and working_directory_effective(service, unit),
+                    "IOL_REST_UNIT_NOT_EFFECTIVE")
         require(all(properties(timer, TIMER_KEYS) == state for timer, state in timers.items()), "IOL_TIMER_STATE_CHANGED")
     return {"state": "EFFECTIVE" if install else "PREFLIGHT_OK", "source": "IOL_REST",
-            "services": {unit: {"configured": install, "uid": account.pw_uid} for unit in plans},
+            "services": {unit: {"configured": install, "uid": account.pw_uid} for unit in LEGACY},
             "timers": {unit: state.get("ActiveState") for unit, state in timers.items()}}
 
 

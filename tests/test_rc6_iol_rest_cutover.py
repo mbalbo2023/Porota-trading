@@ -122,10 +122,17 @@ def test_source_dispatch_requires_release_database_identity_before_children(tmp_
     assert calls == ["iol", "public", "evidence"]
 
 
-def test_iol_unit_cutover_is_idempotent_and_preserves_timers(tmp_path, monkeypatch):
+@pytest.mark.parametrize("already_installed", [False, True])
+def test_iol_unit_cutover_is_idempotent_and_preserves_timers(tmp_path, monkeypatch, already_installed):
     monkeypatch.setattr(units, "UNIT_ROOT", tmp_path)
     monkeypatch.setattr(units, "checked_path", lambda *a, **kw: None)
     account = SimpleNamespace(pw_uid=1000, pw_gid=1000, pw_name="porotaadmin", pw_dir="/home/porotaadmin")
+    health = "porota-iol-oauth-health-rc6.service"
+    if already_installed:
+        for unit in units.LEGACY:
+            path = tmp_path / (unit + ".d") / units.OVERRIDE
+            path.parent.mkdir()
+            path.write_bytes(units.definition(account, unit).replace(b"WorkingDirectory=/opt/porota-trading\n", b""))
     commands, updated = [], False
     def control(*args):
         nonlocal updated
@@ -136,18 +143,23 @@ def test_iol_unit_cutover_is_idempotent_and_preserves_timers(tmp_path, monkeypat
         if keys == units.TIMER_KEYS:
             return {"LoadState": "loaded", "ActiveState": "active", "Triggers": unit.removesuffix(".timer") + ".service"}
         path = tmp_path / (unit + ".d") / units.OVERRIDE
+        installed = updated or already_installed
+        directory = "/opt/porota-trading" if unit != health or updated else "/fixture/restricted"
         return {"LoadState": "loaded", "FragmentPath": str(tmp_path / unit), "NeedDaemonReload": "no",
-                "Conditions": "", "DropInPaths": str(path) if updated else "", "User": account.pw_name if updated else "",
-                "Group": "1000" if updated else "", "ExecStart": "{ argv[]=" + units.launcher_command(account, unit) + " ; }"
-                         if updated else "/opt/porota-trading" + units.LEGACY[unit][0]}
+                "Conditions": "", "WorkingDirectory": directory, "DropInPaths": str(path) if installed else "",
+                "User": account.pw_name if installed else "", "Group": "1000" if installed else "",
+                "ExecStart": "{ argv[]=" + units.launcher_command(account, unit) + " ; }"
+                if installed else "/opt/porota-trading" + units.LEGACY[unit][0]}
     monkeypatch.setattr(units, "systemctl", control)
     monkeypatch.setattr(units, "properties", properties)
     assert units.reconcile(account, install=False)["state"] == "PREFLIGHT_OK"
     assert commands == []
     assert units.reconcile(account, install=True)["state"] == "EFFECTIVE"
-    assert commands == [("stop", *units.LEGACY), ("daemon-reload",)]
+    changing = (health,) if already_installed else tuple(units.LEGACY)
+    assert commands == [("stop", *changing), ("daemon-reload",)]
     assert all((tmp_path / (unit + ".d") / units.OVERRIDE).read_bytes() == units.definition(account, unit)
                for unit in units.LEGACY)
+    assert b"WorkingDirectory=/opt/porota-trading\n" in (tmp_path / (health + ".d") / units.OVERRIDE).read_bytes()
     commands.clear()
     assert units.reconcile(account, install=True)["state"] == "EFFECTIVE"
     assert commands == []
