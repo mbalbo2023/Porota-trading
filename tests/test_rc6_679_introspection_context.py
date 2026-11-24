@@ -79,6 +79,15 @@ def test_introspection_alerts_for_source_failure_and_warns_for_quiet_fresh_marke
         [], ["no_decisions_during_open_market"])
 
 
+def test_introspection_checks_ppi_when_observer_is_booting_during_the_wheel():
+    now = datetime.fromisoformat("2026-11-24T16:35:00-03:00")
+    observer = {"session_state": "BOOT_CALENDAR", "ppi_auth": "COOLDOWN"}
+    assert introspection.open_market_findings(observer, now=now, decisions=0) == (
+        ["ppi_auth_unavailable_during_open_market"], [])
+    assert introspection.open_market_findings(
+        observer, now=now.replace(hour=17), decisions=0) == ([], [])
+
+
 def test_future_or_stale_safety_heartbeat_never_downgrades_hold():
     now=datetime.fromisoformat('2026-10-20T23:00:00-03:00')
     c,observer=fixture(now)

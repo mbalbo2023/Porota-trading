@@ -34,6 +34,7 @@ from rc6_ppi_shared_feed import (
 )
 from rc6_ppi_shared_producer import PPISharedSDKProducer
 from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
+from bd_ppi_readonly_guard import MARKET_CONFIGURATION_FIELDS
 
 
 SCHEMA = "rc6.ppi.single-market-session.offhost.v1"
@@ -727,7 +728,8 @@ class PPISharedSessionOwner:
             if not isinstance(args, dict):
                 raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
             if method == "market_configuration":
-                if args:
+                if args and (set(args) != {"field"}
+                             or args["field"] not in MARKET_CONFIGURATION_FIELDS):
                     raise SessionOwnerBlocked("PPI_AUX_ARGUMENTS_INVALID")
                 identity = None
             elif method == "search_instruments":
@@ -771,7 +773,7 @@ class PPISharedSessionOwner:
             prior_guard_code = getattr(self._reader, "last_read_error_code", None)
             try:
                 if method == "market_configuration":
-                    result = self._reader.market_configuration()
+                    result = self._reader.market_configuration(**args)
                 elif method == "search_instruments":
                     result = self._reader.search_instruments(
                         args["ticker"], args["instrument_type"],

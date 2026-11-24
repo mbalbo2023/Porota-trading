@@ -78,7 +78,9 @@ def should_warn_no_usd_operations(session_state: str | None, currencies: list[di
 
 
 def open_market_findings(observer, *, now, decisions, rate_limited=False):
-    if observer.get("session_state") != "MARKET_OPEN":
+    # The observer can stay in BOOT_CALENDAR while reattaching to PPI.
+    # Use the audited calendar to decide when market data is expected.
+    if byma_paper_spot_phase(now) != "OPEN":
         return [], []
     if observer.get("ppi_auth") != "OK":
         return ["ppi_auth_unavailable_during_open_market"], []
@@ -252,6 +254,7 @@ def atomic_text(path, content):
 
 def collect():
     now = datetime.now(TZ)
+    market_open = byma_paper_spot_phase(now) == "OPEN"
     hour = (now-timedelta(hours=1)).isoformat()
     day = datetime.combine(now.date(), datetime.min.time(), TZ).isoformat()
     result = {"version": VERSION, "hotfix": HOTFIX_TAG,
@@ -265,7 +268,7 @@ def collect():
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
             "last_market_data_at", "real_orders_sent", "http_allowed", "http_blocked")}
         rate_limited = False
-        if observer.get("session_state") == "MARKET_OPEN" and table(c, "api_health"):
+        if market_open and table(c, "api_health"):
             probe = c.execute("""SELECT checked_at,detail FROM api_health
                 WHERE component='PPI_DIRECT_REST_RECOVERY'""").fetchone()
             if probe:
@@ -485,7 +488,6 @@ def collect():
         result["anomalies"].append("real_orders_sent_unverified")
     elif counter != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
-    market_open = str(result["observer"].get("session_state") or "").upper() == "MARKET_OPEN"
     anomalies, warnings = open_market_findings(result["observer"], now=now,
         decisions=result["trading"]["decisions_1h"], rate_limited=rate_limited)
     result["anomalies"].extend(anomalies)

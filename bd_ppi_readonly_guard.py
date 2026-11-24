@@ -28,6 +28,17 @@ import requests
 PRODUCTION_HOST = "clientapi.portfoliopersonal.com"
 _REFRESH_PATH = "/api/1.0/account/refreshtoken"
 
+_MARKET_CONFIGURATION_GETTERS = {
+    "instrument_types": "get_instrument_types",
+    "markets": "get_markets",
+    "settlements": "get_settlements",
+    "quantity_types": "get_quantity_types",
+    "operation_terms": "get_operation_terms",
+    "operation_types": "get_operation_types",
+    "operations": "get_operations",
+}
+MARKET_CONFIGURATION_FIELDS = tuple(_MARKET_CONFIGURATION_GETTERS)
+
 _POST_PATHS = {
     "/api/1.0/account/loginapi",
     _REFRESH_PATH,
@@ -999,21 +1010,19 @@ class ProductionMarketReader:
             raise TypeError("PPI_ESTIMATE_PARAMETERS_REQUIRED")
         return self._market().estimate_bonds(parameters)
 
-    def market_configuration(self):
+    def market_configuration(self, field=None):
         """Enums públicos documentados; misma sesión y ninguna cuenta/orden."""
         self._market()  # exige la misma sesión; no intenta otro login
         configuration = self.__client.configuration
-        values = {"instrument_types": configuration.get_instrument_types(),
-                "markets": configuration.get_markets(),
-                "settlements": configuration.get_settlements(),
-                "quantity_types": configuration.get_quantity_types(),
-                "operation_terms": configuration.get_operation_terms(),
-                "operation_types": configuration.get_operation_types(),
-                "operations": configuration.get_operations()}
+        if field is not None and field not in MARKET_CONFIGURATION_FIELDS:
+            raise ValueError("PPI_CONFIGURATION_FIELD_INVALID")
+        fields = MARKET_CONFIGURATION_FIELDS if field is None else (field,)
+        values = {name: getattr(configuration, _MARKET_CONFIGURATION_GETTERS[name])()
+                  for name in fields}
         if any(not isinstance(items,list) or any(not isinstance(item,str) or not item.strip() for item in items)
                for items in values.values()):
             raise ValueError('PPI_CONFIGURATION_INVALID_SHAPE')
-        return values
+        return values if field is None else values[field]
 
     def _search_cauciones_official(self, market: str = "BYMA"):
         """Expande el alias legado CAUCION al contrato oficial PPI.
