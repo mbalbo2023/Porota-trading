@@ -1,0 +1,44 @@
+name: RC6 replay de frescura del 24/11 READ_ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-ready-replay-20261124]
+    paths:
+      - .github/workflows/rc6-ready-replay-20261124.yml
+      - scripts/rc6_ready_replay_20261124.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Reproducir cotizaciones persistidas con el reloj de recepción
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p evidence
+          python3 -B -m scripts.rc6_ready_replay_20261124 > evidence/ready-replay.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-ready-replay-20261124-${{ github.run_id }}
+          path: evidence/ready-replay.json
+          if-no-files-found: error
+          retention-days: 90
