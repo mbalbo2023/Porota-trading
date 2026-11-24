@@ -4,8 +4,7 @@ on:
   push:
     branches: [diagnostic/rc6-history-ppi-pilot-20261123]
     paths:
-      - .github/workflows/rc6-history-ppi-pilot-20261123.yml
-      - scripts/history_ppi_pilot/**
+      - scripts/history_ppi_pilot/census.py
 
 permissions:
   contents: read
