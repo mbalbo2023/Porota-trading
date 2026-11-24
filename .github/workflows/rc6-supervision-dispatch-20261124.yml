@@ -1,0 +1,55 @@
+name: RC6 supervision requests 2026-11-24
+
+on:
+  push:
+    branches: [diagnostic/rc6-supervision-20261124]
+    paths:
+      - 'ops/supervision/20261124/runtime/*.json'
+      - 'ops/supervision/20261124/funnel/*.json'
+
+permissions: {}
+
+jobs:
+  dispatch-readonly:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/diagnostic/rc6-supervision-20261124' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Send an allowlisted read-only request
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$(TZ=America/Argentina/Buenos_Aires date +%F)" != "2026-11-24" ]]; then
+            echo 'RC6_SUPERVISION_EXPIRED'
+            exit 0
+          fi
+          changed=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq '.files[].filename')
+          if [[ "$changed" =~ ^ops/supervision/20261124/runtime/[0-9A-Za-z-]+\.json$ ]]; then
+            kind=runtime
+            workflow=384354765
+            inputs='{"ref":"main","inputs":{"notification_mode":"read_only"}}'
+          elif [[ "$changed" =~ ^ops/supervision/20261124/funnel/[0-9A-Za-z-]+\.json$ ]]; then
+            kind=funnel
+            workflow=rc6-a655-gap-gate-histogram-readonly.yml
+            inputs='{"ref":"main","inputs":{"run_host":true}}'
+          else
+            echo 'RC6_SUPERVISION_REQUEST_INVALID'
+            exit 1
+          fi
+          response=$(printf '%s\n' "$inputs" | gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/dispatches" --input -)
+          run_id=$(jq -er '.workflow_run_id | select(type == "number" and . > 0)' <<<"$response")
+          printf 'RC6_SUPERVISION_DISPATCH kind=%s run_id=%s\n' "$kind" "$run_id"
+          printf '[RC6 %s run %s](https://github.com/%s/actions/runs/%s)\n' \
+            "$kind" "$run_id" "$GITHUB_REPOSITORY" "$run_id" >> "$GITHUB_STEP_SUMMARY"
