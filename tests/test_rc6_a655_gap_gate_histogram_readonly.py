@@ -1,6 +1,7 @@
 """A655 synthetic SQLite fixtures ONLY; never contacts live host/PPI/Watch."""
 from __future__ import annotations
 
+from datetime import datetime
 import hashlib
 import importlib.util
 import json
@@ -130,6 +131,46 @@ class A655Histogram(unittest.TestCase):
         report = module.diagnose(self.db)
         self.assertEqual(report["state"], "NO_VERIFICADO")
         self.assertEqual(report["reason"], "PRIVATE_RO_MOUNT_REQUIRED")
+
+    def test_fills_from_same_snapshot_use_art_session_and_count_partial_sells(self):
+        with sqlite3.connect(self.db) as c:
+            c.executescript("""
+                CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,asset_class TEXT);
+                CREATE TABLE paper_fills(paper_id TEXT,source TEXT,side TEXT,filled_at TEXT);
+                INSERT INTO paper_positions VALUES('paper-bond','ON'),('paper-stock','ACCIONES');
+            """)
+            c.executemany("INSERT INTO paper_fills VALUES(?,?,?,?)", [
+                ("paper-bond", "PRODUCTION_PAPER", "BUY_SIMULATED", "2026-11-24T03:00:00+00:00"),
+                ("paper-bond", "PRODUCTION_PAPER", "SELL_SIMULATED", "2026-11-24T12:00:00+00:00"),
+                ("paper-bond", "PRODUCTION_PAPER", "SELL_SIMULATED", "2026-11-24T12:00:01+00:00"),
+                ("paper-stock", "PRODUCTION_PAPER", "BUY_SIMULATED", "2026-11-24T02:59:59+00:00"),
+                ("paper-stock", "PRODUCTION_PAPER", "BUY_SIMULATED", "2026-11-24T14:00:01+00:00"),
+                ("paper-stock", "SANDBOX", "BUY_SIMULATED", "2026-11-24T13:00:00+00:00"),
+                ("unjoined", "PRODUCTION_PAPER", "SELL_SIMULATED", "2026-11-24T13:00:00+00:00"),
+            ])
+        at = datetime.fromisoformat("2026-11-24T14:00:00+00:00")
+        with patch.object(module, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = at
+            raw = self.probe()
+        safe = module.sanitize({**raw, "private_ro_mount": True})
+        self.assertEqual(safe["catalog_ready_scope"], "STORED_CATALOG_CAPABILITY")
+        fills = safe["paper_fills_today"]
+        self.assertEqual(fills, {"status": "OBSERVED", "source": "paper_fills",
+            "session_date_art": "2026-11-24", "total": 4, "by_family": {
+                "OBLIGACIONES": {"buy": 1, "sell": 2}, "UNATTRIBUTED": {"buy": 0, "sell": 1}}})
+        bad = {**raw, "private_ro_mount": True, "paper_fills_today": {**fills, "total": 0}}
+        self.assertEqual(module.sanitize(bad)["state"], "NO_VERIFICADO")
+
+    def test_missing_fill_table_is_distinct_from_observed_zero(self):
+        self.assertIsNone(self.probe()["paper_fills_today"]["total"])
+        with sqlite3.connect(self.db) as c:
+            c.executescript("""
+                CREATE TABLE paper_positions(paper_id TEXT PRIMARY KEY,asset_class TEXT);
+                CREATE TABLE paper_fills(paper_id TEXT,source TEXT,side TEXT,filled_at TEXT);
+            """)
+        raw = self.probe()
+        self.assertEqual(raw["paper_fills_today"]["status"], "OBSERVED")
+        self.assertEqual(raw["paper_fills_today"]["total"], 0)
 
     def test_raw_alias_and_ticker_collisions_never_confer_current(self):
         with sqlite3.connect(self.db) as c:

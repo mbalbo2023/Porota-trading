@@ -21,6 +21,7 @@ import sys
 import time
 from urllib.parse import quote
 import uuid
+from zoneinfo import ZoneInfo
 
 
 SCHEMA = "rc6.a668.option-ppi-key-root-readonly.v6"
@@ -37,6 +38,9 @@ MAX_METADATA_BYTES = 128 * 1024 * 1024
 MAX_COUNT = 1000000
 FAMILIES = frozenset({"BONOS", "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI"})
 RAW_FAMILIES = FAMILIES | {"ON", "FCI_LOCAL"}
+ART = ZoneInfo("America/Argentina/Buenos_Aires")
+FILL_FAMILIES = FAMILIES | {"ACCIONES", "CEDEARS", "ETFS", "LETRAS", "UNATTRIBUTED"}
+FILL_SIDES = {"BUY_SIMULATED": "buy", "SELL_SIMULATED": "sell"}
 ACTIVE = frozenset({"AVAILABLE", "ACTIVE", "READY"})
 CAP_CODES = frozenset({
     "NEEDS_NOMINAL_UNITS", "NEEDS_OPTION_CONTRACT",
@@ -157,6 +161,8 @@ def _base():
             "paper_admission_certified": False, "runtime_sha_verified": False,
             "real_orders_sent": None, "sampled_at_utc": None,
             "catalog_active_gap_total": None, "catalog_six_family_total": None,
+            "catalog_ready_scope": "STORED_CATALOG_CAPABILITY",
+            "paper_fills_today": _unverified_fills(),
             "status_coverage": {}, "by_family": {}, "joint": [],
             "option_review_root_total": None, "option_review_root_hist": [],
             "option_ppi_material_identity_total": None,
@@ -971,6 +977,60 @@ def _aggregate(conn):
             option_key_diagnostic)
 
 
+def _unverified_fills():
+    return {"status": "NO_VERIFICADO", "source": "paper_fills", "session_date_art": None,
+            "total": None, "by_family": {}}
+
+
+def _paper_fills_today(conn, at):
+    """Count the actual fill ledger, including partial sells and orphan fills."""
+    if (not {"paper_id", "source", "side", "filled_at"} <= _columns(conn, "paper_fills")
+            or not {"paper_id", "asset_class"} <= _columns(conn, "paper_positions")):
+        return _unverified_fills()
+    local = at.astimezone(ART)
+    start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    counts = {}
+    total = 0
+    for asset, side, amount in conn.execute("""SELECT p.asset_class,f.side,COUNT(*)
+        FROM paper_fills f LEFT JOIN paper_positions p ON p.paper_id=f.paper_id
+        WHERE f.source='PRODUCTION_PAPER'
+          AND julianday(f.filled_at) BETWEEN julianday(?) AND julianday(?)
+        GROUP BY p.asset_class,f.side""", (start.isoformat(), at.isoformat())):
+        if side not in FILL_SIDES or amount > MAX_COUNT:
+            return _unverified_fills()
+        family = str(asset or "").strip().upper()
+        family = {"ON": "OBLIGACIONES", "FCI_LOCAL": "FCI", "ETF": "ETFS"}.get(family, family)
+        if family not in FILL_FAMILIES:
+            family = "UNATTRIBUTED"
+        counts.setdefault(family, {"buy": 0, "sell": 0})[FILL_SIDES[side]] += amount
+        total += amount
+    if total > MAX_COUNT:
+        return _unverified_fills()
+    return {"status": "OBSERVED", "source": "paper_fills",
+            "session_date_art": local.date().isoformat(), "total": total, "by_family": counts}
+
+
+def _sanitize_paper_fills(value, at):
+    if value is None or value == _unverified_fills():
+        return _unverified_fills()
+    if (not isinstance(value, dict) or set(value) != set(_unverified_fills())
+            or value["status"] != "OBSERVED" or value["source"] != "paper_fills"
+            or value["session_date_art"] != at.astimezone(ART).date().isoformat()
+            or type(value["total"]) is not int or not 0 <= value["total"] <= MAX_COUNT
+            or not isinstance(value["by_family"], dict) or set(value["by_family"]) - FILL_FAMILIES):
+        raise Hold("UNTRUSTED_PAPER_FILLS")
+    total = 0
+    for sides in value["by_family"].values():
+        if (not isinstance(sides, dict) or set(sides) != set(FILL_SIDES.values())
+                or any(type(n) is not int or not 0 <= n <= MAX_COUNT for n in sides.values())
+                or sum(sides.values()) == 0):
+            raise Hold("UNTRUSTED_PAPER_FILLS")
+        total += sum(sides.values())
+    if total != value["total"]:
+        raise Hold("UNTRUSTED_PAPER_FILLS")
+    return value
+
+
 def diagnose(db=DB, *, enforce_ro_mount=True):
     report = _base()
     conn = None
@@ -993,7 +1053,9 @@ def diagnose(db=DB, *, enforce_ro_mount=True):
          option_key_diagnostic) = _aggregate(conn)
         report["paper_workspace_verified"] = True
         report["real_orders_sent"] = 0
-        report["sampled_at_utc"] = datetime.now(timezone.utc).isoformat()
+        sampled_at = datetime.now(timezone.utc)
+        report["sampled_at_utc"] = sampled_at.isoformat()
+        report["paper_fills_today"] = _paper_fills_today(conn, sampled_at)
         report["joint"] = joint
         report["option_review_root_total"] = option_root_total
         report["option_review_root_hist"] = option_roots
@@ -1034,6 +1096,7 @@ def sanitize(value):
         return safe
     try:
         dt = _utc(value.get("sampled_at_utc"))
+        paper_fills = _sanitize_paper_fills(value.get("paper_fills_today"), dt)
         if not isinstance(value.get("joint"), list) or len(value["joint"]) > MAX_GROUPS:
             raise Hold("UNTRUSTED_GROUPS")
         groups = set()
@@ -1230,6 +1293,7 @@ def sanitize(value):
                     real_orders_sent=0, sampled_at_utc=dt.isoformat(),
                     catalog_active_gap_total=total,
                     catalog_six_family_total=covered_total,
+                    paper_fills_today=paper_fills,
                     option_review_root_total=root_total,
                     option_review_root_hist=sorted(
                         source_roots, key=lambda x: (x["flags"], x["source_class_bucket"])),
