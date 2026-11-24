@@ -1,0 +1,46 @@
+name: RC6 PPI and introspection one-shot READ_ONLY
+
+on:
+  push:
+    branches: [diagnostic/rc6-ppi-introspection-20261124]
+    paths: ['scripts/rc6_ppi_introspection_once.py', 'scripts/observer_probe.py', '.github/workflows/rc6-ppi-introspection-once.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          path: diagnostic
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: de1798fdb645f41fa6c8c9a6832f0d59fd080d65
+          path: control
+          persist-credentials: false
+      - name: Inspect gateway and recent Telegram acknowledgments
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          PYTHONPATH="$GITHUB_WORKSPACE/control" python3 -B diagnostic/scripts/rc6_ppi_introspection_once.py control > evidence/ppi-introspection.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-ppi-introspection-${{ github.run_id }}
+          path: evidence/ppi-introspection.json
+          retention-days: 7
