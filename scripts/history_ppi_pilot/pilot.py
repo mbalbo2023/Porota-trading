@@ -11,6 +11,8 @@ import sqlite3
 import stat
 import time
 
+from ak_byma_t1_source_clock import estado_negociacion_historica_byma
+from bs_instrument_contracts import cash_currency
 import ct_ppi_history_salvage_hf6 as salvage
 import cu_history_store_v2_hf6 as history
 import fb_raw_evidence_exact_v1 as exact
@@ -88,6 +90,8 @@ def object_payload(row, wrapper):
 
 def fragments_for(manifest, symbol, family, result):
     found = []
+    reasons = Counter()
+    nearest = None
     for prefix in (f'[["{symbol}",', f'["{symbol}",'):
         rows = manifest.execute("""SELECT body_bytes, recorded_at, quality,
             CASE WHEN length(inner_sha256)=64 THEN inner_sha256 END AS inner_sha256,
@@ -101,19 +105,54 @@ def fragments_for(manifest, symbol, family, result):
         for row in rows[:ROWS_PER_PREFIX]:
             try:
                 wrapper = json.loads(row["wrapper_json"])
-                if (wrapper.get("symbol"), wrapper.get("instrument_type") or wrapper.get("asset_class"),
-                    wrapper.get("market"), wrapper.get("currency")) != (symbol, family, "BYMA", "ARS"):
-                    continue
-                if wrapper.get("settlement") not in T1 or row["quality"] != "VALID_PAYLOAD":
-                    continue
-                if (date.fromisoformat(wrapper["date_to"]) < repair.BOOTSTRAP_START or
-                    date.fromisoformat(wrapper["date_from"]) > repair.CUTOFF):
-                    continue
+                first = date.fromisoformat(wrapper["date_from"])
+                last = date.fromisoformat(wrapper["date_to"])
                 observed = history.instant(row["recorded_at"])
+                if wrapper.get("symbol") != symbol:
+                    reasons["other_symbol"] += 1
+                    continue
+                if (wrapper.get("instrument_type") or wrapper.get("asset_class")) != family:
+                    reasons["other_family"] += 1
+                    continue
+                if wrapper.get("market") != "BYMA":
+                    reasons["market_unverified"] += 1
+                    continue
+                try:
+                    currency = cash_currency(wrapper.get("currency"))
+                except (TypeError, ValueError):
+                    currency = None
+                if currency != "ARS":
+                    reasons["currency_unverified_or_other"] += 1
+                    continue
+                if wrapper.get("settlement") not in T1:
+                    reasons["settlement_unverified_or_other"] += 1
+                    continue
+                if row["quality"] != "VALID_PAYLOAD":
+                    reasons["quality_unverified"] += 1
+                    continue
+                if last < repair.BOOTSTRAP_START or first > repair.CUTOFF:
+                    reasons["outside_cutoff"] += 1
+                    distance = min(abs((edge - repair.CUTOFF).days) for edge in (first, last))
+                    if nearest is None or distance < nearest[0]:
+                        nearest = (distance, observed, row, wrapper, first, last)
+                    continue
                 found.append((observed, row, wrapper))
             except (TypeError, ValueError, KeyError, AttributeError):
                 result["index_metadata_rejected"] += 1
     result["eligible_manifest_rows"] = len(found)
+    result["out_of_scope_by_reason"] = dict(reasons)
+    if nearest is not None and not found:
+        _, observed, row, wrapper, first, last = nearest
+        sampled = {"request_from": first.isoformat(), "request_to": last.isoformat(),
+                   "captured_at": observed.isoformat(), "body_integrity": "NO_VERIFICADO"}
+        try:
+            bars = object_payload(row, wrapper)
+            sampled.update(body_integrity="VALID", bars=len(bars),
+                           provider_fields=sorted({key for bar in bars if isinstance(bar, dict)
+                               for key in bar if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,59}", key)}))
+        except (OSError, EOFError, ValueError, UnicodeError):
+            pass
+        result["nearest_other_window"] = sampled
     return sorted(found, key=lambda item: item[0], reverse=True)[:FRAGMENTS_PER_SYMBOL]
 
 
@@ -169,13 +208,26 @@ def cohort(db):
     return result
 
 
+def reference_gaps(db, symbol, family):
+    trading_dates = (date.fromordinal(ordinal) for ordinal in range(
+        repair.BOOTSTRAP_START.toordinal(), repair.CUTOFF.toordinal() + 1))
+    expected = {day.isoformat() for day in trading_dates if estado_negociacion_historica_byma(
+        day, market="BYMA", family=family, settlement="A-24HS") in {"REGULAR", "LIMITED_T1_SOURCE_ONLY"}}
+    observed = {row[0] for row in db.execute("""SELECT date FROM history_canonical_v2
+        WHERE symbol=? AND instrument_type=? AND market='BCBA' AND source='IOL_MCP'
+          AND price_basis='SOURCE_REPORTED'""", (symbol, family))}
+    return {"t1_calendar_days": len(expected), "reference_days_on_calendar": len(observed & expected),
+            "dates_missing_from_reference": sorted(expected - observed),
+            "reference_dates_outside_calendar": sorted(observed - expected)}
+
+
 def main():
     data, observed = MemoryStore(), MemoryStore()
     assert exact.manifest_path() == RELEASE_DATA / "evidence/ppi_history_exact_v1/manifest_exact_v1.db"
     with closing(readonly(RELEASE_DATA / "market_history.db")) as production:
         production.execute("BEGIN")
         copy_history(production, data)
-        previous = production.execute("""SELECT state, targets, archive_imports, ppi_queries, complete, failed
+        previous = production.execute("""SELECT state, targets, archive_imports, ppi_queries, complete, failed, updated_at
             FROM rc6_history_cutoff_repair_runs WHERE cutoff=?""", (repair.CUTOFF.isoformat(),)).fetchone()
         control = dict(previous) if previous else None
     before = cohort(data.db)
@@ -187,6 +239,7 @@ def main():
             deadline = time.monotonic() + 3
             manifest.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
             per_symbol[symbol] = rehearse(manifest, observed, data, symbol, family)
+            per_symbol[symbol]["reference_calendar"] = reference_gaps(data.db, symbol, family)
     assert data.db.execute("PRAGMA quick_check").fetchone()[0] == "ok"
     assert data.db.execute("PRAGMA foreign_key_check").fetchone() is None
     print(json.dumps({"schema": "rc6.history.ppi-cutoff-pilot.v1", "cutoff": repair.CUTOFF.isoformat(),
