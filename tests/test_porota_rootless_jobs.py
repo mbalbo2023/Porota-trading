@@ -74,6 +74,24 @@ class DispatcherTests(unittest.TestCase):
              patch.object(jobs, "database_snapshot", return_value={}):
             jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
 
+    def test_runtime_evidence_runs_the_verified_publisher_under_the_shared_lock(self):
+        self.current["source_tree"] = "b" * 40
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+
+        def run(command, **kwargs):
+            self.assertEqual(command, ("/bin/sh", str(source / "scripts/porota_publish_runtime_evidence_github_rc6.sh"),
+                                       "--verified-release"))
+            self.assertEqual(kwargs["env"]["POROTA_BUILD_SHA"], self.current["source_sha"])
+            self.assertEqual(kwargs["env"]["POROTA_CANDIDATE_TREE_SHA"], self.current["source_tree"])
+            with self.assertRaisesRegex(host.Hold, "OWNER_BUSY"):
+                with host.user_lock(self.identity.state / "deploy.lock"):
+                    pass
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(jobs, "read_release_state", return_value=(self.current, {})):
+            jobs.publish_runtime_evidence(self.identity, root=self.root, run=run)
+
     def test_preopen_red_child_reports_only_allowlisted_checks_and_preserves_exit_two(self):
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"
         host.private_dir(source)

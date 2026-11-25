@@ -123,17 +123,12 @@ PPI_DIAGNOSTIC_FAMILY_ROTATION = (
 )
 
 
-def _next_ppi_diagnostic_family(symbols, cursor):
-    """Choose an unobserved-by-the-READY-basket family; never grant READY."""
+def _next_ppi_diagnostic_family(cursor):
+    """Keep discovering identities after the first READY key in a family."""
     if type(cursor) is not int or cursor < 0:
         raise ValueError("PPI_DIAGNOSTIC_CURSOR_INVALID")
-    covered = {str(kind).upper() for _, kind, _ in symbols}
-    for offset in range(len(PPI_DIAGNOSTIC_FAMILY_ROTATION)):
-        index = (cursor + offset) % len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
-        family = PPI_DIAGNOSTIC_FAMILY_ROTATION[index]
-        if family not in covered:
-            return family, (index + 1) % len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
-    return None, cursor
+    size = len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
+    return PPI_DIAGNOSTIC_FAMILY_ROTATION[cursor % size], (cursor + 1) % size
 CORE_SYMBOLS = (
     ("GGAL", "ACCIONES", "A-24HS"),
     ("AAPL", "CEDEARS", "A-24HS"),
@@ -1287,7 +1282,7 @@ def _eligible_scanner_identities(store):
                 for item in turn if item is not None)
 
 
-def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
+def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None):
     """PPI-primary observation only, independent of simulation readiness.
 
     A zero-READY bootstrap must still be able to *observe* an unequivocal
@@ -1301,9 +1296,20 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
         raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
     if family is not None and (type(family) is not str or family not in OPERATIONAL_FAMILIES):
         raise ValueError("PPI_DIRECT_PROBE_FAMILY_INVALID")
+    if after is None:
+        order = """CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                   CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
+                   f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement"""
+        position = ()
+    else:
+        ticker, _, market, currency, settlement = after
+        # Stable order within a family even if a catalog refresh changes last_seen_at.
+        order = """(f.ticker,f.market,f.currency,f.settlement) <= (?,?,?,?),
+                   f.ticker,f.market,f.currency,f.settlement"""
+        position = (ticker, market, currency, settlement)
     try:
         with store.connect() as c:
-            rows = c.execute("""WITH unique_identity AS (
+            rows = c.execute(f"""WITH unique_identity AS (
                   SELECT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
                   WHERE status IN ('AVAILABLE','STALE')
@@ -1322,10 +1328,8 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
                   AND (? IS NULL OR f.instrument_type=?)
                   AND json_valid(f.metadata_json)
                   AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
-                ORDER BY CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
-                         CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
-                         f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement
-                LIMIT ?""", (family, family, limit)).fetchall()
+                ORDER BY {order}
+                LIMIT ?""", (family, family, *position, limit)).fetchall()
         return [tuple(str(v).strip().upper() for v in row) for row in rows]
     except (sqlite3.Error, OSError, TypeError, ValueError):
         return []
@@ -1346,7 +1350,7 @@ def _safe_ppi_evidence_timestamp(value):
 
 def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None,
                                   pre_wire=None, update_market_clock=False,
-                                  confirm_settlement=False):
+                                  confirm_settlement=False, after=None):
     """Read genuine native evidence without inventing provider-side fields.
 
     Spot/market-book families need Current+Book to claim a fresh executable
@@ -1354,12 +1358,16 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
     guarded Current is only a REFERENCE, never a PPI-signed NAV/TNA, Book,
     economic terms, PAPER_READY or an order. No second reader/login.
     """
-    candidates = _ppi_direct_rest_probe_candidates(store, limit=1, family=family)
+    candidates = _ppi_direct_rest_probe_candidates(store, limit=1, family=family, after=after)
     if not candidates:
         return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
                 "native_receipts": []}
     key = candidates[0]
     ticker, family, market, currency, settlement = key
+    observation = {"paper_ready": False}
+    if confirm_settlement:
+        # Rotation advances even when the attempted key has invalid market data.
+        observation["identity"] = list(key)
     witnessed = {}
     try:
         # Require the EXISTING native wire receipt contract. An SDK cache,
@@ -1429,15 +1437,15 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
             except (ValueError, TypeError, KeyError, OverflowError, ArithmeticError):
                 store.event("PPI_DIRECT_REST_REFERENCE_HOLD",
                             "family=" + family + ";reason=REFERENCE_UNUSABLE")
-                return {"status": "REFERENCE_UNUSABLE", "paper_ready": False,
+                return {**observation, "status": "REFERENCE_UNUSABLE",
                         "native_receipts": list(witnessed)}
             status = _PPI_REFERENCE_OBSERVED[family]
             store.event("PPI_DIRECT_REST_REFERENCE_OBSERVED",
                         f"family={family};identity5={':'.join(key)};"
                         f"wire_sha256={witnessed['current']['guard_wire_receipt']['raw_body_sha256']};"
                         "basis=PPI_NATIVE_CURRENT_ONLY;paper_ready=false")
-            return {"status": status, "identity": list(key),
-                    "paper_ready": False, "native_receipts": list(witnessed)}
+            return {**observation, "status": status, "identity": list(key),
+                    "native_receipts": list(witnessed)}
         witnessed_current = witnessed["current"]
         witnessed_book = witnessed["book"]
         current = witnessed_current["native_payload"]
@@ -1460,7 +1468,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                 quote.bid_size <= 0 or quote.ask_size <= 0 or
                 quote.bid > quote.ask):
             store.event("PPI_DIRECT_REST_PROBE_HOLD", "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID")
-            return {"status": "STALE_OR_INVALID", "paper_ready": False,
+            return {**observation, "status": "STALE_OR_INVALID",
                     "native_receipts": list(witnessed)}
         quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
         store.add_quote(quote)
@@ -1489,19 +1497,19 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                     f"{ticker}:{family}:{settlement}:read_only;"
                     f"current_wire_sha256={witnessed_current['guard_wire_receipt']['raw_body_sha256']};"
                     f"book_wire_sha256={witnessed_book['guard_wire_receipt']['raw_body_sha256']}")
-        return {"status": "FRESH_OBSERVED", "identity": list(key),
-                "paper_ready": False, "native_receipts": list(witnessed)}
+        return {**observation, "status": "FRESH_OBSERVED", "identity": list(key),
+                "native_receipts": list(witnessed)}
     except ValueError as error:
         if (str(error).startswith(("PPI_POSTCLOSE_", "PPI_OPEN_")) or
                 str(error) == "PPI_SINGLE_SESSION_GLOBAL_UNVERIFIED"):
             store.event("PPI_DIRECT_REST_PROBE_HOLD", str(error))
-            return {"status": "PRE_WIRE_GUARD_HOLD", "paper_ready": False,
+            return {**observation, "status": "PRE_WIRE_GUARD_HOLD",
                     "reason": str(error), "native_receipts": list(witnessed)}
         reason = _scanner_ppi_error(error)
     except Exception as error:
         reason = _scanner_ppi_error(error)
     store.event("PPI_DIRECT_REST_PROBE_HOLD", reason)
-    return {"status": "PROVIDER_OR_CONTRACT_HOLD", "paper_ready": False,
+    return {**observation, "status": "PROVIDER_OR_CONTRACT_HOLD",
             "reason": reason, "native_receipts": list(witnessed)}
 
 
@@ -3193,6 +3201,7 @@ def run():
     last_public_check = 0.0
     last_direct_rest_probe = 0.0
     direct_probe_family_cursor = 0
+    direct_probe_after = {}
     last_structured_capture = 0.0
     last_readiness_check = 0.0
     last_complementary_reconcile = 0.0
@@ -3358,25 +3367,22 @@ def run():
                                 "CATALOG_READ_ERROR" if catalog_read_error else "")
             fresh_observation = False
             if (not catalog_read_error and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
-                    and time.monotonic() - last_direct_rest_probe >= 60):
-                # Do not let one READY equity suppress all nine other family
-                # diagnostics. Exactly one missing family per due interval,
-                # and never compete with opened PAPER EXIT/derivative exposure.
-                family, next_cursor = _next_ppi_diagnostic_family(
-                    symbols, direct_probe_family_cursor)
-                if (family is not None and not store.open_positions()
-                        and not store.active_future_positions()):
-                    last_direct_rest_probe = time.monotonic()
-                    direct_probe_family_cursor = next_cursor
-                    probe = _ppi_direct_rest_observe_only(
-                        reader, store, family=family, update_market_clock=True,
-                        confirm_settlement=True)
-                    fresh_observation = probe["status"] == "FRESH_OBSERVED"
-                    _health(store, "PPI_DIRECT_REST_RECOVERY",
-                            "VERDE" if fresh_observation else "AMARILLO",
-                            "Native observe-only family=" + family + ";status=" + probe["status"]
-                            + (";reason=" + probe["reason"] if "reason" in probe else ""),
-                            "PPI Producción", success=fresh_observation)
+                    and time.monotonic() - last_direct_rest_probe >= 60
+                    and not store.open_positions() and not store.active_future_positions()):
+                # Keep the existing guarded cadence and give open positions priority.
+                family, direct_probe_family_cursor = _next_ppi_diagnostic_family(direct_probe_family_cursor)
+                last_direct_rest_probe = time.monotonic()
+                probe = _ppi_direct_rest_observe_only(
+                    reader, store, family=family, update_market_clock=True,
+                    confirm_settlement=True, after=direct_probe_after.get(family))
+                if probe.get("identity"):
+                    direct_probe_after[family] = tuple(probe["identity"])
+                fresh_observation = probe["status"] == "FRESH_OBSERVED"
+                _health(store, "PPI_DIRECT_REST_RECOVERY",
+                        "VERDE" if fresh_observation else "AMARILLO",
+                        "Native observe-only family=" + family + ";status=" + probe["status"]
+                        + (";reason=" + probe["reason"] if "reason" in probe else ""),
+                        "PPI Producción", success=fresh_observation)
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)

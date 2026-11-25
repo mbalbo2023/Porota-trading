@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Produce the canonical sanitized RC6 runtime-evidence bundle.
 
-The collector is deliberately independent from the legacy introspector.  It
-uses only Python's standard library, opens SQLite through ``mode=ro``, asserts
-``PRAGMA query_only=ON`` and writes a single atomic JSON file inside an
-explicit staging root.  Missing schema or safety evidence is represented as
-``INCOMPLETE``/``BLOCKED``; it is never guessed into READY.
+The collector is independent from the legacy introspector. It opens SQLite
+through ``mode=ro``, asserts ``PRAGMA query_only=ON`` and writes one JSON file
+atomically inside an explicit staging root. It uses the release's verifier
+for signed native settlement receipts and fails closed on missing evidence.
 """
 
 from __future__ import annotations
@@ -76,6 +75,7 @@ PPI_SETTLEMENT_LITERALS = {
     "A-48HS": "A-48HS", "A-72HS": "A-72HS",
 }
 PPI_SETTLEMENT_SOURCES = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE", "PPI_NATIVE_REQUEST_RECEIPT"})
+PPI_NATIVE_SETTLEMENT_METADATA_FIELD = "_ppi_native_request_receipt"
 EXPLICIT_CANDIDATE_REASONS = frozenset({
     "CATALOG_RECONCILIATION",
     "FUTURES_CONTRACT_OR_PAPER_MARGIN_UNRESOLVED",
@@ -87,6 +87,7 @@ EXACT_CANDIDATE_REASONS = frozenset({
     "PPI_PRIMARY_IDENTITY_NOT_VERIFIED", "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED",
     "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED", "PPI_FRESHNESS_STALE", "IDENTITY_INCOMPLETE",
     "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID", "PPI_NATIVE_SETTLEMENT_IDENTITY_AMBIGUOUS",
+    "PPI_NATIVE_SETTLEMENT_VERIFIER_UNAVAILABLE",
     "IDENTITY_AMBIGUOUS", "RETRY_IDENTITY_AMBIGUOUS", "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
 })
 OBSERVATION_BLOCK_REASONS = EXACT_CANDIDATE_REASONS | frozenset({
@@ -328,7 +329,7 @@ def _public_settlement_literal(value):
     return literal if literal.isascii() and literal.upper() in PPI_SETTLEMENT_LITERALS else None
 
 
-def _settlement_witness(row, metadata, current):
+def _settlement_witness(row, metadata, current, *, database):
     source = str(row.get("settlement_source") or "").strip().upper()
     primary = str(metadata.get("_discovery_source") or "").upper() == "PPI_PRIMARY"
     observed = _causal_clock(row.get("last_seen_at"), current) if primary else None
@@ -336,12 +337,16 @@ def _settlement_witness(row, metadata, current):
                "state": "NO_VERIFICADO", "literal": None, "observed_at": observed}
     literal = metadata.get("settlement")
     if source == "REQUEST_CANDIDATE":
-        from bu_instrument_catalog import ppi_full_key_evidence_reason
-        from rc6_ppi_native_request_receipt import FIELD, SOURCE
-
-        proof = metadata.get(FIELD)
+        proof = metadata.get(PPI_NATIVE_SETTLEMENT_METADATA_FIELD)
         if proof is not None:
-            reason = ppi_full_key_evidence_reason({**row, "raw": metadata}, now=current)
+            try:
+                from bu_instrument_catalog import ppi_full_key_evidence_reason
+                from rc6_ppi_native_request_receipt import SOURCE
+            except ImportError:
+                return witness, "PPI_NATIVE_SETTLEMENT_VERIFIER_UNAVAILABLE"
+
+            reason = ppi_full_key_evidence_reason(
+                {**row, "raw": metadata}, database=database, now=current)
             if reason:
                 return witness, reason
             received = _causal_clock(proof["book"]["received_at"], current)
@@ -469,7 +474,7 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
                      candidates: list[dict[str, Any]], exact_candidates: list[dict[str, Any]],
                      exact_ledger_present: bool, current: datetime,
                      freshness_seconds: int, market_snapshots=None,
-                     native_reads=None) -> tuple[list[dict[str, Any]], list[str]]:
+                     native_reads=None, *, database: Path) -> tuple[list[dict[str, Any]], list[str]]:
     issues: list[str] = []
     retry_by_key: dict[tuple[str, str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for retry in retries:
@@ -513,7 +518,7 @@ def _instrument_rows(catalog: list[dict[str, Any]], retries: list[dict[str, Any]
         retry_ambiguity = any("AMBIG" in str(item.get("reason") or "").upper() for item in retry_rows)
         capability = safe_text(row.get("capability"), "UNKNOWN_CAPABILITY")
         catalog_status = safe_text(row.get("status"), "UNKNOWN_STATUS")
-        witness, settlement_reason = _settlement_witness(row, metadata, current)
+        witness, settlement_reason = _settlement_witness(row, metadata, current, database=database)
         ppi_fresh = source_state["PPI"]["freshness"]["state"] == "FRESH"
         reasons: list[str] = []
         if not primary:
@@ -1076,6 +1081,7 @@ def build_bundle(*, db_path: Path, operation_mode_path: Path | None,
     instruments, ledger_issues = _instrument_rows(
         catalog, retries, candidates, exact_candidates, exact_ledger_present,
         current, freshness_seconds, snapshots, _native_wire_reads(native_wire_events, current),
+        database=db_path,
     )
     gaps.extend(ledger_issues)
     if len(instruments) != len(catalog):

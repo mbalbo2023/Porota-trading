@@ -885,23 +885,40 @@ def test_open_partial_current_receipt_never_claims_book_or_ready(
         "ready": 0, "hold": 1, "unattempted": 0}
 
 
-def test_ppi_diagnostic_rotation_covers_missing_families_even_with_ready_spot():
+def test_ppi_diagnostic_rotation_keeps_visiting_all_families():
     assert set(observer.PPI_DIAGNOSTIC_FAMILY_ROTATION) == observer.OPERATIONAL_FAMILIES
     assert observer.PPI_DIAGNOSTIC_FAMILY_ROTATION[-1] == "ETFS"
-    only_ready = [("GGAL", "ACCIONES", "INMEDIATA")]
     cursor, observed = 0, []
-    for _ in range(9):
-        family, cursor = observer._next_ppi_diagnostic_family(only_ready, cursor)
+    for _ in observer.PPI_DIAGNOSTIC_FAMILY_ROTATION:
+        family, cursor = observer._next_ppi_diagnostic_family(cursor)
         observed.append(family)
-    assert len(set(observed)) == 9
-    assert "ACCIONES" not in observed
-    assert "FCI" in observed and "CAUCIONES" in observed
-    assert "ETFS" in observed
-    all_ready = [(family + "SYM", family, "INMEDIATA")
-                 for family in observer.PPI_DIAGNOSTIC_FAMILY_ROTATION]
-    assert observer._next_ppi_diagnostic_family(all_ready, 0) == (None, 0)
+    assert observed == list(observer.PPI_DIAGNOSTIC_FAMILY_ROTATION)
+    assert cursor == 0
     with pytest.raises(ValueError, match="PPI_DIAGNOSTIC_CURSOR_INVALID"):
-        observer._next_ppi_diagnostic_family([], -1)
+        observer._next_ppi_diagnostic_family(-1)
+
+
+def test_ppi_diagnostic_rotation_advances_on_provider_error_and_wraps(catalog_store):
+    first = ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")
+    second = ("AL31", "BONOS", "BYMA", "ARS", "INMEDIATA")
+    with catalog_store.connect() as c:
+        c.execute("""INSERT INTO financial_instrument_catalog
+            SELECT ?,instrument_type,market,currency,settlement,'REQUEST_CANDIDATE',
+                   description,last_seen_at,run_id,status,capability,
+                   json_set(json_remove(metadata_json, '$.settlement'), '$.ticker', ?)
+            FROM financial_instrument_catalog WHERE ticker='AL30'""", (second[0], second[0]))
+
+    class MissingMarketData:
+        def capture_guarded_native(self, endpoint, key, *, priority):
+            assert (endpoint, key, priority) == ("current", first, "DISCOVERY")
+            raise ValueError("PPI_NATIVE_CURRENT_UNAVAILABLE")
+
+    result = _ppi_direct_rest_observe_only(
+        MissingMarketData(), catalog_store, family="BONOS", confirm_settlement=True)
+    assert result["status"] == "PROVIDER_OR_CONTRACT_HOLD"
+    assert tuple(result["identity"]) == first
+    assert _ppi_direct_rest_probe_candidates(catalog_store, family="BONOS", after=first) == [second]
+    assert _ppi_direct_rest_probe_candidates(catalog_store, family="BONOS", after=second) == [first]
 
 
 def test_complementary_duplicate_does_not_suppress_unique_primary_ppi_probe(catalog_store):
