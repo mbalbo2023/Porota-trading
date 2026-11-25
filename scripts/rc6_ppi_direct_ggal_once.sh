@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-report=$(python3 - <<'HOST_PY'
+report=$(python3 - "$@" <<'HOST_PY'
 import fcntl
 import json
 import os
@@ -10,11 +10,13 @@ import pwd
 import re
 import stat
 import subprocess
+import sys
 import time
 
 IMAGE = 'sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541'
 PRODUCT = '44ee181dcc452215ab05fae7f3919e344e7601d7'
 HOST_LOCK_WAIT_S = 240
+COOLDOWN_WAIT_LIMIT_S = 20 * 60
 
 PROBE = r'''
 from contextlib import closing, redirect_stderr, redirect_stdout
@@ -260,8 +262,10 @@ def probe(out):
     interlock = ScannerLoginInterlock(db, AUTH_COOLDOWN_SECONDS)
     remote = owner_status(path)
     remaining = remote.get('native_backoff_remaining_seconds')
-    require(type(remaining) is int, 'PPI_PAUSA_NO_VERIFICADA')
-    out['before']['get_wait_s'] = max(remaining, budget_wait(budget))
+    require(type(remaining) is int and remaining >= 0, 'PPI_PAUSA_NO_VERIFICADA')
+    local_remaining = budget_wait(budget)
+    out['before'].update(gateway_get_wait_s=remaining, local_get_wait_s=local_remaining,
+                         get_wait_s=max(remaining, local_remaining))
     out['before']['login_wait_s'] = login_wait(interlock)
     require(remote.get('session_recovery_pending') is False and
             out['before']['get_wait_s'] == 0 and out['before']['login_wait_s'] == 0, 'PPI_PAUSA_ACTIVA')
@@ -396,7 +400,7 @@ def lock_matches_path(path, fd, uid):
             and (opened.st_dev, opened.st_ino) == (named.st_dev, named.st_ino))
 
 
-def host_probe(progress):
+def host_probe(progress, lock_wait_s=HOST_LOCK_WAIT_S):
     uid = os.getuid()
     account = pwd.getpwuid(uid)
     if uid != 1000 or account.pw_name != 'porotaadmin':
@@ -411,7 +415,7 @@ def host_probe(progress):
         if not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_mode & 0o077 or meta.st_nlink != 1:
             return {'state': 'RC6_LOCK_HOST_NO_CONFIABLE'}
         progress['stage'] = 'DEPLOY_LOCK_WAIT'
-        acquired, lock_evidence = wait_for_host_lock(fd, meta)
+        acquired, lock_evidence = wait_for_host_lock(fd, meta, wait_s=lock_wait_s)
         if not acquired:
             return {'state': 'RC6_HOST_OCUPADO', 'host_lock': lock_evidence}
         progress['stage'] = 'DEPLOY_LOCK_RECHECK'
@@ -452,11 +456,48 @@ def host_probe(progress):
         os.close(fd)
 
 
-progress = {'stage': 'HOST_IDENTITY'}
-try:
-    report = host_probe(progress)
-except Exception as error:
-    report = {'state': 'RC6_PROBE_HOST_INCOMPLETO', 'error_class': type(error).__name__, **progress}
+def run_host_attempt(lock_wait_s=HOST_LOCK_WAIT_S):
+    progress = {'stage': 'HOST_IDENTITY'}
+    try:
+        return host_probe(progress, lock_wait_s)
+    except Exception as error:
+        return {'state': 'RC6_PROBE_HOST_INCOMPLETO', 'error_class': type(error).__name__, **progress}
+
+
+def run_with_cooldown_wait():
+    deadline = time.monotonic() + COOLDOWN_WAIT_LIMIT_S
+    report = run_host_attempt()
+    checks = 1
+    while report.get('state') == 'PPI_PAUSA_ACTIVA' and report.get('gateway_sigterm') is False:
+        before = report.get('before')
+        if not isinstance(before, dict):
+            break
+        delays = (before.get('get_wait_s'), before.get('login_wait_s'))
+        if any(type(delay) is not int or delay < 0 for delay in delays) or max(delays) == 0:
+            break
+        delay = max(delays)
+        if time.monotonic() + delay >= deadline:
+            report['cooldown_wait_limit_reached'] = True
+            break
+        # The previous attempt already closed its host-lock descriptor.
+        print(f'Pausa activa. Próxima comprobación en {delay} s.', file=sys.stderr, flush=True)
+        time.sleep(delay)
+        remaining_s = int(deadline - time.monotonic())
+        if remaining_s <= 0:
+            report['cooldown_wait_limit_reached'] = True
+            break
+        report = run_host_attempt(min(HOST_LOCK_WAIT_S, remaining_s))
+        checks += 1
+    report['preflight_checks'] = checks
+    return report
+
+
+if sys.argv[1:] == ['--wait-cooldown']:
+    report = run_with_cooldown_wait()
+elif not sys.argv[1:]:
+    report = run_host_attempt()
+else:
+    report = {'state': 'RC6_OPCION_PROBE_INVALIDA'}
 print(json.dumps(report, ensure_ascii=False, separators=(',', ':')))
 HOST_PY
 ) || report='{"state":"RC6_PROBE_SIN_RESULTADO"}'
