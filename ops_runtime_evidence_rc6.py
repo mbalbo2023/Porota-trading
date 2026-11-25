@@ -75,7 +75,7 @@ PPI_SETTLEMENT_LITERALS = {
     "A-24HS": "A-24HS", "24HS": "A-24HS", "T1": "A-24HS",
     "A-48HS": "A-48HS", "A-72HS": "A-72HS",
 }
-PPI_SETTLEMENT_SOURCES = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE"})
+PPI_SETTLEMENT_SOURCES = frozenset({"PPI_FIELD", "REQUEST_CANDIDATE", "PPI_NATIVE_REQUEST_RECEIPT"})
 EXPLICIT_CANDIDATE_REASONS = frozenset({
     "CATALOG_RECONCILIATION",
     "FUTURES_CONTRACT_OR_PAPER_MARGIN_UNRESOLVED",
@@ -86,6 +86,7 @@ EXPLICIT_CANDIDATE_REASONS = frozenset({
 EXACT_CANDIDATE_REASONS = frozenset({
     "PPI_PRIMARY_IDENTITY_NOT_VERIFIED", "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED",
     "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED", "PPI_FRESHNESS_STALE", "IDENTITY_INCOMPLETE",
+    "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID", "PPI_NATIVE_SETTLEMENT_IDENTITY_AMBIGUOUS",
     "IDENTITY_AMBIGUOUS", "RETRY_IDENTITY_AMBIGUOUS", "OPTION_IOL_SERIES_CONTRACT_UNVERIFIED",
 })
 OBSERVATION_BLOCK_REASONS = EXACT_CANDIDATE_REASONS | frozenset({
@@ -335,6 +336,17 @@ def _settlement_witness(row, metadata, current):
                "state": "NO_VERIFICADO", "literal": None, "observed_at": observed}
     literal = metadata.get("settlement")
     if source == "REQUEST_CANDIDATE":
+        from bu_instrument_catalog import ppi_full_key_evidence_reason
+        from rc6_ppi_native_request_receipt import FIELD, SOURCE
+
+        proof = metadata.get(FIELD)
+        if proof is not None:
+            reason = ppi_full_key_evidence_reason({**row, "raw": metadata}, now=current)
+            if reason:
+                return witness, reason
+            received = _causal_clock(proof["book"]["received_at"], current)
+            witness.update(source=SOURCE, state="NATIVE_REQUEST_MATCH", observed_at=received)
+            return witness, None
         if observed and literal in (None, ""):
             witness["state"] = "REQUEST_ONLY"
         return witness, "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"

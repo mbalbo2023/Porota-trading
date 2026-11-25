@@ -133,7 +133,8 @@ def load_primary_ppi_catalog_snapshot(database, *, include_diagnostic_candidates
                           "market": row[2], "currency": row[3],
                           "settlement": row[4], "settlement_source": row[5],
                           "metadata_json": row[7]}
-                if row[6] == "AVAILABLE" and not ppi_full_key_evidence_reason(record):
+                if (row[6] == "AVAILABLE" and row[5] == "PPI_FIELD"
+                        and not ppi_full_key_evidence_reason(record)):
                     attested.append(key)
                     diagnostic.append(key)
                     continue
@@ -352,7 +353,8 @@ class PPISharedSessionOwner:
                  catalog_five_keys: list[tuple[str, ...]],
                  catalog_source_digest: str,
                  consumer_five_keys: dict[str, list[tuple[str, ...]]],
-                 socket_path: Path, max_subscriptions: int = 60):
+                 socket_path: Path, max_subscriptions: int = 60,
+                 settlement_signer=None):
         if not callable(reader_factory) or not callable(instrument_factory):
             raise SessionOwnerBlocked("PPI_SESSION_INJECTED_FACTORY_MISSING")
         if not callable(getattr(stream_authority, "permits", None)):
@@ -367,6 +369,7 @@ class PPISharedSessionOwner:
         self._capacity = external_capacity_authority
         self._socket_path = Path(socket_path)
         self._max_subscriptions = max_subscriptions
+        self._settlement_signer = settlement_signer
         self._set_catalog(catalog_authority=catalog_authority,
                           ppi_catalog_rows=ppi_catalog_rows,
                           catalog_five_keys=catalog_five_keys,
@@ -702,9 +705,16 @@ class PPISharedSessionOwner:
             if allowed is False or (allowed is not None and identity not in allowed):
                 raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_DENIED")
             response = self.capture_native(method, identity, priority=priority)
+            proof = None
+            if (self._settlement_signer is not None and consumer == "scanner"
+                    and priority == "DISCOVERY" and not self._permits_catalog(identity)):
+                proof = self._settlement_signer.observe(
+                    method, identity, response, generation=self._local_generation,
+                    catalog_digest=self._catalog_source_digest)
             return {"schema": NATIVE_ACQUIRE_SCHEMA,
                     "state": "OK", "receipt": response["native_receipt"],
                     "guard_wire_receipt": response["guard_wire_receipt"],
+                    **({"settlement_proof": proof} if proof else {}),
                     "owner_pid": os.getpid(),
                     "session_generation": self._local_generation,
                     "catalog_source_digest": self._catalog_source_digest,
@@ -940,8 +950,11 @@ class PPISharedSessionOwner:
                   and catalog_digest == self._catalog_source_digest)
         if not stable:
             state = "TRANSITION_UNVERIFIED"
+        signer = self._settlement_signer if state == "OPEN" else None
         return {"schema": SCHEMA, "state": state,
                 "owner_pid": os.getpid(),
+                **({"settlement_signer_public_key": signer.public_key,
+                    "settlement_signer_release": signer.release} if signer else {}),
                 "session_generation": generation if stable else None,
                 "catalog_source_digest": catalog_digest if stable else None,
                 "aux_retry_after_seconds_observed": self._aux_retry_after,

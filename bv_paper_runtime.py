@@ -46,7 +46,7 @@ def _ppi_gateway_catalog(store, *, expected_publication=None):
     rows, query_keys, digest, provider_attested_keys = load_primary_ppi_catalog_snapshot(
         store.path, include_diagnostic_candidates=True,
         expected_publication=expected_publication)
-    # Query-only settlement is never a PPI_FIELD contract or PAPER READY.
+    # Query keys stay separate from the literal PPI_FIELD authority.
     return dict(
         catalog_authority=PrimaryPPICatalogAuthority(
             provider_attested_keys, query_keys=query_keys),
@@ -63,6 +63,7 @@ def _make_ppi_gateway_owner(store):
     from bf_production_paper_observer import _secret
     from rc6_ppi_global_budget import PaperDirectReadBudget
     from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+    from rc6_ppi_native_request_receipt import SettlementReceiptSigner, release_coordinates
     from rc6_ppi_shared_session_owner import (
         PPISharedSessionOwner, ObservedPaperCapacityAuthority,
     )
@@ -72,6 +73,7 @@ def _make_ppi_gateway_owner(store):
     catalog = _ppi_gateway_catalog(store)
     budget = PaperDirectReadBudget(store.path)
     capacity = ObservedPaperCapacityAuthority(budget)
+    release = release_coordinates()
 
     class _NoUnverifiedStreamPermit:
         def permits(self, action, *, five_key=None):
@@ -91,6 +93,7 @@ def _make_ppi_gateway_owner(store):
         stream_authority=_NoUnverifiedStreamPermit(),
         external_capacity_authority=capacity,
         socket_path=gateway_socket_path(store.path), **catalog,
+        settlement_signer=SettlementReceiptSigner(release) if release else None,
     )
 
 
@@ -444,6 +447,15 @@ class ChildProcesses:
                 socket_path=gateway_socket_path(database_path()),
                 timeout_seconds=.4)
             status = client.owner_status()
+            if "settlement_signer_public_key" in status:
+                from rc6_ppi_native_request_receipt import pin_gateway_signer
+
+                try:
+                    pin_gateway_signer(database_path(), status, expected_pid=gateway.pid)
+                except (OSError, ValueError) as exc:
+                    # A broken settlement pin blocks only new settlement
+                    # authority. Existing PPI/EXIT roles still register.
+                    LOG.warning("PPI_SETTLEMENT_SIGNER_HOLD:%s", type(exc).__name__)
             generation = status["session_generation"]
             if generation != self._gateway_generation:
                 self._gateway_registered.clear()

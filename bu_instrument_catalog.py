@@ -490,19 +490,17 @@ def _candidate_has_ppi_primary(settlement_source, metadata_json):
             or source in {"PPI_FIELD", "REQUEST_CANDIDATE"})
 
 
-def ppi_full_key_evidence_reason(record):
+def ppi_full_key_evidence_reason(record, *, database=None, now=None):
     """Distinguish PPI discovery from an attested executable five-key.
 
-    The SearchInstrument request may specify settlement even when the provider
-    response omits it. REQUEST_CANDIDATE is useful for SHADOW discovery and
-    scanner identity selection, but a request parameter cannot certify the
-    financial contract or PAPER settlement. Check the *literal provider raw*
-    against all five normalized catalog coordinates; do not infer a missing
-    field from the SQL key or `_availability_source`.
+    SearchInstrument may omit settlement. Preserve that raw provenance.
+    A live, signed Gateway Current/Book pair can bind an exact requested
+    settlement to an unambiguous PPI-primary catalog identity.
     """
     if not isinstance(record, dict):
         return "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
-    if str(record.get("settlement_source") or "").upper() != "PPI_FIELD":
+    source = str(record.get("settlement_source") or "").upper()
+    if source not in {"PPI_FIELD", "REQUEST_CANDIDATE"}:
         return "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
     raw = record.get("raw")
     if not isinstance(raw, dict):
@@ -510,6 +508,28 @@ def ppi_full_key_evidence_reason(record):
             raw = json.loads(record.get("metadata_json") or "{}")
         except (ValueError, TypeError, json.JSONDecodeError):
             raw = {}
+    if source == "REQUEST_CANDIDATE":
+        from rc6_ppi_native_request_receipt import FIELD, verified_receipt
+
+        proof = raw.get(FIELD) if isinstance(raw, dict) else None
+        if proof is None:
+            return "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+        key = tuple(record.get(name) for name in (
+            "ticker", "instrument_type", "market", "currency", "settlement"))
+        try:
+            four = (str(raw.get("ticker") or raw.get("symbol") or "").strip().upper(),
+                    canonical_family(raw.get("type") or raw.get("instrumentType")),
+                    canonical_market(raw.get("market")), cash_currency(raw.get("currency")))
+            valid_primary = (raw.get("_discovery_source") == "PPI_PRIMARY"
+                             and raw.get("settlement") in (None, "")
+                             and four == key[:4]
+                             and canonical_settlement(key[4], key[1]) == key[4])
+        except (ValueError, TypeError):
+            valid_primary = False
+        if valid_primary and verified_receipt(proof, key, database=database, now=now,
+                                             maximum_age_seconds=PAPER_PPI_IDENTITY_LKG_SECONDS):
+            return ""
+        return "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID"
     if not isinstance(raw, dict) or str(raw.get("_discovery_source") or "").upper() != "PPI_PRIMARY":
         return "PPI_FULL_KEY_NOT_PROVIDER_ATTESTED"
     literal = (raw.get("ticker") or raw.get("symbol"),
@@ -532,7 +552,7 @@ def ppi_full_key_evidence_reason(record):
 
 
 def retain_ppi_settlement_witness(previous, incoming):
-    """Keep an existing literal PPI witness when a search only omits settlement.
+    """Keep a verified PPI witness when a search only omits settlement.
 
     SearchInstrument queries overlap and can later replay the same instrument
     without settlement. Retention preserves the original provider record and
@@ -646,7 +666,7 @@ def ppi_option_full_key_evidence_reason(record):
     return ""
 
 
-def _candidate_retry_ambiguities(connection):
+def _candidate_retry_ambiguities(connection, only_instrument=None):
     table = connection.execute("""SELECT 1 FROM sqlite_master
       WHERE type='table' AND name='complementary_contract_retry'""").fetchone()
     if not table:
@@ -659,17 +679,19 @@ def _candidate_retry_ambiguities(connection):
     required = {"ticker", "instrument_type", "market", "currency", "settlement", "reason"}
     if not required.issubset(columns):
         return set()
+    where = "" if only_instrument is None else " WHERE ticker=? AND instrument_type=?"
     return {
         tuple(str(value or "").strip().upper() for value in row[:5])
         for row in connection.execute("""SELECT ticker,instrument_type,market,currency,
-          settlement,reason FROM complementary_contract_retry""").fetchall()
+          settlement,reason FROM complementary_contract_retry""" + where,
+          only_instrument or ())
         if "AMBIG" in str(row[5] or "").upper()
     }
 
 
 def sync_candidate_universe(connection, checked_at, *,
                             freshness_seconds=PAPER_PPI_IDENTITY_LKG_SECONDS,
-                            bounded_batch=None):
+                            bounded_batch=None, only_instrument=None, database=None):
     """Atomically rebuild the legacy summary without projecting ambiguity to READY.
 
     ``candidate_universe`` intentionally remains keyed by ticker/family/market for
@@ -677,16 +699,25 @@ def sync_candidate_universe(connection, checked_at, *,
     to exactly one complete, fresh PPI-primary catalog identity.  Every other
     projection fails closed.
     """
+    if only_instrument is not None and bounded_batch is not None:
+        raise ValueError("PARTIAL_INSTRUMENT_REQUIRES_ATOMIC_PUBLICATION")
+    where = "" if only_instrument is None else " WHERE ticker=? AND instrument_type=?"
+    params = () if only_instrument is None else only_instrument
     rows = connection.execute("""SELECT ticker,instrument_type,market,currency,
       settlement,settlement_source,status,capability,last_seen_at,metadata_json
-      FROM financial_instrument_catalog
-      ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""").fetchall()
+      FROM financial_instrument_catalog""" + where + """
+      ORDER BY ticker,instrument_type,market,currency,settlement,last_seen_at""", params).fetchall()
+    wire_aliases = {}
+    for row in rows:
+        if (row[6] in {"AVAILABLE", "STALE"}
+                and all(row[i] not in ("", "UNKNOWN", "NO_VERIFICADO", None) for i in (2, 3))):
+            wire_aliases.setdefault(tuple(row[:2]), set()).add(tuple(row[2:4]))
     grouped = {}
     for row in rows:
         ticker, family, market = (str(row[index] or "").strip().upper()
                                   for index in (0, 1, 2))
         grouped.setdefault((ticker, family, market), []).append(row)
-    retry_ambiguities = _candidate_retry_ambiguities(connection)
+    retry_ambiguities = _candidate_retry_ambiguities(connection, only_instrument)
 
     def explicit_projection(family, reasons, fallback_status, detail):
         """Classify WS15 residual families without a generic pending bucket."""
@@ -716,9 +747,13 @@ def sync_candidate_universe(connection, checked_at, *,
         full_key_reason = ppi_full_key_evidence_reason({
             "ticker": row[0], "instrument_type": row[1], "market": row[2],
             "currency": row[3], "settlement": row[4],
-            "settlement_source": row[5], "metadata_json": row[9]})
+            "settlement_source": row[5], "metadata_json": row[9]},
+            database=database, now=checked_at)
         if has_ppi_discovery and full_key_reason:
             reasons.append(full_key_reason)
+        if (row[5] == "REQUEST_CANDIDATE" and not full_key_reason
+                and len(wire_aliases.get(tuple(row[:2]), ())) != 1):
+            reasons.append("PPI_NATIVE_SETTLEMENT_IDENTITY_AMBIGUOUS")
         if any(value in {"", "UNKNOWN", "NO_VERIFICADO"}
                for value in identity_key):
             reasons.append("IDENTITY_INCOMPLETE")
@@ -789,10 +824,10 @@ def sync_candidate_universe(connection, checked_at, *,
 
     if bounded_batch is None:
         # Existing callers retain the original atomic full rebuild contract.
-        connection.execute("DELETE FROM candidate_universe")
+        connection.execute("DELETE FROM candidate_universe" + where, params)
         connection.executemany(
             "INSERT INTO candidate_universe VALUES(?,?,?,?,?,?,?,?)", projected)
-        connection.execute("DELETE FROM candidate_identity_v2")
+        connection.execute("DELETE FROM candidate_identity_v2" + where, params)
         connection.executemany(
             "INSERT INTO candidate_identity_v2 VALUES(?,?,?,?,?,?,?,?,?)", full)
         return
@@ -861,6 +896,64 @@ def persist(c, record):
                json.dumps(record["raw"], ensure_ascii=False, default=str)))
 
 
+def _unique_native_catalog_scope(con, ticker, family, market, currency):
+    keys = con.execute("""SELECT DISTINCT market,currency
+      FROM financial_instrument_catalog
+      WHERE ticker=? AND instrument_type=? AND status IN ('AVAILABLE','STALE')
+        AND market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+        AND currency NOT IN ('','UNKNOWN','NO_VERIFICADO') LIMIT 2""",
+        (ticker, family)).fetchall()
+    return len(keys) == 1 and tuple(keys[0]) == (market, currency)
+
+
+def publish_native_settlement_receipt(store, identity, proof, checked_at):
+    """Publish a signed proof and its instrument's exact eligibility together."""
+    from contextlib import closing
+    from rc6_ppi_native_request_receipt import FIELD, verified_receipt
+
+    if not verified_receipt(proof, identity, database=store.path, now=checked_at):
+        return False
+    ticker, family, market, currency, settlement = identity
+    with closing(store.connect()) as con, con:
+        con.execute("PRAGMA busy_timeout=250")
+        con.execute("BEGIN IMMEDIATE")
+        state = con.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        publication = con.execute("SELECT state FROM candidate_refresh_state WHERE id=1").fetchone()
+        if (state is None or tuple(state) != ("PRODUCTION_PAPER", 0)
+                or publication is None or publication[0] != "COMPLETE"):
+            return False
+        if not _unique_native_catalog_scope(con, ticker, family, market, currency):
+            return False
+        rows = con.execute("""SELECT * FROM financial_instrument_catalog
+          WHERE ticker=? AND instrument_type=? AND settlement=?
+            AND status IN ('AVAILABLE','STALE')
+            AND market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+            AND currency NOT IN ('','UNKNOWN','NO_VERIFICADO') LIMIT 2""",
+            (ticker, family, settlement)).fetchall()
+        if len(rows) != 1:
+            return False
+        record = dict(rows[0])
+        if ((record["market"], record["currency"], record["status"], record["settlement_source"])
+                != (market, currency, "AVAILABLE", "REQUEST_CANDIDATE")
+                or not _candidate_timestamp_is_fresh(
+                    record["last_seen_at"], checked_at, PAPER_PPI_IDENTITY_LKG_SECONDS)):
+            return False
+        raw = json.loads(record["metadata_json"])
+        if not isinstance(raw, dict):
+            return False
+        previous = raw.get(FIELD)
+        if (verified_receipt(previous, identity, database=store.path, now=checked_at)
+                and previous["book"]["received_at"] >= proof["book"]["received_at"]):
+            return False
+        raw[FIELD] = proof
+        record["raw"] = raw
+        if ppi_full_key_evidence_reason(record, database=store.path, now=checked_at):
+            return False
+        persist(con, record)
+        sync_candidate_universe(con, checked_at, only_instrument=(ticker, family), database=store.path)
+        return True
+
+
 def lookup(store, symbol, kind, settlement, *, market=None, currency=None):
     """Una identidad ambigua no se resuelve eligiendo la primera fila."""
     ready_full_keys = set()
@@ -912,6 +1005,8 @@ def lookup(store, symbol, kind, settlement, *, market=None, currency=None):
         return None
     record = dict(rows[0])
     record["raw"] = json.loads(record.pop("metadata_json"))
+    # Recheck independently of a READY projection from before a rebuild.
+    full_key_reason = ppi_full_key_evidence_reason(record, database=getattr(store, "path", None))
     with store.connect() as c:
         ledger = []
         if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_identity_v2'").fetchone():
@@ -920,10 +1015,11 @@ def lookup(store, symbol, kind, settlement, *, market=None, currency=None):
         elif c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_universe'").fetchone():
             ledger = c.execute("SELECT can_simulate,status,detail FROM candidate_universe WHERE ticker=? AND instrument_type=? AND market=? AND settlement=?",
                 (symbol,kind,record["market"],settlement)).fetchall()
+        if (not full_key_reason and record["settlement_source"] == "REQUEST_CANDIDATE"
+                and not _unique_native_catalog_scope(c, symbol, kind, record["market"], record["currency"])):
+            full_key_reason = "PPI_NATIVE_SETTLEMENT_IDENTITY_AMBIGUOUS"
     if len(ledger) != 1 or not ledger[0][0] or ledger[0][1] != "AVAILABLE":
         record["_admission_reason"] = "CANDIDATE_GATE:" + (str(ledger[0][2]) if len(ledger)==1 else "NO_UNIQUE_CANDIDATE")
-    # Guard final lookup, including a stale READY projection from before a rebuild.
-    full_key_reason = ppi_full_key_evidence_reason(record)
     if full_key_reason:
         record["_admission_reason"] = full_key_reason
     return record
