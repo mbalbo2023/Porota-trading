@@ -418,6 +418,9 @@ def test_signed_authority_expires_without_extension_or_more_gets(
 ):
     from be_paper_engine import PaperStore
     clock, provider_calls, _ = wire
+    # Drive signed expiry with the provider clock. Give the CI fixture's
+    # separate SQLite copy a bounded wall-clock budget on slower runners.
+    monkeypatch.setattr(budget_module, "LEDGER_SNAPSHOT_SECONDS", 1.0)
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
