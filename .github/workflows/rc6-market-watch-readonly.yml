@@ -1,10 +1,10 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 cambios materiales y verificación CAFCI READ_ONLY
+run-name: RC6 serie A3 y revisión histórica DLR READ_ONLY
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Leer cambios contractuales y validar el parser CAFCI
+        description: Verificar la serie exacta A3 y el cambio histórico
         type: choice
         options: [read_only]
         default: read_only
@@ -98,12 +98,25 @@ jobs:
               for cid,f,k,m,c,s,t,older,newer,before,after,p_ref,c_ref,rev,latest in rows:
                   p=material_evidence(json.loads(before)) if before else {}
                   n=material_evidence(json.loads(after)) if after else {}
-                  changes.append({"change_id":cid,"identity":[f,k,m,c,s],"detected_at":t,
+                  item = {"change_id":cid,"identity":[f,k,m,c,s],"detected_at":t,
                     "pending":(f,k,m,c,s) in pending,"exact_review_present":rev is not None,
                     "old_hash":older,"new_hash":newer,"latest_hash_matches":newer==latest,
                     "static_sources_match":p_ref==c_ref,
                     "delta":{key:[safe_value(p.get(key)),safe_value(n.get(key))] for key in sorted(p.keys()|n.keys())
-                        if p.get(key)!=n.get(key) and re.fullmatch(r"[a-z_]{1,60}",key)}})
+                        if p.get(key)!=n.get(key) and re.fullmatch(r"[a-z_]{1,60}",key)}}
+                  if f == "FUTUROS":
+                      item["previous_source"] = safe_value(p_ref)
+                      item["current_source"] = safe_value(c_ref)
+                      if before:
+                          allowed = {"market", "currency", "settlement", "paper_quantity_min",
+                              "paper_quantity_step", "paper_quantity_policy", "paper_margin_policy",
+                              "paper_margin_rate", "broker_minimum_quantity","broker_quantity_step",
+                              "broker_margin","policy_scope","readiness_guard","derivation_rule",
+                              "evidence_scope","metadata_source"}
+                          item["old_documented_policy"] = {k:safe_value(v) for k,v in json.loads(before).items()
+                                                           if k in allowed}
+                          item["old_additional_field_count"] = len(json.loads(before).keys()-allowed)
+                  changes.append(item)
               print("RC6_FAMILY_CHANGE="+json.dumps({"at":datetime.now(timezone.utc).isoformat(),
                   "changes":changes},separators=(",",":"),ensure_ascii=True))
           PY
@@ -121,91 +134,46 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: d004109f162b44919fb7d97735344ecedffa811f
+          ref: 6d12321011dd6a4e75461085b9efb92c92561cfd
           persist-credentials: false
-      - name: Verify public CAFCI and A3 responses without credentials
+      - name: Verify corrected A3 CEM request and exact symbol
         shell: bash
         run: |
           python3 -B - <<'PY'
-          from datetime import datetime, timezone
-          from hashlib import sha256
+          from datetime import date, datetime, timezone
           import json
           import re
-          from urllib.error import HTTPError, URLError
-          from urllib.parse import urlencode, urlsplit
-          from urllib.request import HTTPRedirectHandler, Request, build_opener
           
-          from rc6_cafci_fci_reference import MAX_COMPRESSED_BYTES, SOURCE_URL, parse_cafci_daily_reference
+          from scripts.rc6_history_fresh_probe import _fetcher
+          from scripts.rc6_history_fresh_sidecar import _day, _identity_conflicts, _target
           
           
-          class NoRedirect(HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-          
-          
-          def fetch(url, limit):
-              with build_opener(NoRedirect()).open(Request(url, headers={
-                      "User-Agent": "Porota-RC6-Paper-Source-Audit/1.0"}), timeout=9) as response:
-                  body = response.read(limit + 1)
-                  if len(body) > limit:
-                      raise ValueError("SOURCE_RESPONSE_TOO_LARGE")
-                  return response.headers, body, datetime.now(timezone.utc)
-          
-          
-          def failure(error):
-              if isinstance(error, HTTPError):
-                  return {"status": "HTTP_ERROR", "http": error.code,
-                          "redirect_host": urlsplit(error.headers.get("Location","")).hostname}
-              if isinstance(error, URLError):
-                  return {"status": "TRANSPORT_ERROR", "class": type(error.reason).__name__}
-              code = str(error)
-              return {"status": "REJECTED", "code": code if re.fullmatch(
-                  r"[A-Z][A-Z0-9_]{1,80}", code) else type(error).__name__}
-          
-          
-          result = {"at": datetime.now(timezone.utc).isoformat(), "ppi_calls": 0, "execution": False}
+          at = datetime.now(timezone.utc)
+          ids = ("DLR/NOV26", "DLR/DIC26")
+          receipts = {}
+          fetch, close = _fetcher("A3_CEM")
           try:
-              headers, body, now = fetch(SOURCE_URL, MAX_COMPRESSED_BYTES)
-              filename = headers.get_filename()
-              result["cafci_http"] = {"filename": filename if re.fullmatch(
-                  r"20[0-9]{6}_Planilla_Diaria_A\.xlsx", filename or "") else None,
-                  "last_modified": headers.get("Last-Modified"), "size": len(body)}
-              report = parse_cafci_daily_reference(body, captured_at=now,
-                  http_last_modified_at=headers.get("Last-Modified"),
-                  expected_sha256=sha256(body).hexdigest(), source_filename=filename)
-              result["cafci"] = {"report": report.report_date.isoformat(),
-                  "digest": report.source_sha256, "classes": len(report.classes),
-                  "summary": report.summary,
-                  "invalid_fee_classes": [row.cafci_class_id for row in report.classes if
-                      any(hold.endswith("FEE_PERCENT_OUT_OF_RANGE") for hold in row.quality_holds)][:25],
-                  "focal": [{"class_id": row.cafci_class_id, "cnv": row.cnv_fund_id,
-                             "effective": row.nav_effective_date.isoformat() if row.nav_effective_date else None,
-                             "fee_reference_only": True, "has_nav": row.nav_per_unit is not None,
-                             "quality_holds": row.quality_holds} for row in report.classes
-                             if row.cafci_class_id in (1114,1115)]}
-          except (OSError, ValueError, TypeError) as error:
-              result["cafci"] = failure(error)
-          
-          result["a3"] = {}
-          for label, scope in (("product_DLR", {"product":"DLR"}), ("exact_DLR_NOV26", {"symbol":"DLR/NOV26"})):
-              url = "https://apicem.matbarofex.com.ar/api/v1/closing-prices?" + urlencode({
-                  **scope,"from":"2026-11-24T03:00:00Z","to":"2026-11-26T02:59:59Z","page":1,"pageSize":65})
-              try:
-                  _, body, at = fetch(url, 100000)
-                  payload = json.loads(body)
-                  data = payload.get("data") if isinstance(payload,dict) else None
-                  if not isinstance(data,list):
-                      raise ValueError("A3_DATA_MISSING")
-                  records = [{k: row.get(k) for k in
-                      ("symbol","dateTime","date","product","market","currency","settlementPrice","closingPrice","closePrice","close","lastPrice","settlement")
-                      if k in row and type(row[k]) in (str,int,float)}
-                      for row in data if type(row) is dict
-                      and row.get("symbol") in ("DLR/NOV26","DLR/DIC26")]
-                  result["a3"][label] = {"at":at.isoformat(),"rows":records,"digest":sha256(body).hexdigest(),
-                      "page_count": len(data), "total_entries": payload.get("totalEntries"),
-                      "example_symbols": sorted({r.get("symbol") for r in data if isinstance(r,dict)
-                          and isinstance(r.get("symbol"),str)})[:15]}
-              except (OSError, ValueError, TypeError) as error:
-                  result["a3"][label] = failure(error)
-          print("RC6_PUBLIC_FAMILY=" + json.dumps(result, separators=(",",":"),ensure_ascii=True))
+              for ticker in ids:
+                  target = _target((ticker, "FUTUROS", "A3", "ARS", "INMEDIATA"))
+                  try:
+                      payload = fetch(target, date(2026,11,24), date(2026,11,25))
+                      rows = payload.get("data")
+                      received = datetime.now(timezone.utc)
+                      if not isinstance(rows,list) or len(rows)>10:
+                          raise ValueError("A3_TARGET_RESPONSE_SCOPE")
+                      selected = []
+                      for row in rows:
+                          if not isinstance(row,dict) or _identity_conflicts(row,target,"A3_CEM"):
+                              continue
+                          selected.append({"symbol": row.get("symbol"),"product": row.get("product"),
+                              "raw_at":row.get("dateTime"),"session_day":_day(row,"A3_CEM",received).isoformat(),
+                              "has_adjustment":type(row.get("settlement")) in (int,float) and row["settlement"]>0})
+                      receipts[ticker]={"received":received.isoformat(),"records":len(rows),"matched":selected}
+                  except Exception as exc:
+                      code=str(exc)
+                      receipts[ticker]={"error":code if re.fullmatch(r"[A-Z0-9_: /-]{3,90}",code) else type(exc).__name__}
+          finally:
+              close()
+          print("RC6_CEM_CANDIDATE="+json.dumps({"at":at.isoformat(),"cases":receipts,
+                "status":"REFERENCE_ONLY","runtime_entry_authority":False,"ppi_calls":0},separators=(",",":")))
           PY
