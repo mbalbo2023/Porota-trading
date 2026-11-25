@@ -167,7 +167,7 @@ def test_book_failure_materializes_sampled_candles_without_a_market_snapshot(tmp
     known = (AT + timedelta(seconds=10)).isoformat()
     reader = SharedPPIReaderAdapter(client=SimpleNamespace(pull=lambda *_a, **_kw: None),
                                     consumer="scanner", catalog_source_digest=DIGEST)
-    monkeypatch.setattr(reader, "capture_guarded_native", lambda *_a, **_kw: capture)
+    monkeypatch.setattr(reader, "current_with_optional_native_capture", lambda *_a, **_kw: capture)
     monkeypatch.setattr(observer, "now_iso", lambda: known)
 
     def missing_book(*_):

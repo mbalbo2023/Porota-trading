@@ -346,7 +346,7 @@ class SharedPPIReaderAdapter:
         self._state = "OWNER_PINNED_OBSERVE_ONLY"
 
     def _native(self, method: str, ticker: str, instrument_type: str,
-                settlement: str, *, include_guard=False):
+                settlement: str, *, include_guard=False, require_guard=True):
         if not self._gateway_pinned:
             return self._native_unavailable(method.upper(), (ticker, instrument_type, settlement))
         if self._closed:
@@ -377,7 +377,7 @@ class SharedPPIReaderAdapter:
             raise GatewayEvidenceRejected(self._last_error)
         self._last_error = None
         if include_guard:
-            if not isinstance(response.get("guard_wire_receipt"), dict):
+            if require_guard and not isinstance(response.get("guard_wire_receipt"), dict):
                 self._last_error = "PPI_GATEWAY_GUARD_WITNESS_MISSING"
                 raise GatewayEvidenceRejected(self._last_error)
             return copy.deepcopy(response)
@@ -385,6 +385,13 @@ class SharedPPIReaderAdapter:
 
     def current(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("current", ticker, instrument_type, settlement)
+
+    def current_with_optional_native_capture(self, ticker: str, instrument_type: str, settlement: str):
+        """Carry the same Current and its optional candle witness from one GET."""
+        response = self._native("current", ticker, instrument_type, settlement,
+                                include_guard=True, require_guard=False)
+        return {"native_payload": response["receipt"]["raw_payload"],
+                "guard_wire_receipt": response.get("guard_wire_receipt")}
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("book", ticker, instrument_type, settlement)

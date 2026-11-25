@@ -409,15 +409,15 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     with scope:
         current_capture = None
         if isinstance(reader, SharedPPIReaderAdapter) and identity and not catalog_read_error:
-            current_capture = retry_read(lambda: reader.capture_guarded_native(
-                "current", identity, priority=priority), retries=1)
+            current_capture = retry_read(lambda: reader.current_with_optional_native_capture(
+                symbol, asset_class, settlement), retries=1)
             current = current_capture["native_payload"]
         else:
             current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
         try:
             book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
         except Exception:
-            if current_capture is not None:
+            if current_capture is not None and isinstance(current_capture.get("guard_wire_receipt"), dict):
                 _record_candle_current_on_book_failure(store, identity, current_capture, priority)
             raise
     metadata = None
