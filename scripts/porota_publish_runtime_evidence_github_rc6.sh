@@ -3,6 +3,12 @@ set -eu
 
 # Dedicated publisher for WS-INFRA-12.  It does not invoke Docker, systemd
 # mutation, the legacy introspector, DB writers, order clients or retention.
+if [ "$#" -eq 0 ]; then
+  exec /usr/bin/python3 -B "${HOME:?}/.local/state/porota-rc6/scheduler-dispatch.py" --publish-runtime-evidence
+fi
+test "$#" -eq 1 && test "$1" = "--verified-release" || exit 2
+RELEASE_SOURCE="$(cd "$(dirname "$0")/.." && pwd -P)"
+
 LOCK=/run/porota-observability-publish/lock
 SOURCE_ROOT=/opt/porota-trading
 DB="$SOURCE_ROOT/data/paper_v17/observer_v17.db"
@@ -30,7 +36,7 @@ if [ -f "$REPOSITORY/$LATEST" ]; then
   PREVIOUS="--previous=$REPOSITORY/$LATEST"
 fi
 
-python3 "$SOURCE_ROOT/ops_runtime_evidence_rc6.py" \
+python3 -B "$RELEASE_SOURCE/ops_runtime_evidence_rc6.py" \
   --db "$DB" \
   --operation-mode "$SOURCE_ROOT/data/operation_mode.json" \
   --deploy-state "$SOURCE_ROOT/data/deploy/CURRENT_STATE_V2.json" \
@@ -40,7 +46,7 @@ python3 "$SOURCE_ROOT/ops_runtime_evidence_rc6.py" \
   --output "$STAGING/latest.json" \
   ${PREVIOUS:+"$PREVIOUS"}
 
-python3 "$SOURCE_ROOT/ops_runtime_evidence_rc6.py" \
+python3 -B "$RELEASE_SOURCE/ops_runtime_evidence_rc6.py" \
   --db "$DB" --staging-root "$STAGING" --output "$STAGING/unused.json" \
   --validate "$STAGING/latest.json"
 

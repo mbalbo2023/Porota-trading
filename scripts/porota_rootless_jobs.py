@@ -142,6 +142,20 @@ def source_directory(identity, current):
     return source
 
 
+def publish_runtime_evidence(identity, *, root=Path("/opt/porota-trading"), run=subprocess.run):
+    """Run the existing read-only publisher from the verified release source."""
+    with scheduler_lock(identity):
+        current, _ = read_release_state(identity)
+        source = source_directory(identity, current)
+        script = source / "scripts/porota_publish_runtime_evidence_github_rc6.sh"
+        environment = identity.environment()
+        environment.update(POROTA_BUILD_SHA=current["source_sha"],
+                           POROTA_CANDIDATE_TREE_SHA=current["source_tree"])
+        result = run(("/bin/sh", str(script), "--verified-release"),
+                     cwd=root, env=environment, timeout=150, check=False)
+        require(result.returncode == 0, "RUNTIME_EVIDENCE_PUBLISH_FAILED")
+
+
 def verified_host(root, identity):
     current, release = read_release_state(identity)
     manager = Host(root, identity)
@@ -363,9 +377,15 @@ def main(argv=None):
     parser.add_argument("--unit", choices=sorted(ADAPTED_SERVICES | IOL_JOBS))
     parser.add_argument("--verify-iol-rest", action="store_true")
     parser.add_argument("--docker-bridge", nargs=argparse.REMAINDER)
+    parser.add_argument("--publish-runtime-evidence", action="store_true")
     args = parser.parse_args(argv)
     try:
         identity = Identity.current()
+        if args.publish_runtime_evidence:
+            require(args.unit is None and not args.verify_iol_rest and args.docker_bridge is None,
+                    "SCHEDULER_UNIT_SCOPE")
+            publish_runtime_evidence(identity)
+            return 0
         if args.docker_bridge is not None:
             command = publisher_command(args.docker_bridge)
             with scheduler_lock(identity):

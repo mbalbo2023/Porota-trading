@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from datetime import datetime, timezone
 import copy
 import hashlib
@@ -253,6 +254,57 @@ def test_last_exact_market_snapshot_retains_clocks_without_claiming_provider_ide
     assert instrument["readiness"]["unverified_stage"] == "MARKET_OBSERVATION"
     assert "first_block_stage" not in instrument["readiness"]
     assert "PRIVATE_" not in json.dumps(payload)
+
+
+def test_runtime_evidence_binds_settlement_pin_to_the_database_being_read(tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    from rc6_ppi_native_request_receipt import FIELD, SOURCE, SettlementReceiptSigner
+    from tests.test_rc6_ppi_native_request_receipt import AT, KEY, RELEASE, pin, sign_pair
+
+    db, mode, deploy, frozen, manifest = inputs(tmp_path, last_seen=AT.isoformat())
+    signer = SettlementReceiptSigner(RELEASE)
+    proof = sign_pair(signer)
+    pin(db, signer)
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "different.db"))
+    monkeypatch.setenv("POROTA_BUILD_SHA", RELEASE[0])
+    monkeypatch.setenv("POROTA_CANDIDATE_TREE_SHA", RELEASE[1])
+    ticker, family, market, currency, settlement = KEY
+    raw = {"ticker": ticker, "type": family, "market": market, "currency": currency,
+           "_discovery_source": "PPI_PRIMARY", FIELD: proof}
+    with sqlite3.connect(db) as conn:
+        conn.execute("""UPDATE financial_instrument_catalog
+            SET ticker=?,instrument_type=?,market=?,currency=?,settlement=?,
+                settlement_source='REQUEST_CANDIDATE',metadata_json=?""",
+                     (*KEY, json.dumps(raw)))
+
+    payload = evidence.build_bundle(
+        db_path=db, operation_mode_path=mode, deploy_state_path=deploy,
+        frozen_path=frozen, manifest_path=manifest, previous_path=None,
+        freshness_seconds=3600, include_ppi_watch=False, current=AT + timedelta(seconds=3),
+    )
+    instrument = payload["instruments"][0]
+    assert instrument["catalog"]["settlement_source"] == SOURCE
+    assert "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID" not in instrument["readiness"]["reasons"]
+
+
+def test_missing_host_verifier_keeps_the_catalog_evidence_readable(tmp_path, monkeypatch):
+    from rc6_ppi_native_request_receipt import FIELD
+
+    import_module = builtins.__import__
+
+    def unavailable(name, *args, **kwargs):
+        if name == "rc6_ppi_native_request_receipt":
+            raise ImportError(name)
+        return import_module(name, *args, **kwargs)
+
+    row = {"settlement_source": "REQUEST_CANDIDATE"}
+    monkeypatch.setattr(builtins, "__import__", unavailable)
+    _, reason = evidence._settlement_witness(row, {}, NOW, database=tmp_path / "observer.db")
+    assert reason == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+    _, reason = evidence._settlement_witness(row, {FIELD: {}}, NOW,
+                                           database=tmp_path / "observer.db")
+    assert reason == "PPI_NATIVE_SETTLEMENT_VERIFIER_UNAVAILABLE"
 
 
 def test_bounded_wire_receipts_distinguish_returned_literal_from_requested_term(tmp_path, monkeypatch):

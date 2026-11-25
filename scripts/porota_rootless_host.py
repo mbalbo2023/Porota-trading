@@ -49,6 +49,7 @@ PRESERVED_RELEASE_SOURCES = (
     "rc6_scheduler_snapshot.py",
     PRESERVED_SOURCE_UNITS["porota-scheduler-export-rc6.service"],
     "ops_runtime_evidence_rc6.py",
+    PRESERVED_SOURCE_UNITS["porota-runtime-evidence-rc6.service"],
 )
 # Frozen PAPER settings include a dedicated PPI Gateway owner before three
 # independent consumers. Exact roles, not a raw count: Performance remains
