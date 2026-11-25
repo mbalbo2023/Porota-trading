@@ -1386,7 +1386,6 @@ def run_worker(store, stop, *, clock_fn):
             cooldown_skipped = reprobes = recovered = 0
             invalid_session = False
             provider_hold, security_block = None, False
-            deferred_probe = None
             for record in selected:
                 if stop.is_set():
                     break
@@ -1465,16 +1464,6 @@ def run_worker(store, stop, *, clock_fn):
                         stop.wait(0.75)
                         continue
                     error_code = read_error_code or "PPI_" + type(exc).__name__.upper()
-                    if error_code in SCALPING_PROVIDER_BACKPRESSURE:
-                        failed += 1
-                        provider_hold = error_code
-                        cursor, paired_recheck, paired_next_cursor = rotation
-                        if reprobe:
-                            deferred_probe = record, capability
-                        store.event("INTRADAY_SCALPING_BACKPRESSURE",
-                                    f"{record['ticker']}: {error_code};shadow_identity=" +
-                                    json.dumps(_identity(record), separators=(",", ":")))
-                        break
                     if read_error_code == "PPI_INSTRUMENT_NOT_FOUND" and instrument_not_found(exc):
                         negative_at = _stamp(clock_fn())
                         negative = capability_cache.outcome(record, capability, at=negative_at,
@@ -1492,6 +1481,13 @@ def run_worker(store, stop, *, clock_fn):
                             _invalidate_intraday_capability(store, record, negative, at=retry_at)
                             _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_REPROBE_FAILED", record, negative)
                         failed += 1
+                        if error_code in SCALPING_PROVIDER_BACKPRESSURE:
+                            provider_hold = error_code
+                            cursor, paired_recheck, paired_next_cursor = rotation
+                            store.event("INTRADAY_SCALPING_BACKPRESSURE",
+                                        f"{record['ticker']}: {error_code};shadow_identity=" +
+                                        json.dumps(_identity(record), separators=(",", ":")))
+                            break
                         store.event("INTRADAY_SCALPING_ERROR",
                                     f"{record['ticker']}: {error_code};shadow_identity=" +
                                     json.dumps(_identity(record), separators=(",", ":")))
@@ -1541,12 +1537,6 @@ def run_worker(store, stop, *, clock_fn):
                 observed_wait = metrics.get("native_backoff_remaining_seconds")
                 if type(observed_wait) is not int or not 0 < observed_wait <= 86400:
                     observed_wait = min(cadence, 30)
-                if deferred_probe:
-                    record, capability = deferred_probe
-                    retry_at = aware_datetime(clock_fn())
-                    due = retry_at + timedelta(seconds=max(observed_wait, INTRADAY_REPROBE_MIN_SPACING_SECONDS))
-                    capability = capability_cache.remember(record, dict(capability, retry_due_at=_stamp(due)))
-                    _invalidate_intraday_capability(store, record, capability, at=retry_at)
                 resume_reads_at = time.monotonic() + observed_wait
                 last_backpressure = provider_hold
                 stop.wait(min(20, observed_wait))
