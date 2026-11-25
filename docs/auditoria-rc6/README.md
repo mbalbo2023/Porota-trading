@@ -1,6 +1,6 @@
 # Auditoría técnica y funcional de Porota RC6
 
-El [RCA de la rueda PAPER del 24/11](RCA_RUEDA_2026-11-24.md) reconstruye el bloqueo, el embudo, los históricos y las alertas. El [handoff vigente](HANDOFF.md) resume el camino crítico y los [RCA y lecciones](RCA_Y_LECCIONES.md) conservan las defensas y antecedentes. Los recibos de la rueda están en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y la continuidad general en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).
+El [handoff vigente](HANDOFF.md) registra el cierre técnico de Promote #206 y el estado del GO del 25/11. El [PDF de backtesting](BACKTEST_PAPER_2026-11-24.pdf) y su [versión Markdown](BACKTEST_PAPER_2026-11-24.md) reúnen los casos ejecutados, sus recibos y el protocolo para auditar el universo de cada familia hasta el asiento PAPER. El [RCA de la rueda del 24/11](RCA_RUEDA_2026-11-24.md) reconstruye los bloqueos, el embudo, los históricos y las alertas. Los [RCA y lecciones](RCA_Y_LECCIONES.md) conservan las defensas y antecedentes. Recibos de rueda en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y continuidad general en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093).
 
 ## Auditoría histórica del Deploy V2 #198
 

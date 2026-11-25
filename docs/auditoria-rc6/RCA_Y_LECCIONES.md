@@ -1,5 +1,12 @@
 # RCA y lecciones de Porota RC6
 
+## Lecciones verificadas del cierre #205 y #206
+
+- **Separar identidad, procedencia y permiso.** Guardar el literal observado, el plazo consultado y el recibo nativo de la pareja en campos distintos. Anclar firma, generación, catálogo y relojes. Publicar la evidencia y recalcular candidatos en la misma transacción. Probar cambio de SHA, recibo incompleto, firma ajena, reloj inválido y clave ambigua. [RCA del plazo](RCA_RUEDA_2026-11-24.md#cierre-técnico-posterior-a-la-rueda) · [PR #1270](https://github.com/mbalbo2023/Porota-trading/pull/1270)
+- **Medir la última etapa que efectivamente se ejercitó.** Ocho fixtures llegaron al guard, con cero posiciones. La compra requiere señal, economía, riesgo, profundidad y ledger. Cauciones pide términos y libro de colocación. FCI pide clase, NAV, calendario, corte y recibos separados de suscripción, asignación y rescate. [Casos y procedimiento](BACKTEST_PAPER_2026-11-24.md)
+- **Aislar el release de las pruebas y comprobar el real en runtime.** El fixture de firma ahora fija sus SHAs; el test adversarial conserva el rechazo por identidad distinta. Vincular el artefacto primario de Predeploy con el recibo del mismo código, árbol e imagen. Comprobar GO, EXIT y frescura aparte. [CI inicial](https://github.com/mbalbo2023/Porota-trading/actions/runs/45520005231) · [Predeploy corregido](https://github.com/mbalbo2023/Porota-trading/actions/runs/45521938932/artifacts/14980649015) · [Promote #206](https://github.com/mbalbo2023/Porota-trading/actions/runs/45523776489/artifacts/14980838451)
+- **Conservar el reloj que responde cada pregunta.** El dashboard #1269 usa `market_snapshots.observed_at` para recepción. El replay usa esa hora como corte y retiene trade y libro con relojes propios. Para velas e históricos, probar además qué estaba publicado en `known_at` al evaluar. [Recepción #1269](https://github.com/mbalbo2023/Porota-trading/pull/1269) · [Replay físico](https://github.com/mbalbo2023/Porota-trading/actions/runs/45508220641/artifacts/14975086071)
+
 ## RCA vigente de la rueda del 24/11
 
 El [RCA completo](RCA_RUEDA_2026-11-24.md) contiene la evidencia por fase y el criterio de cierre de cada frente. El [handoff vigente](HANDOFF.md) resume el camino crítico.
