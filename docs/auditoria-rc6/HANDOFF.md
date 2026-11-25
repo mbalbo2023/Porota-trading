@@ -2,7 +2,11 @@
 
 ## Continuación de datos, preopen y Gateway
 
-El [RCA del 25/11](RCA_DATOS_PREOPEN_2026-11-25.md) documenta los históricos, las velas, el Gateway, la identidad y scalping. [PR #1275](https://github.com/mbalbo2023/Porota-trading/pull/1275) contiene el candidato `70a44da7a950ddce16219b3553a1ca65930522bb`, árbol `7c5ec912bae29aead5efd003a10cedc8ac202098`. La última instalación acreditada en este corte es [Promote #208](https://github.com/mbalbo2023/Porota-trading/actions/runs/45599380125/artifacts/15014269186), PAPER/0, guard REAL bloqueado y PPI Watch fuera de cambios.
+**VALIDADO_RUNTIME** a las **10:05:44 ART** del 25/11/2026. [Deploy V2 #209](https://github.com/mbalbo2023/Porota-trading/actions/runs/45618943128/artifacts/15023674360) acredita producto `44ee181dcc452215ab05fae7f3919e344e7601d7`, candidato `55bb80daa2834df6b8c7ae6f90b7db9d74ed0eae` y árbol `95493d68d9dd02014d364c0ec24c971a75923cc8`. El [Predeploy #1330](https://github.com/mbalbo2023/Porota-trading/actions/runs/45616489476/artifacts/15022852754) aprobó 9.190 pruebas y validó la misma imagen.
+
+El recibo, el guard y la consulta de SQLite acreditan `PRODUCTION_PAPER / SIMULATION`, `orders_guard=BLOCKED` y `real_orders_sent=0`. El dashboard estaba saludable, el observer activo y el controlador reportó ocho roles. PPI Watch está fuera de cambios. [Checkpoint #1093](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7161442099)
+
+El [RCA del 25/11](RCA_DATOS_PREOPEN_2026-11-25.md) documenta los históricos, las velas, el Gateway, la identidad y scalping. El [manifiesto de recibos](RECIBOS_PAPER_2026-11-25.json) conserva los SHA-256 de la imagen, del paquete y de la evidencia física. [Producto #1275](https://github.com/mbalbo2023/Porota-trading/pull/1275)
 
 Para el próximo corte, leer Actions y [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093). Vincular el T−10 y el censo por familia al release activo. Medir progreso de la primera clave, latencia de cola y ronda efectiva EXIT, reanudación scalping tras pausa y muestras 1m/5m. El histórico de referencia se recupera por huecos en el importador existente. El cierre RAW sigue sujeto a fuente acreditada. [Ownership de producto](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7161018328)
 

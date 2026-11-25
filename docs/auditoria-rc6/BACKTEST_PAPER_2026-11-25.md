@@ -109,4 +109,12 @@ El [censo posterior](https://github.com/mbalbo2023/Porota-trading/commit/1d34e94
 
 La revisión focalizada aprobó 311 pruebas y registró dos omisiones del entorno. La comprobación final recorrió el fallo de Book desde el scanner hasta las dos resoluciones y verificó que la colección permanezca observacional. Los casos de instrumentos y asientos conservan sus recibos originales. [RCA, solución y criterio de cierre](RCA_DATOS_PREOPEN_2026-11-25.md) · [Candidato #1275](https://github.com/mbalbo2023/Porota-trading/pull/1275)
 
+## Cierre técnico del Deploy V2 #209
+
+**VALIDADO_RUNTIME** a las **10:05:44 ART** del 25/11/2026. [Deploy V2 #209](https://github.com/mbalbo2023/Porota-trading/actions/runs/45618943128/artifacts/15023674360) acredita producto `44ee181dcc452215ab05fae7f3919e344e7601d7`, candidato `55bb80daa2834df6b8c7ae6f90b7db9d74ed0eae` y árbol `95493d68d9dd02014d364c0ec24c971a75923cc8`. El [Predeploy #1330](https://github.com/mbalbo2023/Porota-trading/actions/runs/45616489476/artifacts/15022852754) aprobó 9.190 pruebas y validó la misma imagen.
+
+El recibo, el guard y la consulta de SQLite acreditan `PRODUCTION_PAPER / SIMULATION`, `orders_guard=BLOCKED` y `real_orders_sent=0`. El dashboard estaba saludable, el observer activo y el controlador reportó ocho roles. PPI Watch está fuera de cambios. [Checkpoint #1093](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7161442099)
+
+La siguiente observación de rueda debe acreditar T−10, EXIT efectivo, primera cotización fresca y habilitación por clave. La cuota de cuenta PPI y la cobertura RAW siguen pendientes de sus recibos. [Registro de recibos](RECIBOS_PAPER_2026-11-25.json)
+
 PAPER/SHADOW. Órdenes reales bloqueadas. PPI Watch fuera de cambios. [Handoff](HANDOFF.md) · [Ownership](https://github.com/mbalbo2023/Porota-trading/issues/980)

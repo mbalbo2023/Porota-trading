@@ -1118,12 +1118,40 @@
       }
     }
   ],
+  "deploy_209": {
+    "state": "VALIDADO_RUNTIME",
+    "observed_at_utc": "2026-11-25T13:05:44.088454+00:00",
+    "product_sha": "44ee181dcc452215ab05fae7f3919e344e7601d7",
+    "source_sha": "55bb80daa2834df6b8c7ae6f90b7db9d74ed0eae",
+    "source_tree": "95493d68d9dd02014d364c0ec24c971a75923cc8",
+    "image_id": "sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541",
+    "release_manifest_sha256": "62e5aca163a2860db210f5cc7f40e6975f26174864eff6a46025c4ee22265c16",
+    "predeploy": {
+      "run_id": 45616489476,
+      "artifact_id": 15022852754,
+      "artifact_sha256": "94d8cc74731aa2381fb2635c820294f7f62ec80804f73e5e96d569b48297ba15",
+      "tests_executed": 9190,
+      "tests_failed": 0
+    },
+    "promote": {
+      "run_id": 45618943128,
+      "job_id": 139221655189,
+      "artifact_id": 15023674360,
+      "artifact_sha256": "9135ab0d7ddb9f45fba94fc551d9079ba23f6510ef5e341448153f1298ca9104"
+    },
+    "operating_mode": "PRODUCTION_PAPER",
+    "execution_mode": "SIMULATION",
+    "orders_guard": "BLOCKED",
+    "real_orders_sent": 0,
+    "database_real_orders_sent": 0,
+    "ppi_watch_touched": false
+  },
   "next_operational_checks": {
     "preopen": {
       "calendar": "2026-11-25T10:20:00-03:00",
       "utc": "2026-11-25T13:20:00Z",
       "state": "PENDING_WINDOW",
-      "bound_product_sha": "c6b990e20fb7b943dfda478202452b5c550816f6"
+      "expected_product_sha": "44ee181dcc452215ab05fae7f3919e344e7601d7"
     },
     "exit_capacity": {
       "state": "WAITING_MARKET",
