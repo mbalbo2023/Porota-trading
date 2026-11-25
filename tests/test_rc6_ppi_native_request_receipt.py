@@ -69,7 +69,13 @@ def pin(database, signer):
     pin_gateway_signer(database, status, expected_pid=os.getpid(), release=RELEASE)
 
 
-def test_only_controller_pinned_signature_matches_the_exact_instrument(tmp_path):
+@pytest.fixture(autouse=True)
+def fixture_release_coordinates(monkeypatch):
+    monkeypatch.setenv("POROTA_BUILD_SHA", RELEASE[0])
+    monkeypatch.setenv("POROTA_CANDIDATE_TREE_SHA", RELEASE[1])
+
+
+def test_only_controller_pinned_signature_matches_the_exact_instrument(tmp_path, monkeypatch):
     database = tmp_path / "paper.db"
     signer = SettlementReceiptSigner(RELEASE)
     proof = sign_pair(signer)
@@ -83,6 +89,9 @@ def test_only_controller_pinned_signature_matches_the_exact_instrument(tmp_path)
     assert not verified_receipt({**proof, "catalog_sha256": "e" * 64}, KEY, database=database, now=at)
     assert not verified_receipt(sign_pair(SettlementReceiptSigner(RELEASE)), KEY,
                                 database=database, now=at)
+    monkeypatch.setenv("POROTA_BUILD_SHA", "e" * 40)
+    assert not verified_receipt(proof, KEY, database=database, now=at)
+    monkeypatch.setenv("POROTA_BUILD_SHA", RELEASE[0])
     record = dict(zip(PARTS, KEY), settlement_source="REQUEST_CANDIDATE",
                   raw={"ticker": "AL30", "type": "BONOS", "market": "BYMA", "currency": "ARS",
                        "_discovery_source": "IOL_COMPLEMENTARY", FIELD: proof})
