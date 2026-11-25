@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 serie A3 y revisión histórica DLR READ_ONLY
+run-name: RC6 revisión indexada de dos contratos DLR READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -55,7 +55,7 @@ jobs:
           import time
           
           from cg_paper_workspace import database_path
-          from cp_contract_evidence_v2_hf6 import material_evidence, pending_material_changes
+          from cp_contract_evidence_v2_hf6 import material_evidence, material_evidence_hash
           
           
           def safe_value(value):
@@ -73,7 +73,6 @@ jobs:
                   raise SystemExit("PAPER_ZERO_FAILED")
               deadline=time.monotonic()+4
               conn.set_progress_handler(lambda: time.monotonic()>=deadline,1000)
-              pending=pending_material_changes(conn)
               reviews=conn.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='contract_evidence_v2_reviews'").fetchone()
               review_rows = "SELECT change_id FROM contract_evidence_v2_reviews" if reviews else "SELECT NULL AS change_id WHERE 0"
               rows=conn.execute(f"""WITH reviews AS ({review_rows})
@@ -94,16 +93,21 @@ jobs:
                    AND latest.currency=ch.currency AND latest.settlement=ch.settlement
                    AND latest.source_class=ch.source_class
                 LEFT JOIN reviews rev ON rev.change_id=ch.change_id
-                WHERE ch.status='CHANGED_REVIEW_REQUIRED' AND ch.source_class='DERIVED_OFFICIAL_RULE'
-                  AND ((ch.family='CAUCIONES' AND ch.currency='ARS') OR
-                       (ch.family='FUTUROS' AND ch.ticker IN ('DLR/NOV26','DLR/DIC26')))
-                ORDER BY ch.change_id LIMIT 40""").fetchall()
+                WHERE ch.change_id IN (34609,34610)
+                  AND ch.family='FUTUROS' AND ch.market='A3' AND ch.currency='ARS'
+                  AND ch.settlement='INMEDIATA' AND ch.source_class='DERIVED_OFFICIAL_RULE'
+                  AND ch.status='CHANGED_REVIEW_REQUIRED'
+                ORDER BY ch.change_id""").fetchall()
+              if [(row[0],row[2]) for row in rows] != [(34609,"DLR/DIC26"),(34610,"DLR/NOV26")]:
+                  raise SystemExit("EXACT_DLR_CHANGES_NOT_FOUND")
               changes=[]
               for cid,f,k,m,c,s,t,older,newer,before,after,p_ref,c_ref,rev,latest in rows:
                   p=material_evidence(json.loads(before)) if before else {}
                   n=material_evidence(json.loads(after)) if after else {}
                   item = {"change_id":cid,"identity":[f,k,m,c,s],"detected_at":t,
-                    "pending":(f,k,m,c,s) in pending,"exact_review_present":rev is not None,
+                    "material_change":before is None or after is None
+                        or material_evidence_hash(json.loads(before)) != material_evidence_hash(json.loads(after)),
+                    "review_row_present":rev is not None,
                     "old_hash":older,"new_hash":newer,"latest_hash_matches":newer==latest,
                     "static_sources_match":p_ref==c_ref,
                     "delta":{key:[safe_value(p.get(key)),safe_value(n.get(key))] for key in sorted(p.keys()|n.keys())
@@ -122,63 +126,7 @@ jobs:
                           item["old_additional_field_count"] = len(json.loads(before).keys()-allowed)
                   changes.append(item)
               print("RC6_FAMILY_CHANGE="+json.dumps({"at":datetime.now(timezone.utc).isoformat(),
+                  "scope":"TWO_DLR_CHANGE_IDS","mode":"PRODUCTION_PAPER","real_orders_sent":0,
                   "changes":changes},separators=(",",":"),ensure_ascii=True))
           PY
           HOST
-
-  referencias:
-    if: >-
-      github.repository == 'mbalbo2023/Porota-trading' &&
-      github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
-      github.actor == 'mbalbo2023' &&
-      (github.event_name == 'push' || inputs.operation == 'read_only')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: 6d12321011dd6a4e75461085b9efb92c92561cfd
-          persist-credentials: false
-      - name: Verify corrected A3 CEM request and exact symbol
-        shell: bash
-        run: |
-          python3 -B - <<'PY'
-          from datetime import date, datetime, timezone
-          import json
-          import re
-          
-          from scripts.rc6_history_fresh_probe import _fetcher
-          from scripts.rc6_history_fresh_sidecar import _day, _identity_conflicts, _target
-          
-          
-          at = datetime.now(timezone.utc)
-          ids = ("DLR/NOV26", "DLR/DIC26")
-          receipts = {}
-          fetch, close = _fetcher("A3_CEM")
-          try:
-              for ticker in ids:
-                  target = _target((ticker, "FUTUROS", "A3", "ARS", "INMEDIATA"))
-                  try:
-                      payload = fetch(target, date(2026,11,24), date(2026,11,25))
-                      rows = payload.get("data")
-                      received = datetime.now(timezone.utc)
-                      if not isinstance(rows,list) or len(rows)>10:
-                          raise ValueError("A3_TARGET_RESPONSE_SCOPE")
-                      selected = []
-                      for row in rows:
-                          if not isinstance(row,dict) or _identity_conflicts(row,target,"A3_CEM"):
-                              continue
-                          selected.append({"symbol": row.get("symbol"),"product": row.get("product"),
-                              "raw_at":row.get("dateTime"),"session_day":_day(row,"A3_CEM",received).isoformat(),
-                              "has_adjustment":type(row.get("settlement")) in (int,float) and row["settlement"]>0})
-                      receipts[ticker]={"received":received.isoformat(),"records":len(rows),"matched":selected}
-                  except Exception as exc:
-                      code=str(exc)
-                      receipts[ticker]={"error":code if re.fullmatch(r"[A-Z0-9_: /-]{3,90}",code) else type(exc).__name__}
-          finally:
-              close()
-          print("RC6_CEM_CANDIDATE="+json.dumps({"at":at.isoformat(),"cases":receipts,
-                "status":"REFERENCE_ONLY","runtime_entry_authority":False,"ppi_calls":0},separators=(",",":")))
-          PY
