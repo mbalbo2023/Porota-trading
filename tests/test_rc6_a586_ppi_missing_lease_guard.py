@@ -4,6 +4,7 @@ All HTTP in these tests runs exclusively through the in-memory A375 fake wire:
 no broker credentials, provider network, host filesystem or production sidecar.
 """
 
+from contextlib import closing
 from copy import deepcopy
 from datetime import timedelta
 import base64
@@ -417,17 +418,16 @@ def test_signed_authority_expires_without_extension_or_more_gets(
     wire, tmp_path, monkeypatch,
 ):
     from be_paper_engine import PaperStore
-    from rc6_shadow_runtime.source_reads import source_tick
 
     clock, provider_calls, _ = wire
     store = PaperStore(str(tmp_path / "paper.sqlite"))
-    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
-    runtime = RuntimePPIBudget(store.path,
-        RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
-    # The fixture's PAPER ledger stays fixed across admission and wire start.
-    # Verify one private capture while the provider clock drives signed expiry.
-    with source_tick(store.path):
+    # Keep a fixture connection open so SQLite cannot remove WAL/SHM when
+    # unused setup connections are collected during the private-copy check.
+    with closing(store.connect()):
+        store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+        environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
+        runtime = RuntimePPIBudget(store.path,
+            RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
         first = runtime.acquire("book")
         assert first["allowed"] and first["lease"]
         runtime.start(first["lease"])
