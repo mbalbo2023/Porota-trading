@@ -1025,6 +1025,27 @@ def _ppi_gateway_last_events(db, tables):
     return events
 
 
+def _monthly_paper_fills(db, observer):
+    """Count retained production PAPER fills by month in ART."""
+    if observer.get("mode") != "PRODUCTION_PAPER" or observer.get("real_orders_sent") != 0:
+        return {"status": "NO_VERIFICADO"}
+    months = {month: {"buys": 0, "sells": 0} for month in ("2026-09", "2026-10")}
+    try:
+        rows = db.execute("""
+            SELECT strftime('%Y-%m', filled_at, '-3 hours'), side, count(*)
+            FROM paper_fills
+            WHERE source='PRODUCTION_PAPER' AND side IN ('BUY_SIMULATED', 'SELL_SIMULATED')
+              AND julianday(filled_at) >= julianday('2026-09-01T03:00:00Z')
+              AND julianday(filled_at) < julianday('2026-11-01T03:00:00Z')
+            GROUP BY 1, 2
+        """)
+        for month, side, count in rows:
+            months[month]["buys" if side == "BUY_SIMULATED" else "sells"] = count
+    except sqlite3.Error:
+        return {"status": "NO_VERIFICADO"}
+    return {"status": "OBSERVED", "counts_art": months, "provider_requests": 0}
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -1137,7 +1158,8 @@ def _db_snapshot(path):
                 "ppi_auth_last_attempt": _ppi_auth_last_attempt(db, tables),
                 "ppi_gateway_last_events": _ppi_gateway_last_events(db, tables),
                 "scalping_recent_error_codes": scalping_codes,
-                'paper_open_contracts':activity}
+                'paper_open_contracts':activity,
+                "monthly_paper_fills": _monthly_paper_fills(db, observer)}
 
 
 def _performance_recorded_period(path):
@@ -1948,7 +1970,8 @@ def _ppi_intake_evidence(path, *, at=None):
                             "latest_market_at": market_at.isoformat() if market_at else None})
                         observed["http_200_witnesses"] += 1
 
-            http = {}
+            http, recent_http = {}, {}
+            recent_floor = at - timedelta(seconds=90)
             rows = db.execute("""SELECT happened_at,method,substr(path,1,180),result
                                   FROM http_audit ORDER BY id DESC LIMIT 256""")
             for happened_at, method, route, verdict in rows:
@@ -1959,6 +1982,9 @@ def _ppi_intake_evidence(path, *, at=None):
                 if endpoint in _PPI_OBSERVATION_ENDPOINTS and verdict in ("ALLOWED", "BLOCKED", "BACKPRESSURE"):
                     counter = http.setdefault(endpoint, {})
                     counter[verdict] = counter.get(verdict, 0) + 1
+                    if recent_floor <= seen:
+                        recent = recent_http.setdefault(endpoint, {})
+                        recent[verdict] = recent.get(verdict, 0) + 1
 
             exit_round = {}
             row = db.execute("SELECT heartbeat_at,state,substr(detail,1,500) "
@@ -1978,7 +2004,8 @@ def _ppi_intake_evidence(path, *, at=None):
                     "last_cycle": cycles[0] if cycles else None,
                     "discovery_hold_events": holds, "discovery_last_hold_at_utc": last_hold_at,
                     "native_wire": native,
-                    "http_presend": http, "exit_round": exit_round}
+                    "http_presend": http,
+                    "http_presend_90s": recent_http, "exit_round": exit_round}
     except (OSError, sqlite3.Error):
         return result
 
@@ -2062,21 +2089,27 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
     """Read only the verified image's local IPC identity and catalog precheck."""
     receipt = {"schema": _GATEWAY_PROBE_SCHEMA, "read_only": True,
                "provider_requests_by_probe": 0, "status": "NO_VERIFICADO",
-               "global_single_session_custody": "NO_VERIFICADO"}
+               "global_single_session_custody": "NO_VERIFICADO",
+               "intake": _ppi_intake_evidence(ROOT / DB_REL)}
+    stage = "ROOTLESS_CONTEXT"
     try:
         context = _rootless_context()
         if context.current["source_tree"] != expected_tree_sha:
             return {**receipt, "reason": "PRODUCT_TREE_MISMATCH"}
+        stage = "IPC_CHILD_EXEC"
         result = context.host.docker.command_result(
             "container", "exec", context.roles["observer"], "python", "-B", "-c",
             _GATEWAY_DIAGNOSTIC_CHILD, timeout=9)
         if result.returncode != 0 or len(result.stdout) > 4096:
-            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
+            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE",
+                    "probe_stage": stage, "child_exit_code": result.returncode}
+        stage = "IPC_CHILD_PARSE"
         values = json.loads(result.stdout)
         if not isinstance(values, dict):
-            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
-    except (KeyError, OSError, TypeError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
+            return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE", "probe_stage": stage}
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE",
+                "probe_stage": stage, "error_class": type(exc).__name__}
 
     receipt.update(source_sha=context.current["source_sha"],
                    source_tree=expected_tree_sha, owner="NO_VERIFICADO",
@@ -2105,7 +2138,6 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
         receipt["construction"] = construction
     if any(receipt[key] != "NO_VERIFICADO" for key in ("owner", "catalog", "construction")):
         receipt["status"] = "OBSERVED"
-    receipt["intake"] = _ppi_intake_evidence(ROOT / DB_REL)
     return receipt
 
 
