@@ -2,6 +2,9 @@
 """Bounded internal dashboard and connector audit; no provider or order calls."""
 from __future__ import annotations
 
+from contextlib import ExitStack
+from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +14,7 @@ import stat
 import subprocess
 import sys
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 SCHEMA = "rc6.operator-dashboard-readonly.v1"
 # Only internally authored symbolic guard names may reach the receipt.
@@ -391,6 +395,76 @@ print(json.dumps(result,sort_keys=True,separators=(",",":")))
 '''
 
 
+def _unique_json_pairs(rows):
+    result = {}
+    for key, value in rows:
+        if key in result:
+            raise ValueError("ROOTLESS_RECEIPT_DUPLICATE_KEY")
+        result[key] = value
+    return result
+
+
+def _observe_rootless_t10(home, uid, source_sha, *, now=None):
+    """Read the existing private T−10 receipt without issuing PAPER authority."""
+    now = now or datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+    result = {"status": "NO_VERIFICADO", "reason": "T10_RECEIPT_UNSAFE",
+              "active_source_sha": source_sha, "observed_at_ar": now.isoformat(timespec="seconds"),
+              "entry_authority": False}
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        with ExitStack() as files:
+            parent = os.open(home, flags)
+            files.callback(os.close, parent)
+            for part in (None, ".config", "porota-rc6", "operator"):
+                if part is not None:
+                    parent = os.open(part, flags, dir_fd=parent)
+                    files.callback(os.close, parent)
+                meta = os.fstat(parent)
+                if (meta.st_uid != uid or meta.st_mode & 0o022 or
+                        (part == "operator" and stat.S_IMODE(meta.st_mode) != 0o700)):
+                    return result
+            name = "paper-preopen-v2.json"
+            file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOATIME
+            receipt = os.open(name, file_flags, dir_fd=parent)
+            files.callback(os.close, receipt)
+            meta = os.fstat(receipt)
+            if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_nlink != 1 or
+                    stat.S_IMODE(meta.st_mode) != 0o600 or not 0 < meta.st_size <= 4096):
+                return result
+            raw = os.read(receipt, 4097)
+            after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            before_identity = (meta.st_dev, meta.st_ino, meta.st_size, meta.st_mtime_ns, meta.st_ctime_ns)
+            after_identity = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+            if len(raw) != meta.st_size or before_identity != after_identity:
+                return {**result, "reason": "T10_RECEIPT_CHANGED"}
+    except FileNotFoundError:
+        return {**result, "reason": "T10_RECEIPT_MISSING"}
+    except OSError:
+        return result
+
+    try:
+        gate = json.loads(raw, object_pairs_hook=_unique_json_pairs)
+        if (not isinstance(gate, dict) or gate.get("schema") != "RC6_PAPER_PREOPEN_GATE_V2"
+                or gate.get("status") not in ("GO_PAPER_SCALPING", "NO_GO_PAPER_SCALPING")):
+            raise ValueError("T10_RECEIPT_SCHEMA")
+        issued = datetime.fromisoformat(gate["issued_at_ar"])
+    except (KeyError, TypeError, ValueError):
+        return {**result, "reason": "T10_RECEIPT_INVALID"}
+    observed = {**result, "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+                "issued_at_ar": issued.isoformat(timespec="seconds")}
+    if (issued.utcoffset() != now.utcoffset() or issued > now or
+            issued.date() != now.date() or gate.get("trade_day_ar") != now.date().isoformat()
+            or gate.get("phase") != "T_MINUS_10" or not 620 <= issued.hour * 60 + issued.minute < 630):
+        return {**observed, "reason": "T10_RECEIPT_WRONG_SESSION"}
+    if gate.get("candidate_sha") != source_sha:
+        return {**observed, "reason": "T10_RECEIPT_RELEASE_MISMATCH"}
+    gate_reason = gate.get("reason")
+    if gate_reason not in ("PREOPEN_GREEN_RELEASE_PAPER_ZERO", "PREOPEN_OR_RELEASE_NOT_GREEN",
+                            "OPERATOR_NO_GO_PENDING_EXPLICIT_REARM"):
+        gate_reason = "NO_VERIFICADO"
+    return {**observed, "status": gate["status"], "reason": gate_reason}
+
+
 def _rootless_context(*, runner=subprocess.run):
     """Bind to the two exact current private CIDs without a product helper.
 
@@ -436,16 +510,8 @@ def _rootless_context(*, runner=subprocess.run):
             raise ValueError("ROOTLESS_RELEASE_CUSTODY")
     path = state / "current.json"
 
-    def distinct_pairs(rows):
-        result = {}
-        for key, value in rows:
-            if key in result:
-                raise ValueError("ROOTLESS_RECEIPT_DUPLICATE_KEY")
-            result[key] = value
-        return result
-
     def decode(raw):
-        return json.loads(raw, object_pairs_hook=distinct_pairs,
+        return json.loads(raw, object_pairs_hook=_unique_json_pairs,
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError("NONFINITE_JSON")))
 
     def read_current():
@@ -617,9 +683,10 @@ def _rootless_context(*, runner=subprocess.run):
         if ports != ({"8000/tcp": [{"HostIp": "127.0.0.1", "HostPort": "8000"}]}
                      if role == "dashboard" else {}):
             raise ValueError("ROOTLESS_ROLE_PORTS_CHANGED")
+    preopen = _observe_rootless_t10(home, uid, sha)
     if read_current() != original:
         raise ValueError("ROOTLESS_CURRENT_CHANGED")
-    return SimpleNamespace(identity=identity, roles=dict(roles),
+    return SimpleNamespace(identity=identity, roles=dict(roles), preopen=preopen,
         current={"source_sha": sha, "source_tree": tree, "image_id": image, "attempt": attempt})
 
 
@@ -790,7 +857,9 @@ def audit_host(*, runner=subprocess.run):
                 {"COMPLETE", "INCOMPLETE", "MISSING_TABLE", "MISSING_ROW", "SQLITE_UNAVAILABLE"} else "NO_VERIFICADO",
                 "profile": profile[:5], "balance_queries": balance_queries[:10], "equity_exits": equity_exits,
                 "paper_today": paper_today, "caucion_attempt": caucion_attempt,
-                "preopen_receipt_stat": preopen_stat, "identity_clocks":identity_clocks,
+                "preopen_receipt_stat": preopen_stat,
+                "preopen_t10": getattr(context, "preopen", {"status": "NO_VERIFICADO"}),
+                "identity_clocks":identity_clocks,
                 "profile_status": data.get("profile_status") if data.get("profile_status") in {"BOUNDED", "UNAVAILABLE"} else "NO_VERIFICADO",
                 "source_status": data.get("source_status") if data.get("source_status") in
                 {"BOUNDED", "TRUNCATED", "EMPTY", "SQLITE_UNAVAILABLE", "NO_VERIFICADO"} else "NO_VERIFICADO"}
