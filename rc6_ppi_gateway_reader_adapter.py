@@ -398,8 +398,12 @@ class SharedPPIReaderAdapter:
         with self.read_scope(priority=priority, identity=key):
             response = self._native(endpoint, key[0], key[1], key[4],
                                     include_guard=True)
-        return {"native_payload": copy.deepcopy(response["receipt"]["raw_payload"]),
+        data = {"native_payload": copy.deepcopy(response["receipt"]["raw_payload"]),
                 "guard_wire_receipt": copy.deepcopy(response["guard_wire_receipt"])}
+        proof = response.get("settlement_proof")
+        if isinstance(proof, dict):
+            data["settlement_proof"] = copy.deepcopy(proof)
+        return data
 
     def _auxiliary(self, method: str, args: dict):
         if not self._gateway_pinned:

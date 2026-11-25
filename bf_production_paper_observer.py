@@ -368,6 +368,22 @@ def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=N
               WHERE ticker=? AND instrument_type=? AND settlement=?
                 AND settlement_source='PPI_FIELD'
               LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+            if not rows:
+                candidates = connection.execute("""SELECT ticker,instrument_type,market,currency,
+                    settlement,settlement_source,metadata_json
+                  FROM financial_instrument_catalog
+                  WHERE ticker=? AND instrument_type=? AND settlement=?
+                    AND status='AVAILABLE' AND settlement_source='REQUEST_CANDIDATE'
+                    AND market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                    AND currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                  LIMIT 2""", (symbol, asset_class, settlement)).fetchall()
+                if len(candidates) == 1:
+                    record = dict(candidates[0])
+                    market, currency = record["market"], record["currency"]
+                    if (not financial_catalog.ppi_full_key_evidence_reason(record, database=store.path)
+                            and financial_catalog._unique_native_catalog_scope(
+                                connection, symbol, asset_class, market, currency)):
+                        rows = [(market, currency)]
     except (sqlite3.Error, OSError, ValueError, TypeError):
         raise ValueError("PPI_BOOK_PRIMARY_CATALOG_IDENTITY_UNVERIFIED") from None
     if len(rows) != 1:
@@ -1276,11 +1292,10 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None):
 
     A zero-READY bootstrap must still be able to *observe* an unequivocal
     native PPI catalog identity. PPI's documented SearchInstrument response
-    can omit settlement: REQUEST_CANDIDATE may therefore be attempted only
-    as an untrusted native GET query, never promoted to PPI_FIELD or READY.
+    can omit settlement: REQUEST_CANDIDATE is a native GET hypothesis. A
+    verified receipt can later attest the requested term independently.
     An old STALE PPI-primary row is likewise eligible only for this probe.
-    This never inserts a candidate into the trading/scanner universe,
-    changes can_simulate or authorizes an opening.
+    Selection itself grants no trading or scanner authority.
     """
     if type(limit) is not int or not 1 <= limit <= 3:
         raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
@@ -1330,7 +1345,8 @@ def _safe_ppi_evidence_timestamp(value):
 
 
 def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None,
-                                  pre_wire=None, update_market_clock=False):
+                                  pre_wire=None, update_market_clock=False,
+                                  confirm_settlement=False):
     """Read genuine native evidence without inventing provider-side fields.
 
     Spot/market-book families need Current+Book to claim a fresh executable
@@ -1448,6 +1464,23 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                     "native_receipts": list(witnessed)}
         quote = replace(quote, opening_block_reason="PPI_DIRECT_REST_OBSERVE_ONLY")
         store.add_quote(quote)
+        proof = witnessed_book.get("settlement_proof")
+        if confirm_settlement and isinstance(proof, dict):
+            try:
+                same_pair = all(isinstance(proof.get(endpoint), dict)
+                                and witnessed[endpoint]["guard_wire_receipt"].get("guard_budget_receipt_sha256")
+                                and proof[endpoint].get("guard_sha256")
+                                == witnessed[endpoint]["guard_wire_receipt"].get("guard_budget_receipt_sha256")
+                                for endpoint in ("current", "book"))
+                # Both signed references must correspond to this capture,
+                # not another eligible Current/Book pair for the same key.
+                confirmed = same_pair and financial_catalog.publish_native_settlement_receipt(
+                    store, key, proof, now_iso())
+                if confirmed:
+                    store.event("PPI_NATIVE_SETTLEMENT_ATTESTED",
+                                ":".join(key) + ";source=PPI_NATIVE_REQUEST_RECEIPT")
+            except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
+                store.event("PPI_NATIVE_SETTLEMENT_PUBLISH_HOLD", type(exc).__name__)
         if update_market_clock:
             store.state(last_market_data_at=quote.observed_at)
         # Digest of the *actual* guarded GET body, never its raw JSON, URL
@@ -3336,7 +3369,8 @@ def run():
                     last_direct_rest_probe = time.monotonic()
                     direct_probe_family_cursor = next_cursor
                     probe = _ppi_direct_rest_observe_only(
-                        reader, store, family=family, update_market_clock=True)
+                        reader, store, family=family, update_market_clock=True,
+                        confirm_settlement=True)
                     fresh_observation = probe["status"] == "FRESH_OBSERVED"
                     _health(store, "PPI_DIRECT_REST_RECOVERY",
                             "VERDE" if fresh_observation else "AMARILLO",
