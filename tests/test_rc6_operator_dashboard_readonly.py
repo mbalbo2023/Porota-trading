@@ -23,6 +23,45 @@ from scripts import rc6_operator_dashboard_readonly as operator
 
 
 class OperatorAuditTests(TestCase):
+ def test_rootless_t10_observes_only_current_receipt_for_attested_source(self):
+    now = datetime(2026, 11, 25, 10, 30, tzinfo=ZoneInfo("America/Argentina/Buenos_Aires"))
+    current = {"schema": "RC6_PAPER_PREOPEN_GATE_V2", "status": "GO_PAPER_SCALPING",
+               "candidate_sha": "a" * 40, "phase": "T_MINUS_10", "trade_day_ar": "2026-11-25",
+               "issued_at_ar": "2026-11-25T10:20:15-03:00", "reason": "PREOPEN_GREEN_RELEASE_PAPER_ZERO"}
+    with tempfile.TemporaryDirectory() as directory:
+      home = Path(directory)
+      gate_dir = home / ".config/porota-rc6/operator"
+      gate_dir.mkdir(mode=0o700, parents=True)
+      gate = gate_dir / "paper-preopen-v2.json"
+      def check():
+        return operator._observe_rootless_t10(home, os.getuid(), "a" * 40, now=now)
+      self.assertEqual(check()["reason"], "T10_RECEIPT_MISSING")
+      for changes, state, reason in [
+        ({}, "GO_PAPER_SCALPING", "PREOPEN_GREEN_RELEASE_PAPER_ZERO"),
+        ({"status": "NO_GO_PAPER_SCALPING", "reason": "PREOPEN_OR_RELEASE_NOT_GREEN"},
+         "NO_GO_PAPER_SCALPING", "PREOPEN_OR_RELEASE_NOT_GREEN"),
+        ({"issued_at_ar": "2026-11-24T10:20:15-03:00"},
+         "NO_VERIFICADO", "T10_RECEIPT_WRONG_SESSION"),
+        ({"candidate_sha": "b" * 40}, "NO_VERIFICADO", "T10_RECEIPT_RELEASE_MISMATCH"),
+      ]:
+        with self.subTest(changes=changes):
+          gate.write_text(json.dumps({**current, **changes}))
+          gate.chmod(0o600)
+          before = gate.read_bytes()
+          observation = check()
+          self.assertEqual((observation["status"], observation["reason"]), (state, reason))
+          self.assertEqual(observation["receipt_sha256"], sha256(before).hexdigest())
+          self.assertFalse(observation["entry_authority"])
+          self.assertEqual(gate.read_bytes(), before)
+      gate.chmod(0o622)
+      self.assertEqual(check()["reason"], "T10_RECEIPT_UNSAFE")
+      gate.chmod(0o600)
+      gate.write_text('{"status":"GO_PAPER_SCALPING","status":"NO_GO_PAPER_SCALPING"}')
+      self.assertEqual(check()["reason"], "T10_RECEIPT_INVALID")
+      gate.unlink()
+      gate.symlink_to(gate_dir / "untrusted")
+      self.assertEqual(check()["reason"], "T10_RECEIPT_UNSAFE")
+
  def _run_embedded_caucion_probe(self, rows, *, lstat=None):
     """Exercise the real embedded SQLite query, without host or network access."""
     with tempfile.TemporaryDirectory() as directory:
