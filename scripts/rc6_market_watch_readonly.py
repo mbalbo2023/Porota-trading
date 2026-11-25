@@ -978,6 +978,11 @@ def _ppi_auth_last_attempt(db, tables):
                        "SharedFeedUnavailable", "GatewayEvidenceRejected"}
     if prefix and prefix.group(1) in allowed_classes:
         result["error_class"] = prefix.group(1)
+    passive_owner_error = re.fullmatch(
+        r"(?:SharedFeedUnavailable|GatewayEvidenceRejected): "
+        r"(PPI_(?:GATEWAY|NATIVE|AUX)_[A-Z0-9_]{1,60})(?::[a-z_]{1,30})?", detail)
+    if passive_owner_error:
+        result["observer_gateway_error"] = passive_owner_error.group(1)
     metadata = re.match(
         r"^ProductionAuthResponseError: PPI_PRODUCTION_AUTH_(?P<kind>NON_JSON_RESPONSE|PROVIDER_ERROR): "
         r"HTTP=([1-5][0-9]{2}|UNKNOWN); Content-Type="
@@ -2011,47 +2016,33 @@ def _ppi_intake_evidence(path, *, at=None):
 
 _GATEWAY_DIAGNOSTIC_CHILD = '''
 import json
-from types import SimpleNamespace
+import re
 from cg_paper_workspace import database_path
 from rc6_ppi_gateway_reader_adapter import gateway_socket_path, local_gateway_owner_custody
 from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient
-from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
 
-database = database_path()
 result = {}
 try:
-    status = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database), timeout_seconds=2).owner_status()
-    owner = local_gateway_owner_custody(status)
-    result["owner"] = owner["state"]
-    result["registered_roles"] = list(owner["registered_roles"])
-    result["guard_login_wire_attempts"] = owner["guard_login_wire_attempts"]
+    client = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database_path()), timeout_seconds=2)
+    status = client.owner_status()
+except Exception as error:
+    code = str(error)
+    result["ipc"] = code if re.fullmatch(r"PPI_GATEWAY_[A-Z0-9_]{1,60}", code) else "IPC_EXCEPTION"
+else:
+    result["ipc"] = "OWNER_STATUS_OPEN"
+    try:
+        owner = local_gateway_owner_custody(status)
+        result["owner"] = owner["state"]
+        result["registered_roles"] = list(owner["registered_roles"])
+        result["guard_login_wire_attempts"] = owner["guard_login_wire_attempts"]
+    except Exception:
+        result["owner"] = "NO_VERIFICADO"
     result["provider_transport"] = {
         "last_native_http_rejection": status.get("native_last_http_status"),
         "retry_after_seconds": status.get("native_retry_after_seconds_observed"),
         "remaining_pause_seconds": status.get("native_backoff_remaining_seconds"),
-        "response_headers": owner["provider_rate_limit_response_observed"],
+        "response_headers": status.get("provider_rate_limit_response_observed"),
     }
-except Exception as error:
-    result["owner"] = str(error)
-
-try:
-    _, query_keys, _, attested = load_primary_ppi_catalog_snapshot(
-        database, include_diagnostic_candidates=True)
-    result["catalog"] = "QUERY_KEYS_OBSERVED"
-    result["query_keys"] = len(query_keys)
-    result["provider_attested_keys"] = len(attested)
-except Exception as error:
-    result["catalog"] = str(error)
-
-def deny_audit(*args, **kwargs):
-    raise RuntimeError("PPI_DIAGNOSTIC_WRITE_UNEXPECTED")
-
-try:
-    from bv_paper_runtime import _make_ppi_gateway_owner
-    _make_ppi_gateway_owner(SimpleNamespace(path=database, audit_http=deny_audit))
-    result["construction"] = "CONSTRUCTED_WITHOUT_LOGIN"
-except Exception as error:
-    result["construction"] = str(error)
 print(json.dumps(result))
 '''
 
@@ -2114,6 +2105,11 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
     receipt.update(source_sha=context.current["source_sha"],
                    source_tree=expected_tree_sha, owner="NO_VERIFICADO",
                    catalog="NO_VERIFICADO", construction="NO_VERIFICADO")
+    ipc = values.get("ipc")
+    if isinstance(ipc, str) and re.fullmatch(
+            r"(?:PPI_GATEWAY_[A-Z0-9_]{1,60}|OWNER_STATUS_OPEN|IPC_EXCEPTION)", ipc):
+        receipt["ipc_owner_status"] = ipc
+        receipt["provider_transport"] = _gateway_provider_transport(values.get("provider_transport"))
     owner = values.get("owner")
     if isinstance(owner, str) and owner in _GATEWAY_ATTACH_REASONS:
         receipt["owner"] = owner
