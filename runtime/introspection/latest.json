@@ -6,7 +6,7 @@
     "missing_offer_requirements": [],
     "missing_policy_requirements": [],
     "observed_contracts": 10,
-    "offer_checked_at": "2026-11-25T06:35:01.511599-03:00",
+    "offer_checked_at": "2026-11-25T07:35:06.733606-03:00",
     "placed_today": 0,
     "queries": 1,
     "state": "NO_CURRENT_VALID_OFFER"
@@ -330,7 +330,7 @@
     "branch": "runtime-observability",
     "day": "2026-11-25",
     "detail": null,
-    "recorded_at": "2026-11-25T08:42:28.489216+00:00",
+    "recorded_at": "2026-11-25T09:42:30.111469+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -389,7 +389,7 @@
     "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-11-25T09:34:57.867899+00:00",
+    "heartbeat_at": "2026-11-25T10:35:03.674368+00:00",
     "http_allowed": 101,
     "http_blocked": 0,
     "last_market_data_at": "2026-11-24T19:55:50.327678+00:00",
@@ -419,11 +419,11 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 2822737920,
-    "filesystem_free": 22314254336,
+    "database_bytes": 2823036928,
+    "filesystem_free": 22310404096,
     "filesystem_total": 61285326848,
-    "filesystem_used": 38954295296,
-    "filesystem_used_pct": 63.56,
+    "filesystem_used": 38958145536,
+    "filesystem_used_pct": 63.57,
     "wal_bytes": 34632752
   },
   "telegram": {
@@ -431,7 +431,7 @@
     "SENT": 735,
     "SUPPRESSED_WEEKEND": 6
   },
-  "timestamp": "2026-11-25T06:35:01-03:00",
+  "timestamp": "2026-11-25T07:35:06-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -445,33 +445,33 @@
   "warnings": [],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": 16.10159,
-      "heartbeat_at": "2026-11-25T09:34:45.410009+00:00",
+      "heartbeat_age_seconds": 13.651202,
+      "heartbeat_at": "2026-11-25T10:34:53.082404+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 23.183506,
-      "heartbeat_at": "2026-11-25T09:34:38.328093+00:00",
+      "heartbeat_age_seconds": 25.031516,
+      "heartbeat_at": "2026-11-25T10:34:41.702090+00:00",
       "state": "WAITING_WINDOW"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 2.296204,
-      "heartbeat_at": "2026-11-25T09:34:59.215395+00:00",
+      "heartbeat_age_seconds": 3.114035,
+      "heartbeat_at": "2026-11-25T10:35:03.619571+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 6.368864,
-      "heartbeat_at": "2026-11-25T09:34:55.142735+00:00",
+      "heartbeat_age_seconds": 9.378383,
+      "heartbeat_at": "2026-11-25T10:34:57.355223+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 4.458861,
-      "heartbeat_at": "2026-11-25T09:34:57.052738+00:00",
+      "heartbeat_age_seconds": 3.138623,
+      "heartbeat_at": "2026-11-25T10:35:03.594983+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": 0.18322,
-      "heartbeat_at": "2026-11-25T09:35:01.328379+00:00",
+      "heartbeat_age_seconds": 0.703485,
+      "heartbeat_at": "2026-11-25T10:35:06.030121+00:00",
       "state": "RUNNING"
     }
   }
