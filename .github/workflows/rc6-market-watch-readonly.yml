@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 revisión indexada de dos contratos DLR READ_ONLY
+run-name: RC6 estado de recuperación datos y familias READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -49,84 +49,94 @@ jobs:
           "${docker[@]}" exec -i "$cid" python -B - <<'PY'
           from contextlib import closing
           from datetime import datetime, timezone
+          from pathlib import Path
           import json
           import re
           import sqlite3
           import time
           
           from cg_paper_workspace import database_path
-          from cp_contract_evidence_v2_hf6 import material_evidence, material_evidence_hash
+          from cv_history_store_adapter_hf6 import default_history_store
+          from rc6_fund_source_quarantine import _settlement_authority_pins
           
           
-          def safe_value(value):
-              if value is None or type(value) in (bool,int,float):
-                  return value
-              if isinstance(value,str) and re.fullmatch(r"[A-Za-z0-9:_() .\-+]{1,170}", value):
-                  return value
-              return "REDACTED"
-          
-          
-          with closing(sqlite3.connect(database_path().as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
+          def enable_read_only(conn):
               conn.execute("PRAGMA query_only=ON")
               conn.execute("BEGIN")
-              if conn.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone() != ("PRODUCTION_PAPER", 0):
+              limit = time.monotonic() + 4
+              conn.set_progress_handler(lambda: time.monotonic() >= limit, 1000)
+          
+          
+          def status(value):
+              return value if isinstance(value,str) and re.fullmatch(r"[A-Z0-9_]{1,80}",value) else None
+          
+          
+          at = datetime.now(timezone.utc).isoformat()
+          result = {"at": at, "mode": "PRODUCTION_PAPER", "real_orders_sent": 0}
+          with closing(sqlite3.connect(database_path().as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
+              enable_read_only(conn)
+              row = conn.execute("SELECT mode,real_orders_sent,session_state,ppi_auth FROM observer_state WHERE id=1").fetchone()
+              if row is None or row[:2] != ("PRODUCTION_PAPER",0):
                   raise SystemExit("PAPER_ZERO_FAILED")
-              deadline=time.monotonic()+4
-              conn.set_progress_handler(lambda: time.monotonic()>=deadline,1000)
-              reviews=conn.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='contract_evidence_v2_reviews'").fetchone()
-              review_rows = "SELECT change_id FROM contract_evidence_v2_reviews" if reviews else "SELECT NULL AS change_id WHERE 0"
-              rows=conn.execute(f"""WITH reviews AS ({review_rows})
-                SELECT ch.change_id,ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
-                   ch.detected_at,ch.previous_hash,ch.current_hash,prev.evidence_json,cur.evidence_json,
-                   prev.source_ref,cur.source_ref,rev.change_id,latest.evidence_hash
-                FROM contract_evidence_v2_changes ch
-                LEFT JOIN contract_evidence_v2_snapshots prev
-                  ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
-                   AND prev.currency=ch.currency AND prev.settlement=ch.settlement
-                   AND prev.source_class=ch.source_class AND prev.evidence_hash=ch.previous_hash
-                LEFT JOIN contract_evidence_v2_snapshots cur
-                  ON cur.family=ch.family AND cur.ticker=ch.ticker AND cur.market=ch.market
-                   AND cur.currency=ch.currency AND cur.settlement=ch.settlement
-                   AND cur.source_class=ch.source_class AND cur.evidence_hash=ch.current_hash
-                LEFT JOIN contract_evidence_v2_current latest
-                  ON latest.family=ch.family AND latest.ticker=ch.ticker AND latest.market=ch.market
-                   AND latest.currency=ch.currency AND latest.settlement=ch.settlement
-                   AND latest.source_class=ch.source_class
-                LEFT JOIN reviews rev ON rev.change_id=ch.change_id
-                WHERE ch.change_id IN (34609,34610)
-                  AND ch.family='FUTUROS' AND ch.market='A3' AND ch.currency='ARS'
-                  AND ch.settlement='INMEDIATA' AND ch.source_class='DERIVED_OFFICIAL_RULE'
-                  AND ch.status='CHANGED_REVIEW_REQUIRED'
-                ORDER BY ch.change_id""").fetchall()
-              if [(row[0],row[2]) for row in rows] != [(34609,"DLR/DIC26"),(34610,"DLR/NOV26")]:
-                  raise SystemExit("EXACT_DLR_CHANGES_NOT_FOUND")
-              changes=[]
-              for cid,f,k,m,c,s,t,older,newer,before,after,p_ref,c_ref,rev,latest in rows:
-                  p=material_evidence(json.loads(before)) if before else {}
-                  n=material_evidence(json.loads(after)) if after else {}
-                  item = {"change_id":cid,"identity":[f,k,m,c,s],"detected_at":t,
-                    "material_change":before is None or after is None
-                        or material_evidence_hash(json.loads(before)) != material_evidence_hash(json.loads(after)),
-                    "review_row_present":rev is not None,
-                    "old_hash":older,"new_hash":newer,"latest_hash_matches":newer==latest,
-                    "static_sources_match":p_ref==c_ref,
-                    "delta":{key:[safe_value(p.get(key)),safe_value(n.get(key))] for key in sorted(p.keys()|n.keys())
-                        if p.get(key)!=n.get(key) and re.fullmatch(r"[a-z_]{1,60}",key)}}
-                  if f == "FUTUROS":
-                      item["previous_source"] = safe_value(p_ref)
-                      item["current_source"] = safe_value(c_ref)
-                      if before:
-                          allowed = {"market", "currency", "settlement", "paper_quantity_min",
-                              "paper_quantity_step", "paper_quantity_policy", "paper_margin_policy",
-                              "paper_margin_rate", "broker_minimum_quantity","broker_quantity_step",
-                              "broker_margin","policy_scope","readiness_guard","derivation_rule",
-                              "evidence_scope","metadata_source"}
-                          item["old_documented_policy"] = {k:safe_value(v) for k,v in json.loads(before).items()
-                                                           if k in allowed}
-                          item["old_additional_field_count"] = len(json.loads(before).keys()-allowed)
-                  changes.append(item)
-              print("RC6_FAMILY_CHANGE="+json.dumps({"at":datetime.now(timezone.utc).isoformat(),
-                  "scope":"TWO_DLR_CHANGE_IDS","mode":"PRODUCTION_PAPER","real_orders_sent":0,
-                  "changes":changes},separators=(",",":"),ensure_ascii=True))
+              result["market"] = {"phase":status(row[2]),"ppi_auth":status(row[3])}
+              result["workers"] = {
+                  "candles": conn.execute("SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1").fetchone(),
+                  "scalping": conn.execute("""SELECT cursor,heartbeat_at,state,selected,successful,failed,
+                      points_inserted,confirmed_identities,candidates FROM intraday_scalping_worker_state WHERE id=1""").fetchone(),
+                  "caucion": conn.execute("""SELECT heartbeat_at,state,code,last_attempt_at
+                      FROM paper_caucion_cash_sweep_state WHERE id=1""").fetchone(),
+              }
+              result["latest_candle_versions"] = {}
+              for version in conn.execute("""SELECT c.id,c.known_at,c.bar_end,json_extract(s.identity_json,'$.resolution'),
+                               json_extract(c.body_json,'$.quality')
+                     FROM (SELECT * FROM candle_versions ORDER BY id DESC LIMIT 48) c
+                     JOIN candle_series s USING(series_id) ORDER BY c.id DESC"""):
+                  if version[3] in ("1m","5m"):
+                      result["latest_candle_versions"].setdefault(version[3], (version[0],version[1],version[2],status(version[4])))
+              result["exit"] = conn.execute("SELECT state,heartbeat_at FROM paper_exit_reader_state WHERE id=1").fetchone()
+              result["fci"] = {}
+              for ticker in ("BZ.AHORRO.A","BZ.AHORRO.B"):
+                  row = conn.execute("""SELECT settlement_source,capability,metadata_json
+                      FROM financial_instrument_catalog
+                      WHERE ticker=? AND instrument_type='FCI' AND market='BYMA'
+                        AND currency='ARS' AND settlement='INMEDIATA'""",(ticker,)).fetchone()
+                  if row:
+                      raw = json.loads(row[2])
+                      result["fci"][ticker] = {
+                          "settlement_source":status(row[0]),"capability":status(row[1]),
+                          "primary_isin_present":bool(raw.get("isin")),
+                          "exact_class_id_present":any(raw.get(k) for k in ("fundClassId","cafciClassId","cafci_class_id")),
+                          "native_settlement_present":bool(raw.get("settlement")),
+                      }
+              try:
+                  _settlement_authority_pins()
+                  result["fci_settlement_pin"] = "PRESENT"
+              except (OSError, ValueError):
+                  result["fci_settlement_pin"] = "ABSENT_OR_INVALID"
+          
+          history = Path(default_history_store().path).absolute()
+          require_history_path = history.resolve() == history and history.is_file() and history.stat().st_nlink == 1
+          if not require_history_path:
+              raise SystemExit("HISTORY_PATH_IDENTITY_FAILED")
+          with closing(sqlite3.connect(history.as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
+              enable_read_only(conn)
+              tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+              result["history"] = {"cutoff_state":None,"exact_series":{}}
+              if "rc6_history_cutoff_repair_runs" in tables:
+                  row = conn.execute("SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
+                  result["history"]["cutoff_state"] = status(row[0]) if row else None
+              if "history_canonical_v2" not in tables:
+                  raise SystemExit("HISTORY_CANONICAL_TABLE_MISSING")
+              for ticker, family, market, term in (
+                      ("DLR/NOV26","FUTUROS","A3","INMEDIATA"),
+                      ("DLR/DIC26","FUTUROS","A3","INMEDIATA"),
+                      ("GGAL","ACCIONES","BYMA","A-24HS")):
+                  rows = conn.execute("""SELECT date,source,price_basis,adjustment_basis FROM history_canonical_v2
+                      WHERE symbol=? AND instrument_type=? AND market=? AND currency='ARS' AND settlement=?
+                      ORDER BY date DESC LIMIT 8""",(ticker,family,market,term)).fetchall()
+                  result["history"]["exact_series"][ticker] = [
+                      (d,status(source),status(basis),status(adjust)) for d,source,basis,adjust in rows
+                  ]
+          print("RC6_RECOVERY_READ_ONLY=" + json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
           HOST
