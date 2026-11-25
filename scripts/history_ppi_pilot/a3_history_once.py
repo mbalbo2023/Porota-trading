@@ -83,7 +83,10 @@ from ew_a3_history_rc6 import load_targets, run
 from ex_a3_history_job_rc6 import Store
 
 SCHEMA = "rc6.history.a3-reference-once.v1"
-BATCH_LIMIT = 40
+TARGETS = (("DLR/NOV26", "FUTUROS", "A3", "ARS", "INMEDIATA"),
+           ("DLR/DIC26", "FUTUROS", "A3", "ARS", "INMEDIATA"))
+MINIMUM_VERIFIED_SESSION = "2026-11-24"
+BATCH_LIMIT = len(TARGETS)
 DATA = Path("/app/data")
 PAPER = DATA / "paper_v17/observer_v17.db"
 HISTORY = DATA / "market_history.db"
@@ -186,9 +189,9 @@ def load_one_batch():
         except BlockingIOError:
             return {**base, "state": "BLOQUEADO", "reason": "HISTORY_LOAD_ALREADY_RUNNING"}
         targets = load_targets(store, reference_only=True)
-        selected = targets[:BATCH_LIMIT]
+        selected = TARGETS
         base.update(eligible=len(targets), selected=len(selected), batch_limit=BATCH_LIMIT)
-        if not selected:
+        if not set(selected) <= set(targets):
             return {**base, "state": "BLOQUEADO", "reason": "NO_EXACT_A3_TARGETS"}
         assert all(len(key) == 5 and all(KEY_PART.fullmatch(part) for part in key) for key in selected)
         raw_before, before, _ = inspect_history(selected)
@@ -196,7 +199,7 @@ def load_one_batch():
             return {**base, "state": "BLOQUEADO", "reason": "A3_REFERENCE_EXISTING_KEY_CONFLICT"}
         try:
             result = run(store, history_store=history, mode="BOOTSTRAP", reference_only=True,
-                         batch_limit=BATCH_LIMIT, throttle_seconds=1.0)
+                         batch_limit=BATCH_LIMIT, target_keys=selected, throttle_seconds=1.0)
         except CEMReadOnlyError:
             return {**base, "state": "BLOQUEADO", "reason": "A3_CEM_SOURCE_UNVERIFIED"}
         session_after = paper_state()
@@ -228,8 +231,13 @@ def load_one_batch():
     idempotent = not new_keys and not stats["versions_appended"] and not stats["canonical_updates"] and all(
         row["status"] in {"COMPLETE", "NOT_DUE"} and row["canonical_after"] > 0 for row in evidence
     )
+    coverage = all(row["last_session"] is not None
+                   and row["last_session"] >= MINIMUM_VERIFIED_SESSION
+                   and row["status"] in {"COMPLETE", "NOT_DUE"} for row in evidence)
     if not valid:
-        state, outcome = "NO_VERIFICADO", "POSTFLIGHT_OR_TARGET_FAILED"
+        state, outcome = "BLOQUEADO", "POSTFLIGHT_OR_TARGET_FAILED"
+    elif not coverage:
+        state, outcome = "BLOQUEADO", "EXACT_DLR_REFERENCE_COVERAGE_INCOMPLETE"
     elif stats["canonical_updates"]:
         state, outcome = "VALIDADO_RUNTIME", "REFERENCE_WRITES_VERIFIED"
     elif idempotent:
