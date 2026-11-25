@@ -115,8 +115,7 @@ _PPI_REFERENCE_OBSERVED = {
     "CAUCIONES": "CAUCION_CURRENT_REFERENCE_OBSERVED",
 }
 
-# A diagnostic sweep is not the PAPER admission universe. One PPI-native
-# observation at most per due interval, with ETFs deliberately last.
+# Keep the family rotation independent of PAPER admission, with ETFs last.
 PPI_DIAGNOSTIC_FAMILY_ROTATION = (
     "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
     "OPCIONES", "FUTUROS", "CAUCIONES", "FCI", "ETFS",
@@ -1282,7 +1281,8 @@ def _eligible_scanner_identities(store):
                 for item in turn if item is not None)
 
 
-def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None):
+def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None,
+                                      pending_settlement=False):
     """PPI-primary observation only, independent of simulation readiness.
 
     A zero-READY bootstrap must still be able to *observe* an unequivocal
@@ -1296,8 +1296,30 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
         raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
     if family is not None and (type(family) is not str or family not in OPERATIONAL_FAMILIES):
         raise ValueError("PPI_DIRECT_PROBE_FAMILY_INVALID")
+    pending = ""
+    archived_priority = ""
+    if pending_settlement:
+        pending = """AND f.status='AVAILABLE' AND f.settlement_source='REQUEST_CANDIDATE'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM candidate_identity_v2 p
+                    WHERE p.ticker=f.ticker AND p.instrument_type=f.instrument_type
+                      AND p.market=f.market AND p.currency=f.currency
+                      AND p.settlement=f.settlement
+                      AND p.status='AVAILABLE' AND p.can_simulate=1
+                  )"""
+        # A stored TRADE and Book select the first key to revisit. They are
+        # insufficient for live freshness or settlement authority.
+        archived_priority = """EXISTS (
+                    SELECT 1 FROM market_snapshots q
+                    WHERE q.symbol=f.ticker AND q.asset_class=f.instrument_type
+                      AND q.settlement=f.settlement AND q.market=f.market
+                      AND q.currency=f.currency AND q.source='PRODUCTION_PAPER'
+                      AND q.last_kind='TRADE' AND q.trade_at IS NOT NULL
+                      AND q.book_at IS NOT NULL
+                  ) DESC,"""
     if after is None:
-        order = """CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+        order = f"""CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                   {archived_priority}
                    CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
                    f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement"""
         position = ()
@@ -1328,6 +1350,7 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
                   AND (? IS NULL OR f.instrument_type=?)
                   AND json_valid(f.metadata_json)
                   AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
+                  {pending}
                 ORDER BY {order}
                 LIMIT ?""", (family, family, *position, limit)).fetchall()
         return [tuple(str(v).strip().upper() for v in row) for row in rows]
@@ -1362,12 +1385,19 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
     if not candidates:
         return {"status": "CATALOG_IDENTITY_UNAVAILABLE", "paper_ready": False,
                 "native_receipts": []}
-    key = candidates[0]
+    return _observe_native_candidate(
+        reader, store, candidates[0], command_id=command_id, pre_wire=pre_wire,
+        update_market_clock=update_market_clock, confirm_settlement=confirm_settlement)
+
+
+def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=None,
+                              update_market_clock=False, confirm_settlement=False):
     ticker, family, market, currency, settlement = key
     observation = {"paper_ready": False}
     if confirm_settlement:
         # Rotation advances even when the attempted key has invalid market data.
         observation["identity"] = list(key)
+        observation["settlement_attested"] = False
     witnessed = {}
     try:
         # Require the EXISTING native wire receipt contract. An SDK cache,
@@ -1485,6 +1515,7 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
                 confirmed = same_pair and financial_catalog.publish_native_settlement_receipt(
                     store, key, proof, now_iso())
                 if confirmed:
+                    observation["settlement_attested"] = True
                     store.event("PPI_NATIVE_SETTLEMENT_ATTESTED",
                                 ":".join(key) + ";source=PPI_NATIVE_REQUEST_RECEIPT")
             except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
@@ -1511,6 +1542,52 @@ def _ppi_direct_rest_observe_only(reader, store, *, family=None, command_id=None
     store.event("PPI_DIRECT_REST_PROBE_HOLD", reason)
     return {**observation, "status": "PROVIDER_OR_CONTRACT_HOLD",
             "reason": reason, "native_receipts": list(witnessed)}
+
+
+def _discover_native_settlements(reader, store, *, slots, deadline, cursor, after, last_pulse):
+    """Fill free scanner turns with guarded native reads during the same cycle."""
+    exhausted = set()
+    visited = set()
+    result = {"slots": slots, "attempted": 0, "fresh_pairs": 0, "attested": 0}
+
+    def pre_wire():
+        if STOP or time.monotonic() >= deadline or not _market_open():
+            raise ValueError("PPI_OPEN_DISCOVERY_WINDOW_ELAPSED")
+        if store.open_positions() or store.active_future_positions():
+            raise ValueError("PPI_OPEN_EXIT_EXPOSURE_PRESENT")
+
+    while (len(visited) < slots and len(exhausted) < len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
+           and not STOP and time.monotonic() < deadline):
+        family, cursor = _next_ppi_diagnostic_family(cursor)
+        if family in exhausted:
+            continue
+        reference = family in _PPI_REFERENCE_OBSERVED
+        keys = _ppi_direct_rest_probe_candidates(
+            store, family=family, after=after.get(family), pending_settlement=not reference)
+        if not keys or keys[0] in visited:
+            exhausted.add(family)
+            continue
+        key = keys[0]
+        observed = _observe_native_candidate(
+            reader, store, key, pre_wire=pre_wire, update_market_clock=True,
+            confirm_settlement=True)
+        visited.add(key)
+        if reference:
+            exhausted.add(family)
+        status, reason = observed["status"], observed.get("reason")
+        if status != "PRE_WIRE_GUARD_HOLD" or observed["native_receipts"]:
+            result["attempted"] += 1
+            after[family] = key
+            last_pulse = _pulse_observed_progress(store, last_pulse)
+        result["fresh_pairs"] += status == "FRESH_OBSERVED"
+        result["attested"] += observed.get("settlement_attested") is True
+        if status == "PRE_WIRE_GUARD_HOLD" or (
+                status == "PROVIDER_OR_CONTRACT_HOLD" and reason not in {
+                    "PPI_INSTRUMENT_NOT_FOUND", "PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED",
+                    "PPI_RESPONSE_IDENTITY_MISMATCH"}):
+            result["reason"] = reason or status
+            break
+    return cursor, last_pulse, result
 
 
 _PPI_POSTCLOSE_COMMAND_PREFIX = "PPI_DIRECT_REST_POSTCLOSE_ONCE:"
@@ -3366,27 +3443,12 @@ def run():
             observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
                                 "CATALOG_READ_ERROR" if catalog_read_error else "")
             fresh_observation = False
-            if (not catalog_read_error and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
-                    and time.monotonic() - last_direct_rest_probe >= 60
-                    and not store.open_positions() and not store.active_future_positions()):
-                # Keep the existing guarded cadence and give open positions priority.
-                family, direct_probe_family_cursor = _next_ppi_diagnostic_family(direct_probe_family_cursor)
-                last_direct_rest_probe = time.monotonic()
-                probe = _ppi_direct_rest_observe_only(
-                    reader, store, family=family, update_market_clock=True,
-                    confirm_settlement=True, after=direct_probe_after.get(family))
-                if probe.get("identity"):
-                    direct_probe_after[family] = tuple(probe["identity"])
-                fresh_observation = probe["status"] == "FRESH_OBSERVED"
-                _health(store, "PPI_DIRECT_REST_RECOVERY",
-                        "VERDE" if fresh_observation else "AMARILLO",
-                        "Native observe-only family=" + family + ";status=" + probe["status"]
-                        + (";reason=" + probe["reason"] if "reason" in probe else ""),
-                        "PPI Producción", success=fresh_observation)
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
             last_cycle_pulse = time.monotonic()
+            cycle_deadline = last_cycle_pulse + min(
+                INTERVAL, active_plan.get("cadence_seconds", INTERVAL))
             cycle_started = now_iso()
             cycle_clock = time.perf_counter()
             cycle_ok = 0
@@ -3480,6 +3542,27 @@ def run():
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
                            "current + book; PPI Producción solo lectura"))
                     last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
+            if (not observation_hold and not cycle_session_invalid
+                    and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
+                    and last_direct_rest_probe + 60 <= time.monotonic() < cycle_deadline
+                    and not store.open_positions() and not store.active_future_positions()):
+                # Retain the existing diagnostic turn with a full basket.
+                # An empty basket can use its ordinary scanner turns here.
+                slots = max(1, ACTIVE_SYMBOL_LIMIT - len(symbols))
+                last_direct_rest_probe = time.monotonic()
+                direct_probe_family_cursor, last_cycle_pulse, discovery = _discover_native_settlements(
+                    reader, store, slots=slots, deadline=cycle_deadline,
+                    cursor=direct_probe_family_cursor, after=direct_probe_after,
+                    last_pulse=last_cycle_pulse)
+                fresh_observation = discovery["fresh_pairs"] > 0
+                feasibility["native_settlement_discovery"] = discovery
+                detail = (f"turnos={slots};intentos={discovery['attempted']};"
+                          f"pares_frescos={discovery['fresh_pairs']};plazos={discovery['attested']}")
+                if discovery.get("reason"):
+                    detail += ";reason=" + discovery["reason"]
+                _health(store, "PPI_DIRECT_REST_RECOVERY",
+                        "VERDE" if fresh_observation else "AMARILLO",
+                        detail, "PPI Producción", success=fresh_observation)
             try:
                 primary_receipt = scanner_primary.publish()
                 print("PPI_SCANNER_PRIMARY_RECEIPT=" + json.dumps(primary_receipt, sort_keys=True),

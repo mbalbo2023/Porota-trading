@@ -921,6 +921,102 @@ def test_ppi_diagnostic_rotation_advances_on_provider_error_and_wraps(catalog_st
     assert _ppi_direct_rest_probe_candidates(catalog_store, family="BONOS", after=second) == [first]
 
 
+def test_native_discovery_prioritizes_recorded_trades_for_pending_exact_keys(catalog_store):
+    key = ("AL99", "BONOS", "BYMA", "ARS", "INMEDIATA")
+    _support_schema(catalog_store)
+    with catalog_store.connect() as c:
+        c.execute("""UPDATE financial_instrument_catalog
+          SET settlement_source='REQUEST_CANDIDATE',
+              metadata_json=json_remove(metadata_json, '$.settlement') WHERE ticker='AL30'""")
+        c.execute("""INSERT INTO financial_instrument_catalog
+          SELECT 'AL99',instrument_type,market,currency,settlement,settlement_source,
+                 description,last_seen_at,run_id,status,capability,
+                 json_set(metadata_json,'$.ticker','AL99')
+          FROM financial_instrument_catalog WHERE ticker='AL30'""")
+        observer.financial_catalog.sync_candidate_universe(c, "2026-11-24T16:00:00Z")
+        c.execute("""INSERT INTO market_snapshots
+          (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,
+           currency,market,book_at,trade_at,last_kind)
+          VALUES ('PRODUCTION_PAPER','2026-11-24T15:00:00+00:00','AL99','BONOS',
+                  'INMEDIATA','100','99','101','5','5','ARS','BYMA',
+                  '2026-11-24T15:00:00+00:00','2026-11-24T15:00:00+00:00','TRADE')""")
+
+    assert _ppi_direct_rest_probe_candidates(
+        catalog_store, family="BONOS", pending_settlement=True) == [key]
+    assert _ppi_direct_rest_probe_candidates(
+        catalog_store, family="BONOS", after=key, pending_settlement=True) == [
+            ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")]
+    with catalog_store.connect() as c:
+        assert c.execute("""SELECT can_simulate FROM candidate_identity_v2
+                             WHERE ticker='AL99' AND instrument_type='BONOS'""").fetchone()[0] == 0
+
+
+def test_native_discovery_uses_spare_turns_and_keeps_exact_cursor(catalog_store, monkeypatch):
+    families = observer.PPI_DIAGNOSTIC_FAMILY_ROTATION
+    monkeypatch.setattr(observer, "_market_open", lambda: True)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates",
+                        lambda store, *, family, after, pending_settlement:
+                        [(family, family, "BYMA", "ARS", "INMEDIATA")] if after is None else [])
+    observed = []
+
+    def capture(reader, store, key, *, pre_wire, **_):
+        pre_wire()
+        observed.append(key)
+        return {"status": "FRESH_OBSERVED", "native_receipts": ["current", "book"],
+                "settlement_attested": key[1] == families[0]}
+
+    monkeypatch.setattr(observer, "_observe_native_candidate", capture)
+    after = {}
+    pulse = observer.time.monotonic()
+    cursor, _, result = observer._discover_native_settlements(
+        object(), catalog_store, slots=2, deadline=pulse + 20, cursor=0, after=after,
+        last_pulse=pulse)
+    assert [key[1] for key in observed] == list(families[:2])
+    assert after == dict(zip(families, observed))
+    assert cursor == 2
+    assert result == {"slots": 2, "attempted": 2, "fresh_pairs": 2, "attested": 1}
+
+
+@pytest.mark.parametrize(("second_read", "reason"), [
+    ("429", "PPI_NATIVE_HTTP_429"),
+    ("exit", "PPI_OPEN_EXIT_EXPOSURE_PRESENT"),
+])
+def test_native_discovery_stops_on_wire_backoff_and_new_exit(
+        catalog_store, monkeypatch, second_read, reason):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected
+
+    key = ("AL30", "BONOS", "BYMA", "ARS", "INMEDIATA")
+    monkeypatch.setattr(observer, "_market_open", lambda: True)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates",
+                        lambda *_args, **kw: [key] if kw["family"] == "BONOS" else [])
+    sent = []
+    monkeypatch.setattr(catalog_store, "open_positions",
+                        lambda: [object()] if sent and second_read == "exit" else [])
+
+    class Reader:
+        def capture_guarded_native(self, endpoint, identity, *, priority):
+            sent.append(endpoint)
+            if endpoint == "book":
+                raise GatewayEvidenceRejected("PPI_NATIVE_HTTP_429")
+            data = {"date": "2026-11-24T15:00:00Z"}
+            return {"native_payload": data, "guard_wire_receipt": {
+                "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
+                "http_method": "GET", "http_status_code": 200, "adapter_send_invoked": True,
+                "adapter_response_completed": True,
+                "request_identity_3key": [identity[0], identity[1], identity[4]],
+                "claimed_five_key": list(identity), "raw_body_sha256": "a" * 64}}
+
+    pulse = observer.time.monotonic()
+    after = {}
+    _, _, result = observer._discover_native_settlements(
+        Reader(), catalog_store, slots=10, deadline=pulse + 20, cursor=0,
+        after=after, last_pulse=pulse)
+    assert sent == (["current", "book"] if second_read == "429" else ["current"])
+    assert after == {"BONOS": key}
+    assert result == {"slots": 10, "attempted": 1, "fresh_pairs": 0,
+                      "attested": 0, "reason": reason}
+
+
 def test_complementary_duplicate_does_not_suppress_unique_primary_ppi_probe(catalog_store):
     # Same native request 3-key but only ONE PPI-primary identity. An IOL
     # complementary alias is not an independently authenticated PPI collision.
