@@ -1,226 +1,497 @@
-name: RC6 contratos exactos READ_ONLY
-run-name: RC6 procedencia física de velas READ_ONLY
+name: RC6 Market Watch READ_ONLY
+
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-market-watch-readonly.yml'
+      - 'scripts/rc6_market_watch_readonly.py'
+      - 'tests/test_rc6_market_watch_readonly.py'
+      - 'scripts/rc6_operator_dashboard_readonly.py'
+      - 'tests/test_rc6_operator_dashboard_readonly.py'
+      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   push:
-    branches: [audit/rc6-caucion-hold-readonly-20261125]
-    paths: [.github/workflows/rc6-market-watch-readonly.yml]
+    branches: [main]
+    paths:
+      - '.github/workflows/rc6-market-watch-readonly.yml'
+      - 'scripts/rc6_market_watch_readonly.py'
+      - 'tests/test_rc6_market_watch_readonly.py'
+      - 'scripts/rc6_operator_dashboard_readonly.py'
+      - 'tests/test_rc6_operator_dashboard_readonly.py'
+      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
+  schedule:
+    # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
+    - cron: '7-57/10 13-20 * * 1-5'
+    # COM19031 (02-Nov): bounded T+1 equity/CEDEAR surveillance after 17:00.
+    # One last 18:07 ART attempt; gate rejects ticks after 18:15.
+    - cron: '7 21 * * 1-5'
   workflow_dispatch:
     inputs:
-      operation:
-        description: Verificar la serie exacta A3 y el cambio histórico
+      notification_mode:
+        description: 'normal delivers transitions; read_only records evidence without sending or creating delivery state'
         type: choice
-        options: [read_only]
-        default: read_only
+        options: [normal, read_only]
+        default: normal
         required: true
-permissions: {}
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-market-watch-readonly-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  contratos:
-    if: >-
-      github.repository == 'mbalbo2023/Porota-trading' &&
-      github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
-      github.actor == 'mbalbo2023' &&
-      (github.event_name == 'push' || inputs.operation == 'read_only')
+  contracts:
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    env:
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      DO_KEY: ${{ secrets.DO_SSH_KEY }}
-      DO_KNOWN: ${{ secrets.DO_KNOWN_HOSTS }}
+    timeout-minutes: 5
     steps:
-      - name: Read exact contract gate in SQLite query-only
+      - uses: actions/checkout@v4
+      - name: Compile and test isolated monitor without network
         shell: bash
         run: |
           set -Eeuo pipefail
-          umask 077
-          probe_dir=$(mktemp -d)
-          trap 'rm -f -- "$probe_dir/key" "$probe_dir/hosts"; rmdir "$probe_dir"' EXIT
-          printf '%s\n' "$DO_KEY" > "$probe_dir/key"
-          printf '%s\n' "$DO_KNOWN" > "$probe_dir/hosts"
-          ssh -F /dev/null -i "$probe_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$probe_dir/hosts" \
-            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 15 bash -s' <<'HOST'
-          set -Eeuo pipefail
-          test "$(id -u)" = 1000 && test "$(id -un)" = porotaadmin
-          docker=(docker -H unix:///run/user/1000/porota-rc6-docker.sock)
-          cid=$("${docker[@]}" ps --no-trunc -q --filter label=io.porota.project=rc6 --filter label=io.porota.role=observer)
-          [[ "$cid" =~ ^[0-9a-f]{64}$ ]]
-          [[ $("${docker[@]}" inspect --format '{{.Image}}' "$cid") == sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067 ]]
-          "${docker[@]}" exec -i "$cid" python -B - <<'PY'
-          from contextlib import closing
-          from datetime import datetime, timezone
-          from pathlib import Path
-          import json
-          import re
-          import sqlite3
-          import time
-          
-          from cg_paper_workspace import database_path
-          from cv_history_store_adapter_hf6 import default_history_store
-          from rc6_fund_source_quarantine import _settlement_authority_pins
-          from cp_contract_evidence_v2_hf6 import _reviewed_dlr_a3_transition
-          from scripts.rc6_candle_inmarket_evidence import _materialized_guarded_samples
-          
-          
-          def enable_read_only(conn):
-              conn.execute("PRAGMA query_only=ON")
-              conn.execute("BEGIN")
-              limit = time.monotonic() + 4
-              conn.set_progress_handler(lambda: time.monotonic() >= limit, 1000)
-          
-          
-          def status(value):
-              return value if isinstance(value,str) and re.fullmatch(r"[A-Z0-9_]{1,80}",value) else None
-          
-          
-          at = datetime.now(timezone.utc).isoformat()
-          result = {"at": at, "mode": "PRODUCTION_PAPER", "real_orders_sent": 0}
-          with closing(sqlite3.connect(database_path().as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
-              enable_read_only(conn)
-              row = conn.execute("SELECT mode,real_orders_sent,session_state,ppi_auth FROM observer_state WHERE id=1").fetchone()
-              if row is None or row[:2] != ("PRODUCTION_PAPER",0):
-                  raise SystemExit("PAPER_ZERO_FAILED")
-              result["market"] = {"phase":status(row[2]),"ppi_auth":status(row[3])}
-              result["workers"] = {
-                  "candles": conn.execute("SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1").fetchone(),
-                  "scalping": conn.execute("""SELECT cursor,heartbeat_at,state,selected,successful,failed,
-                      points_inserted,confirmed_identities,candidates FROM intraday_scalping_worker_state WHERE id=1""").fetchone(),
-                  "caucion": conn.execute("""SELECT heartbeat_at,state,code,last_attempt_at
-                      FROM paper_caucion_cash_sweep_state WHERE id=1""").fetchone(),
-              }
-              result["latest_candle_versions"] = {}
-              for version in conn.execute("""SELECT c.id,c.known_at,c.bar_end,json_extract(s.identity_json,'$.resolution'),
-                               json_extract(c.body_json,'$.quality')
-                     FROM (SELECT * FROM candle_versions ORDER BY id DESC LIMIT 48) c
-                     JOIN candle_series s USING(series_id) ORDER BY c.id DESC"""):
-                  if version[3] in ("1m","5m"):
-                      result["latest_candle_versions"].setdefault(version[3], (version[0],version[1],version[2],status(version[4])))
-              from hashlib import sha256
-              latest = {}
-              for frame, item in result["latest_candle_versions"].items():
-                  row = conn.execute("""SELECT s.identity_json,v.body_json,v.body_hash
-                    FROM candle_versions v JOIN candle_series s USING(series_id) WHERE v.id=?""",
-                    (item[0],)).fetchone()
-                  series, bar = map(json.loads,row[:2])
-                  latest[frame] = {
-                      "identity":[series[k] for k in ("symbol","asset_class","market","currency","settlement")],
-                      "source":series["source"],"price_kind":series["price_kind"],"samples":bar["samples"],
-                      "synthetic":bar["synthetic"],"has_volume":bar["volume"] is not None,
-                      "body_hash_matches":sha256(row[1].encode("utf-8")).hexdigest()==row[2],
-                  }
-              recent_guarded = conn.execute("""SELECT COUNT(*),MAX(v.known_at)
-                  FROM (SELECT * FROM candle_versions ORDER BY id DESC LIMIT 256) v
-                  JOIN candle_series s USING(series_id)
-                  WHERE json_extract(s.identity_json,'$.source')='PPI_GUARDED_CURRENT'""").fetchone()
-              archived_guarded = conn.execute("""SELECT COUNT(*),MAX(recorded_at)
-                  FROM historical_raw_archive WHERE origin='PPI_GUARDED_CURRENT'""").fetchone()
-              guarded_series = conn.execute("""SELECT COUNT(*) FROM candle_series
-                  WHERE json_extract(identity_json,'$.source')='PPI_GUARDED_CURRENT'""").fetchone()[0]
-              result["candle_provenance"] = {"latest":latest,"recent_guarded_versions":recent_guarded[0],
-                  "last_guarded_version":recent_guarded[1],"guarded_raw_receipts":archived_guarded[0],
-                  "last_guarded_receipt":archived_guarded[1],"guarded_series":guarded_series}
-              if recent_guarded[1] is not None:
-                  guarded_clock = datetime.fromisoformat(recent_guarded[1].replace("Z","+00:00"))
-                  guarded_pair = _materialized_guarded_samples(conn,guarded_clock)
-                  result["candle_provenance"]["guarded_replay_as_of_latest_guarded"] = {
-                      "as_of":guarded_clock.isoformat(),"resolutions":guarded_pair.get("known_at_by_resolution",{})}
-              candle_retained = result["latest_candle_versions"]
-              result["paired_candle_replay"] = {"verified":False,"resolutions":{}}
-              if all(frame in candle_retained for frame in ("1m","5m")):
-                  last_observed = max(datetime.fromisoformat(candle_retained[frame][1].replace("Z","+00:00"))
-                                      for frame in ("1m","5m"))
-                  proof = _materialized_guarded_samples(conn,last_observed)
-                  result["paired_candle_replay"] = {"verified":bool(proof),
-                      "observed_at":last_observed.isoformat(),
-                      "resolutions":proof.get("known_at_by_resolution",{})}
-              result["exit"] = conn.execute("SELECT state,heartbeat_at FROM paper_exit_reader_state WHERE id=1").fetchone()
-              result["dlr_review"] = {}
-              for change_id in (34609,34610):
-                  row = conn.execute("""SELECT ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
-                         ch.source_class,ch.previous_hash,ch.current_hash,p.evidence_json,n.evidence_json,
-                         p.source_ref,n.source_ref FROM contract_evidence_v2_changes ch
-                         JOIN contract_evidence_v2_snapshots p
-                         ON p.family=ch.family AND p.ticker=ch.ticker AND p.market=ch.market
-                         AND p.currency=ch.currency AND p.settlement=ch.settlement
-                         AND p.source_class=ch.source_class AND p.evidence_hash=ch.previous_hash
-                         JOIN contract_evidence_v2_snapshots n
-                         ON n.family=ch.family AND n.ticker=ch.ticker AND n.market=ch.market
-                         AND n.currency=ch.currency AND n.settlement=ch.settlement
-                         AND n.source_class=ch.source_class AND n.evidence_hash=ch.current_hash
-                         WHERE ch.change_id=?""",(change_id,)).fetchone()
-                  if row is None:
-                      raise SystemExit("DLR_EXACT_REVIEW_EVIDENCE_MISSING")
-                  columns = ("family","ticker","market","currency","settlement","source_class",
-                             "previous_hash","current_hash")
-                  change = dict(zip(columns,row[:8]))
-                  result["dlr_review"][change["ticker"]] = {"change_id":change_id,
-                      "accepted":_reviewed_dlr_a3_transition(change,json.loads(row[8]),
-                                                             json.loads(row[9]),row[10],row[11])}
-              if not all(record["accepted"] for record in result["dlr_review"].values()):
-                  raise SystemExit("DLR_EXACT_REVIEW_NOT_APPLIED")
-              families = ("FCI","CAUCIONES","FUTUROS","INDICES")
-              result["catalog_coverage"] = {
-                  row[0]: {"observed":row[1],"catalog_ready":row[2],"state":status(row[3]),"at":row[4]}
-                  for row in conn.execute("""SELECT instrument_type,observed_count,ready_paper_count,
-                          discovery_status,checked_at FROM catalog_family_coverage
-                          WHERE instrument_type IN (?,?,?,?)""",families)
-              }
-              result["family_catalog_rows"] = {}
-              for kind in families:
-                  rows = conn.execute("""SELECT capability,COUNT(*) FROM financial_instrument_catalog
-                          WHERE instrument_type=? AND status='AVAILABLE' GROUP BY capability""",
-                          (kind,)).fetchall()
-                  result["family_catalog_rows"][kind] = {status(value):count for value,count in rows}
-              result["fci"] = {}
-              for ticker in ("BZ.AHORRO.A","BZ.AHORRO.B"):
-                  row = conn.execute("""SELECT settlement_source,capability,metadata_json
-                      FROM financial_instrument_catalog
-                      WHERE ticker=? AND instrument_type='FCI' AND market='BYMA'
-                        AND currency='ARS' AND settlement='INMEDIATA'""",(ticker,)).fetchone()
-                  if row:
-                      raw = json.loads(row[2])
-                      result["fci"][ticker] = {
-                          "settlement_source":status(row[0]),"capability":status(row[1]),
-                          "primary_isin_present":bool(raw.get("isin")),
-                          "exact_class_id_present":any(raw.get(k) for k in ("fundClassId","cafciClassId","cafci_class_id")),
-                          "native_settlement_present":bool(raw.get("settlement")),
-                      }
-              try:
-                  _settlement_authority_pins()
-                  result["fci_settlement_pin"] = "PRESENT"
-              except (OSError, ValueError):
-                  result["fci_settlement_pin"] = "ABSENT_OR_INVALID"
-          
-          history = Path(default_history_store().path).absolute()
-          require_history_path = history.resolve() == history and history.is_file() and history.stat().st_nlink == 1
-          if not require_history_path:
-              raise SystemExit("HISTORY_PATH_IDENTITY_FAILED")
-          with closing(sqlite3.connect(history.as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
-              enable_read_only(conn)
-              tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
-              result["history"] = {"cutoff_state":None,"exact_series":{},"dlr_reference":{}}
-              if "rc6_history_cutoff_repair_runs" in tables:
-                  row = conn.execute("SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
-                  result["history"]["cutoff_state"] = status(row[0]) if row else None
-              if "history_canonical_v2" not in tables:
-                  raise SystemExit("HISTORY_CANONICAL_TABLE_MISSING")
-              for ticker, family, market, term in (
-                      ("DLR/NOV26","FUTUROS","A3","INMEDIATA"),
-                      ("DLR/DIC26","FUTUROS","A3","INMEDIATA"),
-                      ("GGAL","ACCIONES","BYMA","A-24HS")):
-                  rows = conn.execute("""SELECT date,source,price_basis,adjustment_basis FROM history_canonical_v2
-                      WHERE symbol=? AND instrument_type=? AND market=? AND currency='ARS' AND settlement=?
-                      ORDER BY date DESC LIMIT 8""",(ticker,family,market,term)).fetchall()
-                  result["history"]["exact_series"][ticker] = [
-                      (d,status(source),status(basis),status(adjust)) for d,source,basis,adjust in rows
-                  ]
-              for ticker in ("DLR/NOV26","DLR/DIC26"):
-                  row = conn.execute("""SELECT COUNT(*),MAX(date) FROM history_canonical_v2
-                      WHERE symbol=? AND instrument_type='FUTUROS' AND market='A3'
-                        AND currency='UNKNOWN' AND settlement='UNKNOWN' AND price_basis='SOURCE_REPORTED'
-                        AND source='A3_CEM_CLOSING' AND adjustment_basis='UNKNOWN:A3_CEM_CLOSING'""",
-                      (ticker,)).fetchone()
-                  result["history"]["dlr_reference"][ticker] = {"rows":row[0],"last_session":row[1]}
-          print("RC6_RECOVERY_READ_ONLY=" + json.dumps(result,separators=(",",":"),ensure_ascii=True))
+          python3 -m py_compile scripts/rc6_market_watch_readonly.py tests/test_rc6_market_watch_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_market_watch_readonly.py -v
+          python3 -m unittest discover -s tests -p test_rc6_a359_cron_equivalence.py -v
+          python3 -m py_compile scripts/rc6_operator_dashboard_readonly.py
+          python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
+          git diff --check
+
+  watch:
+    needs: contracts
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gate market-hours schedule
+        id: window
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          from datetime import date, datetime, timezone
+          from zoneinfo import ZoneInfo
+          local = datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          minutes = local.hour*60 + local.minute
+          # Only surveillance extends; PAPER entry, FI and caucion do not.
+          late = date(2026,11,2) <= local.date() <= date(2026,12,31)
+          close = 18*60+15 if late else 17*60+15
+          active = (os.environ.get('GITHUB_EVENT_NAME') != 'schedule' or
+                    (local.weekday() < 5 and 10*60+30 <= minutes < close))
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('active=' + ('1' if active else '0') + '\n')
+          print('MARKET_WATCH_TIME_GATE=' + ('ACTIVE' if active else 'SKIP_OFF_HOURS'))
           PY
-          HOST
+      - name: Resolve productive commit and tree directly from GitHub
+        id: productive
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          repo = os.environ['GITHUB_REPOSITORY']
+          branch = urllib.parse.quote('deploy/rc6-pr69-isolated-20260915', safe='')
+          url = f'https://api.github.com/repos/{repo}/branches/{branch}'
+          request = urllib.request.Request(url, headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=20) as response:
+              info = json.load(response)
+          sha = info['commit']['sha']
+          assert len(sha) == 40 and all(c in '0123456789abcdef' for c in sha)
+          # The immutable release source commit may differ from this branch
+          # HEAD while resolving to exactly the same Git tree.
+          commit_url = f'https://api.github.com/repos/{repo}/git/commits/{sha}'
+          commit_request = urllib.request.Request(commit_url, headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(commit_request, timeout=20) as response:
+              git_commit = json.load(response)
+          tree_sha = git_commit['tree']['sha']
+          assert len(tree_sha) == 40 and all(c in '0123456789abcdef' for c in tree_sha)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write('sha=' + sha + '\n')
+              out.write('tree_sha=' + tree_sha + '\n')
+          print('RC6_PRODUCTIVE_SHA=' + sha)
+          print('RC6_PRODUCTIVE_TREE=' + tree_sha)
+          PY
+      - name: Prepare strict SSH
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          test -n "$DO_HOST" && test -n "$DO_USER"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
+      - name: Collect bounded read-only host truth
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.productive.outputs.sha }}
+          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA' --expected-tree-sha '$EXPECTED_TREE_SHA'" \
+            < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2> evidence/.transport.stderr
+          rc=$?
+          set -e
+          PROBE_EXIT_CODE="$rc" python3 scripts/rc6_market_watch_readonly.py transport-diagnostic \
+            --stderr evidence/.transport.stderr > evidence/transport.json
+          rm -f evidence/.transport.stderr
+          if [ "$rc" -ne 0 ] || [ ! -s evidence/snapshot.json ]; then
+            python3 scripts/rc6_market_watch_readonly.py transport-error > evidence/snapshot.json
+            echo "::warning::Remote READ_ONLY probe unavailable. Evidence is fail-closed."
+          fi
+          python3 -m json.tool evidence/snapshot.json >/dev/null
+      - name: Classify recent critical signatures without exporting logs
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 18 python3 - recent-critical-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/recent_critical.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
+          fi
+      - name: Observe the exact PPI Gateway and local catalog without provider requests
+        if: github.event_name == 'workflow_dispatch' && inputs.notification_mode == 'read_only' && steps.window.outputs.active == '1'
+        shell: bash
+        env:
+          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 15 python3 - ppi-gateway-diagnostic-host --expected-tree-sha '$EXPECTED_TREE_SHA'" \
+            < scripts/rc6_market_watch_readonly.py > evidence/ppi_gateway.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/ppi_gateway.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.ppi-gateway-diagnostic-readonly.v1","read_only":true,"status":"NO_VERIFICADO","reason":"REMOTE_PROBE_UNAVAILABLE"}' > evidence/ppi_gateway.json
+          fi
+      - name: Diagnose SHADOW SQLite stages on manual runs only
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 12 python3 - shadow-diagnostic-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/shadow_diagnostic.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/shadow_diagnostic.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.shadow-readonly-diagnostic.v1","status":"REMOTE_DIAGNOSTIC_UNAVAILABLE","read_only":true}' > evidence/shadow_diagnostic.json
+          fi
+      - name: Probe public GitHub schedule API from observer on manual runs only
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 10 python3 - schedule-api-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/schedule_api.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/schedule_api.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.market-schedule-api.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/schedule_api.json
+          fi
+      - name: Sample observer Docker lifecycle metadata on manual runs only
+        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 9 python3 - observer-lifecycle-host" \
+            < scripts/rc6_market_watch_readonly.py > evidence/observer_lifecycle.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/observer_lifecycle.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
+          fi
+      - name: Audit authenticated dashboard routes and connector states without exporting content
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          ssh -i "$HOME/.ssh/rc6_market_watch" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+            "$DO_USER@$DO_HOST" \
+            "timeout 160 python3 - dashboard-host" \
+            < scripts/rc6_operator_dashboard_readonly.py > evidence/dashboard_audit.json 2>/dev/null
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/dashboard_audit.json >/dev/null 2>&1; then
+            printf '%s\n' '{"schema":"rc6.operator-dashboard-readonly.v1","read_only":true,"status":"NO_VERIFICADO","routes":[],"sources":[],"source_status":"NO_VERIFICADO"}' > evidence/dashboard_audit.json
+          fi
+          python3 - <<'PY'
+          import json
+          result=json.load(open('evidence/dashboard_audit.json',encoding='utf-8'))
+          print('RC6_DASHBOARD_AUDIT_SCOPE='+str(result.get('audit_scope','NO_VERIFICADO')))
+          print('RC6_DASHBOARD_AUDIT_STATUS='+str(result.get('status','NO_VERIFICADO')))
+          print('RC6_DASHBOARD_ROUTE_STATUS='+json.dumps([
+              {'path':r.get('path'),'http':r.get('http'),'nav':r.get('nav'),
+               'content':r.get('content'),'error':r.get('error'),
+               'elapsed_ms':r.get('elapsed_ms'),'slow_2s':r.get('slow_2s'),
+               'projection_ms':r.get('projection_ms'),'read_queries':r.get('read_queries'),
+               'unverified_mentions':r.get('unverified_mentions')}
+              for r in result.get('routes',[])],sort_keys=True,separators=(',',':')))
+          print('RC6_DASHBOARD_PROFILE_STATUS='+str(result.get('profile_status','NO_VERIFICADO')))
+          print('RC6_DASHBOARD_PROFILE='+json.dumps(result.get('profile',[]),
+              sort_keys=True,separators=(',',':')))
+          print('RC6_DASHBOARD_BALANCE_QUERIES='+json.dumps(result.get('balance_queries',[]),
+              sort_keys=True,separators=(',',':')))
+          print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
+              sort_keys=True,separators=(',',':')))
+          PY
+      - name: Record genuine schedule cadence independently of observer
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_market_watch_readonly.py schedule-health --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY"
+      - name: Read previous committed monitor artifact (best effort)
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_market_watch_readonly.py select-previous \
+            --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY" \
+            --workflow-id 384354765 --run-id "$GITHUB_RUN_ID" \
+            --destination evidence/previous
+      - name: Compare snapshots and detect transitions
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/rc6_market_watch_readonly.py classify \
+            --current evidence/snapshot.json \
+            --previous evidence/previous/snapshot.json \
+            --previous-decision evidence/previous/decision.json > evidence/decision.json
+          python3 - <<'PY'
+          import json, os, re
+          snap=json.load(open('evidence/snapshot.json',encoding='utf-8'))
+          decision=json.load(open('evidence/decision.json',encoding='utf-8'))
+          def sha(field):
+              value=snap.get(field)
+              return value if type(value) is str and re.fullmatch('[0-9a-f]{40}',value) else 'NO_VERIFICADO'
+          identity=snap.get('provenance_identity')
+          allowed={'ROOTLESS_PRODUCT_TREE_MATCHED','PRODUCT_TREE_NOT_PROVIDED',
+                   'PRODUCT_TREE_MISMATCH','PRIVATE_RELEASE_SOURCE_MISMATCH',
+                   'LEGACY_DEPLOY_SHA_MATCHED','LEGACY_DEPLOY_SHA_MISMATCH'}
+          text=['## POROTA RC6 | Market Watch READ_ONLY',
+                '- Product branch HEAD: '+sha('expected_deploy_sha'),
+                '- Candidate source SHA: '+sha('observed_candidate_sha'),
+                '- Expected product tree: '+sha('expected_product_tree'),
+                '- Provenance identity: '+(identity if type(identity) is str and identity in allowed else 'NO_VERIFICADO'),
+                '- Severity: '+str(snap.get('severity','NO_VERIFICADO')),
+                '- Alerts: '+', '.join(decision['new_alerts'] or ['none']),
+                '- Recovery: '+', '.join(decision['recovered'] or ['none']),
+                '- Pending P1 confirmation: '+', '.join(decision['pending_confirmation'] or ['none']),
+                '- Orders actually sent: no claim unless exact DB counter verified.',
+                '- Trading mutations: NONE; provider calls: NONE; PPI Watch: NOT ACCESSED.',
+                '- Alert delivery uses a separate bounded receipt only when requested.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
+              f.write('\n'.join(text)+'\n')
+          print('RC6_MONITOR_STATUS='+decision['status'])
+          print('RC6_MONITOR_NOTIFICATION='+decision['notification'])
+          PY
+      - name: Send transition through existing PAPER Telegram transport
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        env:
+          NOTIFICATION_MODE: ${{ github.event_name == 'schedule' && 'normal' || (github.event_name == 'workflow_dispatch' && inputs.notification_mode || 'read_only') }}
+        run: |
+          set -Eeuo pipefail
+          request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
+            --decision evidence/decision.json)"
+          if [ "$NOTIFICATION_MODE" = 'read_only' ]; then
+            printf '%s\n' '{"status":"NOT_REQUESTED","read_only":true}' > evidence/delivery.json
+          elif [ -z "$request" ]; then
+            printf '%s\n' '{"status":"NO_TRANSITION"}' > evidence/delivery.json
+          else
+            set +e
+            ssh -i "$HOME/.ssh/rc6_market_watch" \
+              -o BatchMode=yes -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
+              "$DO_USER@$DO_HOST" \
+              "timeout 25 python3 - alert-host '$request'" \
+              < scripts/rc6_market_watch_readonly.py > evidence/delivery.json 2>/dev/null
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/delivery.json >/dev/null 2>&1; then
+              printf '%s\n' '{"status":"UNVERIFIED"}' > evidence/delivery.json
+            fi
+          fi
+          python3 scripts/rc6_market_watch_readonly.py finalize-delivery \
+            --decision evidence/decision.json --receipt evidence/delivery.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('evidence/decision.json',encoding='utf-8'))
+          print('MARKET_WATCH_TELEGRAM='+data['delivery_status'])
+          PY
+      - name: Save immutable per-run evidence
+        if: always() && steps.window.outputs.active == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-market-watch-${{ github.run_id }}
+          path: |
+            evidence/snapshot.json
+            evidence/transport.json
+            evidence/decision.json
+            evidence/shadow_diagnostic.json
+            evidence/schedule_api.json
+            evidence/observer_lifecycle.json
+            evidence/recent_critical.json
+            evidence/ppi_gateway.json
+            evidence/dashboard_audit.json
+            evidence/delivery.json
+            evidence/previous/source.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail checks on verified critical or confirmed P1
+        if: steps.window.outputs.active == '1'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,re
+          data=json.load(open('evidence/decision.json', encoding='utf-8'))
+          snap=json.load(open('evidence/snapshot.json', encoding='utf-8'))
+          findings=snap.get('findings')
+          codes=sorted({code for row in (findings if isinstance(findings,list) else [])
+              if isinstance(row,dict) for code in [row.get('code')]
+              if type(code) is str and re.fullmatch(r'[A-Za-z0-9_:]{1,100}',code)})
+          shadow=snap.get('shadow') if isinstance(snap.get('shadow'),dict) else {}
+          context={}
+          for key,allowed in {
+              'status': {'FAIL_CLOSED','SHADOW_OBSERVING','PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION'},
+              'error_class': {'OperationalError','ValueError','EvidencePayloadLimit'},
+              'error_module': {'runtime','worker','preopen','promotion','stages','families',
+                               'lab','entry_signals','funnel','source_reads','read_contract',
+                               'persistence','snapshot','common','live'},
+              'evidence_file': {'latest.json.gz','checkpoint.json.gz','status.json','preopen','other'},
+          }.items():
+              if type(shadow.get(key)) is str and shadow[key] in allowed:
+                  context[key]=shadow[key]
+          for key in ('error_line','evidence_measured_bytes','evidence_limit_bytes'):
+              value=shadow.get(key)
+              if type(value) is int and 0 <= value <= 2*1024**3:
+                  context[key]=value
+          label=shadow.get('sqlite_errorname')
+          if type(label) is str and re.fullmatch(r'SQLITE_[A-Z0-9_]{1,40}',label):
+              context['sqlite_errorname']=label
+          print('RC6_MONITOR_SAFE_FINDINGS='+','.join(codes))
+          print('RC6_MONITOR_SAFE_SHADOW='+json.dumps(context,sort_keys=True,separators=(',',':')))
+          ops=snap.get('sqlite_ops') if isinstance(snap.get('sqlite_ops'),dict) else {}
+          safe_ops={}
+          for key in ('DAILY_BACKUP','HISTORY_BACKUP','SRE_SNAPSHOT','latest_backup','candle_worker'):
+              item=ops.get(key)
+              if not isinstance(item,dict):
+                  continue
+              safe={}
+              for field in ('last_run_at','created_at','heartbeat_at'):
+                  value=item.get(field)
+                  if type(value) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.+-][0-9:]+)?',value):
+                      safe[field]=value
+              state=item.get('state')
+              if type(state) is str and re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóú_]{1,32}',state):
+                  safe['state']=state
+              if key=='latest_backup' and item.get('kind') in ('DAILY','HISTORY'):
+                  safe['kind']=item['kind']
+              for field in ('size_bytes','cursor'):
+                  value=item.get(field)
+                  if type(value) is int and 0 <= value <= 2**53:
+                      safe[field]=value
+              safe_ops[key]=safe
+          print('RC6_MONITOR_SAFE_SQLITE_OPS='+json.dumps(safe_ops,sort_keys=True,separators=(',',':')))
+          try:
+              recent=json.load(open('evidence/recent_critical.json', encoding='utf-8'))
+          except (OSError,ValueError):
+              recent={}
+          containers=recent.get('containers') if isinstance(recent,dict) else {}
+          containers=containers if isinstance(containers,dict) else {}
+          traces=[]
+          for name in ('observer','dashboard'):
+              item=containers.get(name)
+              rows=item.get('tracebacks') if isinstance(item,dict) else []
+              for row in (rows[-12:] if isinstance(rows,list) else []):
+                  if not isinstance(row,dict):
+                      continue
+                  frame=row.get('last_app_frame')
+                  frame=frame if isinstance(frame,dict) else {}
+                  cls=row.get('exception_class')
+                  module=frame.get('module')
+                  function=frame.get('function')
+                  line=frame.get('line')
+                  observed=row.get('observed_utc')
+                  hint=row.get('sqlite_hint')
+                  if (type(cls) is str and cls in {'sqlite3.OperationalError','ValueError','RuntimeError'}
+                          and type(module) is str and re.fullmatch(r'[a-z0-9_]{1,70}\.py',module)
+                          and type(function) is str and re.fullmatch(r'[A-Za-z0-9_]{1,80}',function)
+                          and type(line) is int and 0 < line <= 1000000
+                          and type(observed) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z',observed)):
+                      traces.append({'container':name,'class':cls,'module':module,
+                          'function':function,'line':line,'utc':observed,
+                          'sqlite_hint':hint if type(hint) is str and hint in {'SQLITE_BUSY_LOCKED','SQLITE_INTERRUPT',
+                              'SQLITE_FULL','SQLITE_IOERR','SQLITE_CANTOPEN','SQLITE_UNKNOWN'} else None})
+          print('RC6_MONITOR_SAFE_RECENT_CRITICAL='+json.dumps(traces[-12:],sort_keys=True,separators=(',',':')))
+          if data['confirmed']:
+              print('::error::RC6 Market Watch incident: '+', '.join(data['confirmed']))
+              raise SystemExit(2)
+          print('RC6_MONITOR_CHECK=GREEN_OR_UNCONFIRMED')
+          PY
+      - name: Destroy SSH credential
+        if: always()
+        run: rm -f "$HOME/.ssh/rc6_market_watch"
+
