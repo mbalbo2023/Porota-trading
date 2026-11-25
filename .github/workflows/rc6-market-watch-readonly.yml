@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 estado de recuperación datos y familias READ_ONLY
+run-name: RC6 postflight de recuperación PAPER READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -45,7 +45,7 @@ jobs:
           docker=(docker -H unix:///run/user/1000/porota-rc6-docker.sock)
           cid=$("${docker[@]}" ps --no-trunc -q --filter label=io.porota.project=rc6 --filter label=io.porota.role=observer)
           [[ "$cid" =~ ^[0-9a-f]{64}$ ]]
-          [[ $("${docker[@]}" inspect --format '{{.Image}}' "$cid") == sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541 ]]
+          [[ $("${docker[@]}" inspect --format '{{.Image}}' "$cid") == sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067 ]]
           "${docker[@]}" exec -i "$cid" python -B - <<'PY'
           from contextlib import closing
           from datetime import datetime, timezone
@@ -58,6 +58,8 @@ jobs:
           from cg_paper_workspace import database_path
           from cv_history_store_adapter_hf6 import default_history_store
           from rc6_fund_source_quarantine import _settlement_authority_pins
+          from cp_contract_evidence_v2_hf6 import _reviewed_dlr_a3_transition
+          from scripts.rc6_candle_inmarket_evidence import _materialized_guarded_samples
           
           
           def enable_read_only(conn):
@@ -93,7 +95,53 @@ jobs:
                      JOIN candle_series s USING(series_id) ORDER BY c.id DESC"""):
                   if version[3] in ("1m","5m"):
                       result["latest_candle_versions"].setdefault(version[3], (version[0],version[1],version[2],status(version[4])))
+              candle_retained = result["latest_candle_versions"]
+              result["paired_candle_replay"] = {"verified":False,"resolutions":{}}
+              if all(frame in candle_retained for frame in ("1m","5m")):
+                  last_observed = max(datetime.fromisoformat(candle_retained[frame][1].replace("Z","+00:00"))
+                                      for frame in ("1m","5m"))
+                  proof = _materialized_guarded_samples(conn,last_observed)
+                  result["paired_candle_replay"] = {"verified":bool(proof),
+                      "observed_at":last_observed.isoformat(),
+                      "resolutions":proof.get("known_at_by_resolution",{})}
               result["exit"] = conn.execute("SELECT state,heartbeat_at FROM paper_exit_reader_state WHERE id=1").fetchone()
+              result["dlr_review"] = {}
+              for change_id in (34609,34610):
+                  row = conn.execute("""SELECT ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
+                         ch.source_class,ch.previous_hash,ch.current_hash,p.evidence_json,n.evidence_json,
+                         p.source_ref,n.source_ref FROM contract_evidence_v2_changes ch
+                         JOIN contract_evidence_v2_snapshots p
+                         ON p.family=ch.family AND p.ticker=ch.ticker AND p.market=ch.market
+                         AND p.currency=ch.currency AND p.settlement=ch.settlement
+                         AND p.source_class=ch.source_class AND p.evidence_hash=ch.previous_hash
+                         JOIN contract_evidence_v2_snapshots n
+                         ON n.family=ch.family AND n.ticker=ch.ticker AND n.market=ch.market
+                         AND n.currency=ch.currency AND n.settlement=ch.settlement
+                         AND n.source_class=ch.source_class AND n.evidence_hash=ch.current_hash
+                         WHERE ch.change_id=?""",(change_id,)).fetchone()
+                  if row is None:
+                      raise SystemExit("DLR_EXACT_REVIEW_EVIDENCE_MISSING")
+                  columns = ("family","ticker","market","currency","settlement","source_class",
+                             "previous_hash","current_hash")
+                  change = dict(zip(columns,row[:8]))
+                  result["dlr_review"][change["ticker"]] = {"change_id":change_id,
+                      "accepted":_reviewed_dlr_a3_transition(change,json.loads(row[8]),
+                                                             json.loads(row[9]),row[10],row[11])}
+              if not all(record["accepted"] for record in result["dlr_review"].values()):
+                  raise SystemExit("DLR_EXACT_REVIEW_NOT_APPLIED")
+              families = ("FCI","CAUCIONES","FUTUROS","INDICES")
+              result["catalog_coverage"] = {
+                  row[0]: {"observed":row[1],"catalog_ready":row[2],"state":status(row[3]),"at":row[4]}
+                  for row in conn.execute("""SELECT instrument_type,observed_count,ready_paper_count,
+                          discovery_status,checked_at FROM catalog_family_coverage
+                          WHERE instrument_type IN (?,?,?,?)""",families)
+              }
+              result["family_catalog_rows"] = {}
+              for kind in families:
+                  rows = conn.execute("""SELECT capability,COUNT(*) FROM financial_instrument_catalog
+                          WHERE instrument_type=? AND status='AVAILABLE' GROUP BY capability""",
+                          (kind,)).fetchall()
+                  result["family_catalog_rows"][kind] = {status(value):count for value,count in rows}
               result["fci"] = {}
               for ticker in ("BZ.AHORRO.A","BZ.AHORRO.B"):
                   row = conn.execute("""SELECT settlement_source,capability,metadata_json
@@ -121,7 +169,7 @@ jobs:
           with closing(sqlite3.connect(history.as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
               enable_read_only(conn)
               tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
-              result["history"] = {"cutoff_state":None,"exact_series":{}}
+              result["history"] = {"cutoff_state":None,"exact_series":{},"dlr_reference":{}}
               if "rc6_history_cutoff_repair_runs" in tables:
                   row = conn.execute("SELECT state FROM rc6_history_cutoff_repair_runs WHERE cutoff='2026-09-21'").fetchone()
                   result["history"]["cutoff_state"] = status(row[0]) if row else None
@@ -137,6 +185,13 @@ jobs:
                   result["history"]["exact_series"][ticker] = [
                       (d,status(source),status(basis),status(adjust)) for d,source,basis,adjust in rows
                   ]
+              for ticker in ("DLR/NOV26","DLR/DIC26"):
+                  row = conn.execute("""SELECT COUNT(*),MAX(date) FROM history_canonical_v2
+                      WHERE symbol=? AND instrument_type='FUTUROS' AND market='A3'
+                        AND currency='UNKNOWN' AND settlement='UNKNOWN' AND price_basis='SOURCE_REPORTED'
+                        AND source='A3_CEM_CLOSING' AND adjustment_basis='UNKNOWN:A3_CEM_CLOSING'""",
+                      (ticker,)).fetchone()
+                  result["history"]["dlr_reference"][ticker] = {"rows":row[0],"last_session":row[1]}
           print("RC6_RECOVERY_READ_ONLY=" + json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
           HOST
