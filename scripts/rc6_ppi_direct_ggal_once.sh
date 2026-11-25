@@ -10,9 +10,11 @@ import pwd
 import re
 import stat
 import subprocess
+import time
 
 IMAGE = 'sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541'
 PRODUCT = '44ee181dcc452215ab05fae7f3919e344e7601d7'
+HOST_LOCK_WAIT_S = 240
 
 PROBE = r'''
 from contextlib import closing, redirect_stderr, redirect_stdout
@@ -315,21 +317,92 @@ if __name__ == '__main__':
 '''
 
 
+def host_lock_holders(meta):
+    """Read kernel lock metadata without printing any process arguments."""
+    identity = (os.major(meta.st_dev), os.minor(meta.st_dev), meta.st_ino)
+    holders = []
+    try:
+        with open('/proc/locks', encoding='ascii') as lock_table:
+            for line in lock_table:
+                fields = line.split()
+                if len(fields) != 8 or fields[1:3] != ['FLOCK', 'ADVISORY']:
+                    continue
+                _, _, _, mode, pid_text, device_inode, _, _ = fields
+                parts = device_inode.split(':')
+                if mode not in ('READ', 'WRITE') or len(parts) != 3:
+                    continue
+                try:
+                    if (int(parts[0], 16), int(parts[1], 16), int(parts[2])) != identity:
+                        continue
+                    pid = int(pid_text)
+                except ValueError:
+                    continue
+                if pid <= 0:
+                    continue
+                result = {'pid': pid, 'mode': 'SHARED' if mode == 'READ' else 'EXCLUSIVE'}
+                try:
+                    with open(f'/proc/{pid}/cgroup', encoding='utf-8') as cgroup:
+                        units = cgroup.read(4096).replace('\n', '/').split('/')
+                    unit = next((part for part in reversed(units)
+                                 if re.fullmatch(r'porota-[a-z0-9-]{1,95}\.service', part)), None)
+                    if unit is not None:
+                        result['unit'] = unit
+                except (OSError, UnicodeError):
+                    pass
+                holders.append(result)
+                if len(holders) == 8:
+                    break
+    except (OSError, UnicodeError):
+        return None
+    return holders
+
+
+def wait_for_host_lock(fd, meta, *, wait_s=HOST_LOCK_WAIT_S):
+    started = time.monotonic()
+    deadline = started + wait_s
+    initially_contended = False
+    initial_holders = None
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True, {'waited_s': round(time.monotonic() - started, 1),
+                          'initial_holders': initial_holders}
+        except BlockingIOError:
+            if not initially_contended:
+                initial_holders = host_lock_holders(meta)
+                initially_contended = True
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False, {'waited_s': round(time.monotonic() - started, 1),
+                               'initial_holders': initial_holders, 'last_holders': host_lock_holders(meta)}
+            time.sleep(min(left, 1))
+
+
+def lock_matches_path(path, fd, uid):
+    opened = os.fstat(fd)
+    named = path.lstat()
+    return (stat.S_ISREG(named.st_mode) and named.st_uid == uid and not named.st_mode & 0o077
+            and opened.st_nlink == named.st_nlink == 1
+            and (opened.st_dev, opened.st_ino) == (named.st_dev, named.st_ino))
+
+
 def host_probe():
     uid = os.getuid()
     account = pwd.getpwuid(uid)
     if uid != 1000 or account.pw_name != 'porotaadmin':
         return {'state': 'RC6_USAR_TERMINAL_POROTAADMIN'}
     state = Path(account.pw_dir) / '.local/state/porota-rc6'
-    fd = os.open(state / 'deploy.lock', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    lock_path = state / 'deploy.lock'
+    fd = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         meta = os.fstat(fd)
         if not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_mode & 0o077 or meta.st_nlink != 1:
             return {'state': 'RC6_LOCK_HOST_NO_CONFIABLE'}
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return {'state': 'RC6_HOST_OCUPADO'}
+        acquired, lock_evidence = wait_for_host_lock(fd, meta)
+        if not acquired:
+            return {'state': 'RC6_HOST_OCUPADO', 'host_lock': lock_evidence}
+        if not lock_matches_path(lock_path, fd, uid):
+            return {'state': 'RC6_LOCK_HOST_CAMBIO', 'host_lock': lock_evidence}
         sock = Path(f'/run/user/{uid}/docker.sock')
         if not stat.S_ISSOCK(sock.lstat().st_mode) or sock.lstat().st_uid != uid:
             return {'state': 'RC6_DOCKER_ROOTLESS_NO_VERIFICADO'}
@@ -352,6 +425,7 @@ def host_probe():
         if type(result) is not dict or result.get('test') != 'PPI_REST_DIRECT_GGAL':
             return {'state': 'RC6_SALIDA_DEL_PROBE_NO_VERIFICADA'}
         result['deployment_sha'] = PRODUCT
+        result['host_lock'] = lock_evidence
         return result
     finally:
         os.close(fd)
