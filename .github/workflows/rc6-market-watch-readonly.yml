@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 postflight de recuperación PAPER READ_ONLY
+run-name: RC6 procedencia física de velas READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -95,6 +95,35 @@ jobs:
                      JOIN candle_series s USING(series_id) ORDER BY c.id DESC"""):
                   if version[3] in ("1m","5m"):
                       result["latest_candle_versions"].setdefault(version[3], (version[0],version[1],version[2],status(version[4])))
+              from hashlib import sha256
+              latest = {}
+              for frame, item in result["latest_candle_versions"].items():
+                  row = conn.execute("""SELECT s.identity_json,v.body_json,v.body_hash
+                    FROM candle_versions v JOIN candle_series s USING(series_id) WHERE v.id=?""",
+                    (item[0],)).fetchone()
+                  series, bar = map(json.loads,row[:2])
+                  latest[frame] = {
+                      "identity":[series[k] for k in ("symbol","asset_class","market","currency","settlement")],
+                      "source":series["source"],"price_kind":series["price_kind"],"samples":bar["samples"],
+                      "synthetic":bar["synthetic"],"has_volume":bar["volume"] is not None,
+                      "body_hash_matches":sha256(row[1].encode("utf-8")).hexdigest()==row[2],
+                  }
+              recent_guarded = conn.execute("""SELECT COUNT(*),MAX(v.known_at)
+                  FROM (SELECT * FROM candle_versions ORDER BY id DESC LIMIT 256) v
+                  JOIN candle_series s USING(series_id)
+                  WHERE json_extract(s.identity_json,'$.source')='PPI_GUARDED_CURRENT'""").fetchone()
+              archived_guarded = conn.execute("""SELECT COUNT(*),MAX(recorded_at)
+                  FROM historical_raw_archive WHERE origin='PPI_GUARDED_CURRENT'""").fetchone()
+              guarded_series = conn.execute("""SELECT COUNT(*) FROM candle_series
+                  WHERE json_extract(identity_json,'$.source')='PPI_GUARDED_CURRENT'""").fetchone()[0]
+              result["candle_provenance"] = {"latest":latest,"recent_guarded_versions":recent_guarded[0],
+                  "last_guarded_version":recent_guarded[1],"guarded_raw_receipts":archived_guarded[0],
+                  "last_guarded_receipt":archived_guarded[1],"guarded_series":guarded_series}
+              if recent_guarded[1] is not None:
+                  guarded_clock = datetime.fromisoformat(recent_guarded[1].replace("Z","+00:00"))
+                  guarded_pair = _materialized_guarded_samples(conn,guarded_clock)
+                  result["candle_provenance"]["guarded_replay_as_of_latest_guarded"] = {
+                      "as_of":guarded_clock.isoformat(),"resolutions":guarded_pair.get("known_at_by_resolution",{})}
               candle_retained = result["latest_candle_versions"]
               result["paired_candle_replay"] = {"verified":False,"resolutions":{}}
               if all(frame in candle_retained for frame in ("1m","5m")):
