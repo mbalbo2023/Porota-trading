@@ -1,10 +1,10 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 contratos exactos y fuentes públicas READ_ONLY
+run-name: RC6 cambios materiales y verificación CAFCI READ_ONLY
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Leer comprobantes de contrato y referencias públicas
+        description: Leer cambios contractuales y validar el parser CAFCI
         type: choice
         options: [read_only]
         default: read_only
@@ -46,70 +46,66 @@ jobs:
           from contextlib import closing
           from datetime import datetime, timezone
           import json
-          import os
           import re
           import sqlite3
           import time
           
-          from bu_instrument_catalog import ppi_full_key_evidence_reason
           from cg_paper_workspace import database_path
-          from rc6_fund_source_quarantine import _settlement_authority_pins
+          from cp_contract_evidence_v2_hf6 import material_evidence, pending_material_changes
           
           
-          def tokens(values):
-              return [item for item in values if isinstance(item, str) and re.fullmatch(
-                  r"[A-Z][A-Z0-9_.: +\-]{0,89}", item, re.I)]
+          def safe_value(value):
+              if value is None or type(value) in (bool,int,float):
+                  return value
+              if isinstance(value,str) and re.fullmatch(r"[A-Za-z0-9:_() .\-+]{1,170}", value):
+                  return value
+              return "REDACTED"
           
           
-          with closing(sqlite3.connect(database_path().as_uri() + "?mode=ro",
-                                       uri=True, timeout=.4)) as conn:
-              conn.row_factory = sqlite3.Row
+          with closing(sqlite3.connect(database_path().as_uri()+"?mode=ro", uri=True, timeout=.4)) as conn:
               conn.execute("PRAGMA query_only=ON")
               conn.execute("BEGIN")
-              if tuple(conn.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) != ("PRODUCTION_PAPER", 0):
+              if conn.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone() != ("PRODUCTION_PAPER", 0):
                   raise SystemExit("PAPER_ZERO_FAILED")
-              deadline = time.monotonic() + 4
-              conn.set_progress_handler(lambda: time.monotonic() >= deadline, 1000)
-              cohort = conn.execute("""SELECT f.*,c.can_simulate,c.status AS projected,c.detail
-                FROM financial_instrument_catalog f LEFT JOIN candidate_identity_v2 c
-                ON f.ticker=c.ticker AND f.instrument_type=c.instrument_type AND f.market=c.market
-                  AND f.currency=c.currency AND f.settlement=c.settlement
-                WHERE f.instrument_type='CAUCIONES' AND f.status='AVAILABLE'
-                OR f.instrument_type='FCI' AND f.ticker IN ('BZ.AHORRO.A','BZ.AHORRO.B')
-                OR f.instrument_type='FUTUROS' AND f.ticker IN ('DLR/NOV26','DLR/DIC26')
-                ORDER BY f.instrument_type,f.ticker,f.market,f.currency,f.settlement LIMIT 40""").fetchall()
-              details = []
-              for row in cohort:
-                  key = [row[k] for k in ("ticker","instrument_type","market","currency","settlement")]
-                  data = json.loads(row["metadata_json"])
-                  bridge = data.get("_contract_bridge") or {}
-                  conflicts = data.get("_contract_conflicts") or {}
-                  evidence = conn.execute("""SELECT cur.source_class
-                      FROM contract_evidence_v2_current cur
-                      WHERE cur.ticker=? AND cur.family=? AND cur.market=? AND cur.currency=? AND cur.settlement=?
-                      ORDER BY 1 LIMIT 9""", key).fetchall()
-                  blocked = conn.execute("""SELECT source_class,status,count(*) FROM contract_evidence_v2_changes
-                      WHERE ticker=? AND family=? AND market=? AND currency=? AND settlement=?
-                       AND status='CHANGED_REVIEW_REQUIRED' GROUP BY 1,2 LIMIT 8""", key).fetchall()
-                  details.append([key,row["status"],row["capability"],row["settlement_source"],
-                      ppi_full_key_evidence_reason(dict(row),database=database_path()),row["can_simulate"],
-                      tokens((row["detail"] or "").split(";")),tokens(bridge.get("gaps",[])),
-                      tokens(conflicts.get("fields",[]) if isinstance(conflicts,dict) else []),
-                      sorted(k for k in ("isin","fundClassId","cafciClassId","cafci_class_id","cnv_fund_id",
-                                         "paper_family_contract_v1","financial_contract_v17",
-                                         "paper_caucion_contract_v1","_ppi_native_request_receipt") if k in data),
-                      [list(r) for r in evidence], [list(r) for r in blocked]])
-              try:
-                  _settlement_authority_pins()
-                  fci_pin = "FCI_SETTLEMENT_PIN_PRESENT"
-              except ValueError:
-                  fci_pin = "FCI_SETTLEMENT_PIN_ABSENT_OR_INVALID"
-              print("RC6_FAMILY_DETAIL=" + json.dumps({
-                  "at": datetime.now(timezone.utc).isoformat(),
-                  "a3_live_auth_configured": all(os.getenv(key) for key in
-                      ("A3_PRIMARY_USER","A3_PRIMARY_PASSWORD")),
-                  "fci_settlement_authority":fci_pin,
-                  "details":details}, separators=(",",":"),ensure_ascii=True))
+              deadline=time.monotonic()+4
+              conn.set_progress_handler(lambda: time.monotonic()>=deadline,1000)
+              pending=pending_material_changes(conn)
+              reviews=conn.execute("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='contract_evidence_v2_reviews'").fetchone()
+              review_rows = "SELECT change_id FROM contract_evidence_v2_reviews" if reviews else "SELECT NULL AS change_id WHERE 0"
+              rows=conn.execute(f"""WITH reviews AS ({review_rows})
+                SELECT ch.change_id,ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
+                   ch.detected_at,ch.previous_hash,ch.current_hash,prev.evidence_json,cur.evidence_json,
+                   prev.source_ref,cur.source_ref,rev.change_id,latest.evidence_hash
+                FROM contract_evidence_v2_changes ch
+                LEFT JOIN contract_evidence_v2_snapshots prev
+                  ON prev.family=ch.family AND prev.ticker=ch.ticker AND prev.market=ch.market
+                   AND prev.currency=ch.currency AND prev.settlement=ch.settlement
+                   AND prev.source_class=ch.source_class AND prev.evidence_hash=ch.previous_hash
+                LEFT JOIN contract_evidence_v2_snapshots cur
+                  ON cur.family=ch.family AND cur.ticker=ch.ticker AND cur.market=ch.market
+                   AND cur.currency=ch.currency AND cur.settlement=ch.settlement
+                   AND cur.source_class=ch.source_class AND cur.evidence_hash=ch.current_hash
+                LEFT JOIN contract_evidence_v2_current latest
+                  ON latest.family=ch.family AND latest.ticker=ch.ticker AND latest.market=ch.market
+                   AND latest.currency=ch.currency AND latest.settlement=ch.settlement
+                   AND latest.source_class=ch.source_class
+                LEFT JOIN reviews rev ON rev.change_id=ch.change_id
+                WHERE ch.status='CHANGED_REVIEW_REQUIRED' AND ch.source_class='DERIVED_OFFICIAL_RULE'
+                  AND ((ch.family='CAUCIONES' AND ch.currency='ARS') OR
+                       (ch.family='FUTUROS' AND ch.ticker IN ('DLR/NOV26','DLR/DIC26')))
+                ORDER BY ch.change_id LIMIT 40""").fetchall()
+              changes=[]
+              for cid,f,k,m,c,s,t,older,newer,before,after,p_ref,c_ref,rev,latest in rows:
+                  p=material_evidence(json.loads(before)) if before else {}
+                  n=material_evidence(json.loads(after)) if after else {}
+                  changes.append({"change_id":cid,"identity":[f,k,m,c,s],"detected_at":t,
+                    "pending":(f,k,m,c,s) in pending,"exact_review_present":rev is not None,
+                    "old_hash":older,"new_hash":newer,"latest_hash_matches":newer==latest,
+                    "static_sources_match":p_ref==c_ref,
+                    "delta":{key:[safe_value(p.get(key)),safe_value(n.get(key))] for key in sorted(p.keys()|n.keys())
+                        if p.get(key)!=n.get(key) and re.fullmatch(r"[a-z_]{1,60}",key)}})
+              print("RC6_FAMILY_CHANGE="+json.dumps({"at":datetime.now(timezone.utc).isoformat(),
+                  "changes":changes},separators=(",",":"),ensure_ascii=True))
           PY
           HOST
 
@@ -125,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 44ee181dcc452215ab05fae7f3919e344e7601d7
+          ref: d004109f162b44919fb7d97735344ecedffa811f
           persist-credentials: false
       - name: Verify public CAFCI and A3 responses without credentials
         shell: bash
@@ -179,6 +175,9 @@ jobs:
                   expected_sha256=sha256(body).hexdigest(), source_filename=filename)
               result["cafci"] = {"report": report.report_date.isoformat(),
                   "digest": report.source_sha256, "classes": len(report.classes),
+                  "summary": report.summary,
+                  "invalid_fee_classes": [row.cafci_class_id for row in report.classes if
+                      any(hold.endswith("FEE_PERCENT_OUT_OF_RANGE") for hold in row.quality_holds)][:25],
                   "focal": [{"class_id": row.cafci_class_id, "cnv": row.cnv_fund_id,
                              "effective": row.nav_effective_date.isoformat() if row.nav_effective_date else None,
                              "fee_reference_only": True, "has_nav": row.nav_per_unit is not None,
@@ -188,9 +187,9 @@ jobs:
               result["cafci"] = failure(error)
           
           result["a3"] = {}
-          for ticker in ("DLR/NOV26","DLR/DIC26"):
+          for label, scope in (("product_DLR", {"product":"DLR"}), ("exact_DLR_NOV26", {"symbol":"DLR/NOV26"})):
               url = "https://apicem.matbarofex.com.ar/api/v1/closing-prices?" + urlencode({
-                  "symbol":ticker,"from":"2026-11-24","to":"2026-11-25","page":1,"pageSize":10})
+                  **scope,"from":"2026-11-24T03:00:00Z","to":"2026-11-26T02:59:59Z","page":1,"pageSize":65})
               try:
                   _, body, at = fetch(url, 100000)
                   payload = json.loads(body)
@@ -200,10 +199,13 @@ jobs:
                   records = [{k: row.get(k) for k in
                       ("symbol","dateTime","date","product","market","currency","settlementPrice","closingPrice","closePrice","close","lastPrice","settlement")
                       if k in row and type(row[k]) in (str,int,float)}
-                      for row in data if type(row) is dict]
-                  result["a3"][ticker] = {"at":at.isoformat(),"rows":records,"digest":sha256(body).hexdigest(),
-                      "fields": sorted(data[0]) if data and isinstance(data[0],dict) else []}
+                      for row in data if type(row) is dict
+                      and row.get("symbol") in ("DLR/NOV26","DLR/DIC26")]
+                  result["a3"][label] = {"at":at.isoformat(),"rows":records,"digest":sha256(body).hexdigest(),
+                      "page_count": len(data), "total_entries": payload.get("totalEntries"),
+                      "example_symbols": sorted({r.get("symbol") for r in data if isinstance(r,dict)
+                          and isinstance(r.get("symbol"),str)})[:15]}
               except (OSError, ValueError, TypeError) as error:
-                  result["a3"][ticker] = failure(error)
+                  result["a3"][label] = failure(error)
           print("RC6_PUBLIC_FAMILY=" + json.dumps(result, separators=(",",":"),ensure_ascii=True))
           PY
