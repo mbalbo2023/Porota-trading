@@ -71,7 +71,7 @@ def test_off_market_empty_hold_does_not_prevent_later_fresh_paper_candidate():
 
     first = run_paper_sweep(broker, [], **common)
     assert first["status"] == "HOLD"
-    assert first["code"] == "EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING"
+    assert first["code"] == "CAUCION_NO_EXECUTABLE_OFFER"
     assert broker.allocations == 0
 
     offer = CaucionOffer(
@@ -90,6 +90,12 @@ def test_off_market_empty_hold_does_not_prevent_later_fresh_paper_candidate():
         quoted_total_fees=Decimal("10"),
         fee_quote_principal=Decimal("100000"),
     )
+
+    from dataclasses import replace
+    fee_missing = run_paper_sweep(broker, [replace(
+        offer, quoted_total_fees=None, fee_quote_principal=None)], **common)
+    assert fee_missing["code"] == "EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING"
+    assert broker.allocations == 0
 
     second = run_paper_sweep(broker, [offer], **common)
     assert second["status"] == "PLACED_SIMULATED"

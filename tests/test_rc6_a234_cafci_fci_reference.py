@@ -160,10 +160,29 @@ class CafciPublicReferenceTest(unittest.TestCase):
             (synthetic_xlsx(reference_row(nav_mil="abc")), "NAV_PER_THOUSAND_INVALID"),
             (synthetic_xlsx(reference_row(nav_mil="-0.5")), "NAV_PER_THOUSAND_INVALID"),
             (synthetic_xlsx(reference_row(effective="01/11/26")), "NAV_DATE_IN_FUTURE"),
-            (synthetic_xlsx(reference_row(fee_in="101")), "FEE_PERCENT_OUT_OF_RANGE"),
         ]:
             with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
                 parse(payload)
+
+    def test_bad_fee_cells_do_not_discard_other_fields_or_classes(self):
+        report = parse(synthetic_xlsx(
+            reference_row(cafci_id="1114", fee_in="101", fee_out="0"),
+            reference_row(cafci_id="1115", fee_in="0.5", fee_out="2"),
+            reference_row(cafci_id="1116", fee_in=None, fee_out="-1")))
+        bad, good, missing = report.classes
+        self.assertIsNone(bad.subscription_fee_pct)
+        self.assertEqual(bad.redemption_fee_pct, 0)
+        self.assertEqual(bad.quality_holds, ("SUBSCRIPTION_FEE_PERCENT_OUT_OF_RANGE",))
+        self.assertEqual(str(bad.nav_per_unit), "1.083156")
+        self.assertEqual(good.quality_holds, ())
+        self.assertEqual(missing.quality_holds,
+                         ("SUBSCRIPTION_FEE_MISSING", "REDEMPTION_FEE_INVALID"))
+        self.assertEqual(report.summary["unusable_subscription_fee_classes"], 2)
+        self.assertEqual(report.summary["unusable_redemption_fee_classes"], 1)
+        self.assertEqual(report.summary["nonzero_subscription_fee_classes"], 1)
+        self.assertEqual(report.summary["nonzero_redemption_fee_classes"], 1)
+        self.assertFalse(report.fees_account_specific_verified)
+        self.assertFalse(report.runtime_entry_authority)
 
     def test_no_classes_or_untrusted_payload_are_rejected(self):
         for payload, reason in [

@@ -8,6 +8,7 @@ Evidence v2: normal market movement must never become contract-change review.
 from __future__ import annotations
 from contextlib import nullcontext
 import json
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -73,6 +74,7 @@ def _catalog(store):
     return out
 
 def _book_row(reader,item,observed_at,now,clock_fn):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected, SharedFeedUnavailable
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
     try:
         # The shared PPI gateway requires a real catalog-bound five-key,
@@ -109,6 +111,10 @@ def _book_row(reader,item,observed_at,now,clock_fn):
                 state="BOOK_READY"
                 rate=str((quote.tna_percent/Decimal("100")).normalize())
                 principal=str(quote.quantity.normalize())
+    except (GatewayEvidenceRejected, SharedFeedUnavailable) as exc:
+        reason = str(exc)
+        state = ("READ_ERROR:" + reason if re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", reason)
+                 else "READ_ERROR:" + type(exc).__name__)
     except Exception as exc:
         state="READ_ERROR:"+type(exc).__name__
     return {**item,"quoted_at":quoted_at,"tna_fraction":rate,

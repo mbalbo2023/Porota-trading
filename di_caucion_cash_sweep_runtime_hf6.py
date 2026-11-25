@@ -131,6 +131,8 @@ def run_paper_sweep(broker, offers, *, obligation_snapshot: ObligationSnapshot,
             obligation_snapshot, currency=ccy, liquidity_deadline=liquidity_deadline)
     except ValueError as exc:
         return {"status":"HOLD","code":str(exc),"allocation":None}
+    if not offers:
+        return {"status":"HOLD","code":"CAUCION_NO_EXECUTABLE_OFFER","allocation":None}
     verified = fee_authorized_offers(offers)
     if not verified:
         return {"status":"HOLD","code":"EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING","allocation":None}
@@ -402,17 +404,21 @@ def offers_from_store(store, *, now):
           f.ticker,f.market,f.currency,f.settlement,f.status,f.capability,f.metadata_json,
           b.term_days,b.quoted_at,b.tna_fraction,b.available_principal,b.state,b.source,b.observed_at
           FROM financial_instrument_catalog f
-          JOIN paper_caucion_live_book b
+          LEFT JOIN paper_caucion_live_book b
             ON b.ticker=f.ticker AND b.market=f.market
            AND b.currency=f.currency AND b.settlement=f.settlement
           WHERE f.instrument_type='CAUCIONES' AND f.status='AVAILABLE'
-            AND f.currency='ARS' ORDER BY f.ticker""")]
+            AND f.market='BYMA' AND f.currency='ARS'
+          ORDER BY f.ticker,f.settlement""")]
     offers=[]; errors=[]
     for row in rows:
         identity_key = ("CAUCIONES", row["ticker"], row["market"],
                         row["currency"], row["settlement"])
         if identity_key in pending:
             errors.append(f"{row['ticker']}:CHANGED_REVIEW_REQUIRED")
+            continue
+        if row["state"] is None:
+            errors.append(f"{row['ticker']}:CAUCION_NO_BOOK_FOR_EXACT_KEY")
             continue
         if row["source"] != PPI_BOOK_SOURCE:
             errors.append(f"{row['ticker']}:CAUCION_LIVE_SOURCE_UNVERIFIED")
@@ -558,6 +564,10 @@ def run_worker(store, stop, *, clock_fn):
                                 currency="ARS", as_of=at, request_id=request_id,
                                 participation=broker.participation,
                                 max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
+                            if result["code"] == "CAUCION_NO_EXECUTABLE_OFFER":
+                                # Include stable dispositions in the idempotent attempt.
+                                # A changed discard set is new evidence even when HOLD repeats.
+                                result["offer_rejections"] = sorted(set(errors))
                         else:
                             result = {"status": "HOLD", "code": admission_reason or "NO_GO_PAPER_SCALPING",
                                       "reason": "GLOBAL_PAPER_PREOPEN_INTERLOCK"}
