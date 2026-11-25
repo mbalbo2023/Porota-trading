@@ -76,9 +76,11 @@ INTRADAY_CAPABILITY_CLOSED_STATES = frozenset({"PPI_INSTRUMENT_NOT_FOUND",
     INTRADAY_CAPABILITY_WARMUP_STATE, INTRADAY_CAPABILITY_REJECTED_STATE})
 SCALPING_PROVIDER_BACKPRESSURE = frozenset({
     "PPI_HTTP_429", "PPI_NATIVE_HTTP_429", "PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE",
+    "PPI_DIRECT_PROVIDER_429_BREAKER",
+})
+SCALPING_GATEWAY_REQUEST_HOLDS = frozenset({
     "PPI_BUDGET_BACKPRESSURE", "PPI_NATIVE_ROUTER_CAPACITY_HOLD",
-    "PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED", "PPI_DIRECT_PROVIDER_429_BREAKER",
-    "PPI_DIRECT_SINGLE_WIRE_BUSY",
+    "PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED", "PPI_DIRECT_SINGLE_WIRE_BUSY",
 })
 SCALPING_REQUEST_DENIALS = frozenset({
     "PPI_NATIVE_DEMAND_DENIED", "PPI_NATIVE_DEMAND_METHOD_DENIED",
@@ -351,7 +353,9 @@ def _intraday_read_error_code(reader, error, classify_read_error):
     transport = transport if isinstance(transport, str) else None
     if transport in {"PPI_HTTP_401", "PPI_HTTP_403", "PPI_SESSION_INVALID"}:
         return "PPI_SESSION_INVALID"
-    if transport in SCALPING_PROVIDER_BACKPRESSURE | SCALPING_REQUEST_DENIALS:
+    if (transport in SCALPING_PROVIDER_BACKPRESSURE
+            or transport in SCALPING_GATEWAY_REQUEST_HOLDS
+            or transport in SCALPING_REQUEST_DENIALS):
         return transport
     if native in SCALPING_PROVIDER_BACKPRESSURE or str(error) in SCALPING_PROVIDER_BACKPRESSURE:
         return native if native in SCALPING_PROVIDER_BACKPRESSURE else str(error)
@@ -1493,6 +1497,9 @@ def run_worker(store, stop, *, clock_fn):
                                     json.dumps(_identity(record), separators=(",", ":")))
                         if error_code in SCALPING_REQUEST_DENIALS:
                             security_block = True
+                            break
+                        if error_code in SCALPING_GATEWAY_REQUEST_HOLDS:
+                            cursor, paired_recheck, paired_next_cursor = rotation
                             break
                         if error_code in {"PPI_SESSION_INVALID", "PPI_GATEWAY_REATTACH_REQUIRED"}:
                             invalid_session = True
