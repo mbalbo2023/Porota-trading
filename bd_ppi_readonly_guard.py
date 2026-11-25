@@ -105,6 +105,22 @@ def ppi_retry_after_seconds(headers):
     return seconds if 0 <= seconds <= 86400 else None
 
 
+def ppi_rate_limit_headers(headers):
+    """Return a bounded response observation, with no account-quota authority."""
+    fields = {}
+    for field, suffix in (("limit", "Limit"), ("remaining", "Remaining")):
+        values = [headers[name] for name in (f"RateLimit-{suffix}", f"X-RateLimit-{suffix}")
+                  if name in headers]
+        if not values or any(not isinstance(item, str) or not re.fullmatch(r"[0-9]{1,9}", item)
+                             for item in values):
+            return None
+        numbers = {int(item) for item in values}
+        if len(numbers) != 1:
+            return None
+        fields[field], = numbers
+    return fields if 0 <= fields["remaining"] <= fields["limit"] and fields["limit"] > 0 else None
+
+
 # Optional per-read native wire witness. Keep this independent of budget
 # admission: it *observes* a completed, guarded GET, never grants a lease.
 _NATIVE_WIRE_RECEIPT_SCHEMA = "RC6_PPI_NATIVE_WIRE_RECEIPT_V1"
@@ -335,6 +351,7 @@ class ReadOnlyTransportGuard:
     consumer: str = "UNSCOPED"
     priority: str = "DISCOVERY"
     owner_managed_refresh: bool = False
+    last_rate_limit_observation: Optional[dict] = None
     _scope: threading.local = field(default_factory=threading.local)
 
     @contextmanager
@@ -613,6 +630,14 @@ class ReadOnlyTransportGuard:
                         refresh["sent"] = True
                     guard._scope.last_provider_response = None
                     response = original_send(adapter, wire_request, **kwargs)
+                    if checked_method == "GET":
+                        limits = ppi_rate_limit_headers(getattr(response, "headers", None) or {})
+                        if limits is not None:
+                            guard.last_rate_limit_observation = {
+                                **limits, "endpoint": _ppi_get_budget_endpoint(checked_method, checked_path),
+                                "http_status": response.status_code,
+                                "observed_at": datetime.now(timezone.utc).isoformat(),
+                            }
                     if response.status_code >= 400:
                         retry_after = ppi_retry_after_seconds(response.headers)
                         guard._scope.last_provider_response = (response.status_code, retry_after)
@@ -812,6 +837,15 @@ class ProductionMarketReader:
     @property
     def last_provider_response(self):
         return getattr(self.__guard._scope, "last_provider_response", None)
+
+    @property
+    def last_rate_limit_observation(self):
+        observation = self.__guard.last_rate_limit_observation
+        return dict(observation) if observation is not None else None
+
+    @property
+    def wire_backoff_remaining_seconds(self):
+        return getattr(self.__guard.budget, "wire_backoff_remaining_seconds", 0)
 
     def refresh_market_session_once(self):
         """Ask the pinned SDK to renew the existing session with one guarded POST."""

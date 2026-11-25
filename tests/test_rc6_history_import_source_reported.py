@@ -61,6 +61,12 @@ class SourceReportedImportTest(unittest.TestCase):
                                         market="BYMA", currency="ARS", settlement="A-24HS",
                                         as_of=self.observed), [])
 
+    def test_missing_only_leaves_an_existing_reference_in_place(self):
+        first = import_iol_export(self.archive, self.destination, self.digest, missing_only=True)
+        retry = import_iol_export(self.archive, self.destination, self.digest, missing_only=True)
+        assert (first["already_present"], first["versions_appended"]) == (0, 1)
+        assert (retry["already_present"], retry["versions_appended"], retry["canonical_rows"]) == (1, 0, 1)
+
     def test_wrong_digest_and_existing_unrelated_database_are_refused(self):
         with self.assertRaisesRegex(ValueError, "HISTORY_CAPTURE_FILE_DIGEST_MISMATCH"):
             import_iol_export(self.archive, self.destination, "f"*64)

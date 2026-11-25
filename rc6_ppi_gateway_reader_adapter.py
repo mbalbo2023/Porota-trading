@@ -121,6 +121,7 @@ def local_gateway_owner_custody(status: dict) -> dict:
             "credential_isolation": "NO_VERIFICADO",
             "provider_signed_session": False,
             "provider_quota": "UNKNOWN", "paper_ready": False,
+            "provider_rate_limit_response_observed": status.get("provider_rate_limit_response_observed"),
             "real_order_routes_exposed": False}
 
 
@@ -235,6 +236,7 @@ class SharedPPIReaderAdapter:
     def metrics(self) -> dict:
         with self._lock:
             guard_allowed = guard_blocked = 0
+            native_backoff = None
             authenticated = self._gateway_pinned
             if self._gateway_pinned:
                 status = self._client.owner_status()
@@ -245,6 +247,7 @@ class SharedPPIReaderAdapter:
                                  and status.get("session_recovery_pending") is not True)
                 guard_allowed = status.get("guard_http_allowed")
                 guard_blocked = status.get("guard_http_blocked")
+                native_backoff = status.get("native_backoff_remaining_seconds")
                 if (type(guard_allowed) is not int or guard_allowed < 0
                         or type(guard_blocked) is not int or guard_blocked < 0):
                     raise SharedFeedUnavailable("PPI_GATEWAY_GUARD_METRICS_UNVERIFIED")
@@ -262,6 +265,7 @@ class SharedPPIReaderAdapter:
                 "consumer_direct_http": 0,
                 "http_allowed": guard_allowed,
                 "http_blocked": guard_blocked,
+                "native_backoff_remaining_seconds": native_backoff,
             }
 
     @property

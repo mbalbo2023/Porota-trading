@@ -778,6 +778,8 @@ class _PrioritizedNativeDemandRouter:
 
     def __init__(self, acquire, *, max_pending=12):
         self.acquire = acquire
+        if type(max_pending) is not int or max_pending < 2:
+            raise ValueError("PPI_NATIVE_ROUTER_CAPACITY_INVALID")
         self.max_pending = max_pending
         self._cv = threading.Condition()
         self._queue = []
@@ -787,6 +789,7 @@ class _PrioritizedNativeDemandRouter:
         self._inflight = False
         self._completed = 0
         self._rejected = 0
+        self._last_exit_queue_wait_ms = None
 
     def start(self):
         with self._cv:
@@ -804,9 +807,14 @@ class _PrioritizedNativeDemandRouter:
                     self._cv.wait()
                 if not self._running:
                     return
-                _, _, item = heapq.heappop(self._queue)
-                if item["cancelled"]:
+                priority, _, item = heapq.heappop(self._queue)
+                elapsed = time.monotonic() - item["enqueued_at"]
+                if elapsed >= 4.0:
+                    item["exception"] = TimeoutError("PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED")
+                    item["finished"].set()
                     continue
+                if priority == _NATIVE_DEMAND_PRIORITY["EXIT_CRITICAL"]:
+                    self._last_exit_queue_wait_ms = round(elapsed * 1000)
                 self._inflight = True
             try:
                 item["result"] = self.acquire(**item["request"])
@@ -823,11 +831,12 @@ class _PrioritizedNativeDemandRouter:
         if type(priority) is not str or priority not in _NATIVE_DEMAND_PRIORITY:
             raise ValueError("PPI_NATIVE_DEMAND_PRIORITY_DENIED")
         item = {"request": request, "finished": threading.Event(),
-                "cancelled": False, "result": None, "exception": None}
+                "result": None, "exception": None, "enqueued_at": time.monotonic()}
         with self._cv:
             if not self._running or self._thread is None:
                 raise RuntimeError("PPI_NATIVE_ROUTER_NOT_RUNNING")
-            if len(self._queue) >= self.max_pending:
+            pending_limit = self.max_pending if priority == "EXIT_CRITICAL" else self.max_pending - 1
+            if len(self._queue) >= pending_limit:
                 self._rejected += 1
                 raise RuntimeError("PPI_NATIVE_ROUTER_CAPACITY_HOLD")
             heapq.heappush(self._queue,
@@ -835,7 +844,8 @@ class _PrioritizedNativeDemandRouter:
             self._cv.notify()
         if not item["finished"].wait(4.0):
             with self._cv:
-                item["cancelled"] = True
+                self._queue = [entry for entry in self._queue if entry[2] is not item]
+                heapq.heapify(self._queue)
             # A request might already be in flight. Never claim zero provider
             # calls on an unknown partial timeout, and never retry locally.
             raise TimeoutError("PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED")
@@ -845,16 +855,16 @@ class _PrioritizedNativeDemandRouter:
 
     def status(self):
         with self._cv:
-            return {"queued": sum(not item["cancelled"] for _, _, item in self._queue),
+            return {"queued": len(self._queue),
                     "inflight": self._inflight, "completed": self._completed,
                     "rejected": self._rejected, "max_pending": self.max_pending,
+                    "last_exit_queue_wait_ms": self._last_exit_queue_wait_ms,
                     "running": self._running}
 
     def stop(self):
         with self._cv:
             self._running = False
             for _, _, item in self._queue:
-                item["cancelled"] = True
                 item["exception"] = RuntimeError("PPI_NATIVE_ROUTER_CLOSED")
                 item["finished"].set()
             self._queue.clear()

@@ -360,19 +360,26 @@ def runtime_contracts(connection, now):
     missing = sorted(required - tables)
     if missing:
         return {'state':'RED','reason':'WS15_RUNTIME_TABLES_MISSING','missing':missing}
-    residual = [dict(row) for row in connection.execute("""
+    cohort = [dict(row) for row in connection.execute("""
       SELECT instrument_type,status,can_simulate,COUNT(*) AS count
       FROM candidate_identity_v2
-      WHERE instrument_type IN ('OPCIONES','FUTUROS','ON','OBLIGACIONES')
       GROUP BY instrument_type,status,can_simulate
       ORDER BY instrument_type,status,can_simulate""")]
+    residual = [row for row in cohort
+                if row["instrument_type"] in {"OPCIONES", "FUTUROS", "ON", "OBLIGACIONES"}]
     unclassified = sum(row['count'] for row in residual
                        if row['status'] not in {'AVAILABLE','PAUSED_EXPLICIT'}
                        or (row['status']=='AVAILABLE') != bool(row['can_simulate']))
-    scalping_eligible = connection.execute("""SELECT COUNT(*)
-      FROM candidate_identity_v2
-      WHERE status='AVAILABLE' AND can_simulate=1
-        AND instrument_type IN ('ACCIONES','CEDEARS','ETFS')""").fetchone()[0]
+    coverage = {}
+    for row in cohort:
+        family = coverage.setdefault(row["instrument_type"], {"keys": 0, "eligible": 0})
+        family["keys"] += row["count"]
+        if row["status"] == "AVAILABLE" and row["can_simulate"] == 1:
+            family["eligible"] += row["count"]
+    scalping_eligible = sum(coverage.get(family, {}).get("eligible", 0)
+                            for family in ("ACCIONES", "CEDEARS", "ETFS"))
+    refresh = (connection.execute("SELECT state FROM candidate_refresh_state WHERE id=1").fetchone()
+               if "candidate_refresh_state" in tables else None)
     workers = {}
     # This is an infrastructure and PAPER/0 check. There is no universal
     # business minimum of spot/scalping candidates: one unrelated family being
@@ -408,6 +415,8 @@ def runtime_contracts(connection, now):
     return {'state':'GREEN' if ok else 'RED',
             'residual_classification':residual,
             'unclassified_residuals':unclassified,
+            'paper_contract_coverage_by_family':coverage,
+            'paper_contract_coverage_publication':refresh[0] if refresh else "NO_VERIFICADO",
             'scalping_eligible_identities':scalping_eligible,
             'scalping_family_readiness':('HAS_CANDIDATES' if scalping_eligible
                                           else 'NO_READY_SPOT_CANDIDATES'),

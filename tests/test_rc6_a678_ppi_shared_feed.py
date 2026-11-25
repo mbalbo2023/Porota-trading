@@ -21,6 +21,7 @@ from rc6_ppi_shared_feed import (
     ReadOnlyUnixFeedClient,
     ReadOnlyUnixFeedServer,
     SharedFeedUnavailable,
+    _PrioritizedNativeDemandRouter,
 )
 
 
@@ -28,6 +29,54 @@ UTC = timezone.utc
 T0 = datetime(2026, 11, 4, 15, 0, tzinfo=UTC)
 FIVE = ("GGAL", "ACCIONES", "BYMA", "ARS", "A-48HS")
 SESSION = "7" * 64  # synthetic fixture only; NOT provider attestation
+
+
+def test_full_lower_priority_queue_still_admits_exit():
+    entered = threading.Event()
+    release = threading.Event()
+    calls = []
+    failures = []
+
+    def acquire(*, priority):
+        calls.append(priority)
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(2)
+
+    def request(priority):
+        try:
+            router.demand(priority=priority)
+        except Exception as exc:
+            failures.append(str(exc))
+
+    def queued(count):
+        deadline = time.monotonic() + 1
+        while router.status()["queued"] != count and time.monotonic() < deadline:
+            time.sleep(.005)
+        assert router.status()["queued"] == count
+
+    router = _PrioritizedNativeDemandRouter(acquire, max_pending=2)
+    first, lower, exit_read = [threading.Thread(target=request, args=(priority,))
+                               for priority in ("WARM", "DISCOVERY", "EXIT_CRITICAL")]
+    router.start()
+    try:
+        first.start()
+        assert entered.wait(1)
+        lower.start()
+        queued(1)
+        request("SCALPING_HOT")
+        exit_read.start()
+        queued(2)
+    finally:
+        release.set()
+        for thread in (first, lower, exit_read):
+            if thread.ident is not None:
+                thread.join(2)
+        status = router.status()
+        router.stop()
+    assert failures == ["PPI_NATIVE_ROUTER_CAPACITY_HOLD"]
+    assert calls == ["WARM", "EXIT_CRITICAL", "DISCOVERY"]
+    assert type(status["last_exit_queue_wait_ms"]) is int
 
 
 def catalog(market="BYMA", currency="ARS"):

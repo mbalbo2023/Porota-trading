@@ -80,6 +80,32 @@ def test_actual_429_closes_wire_across_separate_budget_owners(paper, fake_wire):
     assert len(calls) == 1
 
 
+def test_guard_records_rate_headers_without_promoting_quota(paper, monkeypatch):
+    def send(_adapter, request, **_kwargs):
+        response = requests.Response()
+        response.status_code = 429
+        response.request = request
+        response._content = b"{}"
+        response.headers.update({"RateLimit-Limit": "90", "RateLimit-Remaining": "0",
+                                 "Retry-After": "120", "Set-Cookie": "PRIVATE"})
+        return response
+
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+    budget = PaperDirectReadBudget(paper.path, clock=lambda: 1000)
+    guard = ReadOnlyTransportGuard(budget=budget, consumer="SCANNER").install()
+    try:
+        with requests.Session() as session:
+            assert session.get(BOOK_URL).status_code == 429
+        observed = guard.last_rate_limit_observation
+        assert {key: observed[key] for key in ("endpoint", "limit", "remaining", "http_status")} == {
+            "endpoint": "book", "limit": 90, "remaining": 0, "http_status": 429}
+        assert set(observed) == {"endpoint", "limit", "remaining", "http_status", "observed_at"}
+        assert budget.wire_backoff_remaining_seconds == 120
+        assert not hasattr(budget, "provider_quota_per_hour")
+    finally:
+        guard.restore()
+
+
 def test_wire_retry_after_remains_enforced_after_restarting_budget(paper, fake_wire, monkeypatch):
     calls, status = fake_wire
     status[0] = 429

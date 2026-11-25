@@ -2739,6 +2739,11 @@ class PaperDirectReadBudget:
         self._pending = {}
         self._scope = threading.local()
         self._dataset_id = None
+        self._observed_hold_until = 0.0
+
+    @property
+    def wire_backoff_remaining_seconds(self):
+        return max(0, ceil(self._observed_hold_until - self.clock()))
 
     def _require_paper(self):
         from cg_paper_workspace import checked_path, identity_from_connection
@@ -2842,6 +2847,7 @@ class PaperDirectReadBudget:
                 self._write_breaker(fd, {
                     "schema": self.SCHEMA, "consecutive_429": 0, "hold_until": 0})
             breaker = self._load_breaker(fd)
+            self._observed_hold_until = breaker["hold_until"]
             if self.clock() < breaker["hold_until"]:
                 raise BudgetBackpressure("PPI_DIRECT_PROVIDER_429_BREAKER")
             self._require_paper()
@@ -2894,6 +2900,7 @@ class PaperDirectReadBudget:
             # a successful data read. Short conservative retry suppression.
             state["hold_until"] = now + 10
         self._write_breaker(scope["fd"], state)
+        self._observed_hold_until = state["hold_until"]
         scope["finished"] = True
 
     def report_error(self, endpoint, code):

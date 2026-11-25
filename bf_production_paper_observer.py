@@ -403,10 +403,23 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     A missing/ambiguous five-key cannot bind the diagnostic hash; it does not
     authorize retry, new provider requests, BUY or bypass PAPER holds.
     """
+    from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
+
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
-        current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
-        book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
+        current_capture = None
+        if isinstance(reader, SharedPPIReaderAdapter) and identity and not catalog_read_error:
+            current_capture = retry_read(lambda: reader.capture_guarded_native(
+                "current", identity, priority=priority), retries=1)
+            current = current_capture["native_payload"]
+        else:
+            current = retry_read(lambda: reader.current(symbol, asset_class, settlement), retries=1)
+        try:
+            book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
+        except Exception:
+            if current_capture is not None:
+                _record_candle_current_on_book_failure(store, identity, current_capture, priority)
+            raise
     metadata = None
     if not catalog_read_error:
         metadata = financial_catalog.lookup(store, symbol, asset_class, settlement,
@@ -455,6 +468,29 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
         except Exception:
             pass
     return quote
+
+
+def _record_candle_current_on_book_failure(store, identity, capture, priority):
+    """Preserve Current for candles without publishing a quote or rescuing Book."""
+    from bl_candle_engine import record_guarded_current_sample
+
+    symbol, family, market, currency, settlement = identity
+    try:
+        _ppi_native_book_identity(store, symbol, family, settlement, identity)
+        record = financial_catalog.lookup(store, symbol, family, settlement,
+                                          market=market, currency=currency)
+        checked_at = now_iso()
+        if financial_catalog.ppi_full_key_evidence_reason(record, database=store.path, now=checked_at):
+            return
+        contract = financial_catalog.quote_terms(record).get("contract")
+        record_guarded_current_sample(store, identity, capture, priority=priority,
+                                      as_of=checked_at, cash_multiplier=str(
+                                          getattr(contract, "cash_multiplier", "UNKNOWN")))
+    except (OSError, sqlite3.Error, RuntimeError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
+        try:
+            store.event("PPI_CANDLE_CURRENT_OBSERVATION_HOLD", type(exc).__name__)
+        except (OSError, sqlite3.Error):
+            pass
 
 
 def _support_schema(store):
@@ -1296,6 +1332,11 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
         raise ValueError("PPI_DIRECT_PROBE_BATCH_INVALID")
     if family is not None and (type(family) is not str or family not in OPERATIONAL_FAMILIES):
         raise ValueError("PPI_DIRECT_PROBE_FAMILY_INVALID")
+    return _ppi_rest_probe_keys(store, limit=limit, family=family, after=after,
+                                pending_settlement=pending_settlement)
+
+
+def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
     pending = ""
     archived_priority = ""
     if pending_settlement:
@@ -1335,6 +1376,7 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
                   SELECT ticker,instrument_type,settlement
                   FROM financial_instrument_catalog
                   WHERE status IN ('AVAILABLE','STALE')
+                    AND (? IS NULL OR instrument_type=?)
                     AND settlement_source IN ('PPI_FIELD','REQUEST_CANDIDATE')
                     AND json_valid(metadata_json)
                     AND json_extract(metadata_json,'$._discovery_source')='PPI_PRIMARY'
@@ -1352,7 +1394,7 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
                   AND json_extract(f.metadata_json,'$._discovery_source')='PPI_PRIMARY'
                   {pending}
                 ORDER BY {order}
-                LIMIT ?""", (family, family, *position, limit)).fetchall()
+                LIMIT ?""", (family, family, family, family, *position, limit)).fetchall()
         return [tuple(str(v).strip().upper() for v in row) for row in rows]
     except (sqlite3.Error, OSError, TypeError, ValueError):
         return []
@@ -1548,6 +1590,7 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
     """Fill free scanner turns with guarded native reads during the same cycle."""
     exhausted = set()
     visited = set()
+    planned = {}
     result = {"slots": slots, "attempted": 0, "fresh_pairs": 0, "attested": 0}
 
     def pre_wire():
@@ -1562,12 +1605,23 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
         if family in exhausted:
             continue
         reference = family in _PPI_REFERENCE_OBSERVED
-        keys = _ppi_direct_rest_probe_candidates(
-            store, family=family, after=after.get(family), pending_settlement=not reference)
-        if not keys or keys[0] in visited:
+        if family not in planned:
+            previous = after.get(family)
+            if previous is None or reference:
+                first = _ppi_direct_rest_probe_candidates(
+                    store, family=family, after=previous, pending_settlement=not reference)
+                if first and not reference and slots > 1:
+                    follow = _ppi_rest_probe_keys(store, limit=slots - 1, family=family,
+                                                  after=first[0], pending_settlement=True)
+                    first.extend(key for key in follow if key != first[0])
+                planned[family] = iter(first)
+            else:
+                planned[family] = iter(_ppi_rest_probe_keys(
+                    store, limit=slots, family=family, after=previous, pending_settlement=True))
+        key = next(planned[family], None)
+        if key is None or key in visited:
             exhausted.add(family)
             continue
-        key = keys[0]
         observed = _observe_native_candidate(
             reader, store, key, pre_wire=pre_wire, update_market_clock=True,
             confirm_settlement=True)

@@ -171,7 +171,7 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
                 self.stopped = True
 
     class FakeReader:
-        metrics = {"http_blocked": 0}
+        metrics = {"http_blocked": 12}  # Prior/other-role denials do not block this batch.
         def __init__(self, *args, **kwargs):
             pass
         def login_once(self):
@@ -219,6 +219,56 @@ def test_worker_does_not_degrade_for_explicit_ppi_instrument_unavailable(monkeyp
     assert "intraday_unavailable=1" in running[0]["detail"]
     assert any(event[0] == "INTRADAY_SCALPING_UNSUPPORTED" for event in events)
     assert not any(event[0] == "INTRADAY_SCALPING_ERROR" for event in events)
+
+
+def test_worker_retries_same_rotation_after_confirmed_backoff(monkeypatch, store):
+    import rc6_ppi_gateway_reader_adapter as gateway
+
+    monotonic = [0.0]
+    requests = []
+    beats = []
+
+    class Stop:
+        stopped = False
+
+        def is_set(self):
+            return self.stopped
+
+        def wait(self, seconds):
+            monotonic[0] += seconds
+            if seconds >= 60:
+                self.stopped = True
+
+    class Reader:
+        metrics = {"native_backoff_remaining_seconds": 69, "http_blocked": 12}
+        last_read_error_code = None
+
+        def intraday(self, ticker, *_):
+            requests.append((ticker, monotonic[0]))
+            if len(requests) == 1:
+                self.last_read_error_code = "PPI_NATIVE_HTTP_429"
+                raise gateway.SharedFeedUnavailable(self.last_read_error_code)
+            self.last_read_error_code = None
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(scalping.time, "monotonic", lambda: monotonic[0])
+    monkeypatch.setattr(gateway, "connect_paper_gateway_reader", lambda *_a, **_kw: Reader())
+    monkeypatch.setattr(scalping, "_market_open", lambda *_: True)
+    monkeypatch.setattr(scalping, "_heartbeat", lambda _store, **data: beats.append(data))
+    monkeypatch.setattr(scalping, "select_batch", lambda *_a, **_kw: ([record(), record(ticker="PAMP")], 2, 2))
+    monkeypatch.setattr(scalping, "normalize_payload", lambda *_a, **_kw: [])
+    monkeypatch.setattr(scalping, "persist_payload", lambda *_a, **_kw: {"inserted": 0, "state": "PENDING_LIVE_CONFIRMATION"})
+    monkeypatch.setattr(scalping, "evaluate_candidate", lambda *_a, **_kw: "HOLD")
+    monkeypatch.setenv("PAPER_INTRADAY_SCAN_SECONDS", "180")
+    scalping.run_worker(store, Stop(), clock_fn=lambda: START)
+
+    assert requests[0] == (requests[1][0], 0) and requests[1][1] == 69
+    assert requests[2][0] == "PAMP"
+    assert [beat["state"] for beat in beats].count("PROVIDER_BACKOFF") >= 2
+    assert any(beat["state"] == "RUNNING" and beat["successful"] == 2 for beat in beats)
 
 
 def test_lectura_vacia_se_reintenta_una_sola_vez_sin_login():

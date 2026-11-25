@@ -140,13 +140,14 @@ def _candles(capture, archive_sha, *, source=SOURCE):
 
 
 def import_reference_export(archive, destination, expected_sha256, *, source=SOURCE, symbols=(),
-                            existing_identity=None, expected_legacy_versions=None):
+                            existing_identity=None, expected_legacy_versions=None, missing_only=False):
     """Load valid observations under provider-series keys and verify committed counts."""
     if not re.fullmatch(r"[a-f0-9]{64}", expected_sha256):
         raise ValueError("HISTORY_CAPTURE_DIGEST_REQUIRED")
     if source not in (SOURCE, INTERVALORES):
         raise ValueError("HISTORY_CAPTURE_SOURCE_UNVERIFIED")
-    if expected_legacy_versions is not None and (existing_identity is None or symbols or source != SOURCE):
+    if expected_legacy_versions is not None and (
+            existing_identity is None or symbols or source != SOURCE or missing_only):
         raise ValueError("HISTORY_MIGRATION_EXISTING_FULL_CAPTURE_REQUIRED")
     member_name = MEMBER if source == SOURCE else INTERVALORES_MEMBER
     selected = set(symbols)
@@ -185,9 +186,12 @@ def import_reference_export(archive, destination, expected_sha256, *, source=SOU
                             if expected_legacy_versions is not None:
                                 schema_upgrade = upgrade_existing_history(
                                     store, expected_versions=expected_legacy_versions)
-                        receipt = append_many(store, candles, attempt_key=attempt)
+                        receipt = append_many(store, candles, attempt_key=attempt,
+                                              fill_missing_reference=missing_only)
                         for field in ("committed_rows", "versions_appended", "canonical_updates"):
                             totals[field] += receipt[field]
+                        if missing_only:
+                            totals["already_present"] += receipt["already_present"]
     if selected - {key[2] for key in seen}:
         raise ValueError("HISTORY_CAPTURE_SELECTED_SYMBOL_MISSING")
     if store is None:
@@ -212,10 +216,11 @@ def import_reference_export(archive, destination, expected_sha256, *, source=SOU
 
 
 def import_iol_export(archive, destination, expected_sha256, *, symbols=(), existing_identity=None,
-                      expected_legacy_versions=None):
+                      expected_legacy_versions=None, missing_only=False):
     return import_reference_export(archive, destination, expected_sha256, symbols=symbols,
                                    existing_identity=existing_identity,
-                                   expected_legacy_versions=expected_legacy_versions)
+                                   expected_legacy_versions=expected_legacy_versions,
+                                   missing_only=missing_only)
 
 
 def main():
@@ -228,6 +233,8 @@ def main():
     parser.add_argument("--existing-history-id", metavar="DEVICE:INODE")
     parser.add_argument("--expected-legacy-versions", type=int,
                         help="Explicitly upgrade the existing file from a verified legacy snapshot count")
+    parser.add_argument("--missing-only", action="store_true",
+                        help="Fill missing provider-series dates and preserve existing references")
     args = parser.parse_args()
     identity = None
     if args.existing_history_id is not None:
@@ -236,7 +243,8 @@ def main():
         identity = tuple(map(int, args.existing_history_id.split(":")))
     receipt = import_reference_export(args.archive, args.destination, args.sha256, source=args.source,
                                       symbols=args.symbol, existing_identity=identity,
-                                      expected_legacy_versions=args.expected_legacy_versions)
+                                      expected_legacy_versions=args.expected_legacy_versions,
+                                      missing_only=args.missing_only)
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
 
 
