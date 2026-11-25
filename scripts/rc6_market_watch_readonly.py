@@ -1923,7 +1923,7 @@ def _ppi_intake_evidence(path, *, at=None):
                                       for name in ("slots", "attempted", "fresh_pairs", "attested")},
                                    "reason": _ppi_intake_reason(discovery.get("reason"))}})
 
-            native, holds = {}, {}
+            native, holds, last_hold_at = {}, {}, {}
             for event in ("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", "PPI_DIRECT_REST_PROBE_HOLD"):
                 rows = db.execute("""SELECT event_at,substr(detail,1,512)
                     FROM paper_events WHERE event_type=? AND julianday(event_at)>=julianday(?)
@@ -1935,6 +1935,7 @@ def _ppi_intake_evidence(path, *, at=None):
                     if event == "PPI_DIRECT_REST_PROBE_HOLD":
                         reason = _ppi_intake_reason(detail) or "UNCLASSIFIED"
                         holds[reason] = holds.get(reason, 0) + 1
+                        last_hold_at.setdefault(reason, seen.isoformat())
                         continue
                     fields = dict(field.split("=", 1) for field in detail.split(";") if "=" in field)
                     endpoint = fields.get("endpoint")
@@ -1975,7 +1976,8 @@ def _ppi_intake_evidence(path, *, at=None):
                     "observed_at": at.isoformat(), "sampled_cycles": len(cycles),
                     "first_sampled_cycle": cycles[-1] if cycles else None,
                     "last_cycle": cycles[0] if cycles else None,
-                    "discovery_hold_events": holds, "native_wire": native,
+                    "discovery_hold_events": holds, "discovery_last_hold_at_utc": last_hold_at,
+                    "native_wire": native,
                     "http_presend": http, "exit_round": exit_round}
     except (OSError, sqlite3.Error):
         return result
@@ -1984,16 +1986,24 @@ _GATEWAY_DIAGNOSTIC_CHILD = '''
 import json
 from types import SimpleNamespace
 from cg_paper_workspace import database_path
-from rc6_ppi_gateway_reader_adapter import gateway_owner_custody
+from rc6_ppi_gateway_reader_adapter import gateway_socket_path, local_gateway_owner_custody
+from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient
 from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
 
 database = database_path()
 result = {}
 try:
-    owner = gateway_owner_custody(database)
+    status = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database), timeout_seconds=2).owner_status()
+    owner = local_gateway_owner_custody(status)
     result["owner"] = owner["state"]
     result["registered_roles"] = list(owner["registered_roles"])
     result["guard_login_wire_attempts"] = owner["guard_login_wire_attempts"]
+    result["provider_transport"] = {
+        "last_native_http_rejection": status.get("native_last_http_status"),
+        "retry_after_seconds": status.get("native_retry_after_seconds_observed"),
+        "remaining_pause_seconds": status.get("native_backoff_remaining_seconds"),
+        "response_headers": owner["provider_rate_limit_response_observed"],
+    }
 except Exception as error:
     result["owner"] = str(error)
 
@@ -2017,6 +2027,35 @@ except Exception as error:
     result["construction"] = str(error)
 print(json.dumps(result))
 '''
+
+
+def _gateway_provider_transport(value):
+    """Export passive wire metadata, independent of account-wide quota evidence."""
+    if not isinstance(value, dict):
+        return {"status": "NO_VERIFICADO"}
+    error = value.get("last_native_http_rejection")
+    retry = value.get("retry_after_seconds")
+    pause = value.get("remaining_pause_seconds")
+    result = {"status": "OBSERVED",
+              "last_native_http_rejection": error if type(error) is int and error in (401, 403, 429) else None,
+              "retry_after_seconds": retry if error == 429 and type(retry) is int and 0 <= retry <= 86400 else None,
+              "remaining_pause_seconds": pause if type(pause) is int and 0 <= pause <= 86400 else None,
+              "headers": {"status": "NO_OBSERVADO"}}
+    headers = value.get("response_headers")
+    if headers is None:
+        return result
+    result["headers"] = {"status": "NO_VERIFICADO"}
+    if not isinstance(headers, dict):
+        return result
+    limit, remaining, status = (headers.get(key) for key in ("limit", "remaining", "http_status"))
+    at = timestamp(headers.get("observed_at"))
+    if (type(limit) is int and type(remaining) is int and 0 <= remaining <= limit < 10**9
+            and limit > 0 and type(status) is int and 100 <= status <= 599 and at is not None):
+        endpoint = headers.get("endpoint")
+        result["headers"] = {"status": "OBSERVED", "limit": limit, "remaining": remaining,
+                             "http_status": status, "at_utc": at.isoformat(),
+                             "endpoint": endpoint if endpoint in _PPI_OBSERVATION_ENDPOINTS else "AUXILIARY"}
+    return result
 
 
 def ppi_gateway_diagnostic_host(expected_tree_sha):
@@ -2052,6 +2091,7 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
             and all(isinstance(role, str) and role in _GATEWAY_LOCAL_ROLES for role in roles)
             and len(roles) == len(set(roles))):
         receipt.update(owner=owner, registered_roles=sorted(roles), guard_login_wire_attempts=1)
+        receipt["provider_transport"] = _gateway_provider_transport(values.get("provider_transport"))
     catalog = values.get("catalog")
     if isinstance(catalog, str) and catalog in _GATEWAY_CATALOG_REASONS:
         receipt["catalog"] = catalog

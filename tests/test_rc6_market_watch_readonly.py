@@ -502,6 +502,7 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(evidence["status"], "OBSERVED")
         self.assertEqual(evidence["last_cycle"]["discovery"]["reason"], "PPI_NATIVE_HTTP_429")
         self.assertEqual(evidence["discovery_hold_events"], {"PPI_NATIVE_HTTP_429": 1, "UNCLASSIFIED": 1})
+        self.assertEqual(evidence["discovery_last_hold_at_utc"]["PPI_NATIVE_HTTP_429"], observed)
         self.assertEqual(evidence["native_wire"]["current"]["latest_market_at"], old)
         self.assertNotIn("book", evidence["native_wire"])
         self.assertEqual(evidence["http_presend"]["book"], {"BACKPRESSURE": 1})
@@ -509,6 +510,23 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(evidence["exit_round"]["observed_book_errors"], 0)
         self.assertNotIn("DO_NOT_LEAK", json.dumps(evidence))
         self.assertEqual(self.db.read_bytes(), before)
+
+    def test_gateway_provider_transport_exports_only_passive_timing_and_valid_limit_numbers(self):
+        raw = {"last_native_http_rejection": 429, "retry_after_seconds": 1,
+               "remaining_pause_seconds": 115, "response_headers": None}
+        observation = monitor._gateway_provider_transport(raw)
+        self.assertEqual(observation["headers"], {"status": "NO_OBSERVADO"})
+        self.assertEqual(observation["retry_after_seconds"], 1)
+        self.assertEqual(observation["remaining_pause_seconds"], 115)
+        raw["response_headers"] = {"endpoint": "current", "limit": 100, "remaining": 0,
+                                   "http_status": 429, "observed_at": NOW.isoformat(),
+                                   "body": "DO_NOT_LEAK"}
+        observation = monitor._gateway_provider_transport(raw)
+        self.assertEqual(observation["headers"], {"status": "OBSERVED", "endpoint": "current",
+                         "limit": 100, "remaining": 0, "http_status": 429, "at_utc": NOW.isoformat()})
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(observation))
+        raw["response_headers"]["remaining"] = 101
+        self.assertEqual(monitor._gateway_provider_transport(raw)["headers"], {"status": "NO_VERIFICADO"})
 
     def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
         current = json.loads(self.provenance_path.read_text())
