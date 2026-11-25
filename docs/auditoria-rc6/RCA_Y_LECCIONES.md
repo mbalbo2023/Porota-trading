@@ -1,5 +1,17 @@
 # RCA y lecciones de Porota RC6
 
+## Auditoría PAPER del 25/11 y fix-forward #1272
+
+| Hallazgo | RCA | Defensa y comprobación |
+| --- | --- | --- |
+| Familias y claves sin turno de prueba | El selector omitía familias con una clave admitida y consultaba siempre el primer elemento de las restantes. | Rotación estable por familia y clave, con avance también ante un rechazo y vuelta al inicio. La regresión cubre los tres resultados dentro de la cuota anterior. |
+| La verificación del censo podía mirar el pin de otra DB | El publicador abría la ruta explícita de SQLite para el censo y resolvía el pin con el argumento por defecto. | El verificador queda ligado a la misma base que produce el censo. La prueba conserva dos bases y una firma válida para una sola. |
+| Dependencia faltante en el publicador host | El import del nuevo recibo buscaba un módulo que el checkout host conservado no provee. Reconstrucción aislada del error de importación. | El launcher existente verifica y lee el source privado bajo su lock, con el wrapper incluido en el mismo release. Si falta el verificador, el censo registra el rechazo del plazo. |
+| Diagnóstico de Gateway transitoriamente sin recibo al arranque | El primer chequeo registró `CONTAINER_PROBE_UNAVAILABLE` en el probe acotado. El reporte agrupa fallos de longitud, JSON, subprocess y plazo. La causa de esa lectura puntual queda acotada al diagnóstico. | La lectura estabilizada acreditó dueño, roles y construcción sin login adicional en el mismo árbol. Conservar ambos recibos y la distinción entre diagnóstico local y una ronda EXIT en mercado. [#460](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537926257/artifacts/14987483063) · [#461](https://github.com/mbalbo2023/Porota-trading/actions/runs/45538260228/artifacts/14988041697) |
+| Interpretación de READY y del dato más reciente | Un fixture puede pasar el guard sin fill y una cotización archivada puede ser fresca sólo al recibir. | Conservar primera barrera, ciclo de caja y ledger de prueba por clave, y tres cortes de reloj. La verificación física enlaza identidad, reloj, primer libro o NAV/TNA, riesgo y asiento. |
+
+La [auditoría](BACKTEST_PAPER_2026-11-25.md) conserva la evidencia y el criterio de cierre de las causas dependientes de la rueda y los proveedores. El [manifiesto](RECIBOS_PAPER_2026-11-25.json) fija bases, archivos de prueba, fuentes, relojes y digests. [PR #1272](https://github.com/mbalbo2023/Porota-trading/pull/1272) · [Predeploy exacto](https://github.com/mbalbo2023/Porota-trading/actions/runs/45535126618/artifacts/14986798842) · [Promote #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370)
+
 ## Lecciones verificadas del cierre #205 y #206
 
 - **Separar identidad, procedencia y permiso.** Guardar el literal observado, el plazo consultado y el recibo nativo de la pareja en campos distintos. Anclar firma, generación, catálogo y relojes. Publicar la evidencia y recalcular candidatos en la misma transacción. Probar cambio de SHA, recibo incompleto, firma ajena, reloj inválido y clave ambigua. [RCA del plazo](RCA_RUEDA_2026-11-24.md#cierre-técnico-posterior-a-la-rueda) · [PR #1270](https://github.com/mbalbo2023/Porota-trading/pull/1270)

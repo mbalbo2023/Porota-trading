@@ -1,0 +1,1145 @@
+{
+  "schema": "porota.rc6.paper-audit-result.v1",
+  "censo": {
+    "collection_time_utc": "2026-11-25T00:50:08.176257+00:00",
+    "source_commit": "dd06564d7630d6c819fd10fb119b5c6883fbac21",
+    "source_sha256": "ead60ad003306c3bfa79d56d2ce880eb3ab49ec851ddc97dca4a7d88fc5d9a96",
+    "deployment_sha": "06d9fa8de2bc43cf7dee76b6acf006f8c8d1b84f",
+    "candidate_sha": "2cf55e0b6f5cb85206de04a000d06c2030c7578e",
+    "product_rows": 17472,
+    "outside_scope_rows": 1,
+    "total_rows": 17473,
+    "unique_raw_keys": 17473,
+    "basis": "PUBLISHED_HISTORICAL_CENSUS",
+    "artifact": "CENSO_PAPER_2026-11-25.jsonl.gz",
+    "artifact_sha256": "9db28ba340c1bfbb75d47bd20135c78841617eefc036d96e1ed920e8ca27f33d",
+    "family_counts": {
+      "ACCIONES": 206,
+      "CEDEARS": 2504,
+      "ETFS": 0,
+      "BONOS": 3105,
+      "LETRAS": 59,
+      "OBLIGACIONES": 5263,
+      "OPCIONES": 5002,
+      "FUTUROS": 236,
+      "CAUCIONES": 10,
+      "FCI": 1087
+    },
+    "first_gates_by_family": {
+      "ACCIONES": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 165,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 35,
+        "PPI_FRESHNESS_STALE": 6
+      },
+      "CEDEARS": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1198,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 1166,
+        "PPI_FRESHNESS_STALE": 140
+      },
+      "ETFS": {},
+      "BONOS": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 2495,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 610
+      },
+      "LETRAS": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 42,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 16,
+        "PPI_FRESHNESS_STALE": 1
+      },
+      "OBLIGACIONES": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 3866,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 1397
+      },
+      "OPCIONES": {
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 2855,
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 2147
+      },
+      "FUTUROS": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 236
+      },
+      "CAUCIONES": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 10
+      },
+      "FCI": {
+        "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1065,
+        "PPI_PRIMARY_IDENTITY_NOT_VERIFIED": 22
+      }
+    }
+  },
+  "watch": {
+    "run_id": 45533003189,
+    "artifact_id": 14985443767,
+    "sha256": "c2db30dfd1a92fe418f7c9a16302c94a3977c6e44e2dab1f95879ac3d8b05749",
+    "observed_at_utc": "2026-11-25T02:27:20.076738+00:00",
+    "deployment_sha": "167ae9bc00de6f3de9d18183a10a8c2364c2e387",
+    "outcome": "MARKET_CLOSED",
+    "observer_mode": "PRODUCTION_PAPER",
+    "real_orders_sent_observed": 0,
+    "provider_requests_by_probe": 0,
+    "watch_accessed": false,
+    "notification_delivery": "NO_TRANSITION",
+    "projected_readiness": {
+      "ready": 0,
+      "total": 17473
+    },
+    "last_market_at": "2026-11-24T19:55:50.327678+00:00",
+    "readiness_source": "READ_ONLY_AGGREGATE"
+  },
+  "a655": {
+    "run_id": 45534276846,
+    "artifact_id": 14985743479,
+    "sha256": "f2bacbd3c484850f922c966a04f8272ca838f5ba2e3949258f5afe5bdcd0be4b",
+    "observed_at_utc": "2026-11-25T02:37:51.013655+00:00",
+    "private_ro_mount": true,
+    "runtime_sha_verified": false,
+    "real_orders_sent": 0,
+    "paper_fills_today": {
+      "by_family": {},
+      "session_date_art": "2026-11-24",
+      "source": "paper_fills",
+      "status": "OBSERVED",
+      "total": 0
+    },
+    "active_gaps": 954,
+    "catalog_by_family": {
+      "BONOS": {
+        "active": 2517,
+        "active_gap": 34,
+        "all": 3105,
+        "nonactive": 588,
+        "ready": 2483
+      },
+      "CAUCIONES": {
+        "active": 10,
+        "active_gap": 10,
+        "all": 10,
+        "nonactive": 0,
+        "ready": 0
+      },
+      "FCI": {
+        "active": 1086,
+        "active_gap": 23,
+        "all": 1087,
+        "nonactive": 1,
+        "ready": 1063
+      },
+      "FUTUROS": {
+        "active": 141,
+        "active_gap": 141,
+        "all": 236,
+        "nonactive": 95,
+        "ready": 0
+      },
+      "OBLIGACIONES": {
+        "active": 3744,
+        "active_gap": 69,
+        "all": 5263,
+        "nonactive": 1519,
+        "ready": 3675
+      },
+      "OPCIONES": {
+        "active": 1463,
+        "active_gap": 677,
+        "all": 5002,
+        "nonactive": 3539,
+        "ready": 786
+      }
+    },
+    "option_first_contract_gate": [
+      {
+        "category": "REQUEST_SIDE_SETTLEMENT",
+        "count": 568
+      }
+    ]
+  },
+  "clock_replay": {
+    "run_id": 45508220641,
+    "artifact_id": 14975086071,
+    "sha256": "bbe3759417c16d04aa66f3143b736ac4b357c816a4da6dd6fc9851cf4943af48",
+    "source_sha": "bd6ae43b8343f459153fd492419245c32554996a",
+    "counts": {
+      "at_cut:RECEIPT_STALE_OR_FUTURE": 6,
+      "at_receive:FRESH_PAIR": 6,
+      "before_receive:RECEIPT_STALE_OR_FUTURE": 6,
+      "recorded_rows": 6
+    },
+    "families": {
+      "ACCIONES": {
+        "fresh_pairs": 2,
+        "fresh_two_sided_pairs": 2,
+        "records": 2
+      },
+      "BONOS": {
+        "fresh_pairs": 4,
+        "fresh_two_sided_pairs": 4,
+        "records": 4
+      }
+    },
+    "authority": "CLOCK_REPLAY_ONLY"
+  },
+  "offhost": {
+    "candidate_source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+    "candidate_tree_sha": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+    "provider": "FIXTURES_AND_RECORDED_CLOCKS",
+    "suites": {
+      "replay-fix.xml": {
+        "counts": {
+          "tests": 341,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "bd35b522a5ea728d5329e270411b0500939fe77fcdfd4e4c4453c7c27ffa6cbc",
+        "test_files": [
+          "tests/test_porota_rootless_host.py",
+          "tests/test_porota_rootless_jobs.py",
+          "tests/test_porota_rootless_setup.py",
+          "tests/test_rc6_a248_paper_spot_pit_readiness.py",
+          "tests/test_rc6_p0b_exit_round_wiring.py",
+          "tests/test_rc6_paper_preopen_gate.py",
+          "tests/test_rc6_ppi_gateway_family_ready.py",
+          "tests/test_rc6_ppi_native_request_receipt.py",
+          "tests/test_rc6_ppi_rest_recovery_probe.py",
+          "tests/test_ws_infra_12_runtime_evidence.py"
+        ]
+      },
+      "replay-lifecycle.xml": {
+        "counts": {
+          "tests": 551,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "aea383895b1ee182842439a1938af109ee53212aef9f027c6bdaa09f4336075e",
+        "test_files": [
+          "tests/test_execution_replay_v17.py",
+          "tests/test_production_paper_v1634.py",
+          "tests/test_rc6_a200_fixed_income_engine_integration.py",
+          "tests/test_rc6_a232_fund_caucion_market_entry.py",
+          "tests/test_rc6_a785_caucion_settle_wal.py",
+          "tests/test_rc6_cauciones_contract.py",
+          "tests/test_rc6_cauciones_official_contract.py",
+          "tests/test_rc6_etf_cost_cycle.py",
+          "tests/test_rc6_fixed_income_native_redemption.py",
+          "tests/test_rc6_fixed_income_runtime.py",
+          "tests/test_rc6_fund_attested_settlement.py",
+          "tests/test_rc6_fund_paper_allocator.py",
+          "tests/test_rc6_fund_ppi_catalog_market.py",
+          "tests/test_rc6_future_contract_policy.py",
+          "tests/test_rc6_future_paper_engine.py",
+          "tests/test_rc6_option_paper_execution.py",
+          "tests/test_rc6_option_paper_strategy.py",
+          "tests/test_rc6_public_fee_currency.py",
+          "tests/test_ws_caucion_12_live_ppi_wiring.py"
+        ]
+      },
+      "replay-ingesta.xml": {
+        "counts": {
+          "tests": 215,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "junit_sha256": "3876b0c186782f39280e6a8f768b62d096357a5ad5377d63d5e6fa0e7046d61c",
+        "test_files": [
+          "tests/test_candle_archive_v17.py",
+          "tests/test_history_reconciler_rc6.py",
+          "tests/test_intraday_scalping_rc6_integration.py",
+          "tests/test_rc6_a222_spot_scalping_guarded_release.py",
+          "tests/test_rc6_a228_scalping_replay_and_metrics.py",
+          "tests/test_rc6_candle_inmarket_evidence.py",
+          "tests/test_rc6_history_cutoff_repair_coverage.py",
+          "tests/test_rc6_history_import_source_reported.py",
+          "tests/test_rc6_history_offhost_preflight.py",
+          "tests/test_rc6_ppi_history_provenance_gate.py",
+          "tests/test_rc6_shadow_operational_funnel.py"
+        ]
+      }
+    },
+    "spot_paper_cycles": [
+      {
+        "identity": [
+          "GGAL",
+          "ACCIONES",
+          "BYMA",
+          "ARS",
+          "A-24HS"
+        ],
+        "clock_start": "2026-11-24T12:10:00-03:00",
+        "inputs": "SYNTHETIC_FIXTURE_ONLY",
+        "sector_policy": "OBSERVATION_ONLY",
+        "broker_economics_mode": "SHADOW",
+        "tariff": "VERSIONED_PAPER_TERMS",
+        "real_orders_sent": 0,
+        "decisions": [
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 1/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 2/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 3/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 4/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 5/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 6/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 7/8 muestras"
+          },
+          {
+            "action": "BUY",
+            "reason": "Momentum positivo y friccion admisible"
+          }
+        ],
+        "fills": [
+          {
+            "side": "BUY_SIMULATED",
+            "quantity": "100",
+            "price": "102.1204",
+            "costs": "80.32",
+            "paper_id": "PAPER-e97969afbe504ca4a5354aaa525fe9aa"
+          },
+          {
+            "side": "SELL_SIMULATED",
+            "quantity": "100",
+            "price": "108.1048",
+            "costs": "10.88",
+            "paper_id": "PAPER-e97969afbe504ca4a5354aaa525fe9aa"
+          }
+        ]
+      },
+      {
+        "identity": [
+          "AAPL",
+          "CEDEARS",
+          "BYMA",
+          "ARS",
+          "A-24HS"
+        ],
+        "clock_start": "2026-11-24T12:10:00-03:00",
+        "inputs": "SYNTHETIC_FIXTURE_ONLY",
+        "sector_policy": "OBSERVATION_ONLY",
+        "broker_economics_mode": "SHADOW",
+        "tariff": "VERSIONED_PAPER_TERMS",
+        "real_orders_sent": 0,
+        "decisions": [
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 1/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 2/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 3/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 4/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 5/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 6/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 7/8 muestras"
+          },
+          {
+            "action": "BUY",
+            "reason": "Momentum positivo y friccion admisible"
+          }
+        ],
+        "fills": [
+          {
+            "side": "BUY_SIMULATED",
+            "quantity": "100",
+            "price": "102.1204",
+            "costs": "80.32",
+            "paper_id": "PAPER-5e3c6ccc35e14ccd8af95d3ebf515798"
+          },
+          {
+            "side": "SELL_SIMULATED",
+            "quantity": "100",
+            "price": "108.1048",
+            "costs": "10.88",
+            "paper_id": "PAPER-5e3c6ccc35e14ccd8af95d3ebf515798"
+          }
+        ]
+      },
+      {
+        "identity": [
+          "MERV",
+          "ETFS",
+          "BYMA",
+          "ARS",
+          "A-24HS"
+        ],
+        "clock_start": "2026-11-24T12:10:00-03:00",
+        "inputs": "SYNTHETIC_FIXTURE_ONLY",
+        "sector_policy": "OBSERVATION_ONLY",
+        "broker_economics_mode": "SHADOW",
+        "tariff": "SYNTHETIC_ETF",
+        "real_orders_sent": 0,
+        "decisions": [
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 1/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 2/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 3/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 4/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 5/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 6/8 muestras"
+          },
+          {
+            "action": "HOLD",
+            "reason": "Aprendiendo serie: 7/8 muestras"
+          },
+          {
+            "action": "BUY",
+            "reason": "Momentum positivo y friccion admisible"
+          }
+        ],
+        "fills": [
+          {
+            "side": "BUY_SIMULATED",
+            "quantity": "100",
+            "price": "102.1204",
+            "costs": "19.50",
+            "paper_id": "PAPER-a13c4bfc23014afe9f5a573cb399b195"
+          },
+          {
+            "side": "SELL_SIMULATED",
+            "quantity": "100",
+            "price": "108.1048",
+            "costs": "20.65",
+            "paper_id": "PAPER-a13c4bfc23014afe9f5a573cb399b195"
+          }
+        ]
+      }
+    ],
+    "fund_paper_cycle": {
+      "identity": [
+        "FCI.FIXTURE.B",
+        "FCI",
+        "BYMA",
+        "ARS",
+        "INMEDIATA"
+      ],
+      "inputs": "SYNTHETIC_TEST_ONLY",
+      "opened_at": "2026-11-24T13:00:00-03:00",
+      "settled_at": "2026-11-25T12:00:00-03:00",
+      "redeemed_at": "2026-11-27T12:00:00-03:00",
+      "subscription_ars": "1001.01",
+      "allocated_units": "100",
+      "redemption_cash_ars": "1029.0",
+      "final_cash_ars": "2027.99",
+      "events": [
+        {
+          "event_id": "e0",
+          "to_state": "SUBSCRIBE_REQUESTED",
+          "amount": "-1001.01"
+        },
+        {
+          "event_id": "e1",
+          "to_state": "PENDING",
+          "amount": "0"
+        },
+        {
+          "event_id": "e2",
+          "to_state": "NAV_APPLIED",
+          "amount": "0"
+        },
+        {
+          "event_id": "e3",
+          "to_state": "SETTLED",
+          "amount": "0"
+        },
+        {
+          "event_id": "e4",
+          "to_state": "REDEEM_REQUESTED",
+          "amount": "0"
+        },
+        {
+          "event_id": "e5",
+          "to_state": "REDEEMED",
+          "amount": "1029.0"
+        }
+      ],
+      "real_orders_sent": 0
+    }
+  },
+  "predeploy": {
+    "run_id": 45535126618,
+    "run_number": 1321,
+    "job_id": 138939745297,
+    "artifact_id": 14986798842,
+    "artifact_sha256": "77d55aafa921356169ee0da0f6ab4ac1919fce2c7929b532ae014f444ad8d32d",
+    "artifact_bytes": 311600907,
+    "retired_testcases": 496,
+    "code_tests": {
+      "collected": 9178,
+      "errors": 0,
+      "executed": 9178,
+      "failed": 0,
+      "globally_discovered": 9674,
+      "image_id": "sha256:ad4ee9dcc5abf37912fc332c86e821be685379a692af64dd5b66943c9cf78677",
+      "schema": "porota.code-tests.v1",
+      "skipped": 0,
+      "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+      "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+      "status": "PASS"
+    },
+    "functional": {
+      "environment": "ISOLATED_SYNTHETIC_CI",
+      "http": {
+        "/api/dashboard/truth": 200,
+        "/health": 200,
+        "/salud": 200,
+        "/vivo": 200
+      },
+      "image_id": "sha256:ad4ee9dcc5abf37912fc332c86e821be685379a692af64dd5b66943c9cf78677",
+      "order_routes_blocked": true,
+      "paper_mode": "PRODUCTION_PAPER",
+      "real_orders_sent": 0,
+      "schema": "porota.functional.v1",
+      "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+      "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+      "sqlite_integrity": "ok",
+      "sqlite_journal_mode": "wal",
+      "status": "PASS",
+      "tested_order_routes": 3
+    },
+    "manifest": {
+      "build_run_attempt": 1,
+      "build_run_id": 45535126618,
+      "execution_mode": "SIMULATION",
+      "image_id": "sha256:ad4ee9dcc5abf37912fc332c86e821be685379a692af64dd5b66943c9cf78677",
+      "image_size_bytes": 890994949,
+      "members": {
+        "code-tests.json": {
+          "bytes": 38498,
+          "sha256": "8638408c7449e038646f7f4cfef97a259cff84b3c1707b05a3a60b345f6214c5"
+        },
+        "functional.json": {
+          "bytes": 550,
+          "sha256": "d00f252528656cc896223b8b931f0fd8891ac76a775968b481c74f05b0bdd2f7"
+        },
+        "porota-deploy-bundle-v2-manifest.json": {
+          "bytes": 106190,
+          "sha256": "a3f7f4764a266001a3552c6458a4b186200fd37d860de4a5954f8ebaf57d6cd5"
+        },
+        "porota-deploy-bundle-v2.tgz": {
+          "bytes": 2321838,
+          "sha256": "583f385f34bff1625e3c8319dbafd058923e7e3b52cf7300f59cbeed67863683"
+        },
+        "porota-predeploy-image.tar.gz": {
+          "bytes": 309131748,
+          "sha256": "de82026bf6403311c906f8f4052d12ec2aceb08f66932a47a70c1a6f40c18492"
+        }
+      },
+      "operating_mode": "PRODUCTION_PAPER",
+      "real_order_capability": "BLOCKED",
+      "real_orders_sent_required": 0,
+      "schema": "porota.release.v1",
+      "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+      "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36"
+    },
+    "product_sha": "c6b990e20fb7b943dfda478202452b5c550816f6",
+    "product_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36"
+  },
+  "promote": {
+    "run_number": 207,
+    "run_id": 45537154370,
+    "job_id": 138946444481,
+    "artifact_id": 14987771207,
+    "artifact_sha256": "4fc9f57205962f257abc03c9a9366f787690c40d56fb764c8ec7d70327dc4061",
+    "runtime_member_sha256": "0c1d4bb206a0bc1a0e138977ddfd7dbf5ae490117b2f1c30f699a630ece2900e",
+    "download_member_sha256": "7265ee487388e2f401e2b135bfb8f5696258191b6901dd0cfcface6876a5781e",
+    "download": {
+      "artifact_digest": "sha256:77d55aafa921356169ee0da0f6ab4ac1919fce2c7929b532ae014f444ad8d32d",
+      "artifact_id": 14986798842,
+      "deployment_sha": "c6b990e20fb7b943dfda478202452b5c550816f6",
+      "image_id": "sha256:ad4ee9dcc5abf37912fc332c86e821be685379a692af64dd5b66943c9cf78677",
+      "run_attempt": 1,
+      "run_id": 45535126618,
+      "schema": "porota.release.download.v1",
+      "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+      "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36"
+    },
+    "physical": {
+      "state": "VALIDADO_RUNTIME",
+      "phase": "COMPLETE",
+      "deployment_sha": "c6b990e20fb7b943dfda478202452b5c550816f6",
+      "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+      "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+      "image_id": "sha256:ad4ee9dcc5abf37912fc332c86e821be685379a692af64dd5b66943c9cf78677",
+      "operating_mode": "PRODUCTION_PAPER",
+      "execution_mode": "SIMULATION",
+      "real_orders_sent": 0,
+      "ppi_watch_touched": false,
+      "release_manifest_sha256": "1f4a60003a931246763308151c07a898a70d013bce65d09ae6c7fde13829e37e",
+      "health": {
+        "dashboard": "healthy",
+        "observer": "running",
+        "orders_guard": "BLOCKED",
+        "paper_readiness": "FAIL_CLOSED_PER_INSTRUMENT",
+        "source_alert": "NONE"
+      },
+      "iol_rest": {
+        "collector": {
+          "exit_code": 0,
+          "source": "IOL_REST",
+          "source_cycle": {
+            "reason": "OUTSIDE_COLLECTOR_WINDOW",
+            "stages": {},
+            "status": "NOT_DUE"
+          }
+        },
+        "health": {
+          "exit_code": 0,
+          "result": "REFERENCE_GD30_VERIFIED",
+          "source": "IOL_REST"
+        },
+        "services": {
+          "porota-iol-oauth-health-rc6.service": {
+            "configured": true,
+            "uid": 1000
+          },
+          "porota-iol-shadow-collector-rc6.service": {
+            "configured": true,
+            "uid": 1000
+          }
+        },
+        "source": "IOL_REST",
+        "state": "EFFECTIVE",
+        "timers": {
+          "porota-iol-oauth-health-rc6.timer": "active",
+          "porota-iol-shadow-collector-rc6.timer": "active"
+        }
+      },
+      "preserved_host_sources": {
+        "ops_runtime_evidence_rc6.py": {
+          "sha256": "e0a5af53b947efa9f55768db1d4b06aed7aa206529823c4873615ab126712ea8",
+          "updated": true
+        },
+        "rc6_scheduler_snapshot.py": {
+          "sha256": "5ef572539825471be6a52dbed4d6f96291c34f200331af5d927a12a2941b9033",
+          "updated": false
+        },
+        "scripts/porota_export_scheduler_state_rc6.sh": {
+          "sha256": "3ac4f62e95bd402e66eac64827c89b147f1cadf1f8bcd18e778065366a5a1e06",
+          "updated": false
+        },
+        "scripts/porota_publish_runtime_evidence_github_rc6.sh": {
+          "sha256": "3f4bab62ee11e775e7ac4f9d054cc20e773c18527c25478cf0fc4f4fd689af74",
+          "updated": true
+        }
+      }
+    },
+    "controller_recorded_at_utc": "2026-11-25T03:08:01.707430+00:00",
+    "controller_roles": [
+      "candles",
+      "caucion_cash_sweep",
+      "dynamic_shadow",
+      "exit_reader",
+      "intraday_scalping",
+      "notifications",
+      "ppi_gateway",
+      "scanner"
+    ],
+    "fixed_income_sale_state": "ACTIVE_PAPER",
+    "fixed_income_sale_variants": 6,
+    "fixed_income_policy_sha256": "6dba509ffd7fadc672184e4f6f7c98a441acc6355c2a2641f3e055d906608849",
+    "sqlite_dataset_sha256": "079058fa23f1a0e518b59a48944e08a5e850790d6255550081caef6791e0d250",
+    "sqlite_real_orders_sent": 0
+  },
+  "introspection": {
+    "source_commit": "d748733156f2c10852b599c15772336039a456b4",
+    "previous_commit": "316a1f404a8d606fd4228f8db40da21b224e01b2",
+    "observed_at_art": "2026-11-24T23:35:11-03:00",
+    "ingestion": {
+      "candle_versions": 144377,
+      "instruments": 1151,
+      "last_download": "2026-09-25T20:02:13.939573+00:00",
+      "last_market_date": "2026-09-25",
+      "latest_candle_known_at": "2026-11-24T20:00:01.694229+00:00",
+      "raw": 0,
+      "rows": 242636
+    },
+    "caucion_readiness": {
+      "complete_offers": 0,
+      "declared": 1,
+      "missing_offer_requirements": [],
+      "missing_policy_requirements": [],
+      "observed_contracts": 10,
+      "offer_checked_at": "2026-11-24T23:35:11.959832-03:00",
+      "placed_today": 0,
+      "queries": 1,
+      "state": "NO_CURRENT_VALID_OFFER"
+    },
+    "scalping": {
+      "approved_1h": 0,
+      "evaluated_1h": 0,
+      "paper_positions_today": 0,
+      "rejected_1h": 0
+    },
+    "trading": {
+      "buys_1h": 0,
+      "closed_today": 0,
+      "decisions_1h": 0,
+      "net_pnl_today": 0,
+      "open": 0,
+      "sells_1h": 0
+    }
+  },
+  "postflight_read_only": [
+    {
+      "run_id": 45537926257,
+      "run_number": 460,
+      "artifact_id": 14987483063,
+      "artifact_sha256": "1c96e351109aa80748af2d41d53aaaf223eaf267c8b546bb1e96d599ecf07343",
+      "snapshot": {
+        "generated_at": "2026-11-25T03:09:22.636095+00:00",
+        "expected_deploy_sha": "c6b990e20fb7b943dfda478202452b5c550816f6",
+        "expected_product_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+        "observed_candidate_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+        "provenance_identity": "ROOTLESS_PRODUCT_TREE_MATCHED",
+        "market_open_observed": false,
+        "observer": {
+          "heartbeat_at": "2026-11-25T03:09:19.119043+00:00",
+          "last_market_data_at": "2026-11-24T19:55:50.327678+00:00",
+          "mode": "PRODUCTION_PAPER",
+          "ppi_auth": "OK",
+          "process_state": "WAITING_MARKET",
+          "real_orders_sent": 0,
+          "session_state": "MARKET_CLOSED"
+        },
+        "rootless_probe_reason": "OK",
+        "readiness": {
+          "ready": 0,
+          "total": 17473
+        },
+        "workers": {
+          "intraday_scalping_worker_state": {
+            "candidates": 0,
+            "failed": 0,
+            "heartbeat_at": "2026-11-25T03:09:08.128397+00:00",
+            "real_orders_sent": 0,
+            "selected": 0,
+            "state": "WAITING_MARKET",
+            "successful": 0
+          },
+          "paper_caucion_cash_sweep_state": {
+            "heartbeat_at": "2026-11-25T03:09:16.193387+00:00",
+            "real_orders_sent": 0,
+            "state": "WAITING_WINDOW"
+          },
+          "paper_notification_worker": {
+            "heartbeat_at": "2026-11-25T03:09:22.381906+00:00",
+            "state": "RUNNING"
+          },
+          "paper_supervisor_state": {
+            "heartbeat_at": "2026-11-25T03:09:20.906821+00:00",
+            "state": "RUNNING"
+          }
+        },
+        "broker_requests": 0,
+        "ppi_watch_accessed": false,
+        "real_order_routes_called": 0,
+        "schedule_health": {
+          "consecutive_gaps_seconds": [],
+          "genuine_recent_runs": 0,
+          "independent_watchdog_ack": "HISTORICAL_VERIFIED",
+          "independent_watchdog_ack_age_seconds": 27980.619,
+          "last_schedule_age_seconds": 15042.636095,
+          "silence": false,
+          "state": "NO_VERIFICADO"
+        },
+        "cursors": {
+          "market_snapshots": 289243,
+          "paper_decisions": 105618,
+          "paper_events": 609968,
+          "paper_fills": 304,
+          "scalping_candidates": 94883,
+          "trade_gate_evaluations": 623
+        },
+        "sqlite_ops": {
+          "DAILY_BACKUP": {
+            "last_run_at": "2026-10-21T03:21:30-03:00",
+            "state": "DEFERRED_DISK"
+          },
+          "HISTORY_BACKUP": {
+            "last_run_at": "2026-10-21T03:21:53-03:00",
+            "state": "VERDE"
+          },
+          "SRE_SNAPSHOT": {
+            "last_run_at": "2026-11-25T00:04:23-03:00",
+            "state": "VERDE"
+          },
+          "candle_worker": {
+            "cursor": 289243,
+            "heartbeat_at": "2026-11-25T03:08:46.304326+00:00",
+            "state": "RUNNING"
+          },
+          "exit_reader": {
+            "heartbeat_at": "2026-11-25T03:09:21.066332+00:00",
+            "state": "WAITING_MARKET"
+          },
+          "latest_backup": {
+            "created_at": "2026-10-21T03:21:53-03:00",
+            "kind": "HISTORY_DAILY",
+            "size_bytes": 91768197,
+            "state": "VERDE"
+          }
+        },
+        "findings": [
+          {
+            "code": "PERFORMANCE_REPORT_STALE",
+            "severity": "P2"
+          }
+        ],
+        "ppi_auth_last_attempt": {
+          "checked_at": "2026-11-25T03:06:49.982158+00:00",
+          "component": "PPI_PRODUCTION_AUTH",
+          "error_class": null,
+          "http_status": null,
+          "last_success_at": "2026-11-25T03:06:49.982158+00:00",
+          "provider_requests_by_probe": 0,
+          "reason": "AUTH_SUCCESS",
+          "response_bytes": null,
+          "response_media_type": null,
+          "state": "VERDE",
+          "status": "LAST_AUTH_SUCCESS_RECORDED"
+        },
+        "paper_open_contracts": {
+          "inflight_evaluation_or_fill": "NO_VERIFICADO",
+          "paper_cauciones": 0,
+          "paper_future_positions": 0,
+          "paper_positions": 0
+        },
+        "decision": {
+          "acknowledged_codes": [],
+          "alerted": [],
+          "confirmed": [],
+          "delivery_status": "NO_TRANSITION",
+          "generated_at": "2026-11-25T03:09:22.636095+00:00",
+          "incident_origins": {},
+          "new_alerts": [],
+          "notification": "NONE",
+          "pending_confirmation": [],
+          "previous_comparable": false,
+          "read_only": true,
+          "real_orders_sent_verified": true,
+          "recovered": [],
+          "schema": "rc6.market-watch-readonly.v1",
+          "status": "P2",
+          "transition_id": null
+        },
+        "delivery": {
+          "status": "NOT_REQUESTED",
+          "read_only": true
+        },
+        "gateway": {
+          "global_single_session_custody": "NO_VERIFICADO",
+          "provider_requests_by_probe": 0,
+          "read_only": true,
+          "reason": "CONTAINER_PROBE_UNAVAILABLE",
+          "schema": "rc6.ppi-gateway-diagnostic-readonly.v1",
+          "status": "NO_VERIFICADO"
+        },
+        "dashboard": {
+          "preopen_receipt_stat": "FILE_METADATA_MATCH",
+          "history_cutoff_repair": "INCOMPLETE",
+          "paper_today": {
+            "art_date": "2026-11-25",
+            "closed_today": 0,
+            "equity_close_reasons_today": {},
+            "families_closed": {},
+            "invalid_net_pnl": 0,
+            "opened_today": 0,
+            "sampled": 0,
+            "status": "BOUNDED",
+            "truncated": false,
+            "wins_today": 0
+          },
+          "caucion_attempt": {
+            "has_paper_id": true,
+            "latest_age_seconds": 2878768,
+            "latest_result": "PLACED_SIMULATED",
+            "latest_today": false,
+            "sampled": 6,
+            "status": "BOUNDED",
+            "today_attempts": 0,
+            "worker_attempts_today": 0,
+            "worker_latest_age_seconds": 27573,
+            "worker_latest_code": "NO_VERIFICADO",
+            "worker_latest_result": "HOLD",
+            "worker_latest_today": false,
+            "worker_status": "TRUNCATED"
+          },
+          "status": "ROUTES_VERIFIED"
+        }
+      }
+    },
+    {
+      "run_id": 45538260228,
+      "run_number": 461,
+      "artifact_id": 14988041697,
+      "artifact_sha256": "c9098f39fb449fbe10cdb639b5b8f020ed86125cbe1ea33415ef8d68bdbf2d76",
+      "snapshot": {
+        "generated_at": "2026-11-25T03:12:02.078572+00:00",
+        "expected_deploy_sha": "c6b990e20fb7b943dfda478202452b5c550816f6",
+        "expected_product_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+        "observed_candidate_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+        "provenance_identity": "ROOTLESS_PRODUCT_TREE_MATCHED",
+        "market_open_observed": false,
+        "observer": {
+          "heartbeat_at": "2026-11-25T03:12:00.578724+00:00",
+          "last_market_data_at": "2026-11-24T19:55:50.327678+00:00",
+          "mode": "PRODUCTION_PAPER",
+          "ppi_auth": "OK",
+          "process_state": "WAITING_MARKET",
+          "real_orders_sent": 0,
+          "session_state": "MARKET_CLOSED"
+        },
+        "rootless_probe_reason": "OK",
+        "readiness": {
+          "ready": 0,
+          "total": 17473
+        },
+        "workers": {
+          "intraday_scalping_worker_state": {
+            "candidates": 0,
+            "failed": 0,
+            "heartbeat_at": "2026-11-25T03:11:48.905396+00:00",
+            "real_orders_sent": 0,
+            "selected": 0,
+            "state": "WAITING_MARKET",
+            "successful": 0
+          },
+          "paper_caucion_cash_sweep_state": {
+            "heartbeat_at": "2026-11-25T03:11:46.251951+00:00",
+            "real_orders_sent": 0,
+            "state": "WAITING_WINDOW"
+          },
+          "paper_notification_worker": {
+            "heartbeat_at": "2026-11-25T03:12:01.575809+00:00",
+            "state": "RUNNING"
+          },
+          "paper_supervisor_state": {
+            "heartbeat_at": "2026-11-25T03:12:01.429491+00:00",
+            "state": "RUNNING"
+          }
+        },
+        "broker_requests": 0,
+        "ppi_watch_accessed": false,
+        "real_order_routes_called": 0,
+        "schedule_health": {
+          "consecutive_gaps_seconds": [],
+          "genuine_recent_runs": 0,
+          "independent_watchdog_ack": "HISTORICAL_VERIFIED",
+          "independent_watchdog_ack_age_seconds": 28140.061,
+          "last_schedule_age_seconds": 15202.078572,
+          "silence": false,
+          "state": "NO_VERIFICADO"
+        },
+        "cursors": {
+          "market_snapshots": 289243,
+          "paper_decisions": 105618,
+          "paper_events": 609968,
+          "paper_fills": 304,
+          "scalping_candidates": 94883,
+          "trade_gate_evaluations": 623
+        },
+        "sqlite_ops": {
+          "DAILY_BACKUP": {
+            "last_run_at": "2026-10-21T03:21:30-03:00",
+            "state": "DEFERRED_DISK"
+          },
+          "HISTORY_BACKUP": {
+            "last_run_at": "2026-10-21T03:21:53-03:00",
+            "state": "VERDE"
+          },
+          "SRE_SNAPSHOT": {
+            "last_run_at": "2026-11-25T00:09:24-03:00",
+            "state": "AMARILLO"
+          },
+          "candle_worker": {
+            "cursor": 289243,
+            "heartbeat_at": "2026-11-25T03:11:46.891313+00:00",
+            "state": "RUNNING"
+          },
+          "exit_reader": {
+            "heartbeat_at": "2026-11-25T03:11:58.130309+00:00",
+            "state": "WAITING_MARKET"
+          },
+          "latest_backup": {
+            "created_at": "2026-10-21T03:21:53-03:00",
+            "kind": "HISTORY_DAILY",
+            "size_bytes": 91768197,
+            "state": "VERDE"
+          }
+        },
+        "findings": [
+          {
+            "code": "PERFORMANCE_REPORT_STALE",
+            "severity": "P2"
+          }
+        ],
+        "ppi_auth_last_attempt": {
+          "checked_at": "2026-11-25T03:06:49.982158+00:00",
+          "component": "PPI_PRODUCTION_AUTH",
+          "error_class": null,
+          "http_status": null,
+          "last_success_at": "2026-11-25T03:06:49.982158+00:00",
+          "provider_requests_by_probe": 0,
+          "reason": "AUTH_SUCCESS",
+          "response_bytes": null,
+          "response_media_type": null,
+          "state": "VERDE",
+          "status": "LAST_AUTH_SUCCESS_RECORDED"
+        },
+        "paper_open_contracts": {
+          "inflight_evaluation_or_fill": "NO_VERIFICADO",
+          "paper_cauciones": 0,
+          "paper_future_positions": 0,
+          "paper_positions": 0
+        },
+        "decision": {
+          "acknowledged_codes": [],
+          "alerted": [],
+          "confirmed": [],
+          "delivery_status": "NO_TRANSITION",
+          "generated_at": "2026-11-25T03:12:02.078572+00:00",
+          "incident_origins": {},
+          "new_alerts": [],
+          "notification": "NONE",
+          "pending_confirmation": [],
+          "previous_comparable": true,
+          "read_only": true,
+          "real_orders_sent_verified": true,
+          "recovered": [],
+          "schema": "rc6.market-watch-readonly.v1",
+          "status": "P2",
+          "transition_id": null
+        },
+        "delivery": {
+          "status": "NOT_REQUESTED",
+          "read_only": true
+        },
+        "gateway": {
+          "catalog": "QUERY_KEYS_OBSERVED",
+          "construction": "CONSTRUCTED_WITHOUT_LOGIN",
+          "global_single_session_custody": "NO_VERIFICADO",
+          "guard_login_wire_attempts": 1,
+          "owner": "LOCAL_OWNER_OBSERVED",
+          "provider_attested_keys": 0,
+          "provider_requests_by_probe": 0,
+          "query_keys": 10290,
+          "read_only": true,
+          "registered_roles": [
+            "exit_reader",
+            "scalping",
+            "scanner"
+          ],
+          "schema": "rc6.ppi-gateway-diagnostic-readonly.v1",
+          "source_sha": "2b719cc86252c51dac516a48b519ab422dcb8e50",
+          "source_tree": "1401d8390e01dbf3be3b0e115a5bfd97acd0ae36",
+          "status": "OBSERVED"
+        },
+        "dashboard": {
+          "preopen_receipt_stat": "FILE_METADATA_MATCH",
+          "history_cutoff_repair": "INCOMPLETE",
+          "paper_today": {
+            "art_date": "2026-11-25",
+            "closed_today": 0,
+            "equity_close_reasons_today": {},
+            "families_closed": {},
+            "invalid_net_pnl": 0,
+            "opened_today": 0,
+            "sampled": 0,
+            "status": "BOUNDED",
+            "truncated": false,
+            "wins_today": 0
+          },
+          "caucion_attempt": {
+            "has_paper_id": true,
+            "latest_age_seconds": 2878927,
+            "latest_result": "PLACED_SIMULATED",
+            "latest_today": false,
+            "sampled": 6,
+            "status": "BOUNDED",
+            "today_attempts": 0,
+            "worker_attempts_today": 0,
+            "worker_latest_age_seconds": 27731,
+            "worker_latest_code": "NO_VERIFICADO",
+            "worker_latest_result": "HOLD",
+            "worker_latest_today": false,
+            "worker_status": "TRUNCATED"
+          },
+          "status": "ROUTES_VERIFIED"
+        }
+      }
+    }
+  ],
+  "next_operational_checks": {
+    "preopen": {
+      "calendar": "2026-11-25T10:20:00-03:00",
+      "utc": "2026-11-25T13:20:00Z",
+      "state": "PENDING_WINDOW",
+      "bound_product_sha": "c6b990e20fb7b943dfda478202452b5c550816f6"
+    },
+    "exit_capacity": {
+      "state": "WAITING_MARKET",
+      "local_reader_observed": true
+    },
+    "first_fresh_quote": {
+      "state": "PENDING_WINDOW",
+      "observed_previous_market_at": "2026-11-24T19:55:50.327678+00:00"
+    },
+    "census_publication": {
+      "state": "SCHEDULED_NATIVE_TIMER_WINDOW",
+      "minute": 50
+    },
+    "history": {
+      "physical_cutoff": "INCOMPLETE",
+      "root_risk": "RAW_PRICE_PROVENANCE_AND_COVERAGE"
+    }
+  }
+}
