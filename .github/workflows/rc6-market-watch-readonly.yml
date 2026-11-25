@@ -1,6 +1,9 @@
 name: RC6 contratos exactos READ_ONLY
 run-name: RC6 serie A3 y revisión histórica DLR READ_ONLY
 on:
+  push:
+    branches: [audit/rc6-caucion-hold-readonly-20261125]
+    paths: [.github/workflows/rc6-market-watch-readonly.yml]
   workflow_dispatch:
     inputs:
       operation:
@@ -15,7 +18,8 @@ jobs:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
-      github.actor == 'mbalbo2023' && inputs.operation == 'read_only'
+      github.actor == 'mbalbo2023' &&
+      (github.event_name == 'push' || inputs.operation == 'read_only')
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     env:
@@ -126,7 +130,8 @@ jobs:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
-      github.actor == 'mbalbo2023' && inputs.operation == 'read_only'
+      github.actor == 'mbalbo2023' &&
+      (github.event_name == 'push' || inputs.operation == 'read_only')
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
