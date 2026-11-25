@@ -417,22 +417,24 @@ def test_signed_authority_expires_without_extension_or_more_gets(
     wire, tmp_path, monkeypatch,
 ):
     from be_paper_engine import PaperStore
+    from rc6_shadow_runtime.source_reads import source_tick
+
     clock, provider_calls, _ = wire
-    # Drive signed expiry with the provider clock. Give the CI fixture's
-    # separate SQLite copy a bounded wall-clock budget on slower runners.
-    monkeypatch.setattr(budget_module, "LEDGER_SNAPSHOT_SECONDS", 1.0)
     store = PaperStore(str(tmp_path / "paper.sqlite"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
     runtime = RuntimePPIBudget(store.path,
         RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
-    first = runtime.acquire("book")
-    assert first["allowed"] and first["lease"]
-    runtime.start(first["lease"])
-    runtime.finish(first["lease"])
-    clock.advance(3601)
-    with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
-        runtime.acquire("book")
+    # The fixture's PAPER ledger stays fixed across admission and wire start.
+    # Verify one private capture while the provider clock drives signed expiry.
+    with source_tick(store.path):
+        first = runtime.acquire("book")
+        assert first["allowed"] and first["lease"]
+        runtime.start(first["lease"])
+        runtime.finish(first["lease"])
+        clock.advance(3601)
+        with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
+            runtime.acquire("book")
     assert not provider_calls
 
 
