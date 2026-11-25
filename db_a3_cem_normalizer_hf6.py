@@ -7,7 +7,7 @@ metadata and can never populate History Store `settlement` automatically.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 from bs_instrument_contracts import aware_datetime, cash_currency
@@ -87,6 +87,14 @@ def closing_session_date(value):
     if point.utcoffset() == timedelta(0) and point.time() == time.min:
         return point.date()
     return point.astimezone(ART).date()
+
+
+def closing_session_bounds(start, end):
+    """Include both economic-session labels at the UTC boundaries used by CEM."""
+    return (
+        datetime.combine(start, time.min, timezone.utc).isoformat(),
+        datetime.combine(end, time.max, timezone.utc).isoformat(),
+    )
 
 
 def closing_to_candle(row: dict[str, Any], *, instrument_type: str,

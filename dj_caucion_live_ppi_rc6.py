@@ -79,16 +79,23 @@ def _book_row(reader,item,observed_at,now,clock_fn):
     from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected, SharedFeedUnavailable
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
     settlement_echo = None
+    settlement_proof = None
     try:
         # The shared PPI gateway requires a real catalog-bound five-key,
         # including Market/Currency; never infer it from the 3-key SDK call.
         scope = getattr(reader, "read_scope", None)
         identity = (item["ticker"], "CAUCIONES", item["market"],
                     item["currency"], item["settlement"])
-        with (scope(priority="WARM", identity=identity)
-              if callable(scope) else nullcontext()):
-            book=retry_read(lambda: reader.book(
-                item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+        capture = getattr(reader, "capture_guarded_native", None)
+        if callable(capture):
+            witnessed = retry_read(lambda: capture("book", identity, priority="WARM"), retries=1)
+            book = witnessed["native_payload"]
+            settlement_proof = witnessed.get("settlement_proof")
+        else:
+            with (scope(priority="WARM", identity=identity)
+                  if callable(scope) else nullcontext()):
+                book=retry_read(lambda: reader.book(
+                    item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
         # Reconcile the native Book with the exact PPI catalog identity before
         # its depth can be projected as PAPER participation authority.
         assert_native_ppi_response_identity(
@@ -123,7 +130,8 @@ def _book_row(reader,item,observed_at,now,clock_fn):
         state="READ_ERROR:"+type(exc).__name__
     return {**item,"quoted_at":quoted_at,"tna_fraction":rate,
             "available_principal":principal,"state":state,
-            "source":SOURCE,"observed_at":observed_at,"settlement_echo":settlement_echo}
+            "source":SOURCE,"observed_at":observed_at,"settlement_echo":settlement_echo,
+            "settlement_proof": settlement_proof if state == "BOOK_READY" else None}
 
 def refresh(reader,store,*,now,clock_fn=None):
     if reader is None or not hasattr(reader,"book"):
@@ -158,10 +166,19 @@ def refresh(reader,store,*,now,clock_fn=None):
             'SELECT COUNT(*) FROM paper_caucion_live_book_history').fetchone()[0])
     ready = sum(r["state"]=="BOOK_READY" for r in rows)
     state = "OK" if ready else "NO_VALID_BOOK" if rows else "NO_CATALOG_OFFERS"
+    from bu_instrument_catalog import publish_native_settlement_receipt
+
+    published = 0
+    for row in rows:
+        if row["settlement_proof"] is not None:
+            key = (row["ticker"], "CAUCIONES", row["market"], row["currency"], row["settlement"])
+            published += int(publish_native_settlement_receipt(
+                store, key, row["settlement_proof"], row["observed_at"]))
     return {"state":state,"records":len(rows),"ready":ready,
             "states":{r["ticker"]:r["state"] for r in rows},
             "settlement_echo":{r["ticker"]:r["settlement_echo"] for r in rows
                                if r["settlement_echo"] is not None},
+            "settlement_proofs_published": published,
             "history_rows":history_rows,
             "history_review_threshold_exceeded":history_rows>REVIEW_AT_ROWS,
             "history_retention":"HOLD_PIN_AND_PIT_UNVERIFIED",

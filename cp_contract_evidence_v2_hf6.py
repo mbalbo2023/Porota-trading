@@ -139,6 +139,30 @@ _A198_REVIEWED_CHANGES = (
      "184c6225d8d6812b91eb48bd171d6919f495b5a16521132e50212579e3057a4f"),
 )
 
+# Exact predecessor and successor payloads from read-only run 45718338228.
+# Only the upgrade from the incomplete PAPER template to the published A3
+# contract is reviewed. This does not attest a PPI quote or clearing margin.
+_DLR_PREVIOUS_SOURCE = "POROTA_PAPER_FUTURES_CONSERVATIVE_POLICY:v1"
+_DLR_PREVIOUS_HASH = "857671336be34d0c779f0552d6e7cda03023f81cf698f5ea0eeebd6489b972c3"
+_DLR_REVIEWED_HASHES = {
+    "DLR/DIC26": "3ec6bd168e8f80024488f6898a284e4e1ba6dbc8178982b5cc401c62fd91f925",
+    "DLR/NOV26": "b911ac61ea1c49fbf4d0bcff904b0bbf1c6aadfa507c7189a5e219ada45fba57",
+}
+
+
+def _reviewed_dlr_a3_transition(change, previous, current, previous_source, current_source):
+    from rc6_ppi_future_contract_policy import A3_DLR_SOURCE_REF
+
+    expected = _DLR_REVIEWED_HASHES.get(change["ticker"])
+    return bool(
+        expected
+        and (change["family"], change["market"], change["currency"], change["settlement"],
+             change["source_class"]) == ("FUTUROS", "A3", "ARS", "INMEDIATA", "DERIVED_OFFICIAL_RULE")
+        and (previous_source, current_source) == (_DLR_PREVIOUS_SOURCE, A3_DLR_SOURCE_REF)
+        and change["previous_hash"] == _DLR_PREVIOUS_HASH == evidence_hash(previous)
+        and change["current_hash"] == expected == evidence_hash(current)
+    )
+
 
 def _fee_authority_review_matches(receipt, change, previous, current,
                                   previous_source_ref, current_source_ref):
@@ -341,7 +365,7 @@ def apply_reviewed_caucion_fee_authority_correction(store):
         return {**result, "status": "BLOCKED", "reason": reason}
 
 
-def pending_material_changes(connection):
+def pending_material_changes(connection, *, family=None):
     """Return identities with at least one unresolved *material* change.
 
     Historical false positives are not mutated or deleted: the append-only
@@ -355,6 +379,7 @@ def pending_material_changes(connection):
     if not {"contract_evidence_v2_changes", "contract_evidence_v2_snapshots"} <= tables:
         return set()
     reviews = _fee_review_receipts(connection, tables)
+    where = " AND ch.family=?" if family is not None else ""
     rows = connection.execute("""
       SELECT ch.family,ch.ticker,ch.market,ch.currency,ch.settlement,
              prev.evidence_json,curr.evidence_json,ch.change_id,ch.source_class,
@@ -371,7 +396,7 @@ def pending_material_changes(connection):
        AND curr.settlement=ch.settlement AND curr.source_class=ch.source_class
        AND curr.evidence_hash=ch.current_hash
       WHERE ch.status='CHANGED_REVIEW_REQUIRED'
-    """).fetchall()
+    """ + where, (family,) if family is not None else ()).fetchall()
     pending = set()
     for row in rows:
         identity = tuple(row[:5])
@@ -386,8 +411,12 @@ def pending_material_changes(connection):
         except (TypeError, ValueError, json.JSONDecodeError):
             changed = True
         change = dict(zip(_CHANGE_COLUMNS, (row[7], *identity, row[8], row[9], row[10], row[11])))
-        reviewed = (changed and row[7] in reviews and _fee_authority_review_matches(
-            reviews[row[7]], change, previous, current, row[12], row[13]))
+        reviewed = changed and (
+            (row[7] in reviews and _fee_authority_review_matches(
+                reviews[row[7]], change, previous, current, row[12], row[13]))
+            or (identity[0] == "FUTUROS" and _reviewed_dlr_a3_transition(
+                change, previous, current, row[12], row[13]))
+        )
         if changed and not reviewed:
             pending.add(identity)
     return pending

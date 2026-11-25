@@ -18,6 +18,7 @@ from rc6_ppi_shared_feed import _canonical_bytes, _five, _sha
 SOURCE = "PPI_NATIVE_REQUEST_RECEIPT"
 FIELD = "_ppi_native_request_receipt"
 SCHEMA = "rc6.ppi.native-settlement-receipt.v1"
+CAUCION_BOOK_SCHEMA = "rc6.ppi.caucion-book-settlement-receipt.v1"
 _PIN_SCHEMA = "rc6.ppi.native-settlement-controller-pin.v1"
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -32,6 +33,7 @@ _MATERIAL_FIELDS = {
     "schema", "five_key", "release", "catalog_sha256", "gateway_generation",
     "current", "book", "signature",
 }
+_CAUCION_BOOK_FIELDS = _MATERIAL_FIELDS - {"current"}
 _WIRE_FIELDS = {
     "guard_sha256", "body_sha256", "lease_sha256",
     "native_at", "received_at", "monotonic_ns",
@@ -57,7 +59,16 @@ def _positive(value):
     return number.is_finite() and number > 0
 
 
-def _wire_part(capture, endpoint, identity):
+def _caucion_book_scope(identity):
+    from rc6_cauciones_contract import parse_ticker
+
+    return (
+        identity[1:] == ("CAUCIONES", "BYMA", "ARS", "INMEDIATA")
+        and parse_ticker(identity[0]).currency_prefix == "PESOS"
+    )
+
+
+def _wire_part(capture, endpoint, identity, *, priority="DISCOVERY"):
     from rc6_ppi_global_budget import assert_native_ppi_response_identity
     from rc6_ppi_shared_rest_producer import _validate_guard_witness
 
@@ -65,7 +76,7 @@ def _wire_part(capture, endpoint, identity):
     payload = native["raw_payload"]
     guard = capture["guard_wire_receipt"]
     guard_hash, received, monotonic = _validate_guard_witness(
-        guard, method=endpoint, priority="DISCOVERY", five_key=identity,
+        guard, method=endpoint, priority=priority, five_key=identity,
         raw_sha256=native["raw_sha256"],
     )
     assert_native_ppi_response_identity(payload, identity)
@@ -78,6 +89,16 @@ def _wire_part(capture, endpoint, identity):
         raise ValueError("PPI_NATIVE_SETTLEMENT_WIRE_CONTEXT_MISMATCH")
     if endpoint == "current":
         usable = _positive(payload["price"])
+    elif priority == "WARM" and _caucion_book_scope(identity):
+        from rc6_cauciones_contract import placed_side_book_levels, quote_from_book_level
+        from rc6_ppi_global_budget import native_ppi_response_settlement
+
+        status, _ = native_ppi_response_settlement(payload)
+        levels = list(placed_side_book_levels(payload))
+        quote = quote_from_book_level(identity[0], levels[0]) if levels else None
+        usable = status == "EXPLICIT" and quote is not None and (
+            quote.tna_percent > 0 and quote.quantity > 0
+        )
     else:
         bid = payload["bids"][0]
         offer = payload["offers"][0]
@@ -94,15 +115,20 @@ def _wire_part(capture, endpoint, identity):
     }
 
 
+def _valid_wire(wire):
+    return (
+        isinstance(wire, dict) and set(wire) == _WIRE_FIELDS
+        and all(isinstance(wire[h], str) and _SHA64.fullmatch(wire[h])
+                for h in ("guard_sha256", "body_sha256", "lease_sha256"))
+        and type(wire["monotonic_ns"]) is int and wire["monotonic_ns"] > 0
+        and 0 <= (_clock(wire["received_at"]) - _clock(wire["native_at"])).total_seconds()
+        <= _PAIR_MAX_SECONDS
+    )
+
+
 def _valid_pair(current, book):
-    for wire in (current, book):
-        if (not isinstance(wire, dict) or set(wire) != _WIRE_FIELDS
-                or any(not isinstance(wire[h], str) or not _SHA64.fullmatch(wire[h])
-                       for h in ("guard_sha256", "body_sha256", "lease_sha256"))
-                or type(wire["monotonic_ns"]) is not int or wire["monotonic_ns"] <= 0
-                or not 0 <= (_clock(wire["received_at"]) - _clock(wire["native_at"])).total_seconds()
-                <= _PAIR_MAX_SECONDS):
-            return False
+    if not _valid_wire(current) or not _valid_wire(book):
+        return False
     span = (_clock(book["received_at"]) - _clock(current["received_at"])).total_seconds()
     return (0 <= span <= _PAIR_MAX_SECONDS
             and book["monotonic_ns"] > current["monotonic_ns"]
@@ -111,7 +137,7 @@ def _valid_pair(current, book):
 
 
 class SettlementReceiptSigner:
-    """The Gateway signs one Current/Book pair; its runtime parent pins the key."""
+    """Sign native settlement evidence with the Gateway key pinned by its parent."""
 
     def __init__(self, release):
         if (not isinstance(release, list) or len(release) != 2
@@ -122,26 +148,37 @@ class SettlementReceiptSigner:
         self.public_key = self._key.public_key().public_bytes_raw().hex()
         self._current = None
 
-    def observe(self, endpoint, five_key, capture, *, generation, catalog_digest):
-        ready_current, self._current = self._current, None
+    def observe(self, endpoint, five_key, capture, *, generation, catalog_digest, priority="DISCOVERY"):
+        ready_current = self._current
+        if priority == "DISCOVERY":
+            self._current = None
         try:
             identity = _five(five_key)
-            if (endpoint not in _ENDPOINTS or identity[1] in _REFERENCE_ONLY
+            if (endpoint not in _ENDPOINTS
                     or not _SHA64.fullmatch(str(generation))
                     or not _SHA64.fullmatch(str(catalog_digest))):
                 return None
-            wire = _wire_part(capture, endpoint, identity)
-            context = (identity, generation, catalog_digest)
-            if endpoint == "current":
-                self._current = (context, wire)
-                return None
-            if not ready_current or ready_current[0] != context or not _valid_pair(ready_current[1], wire):
-                return None
-            payload = {
-                "schema": SCHEMA, "five_key": list(identity), "release": self.release,
+            context = {
+                "five_key": list(identity), "release": self.release,
                 "gateway_generation": generation, "catalog_sha256": catalog_digest,
-                "current": ready_current[1], "book": wire,
             }
+            if priority == "WARM" and endpoint == "book" and _caucion_book_scope(identity):
+                wire = _wire_part(capture, endpoint, identity, priority=priority)
+                if not _valid_wire(wire):
+                    return None
+                payload = {**context, "schema": CAUCION_BOOK_SCHEMA, "book": wire}
+                return {**payload, "signature": self._key.sign(_canonical_bytes(payload)).hex()}
+
+            if priority != "DISCOVERY" or identity[1] in _REFERENCE_ONLY:
+                return None
+            wire = _wire_part(capture, endpoint, identity)
+            coordinate = (identity, generation, catalog_digest)
+            if endpoint == "current":
+                self._current = (coordinate, wire)
+                return None
+            if not ready_current or ready_current[0] != coordinate or not _valid_pair(ready_current[1], wire):
+                return None
+            payload = {**context, "schema": SCHEMA, "current": ready_current[1], "book": wire}
             return {**payload, "signature": self._key.sign(_canonical_bytes(payload)).hex()}
         except (ValueError, TypeError, ArithmeticError, KeyError, IndexError, RuntimeError):
             # No contract proof from an unusable response. The native read
@@ -229,13 +266,19 @@ def verified_receipt(proof, five_key, *, database=None, now=None,
     """Verify the exact contract. Only the active signer may add a new proof."""
     try:
         identity = _five(five_key)
-        if (not isinstance(proof, dict) or set(proof) != _MATERIAL_FIELDS
-                or proof["schema"] != SCHEMA or proof["five_key"] != list(identity)
-                or identity[1] in _REFERENCE_ONLY
-                or not isinstance(proof["signature"], str) or not _SIGNATURE.fullmatch(proof["signature"])
-                or any(not isinstance(proof[name], str) or not _SHA64.fullmatch(proof[name])
-                       for name in ("catalog_sha256", "gateway_generation"))
-                or not _valid_pair(proof["current"], proof["book"])):
+        if (not isinstance(proof, dict) or proof.get("five_key") != list(identity)
+                or not isinstance(proof.get("signature"), str) or not _SIGNATURE.fullmatch(proof["signature"])
+                or any(not isinstance(proof.get(name), str) or not _SHA64.fullmatch(proof[name])
+                       for name in ("catalog_sha256", "gateway_generation"))):
+            return False
+        if proof.get("schema") == CAUCION_BOOK_SCHEMA:
+            valid = (set(proof) == _CAUCION_BOOK_FIELDS and _caucion_book_scope(identity)
+                     and _valid_wire(proof["book"]))
+        else:
+            valid = (proof.get("schema") == SCHEMA and set(proof) == _MATERIAL_FIELDS
+                     and identity[1] not in _REFERENCE_ONLY
+                     and _valid_pair(proof["current"], proof["book"]))
+        if not valid:
             return False
         point = datetime.now(timezone.utc) if now is None else (
             _clock(now) if isinstance(now, str) else _clock(now.isoformat()))

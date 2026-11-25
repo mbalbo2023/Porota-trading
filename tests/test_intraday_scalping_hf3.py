@@ -76,13 +76,7 @@ def test_revision_del_volumen_cerrado_preserva_la_confirmacion_del_precio(store)
     assert detail["volume_contract_state"] == "PPI_CLOSED_VOLUME_REVISED"
 
 
-def test_rotacion_usa_solo_spot_ready_y_excluye_derivados(store):
-    rows = [
-        record(),
-        record(ticker="AAPLD",instrument_type="CEDEARS",currency="USD_MEP"),
-        record(ticker="DLR/NOV26",instrument_type="FUTUROS",market="ROFEX",
-               currency="USD",settlement="INMEDIATA",capability="NEEDS_FUTURES_MARGIN_AND_CONTRACT"),
-    ]
+def _catalog_batch(store, rows):
     with store.connect() as connection:
         connection.execute("""CREATE TABLE IF NOT EXISTS candidate_identity_v2(
           ticker TEXT NOT NULL,instrument_type TEXT NOT NULL,market TEXT NOT NULL,
@@ -101,10 +95,30 @@ def test_rotacion_usa_solo_spot_ready_y_excluye_derivados(store):
              "AVAILABLE" if row["capability"].startswith("READY_PAPER_") else "PAUSED_EXPLICIT",
              row["capability"],"2026-09-01T10:00:00-03:00")
             for row in rows])
+
+
+def test_rotacion_usa_solo_spot_ready_y_excluye_derivados(store):
+    _catalog_batch(store, [
+        record(),
+        record(ticker="AAPLD",instrument_type="CEDEARS",currency="USD_MEP"),
+        record(ticker="DLR/NOV26",instrument_type="FUTUROS",market="ROFEX",
+               currency="USD",settlement="INMEDIATA",capability="NEEDS_FUTURES_MARGIN_AND_CONTRACT"),
+    ])
     selected, _, total = scalping.select_batch(store,limit=8)
     assert total == 2
     assert {row["market"] for row in selected} == {"BYMA"}
     assert {row["instrument_type"] for row in selected} == {"ACCIONES","CEDEARS"}
+
+
+def test_minimum_batch_rotates_beyond_all_eight_focus_symbols(store):
+    _catalog_batch(store, [record(ticker=ticker) for ticker in (*scalping.FOCUS, "LOMA", "TECO2")])
+    cursor = 0
+    seen = set()
+    for _ in range(3):
+        selected, cursor, total = scalping.select_batch(store, limit=8, cursor=cursor)
+        assert total == 10 and len(selected) == 8
+        seen.update(row["ticker"] for row in selected)
+    assert seen == set(scalping.FOCUS) | {"LOMA", "TECO2"}
 
 
 def test_dashboard_tiene_solapa_y_declara_scanner_sin_fills(monkeypatch, store):

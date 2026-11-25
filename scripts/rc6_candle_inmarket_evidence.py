@@ -8,6 +8,7 @@ backfill, or PPI Watch resource is accessed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -24,6 +25,7 @@ REQUIRED_CANDLE_TABLES = ("candle_dirty", "candle_worker_state")
 DELEGATED_CHECK = "DELEGATED_TO_RC6_FULL_DB_INTEGRITY"
 GLOBAL_INTEGRITY_OWNER = "porota-full-db-integrity-rc6.service"
 QUERY_BUDGET_SECONDS = 2.0
+RECENT_VERSION_LIMIT = 256
 
 
 def _as_nonnegative_int(value: Any, field: str) -> int:
@@ -53,6 +55,44 @@ def is_fresh(summary: dict[str, Any], *, now: datetime | None = None) -> bool:
         return False
     age = (now.astimezone(timezone.utc) - observed).total_seconds()
     return 0 <= age <= ttl
+
+
+def _materialized_guarded_samples(conn, observed_at):
+    """Current-only samples bypass the snapshot cursor; prove closed bars instead."""
+    frames = {}
+    seen = set()
+    for series_id, bar_start, known_at, bar_end, body, body_hash, identity in conn.execute("""
+        SELECT v.series_id,v.bar_start,v.known_at,v.bar_end,v.body_json,v.body_hash,s.identity_json
+        FROM (SELECT * FROM candle_versions ORDER BY id DESC LIMIT ?) v
+        JOIN candle_series s USING(series_id) ORDER BY v.id DESC
+    """, (RECENT_VERSION_LIMIT,)):
+        known, end = _parse_iso(known_at), _parse_iso(bar_end)
+        if not end <= known <= observed_at or (
+                observed_at - end).total_seconds() > FRESHNESS_TTL_SECONDS:
+            continue
+        version_key = (series_id, bar_start)
+        if version_key in seen:
+            continue
+        seen.add(version_key)
+        series = json.loads(identity)
+        resolution = series.get("resolution")
+        if (series.get("source") != "PPI_GUARDED_CURRENT" or
+                series.get("price_kind") != "TRADE_SAMPLES" or resolution not in ("1m", "5m")):
+            continue
+        if hashlib.sha256(body.encode("utf-8")).hexdigest() != body_hash:
+            raise ValueError("GUARDED_CANDLE_BODY_HASH_MISMATCH")
+        candle = json.loads(body)
+        if (candle.get("quality") != "SAMPLED" or candle.get("end") != bar_end
+                or candle.get("synthetic") is not False or candle.get("volume") is not None
+                or type(candle.get("samples")) is not int or candle["samples"] < 1):
+            continue
+        key = tuple(series[name] for name in ("symbol", "asset_class", "market", "currency", "settlement"))
+        basis = tuple(series[name] for name in ("adjustment", "adjustment_basis", "cash_multiplier"))
+        group = frames.setdefault((key, basis), {})
+        group.setdefault(resolution, known.isoformat())
+        if set(group) == {"1m", "5m"}:
+            return {"identity": list(key), "known_at_by_resolution": group}
+    return {}
 
 
 def collect_inputs(*, db_path: str, observed_at: str,
@@ -106,6 +146,8 @@ def collect_inputs(*, db_path: str, observed_at: str,
             "SELECT COUNT(*) FROM candle_dirty "
             "WHERE julianday(bar_end) > julianday(?)", (observed,)
         ).fetchone()[0]
+        sampled_progress = (_materialized_guarded_samples(conn, _parse_iso(observed))
+                            if {"candle_versions", "candle_series"} <= tables else {})
         return {
             "current_cursor": worker[0],
             "heartbeat_at": worker[1],
@@ -115,6 +157,7 @@ def collect_inputs(*, db_path: str, observed_at: str,
             "dirty_due_bars": dirty_due_bars,
             "dirty_open_bars": dirty_open_bars,
             "invalid_dirty_timestamp_count": invalid_dirty_timestamp_count,
+            "guarded_current_sampled_progress": sampled_progress,
             "required_tables": sorted(required),
         }
     finally:
@@ -128,6 +171,7 @@ def build_summary(
     observed_at: str, collection_error: str | None = None,
     required_tables: list[str] | None = None,
     table_quick_checks: dict[str, str] | None = None,
+    guarded_current_sampled_progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build fail-closed proof. Open bars are reported but never treated as dirty."""
     baseline = _as_nonnegative_int(baseline_cursor, "baseline_cursor")
@@ -143,10 +187,18 @@ def build_summary(
         and set(table_quick_checks) == set(REQUIRED_CANDLE_TABLES)
         and all(value == "ok" for value in table_quick_checks.values())
     ) if scoped else quick_check == "ok"
+    try:
+        heartbeat_age = (observed - _parse_iso(heartbeat_at)).total_seconds()
+        fresh_heartbeat = 0 <= heartbeat_age <= FRESHNESS_TTL_SECONDS
+    except ValueError:
+        fresh_heartbeat = False
+    sampled = bool(guarded_current_sampled_progress)
     checks = {
         "schema_collected": not collection_error,
-        "cursor_strictly_advanced": current > baseline,
+        ("guarded_current_both_resolutions" if sampled else "cursor_strictly_advanced"):
+            sampled or current > baseline,
         "candle_worker_running": worker_state == "RUNNING",
+        "candle_heartbeat_fresh": fresh_heartbeat,
         ("candle_tables_quick_check_ok" if scoped else "sqlite_quick_check_ok"): integrity_ok,
         "dirty_due_bars_zero": due == 0,
         "dirty_timestamps_valid": invalid == 0,
@@ -161,6 +213,7 @@ def build_summary(
         "status": "GREEN" if all(checks.values()) else "RED",
         "baseline_cursor": baseline,
         "current_cursor": current,
+        "guarded_current_sampled_progress": guarded_current_sampled_progress or {},
         "worker_state": worker_state,
         "heartbeat_at": heartbeat_at,
         "sqlite_quick_check": quick_check,

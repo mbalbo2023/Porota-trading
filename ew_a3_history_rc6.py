@@ -20,7 +20,9 @@ from cu_history_store_v2_hf6 import (
     require_current_history, source_reported_adjustment,
 )
 from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient, assert_cem_invariants
-from db_a3_cem_normalizer_hf6 import normalize_symbols, closing_to_candle, assert_cem_normalizer_invariants
+from db_a3_cem_normalizer_hf6 import (
+    assert_cem_normalizer_invariants, closing_session_bounds, closing_to_candle, normalize_symbols,
+)
 from cy_market_source_arbitration_hf6 import assert_source_invariants
 from fd_a3_identity_mapper_rc6 import A3IdentityError, align_dlr, porota_to_a3_dlr
 from rc6_data_retention import bounded_daily_start, daily_start
@@ -172,18 +174,29 @@ def _range_for(mode,current,state):
 
 
 def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL',batch_limit=40,
-        throttle_seconds=0.0,reference_only=False):
+        throttle_seconds=0.0,reference_only=False,target_keys=None):
     assert_cem_invariants();assert_cem_normalizer_invariants();assert_source_invariants()
     mode=str(mode).upper()
     if mode not in {'BOOTSTRAP','DAILY_INCREMENTAL','RECONCILE','WEEKEND_DEEP'}:
         raise ValueError('A3_HISTORY_MODE_INVALID')
     current=now or datetime.now(TZ)
     if current.tzinfo is None: current=current.replace(tzinfo=TZ)
+    current = current.astimezone(TZ)
     with store.connect() as c:
         runtime=c.execute('SELECT session_state,real_orders_sent FROM observer_state WHERE id=1').fetchone()
         if not runtime or str(runtime[0])!='MARKET_CLOSED' or int(runtime[1] or 0)!=0:
             return {'ran':False,'reason':'RUNTIME_NOT_CLOSED_OR_SAFE','execution_allowed':False,'mode':mode}
-    targets=load_targets(store,reference_only=reference_only)[:max(1,int(batch_limit))]
+    available = load_targets(store, reference_only=reference_only)
+    limit = max(1, int(batch_limit))
+    if target_keys is not None:
+        requested = tuple(tuple(key) for key in target_keys)
+        if (not reference_only or not 1 <= len(requested) <= limit
+                or len(set(requested)) != len(requested)
+                or not set(requested) <= set(available)):
+            raise ValueError("A3_HISTORY_REFERENCE_TARGET_SCOPE_UNVERIFIED")
+        targets = requested
+    else:
+        targets = available[:limit]
     init_state(store)
     if not targets:
         return {'ran':False,'reason':'NO_EXACT_A3_TARGETS','execution_allowed':False,
@@ -233,7 +246,9 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
             per_target.append({'target':target,'status':'NOT_DUE'});continue
         try:
             stats['provider_requests']+=1
-            payload=cem.closing_prices(symbol=source_symbol,date_from=start.isoformat(),date_to=end.isoformat(),page=1,page_size=500)
+            lower, upper = (closing_session_bounds(start, end) if reference_only
+                            else (start.isoformat(), end.isoformat()))
+            payload=cem.closing_prices(symbol=source_symbol,date_from=lower,date_to=upper,page=1,page_size=500)
             observed_at = (current if now is not None else datetime.now(TZ)).isoformat()
             raw=_payload_rows(payload);candles=[]
             for row in raw:
@@ -272,7 +287,8 @@ def run(store,*,client=None,history_store=None,now=None,mode='DAILY_INCREMENTAL'
                 stats['empty']+=1;per_target.append({'target':target,'status':status,'range':[start.isoformat(),end.isoformat()],
                                                      'source_symbol':source_symbol,'alignment':alignment_status})
             else:
-                result=append_many(hstore,candles)
+                result=append_many(hstore,candles,
+                                   fill_missing_reference=reference_only and mode != 'RECONCILE')
                 last=max(c.date for c in candles)
                 _record(store,target,ledger_source,status='COMPLETE',day=last,rows=len(candles),success=True)
                 stats['matched']+=1;stats['complete']+=1

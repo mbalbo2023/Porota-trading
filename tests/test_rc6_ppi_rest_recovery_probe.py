@@ -885,8 +885,10 @@ def test_open_partial_current_receipt_never_claims_book_or_ready(
         "ready": 0, "hold": 1, "unattempted": 0}
 
 
-def test_ppi_diagnostic_rotation_keeps_visiting_all_families():
-    assert set(observer.PPI_DIAGNOSTIC_FAMILY_ROTATION) == observer.OPERATIONAL_FAMILIES
+def test_ppi_diagnostic_rotation_keeps_visiting_every_paired_receipt_family():
+    assert set(observer.PPI_DIAGNOSTIC_FAMILY_ROTATION) == (
+        observer.OPERATIONAL_FAMILIES - {"CAUCIONES", "FCI"}
+    )
     assert observer.PPI_DIAGNOSTIC_FAMILY_ROTATION[-1] == "ETFS"
     cursor, observed = 0, []
     for _ in observer.PPI_DIAGNOSTIC_FAMILY_ROTATION:

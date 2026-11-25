@@ -411,7 +411,7 @@ def offers_from_store(store, *, now):
             return [], ["CAUCION_LIVE_BOOK_MISSING"]
         # The catalog can lag evidence ingestion. Recheck material changes
         # from the append-only evidence log instead of trusting stale READY.
-        pending = pending_material_changes(connection)
+        pending = pending_material_changes(connection, family="CAUCIONES")
         rows=[dict(r) for r in connection.execute("""SELECT
           f.ticker,f.instrument_type,f.market,f.currency,f.settlement,f.status,
           f.capability,f.settlement_source,f.metadata_json,
@@ -442,9 +442,9 @@ def offers_from_store(store, *, now):
         try:
             raw=json.loads(row["metadata_json"] or "{}")
             policy=raw.get("paper_caucion_contract_v1") or {}
-            if row["capability"]!="READY_PAPER_CAUCION_PLACING":
-                reason = ppi_full_key_evidence_reason(
-                    {**row, "raw": raw}, database=getattr(store, "path", None), now=at)
+            reason = ppi_full_key_evidence_reason(
+                {**row, "raw": raw}, database=getattr(store, "path", None), now=at)
+            if reason or row["capability"]!="READY_PAPER_CAUCION_PLACING":
                 raise ValueError(reason or "CAUCION_STATIC_POLICY_NOT_READY")
             if policy.get("paper_fill_policy")!="LIVE_PPI_BID_PARTICIPATION_CAP":
                 raise ValueError("CAUCION_LIVE_FILL_POLICY_MISSING")

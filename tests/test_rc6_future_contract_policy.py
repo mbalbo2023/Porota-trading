@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 import json
 from decimal import Decimal
 
+import pytest
+
 import bs_instrument_contracts as contracts
 import cp_contract_evidence_v2_hf6 as evidence
 import cr_contract_evidence_v2_mass_hf6 as mass
@@ -111,6 +113,50 @@ def test_request_only_future_cannot_mint_ppi_contract_evidence():
     assert records == []
     assert skipped == {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED": 1}
     assert identities == {}
+
+
+@pytest.mark.parametrize("ticker", ["DLR/DIC26", "DLR/NOV26"])
+def test_review_clears_only_the_two_exact_preexisting_dlr_transitions(tmp_path, ticker):
+    from be_paper_engine import PaperStore
+
+    store = PaperStore(str(tmp_path / "paper.db"))
+    previous = {
+        "broker_margin": "NO_VERIFICADO",
+        "broker_minimum_quantity": "NO_VERIFICADO",
+        "broker_quantity_step": "NO_VERIFICADO",
+        "currency": "ARS",
+        "market": "A3",
+        "paper_margin_policy": "CONSERVATIVE_NOTIONAL_RATE",
+        "paper_margin_rate": "1",
+        "paper_quantity_min": "1",
+        "paper_quantity_policy": "ONE_INTEGER_CONTRACT_SIMULATION_UNIT",
+        "paper_quantity_step": "1",
+        "policy_scope": "PRODUCTION_PAPER_SIMULATION_ONLY",
+        "readiness_guard": "REQUIRES_VERIFIED_MULTIPLIER_EXPIRY_UNDERLYING",
+        "settlement": "INMEDIATA",
+    }
+    current = policy.standard_dlr_future_evidence(future_row(ticker))
+    identity = ("FUTUROS", ticker, "A3", "ARS", "INMEDIATA")
+    record = dict(zip(("family", "ticker", "market", "currency", "settlement"), identity),
+                  source_class="DERIVED_OFFICIAL_RULE")
+    for at, source, payload in [
+        ("2026-10-05T10:00:00+00:00", "POROTA_PAPER_FUTURES_CONSERVATIVE_POLICY:v1", previous),
+        ("2026-10-14T03:02:00+00:00", policy.A3_DLR_SOURCE_REF, current),
+    ]:
+        evidence.record_snapshots(store, [
+            {**record, "source_ref": source, "observed_at": at, "evidence": payload}
+        ])
+    with store.connect() as db:
+        assert not evidence.pending_material_changes(db)
+        assert db.execute("""SELECT COUNT(*) FROM contract_evidence_v2_changes
+            WHERE status='CHANGED_REVIEW_REQUIRED'""").fetchone()[0] == 1
+    evidence.record_snapshots(store, [{
+        **record, "source_ref": policy.A3_DLR_SOURCE_REF, "observed_at": "2026-11-25T20:00:00+00:00",
+        "evidence": {**current, "price_tick": "1"},
+    }])
+    with store.connect() as db:
+        assert evidence.pending_material_changes(db, family="FUTUROS") == {identity}
+        assert evidence.pending_material_changes(db, family="CAUCIONES") == set()
 
 
 def test_future_paper_window_is_a3_specific_and_has_eod_buffers():
