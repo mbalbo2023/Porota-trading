@@ -1,17 +1,17 @@
-name: RC6 evidencia de ruedas por familia READ_ONLY
-run-name: RC6 cauciones FCI futuros READ_ONLY
+name: RC6 contratos exactos READ_ONLY
+run-name: RC6 contratos exactos y fuentes públicas READ_ONLY
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Leer el estado PAPER de cauciones FCI y futuros
+        description: Leer comprobantes de contrato y referencias públicas
         type: choice
         options: [read_only]
         default: read_only
         required: true
 permissions: {}
 jobs:
-  familias:
+  contratos:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
@@ -24,7 +24,7 @@ jobs:
       DO_KEY: ${{ secrets.DO_SSH_KEY }}
       DO_KNOWN: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - name: Read PAPER family receipts in SQLite query-only
+      - name: Read exact contract gate in SQLite query-only
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -35,7 +35,7 @@ jobs:
           printf '%s\n' "$DO_KNOWN" > "$probe_dir/hosts"
           ssh -F /dev/null -i "$probe_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$probe_dir/hosts" \
-            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 20 bash -s' <<'HOST'
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 15 bash -s' <<'HOST'
           set -Eeuo pipefail
           test "$(id -u)" = 1000 && test "$(id -un)" = porotaadmin
           docker=(docker -H unix:///run/user/1000/porota-rc6-docker.sock)
@@ -46,134 +46,164 @@ jobs:
           from contextlib import closing
           from datetime import datetime, timezone
           import json
+          import os
           import re
           import sqlite3
           import time
           
+          from bu_instrument_catalog import ppi_full_key_evidence_reason
           from cg_paper_workspace import database_path
+          from rc6_fund_source_quarantine import _settlement_authority_pins
           
           
-          def token(value):
-              return value if isinstance(value, str) and re.fullmatch(
-                  r"[A-Z0-9][A-Z0-9_ /.:+\-]{0,63}", value, re.I) else None
+          def tokens(values):
+              return [item for item in values if isinstance(item, str) and re.fullmatch(
+                  r"[A-Z][A-Z0-9_.: +\-]{0,89}", item, re.I)]
           
           
-          def stamp(value):
+          with closing(sqlite3.connect(database_path().as_uri() + "?mode=ro",
+                                       uri=True, timeout=.4)) as conn:
+              conn.row_factory = sqlite3.Row
+              conn.execute("PRAGMA query_only=ON")
+              conn.execute("BEGIN")
+              if tuple(conn.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) != ("PRODUCTION_PAPER", 0):
+                  raise SystemExit("PAPER_ZERO_FAILED")
+              deadline = time.monotonic() + 4
+              conn.set_progress_handler(lambda: time.monotonic() >= deadline, 1000)
+              cohort = conn.execute("""SELECT f.*,c.can_simulate,c.status AS projected,c.detail
+                FROM financial_instrument_catalog f LEFT JOIN candidate_identity_v2 c
+                ON f.ticker=c.ticker AND f.instrument_type=c.instrument_type AND f.market=c.market
+                  AND f.currency=c.currency AND f.settlement=c.settlement
+                WHERE f.instrument_type='CAUCIONES' AND f.status='AVAILABLE'
+                OR f.instrument_type='FCI' AND f.ticker IN ('BZ.AHORRO.A','BZ.AHORRO.B')
+                OR f.instrument_type='FUTUROS' AND f.ticker IN ('DLR/NOV26','DLR/DIC26')
+                ORDER BY f.instrument_type,f.ticker,f.market,f.currency,f.settlement LIMIT 40""").fetchall()
+              details = []
+              for row in cohort:
+                  key = [row[k] for k in ("ticker","instrument_type","market","currency","settlement")]
+                  data = json.loads(row["metadata_json"])
+                  bridge = data.get("_contract_bridge") or {}
+                  conflicts = data.get("_contract_conflicts") or {}
+                  evidence = conn.execute("""SELECT cur.source_class
+                      FROM contract_evidence_v2_current cur
+                      WHERE cur.ticker=? AND cur.family=? AND cur.market=? AND cur.currency=? AND cur.settlement=?
+                      ORDER BY 1 LIMIT 9""", key).fetchall()
+                  blocked = conn.execute("""SELECT source_class,status,count(*) FROM contract_evidence_v2_changes
+                      WHERE ticker=? AND family=? AND market=? AND currency=? AND settlement=?
+                       AND status='CHANGED_REVIEW_REQUIRED' GROUP BY 1,2 LIMIT 8""", key).fetchall()
+                  details.append([key,row["status"],row["capability"],row["settlement_source"],
+                      ppi_full_key_evidence_reason(dict(row),database=database_path()),row["can_simulate"],
+                      tokens((row["detail"] or "").split(";")),tokens(bridge.get("gaps",[])),
+                      tokens(conflicts.get("fields",[]) if isinstance(conflicts,dict) else []),
+                      sorted(k for k in ("isin","fundClassId","cafciClassId","cafci_class_id","cnv_fund_id",
+                                         "paper_family_contract_v1","financial_contract_v17",
+                                         "paper_caucion_contract_v1","_ppi_native_request_receipt") if k in data),
+                      [list(r) for r in evidence], [list(r) for r in blocked]])
               try:
-                  point = datetime.fromisoformat(value)
-                  return point.astimezone(timezone.utc).isoformat() if point.tzinfo else None
-              except (ValueError, TypeError):
+                  _settlement_authority_pins()
+                  fci_pin = "FCI_SETTLEMENT_PIN_PRESENT"
+              except ValueError:
+                  fci_pin = "FCI_SETTLEMENT_PIN_ABSENT_OR_INVALID"
+              print("RC6_FAMILY_DETAIL=" + json.dumps({
+                  "at": datetime.now(timezone.utc).isoformat(),
+                  "a3_live_auth_configured": all(os.getenv(key) for key in
+                      ("A3_PRIMARY_USER","A3_PRIMARY_PASSWORD")),
+                  "fci_settlement_authority":fci_pin,
+                  "details":details}, separators=(",",":"),ensure_ascii=True))
+          PY
+          HOST
+
+  referencias:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
+      github.actor == 'mbalbo2023' && inputs.operation == 'read_only'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 44ee181dcc452215ab05fae7f3919e344e7601d7
+          persist-credentials: false
+      - name: Verify public CAFCI and A3 responses without credentials
+        shell: bash
+        run: |
+          python3 -B - <<'PY'
+          from datetime import datetime, timezone
+          from hashlib import sha256
+          import json
+          import re
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import urlencode, urlsplit
+          from urllib.request import HTTPRedirectHandler, Request, build_opener
+          
+          from rc6_cafci_fci_reference import MAX_COMPRESSED_BYTES, SOURCE_URL, parse_cafci_daily_reference
+          
+          
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
                   return None
           
           
-          start = "2026-11-25T19:25:00+00:00"
-          cutoff = "2026-11-25T19:55:00+00:00"
-          day_start = "2026-11-25T03:00:00+00:00"
-          day_end = "2026-11-26T03:00:00+00:00"
-          with closing(sqlite3.connect(database_path().as_uri() + "?mode=ro",
-                                       uri=True, timeout=0.4)) as conn:
-              conn.execute("PRAGMA query_only=ON")
-              mode, orders, session, auth = conn.execute("""SELECT mode,real_orders_sent,
-                  session_state,ppi_auth FROM observer_state WHERE id=1""").fetchone()
-              if (mode, orders) != ("PRODUCTION_PAPER", 0):
-                  raise SystemExit("PAPER_ZERO_FAILED")
-              conn.execute("BEGIN")
-              tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
+          def fetch(url, limit):
+              with build_opener(NoRedirect()).open(Request(url, headers={
+                      "User-Agent": "Porota-RC6-Paper-Source-Audit/1.0"}), timeout=9) as response:
+                  body = response.read(limit + 1)
+                  if len(body) > limit:
+                      raise ValueError("SOURCE_RESPONSE_TOO_LARGE")
+                  return response.headers, body, datetime.now(timezone.utc)
           
-              def query(table, sql, params=()):
-                  if table not in tables:
-                      return {"table_absent": table}
-                  deadline = time.monotonic() + 1.3
-                  conn.set_progress_handler(lambda: time.monotonic() >= deadline, 1000)
-                  try:
-                      return conn.execute(sql, params).fetchall()
-                  except sqlite3.Error as e:
-                      return {"sql_error": token(getattr(e, "sqlite_errorname", ""))}
-                  finally:
-                      conn.set_progress_handler(None, 0)
           
-              def rows(result, convert):
-                  return [convert(*row) for row in result] if isinstance(result, list) else result
+          def failure(error):
+              if isinstance(error, HTTPError):
+                  return {"status": "HTTP_ERROR", "http": error.code,
+                          "redirect_host": urlsplit(error.headers.get("Location","")).hostname}
+              if isinstance(error, URLError):
+                  return {"status": "TRANSPORT_ERROR", "class": type(error.reason).__name__}
+              code = str(error)
+              return {"status": "REJECTED", "code": code if re.fullmatch(
+                  r"[A-Z][A-Z0-9_]{1,80}", code) else type(error).__name__}
           
-              release = {"at": datetime.now(timezone.utc).isoformat(), "mode": mode,
-                         "orders": orders, "session": token(session), "auth": token(auth)}
-              declared = query("financial_instrument_catalog", """SELECT
-                  instrument_type,capability,settlement_source,count(*)
-                  FROM financial_instrument_catalog WHERE instrument_type IN
-                  ('CAUCIONES','FCI','FUTUROS') AND status='AVAILABLE'
-                  GROUP BY instrument_type,capability,settlement_source ORDER BY 1,2,3 LIMIT 60""")
-              catalog = rows(declared, lambda f,c,s,n: [token(f),token(c),token(s),n])
-              status = query("candidate_identity_v2", """SELECT instrument_type,status,count(*),
-                  max(checked_at) FROM candidate_identity_v2 WHERE instrument_type IN
-                    ('CAUCIONES','FCI','FUTUROS') GROUP BY 1,2 ORDER BY 1,2 LIMIT 45""")
-              projection = rows(status, lambda f,s,n,t: [token(f),token(s),n,stamp(t)])
-              cfi = query("catalog_family_coverage", """SELECT instrument_type,declared,queries,
-                  observed_count,ready_paper_count,discovery_status,checked_at FROM catalog_family_coverage
-                  WHERE instrument_type IN ('CAUCIONES','FCI','FUTUROS') ORDER BY 1""")
-              coverage = rows(cfi, lambda f,d,q,o,r,s,t: [token(f),d,q,o,r,token(s),stamp(t)])
-              agents = query("source_sync", """SELECT source,status,last_attempt_at,last_success_at,items
-                  FROM source_sync WHERE source IN ('FINANCIAL_INSTRUMENT_CATALOG','PPI_PUBLIC')
-                  OR upper(source) LIKE '%CAFCI%' OR upper(source) LIKE '%FCI%'
-                  OR upper(source) LIKE '%FUTUR%' OR upper(source) LIKE '%A3%'
-                  ORDER BY source LIMIT 25""")
-              sources = rows(agents, lambda s,c,a,b,n: [token(s),token(c),stamp(a),stamp(b),n])
-              swp = query("paper_caucion_cash_sweep_attempts", """SELECT
-                  status,code,min(evaluated_at),count(*) FROM paper_caucion_cash_sweep_attempts
-                  WHERE request_id='paper-caucion-cash-sweep:2026-11-25:ARS:v1' GROUP BY 1,2 LIMIT 20""")
-              sweep = rows(swp, lambda s,c,t,n: [token(s),token(c),stamp(t),n])
-              hist = query("paper_caucion_live_book_history", """SELECT
-                  ticker,market,currency,settlement,state,count(*),min(observed_at),max(observed_at),max(quoted_at)
-                  FROM paper_caucion_live_book_history
-                  WHERE julianday(observed_at) BETWEEN julianday(?) AND julianday(?)
-                  GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5 LIMIT 120""", (start, cutoff))
-              history = rows(hist, lambda a,b,c,d,s,n,f,l,q:
-                             [token(a),token(b),token(c),token(d),token(s),n,stamp(f),stamp(l),stamp(q)])
-              hist_all = query("paper_caucion_live_book_history", """SELECT count(*),min(observed_at),
-                  max(observed_at) FROM paper_caucion_live_book_history""")
-              hist_custody = rows(hist_all, lambda n,f,l: [n,stamp(f),stamp(l)])
-              raw_ev = query("paper_events", """SELECT event_at,event_type,detail FROM paper_events
-                  WHERE event_type IN ('CAUCION_LIVE_BOOK_REFRESH','CAUCION_LIVE_BOOK_REFRESH_ERROR')
-                    AND julianday(event_at) >= julianday(?) AND julianday(event_at) <= julianday(?)
-                  ORDER BY id LIMIT 55""", (day_start, day_end))
-              events = []
-              if isinstance(raw_ev, dict):
-                  events = raw_ev
-              else:
-                  for at, event, detail in raw_ev:
-                      if event.endswith("_ERROR"):
-                          events.append([stamp(at), token(event), token(detail)])
-                          continue
-                      try:
-                          data = json.loads(detail)
-                          events.append([stamp(at),token(data.get("state")),data.get("records"),
-                                         data.get("ready"),{token(k):token(v) for k,v in
-                                         data.get("states",{}).items() if token(k) and token(v)}])
-                      except (TypeError, ValueError, AttributeError):
-                          events.append([stamp(at), "REFRESH_DETAIL_INVALID"])
-              funds = query("financial_instrument_catalog", """SELECT ticker,market,currency,settlement,
-                  capability,settlement_source,last_seen_at FROM financial_instrument_catalog
-                  WHERE instrument_type='FCI' AND status='AVAILABLE'
-                  ORDER BY CASE WHEN ticker LIKE '%AHORRO%' THEN 0 ELSE 1 END,
-                  ticker,market,currency,settlement LIMIT 8""")
-              fund_sample = rows(funds, lambda a,b,c,d,e,f,t: [*(token(x) for x in (a,b,c,d,e,f)),stamp(t)])
-              dlr = query("financial_instrument_catalog", """SELECT ticker,market,currency,settlement,
-                  capability,settlement_source,last_seen_at FROM financial_instrument_catalog
-                  WHERE instrument_type='FUTUROS' AND ticker IN ('DLR/NOV26','DLR/DIC26','DLR/DEC26')
-                  ORDER BY 1,2,3,4 LIMIT 14""")
-              dlr_sample = rows(dlr, lambda a,b,c,d,e,f,t: [*(token(x) for x in (a,b,c,d,e,f)),stamp(t)])
-              snapshots = query("market_snapshots", """SELECT asset_class,symbol,settlement,source,
-                  count(*),max(observed_at) FROM market_snapshots WHERE symbol IN
-                    ('DLR/NOV26','DLR/DIC26','DLR/DEC26')
-                  AND asset_class='FUTUROS' GROUP BY 1,2,3,4 ORDER BY 1,2,3,4 LIMIT 30""")
-              marks = rows(snapshots, lambda f,s,p,o,n,t: [token(f),token(s),token(p),token(o),n,stamp(t)])
-              pl = query("paper_family_lifecycle", """SELECT family,state,count(*),max(updated_at)
-                  FROM paper_family_lifecycle WHERE family IN ('FCI','FUTUROS')
-                  GROUP BY 1,2 ORDER BY 1,2 LIMIT 40""")
-              ledger = rows(pl, lambda f,s,n,t: [token(f),token(s),n,stamp(t)])
-              print("RC6_FAMILY_PROBE=" + json.dumps({**release, "catalog":catalog,"coverage":coverage,
-                  "projection":projection,"sources":sources,"sweep":sweep,"caucion_history":history,
-                  "caucion_history_custody":hist_custody,"refresh":events,"fund_sample":fund_sample,
-                  "dlr_sample":dlr_sample,"futures_snapshots":marks,"ledger":ledger},
-                  separators=(",",":"), ensure_ascii=True))
+          
+          result = {"at": datetime.now(timezone.utc).isoformat(), "ppi_calls": 0, "execution": False}
+          try:
+              headers, body, now = fetch(SOURCE_URL, MAX_COMPRESSED_BYTES)
+              filename = headers.get_filename()
+              result["cafci_http"] = {"filename": filename if re.fullmatch(
+                  r"20[0-9]{6}_Planilla_Diaria_A\.xlsx", filename or "") else None,
+                  "last_modified": headers.get("Last-Modified"), "size": len(body)}
+              report = parse_cafci_daily_reference(body, captured_at=now,
+                  http_last_modified_at=headers.get("Last-Modified"),
+                  expected_sha256=sha256(body).hexdigest(), source_filename=filename)
+              result["cafci"] = {"report": report.report_date.isoformat(),
+                  "digest": report.source_sha256, "classes": len(report.classes),
+                  "focal": [{"class_id": row.cafci_class_id, "cnv": row.cnv_fund_id,
+                             "effective": row.nav_effective_date.isoformat() if row.nav_effective_date else None,
+                             "fee_reference_only": True, "has_nav": row.nav_per_unit is not None,
+                             "quality_holds": row.quality_holds} for row in report.classes
+                             if row.cafci_class_id in (1114,1115)]}
+          except (OSError, ValueError, TypeError) as error:
+              result["cafci"] = failure(error)
+          
+          result["a3"] = {}
+          for ticker in ("DLR/NOV26","DLR/DIC26"):
+              url = "https://apicem.matbarofex.com.ar/api/v1/closing-prices?" + urlencode({
+                  "symbol":ticker,"from":"2026-11-24","to":"2026-11-25","page":1,"pageSize":10})
+              try:
+                  _, body, at = fetch(url, 100000)
+                  payload = json.loads(body)
+                  data = payload.get("data") if isinstance(payload,dict) else None
+                  if not isinstance(data,list):
+                      raise ValueError("A3_DATA_MISSING")
+                  records = [{k: row.get(k) for k in
+                      ("symbol","dateTime","date","product","market","currency","settlementPrice","closingPrice","closePrice","close","lastPrice","settlement")
+                      if k in row and type(row[k]) in (str,int,float)}
+                      for row in data if type(row) is dict]
+                  result["a3"][ticker] = {"at":at.isoformat(),"rows":records,"digest":sha256(body).hexdigest(),
+                      "fields": sorted(data[0]) if data and isinstance(data[0],dict) else []}
+              except (OSError, ValueError, TypeError) as error:
+                  result["a3"][ticker] = failure(error)
+          print("RC6_PUBLIC_FAMILY=" + json.dumps(result, separators=(",",":"),ensure_ascii=True))
           PY
-          HOST
