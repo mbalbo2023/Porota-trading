@@ -1,6 +1,15 @@
 # Porota Trading RC6 — instrucciones para agentes
 
-## Continuidad operativa · auditoría integral PAPER desde el 25/11/2026
+## Auditoría PAPER y continuidad de la rueda del 25/11/2026
+
+Usar el [handoff vigente](docs/auditoria-rc6/HANDOFF.md), el [informe de auditoría](docs/auditoria-rc6/BACKTEST_PAPER_2026-11-25.md), el [PDF](docs/auditoria-rc6/BACKTEST_PAPER_2026-11-25.pdf) y el [manifiesto de recibos](docs/auditoria-rc6/RECIBOS_PAPER_2026-11-25.json). Reconciliar el producto, el recibo físico de [Promote V2 #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370), [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093), [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y los owners de [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).
+
+- [#1272](https://github.com/mbalbo2023/Porota-trading/pull/1272) rota familia y clave dentro del presupuesto existente, verifica el recibo con el pin del SQLite leído y ejecuta el publicador con el source privado del release. [Predeploy V2 #1321](https://github.com/mbalbo2023/Porota-trading/actions/runs/45535126618/artifacts/14986798842) acredita 9.178 pruebas activas. [Promote #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370/artifacts/14987771207) quedó `VALIDADO_RUNTIME` a las 00:08 ART del 25/11, con PAPER/0, guard REAL bloqueado y PPI Watch fuera de cambios.
+- El censo congelado contiene 17.472 claves dentro del alcance y una referencia de índice. Su fecha y sus SHAs son los del corte #205. Usar la clave y el primer rechazo del [censo por clave](docs/auditoria-rc6/CENSO_PAPER_2026-11-25.jsonl.gz) como línea base y reconciliar con una proyección del release activo.
+- Empezar la verificación de rueda por READ_ONLY en Actions. Correlacionar el T−10 de las 10:20 ART con el SHA del release y acreditar capacidad EXIT y primer dato genuino fresco por clave. Seguir sólo los instrumentos habilitados por sus filtros a decisión, economía, riesgo, fill y asiento. El replay de fixture conserva su propio reloj, fuente y ledger aislado.
+- Priorizar libro, tasa e importe de cauciones, y contrato de clase, NAV y corte de FCI. Para scalping, medir último trabajo útil y el avance de candidato, señal y asiento. En velas seguir el cursor, 1m/5m, `known_at` y EOD. El histórico RAW exige cobertura y procedencia junto al recibo de restauración.
+
+## Antecedente del cierre técnico #206
 
 [Handoff vigente](docs/auditoria-rc6/HANDOFF.md), [RCA del 24/11](docs/auditoria-rc6/RCA_RUEDA_2026-11-24.md) y [backtesting por familia en PDF](docs/auditoria-rc6/BACKTEST_PAPER_2026-11-24.pdf). Reconciliar el HEAD de producto y el recibo físico en [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093), las observaciones de rueda en [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y el ownership en [#980](https://github.com/mbalbo2023/Porota-trading/issues/980) antes de escribir. `main` es la rama de control documental.
 

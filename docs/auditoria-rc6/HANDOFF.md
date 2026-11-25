@@ -1,6 +1,19 @@
 # Handoff de Porota Trading RC6
 
-## Checkpoint vigente al cierre técnico del 24/11/2026
+## Auditoría y continuidad de la rueda del 25/11/2026
+
+**VALIDADO_RUNTIME** a las 00:08:01 ART del 25/11 (`03:08:01 UTC`). El producto de [#1272](https://github.com/mbalbo2023/Porota-trading/pull/1272) quedó en `c6b990e20fb7b943dfda478202452b5c550816f6`, fuente `2b719cc86252c51dac516a48b519ab422dcb8e50`, árbol `1401d8390e01dbf3be3b0e115a5bfd97acd0ae36`. [Predeploy #1321](https://github.com/mbalbo2023/Porota-trading/actions/runs/45535126618/artifacts/14986798842) acreditó 9.178 pruebas activas y el recibo funcional PAPER/0 de la imagen exacta. El único [Promote #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370/artifacts/14987771207) verificó esa imagen, la misma DB, dashboard saludable, observer activo, ocho roles, guard REAL `BLOCKED`, seis variantes de renta fija `ACTIVE_PAPER` y PPI Watch fuera de cambios.
+
+Los [resultados en Markdown](BACKTEST_PAPER_2026-11-25.md), el [PDF actualizado](BACKTEST_PAPER_2026-11-25.pdf), el [censo reproducible](CENSO_PAPER_2026-11-25.jsonl.gz) y [los recibos](RECIBOS_PAPER_2026-11-25.json) reúnen los casos, RCA y regresiones. El censo de la auditoría contiene 17.472 claves más un índice de referencia. La proyección de la lectura inicial dio 0/17.473 READY. La rotación, el pin SQLite y el source del publicador se corrigieron en el candidato.
+
+El [postflight READ_ONLY #461](https://github.com/mbalbo2023/Porota-trading/actions/runs/45538260228/artifacts/14988041697) identificó el release a las 00:12:02 ART del 25/11. Confirmó PAPER/0, PPI Auth OK, dueño local de Gateway con un login, tres consumidores y EXIT `WAITING_MARKET`. La proyección seguía en **0/17.473 READY**, sin asientos nuevos y con cursor de velas 289.243. El preopen de la mañana, la capacidad efectiva EXIT, la primera cotización de rueda y la nueva publicación del censo requieren sus propios recibos.
+
+1. **Rueda y EXIT.** Vincular el recibo de las 10:20 ART / 13:20 UTC al release activo. Usar el timer vigente y las lecturas de Actions ya instaladas. Acreditar la capacidad de EXIT en su ventana con la misma generación, presupuesto, hora del libro y recepción.
+2. **Censo fresco.** Comprobar la próxima publicación del censo de `:50` y la continuidad rueda por rueda. Comparar claves incorporadas, primer gate, avance por familia y asientos con el manifiesto congelado. Registrar los ETF que efectivamente aparecen en el catálogo primario y su contrato de costos.
+3. **Cauciones, FCI, scalping y renta fija.** Seguir el libro colocador y la TNA, clase y autoridad de NAV/calendario, ticks y salida de scalping, y el recorrido ACK → Book posterior → ledger de renta fija. Con el proveedor y los calendarios de fixture se observaron asientos y conciliación de prueba.
+4. **Velas e históricos.** Verificar el delta de cursor y `known_at` 1m/5m ligado a trades admitidos. Conservar el cutoff RAW `INCOMPLETE` mientras falten series y autoridad de precio. Usar la custodia y el [owner incremental](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7135331826).
+
+## Antecedente al cierre técnico del 24/11/2026
 
 **VALIDADO_RUNTIME** a las 22:18 ART del 24/11. El [PR #1270](https://github.com/mbalbo2023/Porota-trading/pull/1270) quedó en producto `167ae9bc00de6f3de9d18183a10a8c2364c2e387`, fuente `d5a656f9529bbc1749cd6ada1c098e218a8b6398`, árbol `8f89464d79accab63733140cb07362564d4f9994`. [Predeploy #1320](https://github.com/mbalbo2023/Porota-trading/actions/runs/45521938932/artifacts/14980649015) aprobó 9.174 pruebas. [Promote #206](https://github.com/mbalbo2023/Porota-trading/actions/runs/45523776489/artifacts/14980838451) verificó dashboard saludable, observer activo, ocho roles, `PRODUCTION_PAPER / SIMULATION`, guard REAL `BLOCKED` y `real_orders_sent=0` en SQLite. El controlador acreditó seis variantes de venta de renta fija `ACTIVE_PAPER`. Owners de [escritura](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7149457656) y [deploy](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7149454154) de #1270 liberados.
 
@@ -16,12 +29,6 @@ El [RCA del plazo](RCA_RUEDA_2026-11-24.md#cierre-técnico-posterior-a-la-rueda)
 | P1 · Salud integral | Medir último éxito útil de los ocho roles, horarios y recibos de los 32 timers, dashboard vs. base, WAL y backups, IOL en ventana y outbox/ACK. Los incidentes de cola #1087 y alertas están trazados en el RCA. |
 
 En la consulta de PR abiertos, [#1216 ETF](https://github.com/mbalbo2023/Porota-trading/pull/1216) requiere verificar la proyección física y reconciliar su disposición `SUPERSEDIDO_CON_REFERENCIA` con [su declaración](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7024848993). [#1166 Performance](https://github.com/mbalbo2023/Porota-trading/pull/1166) se conserva `RETENER_CON_CAUSA` como frente independiente con [su declaración](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7017215316). Verificar sus heads, pruebas y ownership antes de decidir su disposición definitiva.
-
-## Instrucción para el agente entrante
-
-```text
-Continuá Porota RC6 desde AGENTS.md y docs/auditoria-rc6/HANDOFF.md, incluido el PDF de backtesting. Reconciliá HEAD, #1093, #980 y el recibo físico. Empezá READ_ONLY por Actions y verificá el preopen de las 10:20 ART para el SHA activo y la capacidad EXIT. Congelá un universo exacto de las diez familias. Seguí cada clave por sus filtros y motores hasta compra, colocación o suscripción y asiento PAPER en replay aislado. Priorizá cauciones, FCI, scalping, velas 1m/5m e históricos. Publicá casos, cobertura, primer bloqueo, fills simulados y evidencias por capa en GitHub y actualizá el PDF. PAPER/SHADOW, real_orders_sent=0, PPI Watch fuera de cambios y fix-forward.
-```
 
 ## Corte de la rueda PAPER del 24/11/2026
 
