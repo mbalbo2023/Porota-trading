@@ -977,6 +977,30 @@ def test_native_discovery_uses_spare_turns_and_keeps_exact_cursor(catalog_store,
     assert result == {"slots": 2, "attempted": 2, "fresh_pairs": 2, "attested": 1}
 
 
+def test_open_rotation_materializes_one_bounded_plan_for_multiple_same_family_keys(
+        catalog_store, monkeypatch):
+    family = "BONOS"
+    keys = [(f"AL{i}", family, "BYMA", "ARS", "INMEDIATA") for i in range(30, 33)]
+    reads = []
+
+    def batch(_store, *, limit, family, after, pending_settlement):
+        reads.append((limit, family, after, pending_settlement))
+        return keys[1:]
+
+    monkeypatch.setattr(observer, "PPI_DIAGNOSTIC_FAMILY_ROTATION", (family,))
+    monkeypatch.setattr(observer, "_market_open", lambda: True)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates", lambda *_a, **_kw: keys[:1])
+    monkeypatch.setattr(observer, "_ppi_rest_probe_keys", batch)
+    monkeypatch.setattr(observer, "_observe_native_candidate", lambda *_a, **_kw: {
+        "status": "FRESH_OBSERVED", "native_receipts": ["current", "book"], "settlement_attested": True})
+    pulse = observer.time.monotonic()
+    after = {}
+    _, _, result = observer._discover_native_settlements(
+        object(), catalog_store, slots=3, deadline=pulse + 10, cursor=0, after=after, last_pulse=pulse)
+    assert reads == [(2, family, keys[0], True)]
+    assert after == {family: keys[-1]} and result["attested"] == 3
+
+
 @pytest.mark.parametrize(("second_read", "reason"), [
     ("429", "PPI_NATIVE_HTTP_429"),
     ("exit", "PPI_OPEN_EXIT_EXPOSURE_PRESENT"),

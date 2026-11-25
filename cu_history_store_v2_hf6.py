@@ -400,11 +400,13 @@ def _append_connection(connection,value):
             "source_rank":source_rank(value.source),"payload_hash":digest,"conflicts_recorded":conflicts}
 
 
-def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
+def append_many(store,candles:Iterable[Candle],*,attempt_key=None,fill_missing_reference=False):
     values=list(islice(iter(candles),MAX_BATCH_ROWS+1))
     if len(values)>MAX_BATCH_ROWS: raise ValueError("HISTORY_BATCH_ROW_BUDGET_EXHAUSTED")
     values=[v.normalized() for v in values]
     reference_store = getattr(store, "source_reported_only", False) is True
+    if fill_missing_reference and not reference_store:
+        raise ValueError("HISTORY_MISSING_ONLY_REQUIRES_REFERENCE_STORE")
     if any((value.price_basis == SOURCE_REPORTED) != reference_store for value in values):
         raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
     for value in values: value.validate()
@@ -419,6 +421,18 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
         try:
             if existing_only:
                 require_current_history(connection)
+            if fill_missing_reference:
+                missing = [value for value in values if not connection.execute(
+                    "SELECT 1 FROM history_canonical_v2 WHERE " + _WHERE, _key(value),
+                ).fetchone()]
+                already_present = len(values) - len(missing)
+                if not missing:
+                    connection.commit()
+                    return {"versions_appended": 0, "canonical_updates": 0,
+                            "protected_by_precedence": 0, "committed_rows": 0,
+                            "already_present": already_present, "batch_semantics": "ATOMIC_BOUNDED"}
+                values = missing
+                key = sha256(_canonical_json([key, [_key(value) for value in values]]).encode()).hexdigest()
             prior=connection.execute('SELECT ordinal,version_id,payload_hash FROM history_batch_rows_v2 WHERE attempt_key=? ORDER BY ordinal',
                                      (key,)).fetchall() if attempt_key is not None else []
             if prior:
@@ -458,7 +472,8 @@ def append_many(store,candles:Iterable[Candle],*,attempt_key=None):
         except BaseException:
             connection.rollback();raise
     return {"versions_appended":versions,"canonical_updates":canonical,"protected_by_precedence":len(values)-canonical,
-            "committed_rows":len(values),"attempt_key":key,"batch_semantics":"ATOMIC_BOUNDED","row_results":results}
+            "committed_rows":len(values),"attempt_key":key,"batch_semantics":"ATOMIC_BOUNDED","row_results":results,
+            **({"already_present": already_present} if fill_missing_reference else {})}
 
 
 def append_candle(store,candle): return append_many(store,[candle])["row_results"][0]

@@ -116,6 +116,81 @@ def test_incomplete_or_mismatched_wire_cannot_be_signed(defect):
     assert signer.observe("book", key, capture, generation=generation, catalog_digest=DIGEST) is None
 
 
+def test_release_rotation_retains_only_preexisting_identity_authority(tmp_path, monkeypatch):
+    import rc6_ppi_native_request_receipt as receipts
+
+    class RotationClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (AT + timedelta(seconds=3)).astimezone(tz)
+
+    monkeypatch.setattr(receipts, "datetime", RotationClock)
+    database = str(tmp_path / "paper.db")
+    old = SettlementReceiptSigner(RELEASE)
+    pin(database, old)
+    proof = sign_pair(old)
+    new_release = ["e" * 40, "f" * 40]
+    new = SettlementReceiptSigner(new_release)
+    status = {"state": "OPEN", "owner_pid": os.getpid(),
+              "settlement_signer_public_key": new.public_key, "settlement_signer_release": new_release}
+    pin_gateway_signer(database, status, expected_pid=os.getpid(), release=new_release)
+    monkeypatch.setenv("POROTA_BUILD_SHA", new_release[0])
+    monkeypatch.setenv("POROTA_CANDIDATE_TREE_SHA", new_release[1])
+    at = AT + timedelta(seconds=10)
+    assert verified_receipt(proof, KEY, database=database, now=at)
+    assert not verified_receipt(proof, KEY, database=database, now=at, require_active=True)
+    assert not verified_receipt(proof, KEY, database=database, now=at + timedelta(days=15))
+    old.observe("current", KEY, wire("current", elapsed=4), generation=GENERATION, catalog_digest=DIGEST)
+    late = old.observe("book", KEY, wire("book", elapsed=5), generation=GENERATION, catalog_digest=DIGEST)
+    assert late and not verified_receipt(late, KEY, database=database, now=at)
+
+
+def test_book_failure_materializes_sampled_candles_without_a_market_snapshot(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import bf_production_paper_observer as observer
+    from bl_candle_engine import CandleArchive, SampleMaterializer, Series
+    from rc6_ppi_gateway_reader_adapter import SharedFeedUnavailable, SharedPPIReaderAdapter
+
+    store = PaperStore(str(tmp_path / "paper.db"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    _support_schema(store)
+    record = catalog.normalize_record(
+        {"ticker": KEY[0], "type": KEY[1], "market": KEY[2], "currency": KEY[3],
+         "settlement": KEY[4]}, KEY[4], AT.isoformat(), "OFFHOST")
+    with store.connect() as connection:
+        catalog.persist(connection, record)
+    archive = CandleArchive(store)
+    captured = wire("current")
+    capture = {"native_payload": captured["native_receipt"]["raw_payload"],
+               "guard_wire_receipt": captured["guard_wire_receipt"]}
+    known = (AT + timedelta(seconds=10)).isoformat()
+    reader = SharedPPIReaderAdapter(client=SimpleNamespace(pull=lambda *_a, **_kw: None),
+                                    consumer="scanner", catalog_source_digest=DIGEST)
+    monkeypatch.setattr(reader, "current_with_optional_native_capture", lambda *_a, **_kw: capture)
+    monkeypatch.setattr(observer, "now_iso", lambda: known)
+
+    def missing_book(*_):
+        raise SharedFeedUnavailable("PPI_NATIVE_HTTP_429")
+
+    monkeypatch.setattr(reader, "book", missing_book)
+    for _ in range(2):
+        with pytest.raises(SharedFeedUnavailable, match="PPI_NATIVE_HTTP_429"):
+            observer._read_scanner_quote(reader, store, KEY[0], KEY[1], KEY[4], identity=KEY)
+    end = (AT + timedelta(minutes=5)).isoformat()
+    result = SampleMaterializer(store).tick(end)
+    assert result["versions"] == 2 and result["cursor"] == 0
+    for resolution in ("1m", "5m"):
+        series = Series(*KEY, resolution, "PPI_GUARDED_CURRENT", "RAW",
+                        "OBSERVED_NOMINAL_PRICE", "TRADE_SAMPLES", "UNKNOWN")
+        bar, = archive.read(series, as_of=end, qualities=("SAMPLED",))
+        assert bar["close"] == "100" and bar["samples"] == 1 and bar["volume"] is None
+    with store.connect() as connection:
+        assert connection.execute("SELECT count(*) FROM market_snapshots").fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT count(*) FROM historical_raw_archive WHERE origin='PPI_GUARDED_CURRENT'").fetchone()[0] == 1
+
+
 def test_catalog_rejects_a_second_market_or_currency_even_on_another_term(tmp_path):
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)

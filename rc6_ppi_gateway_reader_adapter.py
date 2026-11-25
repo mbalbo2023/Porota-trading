@@ -105,6 +105,8 @@ def local_gateway_owner_custody(status: dict) -> dict:
     distinct_three_children = (
         set(roles) == {"scanner", "exit_reader", "scalping"}
         and len(child_pids) == 3 and status["owner_pid"] not in child_pids)
+    router = status.get("native_router")
+    exit_wait_ms = router.get("last_exit_queue_wait_ms") if isinstance(router, dict) else None
     return {"schema": "rc6.ppi.local-owner-custody.v1",
             "state": "LOCAL_OWNER_OBSERVED",
             "owner_pid": status["owner_pid"],
@@ -121,6 +123,8 @@ def local_gateway_owner_custody(status: dict) -> dict:
             "credential_isolation": "NO_VERIFICADO",
             "provider_signed_session": False,
             "provider_quota": "UNKNOWN", "paper_ready": False,
+            "provider_rate_limit_response_observed": status.get("provider_rate_limit_response_observed"),
+            "exit_last_queue_wait_ms": exit_wait_ms if type(exit_wait_ms) is int and exit_wait_ms >= 0 else None,
             "real_order_routes_exposed": False}
 
 
@@ -235,6 +239,7 @@ class SharedPPIReaderAdapter:
     def metrics(self) -> dict:
         with self._lock:
             guard_allowed = guard_blocked = 0
+            native_backoff = None
             authenticated = self._gateway_pinned
             if self._gateway_pinned:
                 status = self._client.owner_status()
@@ -245,6 +250,7 @@ class SharedPPIReaderAdapter:
                                  and status.get("session_recovery_pending") is not True)
                 guard_allowed = status.get("guard_http_allowed")
                 guard_blocked = status.get("guard_http_blocked")
+                native_backoff = status.get("native_backoff_remaining_seconds")
                 if (type(guard_allowed) is not int or guard_allowed < 0
                         or type(guard_blocked) is not int or guard_blocked < 0):
                     raise SharedFeedUnavailable("PPI_GATEWAY_GUARD_METRICS_UNVERIFIED")
@@ -262,6 +268,7 @@ class SharedPPIReaderAdapter:
                 "consumer_direct_http": 0,
                 "http_allowed": guard_allowed,
                 "http_blocked": guard_blocked,
+                "native_backoff_remaining_seconds": native_backoff,
             }
 
     @property
@@ -339,7 +346,7 @@ class SharedPPIReaderAdapter:
         self._state = "OWNER_PINNED_OBSERVE_ONLY"
 
     def _native(self, method: str, ticker: str, instrument_type: str,
-                settlement: str, *, include_guard=False):
+                settlement: str, *, include_guard=False, require_guard=True):
         if not self._gateway_pinned:
             return self._native_unavailable(method.upper(), (ticker, instrument_type, settlement))
         if self._closed:
@@ -370,7 +377,7 @@ class SharedPPIReaderAdapter:
             raise GatewayEvidenceRejected(self._last_error)
         self._last_error = None
         if include_guard:
-            if not isinstance(response.get("guard_wire_receipt"), dict):
+            if require_guard and not isinstance(response.get("guard_wire_receipt"), dict):
                 self._last_error = "PPI_GATEWAY_GUARD_WITNESS_MISSING"
                 raise GatewayEvidenceRejected(self._last_error)
             return copy.deepcopy(response)
@@ -378,6 +385,13 @@ class SharedPPIReaderAdapter:
 
     def current(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("current", ticker, instrument_type, settlement)
+
+    def current_with_optional_native_capture(self, ticker: str, instrument_type: str, settlement: str):
+        """Carry the same Current and its optional candle witness from one GET."""
+        response = self._native("current", ticker, instrument_type, settlement,
+                                include_guard=True, require_guard=False)
+        return {"native_payload": response["receipt"]["raw_payload"],
+                "guard_wire_receipt": response.get("guard_wire_receipt")}
 
     def book(self, ticker: str, instrument_type: str, settlement: str):
         return self._native("book", ticker, instrument_type, settlement)

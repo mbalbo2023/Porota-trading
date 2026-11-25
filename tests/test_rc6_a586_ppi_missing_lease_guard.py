@@ -4,6 +4,7 @@ All HTTP in these tests runs exclusively through the in-memory A375 fake wire:
 no broker credentials, provider network, host filesystem or production sidecar.
 """
 
+from contextlib import closing
 from copy import deepcopy
 from datetime import timedelta
 import base64
@@ -417,19 +418,23 @@ def test_signed_authority_expires_without_extension_or_more_gets(
     wire, tmp_path, monkeypatch,
 ):
     from be_paper_engine import PaperStore
+
     clock, provider_calls, _ = wire
     store = PaperStore(str(tmp_path / "paper.sqlite"))
-    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
-    environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
-    runtime = RuntimePPIBudget(store.path,
-        RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
-    first = runtime.acquire("book")
-    assert first["allowed"] and first["lease"]
-    runtime.start(first["lease"])
-    runtime.finish(first["lease"])
-    clock.advance(3601)
-    with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
-        runtime.acquire("book")
+    # Keep a fixture connection open so SQLite cannot remove WAL/SHM when
+    # unused setup connections are collected during the private-copy check.
+    with closing(store.connect()):
+        store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+        environ, _ = static_authority_file(tmp_path, monkeypatch, clock)
+        runtime = RuntimePPIBudget(store.path,
+            RuntimeCapacityController(environ=environ, policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
+        first = runtime.acquire("book")
+        assert first["allowed"] and first["lease"]
+        runtime.start(first["lease"])
+        runtime.finish(first["lease"])
+        clock.advance(3601)
+        with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
+            runtime.acquire("book")
     assert not provider_calls
 
 

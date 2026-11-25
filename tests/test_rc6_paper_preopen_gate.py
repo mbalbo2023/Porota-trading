@@ -283,6 +283,7 @@ def test_preopen_runtime_has_no_global_scalping_minimum_for_other_families():
     assert runtime["state"] == "GREEN"
     assert runtime["scalping_eligible_identities"] == 0
     assert runtime["scalping_family_readiness"] == "NO_READY_SPOT_CANDIDATES"
+    assert runtime["paper_contract_coverage_by_family"] == {"FUTUROS": {"keys": 1, "eligible": 1}}
     assert all(item["state"] == "GREEN" for item in runtime["workers"].values())
 
     db.execute("UPDATE candidate_identity_v2 SET can_simulate=0")

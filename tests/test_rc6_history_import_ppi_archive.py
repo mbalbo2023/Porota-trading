@@ -65,6 +65,19 @@ class ArchiveImportTest(unittest.TestCase):
             self.assertEqual(connection.execute("""SELECT COUNT(*) FROM history_canonical_v2
                 WHERE price_basis='RAW' OR currency<>'UNKNOWN'""").fetchone()[0], 0)
 
+    def test_missing_only_preserves_existing_version_and_adds_latest_missing_day(self):
+        self.archive("TEST", "ON", "A-24HS", "2025-09-23", [self.bar("2025-09-22")])
+        import_ppi_archive(self.store, environ=self.env)
+        self.archive("TEST", "ON", "A-24HS", "2025-09-26",
+                     [self.bar("2025-09-22", price=13), self.bar("2025-09-24")])
+        self.archive("TEST", "ON", "A-24HS", "2025-09-27", [self.bar("2025-09-24", price=14)])
+        report = import_ppi_archive(self.store, environ=self.env, missing_only=True)
+        assert (report["already_present"], report["versions_appended"]) == (1, 1)
+        assert [row["close"] for row in self.read(
+            "TEST", "OBLIGACIONES", "ON", "A-24HS", "2025-09-27")] == [12, 14]
+        retry = import_ppi_archive(self.store, environ=self.env, missing_only=True)
+        assert (retry["already_present"], retry["versions_appended"]) == (2, 0)
+
     def test_conflicting_values_legacy_and_corrupt_objects_do_not_enter_store(self):
         old = self.bar("2025-09-22")
         bad = self.bar("2025-09-24", price=1)

@@ -357,6 +357,56 @@ def archive_raw(c,*,origin,row_key,payload,recorded_at,quality='UNVERIFIED'):
         (origin,row_key,fingerprint(payload),stamp(recorded_at),quality,body)).rowcount==1
 
 
+def record_guarded_current_sample(store, identity, capture, *, priority, as_of,
+                                  cash_multiplier="UNKNOWN"):
+    """Feed the existing dirty-bar queue from an independent Current receipt."""
+    from rc6_ppi_global_budget import assert_native_ppi_response_identity
+    from rc6_ppi_shared_feed import _five, _sha
+    from rc6_ppi_shared_rest_producer import _validate_guard_witness
+
+    key = _five(identity)
+    if key[1] in {"CAUCIONES", "FCI", "INDICES"}:
+        return False
+    payload = capture["native_payload"]
+    guard = capture["guard_wire_receipt"]
+    digest, received_at, _ = _validate_guard_witness(
+        guard, method="current", priority=priority, five_key=key, raw_sha256=_sha(payload))
+    assert_native_ppi_response_identity(payload, key)
+    event, received, checked = (stamp(value) for value in (payload["date"], received_at, as_of))
+    age = (aware_datetime(checked) - aware_datetime(event)).total_seconds()
+    if not event <= received <= checked or not 0 <= age <= 120:
+        return False
+    price = format(decimal_value(payload["price"], "precio", positive=True).normalize(), "f")
+    source = "PPI_GUARDED_CURRENT"
+    series_items = [Series(*key, resolution, source, "RAW", "OBSERVED_NOMINAL_PRICE",
+                           "TRADE_SAMPLES", "UNKNOWN", cash_multiplier)
+                    for resolution in ("1m", "5m")]
+    with store.connect() as c:
+        c.execute("PRAGMA busy_timeout=250")
+        c.execute("BEGIN IMMEDIATE")
+        state = c.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()
+        if state is None or tuple(state) != ("PRODUCTION_PAPER", 0):
+            return False
+        missing = [series for series in series_items if not c.execute("""
+            SELECT 1 FROM candle_samples WHERE series_id=? AND event_at=? AND price=?""",
+            (series.key, event, price)).fetchone()]
+        if not missing:
+            return False
+        if not archive_raw(c, origin=source, row_key=digest, recorded_at=received,
+                           quality="SAMPLED", payload={"identity": key, "trade_at": event,
+                           "price": price, "wire_sha256": guard["raw_body_sha256"]}):
+            return False
+        sample_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+        for series in missing:
+            start, end = bounds(event, series.resolution)
+            CandleArchive.register(c, series)
+            inserted = c.execute("INSERT OR IGNORE INTO candle_samples VALUES(?,?,?,?,?)",
+                                 (series.key, event, price, received, sample_id)).rowcount
+            if inserted:
+                c.execute("INSERT OR IGNORE INTO candle_dirty VALUES(?,?,?)", (series.key, start, end))
+    return True
+
+
 def migrate_legacy(source_path,store,*,recorded_at,batch_size=500):
     """Copia en cuarentena, no convierte datos desconocidos en OHLCV válido.
 

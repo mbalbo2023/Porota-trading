@@ -911,7 +911,8 @@ def publish_native_settlement_receipt(store, identity, proof, checked_at):
     from contextlib import closing
     from rc6_ppi_native_request_receipt import FIELD, verified_receipt
 
-    if not verified_receipt(proof, identity, database=store.path, now=checked_at):
+    if not verified_receipt(proof, identity, database=store.path, now=checked_at,
+                            require_active=True):
         return False
     ticker, family, market, currency, settlement = identity
     with closing(store.connect()) as con, con:

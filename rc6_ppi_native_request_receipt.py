@@ -1,6 +1,6 @@
 """PAPER settlement evidence signed by the real, guarded PPI REST owner."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import os
@@ -22,7 +22,9 @@ _PIN_SCHEMA = "rc6.ppi.native-settlement-controller-pin.v1"
 _SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 _SHA64 = re.compile(r"[0-9a-f]{64}\Z")
 _SIGNATURE = re.compile(r"[0-9a-f]{128}\Z")
-_PIN_MAX_BYTES = 1024
+_PIN_MAX_BYTES = 16 * 1024
+_MAX_RETIRED_PINS = 64
+_IDENTITY_LKG_SECONDS = 14 * 86400
 _PAIR_MAX_SECONDS = 120
 _ENDPOINTS = ("current", "book")
 _REFERENCE_ONLY = frozenset({"CAUCIONES", "FCI", "INDICES"})
@@ -163,13 +165,24 @@ def _read_pin(path: Path):
                 or info.st_mode & 0o022 or not 0 < info.st_size <= _PIN_MAX_BYTES):
             raise ValueError("PPI_NATIVE_SETTLEMENT_PIN_CUSTODY")
         pin = json.loads(stream.read(_PIN_MAX_BYTES + 1))
-    if (not isinstance(pin, dict) or pin.get("schema") != _PIN_SCHEMA
-            or not isinstance(pin.get("public_key"), str) or not _SHA64.fullmatch(pin["public_key"])
-            or not isinstance(pin.get("release"), list) or len(pin["release"]) != 2
-            or any(not isinstance(item, str) or not _SHA40.fullmatch(item)
-                   for item in pin["release"])):
+    if not isinstance(pin, dict) or pin.get("schema") != _PIN_SCHEMA or not _valid_pin_key(pin):
         raise ValueError("PPI_NATIVE_SETTLEMENT_PIN_INVALID")
+    retired = pin.get("retired", [])
+    if (not isinstance(retired, list) or len(retired) > _MAX_RETIRED_PINS
+            or any(not isinstance(item, dict) or not _valid_pin_key(item)
+                   or not isinstance(item.get("until"), str) for item in retired)):
+        raise ValueError("PPI_NATIVE_SETTLEMENT_PIN_INVALID")
+    for item in retired:
+        _clock(item["until"])
     return pin
+
+
+def _valid_pin_key(pin):
+    release = pin.get("release")
+    public = pin.get("public_key")
+    return (isinstance(public, str) and bool(_SHA64.fullmatch(public))
+            and isinstance(release, list) and len(release) == 2
+            and all(isinstance(item, str) and _SHA40.fullmatch(item) for item in release))
 
 
 def pin_gateway_signer(database, status, *, expected_pid, release=None):
@@ -187,10 +200,19 @@ def pin_gateway_signer(database, status, *, expected_pid, release=None):
         raise ValueError("PPI_NATIVE_SETTLEMENT_PIN_CUSTODY")
     pin = {"schema": _PIN_SCHEMA, "public_key": public, "release": release}
     try:
-        if _read_pin(path) == pin:
-            return
+        previous = _read_pin(path)
     except FileNotFoundError:
-        pass
+        previous = None
+    if previous:
+        if previous["public_key"] == public and previous["release"] == release:
+            return
+        now = datetime.now(timezone.utc)
+        floor = now - timedelta(seconds=_IDENTITY_LKG_SECONDS)
+        retired = [{"public_key": previous["public_key"], "release": previous["release"],
+                    "until": now.isoformat()}]
+        retired.extend(item for item in previous.get("retired", [])
+                       if floor <= _clock(item["until"]) <= now)
+        pin["retired"] = retired[:_MAX_RETIRED_PINS]
     with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".settlement-", delete=False) as f:
         temporary = Path(f.name)
         try:
@@ -202,8 +224,9 @@ def pin_gateway_signer(database, status, *, expected_pid, release=None):
             temporary.unlink(missing_ok=True)
 
 
-def verified_receipt(proof, five_key, *, database=None, now=None, maximum_age_seconds=14 * 86400):
-    """Verify the signed exact contract, independently of the current quote gate."""
+def verified_receipt(proof, five_key, *, database=None, now=None,
+                     maximum_age_seconds=_IDENTITY_LKG_SECONDS, require_active=False):
+    """Verify the exact contract. Only the active signer may add a new proof."""
     try:
         identity = _five(five_key)
         if (not isinstance(proof, dict) or set(proof) != _MATERIAL_FIELDS
@@ -221,11 +244,23 @@ def verified_receipt(proof, five_key, *, database=None, now=None, maximum_age_se
             return False
         pin = _read_pin(_pin_path(database))
         release = release_coordinates()
-        if proof["release"] != pin["release"] or (release and release != pin["release"]):
+        if release and release != pin["release"]:
             return False
         material = {k: v for k, v in proof.items() if k != "signature"}
-        Ed25519PublicKey.from_public_bytes(bytes.fromhex(pin["public_key"])).verify(
-            bytes.fromhex(proof["signature"]), _canonical_bytes(material))
-        return True
-    except (OSError, ValueError, TypeError, AttributeError, OverflowError, InvalidSignature):
+        signature, signed = bytes.fromhex(proof["signature"]), _canonical_bytes(material)
+        candidates = [pin]
+        if not require_active:
+            candidates.extend(item for item in pin.get("retired", [])
+                              if known <= _clock(item["until"]) <= point)
+        for signer in candidates:
+            if proof["release"] != signer["release"]:
+                continue
+            try:
+                Ed25519PublicKey.from_public_bytes(bytes.fromhex(signer["public_key"])).verify(
+                    signature, signed)
+                return True
+            except InvalidSignature:
+                continue
+        return False
+    except (OSError, ValueError, TypeError, AttributeError, OverflowError):
         return False

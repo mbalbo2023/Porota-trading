@@ -74,6 +74,19 @@ INTRADAY_CAPABILITY_REJECTED_STATE = "INTRADAY_CAPABILITY_WARMUP_REJECTED_CLOSED
 INTRADAY_CAPABILITY_CLOSED_STATES = frozenset({"PPI_INSTRUMENT_NOT_FOUND",
     "INTRADAY_CAPABILITY_REPROBE_PENDING", "INTRADAY_CAPABILITY_REPROBE_FAILED",
     INTRADAY_CAPABILITY_WARMUP_STATE, INTRADAY_CAPABILITY_REJECTED_STATE})
+SCALPING_PROVIDER_BACKPRESSURE = frozenset({
+    "PPI_HTTP_429", "PPI_NATIVE_HTTP_429", "PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE",
+    "PPI_DIRECT_PROVIDER_429_BREAKER",
+})
+SCALPING_GATEWAY_REQUEST_HOLDS = frozenset({
+    "PPI_BUDGET_BACKPRESSURE", "PPI_NATIVE_ROUTER_CAPACITY_HOLD",
+    "PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED", "PPI_DIRECT_SINGLE_WIRE_BUSY",
+})
+SCALPING_REQUEST_DENIALS = frozenset({
+    "PPI_NATIVE_DEMAND_DENIED", "PPI_NATIVE_DEMAND_METHOD_DENIED",
+    "PPI_NATIVE_DEMAND_ROLE_DENIED", "PPI_NATIVE_DEMAND_IDENTITY_DENIED",
+    "PPI_GATEWAY_UNREGISTERED_CLIENT",
+})
 
 
 def _unique_capability_keys(pairs):
@@ -340,8 +353,12 @@ def _intraday_read_error_code(reader, error, classify_read_error):
     transport = transport if isinstance(transport, str) else None
     if transport in {"PPI_HTTP_401", "PPI_HTTP_403", "PPI_SESSION_INVALID"}:
         return "PPI_SESSION_INVALID"
-    if transport == "PPI_HTTP_429":
+    if (transport in SCALPING_PROVIDER_BACKPRESSURE
+            or transport in SCALPING_GATEWAY_REQUEST_HOLDS
+            or transport in SCALPING_REQUEST_DENIALS):
         return transport
+    if native in SCALPING_PROVIDER_BACKPRESSURE or str(error) in SCALPING_PROVIDER_BACKPRESSURE:
+        return native if native in SCALPING_PROVIDER_BACKPRESSURE else str(error)
     if native == "PPI_EXCEPTION" and transport in {
             "PPI_HTTP_408", "PPI_HTTP_500", "PPI_HTTP_502", "PPI_HTTP_503", "PPI_HTTP_504"}:
         return transport
@@ -1296,13 +1313,14 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
-    from bd_ppi_readonly_guard import (retry_read, classify_read_error,
-                                       instrument_not_found)
+    from bd_ppi_readonly_guard import classify_read_error, instrument_not_found
     from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
     init_schema(store)
     cursor = 0
     reader = None
     next_login = 0.0
+    resume_reads_at = 0.0
+    last_backpressure = None
     capability_cache = IntradayCapabilityCache()
     interval = max(60, int(os.getenv(
         "PAPER_INTRADAY_SCAN_SECONDS", str(DEFAULT_INTRADAY_SCAN_SECONDS))))
@@ -1322,6 +1340,12 @@ def run_worker(store, stop, *, clock_fn):
                 _heartbeat(store,at=at,state="WAITING_MARKET",cursor=cursor,
                            detail="Scanner activo; espera ventana intradiaria 10:30-17:00 Argentina")
                 stop.wait(20)
+                continue
+            wait_seconds = resume_reads_at - time.monotonic()
+            if wait_seconds > 0:
+                _heartbeat(store, at=at, state="PROVIDER_BACKOFF", cursor=cursor,
+                           detail=f"provider_hold={last_backpressure}")
+                stop.wait(min(20, wait_seconds))
                 continue
             if reader is None:
                 if time.monotonic() < next_login:
@@ -1345,6 +1369,7 @@ def run_worker(store, stop, *, clock_fn):
             # of replaying stale record dictionaries from memory.
             selected, next_cursor, universe, dynamic_selection = select_runtime_batch(
                 store, limit=batch_limit, cursor=cursor, at=at)
+            rotation = (cursor, paired_recheck, paired_next_cursor)
             phase = "RECHECK" if paired_recheck else "BASELINE"
             if dynamic_selection["dynamic"]:
                 phase = "APPROVED_DYNAMIC"
@@ -1364,6 +1389,7 @@ def run_worker(store, stop, *, clock_fn):
             unsupported_this_batch = 0
             cooldown_skipped = reprobes = recovered = 0
             invalid_session = False
+            provider_hold, security_block = None, False
             for record in selected:
                 if stop.is_set():
                     break
@@ -1396,9 +1422,8 @@ def run_worker(store, stop, *, clock_fn):
                         if getattr(reader, "budget_enabled", False) is True and hasattr(reader, "read_scope") else nullcontext())
                     with scope:
                         try:
-                            payload = retry_read(lambda: reader.intraday(
-                                record["ticker"],record["instrument_type"],record["settlement"]),
-                                retries=0 if reprobe else 1)
+                            payload = reader.intraday(
+                                record["ticker"], record["instrument_type"], record["settlement"])
                         except Exception as read_error:
                             # Authentication/HTTP diagnostics belong only to
                             # the actual read. Local persistence/decoder errors
@@ -1460,23 +1485,39 @@ def run_worker(store, stop, *, clock_fn):
                             _invalidate_intraday_capability(store, record, negative, at=retry_at)
                             _capability_event(store, "INTRADAY_SCALPING_CAPABILITY_REPROBE_FAILED", record, negative)
                         failed += 1
+                        if error_code in SCALPING_PROVIDER_BACKPRESSURE:
+                            provider_hold = error_code
+                            cursor, paired_recheck, paired_next_cursor = rotation
+                            store.event("INTRADAY_SCALPING_BACKPRESSURE",
+                                        f"{record['ticker']}: {error_code};shadow_identity=" +
+                                        json.dumps(_identity(record), separators=(",", ":")))
+                            break
                         store.event("INTRADAY_SCALPING_ERROR",
                                     f"{record['ticker']}: {error_code};shadow_identity=" +
                                     json.dumps(_identity(record), separators=(",", ":")))
+                        if error_code in SCALPING_REQUEST_DENIALS:
+                            security_block = True
+                            break
+                        if error_code in SCALPING_GATEWAY_REQUEST_HOLDS:
+                            cursor, paired_recheck, paired_next_cursor = rotation
+                            break
                         if error_code in {"PPI_SESSION_INVALID", "PPI_GATEWAY_REATTACH_REQUIRED"}:
                             invalid_session = True
                             break
                 stop.wait(0.75)
+            metrics = {}
             try:
-                metrics = reader.metrics if reader else {}
+                if reader:
+                    # Guard counters are cumulative. Use the current owner's backoff only.
+                    metrics = reader.metrics
             except Exception as exc:
                 from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
                 if not gateway_reader_needs_reattach(exc):
                     raise
                 invalid_session = True
-                metrics = {}  # no invented owner HTTP counters on disconnect
-            state = "SECURITY_BLOCK" if metrics.get("http_blocked") or False else \
-                    "DEGRADED" if failed and successful else "ERROR" if failed else "RUNNING"
+            state = ("SECURITY_BLOCK" if security_block else "PROVIDER_BACKOFF" if provider_hold
+                     else "DEGRADED" if invalid_session or (failed and successful)
+                     else "ERROR" if failed else "RUNNING")
             _heartbeat(store,at=clock_fn(),state=state,cursor=cursor,selected=len(selected),
                        successful=successful,failed=failed,inserted=inserted,
                        confirmed=confirmed,candidates=candidates,
@@ -1489,6 +1530,7 @@ def run_worker(store, stop, *, clock_fn):
                                f"capability_cache_evictions={capability_cache.evictions}; "
                                f"capability_cooldown_skipped={cooldown_skipped}; "
                                f"capability_reprobes={reprobes}; capability_recovered={recovered}; "
+                               f"provider_hold={provider_hold or 'NONE'}; "
                                f"modo={os.getenv('PAPER_SCALPING_MODE','ACTIVE_OBSERVE')}; "
                                "fills exclusivamente PAPER; órdenes reales bloqueadas"))
             if invalid_session:
@@ -1497,7 +1539,16 @@ def run_worker(store, stop, *, clock_fn):
                 reader.close()
                 reader = None
                 next_login = time.monotonic() + 60
-            stop.wait(dynamic_selection.get("cadence_seconds", interval))
+            cadence = dynamic_selection.get("cadence_seconds", interval)
+            if provider_hold:
+                observed_wait = metrics.get("native_backoff_remaining_seconds")
+                if type(observed_wait) is not int or not 0 < observed_wait <= 86400:
+                    observed_wait = min(cadence, 30)
+                resume_reads_at = time.monotonic() + observed_wait
+                last_backpressure = provider_hold
+                stop.wait(min(20, observed_wait))
+            else:
+                stop.wait(cadence)
     finally:
         if reader:
             reader.close()

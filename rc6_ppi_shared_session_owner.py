@@ -23,6 +23,7 @@ import time
 from datetime import date, datetime, timezone
 from contextlib import closing
 from pathlib import Path
+from math import ceil
 from typing import Any, Callable
 
 from rc6_ppi_shared_feed import (
@@ -951,6 +952,9 @@ class PPISharedSessionOwner:
         if not stable:
             state = "TRANSITION_UNVERIFIED"
         signer = self._settlement_signer if state == "OPEN" else None
+        native_backoff = max(0, ceil(max(self._native_hold_until, self._rate_limit_until)
+                                     - time.monotonic()))
+        wire_backoff = getattr(reader, "wire_backoff_remaining_seconds", 0)
         return {"schema": SCHEMA, "state": state,
                 "owner_pid": os.getpid(),
                 **({"settlement_signer_public_key": signer.public_key,
@@ -961,6 +965,9 @@ class PPISharedSessionOwner:
                 "aux_last_http_status": self._aux_last_http_status,
                 "native_retry_after_seconds_observed": self._native_retry_after,
                 "native_last_http_status": self._native_last_http_status,
+                "native_backoff_remaining_seconds": (
+                    max(native_backoff, wire_backoff if type(wire_backoff) is int else 0)
+                    if stable else None),
                 "session_recovery_pending": self._session_recovery_at is not None,
                 "login_invocations_by_owner": self._login_invocations,
                 # Guard counts come from the single real HTTP transport,
@@ -972,6 +979,8 @@ class PPISharedSessionOwner:
                 "stream_invoked": self._stream_invoked,
                 "stream_state": stream.status() if stream else "NOT_BOUND",
                 "provider_quota": "UNKNOWN",
+                "provider_rate_limit_response_observed": (
+                    getattr(reader, "last_rate_limit_observation", None) if stable else None),
                 "watch_usage": "NO_VERIFICADO",
                 "catalog_independent_attestation": "EXTERNAL_GATE_ONLY_UNVERIFIED",
                 "same_reader_rest_stream_binding": stable and state == "OPEN",

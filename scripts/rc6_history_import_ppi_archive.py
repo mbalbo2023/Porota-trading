@@ -160,7 +160,7 @@ def _candles(payload, identity, bounds, attempt, wrapper, inner):
     return candidates, rejected
 
 
-def import_ppi_archive(store, *, environ=None):
+def import_ppi_archive(store, *, environ=None, missing_only=False):
     """Replay verified rows in acquisition order and emit coverage per selector."""
     if getattr(store, "source_reported_only", False) is not True:
         raise ValueError("HISTORY_STORE_SERIES_SCOPE_MISMATCH")
@@ -172,6 +172,7 @@ def import_ppi_archive(store, *, environ=None):
         index, invalid = _archive_index(db)
         for identity, captures in sorted(index.items()):
             seen_days = {}
+            latest = {}
             observed_dates = set()
             counts, rejected = Counter(), Counter()
             for (_, start, end, _), attempt in sorted(captures.items(), key=lambda item: item[1]):
@@ -184,6 +185,9 @@ def import_ppi_archive(store, *, environ=None):
                     continue
                 rejected.update(reasons)
                 observed_dates.update(candidates)
+                if missing_only:
+                    latest.update({day: candle for day, (_, candle) in candidates.items()})
+                    continue
                 day_changes = {day: (signature, candle) for day, (signature, candle) in candidates.items()
                                if day not in seen_days or seen_days[day] != signature}
                 if not day_changes:
@@ -193,6 +197,13 @@ def import_ppi_archive(store, *, environ=None):
                 receipt = history.append_many(store, ordered, attempt_key=attempt_key)
                 seen_days.update({day: item[0] for day, item in day_changes.items()})
                 counts.update({key: receipt[key] for key in ("committed_rows", "versions_appended", "canonical_updates")})
+            if latest:
+                ordered = [latest[day] for day in sorted(latest)]
+                for offset in range(0, len(ordered), history.MAX_BATCH_ROWS):
+                    batch = ordered[offset:offset + history.MAX_BATCH_ROWS]
+                    receipt = history.append_many(store, batch, fill_missing_reference=True)
+                    counts.update({key: receipt[key] for key in (
+                        "committed_rows", "versions_appended", "canonical_updates", "already_present")})
             totals.update(counts)
             report.append({"series": identity, **counts, "days": len(observed_dates),
                            "first_date": min(observed_dates, default=None),
@@ -211,10 +222,13 @@ def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--destination", type=Path, required=True)
     cli.add_argument("--existing-history", action="store_true")
+    cli.add_argument("--missing-only", action="store_true",
+                     help="Fill missing provider-series dates with the latest archived reference")
     args = cli.parse_args()
     store = (HistoricalStore(str(args.destination)).for_source_reported_history() if args.existing_history
              else _source_store(args.destination))
-    print(json.dumps(import_ppi_archive(store), ensure_ascii=False, separators=(",", ":")))
+    print(json.dumps(import_ppi_archive(store, missing_only=args.missing_only),
+                     ensure_ascii=False, separators=(",", ":")))
 
 
 if __name__ == "__main__":

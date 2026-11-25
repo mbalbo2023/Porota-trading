@@ -518,7 +518,8 @@ def test_generic_global_error_never_creates_instrument_negative_cache(tmp_path, 
     response.status_code = 429
     error = requests.HTTPError("sanitized offline 429", response=response)
     h = Harness(tmp_path, monkeypatch, times=[DAY], behavior=lambda _h, _r: error).run()
-    assert len(h.calls) == 2  # original bounded retry remains, both off-provider fake wire
+    assert len(h.calls) == 1
+    assert h.cuts[0]["heartbeat"]["state"] == "PROVIDER_BACKOFF"
     assert h.cuts[0]["heartbeat"]["failed"] == 1
     assert h.cuts[0]["states"] == []
     assert "unsupported_cached=0" in h.cuts[0]["heartbeat"]["detail"]
