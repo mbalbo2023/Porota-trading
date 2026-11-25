@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ CASH_SWEEP_ORDER_ROUTING_ALLOWED = False
 ZERO = Decimal("0")
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 PAPER_SCHEDULE_SOURCE = "POROTA_PAPER_CAUCION_EOD_POLICY:v1"
+CAUCION_NO_OFFER = "CAUCION_NO_EXECUTABLE_OFFER"
 CASH_SWEEP_HEALTHY_RUNTIME_STATES = frozenset({
     "WAITING_WINDOW", "WAITING_CALENDAR", "HOLD", "PLACED_SIMULATED",
 })
@@ -131,8 +133,9 @@ def run_paper_sweep(broker, offers, *, obligation_snapshot: ObligationSnapshot,
             obligation_snapshot, currency=ccy, liquidity_deadline=liquidity_deadline)
     except ValueError as exc:
         return {"status":"HOLD","code":str(exc),"allocation":None}
+    offers = tuple(offers or ())
     if not offers:
-        return {"status":"HOLD","code":"CAUCION_NO_EXECUTABLE_OFFER","allocation":None}
+        return {"status":"HOLD","code":CAUCION_NO_OFFER,"allocation":None}
     verified = fee_authorized_offers(offers)
     if not verified:
         return {"status":"HOLD","code":"EXACT_FEE_OR_VERSIONED_PAPER_TARIFF_MISSING","allocation":None}
@@ -378,6 +381,14 @@ def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
 
 
 
+def _offer_rejection(ticker, reason):
+    code = str(reason)
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,125}|READ_ERROR:[A-Za-z0-9_]{1,110}", code):
+        code = "CAUCION_OFFER_FIELDS_INVALID"
+    shown_ticker = ticker if re.fullmatch(r"PESOS[1-9][0-9]{0,2}", ticker or "") else "CAUCION"
+    return f"{shown_ticker}:{code}"
+
+
 def offers_from_store(store, *, now):
     """Bind exact PPI identity/static PAPER policy to fresh local PPI book.
 
@@ -386,6 +397,7 @@ def offers_from_store(store, *, now):
     from datetime import datetime, time as dt_time
     from ak_byma_calendar import ANIOS_AUDITADOS, es_dia_habil_operativo
     from au_fee_schedule import CAUCION_PAPER_FEE_AUTHORITY
+    from bu_instrument_catalog import ppi_full_key_evidence_reason
     from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     from rc6_cauciones_contract import parse_ticker, theoretical_liquidity_date
     from cp_contract_evidence_v2_hf6 import pending_material_changes
@@ -401,7 +413,8 @@ def offers_from_store(store, *, now):
         # from the append-only evidence log instead of trusting stale READY.
         pending = pending_material_changes(connection)
         rows=[dict(r) for r in connection.execute("""SELECT
-          f.ticker,f.market,f.currency,f.settlement,f.status,f.capability,f.metadata_json,
+          f.ticker,f.instrument_type,f.market,f.currency,f.settlement,f.status,
+          f.capability,f.settlement_source,f.metadata_json,
           b.term_days,b.quoted_at,b.tna_fraction,b.available_principal,b.state,b.source,b.observed_at
           FROM financial_instrument_catalog f
           LEFT JOIN paper_caucion_live_book b
@@ -415,22 +428,24 @@ def offers_from_store(store, *, now):
         identity_key = ("CAUCIONES", row["ticker"], row["market"],
                         row["currency"], row["settlement"])
         if identity_key in pending:
-            errors.append(f"{row['ticker']}:CHANGED_REVIEW_REQUIRED")
+            errors.append(_offer_rejection(row["ticker"], "CHANGED_REVIEW_REQUIRED"))
             continue
         if row["state"] is None:
-            errors.append(f"{row['ticker']}:CAUCION_NO_BOOK_FOR_EXACT_KEY")
+            errors.append(_offer_rejection(row["ticker"], "CAUCION_NO_BOOK_FOR_EXACT_KEY"))
             continue
         if row["source"] != PPI_BOOK_SOURCE:
-            errors.append(f"{row['ticker']}:CAUCION_LIVE_SOURCE_UNVERIFIED")
+            errors.append(_offer_rejection(row["ticker"], "CAUCION_LIVE_SOURCE_UNVERIFIED"))
             continue
         if row["state"]!="BOOK_READY":
-            errors.append(f"{row['ticker']}:{row['state']}")
+            errors.append(_offer_rejection(row["ticker"], row["state"]))
             continue
         try:
             raw=json.loads(row["metadata_json"] or "{}")
             policy=raw.get("paper_caucion_contract_v1") or {}
             if row["capability"]!="READY_PAPER_CAUCION_PLACING":
-                raise ValueError("CAUCION_STATIC_POLICY_NOT_READY")
+                reason = ppi_full_key_evidence_reason(
+                    {**row, "raw": raw}, database=getattr(store, "path", None), now=at)
+                raise ValueError(reason or "CAUCION_STATIC_POLICY_NOT_READY")
             if policy.get("paper_fill_policy")!="LIVE_PPI_BID_PARTICIPATION_CAP":
                 raise ValueError("CAUCION_LIVE_FILL_POLICY_MISSING")
             if policy.get("fee_authority")!=CAUCION_PAPER_FEE_AUTHORITY:
@@ -472,7 +487,7 @@ def offers_from_store(store, *, now):
                 raise ValueError("CAUCION_TERM_IDENTITY_MISMATCH")
             offers.append(offer)
         except (ValueError,TypeError,KeyError,ArithmeticError) as exc:
-            errors.append(f"{row['ticker']}:{str(exc)}")
+            errors.append(_offer_rejection(row["ticker"], exc))
     return offers,errors
 
 def _persist_runtime(store, *, at, state, code, request_id=None, paper_id=None,
@@ -564,7 +579,7 @@ def run_worker(store, stop, *, clock_fn):
                                 currency="ARS", as_of=at, request_id=request_id,
                                 participation=broker.participation,
                                 max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
-                            if result["code"] == "CAUCION_NO_EXECUTABLE_OFFER":
+                            if result["code"] == CAUCION_NO_OFFER:
                                 # Include stable dispositions in the idempotent attempt.
                                 # A changed discard set is new evidence even when HOLD repeats.
                                 result["offer_rejections"] = sorted(set(errors))

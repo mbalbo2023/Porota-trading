@@ -99,6 +99,42 @@ def test_explicit_conflicting_identity_or_currency_never_reaches_canonical(tmp_p
     assert row['price_basis_status'] == 'UNVERIFIED' and row['status'] == 'STAGED_REVIEW_REQUIRED'
 
 
+def test_a3_cem_standard_dlr_uses_provider_symbol_and_retains_original_evidence(
+        tmp_path, monkeypatch):
+    from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient
+    from scripts.rc6_history_fresh_probe import _fetcher
+
+    target = ("DLR/NOV26", "FUTUROS", "A3", "ARS", "INMEDIATA")
+    quote = {"symbol": "DLR112026", "product": "DLR", "dateTime": "2026-10-23T00:00:00Z",
+             "close": 1560, "settlement": 1560.5}
+    calls = []
+
+    def closing_prices(_client, **kwargs):
+        calls.append(kwargs)
+        return {"data": [quote, {**quote, "symbol": "DLR122026"},
+                         {**quote, "product": "OTHER"}, {**quote, "currency": "USD"},
+                         {**quote, "ticker": "DLR/DIC26"}]}
+
+    monkeypatch.setattr(A3CEMPublicReadOnlyClient, "closing_prices", closing_prices)
+    fetch, close = _fetcher("A3_CEM")
+    sidecar = tmp_path / "cem.db"
+    try:
+        receipt = capture(sidecar, [target], "A3_CEM", fetch, now=NOW)
+    finally:
+        close()
+    assert len(calls) == 1 and calls[0]["symbol"] == "DLR112026"
+    assert calls[0]["date_to"] == "2026-10-26T23:59:59.999999+00:00"
+    row = _records(sidecar)[0]
+    assert json.loads(row["retained_rows_json"]) == [quote]
+    assert row["dropped_invalid"] == 4
+    assert row["provider_currency_status"] == "REQUEST_ONLY"
+    assert receipt["history_v2_writes"] == 0 and receipt["execution_allowed"] is False
+    with sqlite3.connect(sidecar) as connection:
+        assert connection.execute("SELECT economic_day FROM fresh_row_revisions_rc6").fetchone() == (
+            "2026-10-23",)
+    assert verify(sidecar, now=NOW + timedelta(minutes=2))["state"] == "EVIDENCE_ONLY_NO_GO"
+
+
 def test_conflicting_currency_aliases_are_dropped_even_when_first_alias_matches(tmp_path):
     rows = [dict(date='2026-10-23', currency='ARS', moneda='USD', price=100),
             dict(date='2026-10-24', currency='ARS', quoteCurrency='ARS', price=101)]

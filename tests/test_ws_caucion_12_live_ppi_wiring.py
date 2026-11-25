@@ -63,6 +63,33 @@ def test_live_collector_uses_same_bounded_terms_as_ppi_discovery(tmp_path, monke
         live._catalog(store)
 
 
+def test_live_caucion_records_gateway_rejection_and_missing_exact_book(
+        tmp_path, monkeypatch):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected
+
+    store = _store(tmp_path, ticker="PESOS7", at=datetime(2026, 10, 2, 16, 40, tzinfo=TZ))
+    at = datetime(2026, 10, 2, 16, 40, tzinfo=TZ)
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "7")
+    with store.connect() as connection:
+        raw = {"ticker": "PESOS1", "description": "PESOS1", "currency": "Pesos",
+               "settlement": "INMEDIATA", "type": "CAUCIONES", "market": "BYMA",
+               "_discovery_source": "PPI_PRIMARY"}
+        catalog.persist(connection, catalog.normalize_record(
+            raw, "INMEDIATA", at.isoformat(), "test"))
+
+    class Reader:
+        def book(self, *_):
+            raise GatewayEvidenceRejected("PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE")
+
+    result = live.refresh(Reader(), store, now=at, clock_fn=lambda: at)
+    assert result["state"] == "NO_VALID_BOOK" and result["ready"] == 0
+    assert result["states"] == {"PESOS7": "READ_ERROR:PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE"}
+    assert result["settlement_echo"] == {}
+    assert offers_from_store(store, now=at) == ([], [
+        "PESOS1:CAUCION_NO_BOOK_FOR_EXACT_KEY",
+        "PESOS7:READ_ERROR:PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE"])
+
+
 def test_mass_policy_marks_exact_ars_caucion_static_ready(tmp_path):
     store=_store(tmp_path)
     result=mass.collect(store,run_id="caucion-static")
@@ -159,7 +186,7 @@ def test_caucion_sdk_public_shape_cannot_substitute_request_for_native_settlemen
     else:
         assert (record["settlement_source"], record["capability"]) == ("REQUEST_CANDIDATE", "NEEDS_CAUCION_TERMS")
         assert record["_admission_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
-        assert offers == [] and errors == ["PESOS1:CAUCION_STATIC_POLICY_NOT_READY"]
+        assert offers == [] and errors == ["PESOS1:PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"]
 
 
 @pytest.mark.parametrize(("policy", "hold"), [
@@ -167,7 +194,7 @@ def test_caucion_sdk_public_shape_cannot_substitute_request_for_native_settlemen
     ("CURRENT_STATIC", None),
     ("OLD_QUOTE", "CAUCION_STATIC_POLICY_NOT_READY"),
     ("MISSING_POLICY", "CAUCION_STATIC_POLICY_NOT_READY"),
-    ("REQUEST_ONLY", "CAUCION_STATIC_POLICY_NOT_READY"),
+    ("REQUEST_ONLY", "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"),
     ("MATERIAL_CHANGE", "CHANGED_REVIEW_REQUIRED"),
     ("WRONG_TERM", "CAUCION_STATIC_POLICY_NOT_READY"),
     ("FUTURE_POLICY", "CAUCION_STATIC_POLICY_NOT_READY"),

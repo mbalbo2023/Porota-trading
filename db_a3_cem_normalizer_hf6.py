@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Any
 
-from bs_instrument_contracts import cash_currency
+from bs_instrument_contracts import aware_datetime, cash_currency
 from cu_history_store_v2_hf6 import A3_REPORTED, Candle, instant, ART
 
 CEM_HISTORY_SOURCE = A3_REPORTED
@@ -81,6 +81,14 @@ def normalize_symbols(payload: dict[str, Any]) -> list[CEMSymbol]:
     return result
 
 
+def closing_session_date(value):
+    """CEM midnight UTC labels the exchange session, while intraday times do not."""
+    point = aware_datetime(value)
+    if point.utcoffset() == timedelta(0) and point.time() == time.min:
+        return point.date()
+    return point.astimezone(ART).date()
+
+
 def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
                       market: str, settlement_identity: str,currency=None,observed_at=None) -> Candle:
     """Convert CEM official EOD OHLC to History Store v2.
@@ -119,13 +127,8 @@ def closing_to_candle(row: dict[str, Any], *, instrument_type: str,
         raise ValueError("CEM_CLOSING_IDENTITY_INCOMPLETE")
     try:
         provider_at = datetime.fromisoformat(date_time.replace("Z", "+00:00"))
-        observed_date = instant(date_time).astimezone(ART).date()
-        # CEM closing-prices labels the session at midnight UTC. Other
-        # timestamps retain the exchange-local observation date.
         session_label = provider_at.utcoffset() == timedelta(0) and provider_at.time() == time.min
-        if session_label:
-            observed_date = provider_at.date()
-        day = observed_date.isoformat()
+        day = closing_session_date(provider_at).isoformat()
     except ValueError as exc:
         raise ValueError("CEM_CLOSING_DATE_INVALID") from exc
     close = row.get("close")
