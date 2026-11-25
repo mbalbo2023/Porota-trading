@@ -7,6 +7,7 @@ generation and cannot certify PIT, monetary identity or retention of legacy.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -47,12 +48,20 @@ def _fetcher(source):
         return fetch, lambda: None
     if source == "A3_CEM":
         from cz_a3_cem_public_history_hf6 import A3CEMPublicReadOnlyClient
+        from db_a3_cem_normalizer_hf6 import closing_session_bounds
+        from rc6_ppi_future_contract_policy import standard_dlr_cem_symbol
+
         client = A3CEMPublicReadOnlyClient()
 
         def fetch(target, from_day, to_day):
-            symbol, family, market, *_ = target
+            symbol, family, market, currency, settlement = target
             if family not in {"FUTUROS", "OPCIONES"} or market not in {"A3", "ROFEX"}:
                 raise ValueError("FRESH_A3_IDENTITY_UNSUPPORTED")
+            if (family, market, currency, settlement) == ("FUTUROS", "A3", "ARS", "INMEDIATA"):
+                symbol = standard_dlr_cem_symbol(symbol) or symbol
+                lower, upper = closing_session_bounds(from_day, to_day)
+                return client.closing_prices(
+                    symbol=symbol, date_from=lower, date_to=upper, page=1, page_size=500)
             return client.closing_prices(symbol=symbol, date_from=from_day.isoformat(),
                                          date_to=to_day.isoformat(), page=1, page_size=500)
 

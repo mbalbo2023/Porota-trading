@@ -115,10 +115,13 @@ def test_cem_reference_uses_daily_label_and_exact_ppi_ticker_without_paper_readi
         'DLR/DIC26', 'FUTUROS', {(source.symbol, source.family): source},
     )
     assert raw_alignment == 'ALIGNMENT_UNVERIFIED'
+    target = ('DLR/DIC26', 'FUTUROS', 'A3', 'ARS', 'INMEDIATA')
     result = a3.run(state, client=client, history_store=history, now=NOW,
-                    mode='BOOTSTRAP', reference_only=True)
+                    mode='BOOTSTRAP', reference_only=True, target_keys=[target])
     assert result['selected'] == result['complete'] == result['canonical_updates'] == 1
     assert client.calls[0]['symbol'] == 'DLR122026'
+    assert client.calls[0]['date_from'].endswith('T00:00:00+00:00')
+    assert client.calls[0]['date_to'] == '2026-09-05T23:59:59.999999+00:00'
     with history.connect() as db:
         rows = read_as_of(db, symbol='DLR/DIC26', instrument_type='FUTUROS',
                            market='A3', currency='UNKNOWN', settlement='UNKNOWN', as_of=NOW,
@@ -129,6 +132,12 @@ def test_cem_reference_uses_daily_label_and_exact_ppi_ticker_without_paper_readi
         assert db.execute("SELECT COUNT(*) FROM history_canonical_v2 WHERE price_basis='RAW'").fetchone()[0] == 0
     with state.connect() as db:
         assert db.execute("SELECT source FROM a3_history_ingest_state_rc6_v2").fetchone()[0] == 'A3_CEM_REFERENCE'
+        # A process can stop after the reference batch commits and before the
+        # cursor is advanced. Replay must fill only missing dates.
+        db.execute("DELETE FROM a3_history_ingest_state_rc6_v2")
+    replay = a3.run(state, client=client, history_store=history, now=NOW + timedelta(minutes=1),
+                    mode='BOOTSTRAP', reference_only=True, target_keys=[target])
+    assert replay['complete'] == 1 and replay['versions_appended'] == replay['canonical_updates'] == 0
 
 
 def test_dlr_spread_or_variant_stays_fail_closed(tmp_path):

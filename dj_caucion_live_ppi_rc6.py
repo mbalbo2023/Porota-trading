@@ -8,6 +8,7 @@ Evidence v2: normal market movement must never become contract-change review.
 from __future__ import annotations
 from contextlib import nullcontext
 import json
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -15,7 +16,9 @@ from zoneinfo import ZoneInfo
 from bd_ppi_readonly_guard import caucion_discovery_days, retry_read
 from bs_instrument_contracts import aware_datetime
 from rc6_cauciones_contract import parse_ticker, placed_side_book_levels, quote_from_book_level
-from rc6_ppi_global_budget import assert_native_ppi_response_identity
+from rc6_ppi_global_budget import (
+    assert_native_ppi_response_identity, native_ppi_response_settlement,
+)
 
 TZ=ZoneInfo("America/Argentina/Buenos_Aires")
 # A244: a review threshold, NOT a purge limit. History rows are evidence
@@ -73,22 +76,32 @@ def _catalog(store):
     return out
 
 def _book_row(reader,item,observed_at,now,clock_fn):
+    from rc6_ppi_gateway_reader_adapter import GatewayEvidenceRejected, SharedFeedUnavailable
     state="NO_PLACED_BID"; quoted_at=None; rate=None; principal=None
+    settlement_echo = None
+    settlement_proof = None
     try:
         # The shared PPI gateway requires a real catalog-bound five-key,
         # including Market/Currency; never infer it from the 3-key SDK call.
         scope = getattr(reader, "read_scope", None)
         identity = (item["ticker"], "CAUCIONES", item["market"],
                     item["currency"], item["settlement"])
-        with (scope(priority="WARM", identity=identity)
-              if callable(scope) else nullcontext()):
-            book=retry_read(lambda: reader.book(
-                item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
+        capture = getattr(reader, "capture_guarded_native", None)
+        if callable(capture):
+            witnessed = retry_read(lambda: capture("book", identity, priority="WARM"), retries=1)
+            book = witnessed["native_payload"]
+            settlement_proof = witnessed.get("settlement_proof")
+        else:
+            with (scope(priority="WARM", identity=identity)
+                  if callable(scope) else nullcontext()):
+                book=retry_read(lambda: reader.book(
+                    item["ticker"],"CAUCIONES",item["settlement"]),retries=1)
         # Reconcile the native Book with the exact PPI catalog identity before
         # its depth can be projected as PAPER participation authority.
         assert_native_ppi_response_identity(
             book, (item["ticker"], "CAUCIONES", item["market"],
                    item["currency"], item["settlement"]))
+        settlement_echo, _ = native_ppi_response_settlement(book)
         # Each sequential request can return a quote created after the batch
         # started. Timestamp actual receipt; the batch clock cannot decide
         # whether a provider quote is in the future or has already expired.
@@ -109,11 +122,16 @@ def _book_row(reader,item,observed_at,now,clock_fn):
                 state="BOOK_READY"
                 rate=str((quote.tna_percent/Decimal("100")).normalize())
                 principal=str(quote.quantity.normalize())
+    except (GatewayEvidenceRejected, SharedFeedUnavailable) as exc:
+        reason = str(exc)
+        state = ("READ_ERROR:" + reason if re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", reason)
+                 else "READ_ERROR:" + type(exc).__name__)
     except Exception as exc:
         state="READ_ERROR:"+type(exc).__name__
     return {**item,"quoted_at":quoted_at,"tna_fraction":rate,
             "available_principal":principal,"state":state,
-            "source":SOURCE,"observed_at":observed_at}
+            "source":SOURCE,"observed_at":observed_at,"settlement_echo":settlement_echo,
+            "settlement_proof": settlement_proof if state == "BOOK_READY" else None}
 
 def refresh(reader,store,*,now,clock_fn=None):
     if reader is None or not hasattr(reader,"book"):
@@ -146,9 +164,21 @@ def refresh(reader,store,*,now,clock_fn=None):
         # an immutable PAPER decision, audit or external export.
         history_rows = int(c.execute(
             'SELECT COUNT(*) FROM paper_caucion_live_book_history').fetchone()[0])
-    return {"state":"OK","records":len(rows),
-            "ready":sum(r["state"]=="BOOK_READY" for r in rows),
+    ready = sum(r["state"]=="BOOK_READY" for r in rows)
+    state = "OK" if ready else "NO_VALID_BOOK" if rows else "NO_CATALOG_OFFERS"
+    from bu_instrument_catalog import publish_native_settlement_receipt
+
+    published = 0
+    for row in rows:
+        if row["settlement_proof"] is not None:
+            key = (row["ticker"], "CAUCIONES", row["market"], row["currency"], row["settlement"])
+            published += int(publish_native_settlement_receipt(
+                store, key, row["settlement_proof"], row["observed_at"]))
+    return {"state":state,"records":len(rows),"ready":ready,
             "states":{r["ticker"]:r["state"] for r in rows},
+            "settlement_echo":{r["ticker"]:r["settlement_echo"] for r in rows
+                               if r["settlement_echo"] is not None},
+            "settlement_proofs_published": published,
             "history_rows":history_rows,
             "history_review_threshold_exceeded":history_rows>REVIEW_AT_ROWS,
             "history_retention":"HOLD_PIN_AND_PIT_UNVERIFIED",

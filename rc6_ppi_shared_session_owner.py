@@ -707,11 +707,13 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_DENIED")
             response = self.capture_native(method, identity, priority=priority)
             proof = None
+            caucion_book = (method == "book" and identity[1] == "CAUCIONES" and priority == "WARM")
             if (self._settlement_signer is not None and consumer == "scanner"
-                    and priority == "DISCOVERY" and not self._permits_catalog(identity)):
+                    and (priority == "DISCOVERY" or caucion_book)
+                    and not self._permits_catalog(identity)):
                 proof = self._settlement_signer.observe(
                     method, identity, response, generation=self._local_generation,
-                    catalog_digest=self._catalog_source_digest)
+                    catalog_digest=self._catalog_source_digest, priority=priority)
             return {"schema": NATIVE_ACQUIRE_SCHEMA,
                     "state": "OK", "receipt": response["native_receipt"],
                     "guard_wire_receipt": response["guard_wire_receipt"],

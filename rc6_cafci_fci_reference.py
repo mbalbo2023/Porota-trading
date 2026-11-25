@@ -52,8 +52,8 @@ class CafciClassReference:
     nav_effective_date: date | None
     nav_per_thousand: Decimal | None
     nav_per_unit: Decimal | None
-    subscription_fee_pct: Decimal
-    redemption_fee_pct: Decimal
+    subscription_fee_pct: Decimal | None
+    redemption_fee_pct: Decimal | None
     settlement_days_reported: int | None
     minimum_subscription_reported: Decimal | None
     quality_holds: tuple[str, ...]
@@ -95,10 +95,18 @@ class CafciDailyReference:
                                   for row in self.classes),
             "nav_date_missing": sum(row.nav_effective_date is None for row in self.classes),
             "nonzero_subscription_fee_classes": sum(
-                row.subscription_fee_pct > 0 for row in self.classes
+                row.subscription_fee_pct is not None and row.subscription_fee_pct > 0
+                for row in self.classes
             ),
             "nonzero_redemption_fee_classes": sum(
-                row.redemption_fee_pct > 0 for row in self.classes
+                row.redemption_fee_pct is not None and row.redemption_fee_pct > 0
+                for row in self.classes
+            ),
+            "unusable_subscription_fee_classes": sum(
+                row.subscription_fee_pct is None for row in self.classes
+            ),
+            "unusable_redemption_fee_classes": sum(
+                row.redemption_fee_pct is None for row in self.classes
             ),
             "rows_with_holds": sum(bool(row.quality_holds) for row in self.classes),
         }
@@ -213,6 +221,22 @@ def _integer(value: str | None, code: str, *, allow_zero: bool = False) -> int:
     return int(number)
 
 
+def _fee_reference(value: str | None, code: str, holds: list[str]) -> Decimal | None:
+    # A bad public fee cell is scoped to its class and field. A missing amount
+    # cannot become a zero fee, and does not make a separate NAV cell unusable.
+    try:
+        percent = _decimal(value, code, missing_allowed=True)
+    except ValueError:
+        holds.append(code + "_INVALID")
+        return None
+    if percent is None:
+        holds.append(code + "_MISSING")
+    elif percent > 100:
+        holds.append(code + "_PERCENT_OUT_OF_RANGE")
+        return None
+    return percent
+
+
 def parse_cafci_daily_reference(
     payload: bytes, *, captured_at: datetime | str,
     http_last_modified_at: datetime | str, expected_sha256: str,
@@ -277,14 +301,12 @@ def parse_cafci_daily_reference(
             value_mil = None
         else:
             value_mil = _decimal(raw_nav, "NAV_PER_THOUSAND", missing_allowed=True)
-        fees_in = _decimal(row.get(30), "SUBSCRIPTION_FEE")
-        fees_out = _decimal(row.get(34), "REDEMPTION_FEE")
-        if fees_in > 100 or fees_out > 100:
-            raise ValueError("CAFCI_FEE_PERCENT_OUT_OF_RANGE")
+        holds = []
+        fees_in = _fee_reference(row.get(30), "SUBSCRIPTION_FEE", holds)
+        fees_out = _fee_reference(row.get(34), "REDEMPTION_FEE", holds)
         # -1 is another observed sentinel for funds in liquidation.
         settlement = (-1 if row.get(38) == "-1" else
                       _integer(row.get(38), "SETTLEMENT_DAYS", allow_zero=True))
-        holds = []
         if value_mil is None:
             holds.append("NAV_PLACEHOLDER" if raw_nav == "(**)" else "NAV_EMPTY_CELL")
         elif value_mil == 0:

@@ -126,7 +126,7 @@ def _caucion_offer_evidence(connection, now):
         return dict(evidence, state="NO_VERIFICADO")
     if errors == ["CAUCION_LIVE_BOOK_MISSING"]:
         return dict(evidence, state="CAUCION_LIVE_BOOK_MISSING")
-    return dict(evidence, complete_offers=len(offers), state=(
+    return dict(evidence, complete_offers=len(offers), offer_rejections=errors, state=(
         "CURRENT_OFFERS_OBSERVED" if offers else "NO_CURRENT_VALID_OFFER"))
 
 
@@ -334,6 +334,9 @@ def collect():
             if table(c, source):
                 row = dict(c.execute(f"SELECT * FROM {source} WHERE id=1").fetchone() or {})
                 selected={k: row.get(k) for k in ("state","heartbeat_at","detail")}
+                if name == "caucion_cash_sweep":
+                    selected["code"] = row.get("code")
+                    selected["last_attempt_at"] = row.get("last_attempt_at")
                 selected["heartbeat_age_seconds"] = non_negative_age_seconds(
                     now, row.get("heartbeat_at")
                 )

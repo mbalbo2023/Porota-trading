@@ -136,6 +136,15 @@ def standard_dlr_terms(ticker):
     }
 
 
+def standard_dlr_cem_symbol(ticker):
+    """Resolve the CEM code only for a reviewed standard PPI DLR series."""
+    terms = standard_dlr_terms(ticker)
+    if terms is None:
+        return None
+    year, month = terms["expires_at"][:7].split("-")
+    return f"DLR{month}{year}"
+
+
 def standard_dlr_future_evidence(row):
     """Build a contract only from exact current PPI identity + A3 static rules."""
     raw = _raw(row)

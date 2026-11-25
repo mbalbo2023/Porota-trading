@@ -103,7 +103,7 @@ def verify(path, *, now=None):
             conflict = False
             prior_index = -1
             for ordinal, evidence in enumerate(retained):
-                if not isinstance(evidence, dict) or _identity_conflicts(evidence, identity):
+                if not isinstance(evidence, dict) or _identity_conflicts(evidence, identity, source):
                     raise ValueError('FRESH_VERIFY_ROW_IDENTITY_CONFLICT')
                 day = _day(evidence, source, known)
                 if not cutoff <= day <= known.astimezone(ART).date():

@@ -608,8 +608,9 @@ def select_batch(store, *, limit, cursor=0):
             AND c.currency<>'UNKNOWN' AND c.market<>'UNKNOWN'
           ORDER BY c.instrument_type,c.market,c.currency,c.ticker,c.settlement
         """, tuple(sorted(SCALPING_STRATEGY_FAMILIES))).fetchall()]
-        opened = {row[0] for row in connection.execute(
-            "SELECT DISTINCT symbol FROM paper_positions WHERE status='OPEN'").fetchall()}
+        opened = {tuple(row) for row in connection.execute("""
+            SELECT symbol,asset_class,market,currency,settlement
+            FROM paper_positions WHERE status='OPEN'""")}
     unique = {}
     for row in rows:
         try:
@@ -624,9 +625,16 @@ def select_batch(store, *, limit, cursor=0):
         request_key = (row["ticker"], row["instrument_type"], row["settlement"])
         unique.setdefault(request_key, []).append(row)
     rows = [values[0] for values in unique.values() if len(values) == 1]
-    priority = [row for row in rows if row["ticker"] in opened or row["ticker"] in FOCUS]
+    held = [row for row in rows if _identity(row) in opened]
+    unheld = [row for row in rows if _identity(row) not in opened]
+    focus = [row for row in unheld if row["ticker"] in FOCUS]
+    # An eight-instrument focus list must not consume an entire supported
+    # eight-instrument batch. Positions retain precedence over both groups.
+    has_nonfocus = len(unheld) > len(focus)
+    focus_limit = max(0, limit - len(held) - int(has_nonfocus))
+    priority = held + focus[:focus_limit]
     priority_keys = {_identity(row) for row in priority}
-    rotation = [row for row in rows if _identity(row) not in priority_keys]
+    rotation = [row for row in unheld if _identity(row) not in priority_keys]
     slots = max(0, limit - len(priority))
     if rotation and slots:
         start = cursor % len(rotation)

@@ -67,7 +67,11 @@ def _target(raw):
     if any(part in {"", "UNKNOWN"} for part in target):
         raise ValueError("FRESH_EXACT_IDENTITY_REQUIRED")
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{0,39}", target[0]):
-        raise ValueError("FRESH_SYMBOL_INVALID")
+        from rc6_ppi_future_contract_policy import standard_dlr_cem_symbol
+
+        if (target[1:] != ("FUTUROS", "A3", "ARS", "INMEDIATA")
+                or standard_dlr_cem_symbol(target[0]) is None):
+            raise ValueError("FRESH_SYMBOL_INVALID")
     try:
         if cash_currency(target[3]) != target[3]:
             raise ValueError("FRESH_CURRENCY_UNVERIFIED")
@@ -106,6 +110,10 @@ def _day(row, source, observed):
     source_time = instant(value)
     if source_time > observed:
         raise ValueError("FRESH_PROVIDER_CLOCK_IN_FUTURE")
+    if source == "A3_CEM":
+        from db_a3_cem_normalizer_hf6 import closing_session_date
+
+        return closing_session_date(value)
     return source_time.astimezone(ART).date()
 
 
@@ -131,12 +139,19 @@ def _explicit_currency(row):
     return normalized.pop() if len(normalized) == 1 else "UNVERIFIED"
 
 
-def _identity_conflicts(row, target):
-    for names, expected in ((('symbol', 'ticker'), target[0]),
-                            (('instrumentType', 'type'), target[1]),
-                            (('market',), target[2]),
-                            (('settlementTerm',), target[4])):
-        if any(name in row and str(row[name]).strip().upper() != expected
+def _identity_conflicts(row, target, source):
+    symbols = {target[0]}
+    if source == "A3_CEM" and target[1:] == ("FUTUROS", "A3", "ARS", "INMEDIATA"):
+        from rc6_ppi_future_contract_policy import standard_dlr_cem_symbol
+
+        cem_symbol = standard_dlr_cem_symbol(target[0])
+        if cem_symbol is not None and row.get("product") == "DLR" and row.get("symbol") == cem_symbol:
+            symbols.add(cem_symbol)
+    for names, expected in ((('symbol', 'ticker'), symbols),
+                            (('instrumentType', 'type'), {target[1]}),
+                            (('market',), {target[2]}),
+                            (('settlementTerm',), {target[4]})):
+        if any(name in row and str(row[name]).strip().upper() not in expected
                for name in names):
             return True
     return False
@@ -238,7 +253,7 @@ def capture(destination, targets, source, fetch, *, now=None, protected_paths=()
                     if not isinstance(row, dict):
                         invalid += 1
                         continue
-                    if _identity_conflicts(row, target):
+                    if _identity_conflicts(row, target, source):
                         invalid += 1
                         continue
                     try:

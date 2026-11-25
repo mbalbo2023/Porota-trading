@@ -115,10 +115,12 @@ _PPI_REFERENCE_OBSERVED = {
     "CAUCIONES": "CAUCION_CURRENT_REFERENCE_OBSERVED",
 }
 
-# Keep the family rotation independent of PAPER admission, with ETFs last.
+# Only families that can produce the paired native settlement receipt use
+# these turns. The dedicated caucion book and fund class/NAV have their own
+# input contracts. Manual reference diagnostics remain available.
 PPI_DIAGNOSTIC_FAMILY_ROTATION = (
     "ACCIONES", "CEDEARS", "BONOS", "LETRAS", "OBLIGACIONES",
-    "OPCIONES", "FUTUROS", "CAUCIONES", "FCI", "ETFS",
+    "OPCIONES", "FUTUROS", "ETFS",
 )
 
 
@@ -1279,7 +1281,7 @@ def _eligible_scanner_identities(store):
     """Map scanner requests to their exact PIT identities in rotation order."""
     family_order = (
         "ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
-        "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI",
+        "OBLIGACIONES", "OPCIONES", "FUTUROS",
     )
     allowed_sql = ",".join("?" for _ in family_order)
     with store.connect() as c:
@@ -1604,13 +1606,12 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
         family, cursor = _next_ppi_diagnostic_family(cursor)
         if family in exhausted:
             continue
-        reference = family in _PPI_REFERENCE_OBSERVED
         if family not in planned:
             previous = after.get(family)
-            if previous is None or reference:
+            if previous is None:
                 first = _ppi_direct_rest_probe_candidates(
-                    store, family=family, after=previous, pending_settlement=not reference)
-                if first and not reference and slots > 1:
+                    store, family=family, after=previous, pending_settlement=True)
+                if first and slots > 1:
                     follow = _ppi_rest_probe_keys(store, limit=slots - 1, family=family,
                                                   after=first[0], pending_settlement=True)
                     first.extend(key for key in follow if key != first[0])
@@ -1626,8 +1627,6 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
             reader, store, key, pre_wire=pre_wire, update_market_clock=True,
             confirm_settlement=True)
         visited.add(key)
-        if reference:
-            exhausted.add(family)
         status, reason = observed["status"], observed.get("reason")
         if status != "PRE_WIRE_GUARD_HOLD" or observed["native_receipts"]:
             result["attempted"] += 1
