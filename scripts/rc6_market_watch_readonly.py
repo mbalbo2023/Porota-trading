@@ -1957,6 +1957,8 @@ def _ppi_intake_evidence(path, *, at=None):
                                    "reason": _ppi_intake_reason(discovery.get("reason"))}})
 
             native, holds, last_hold_at = {}, {}, {}
+            spot_wire = {key: {} for key in (
+                "GGAL:ACCIONES:BYMA:ARS:A-24HS", "AAPL:CEDEARS:BYMA:ARS:A-24HS")}
             for event in ("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", "PPI_DIRECT_REST_PROBE_HOLD"):
                 rows = db.execute("""SELECT event_at,substr(detail,1,512)
                     FROM paper_events WHERE event_type=? AND julianday(event_at)>=julianday(?)
@@ -1980,6 +1982,13 @@ def _ppi_intake_evidence(path, *, at=None):
                             "http_200_witnesses": 0, "latest_received_at": received.isoformat(),
                             "latest_market_at": market_at.isoformat() if market_at else None})
                         observed["http_200_witnesses"] += 1
+                        exact = fields.get("identity5")
+                        if exact in spot_wire and endpoint in ("current", "book"):
+                            spot_wire[exact].setdefault(endpoint, {
+                                "http_status": 200,
+                                "received_at_utc": received.isoformat(),
+                                "market_at_utc": market_at.isoformat() if market_at else None
+                            })
 
             http, recent_http = {}, {}
             recent_floor = at - timedelta(seconds=90)
@@ -2014,28 +2023,48 @@ def _ppi_intake_evidence(path, *, at=None):
                     "first_sampled_cycle": cycles[-1] if cycles else None,
                     "last_cycle": cycles[0] if cycles else None,
                     "discovery_hold_events": holds, "discovery_last_hold_at_utc": last_hold_at,
-                    "native_wire": native,
+                    "native_wire": native, "spot_wire": spot_wire,
                     "http_presend": http,
                     "http_presend_90s": recent_http, "exit_round": exit_round}
     except (OSError, sqlite3.Error):
         return result
 
 _GATEWAY_DIAGNOSTIC_CHILD = '''
+import fcntl
 import json
+import os
 import re
+import stat
 from cg_paper_workspace import database_path
 from rc6_ppi_gateway_reader_adapter import gateway_socket_path, local_gateway_owner_custody
 from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient
 
-result = {}
+result = {"owner_lease": "NO_VERIFICADO"}
+socket_path = gateway_socket_path(database_path())
 try:
-    client = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database_path()), timeout_seconds=2)
+    fd = os.open(socket_path.parent / "owner.lock", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        mode = os.fstat(fd)
+        if stat.S_ISREG(mode.st_mode) and mode.st_nlink == 1 and not (mode.st_mode & 0o077):
+            try:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                result["owner_lease"] = "EXCLUSIVE_OWNER_HELD"
+            else:
+                result["owner_lease"] = "NO_EXCLUSIVE_OWNER_AT_SAMPLE"
+    finally:
+        os.close(fd)
+except OSError:
+    pass
+try:
+    client = ReadOnlyUnixFeedClient(socket_path=socket_path, timeout_seconds=2)
     status = client.owner_status()
 except Exception as error:
     code = str(error)
     result["ipc"] = code if re.fullmatch(r"PPI_GATEWAY_[A-Z0-9_]{1,60}", code) else "IPC_EXCEPTION"
 else:
     result["ipc"] = "OWNER_STATUS_OPEN"
+    result["session_recovery_pending"] = status.get("session_recovery_pending")
     try:
         owner = local_gateway_owner_custody(status)
         result["owner"] = owner["state"]
@@ -2111,6 +2140,12 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
     receipt.update(source_sha=context.current["source_sha"],
                    source_tree=expected_tree_sha, owner="NO_VERIFICADO",
                    catalog="NO_VERIFICADO", construction="NO_VERIFICADO")
+    lease = values.get("owner_lease")
+    if isinstance(lease, str) and lease in ("EXCLUSIVE_OWNER_HELD", "NO_EXCLUSIVE_OWNER_AT_SAMPLE"):
+        receipt["owner_lease"] = lease
+    pending = values.get("session_recovery_pending")
+    if type(pending) is bool:
+        receipt["session_recovery_pending"] = pending
     ipc = values.get("ipc")
     if isinstance(ipc, str) and re.fullmatch(
             r"(?:PPI_GATEWAY_[A-Z0-9_]{1,60}|OWNER_STATUS_OPEN|IPC_EXCEPTION)", ipc):
