@@ -396,25 +396,32 @@ def lock_matches_path(path, fd, uid):
             and (opened.st_dev, opened.st_ino) == (named.st_dev, named.st_ino))
 
 
-def host_probe():
+def host_probe(progress):
     uid = os.getuid()
     account = pwd.getpwuid(uid)
     if uid != 1000 or account.pw_name != 'porotaadmin':
         return {'state': 'RC6_USAR_TERMINAL_POROTAADMIN'}
     state = Path(account.pw_dir) / '.local/state/porota-rc6'
     lock_path = state / 'deploy.lock'
+    progress['stage'] = 'DEPLOY_LOCK_OPEN'
     fd = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
+        progress['stage'] = 'DEPLOY_LOCK_VALIDATE'
         meta = os.fstat(fd)
         if not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_mode & 0o077 or meta.st_nlink != 1:
             return {'state': 'RC6_LOCK_HOST_NO_CONFIABLE'}
+        progress['stage'] = 'DEPLOY_LOCK_WAIT'
         acquired, lock_evidence = wait_for_host_lock(fd, meta)
         if not acquired:
             return {'state': 'RC6_HOST_OCUPADO', 'host_lock': lock_evidence}
+        progress['stage'] = 'DEPLOY_LOCK_RECHECK'
         if not lock_matches_path(lock_path, fd, uid):
             return {'state': 'RC6_LOCK_HOST_CAMBIO', 'host_lock': lock_evidence}
-        sock = Path(f'/run/user/{uid}/docker.sock')
-        if not stat.S_ISSOCK(sock.lstat().st_mode) or sock.lstat().st_uid != uid:
+        progress['stage'] = 'ROOTLESS_DOCKER_SOCKET'
+        # Same endpoint as Identity.socket in scripts/porota_rootless_host.py.
+        sock = Path(f'/run/user/{uid}/porota-rc6-docker.sock')
+        socket_meta = sock.lstat()
+        if not stat.S_ISSOCK(socket_meta.st_mode) or socket_meta.st_uid != uid:
             return {'state': 'RC6_DOCKER_ROOTLESS_NO_VERIFICADO'}
         docker = ['docker', '-H', 'unix://' + str(sock)]
 
@@ -423,14 +430,18 @@ def host_probe():
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                   timeout=timeout, check=True).stdout
 
+        progress['stage'] = 'ROOTLESS_DOCKER_INFO'
         if 'rootless' not in run('info', '--format', '{{json .SecurityOptions}}'):
             return {'state': 'RC6_DOCKER_ROOTLESS_NO_VERIFICADO'}
+        progress['stage'] = 'OBSERVER_LOOKUP'
         cid = run('ps','--no-trunc','-q','--filter','label=io.porota.project=rc6',
                   '--filter','label=io.porota.role=observer').strip()
         if not re.fullmatch(r'[a-f0-9]{64}', cid):
             return {'state': 'RC6_OBSERVER_NO_UNICO'}
+        progress['stage'] = 'OBSERVER_RELEASE'
         if run('inspect','--format','{{.Image}}|{{.State.Running}}',cid).strip() != IMAGE + '|true':
             return {'state': 'RC6_RELEASE_DISTINTO_DEL_VERIFICADO'}
+        progress['stage'] = 'OBSERVER_EXEC'
         result = json.loads(run('exec','-i',cid,'python','-B','-',code=PROBE,timeout=112))
         if type(result) is not dict or result.get('test') != 'PPI_REST_DIRECT_GGAL':
             return {'state': 'RC6_SALIDA_DEL_PROBE_NO_VERIFICADA'}
@@ -441,10 +452,11 @@ def host_probe():
         os.close(fd)
 
 
+progress = {'stage': 'HOST_IDENTITY'}
 try:
-    report = host_probe()
+    report = host_probe(progress)
 except Exception as error:
-    report = {'state': 'RC6_PROBE_HOST_INCOMPLETO', 'error_class': type(error).__name__}
+    report = {'state': 'RC6_PROBE_HOST_INCOMPLETO', 'error_class': type(error).__name__, **progress}
 print(json.dumps(report, ensure_ascii=False, separators=(',', ':')))
 HOST_PY
 ) || report='{"state":"RC6_PROBE_SIN_RESULTADO"}'
