@@ -321,6 +321,7 @@ def host_lock_holders(meta):
     """Read kernel lock metadata without printing any process arguments."""
     identity = (os.major(meta.st_dev), os.minor(meta.st_dev), meta.st_ino)
     holders = []
+    seen = set()
     try:
         with open('/proc/locks', encoding='ascii') as lock_table:
             for line in lock_table:
@@ -337,8 +338,10 @@ def host_lock_holders(meta):
                     pid = int(pid_text)
                 except ValueError:
                     continue
-                if pid <= 0:
+                key = (pid, mode)
+                if pid <= 0 or key in seen:
                     continue
+                seen.add(key)
                 result = {'pid': pid, 'mode': 'SHARED' if mode == 'READ' else 'EXCLUSIVE'}
                 try:
                     with open(f'/proc/{pid}/cgroup', encoding='utf-8') as cgroup:
@@ -359,23 +362,30 @@ def host_lock_holders(meta):
 
 def wait_for_host_lock(fd, meta, *, wait_s=HOST_LOCK_WAIT_S):
     started = time.monotonic()
-    deadline = started + wait_s
-    initially_contended = False
-    initial_holders = None
-    while True:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return True, {'waited_s': round(time.monotonic() - started, 1),
-                          'initial_holders': initial_holders}
-        except BlockingIOError:
-            if not initially_contended:
-                initial_holders = host_lock_holders(meta)
-                initially_contended = True
-            left = deadline - time.monotonic()
-            if left <= 0:
-                return False, {'waited_s': round(time.monotonic() - started, 1),
-                               'initial_holders': initial_holders, 'last_holders': host_lock_holders(meta)}
-            time.sleep(min(left, 1))
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True, {'waited_s': 0, 'initial_holders': None}
+    except BlockingIOError:
+        initial_holders = host_lock_holders(meta)
+    # Pass the original open file description. The parent retains the lock
+    # after flock exits, so there is no unlock/reacquire gap before Docker.
+    try:
+        waiter = subprocess.run(
+            ['flock', '--exclusive', '--timeout', str(wait_s), '--conflict-exit-code', '75', str(fd)],
+            pass_fds=(fd,), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=wait_s + 2, check=False,
+        )
+        status = waiter.returncode
+    except subprocess.TimeoutExpired:
+        status = 75
+    evidence = {'waited_s': round(time.monotonic() - started, 1), 'initial_holders': initial_holders,
+                'wait_kind': 'BLOCKING_FLOCK'}
+    if status == 0:
+        return True, evidence
+    if status != 75:
+        raise RuntimeError('RC6_FLOCK_ESPERA_FALLIDA')
+    evidence['last_holders'] = host_lock_holders(meta)
+    return False, evidence
 
 
 def lock_matches_path(path, fd, uid):
