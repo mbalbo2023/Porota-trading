@@ -105,6 +105,8 @@ def local_gateway_owner_custody(status: dict) -> dict:
     distinct_three_children = (
         set(roles) == {"scanner", "exit_reader", "scalping"}
         and len(child_pids) == 3 and status["owner_pid"] not in child_pids)
+    router = status.get("native_router")
+    exit_wait_ms = router.get("last_exit_queue_wait_ms") if isinstance(router, dict) else None
     return {"schema": "rc6.ppi.local-owner-custody.v1",
             "state": "LOCAL_OWNER_OBSERVED",
             "owner_pid": status["owner_pid"],
@@ -122,6 +124,7 @@ def local_gateway_owner_custody(status: dict) -> dict:
             "provider_signed_session": False,
             "provider_quota": "UNKNOWN", "paper_ready": False,
             "provider_rate_limit_response_observed": status.get("provider_rate_limit_response_observed"),
+            "exit_last_queue_wait_ms": exit_wait_ms if type(exit_wait_ms) is int and exit_wait_ms >= 0 else None,
             "real_order_routes_exposed": False}
 
 

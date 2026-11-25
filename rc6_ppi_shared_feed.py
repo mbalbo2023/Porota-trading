@@ -1006,6 +1006,7 @@ class ReadOnlyUnixFeedServer:
                 return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "PPI_GATEWAY_OWNER_UNAVAILABLE"}
             status = self.owner_status()
             return {**status, "schema": NATIVE_ACQUIRE_SCHEMA,
+                    "native_router": self.native_router_status(),
                     "registered_clients": self.role_registry_status()}
         if isinstance(request, dict) and request.get("op") in {
                 "native_acquire", "native_read", "aux_acquire", "pull",
