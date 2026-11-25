@@ -1866,6 +1866,119 @@ _GATEWAY_CONSTRUCTION_REASONS = _GATEWAY_CATALOG_REASONS | frozenset({
 })
 _GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
 _GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
+_PPI_OBSERVATION_ENDPOINTS = ("current", "book", "intraday")
+
+
+def _ppi_intake_reason(value):
+    # Same symbolic code boundary enforced by the Gateway native RPC.
+    if isinstance(value, str) and (re.fullmatch(r"PPI_[A-Z0-9_]{1,100}", value) or
+                                   value == "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID"):
+        return value
+    return "UNCLASSIFIED" if value else None
+
+
+def _ppi_intake_evidence(path, *, at=None):
+    """Correlate existing PAPER counters, REST witnesses and EXIT on one SQLite read."""
+    at = at or now_utc()
+    floor = at.astimezone(ART).replace(hour=10, minute=30, second=0, microsecond=0)
+    result = {"status": "NO_VERIFICADO", "read_only": True}
+    uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=.2)) as db:
+            db.execute("PRAGMA query_only=ON")
+            deadline = time.monotonic() + 1.25
+            db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            db.execute("BEGIN")
+            status = db.execute("SELECT mode, real_orders_sent FROM observer_state WHERE id=1").fetchone()
+            if status != ("PRODUCTION_PAPER", 0):
+                return result
+
+            cycles = []
+            rows = db.execute("""SELECT finished_at,eligible_total,selected_count,successful_count,
+                failed_count,substr(detail,1,32768) FROM universe_cycle_metrics ORDER BY id DESC LIMIT 72""")
+            for finished, eligible, selected, successful, failed, detail in rows:
+                observed_at = timestamp(finished)
+                if not observed_at or not floor <= observed_at <= at:
+                    continue
+                try:
+                    plan = json.loads(detail[detail.index("{"):])
+                except (ValueError, AttributeError, TypeError):
+                    plan = {}
+                plan = plan if isinstance(plan, dict) else {}
+                active = plan.get("active_plan")
+                catalog_status = active.get("catalog_status") if isinstance(active, dict) else None
+                discovery = plan.get("native_settlement_discovery")
+                discovery = discovery if isinstance(discovery, dict) else {}
+                counters = dict(zip(("eligible", "selected", "successful", "failed"),
+                                    (eligible, selected, successful, failed)))
+                cycles.append({"at": observed_at.isoformat(),
+                               **{key: value if type(value) is int and 0 <= value <= 1000000 else None
+                                  for key, value in counters.items()},
+                               "catalog": catalog_status if catalog_status in (
+                                   "NO_ELIGIBLE_INSTRUMENTS", "ELIGIBLE_INSTRUMENTS", "CATALOG_READ_ERROR",
+                                   "CATALOG_IDENTITY_UNVERIFIED") else None,
+                               "discovery": {
+                                   **{name: discovery.get(name) if type(discovery.get(name)) is int
+                                      and 0 <= discovery[name] <= 1000 else None
+                                      for name in ("slots", "attempted", "fresh_pairs", "attested")},
+                                   "reason": _ppi_intake_reason(discovery.get("reason"))}})
+
+            native, holds = {}, {}
+            for event in ("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", "PPI_DIRECT_REST_PROBE_HOLD"):
+                rows = db.execute("""SELECT event_at,substr(detail,1,512)
+                    FROM paper_events WHERE event_type=? AND julianday(event_at)>=julianday(?)
+                    ORDER BY julianday(event_at) DESC LIMIT 96""", (event, floor.isoformat()))
+                for event_at, detail in rows:
+                    seen = timestamp(event_at)
+                    if not seen or seen > at or not isinstance(detail, str):
+                        continue
+                    if event == "PPI_DIRECT_REST_PROBE_HOLD":
+                        reason = _ppi_intake_reason(detail) or "UNCLASSIFIED"
+                        holds[reason] = holds.get(reason, 0) + 1
+                        continue
+                    fields = dict(field.split("=", 1) for field in detail.split(";") if "=" in field)
+                    endpoint = fields.get("endpoint")
+                    received = timestamp(fields.get("wire_received_at_utc"))
+                    market_at = timestamp(fields.get("market_timestamp_utc"))
+                    if (endpoint in _PPI_OBSERVATION_ENDPOINTS and fields.get("http_status") == "200"
+                            and received and floor <= received <= at):
+                        observed = native.setdefault(endpoint, {
+                            "http_200_witnesses": 0, "latest_received_at": received.isoformat(),
+                            "latest_market_at": market_at.isoformat() if market_at else None})
+                        observed["http_200_witnesses"] += 1
+
+            http = {}
+            rows = db.execute("""SELECT happened_at,method,substr(path,1,180),result
+                                  FROM http_audit ORDER BY id DESC LIMIT 256""")
+            for happened_at, method, route, verdict in rows:
+                seen = timestamp(happened_at)
+                if method != "GET" or not seen or not floor <= seen <= at or not isinstance(route, str):
+                    continue
+                endpoint = route.rsplit("/", 1)[-1].lower()
+                if endpoint in _PPI_OBSERVATION_ENDPOINTS and verdict in ("ALLOWED", "BLOCKED", "BACKPRESSURE"):
+                    counter = http.setdefault(endpoint, {})
+                    counter[verdict] = counter.get(verdict, 0) + 1
+
+            exit_round = {}
+            row = db.execute("SELECT heartbeat_at,state,substr(detail,1,500) "
+                             "FROM paper_exit_reader_state WHERE id=1").fetchone()
+            if row and (heartbeat := timestamp(row[0])) is not None and floor <= heartbeat <= at:
+                match = re.search(r"; budget_round=(COMPLETE|DEGRADED|BASELINE_NOT_MEASURED|NO_VERIFICADO|NOT_OBSERVED)$",
+                                  row[2] or "")
+                failures = re.match(r"^([0-9]{1,5}) errores de lectura de abiertas;", row[2] or "")
+                exit_round = {"at": heartbeat.isoformat(), "status": row[1] if row[1] in (
+                    "READY", "DEGRADED", "VERIFYING", "ERROR", "WAITING_MARKET", "GATEWAY_ATTACH_RETRY") else None,
+                    "budget_round": match[1] if match else None,
+                    "observed_book_errors": int(failures[1]) if failures else None,
+                    "sqlite_contention": (row[2] or "").startswith("SQLite contention;")}
+            return {**result, "status": "OBSERVED", "window_start": floor.isoformat(),
+                    "observed_at": at.isoformat(), "sampled_cycles": len(cycles),
+                    "first_sampled_cycle": cycles[-1] if cycles else None,
+                    "last_cycle": cycles[0] if cycles else None,
+                    "discovery_hold_events": holds, "native_wire": native,
+                    "http_presend": http, "exit_round": exit_round}
+    except (OSError, sqlite3.Error):
+        return result
 
 _GATEWAY_DIAGNOSTIC_CHILD = '''
 import json
@@ -1952,6 +2065,7 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
         receipt["construction"] = construction
     if any(receipt[key] != "NO_VERIFICADO" for key in ("owner", "catalog", "construction")):
         receipt["status"] = "OBSERVED"
+    receipt["intake"] = _ppi_intake_evidence(ROOT / DB_REL)
     return receipt
 
 

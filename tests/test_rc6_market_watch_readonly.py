@@ -462,6 +462,54 @@ class MonitorContracts(unittest.TestCase):
             self.assertEqual(blocked["catalog"], "QUERY_KEYS_OBSERVED")
             self.assertEqual(blocked["construction"], "PPI_IDENTITY_COMPONENT_INVALID")
 
+    def test_ppi_intake_distinguishes_guard_native_and_exit_in_current_session(self):
+        at = datetime(2026, 11, 25, 13, 40, tzinfo=timezone.utc)
+        observed = (at - timedelta(minutes=1)).isoformat()
+        old = (at - timedelta(days=1)).isoformat()
+        with sqlite3.connect(self.db) as db:
+            db.executescript("""CREATE TABLE universe_cycle_metrics (
+                id INTEGER PRIMARY KEY, finished_at TEXT, eligible_total INTEGER,
+                selected_count INTEGER, successful_count INTEGER, failed_count INTEGER, detail TEXT);
+                DROP TABLE paper_events;
+                CREATE TABLE paper_events (id INTEGER PRIMARY KEY, event_at TEXT, event_type TEXT, detail TEXT);
+                CREATE TABLE http_audit (id INTEGER PRIMARY KEY, happened_at TEXT, method TEXT,
+                    path TEXT, result TEXT);
+                CREATE TABLE paper_exit_reader_state (id INTEGER PRIMARY KEY, heartbeat_at TEXT,
+                    state TEXT, detail TEXT);""")
+            plan = {"active_plan": {"catalog_status": "NO_ELIGIBLE_INSTRUMENTS"},
+                    "native_settlement_discovery": {
+                        "slots": 8, "attempted": 1, "fresh_pairs": 0, "attested": 0,
+                        "reason": "PPI_NATIVE_HTTP_429"}}
+            db.execute("INSERT INTO universe_cycle_metrics VALUES(NULL,?,0,0,0,0,?)",
+                       (observed, "rotación; factibilidad=" + json.dumps(plan)))
+            witness = ("identity5=DO_NOT_LEAK;endpoint=current;http_status=200;"
+                       f"wire_received_at_utc={observed};market_timestamp_utc={old}")
+            db.executemany("INSERT INTO paper_events VALUES(NULL,?,?,?)", [
+                (old, "PPI_DIRECT_REST_PROBE_HOLD", "PPI_NATIVE_HTTP_403"),
+                (observed, "PPI_DIRECT_REST_PROBE_HOLD", "PPI_NATIVE_HTTP_429"),
+                (observed, "PPI_DIRECT_REST_PROBE_HOLD", "DO_NOT_LEAK provider body"),
+                (observed, "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", witness),
+            ])
+            db.executemany("INSERT INTO http_audit VALUES(NULL,?,?,?,?)", [
+                (observed, "GET", "/api/marketdata/current", "ALLOWED"),
+                (observed, "GET", "/api/marketdata/book", "BACKPRESSURE"),
+            ])
+            db.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
+                       (observed, "DEGRADED", "0 errores de lectura de abiertas; round_seconds=0.0001; "
+                        "baseline_cadence=NO_VERIFICADO; budget_round=BASELINE_NOT_MEASURED"))
+        before = self.db.read_bytes()
+        evidence = monitor._ppi_intake_evidence(self.db, at=at)
+        self.assertEqual(evidence["status"], "OBSERVED")
+        self.assertEqual(evidence["last_cycle"]["discovery"]["reason"], "PPI_NATIVE_HTTP_429")
+        self.assertEqual(evidence["discovery_hold_events"], {"PPI_NATIVE_HTTP_429": 1, "UNCLASSIFIED": 1})
+        self.assertEqual(evidence["native_wire"]["current"]["latest_market_at"], old)
+        self.assertNotIn("book", evidence["native_wire"])
+        self.assertEqual(evidence["http_presend"]["book"], {"BACKPRESSURE": 1})
+        self.assertEqual(evidence["exit_round"]["budget_round"], "BASELINE_NOT_MEASURED")
+        self.assertEqual(evidence["exit_round"]["observed_book_errors"], 0)
+        self.assertNotIn("DO_NOT_LEAK", json.dumps(evidence))
+        self.assertEqual(self.db.read_bytes(), before)
+
     def test_rootless_current_marker_uses_candidate_sha_not_removed_deploy_sha(self):
         current = json.loads(self.provenance_path.read_text())
         current.pop("deploy_sha")
