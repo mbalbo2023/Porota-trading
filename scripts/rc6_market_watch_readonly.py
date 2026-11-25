@@ -1012,7 +1012,8 @@ def _ppi_gateway_last_events(db, tables):
     if "paper_events" not in tables:
         return {}
     events = {}
-    for event in ("PPI_GATEWAY_HOLD", "PPI_GATEWAY_OWNER_OPEN", "PPI_GATEWAY_ATTACHED"):
+    for event in ("PPI_GATEWAY_HOLD", "PPI_GATEWAY_OWNER_OPEN", "PPI_GATEWAY_ATTACHED",
+                  "PPI_GATEWAY_AUTH_REFRESH", "PPI_GATEWAY_AUTH_RECOVERY"):
         try:
             row = db.execute("""SELECT event_at,substr(detail,1,180) AS detail_prefix
                 FROM paper_events INDEXED BY idx_shadow_event_type_at_jd WHERE event_type=?
@@ -1026,6 +1027,11 @@ def _ppi_gateway_last_events(db, tables):
             detail = row["detail_prefix"]
             if event == "PPI_GATEWAY_HOLD":
                 record["error_class"] = detail if detail in _GATEWAY_OWNER_ERROR_CLASSES else None
+            elif event in {"PPI_GATEWAY_AUTH_REFRESH", "PPI_GATEWAY_AUTH_RECOVERY"}:
+                if detail in {"PPI_OWNER_REFRESH_SUCCESS", "PPI_OWNER_REFRESH_UNAVAILABLE",
+                              "PPI_OWNER_REFRESH_HTTP_401", "PPI_OWNER_REFRESH_HTTP_403",
+                              "PPI_OWNER_REFRESH_HTTP_429", "PPI_OWNER_REFRESH_UNVERIFIED", "PPI_HTTP_401"}:
+                    record["outcome"] = detail
             events[event] = record
     return events
 
