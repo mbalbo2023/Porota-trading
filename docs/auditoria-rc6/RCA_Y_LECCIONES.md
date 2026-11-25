@@ -1,5 +1,14 @@
 # RCA y lecciones de Porota RC6
 
+## Datos, preopen y Gateway del 25/11
+
+- El 429 prueba una limitación observada. La cuota pública o de cuenta y la concurrencia se acreditan por separado. La telemetría guarda el reloj del límite y la cola de EXIT. Scalping vuelve a su rotación después del backoff real.
+- Un cambio de firmante debe preservar la identidad acreditada durante su vigencia y exigir el firmante activo para incorporar evidencia nueva. La frescura de la rueda mantiene sus propios relojes por clave.
+- Una falla de Book puede dejar un Current útil para velas muestreadas. Su recibo, fuente y fecha quedan visibles. La ejecución requiere sus propios datos y contrato.
+- La recuperación de históricos usa el inventario existente, un guard por clave y fecha y un recibo de reanudación. La base de ajuste y la moneda de RAW requieren autoridad específica.
+
+[RCA y criterios de cierre](RCA_DATOS_PREOPEN_2026-11-25.md) · [PR de producto](https://github.com/mbalbo2023/Porota-trading/pull/1275)
+
 ## Auditoría PAPER del 25/11 y fix-forward #1272
 
 | Hallazgo | RCA | Defensa y comprobación |

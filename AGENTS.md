@@ -1,5 +1,11 @@
 # Porota Trading RC6 — instrucciones para agentes
 
+## Datos, preopen y Gateway del 25/11/2026
+
+Seguir el [RCA de datos y preopen](docs/auditoria-rc6/RCA_DATOS_PREOPEN_2026-11-25.md), el [handoff](docs/auditoria-rc6/HANDOFF.md) y [#1275](https://github.com/mbalbo2023/Porota-trading/pull/1275). Usar el censo por clave de las 07:50 ART como referencia previa a #208. En el T−10 acreditar la publicación contractual por familia, vigencia de identidad, primer dato fresco y capacidad EXIT. La evidencia almacenada de plazo se reutiliza con la misma clave y vigencia. El cupo PPI sólo se acredita con evidencia específica del proveedor.
+
+Reusar los archivos históricos por huecos con `--missing-only`. Mantener referencias y RAW con su procedencia declarada. Las muestras de Current alimentan 1m y 5m con calidad `SAMPLED`. Ante 429, scalping conserva su rotación y reanuda al vencer la espera observada. Verificar el reloj de la fuente, la suscripción o demanda de datos, el contrato de volumen y el primer gate de cada instrumento.
+
 ## Auditoría PAPER y continuidad de la rueda del 25/11/2026
 
 Usar el [handoff vigente](docs/auditoria-rc6/HANDOFF.md), el [informe de auditoría](docs/auditoria-rc6/BACKTEST_PAPER_2026-11-25.md), el [PDF](docs/auditoria-rc6/BACKTEST_PAPER_2026-11-25.pdf) y el [manifiesto de recibos](docs/auditoria-rc6/RECIBOS_PAPER_2026-11-25.json). Reconciliar el producto, el recibo físico de [Promote V2 #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370), [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093), [#1259](https://github.com/mbalbo2023/Porota-trading/issues/1259) y los owners de [#980](https://github.com/mbalbo2023/Porota-trading/issues/980).

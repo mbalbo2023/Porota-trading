@@ -96,4 +96,17 @@ La introspección de las 23:35 ART observó cero ofertas completas en 10 caucion
 4. Para el pase completo, registrar señal, economía, riesgo, capacidad EXIT, decisión, orden o evento especializado, cantidad, costos y asientos conciliados. El replay causal sólo puede usar datos disponibles en `known_at`.
 5. Publicar las evidencias contemporáneas de preopen, EXIT, primera cotización, progreso y ledger por clave al corte de rueda. Actualizar el handoff y el registro de causas con las deltas verificadas.
 
+## Addenda de datos y preopen
+
+El [censo posterior](https://github.com/mbalbo2023/Porota-trading/commit/1d34e94ae9005194cb1ea2718195fbae12ecdf5d), del 25/11 a las 07:50:29 ART, registró 17.482 claves, cero READY y 11.195 plazos registrados como hipótesis de consulta. El primer bloqueo de otras 6.102 claves fue la falta de identidad primaria PPI. El [Promote #208](https://github.com/mbalbo2023/Porota-trading/actions/runs/45599380125/artifacts/15014269186) de las 08:01:42 ART acreditó PAPER/0 en el release siguiente. Estos dos recibos tienen sus propios cortes.
+
+| Frente | Corrección incorporada al candidato #1275 | Evidencia que cierra la rueda |
+| --- | --- | --- |
+| Históricos | Completar huecos con los archivos PPI y de referencia mediante el importador existente. Conservar cada fecha ya cubierta y su procedencia. | Conciliar altas, huecos y versiones por serie. El lote anterior dio 0/40 en la certificación RAW. Hace falta el contrato de procedencia del proveedor. |
+| Velas 1m/5m | Conservar un Current genuino y vigente de clave acreditada si Book falla. El worker publica barras muestreadas con sus propios relojes. | Relacionar evento, recepción, muestra y versión. Acreditar la continuidad de trades y su unidad para OHLCV completo. |
+| Preopen y EXIT | Conservar el plazo firmado vigente al rotar el Gateway, preparar la rueda por grupo, computar cobertura contractual por familia y reservar un lugar para EXIT. | T−10, primer dato de rueda, motivos por clave y medición de la ronda EXIT del SHA instalado. |
+| Gateway y scalping | Observar límites informados en respuestas existentes. Al llegar 429, pausar la rotación y reintentar cuando vence la espera observada. | Cuota de cuenta acreditada por PPI, reanudación física, volumen intradiario y primer gate de scalping. |
+
+La revisión focalizada aprobó 311 pruebas y registró dos omisiones del entorno. La comprobación final recorrió el fallo de Book desde el scanner hasta las dos resoluciones y verificó que la colección permanezca observacional. Los casos de instrumentos y asientos conservan sus recibos originales. [RCA, solución y criterio de cierre](RCA_DATOS_PREOPEN_2026-11-25.md) · [Candidato #1275](https://github.com/mbalbo2023/Porota-trading/pull/1275)
+
 PAPER/SHADOW. Órdenes reales bloqueadas. PPI Watch fuera de cambios. [Handoff](HANDOFF.md) · [Ownership](https://github.com/mbalbo2023/Porota-trading/issues/980)

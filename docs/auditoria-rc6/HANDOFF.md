@@ -1,5 +1,11 @@
 # Handoff de Porota Trading RC6
 
+## Continuación de datos, preopen y Gateway
+
+El [RCA del 25/11](RCA_DATOS_PREOPEN_2026-11-25.md) documenta los históricos, las velas, el Gateway, la identidad y scalping. [PR #1275](https://github.com/mbalbo2023/Porota-trading/pull/1275) contiene el candidato `70a44da7a950ddce16219b3553a1ca65930522bb`, árbol `7c5ec912bae29aead5efd003a10cedc8ac202098`. La última instalación acreditada en este corte es [Promote #208](https://github.com/mbalbo2023/Porota-trading/actions/runs/45599380125/artifacts/15014269186), PAPER/0, guard REAL bloqueado y PPI Watch fuera de cambios.
+
+Para el próximo corte, leer Actions y [#1093](https://github.com/mbalbo2023/Porota-trading/issues/1093). Vincular el T−10 y el censo por familia al release activo. Medir progreso de la primera clave, latencia de cola y ronda efectiva EXIT, reanudación scalping tras pausa y muestras 1m/5m. El histórico de referencia se recupera por huecos en el importador existente. El cierre RAW sigue sujeto a fuente acreditada. [Ownership de producto](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7161018328)
+
 ## Auditoría y continuidad de la rueda del 25/11/2026
 
 **VALIDADO_RUNTIME** a las 00:08:01 ART del 25/11 (`03:08:01 UTC`). El producto de [#1272](https://github.com/mbalbo2023/Porota-trading/pull/1272) quedó en `c6b990e20fb7b943dfda478202452b5c550816f6`, fuente `2b719cc86252c51dac516a48b519ab422dcb8e50`, árbol `1401d8390e01dbf3be3b0e115a5bfd97acd0ae36`. [Predeploy #1321](https://github.com/mbalbo2023/Porota-trading/actions/runs/45535126618/artifacts/14986798842) acreditó 9.178 pruebas activas y el recibo funcional PAPER/0 de la imagen exacta. El único [Promote #207](https://github.com/mbalbo2023/Porota-trading/actions/runs/45537154370/artifacts/14987771207) verificó esa imagen, la misma DB, dashboard saludable, observer activo, ocho roles, guard REAL `BLOCKED`, seis variantes de renta fija `ACTIVE_PAPER` y PPI Watch fuera de cambios.
