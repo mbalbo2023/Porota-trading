@@ -1,12 +1,14 @@
 {
-  "anomalies": [],
+  "anomalies": [
+    "ppi_auth_unavailable_during_open_market"
+  ],
   "caucion_readiness": {
     "complete_offers": 0,
     "declared": 1,
     "missing_offer_requirements": [],
     "missing_policy_requirements": [],
     "observed_contracts": 10,
-    "offer_checked_at": "2026-11-25T15:35:04.833308-03:00",
+    "offer_checked_at": "2026-11-25T16:35:04.109855-03:00",
     "placed_today": 0,
     "queries": 1,
     "state": "NO_CURRENT_VALID_OFFER"
@@ -336,7 +338,7 @@
     "branch": "runtime-observability",
     "day": "2026-11-25",
     "detail": null,
-    "recorded_at": "2026-11-25T17:42:19.424812+00:00",
+    "recorded_at": "2026-11-25T18:42:14.337500+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -395,15 +397,15 @@
     "unchanged": 1
   },
   "observer": {
-    "heartbeat_at": "2026-11-25T18:34:53.045245+00:00",
-    "http_allowed": 24,
+    "heartbeat_at": "2026-11-25T19:34:58.609768+00:00",
+    "http_allowed": 14,
     "http_blocked": 0,
     "last_market_data_at": "2026-11-25T18:32:43.456664+00:00",
     "mode": "PRODUCTION_PAPER",
-    "ppi_auth": "OK",
+    "ppi_auth": "ERROR",
     "process_state": "DEGRADED",
     "real_orders_sent": 0,
-    "session_state": "MARKET_OPEN"
+    "session_state": "BOOT_PPI_GATEWAY_IDENTITY"
   },
   "ppi_errors_1h": [],
   "quick_check": "DELEGATED_TO_RC6_FULL_DB_INTEGRITY",
@@ -425,19 +427,19 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 2826592256,
-    "filesystem_free": 22196662272,
+    "database_bytes": 2826903552,
+    "filesystem_free": 22280376320,
     "filesystem_total": 61285326848,
-    "filesystem_used": 39071887360,
-    "filesystem_used_pct": 63.75,
+    "filesystem_used": 38988173312,
+    "filesystem_used_pct": 63.62,
     "wal_bytes": 4276592
   },
   "telegram": {
     "DEAD": 1,
-    "SENT": 746,
+    "SENT": 749,
     "SUPPRESSED_WEEKEND": 6
   },
-  "timestamp": "2026-11-25T15:35:04-03:00",
+  "timestamp": "2026-11-25T16:35:04-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -446,41 +448,38 @@
     "open": 0,
     "sells_1h": 0
   },
-  "verdict": "WARN",
+  "verdict": "CRITICAL",
   "version": "17.0.0-rc6",
-  "warnings": [
-    "no_decisions_during_open_market",
-    "no_usd_operations_today"
-  ],
+  "warnings": [],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": 2.866914,
-      "heartbeat_at": "2026-11-25T18:35:01.966394+00:00",
+      "heartbeat_age_seconds": 1.03748,
+      "heartbeat_at": "2026-11-25T19:35:03.072375+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 13.442075,
-      "heartbeat_at": "2026-11-25T18:34:51.391233+00:00",
-      "state": "WAITING_WINDOW"
+      "heartbeat_age_seconds": 15.024689,
+      "heartbeat_at": "2026-11-25T19:34:49.085166+00:00",
+      "state": "HOLD"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 2.192391,
-      "heartbeat_at": "2026-11-25T18:35:02.640917+00:00",
-      "state": "DEGRADED"
+      "heartbeat_age_seconds": 1.21441,
+      "heartbeat_at": "2026-11-25T19:35:02.895445+00:00",
+      "state": "GATEWAY_ATTACH_RETRY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 86.60431,
-      "heartbeat_at": "2026-11-25T18:33:38.228998+00:00",
-      "state": "RUNNING"
+      "heartbeat_age_seconds": 18.394197,
+      "heartbeat_at": "2026-11-25T19:34:45.715658+00:00",
+      "state": "LOGIN_ERROR"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 3.884185,
-      "heartbeat_at": "2026-11-25T18:35:00.949123+00:00",
+      "heartbeat_age_seconds": 6.220006,
+      "heartbeat_at": "2026-11-25T19:34:57.889849+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": 0.740939,
-      "heartbeat_at": "2026-11-25T18:35:04.092369+00:00",
+      "heartbeat_age_seconds": 1.527775,
+      "heartbeat_at": "2026-11-25T19:35:02.582080+00:00",
       "state": "RUNNING"
     }
   }
