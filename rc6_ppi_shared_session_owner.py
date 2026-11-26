@@ -670,8 +670,9 @@ class PPISharedSessionOwner:
                     **({"observed_book_max_age": observed_book_max_age}
                        if observed_book_max_age is not None else {}))
             except Exception as exc:
-                if isinstance(exc, NativeBookClockRejected):
-                    self._native_book_clock_rejection = exc.evidence
+                clock_error = exc if isinstance(exc, NativeBookClockRejected) else exc.__cause__
+                if isinstance(clock_error, NativeBookClockRejected):
+                    self._native_book_clock_rejection = clock_error.evidence
                 status, retry_after = self._observed_http_error(exc)
                 guarded = self._guarded_provider_error(wire_calls)
                 if guarded is not None:

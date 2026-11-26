@@ -513,7 +513,7 @@ def test_repeated_current_is_a_new_http_response_but_never_a_new_cached_trade(ha
     ("exit_reader", "EXIT_CRITICAL", "book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
     ("scanner", "OPENED_CRITICAL", "book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
     ("scanner", "DISCOVERY", "book", -121, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
-    ("scanner", "DISCOVERY", "book", 30, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("scanner", "DISCOVERY", "book", 30, "PPI_REST_NATIVE_TIME_AFTER_RECEIVE"),
     ("scanner", "DISCOVERY", "current", 30, "PPI_REST_NATIVE_TIME_AFTER_RECEIVE"),
 ])
 def test_scanner_observation_preserves_protected_book_clocks_and_causality(

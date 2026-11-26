@@ -218,11 +218,12 @@ class MarketOnlyRESTProducer:
             source["guard_wire_receipt"], method=method, priority=priority,
             five_key=identity, raw_sha256=raw_sha)
         if native > received:
+            blocked = RESTProducerBlocked("PPI_REST_NATIVE_TIME_AFTER_RECEIVE")
             if method == "book":
                 from rc6_ppi_shared_feed import NativeBookClockRejected
-                raise NativeBookClockRejected("BOOK_SOURCE_AFTER_RECEIPT", native, received,
-                                              datetime.now(timezone.utc))
-            raise RESTProducerBlocked("PPI_REST_NATIVE_TIME_AFTER_RECEIVE")
+                raise blocked from NativeBookClockRejected("BOOK_SOURCE_AFTER_RECEIPT", native, received,
+                                                           datetime.now(timezone.utc))
+            raise blocked
         # The native receipt store is the ONLY fan-out publisher. This object
         # exposes no extra GET, budget or order method; no double lease.
         result = self._sink.publish_native_rest_receipt(
