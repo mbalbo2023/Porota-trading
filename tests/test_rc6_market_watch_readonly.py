@@ -461,6 +461,12 @@ class MonitorContracts(unittest.TestCase):
             self.assertEqual(blocked["owner"], "PPI_GATEWAY_UNAVAILABLE")
             self.assertEqual(blocked["catalog"], "QUERY_KEYS_OBSERVED")
             self.assertEqual(blocked["construction"], "PPI_IDENTITY_COMPONENT_INVALID")
+            docker.command_result.side_effect = subprocess.TimeoutExpired("read-only-probe", 29)
+            with patch.object(monitor, "_ppi_intake_evidence", return_value={"status": "OBSERVED"}):
+                partial = monitor.ppi_gateway_diagnostic_host(SHA)
+            self.assertEqual(partial["reason"], "CONTAINER_PROBE_UNAVAILABLE")
+            self.assertEqual(partial["intake"], {"status": "OBSERVED"})
+            self.assertLessEqual(docker.command_result.call_args.kwargs["timeout"], 30)
 
     def test_ppi_intake_distinguishes_guard_native_and_exit_in_current_session(self):
         at = datetime(2026, 11, 25, 13, 40, tzinfo=timezone.utc)
@@ -1186,7 +1192,7 @@ class MonitorContracts(unittest.TestCase):
             "- name: Diagnose SHADOW", 1)[0]
         self.assertIn("github.event_name == 'workflow_dispatch'", gateway)
         self.assertIn("inputs.notification_mode == 'read_only'", gateway)
-        self.assertIn("timeout 78 python3 - ppi-gateway-diagnostic-host", gateway)
+        self.assertIn("timeout 35 python3 - ppi-gateway-diagnostic-host", gateway)
         self.assertIn("github.event_name == 'schedule' && 'normal'", workflow)
         self.assertIn("inputs.notification_mode || 'read_only'", workflow)
         self.assertIn("for name in ('observer','dashboard')", workflow)

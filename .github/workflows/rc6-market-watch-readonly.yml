@@ -195,7 +195,7 @@ jobs:
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
             "$DO_USER@$DO_HOST" \
-            "timeout 78 python3 - ppi-gateway-diagnostic-host --expected-tree-sha '$EXPECTED_TREE_SHA'" \
+            "timeout 35 python3 - ppi-gateway-diagnostic-host --expected-tree-sha '$EXPECTED_TREE_SHA'" \
             < scripts/rc6_market_watch_readonly.py > evidence/ppi_gateway.json 2>/dev/null
           rc=$?
           set -e
