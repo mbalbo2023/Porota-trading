@@ -1,5 +1,5 @@
 name: RC6 PPI REST directo GGAL
-run-name: RC6 prueba REST escalonada GGAL en PAPER
+run-name: RC6 REST GGAL con catálogo normalizado y pausa respetada
 
 on:
   push:
@@ -29,7 +29,7 @@ jobs:
       github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
       github.run_attempt == '1' && (github.event_name == 'push' || inputs.operation == 'direct_ggal')
     runs-on: ubuntu-24.04
-    timeout-minutes: 4
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          printf '%s  %s\n' 'c7046f3d5bf9c0845179190444da02b8d50a1d47b5505d2e392c16830fcea8b3' scripts/rc6_ppi_direct_ggal_once.sh | sha256sum -c
+          printf '%s  %s\n' '0823bc9ed38adcae061160add4cdfeaf46fb26176ab64778d8da2b837c1171f7' scripts/rc6_ppi_direct_ggal_once.sh | sha256sum -c
           bash -n scripts/rc6_ppi_direct_ggal_once.sh
 
       - name: Run the guarded one-shot direct REST probe on the Droplet
@@ -63,7 +63,7 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$probe_dir/known_hosts" -o ConnectTimeout=10 \
             -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" 'bash -s' \
+            "$DO_USER@$DO_HOST" 'bash -s -- --wait-cooldown' \
             < scripts/rc6_ppi_direct_ggal_once.sh > "$probe_dir/result" 2> "$probe_dir/stderr"; then
             exit 1
           fi
