@@ -2,11 +2,11 @@
   "anomalies": [],
   "caucion_readiness": {
     "complete_offers": 0,
-    "declared": 1,
+    "declared": -1,
     "missing_offer_requirements": [],
     "missing_policy_requirements": [],
     "observed_contracts": 10,
-    "offer_checked_at": "2026-11-25T23:35:11.259309-03:00",
+    "offer_checked_at": "2026-11-26T00:35:25.260968-03:00",
     "placed_today": 0,
     "queries": 1,
     "state": "NO_CURRENT_VALID_OFFER"
@@ -21,13 +21,7 @@
     "open_without_exit_intent": 0,
     "orphan_fills": 0
   },
-  "currency_funnel": [
-    {
-      "currency": "ARS",
-      "last_observed_at": "2026-11-25T18:32:43.456664+00:00",
-      "observed_symbols": 1
-    }
-  ],
+  "currency_funnel": [],
   "economics": {
     "blocked_1h": 0,
     "evaluated_1h": 0,
@@ -41,21 +35,21 @@
           "count": 171
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
-      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "ACCIONES",
-      "observed_count": 136,
+      "observed_count": 18,
       "queries": 4,
-      "ready_paper_count": 136,
+      "ready_paper_count": 18,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "ACCIONES-USA",
       "observed_count": 0,
@@ -71,19 +65,19 @@
         },
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 33
+          "count": 43
         },
         {
           "capability": "READY_PAPER_SPOT",
           "count": 2483
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "BONOS",
-      "observed_count": 503,
+      "observed_count": 51,
       "queries": 4,
       "ready_paper_count": 1,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
@@ -95,12 +89,12 @@
           "count": 10
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
-      "discovery_status": "INSTRUMENTS_OBSERVED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "QUERY_ERROR",
       "excluded_by_default": false,
       "instrument_type": "CAUCIONES",
-      "observed_count": 10,
+      "observed_count": 0,
       "queries": 1,
       "ready_paper_count": 0,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
@@ -112,21 +106,21 @@
           "count": 1338
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "CEDEARS",
-      "observed_count": 88,
+      "observed_count": 72,
       "queries": 4,
-      "ready_paper_count": 88,
+      "ready_paper_count": 72,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "ETF",
       "observed_count": 0,
@@ -136,8 +130,8 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "QUERY_ERROR",
       "excluded_by_default": false,
       "instrument_type": "ETFS",
@@ -157,21 +151,21 @@
           "count": 1063
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "FCI",
-      "observed_count": 33,
+      "observed_count": 21,
       "queries": 4,
       "ready_paper_count": 0,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "FCI-EXTERIOR",
       "observed_count": 0,
@@ -190,21 +184,21 @@
           "count": 2
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
-      "discovery_status": "OBSERVED_WITH_ERRORS",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "QUERY_ERROR",
       "excluded_by_default": false,
       "instrument_type": "FUTUROS",
-      "observed_count": 31,
-      "queries": 4,
+      "observed_count": 0,
+      "queries": 8,
       "ready_paper_count": 0,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "INDICES",
       "observed_count": 0,
@@ -214,9 +208,9 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "LEBAC",
       "observed_count": 0,
@@ -228,28 +222,28 @@
       "capabilities": [
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 2
+          "count": 3
         },
         {
           "capability": "READY_PAPER_SPOT",
           "count": 39
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "LETRAS",
-      "observed_count": 12,
+      "observed_count": 4,
       "queries": 4,
       "ready_paper_count": 1,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
-      "discovery_status": "DECLARED_NO_QUERY",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "LICITACIONES",
       "observed_count": 0,
@@ -259,9 +253,9 @@
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "NOBAC",
       "observed_count": 0,
@@ -277,28 +271,28 @@
         },
         {
           "capability": "NEEDS_NOMINAL_UNITS",
-          "count": 58
+          "count": 60
         },
         {
           "capability": "READY_PAPER_SPOT",
           "count": 3675
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "OBLIGACIONES",
-      "observed_count": 137,
+      "observed_count": 37,
       "queries": 4,
-      "ready_paper_count": 22,
+      "ready_paper_count": 24,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
     },
     {
       "capabilities": [],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 0,
-      "discovery_status": "NOT_ENUMERATED",
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
+      "discovery_status": "CONFIGURATION_UNAVAILABLE",
       "excluded_by_default": false,
       "instrument_type": "ON",
       "observed_count": 0,
@@ -314,19 +308,19 @@
         },
         {
           "capability": "NEEDS_OPTION_CONTRACT",
-          "count": 109
+          "count": 110
         },
         {
           "capability": "READY_PAPER_OPTION_LONG",
           "count": 786
         }
       ],
-      "checked_at": "2026-11-25T03:15:07.011417+00:00",
-      "declared": 1,
+      "checked_at": "2026-11-26T03:00:00.980351+00:00",
+      "declared": -1,
       "discovery_status": "OBSERVED_WITH_ERRORS",
       "excluded_by_default": false,
       "instrument_type": "OPCIONES",
-      "observed_count": 1191,
+      "observed_count": 1187,
       "queries": 4,
       "ready_paper_count": 0,
       "ready_paper_count_scope": "CATALOG_CENSUS_AT_CHECKED_AT"
@@ -336,7 +330,7 @@
     "branch": "runtime-observability",
     "day": "2026-11-25",
     "detail": null,
-    "recorded_at": "2026-11-26T01:42:30.771132+00:00",
+    "recorded_at": "2026-11-26T02:42:34.397047+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
@@ -391,11 +385,11 @@
     "policy": "ALERT_ONLY",
     "rising": 0,
     "state": "INSUFFICIENT_SAMPLE",
-    "symbols": 1,
-    "unchanged": 1
+    "symbols": 0,
+    "unchanged": 0
   },
   "observer": {
-    "heartbeat_at": "2026-11-26T02:35:11.096778+00:00",
+    "heartbeat_at": "2026-11-26T03:35:23.949443+00:00",
     "http_allowed": 55,
     "http_blocked": 0,
     "last_market_data_at": "2026-11-25T18:32:43.456664+00:00",
@@ -425,19 +419,19 @@
     "unmapped_positions": 0
   },
   "storage": {
-    "database_bytes": 2829340672,
-    "filesystem_free": 22178447360,
+    "database_bytes": 2830098432,
+    "filesystem_free": 22166999040,
     "filesystem_total": 61285326848,
-    "filesystem_used": 39090102272,
-    "filesystem_used_pct": 63.78,
-    "wal_bytes": 18494712
+    "filesystem_used": 39101550592,
+    "filesystem_used_pct": 63.8,
+    "wal_bytes": 26747072
   },
   "telegram": {
     "DEAD": 1,
     "SENT": 753,
     "SUPPRESSED_WEEKEND": 6
   },
-  "timestamp": "2026-11-25T23:35:11-03:00",
+  "timestamp": "2026-11-26T00:35:25-03:00",
   "trading": {
     "buys_1h": 0,
     "closed_today": 0,
@@ -451,33 +445,33 @@
   "warnings": [],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": 20.991206,
-      "heartbeat_at": "2026-11-26T02:34:50.268103+00:00",
+      "heartbeat_age_seconds": 24.783052,
+      "heartbeat_at": "2026-11-26T03:35:00.477916+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 7.355316,
-      "heartbeat_at": "2026-11-26T02:35:03.903993+00:00",
+      "heartbeat_age_seconds": 17.845814,
+      "heartbeat_at": "2026-11-26T03:35:07.415154+00:00",
       "state": "WAITING_WINDOW"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 10.175091,
-      "heartbeat_at": "2026-11-26T02:35:01.084218+00:00",
+      "heartbeat_age_seconds": 4.069208,
+      "heartbeat_at": "2026-11-26T03:35:21.191760+00:00",
       "state": "WAITING_MARKET"
     },
     "scalping": {
-      "heartbeat_age_seconds": 14.921121,
-      "heartbeat_at": "2026-11-26T02:34:56.338188+00:00",
+      "heartbeat_age_seconds": 4.782618,
+      "heartbeat_at": "2026-11-26T03:35:20.478350+00:00",
       "state": "WAITING_MARKET"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 5.536525,
-      "heartbeat_at": "2026-11-26T02:35:05.722784+00:00",
+      "heartbeat_age_seconds": 4.228761,
+      "heartbeat_at": "2026-11-26T03:35:21.032207+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": 0.659616,
-      "heartbeat_at": "2026-11-26T02:35:10.599693+00:00",
+      "heartbeat_age_seconds": 0.679827,
+      "heartbeat_at": "2026-11-26T03:35:24.581141+00:00",
       "state": "RUNNING"
     }
   }
