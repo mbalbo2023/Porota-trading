@@ -538,6 +538,34 @@ def test_aux_observed_429_retry_after_blocks_next_get_without_claiming_quota(har
         owner.close()
 
 
+@pytest.mark.parametrize(("http_status", "body", "reason"), [
+    (404, "Instrument not found", "PPI_INSTRUMENT_NOT_FOUND"),
+    (404, "UNTRUSTED_RESPONSE_BODY", "PPI_NATIVE_HTTP_404"),
+    (503, "UNTRUSTED_RESPONSE_BODY", "PPI_NATIVE_HTTP_503"),
+])
+def test_owner_reports_guarded_native_http_failure_when_sdk_raises_only_the_body(
+        harness, http_status, body, reason):
+    owner = harness.make_owner()
+    try:
+        owner.open_once()
+        harness.wire.status = http_status
+        harness.wire.body = json.dumps(body).encode()
+        sdk = owner._reader._ProductionMarketReader__client.marketdata
+        original_current = sdk.current
+
+        def sdk_current(*args):
+            raise Exception(original_current(*args))
+
+        sdk.current = sdk_current
+        with pytest.raises(SessionOwnerBlocked, match=f"^{reason}$"):
+            owner.capture_native("current", FIVE, priority="DISCOVERY")
+        assert harness.counts["gets"] == 1
+        assert owner.status()["session_recovery_pending"] is False
+        assert owner.status()["native_backoff_remaining_seconds"] == 0
+    finally:
+        owner.close()
+
+
 @pytest.mark.parametrize("http_status", [401, 403, 429])
 def test_owner_uses_guarded_status_when_sdk_retry_hides_http_error(
         harness, monkeypatch, http_status):
