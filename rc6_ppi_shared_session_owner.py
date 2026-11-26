@@ -28,11 +28,13 @@ from typing import Any, Callable
 
 from rc6_ppi_shared_feed import (
     NATIVE_ACQUIRE_SCHEMA,
+    NativeBookClockRejected,
     _canonical_bytes,
     PPIReadOnlyNativeReceiptStore,
     PPISharedMarketFeed,
     ReadOnlyUnixFeedServer,
 )
+from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS, SPOT_SCANNER_FAMILIES
 from rc6_ppi_shared_producer import PPISharedSDKProducer
 from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 from bd_ppi_readonly_guard import MARKET_CONFIGURATION_FIELDS
@@ -386,6 +388,7 @@ class PPISharedSessionOwner:
         self._aux_last_http_status = None
         self._native_hold_until = 0.0
         self._native_retry_after = None
+        self._native_book_clock_rejection = None
         self._native_last_http_status = None
         self._session_recovery_at = None
         self._rate_limit_until = 0.0
@@ -649,7 +652,8 @@ class PPISharedSessionOwner:
                 return outcome
         return None
 
-    def capture_native(self, method: str, five_key: Any, *, priority: str):
+    def capture_native(self, method: str, five_key: Any, *, priority: str,
+                       observed_book_max_age=None):
         """Only owner path to guarded PPI REST; no consumer-facing GET."""
         with self._lock:
             self._require_open()
@@ -662,8 +666,12 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE")
             wire_calls = getattr(self._reader, "metrics", {}).get("http_allowed")
             try:
-                return self._rest.capture(method, five_key, priority=priority)
+                return self._rest.capture(method, five_key, priority=priority,
+                    **({"observed_book_max_age": observed_book_max_age}
+                       if observed_book_max_age is not None else {}))
             except Exception as exc:
+                if isinstance(exc, NativeBookClockRejected):
+                    self._native_book_clock_rejection = exc.evidence
                 status, retry_after = self._observed_http_error(exc)
                 guarded = self._guarded_provider_error(wire_calls)
                 if guarded is not None:
@@ -714,7 +722,14 @@ class PPISharedSessionOwner:
             allowed = self._feed._consumers.get(consumer, False)
             if allowed is False or (allowed is not None and identity not in allowed):
                 raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_DENIED")
-            response = self.capture_native(method, identity, priority=priority)
+            # Spot scanning can validate an observed Book against its existing
+            # horizon. EXIT, PIT acquisition and other families keep the native TTL.
+            observe_spot_book = (consumer == "scanner" and method == "book"
+                                 and identity[1] in SPOT_SCANNER_FAMILIES
+                                 and priority != "OPENED_CRITICAL")
+            response = self.capture_native(method, identity, priority=priority,
+                **({"observed_book_max_age": SETTLEMENT_PAIR_MAX_SECONDS}
+                   if observe_spot_book else {}))
             proof = None
             caucion_book = (method == "book" and identity[1] == "CAUCIONES" and priority == "WARM")
             if (self._settlement_signer is not None and consumer == "scanner"
@@ -976,6 +991,7 @@ class PPISharedSessionOwner:
                 "aux_last_http_status": self._aux_last_http_status,
                 "native_retry_after_seconds_observed": self._native_retry_after,
                 "native_last_http_status": self._native_last_http_status,
+                "native_book_clock_rejection": self._native_book_clock_rejection if stable else None,
                 "native_backoff_remaining_seconds": (
                     max(native_backoff, wire_backoff if type(wire_backoff) is int else 0)
                     if stable else None),

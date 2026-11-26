@@ -38,6 +38,7 @@ from rc6_ppi_global_budget import (
     PAPER_DIRECT_WIRE_BACKPRESSURE,
     assert_native_ppi_response_identity, native_ppi_response_settlement,
 )
+from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
@@ -98,6 +99,9 @@ CATALOG_PROVIDER_BACKPRESSURE = PAPER_DIRECT_WIRE_BACKPRESSURE | {
     "PPI_AUX_HTTP_429",
     "PPI_AUX_PROVIDER_BACKOFF_ACTIVE",
     "PPI_GATEWAY_SESSION_RECOVERY_PENDING",
+}
+NATIVE_PROVIDER_BACKPRESSURE = PAPER_DIRECT_WIRE_BACKPRESSURE | {
+    "PPI_HTTP_429", "PPI_NATIVE_HTTP_429", "PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE",
 }
 MARKET_OPEN_HOUR = int(os.getenv("MARKET_OPEN_HOUR", "10"))
 MARKET_OPEN_MINUTE = int(os.getenv("MARKET_OPEN_MINUTE", "30"))
@@ -1534,6 +1538,18 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
                         f"response_settlement_status={settlement_status};"
                         f"response_settlement_literal={settlement_literal};"
                         f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
+            if endpoint == "current" and confirm_settlement and len(endpoints) == 2:
+                try:
+                    trade_at = datetime.fromisoformat(native_time.replace("Z", "+00:00"))
+                    age = (datetime.fromisoformat(now_iso()) - trade_at).total_seconds()
+                    valid = 0 <= age <= SETTLEMENT_PAIR_MAX_SECONDS and D(payload["price"]) > 0
+                except (AttributeError, KeyError, TypeError, ValueError, ArithmeticError):
+                    valid = False
+                if not valid:
+                    reason = "PPI_DISCOVERY_CURRENT_STALE_OR_INVALID"
+                    store.event("PPI_DIRECT_REST_PROBE_HOLD", reason)
+                    return {**observation, "status": "STALE_OR_INVALID", "reason": reason,
+                            "native_receipts": list(witnessed)}
         if family in _PPI_REFERENCE_OBSERVED:
             # PPI SearchInstrument does not promise settlement, and funds/
             # money-market rates are not an equity two-sided order book.
@@ -1651,6 +1667,7 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
 
     while (len(visited) < slots and len(exhausted) < len(PPI_DIAGNOSTIC_FAMILY_ROTATION)
            and not STOP and time.monotonic() < deadline):
+        candidate_cursor = cursor
         family, cursor = _next_ppi_diagnostic_family(cursor)
         if family in exhausted:
             continue
@@ -1676,6 +1693,13 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
             confirm_settlement=True)
         visited.add(key)
         status, reason = observed["status"], observed.get("reason")
+        if reason in NATIVE_PROVIDER_BACKPRESSURE:
+            # A genuine 429 spent one attempt. Local backpressure did not,
+            # unless the Current half of this pair had already reached PPI.
+            result["attempted"] += (bool(observed["native_receipts"])
+                                    or reason in {"PPI_HTTP_429", "PPI_NATIVE_HTTP_429"})
+            result["reason"] = reason
+            return candidate_cursor, last_pulse, result
         if status != "PRE_WIRE_GUARD_HOLD" or observed["native_receipts"]:
             result["attempted"] += 1
             after[family] = key
@@ -1688,7 +1712,7 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
         if status == "PRE_WIRE_GUARD_HOLD" or (
                 status == "PROVIDER_OR_CONTRACT_HOLD" and reason not in {
                     "PPI_INSTRUMENT_NOT_FOUND", "PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED",
-                    "PPI_RESPONSE_IDENTITY_MISMATCH"}):
+                    "PPI_RESPONSE_IDENTITY_MISMATCH", "PPI_NATIVE_RECEIPT_CLOCK_INVALID"}):
             result["reason"] = reason or status
             break
     return cursor, last_pulse, result
@@ -3669,11 +3693,15 @@ def run():
                     store.state(process_state="DEGRADED", detail="La barrera bloqueo una ruta no permitida.")
                 except Exception as exc:
                     cycle_failures += 1
-                    store.event("DATA_ERROR", f"{symbol}: {_scanner_ppi_error(exc)}")
+                    read_error = _scanner_ppi_error(exc)
+                    store.event("DATA_ERROR", f"{symbol}: {read_error}")
                     if session_invalid(exc) or _scanner_gateway_reader_lost(exc):
                         cycle_session_invalid = True
                         store.event("PPI_GATEWAY_REATTACH_REQUIRED",
                                     "Owner PPI cambió/no responde o auth inválida; reconexión AF_UNIX sin login")
+                        break
+                    if read_error in NATIVE_PROVIDER_BACKPRESSURE:
+                        observation_hold = read_error
                         break
                 finally:
                     latency = round((time.perf_counter() - symbol_clock) * 1000, 2)

@@ -509,12 +509,15 @@ def test_repeated_current_is_a_new_http_response_but_never_a_new_cached_trade(ha
         owner.close()
 
 
-@pytest.mark.parametrize(("method", "date_offset", "error"), [
-    ("book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
-    ("current", 30, "PPI_REST_NATIVE_TIME_AFTER_RECEIVE"),
+@pytest.mark.parametrize(("consumer", "priority", "method", "date_offset", "error"), [
+    ("exit_reader", "EXIT_CRITICAL", "book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("scanner", "OPENED_CRITICAL", "book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("scanner", "DISCOVERY", "book", -121, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("scanner", "DISCOVERY", "book", 30, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("scanner", "DISCOVERY", "current", 30, "PPI_REST_NATIVE_TIME_AFTER_RECEIVE"),
 ])
-def test_observing_current_does_not_change_book_freshness_or_timestamp_order(
-    harness, method, date_offset, error,
+def test_scanner_observation_preserves_protected_book_clocks_and_causality(
+    harness, consumer, priority, method, date_offset, error,
 ):
     owner = harness.make_owner()
     payload = (harness.native_book if method == "book" else {
@@ -525,9 +528,32 @@ def test_observing_current_does_not_change_book_freshness_or_timestamp_order(
     try:
         owner.open_once()
         with pytest.raises((ValueError, RuntimeError), match=error):
-            owner.dispatch_native_acquire(consumer="scanner", method=method,
-                                          five_key=FIVE, priority="DISCOVERY")
+            owner.dispatch_native_acquire(consumer=consumer, method=method,
+                                          five_key=FIVE, priority=priority)
+        if method == "book":
+            diagnostic = owner.status()["native_book_clock_rejection"]
+            assert diagnostic["native_at_utc"] == stamp.isoformat()
+            assert diagnostic["reason"] == ("BOOK_SOURCE_TOO_OLD" if date_offset < 0
+                                            else "BOOK_SOURCE_AFTER_RECEIPT")
         assert owner._native.stats()["retained_raw_receipts"] == 0
+        assert harness.counts["gets"] == 1
+    finally:
+        owner.close()
+
+
+def test_spot_book_observation_never_publishes_a_native_pit_or_exit_book(harness):
+    owner = harness.make_owner()
+    stamp = datetime.now(timezone.utc) - timedelta(seconds=45)
+    harness.wire.body = json.dumps({**harness.native_book, "date": stamp.isoformat()}).encode()
+    try:
+        owner.open_once()
+        result = owner.dispatch_native_acquire(consumer="scanner", method="book", five_key=FIVE,
+                                               priority="HOT")
+        assert result["receipt"]["native_at_utc"] == stamp.isoformat()
+        assert result["receipt"]["cache_state"] == "PPI_NATIVE_RECEIPT_STALE"
+        assert result["receipt"]["paper_ready"] is False
+        assert owner._native.read_native(consumer="exit_reader", method="book", five_key=FIVE)[
+            "state"] == "NO_AUTHENTIC_NATIVE_RECEIPT"
         assert harness.counts["gets"] == 1
     finally:
         owner.close()

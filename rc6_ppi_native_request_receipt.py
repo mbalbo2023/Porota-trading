@@ -26,7 +26,8 @@ _SIGNATURE = re.compile(r"[0-9a-f]{128}\Z")
 _PIN_MAX_BYTES = 16 * 1024
 _MAX_RETIRED_PINS = 64
 _IDENTITY_LKG_SECONDS = 14 * 86400
-_PAIR_MAX_SECONDS = 120
+SETTLEMENT_PAIR_MAX_SECONDS = 120
+SPOT_SCANNER_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES"})
 _ENDPOINTS = ("current", "book")
 _REFERENCE_ONLY = frozenset({"CAUCIONES", "FCI", "INDICES"})
 _MATERIAL_FIELDS = {
@@ -73,7 +74,9 @@ def _wire_part(capture, endpoint, identity, *, priority="DISCOVERY"):
     from rc6_ppi_shared_rest_producer import _validate_guard_witness
 
     native = capture["native_receipt"]
-    if "cache_state" in native:
+    if ("cache_state" in native and not (
+            priority == "DISCOVERY" and identity[1] in SPOT_SCANNER_FAMILIES
+            and native["cache_state"] == "PPI_NATIVE_RECEIPT_STALE")):
         raise ValueError("PPI_NATIVE_SETTLEMENT_WIRE_CONTEXT_MISMATCH")
     payload = native["raw_payload"]
     guard = capture["guard_wire_receipt"]
@@ -124,7 +127,7 @@ def _valid_wire(wire):
                 for h in ("guard_sha256", "body_sha256", "lease_sha256"))
         and type(wire["monotonic_ns"]) is int and wire["monotonic_ns"] > 0
         and 0 <= (_clock(wire["received_at"]) - _clock(wire["native_at"])).total_seconds()
-        <= _PAIR_MAX_SECONDS
+        <= SETTLEMENT_PAIR_MAX_SECONDS
     )
 
 
@@ -132,7 +135,7 @@ def _valid_pair(current, book):
     if not _valid_wire(current) or not _valid_wire(book):
         return False
     span = (_clock(book["received_at"]) - _clock(current["received_at"])).total_seconds()
-    return (0 <= span <= _PAIR_MAX_SECONDS
+    return (0 <= span <= SETTLEMENT_PAIR_MAX_SECONDS
             and book["monotonic_ns"] > current["monotonic_ns"]
             and book["guard_sha256"] != current["guard_sha256"]
             and book["lease_sha256"] != current["lease_sha256"])
@@ -174,6 +177,8 @@ class SettlementReceiptSigner:
             if priority != "DISCOVERY" or identity[1] in _REFERENCE_ONLY:
                 return None
             wire = _wire_part(capture, endpoint, identity)
+            if not _valid_wire(wire):
+                return None
             coordinate = (identity, generation, catalog_digest)
             if endpoint == "current":
                 self._current = (coordinate, wire)

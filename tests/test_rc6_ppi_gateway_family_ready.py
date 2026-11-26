@@ -83,9 +83,13 @@ def _derivative_economics(store, family):
         catalog.sync_candidate_universe(con, AT.isoformat())
 
 
-@pytest.mark.parametrize(("ticker", "family", "market", "term"), CASES, ids=[row[1] for row in CASES])
+@pytest.mark.parametrize(("ticker", "family", "market", "term", "trade_age", "book_age"), [
+    *(pytest.param(*case, 0, 0, id=case[1]) for case in CASES),
+    pytest.param(*CASES[0], 45, 45, id="GGAL_SPOT_CLOCKS_OUTSIDE_CACHE"),
+    pytest.param(*CASES[0], 121, 0, id="GGAL_STALE_CURRENT_DOES_NOT_REQUEST_BOOK"),
+])
 def test_one_instrument_per_family_through_gateway_and_engine(
-        tmp_path, monkeypatch, ticker, family, market, term):
+        tmp_path, monkeypatch, ticker, family, market, term, trade_age, book_age):
     key = (ticker, family, market, "ARS", term)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
@@ -125,7 +129,8 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         assert budget.in_wire_scope and query == {"ticker": [ticker], "type": [family], "settlement": [term]}
         calls.append(endpoint)
         price = 1500 if family == "FUTUROS" else 100
-        body = {"date": ReplayClock.value.isoformat()}
+        age = trade_age if endpoint == "Current" else book_age
+        body = {"date": (ReplayClock.value - timedelta(seconds=age)).isoformat()}
         if endpoint == "Current":
             body.update(price=price, volume=1000, openingPrice=price, max=price, min=price)
         else:
@@ -167,6 +172,12 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         observed = observer._ppi_direct_rest_observe_only(
             adapter, store, family=family, confirm_settlement=True)
         assert not observed["paper_ready"]
+        if trade_age > settlement_proof.SETTLEMENT_PAIR_MAX_SECONDS:
+            assert calls == ["Current"]
+            assert observed["reason"] == "PPI_DISCOVERY_CURRENT_STALE_OR_INVALID"
+            assert not observed["settlement_attested"]
+            assert not store.open_positions()
+            return
         if family in {"CAUCIONES", "FCI"}:
             assert calls == ["Current"]
             assert observed["status"] == observer._PPI_REFERENCE_OBSERVED[family]
@@ -206,3 +217,34 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         assert not store.open_positions()
     finally:
         gateway.close()
+
+
+@pytest.mark.parametrize(("reason", "attempts"), [
+    ("PPI_DIRECT_PROVIDER_429_BREAKER", 0), ("PPI_NATIVE_HTTP_429", 1),
+])
+def test_discovery_resumes_same_key_after_provider_pause(monkeypatch, reason, attempts):
+    import time
+
+    key = (*CASES[0][:3], "ARS", CASES[0][3])
+    outcomes = iter([
+        {"status": "PROVIDER_OR_CONTRACT_HOLD", "reason": reason, "native_receipts": []},
+        {"status": "FRESH_OBSERVED", "settlement_attested": True,
+         "native_receipts": ["current", "book"]},
+    ])
+    seen = []
+
+    def observe(_reader, _store, candidate, **kwargs):
+        seen.append(candidate)
+        return next(outcomes)
+
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates", lambda *a, **k: [key])
+    monkeypatch.setattr(observer, "_observe_native_candidate", observe)
+    monkeypatch.setattr(observer, "_pulse_observed_progress", lambda *a: 0)
+    pending = {}
+    deadline = time.monotonic() + 10
+    cursor, _, paused = observer._discover_native_settlements(
+        object(), object(), slots=1, deadline=deadline, cursor=0, after=pending, last_pulse=0)
+    assert paused["attempted"] == attempts and cursor == 0 and pending == {}
+    _, _, resumed = observer._discover_native_settlements(
+        object(), object(), slots=1, deadline=deadline, cursor=cursor, after=pending, last_pulse=0)
+    assert seen == [key, key] and resumed["attested"] == 1

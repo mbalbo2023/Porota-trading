@@ -210,8 +210,7 @@ def publisher_command(arguments):
     return tuple(arguments[2:])
 
 
-def read_preopen_red_receipt(output):
-    """Read the allowlisted portion of a bounded RED child receipt."""
+def _read_preopen_child(output):
     try:
         output.flush()
         size = output.tell()
@@ -219,8 +218,17 @@ def read_preopen_red_receipt(output):
             return None
         output.seek(0)
         receipt = json.loads(output.read(PREOPEN_CAPTURE_LIMIT))
-        if type(receipt) is not dict or receipt.get("schema") != "POROTA_RC6_PREOPEN_V3" or receipt.get("status") != "RED":
-            return None
+        return receipt if type(receipt) is dict and receipt.get("schema") == "POROTA_RC6_PREOPEN_V3" else None
+    except (OSError, ValueError, TypeError, UnicodeDecodeError):
+        return None
+
+
+def read_preopen_red_receipt(output):
+    """Read the allowlisted portion of a bounded RED child receipt."""
+    receipt = _read_preopen_child(output)
+    if receipt is None or receipt.get("status") != "RED":
+        return None
+    try:
         names = receipt.get("red_checks")
         if (type(names) is not list or not 1 <= len(names) <= len(PREOPEN_RED_KEYS) or
                 any(type(name) is not str or name not in PREOPEN_RED_KEYS for name in names) or
@@ -236,6 +244,19 @@ def read_preopen_red_receipt(output):
         return summary
     except (OSError, ValueError, TypeError, UnicodeDecodeError):
         return None
+
+
+def read_release_revalidation(output, code):
+    result = _read_preopen_child(output)
+    require(result is not None and code in {0, 2}, "PAPER_RELEASE_REVALIDATION_CHILD_UNVERIFIED")
+    gate = result.get("paper_admission_receipt")
+    require(type(gate) is dict, "PAPER_RELEASE_REVALIDATION_CHILD_UNVERIFIED")
+    status, reason = gate.get("status"), gate.get("reason")
+    require(status in ("GO_PAPER_SCALPING", "NO_GO_PAPER_SCALPING")
+            and (status != "GO_PAPER_SCALPING" or code == 0 and result.get("status") == "GREEN")
+            and isinstance(reason, str) and re.fullmatch(r"[A-Z_]{1,96}", reason),
+            "PAPER_RELEASE_REVALIDATION_CHILD_UNVERIFIED")
+    return {"source": "PAPER_RELEASE_REVALIDATION", "result": status, "reason": reason, "exit_code": code}
 
 
 def publish_validation(manager, current, root, identity):
@@ -300,11 +321,16 @@ def run_iol_job(unit, root, identity, current, *, verify_rest=False, run=subproc
     return {"source": SOURCE, "result": "REFERENCE_GD30_VERIFIED" if verify_rest else "AUTHENTICATED", "exit_code": 0}
 
 
-def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_rest=False, run=subprocess.run):
+def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_rest=False,
+            revalidate_paper_gate=False, run=subprocess.run):
     identity = identity or Identity.current()
-    require(unit in ADAPTED_SERVICES | IOL_JOBS and (not verify_rest or unit == IOL_HEALTH), "SCHEDULER_UNIT_SCOPE")
+    require(unit in ADAPTED_SERVICES | IOL_JOBS and (not verify_rest or unit == IOL_HEALTH)
+            and (not revalidate_paper_gate or unit == PREOPEN), "SCHEDULER_UNIT_SCOPE")
     with scheduler_lock(identity):
         manager, current, _ = verified_host(root, identity)
+        if revalidate_paper_gate:
+            require(database_snapshot(root / DB_RELATIVE) == current.get("database"),
+                    "PAPER_RELEASE_DATABASE_IDENTITY_UNVERIFIED")
         if unit in DOCKER_JOBS:
             role, commands = DOCKER_JOBS[unit]
             commands_result = execute_commands(manager, current, role, commands,
@@ -330,13 +356,18 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
                         "PYTHONPATH": str(source), "PAPER_V17_DB_PATH": str(root / DB_RELATIVE),
                         "DOCKER_HOST": f"unix://{identity.socket}"})
             if unit == PREOPEN:
-                command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"), "--publish-paper-gate")
+                command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"))
+                command += (("--revalidate-release", current["source_sha"]) if revalidate_paper_gate
+                            else ("--publish-paper-gate",))
                 # The child already emits a typed JSON receipt and exit 2 for RED.
                 # Keep its complete output private; journal only allowlisted metadata.
                 with tempfile.TemporaryFile(dir=identity.state) as output:
                     result = run(command, cwd=root, env=env, check=False, stdout=output,
                                  stderr=subprocess.DEVNULL, timeout=600)
-                    if result.returncode != 0:
+                    if revalidate_paper_gate:
+                        commands_result = [read_release_revalidation(output, result.returncode)]
+                        preopen_failure = None
+                    elif result.returncode != 0:
                         receipt = read_preopen_red_receipt(output) if result.returncode == 2 else None
                         signature = ("PREOPEN_RED_CHECKS" if receipt is not None else
                                      "PREOPEN_CHILD_RECEIPT_UNVERIFIED" if result.returncode == 2 else
@@ -358,10 +389,13 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
                              stderr=subprocess.DEVNULL, timeout=600)
                 require(result.returncode == 0, "SCHEDULER_HOST_JOB_FAILED")
                 preopen_failure = None
-            commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
+            if not revalidate_paper_gate:
+                commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
         observed_database = database_snapshot(root / DB_RELATIVE)
         if unit in IOL_JOBS:
             require(observed_database == current.get("database"), "IOL_RELEASE_DATABASE_IDENTITY_CHANGED")
+        if revalidate_paper_gate:
+            require(observed_database == current.get("database"), "PAPER_RELEASE_DATABASE_IDENTITY_CHANGED")
         if unit == PREOPEN and preopen_failure is not None:
             return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "BLOQUEADO",
                     "source_sha": current["source_sha"], "image_id": current["image_id"],
@@ -376,24 +410,28 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--unit", choices=sorted(ADAPTED_SERVICES | IOL_JOBS))
     parser.add_argument("--verify-iol-rest", action="store_true")
+    parser.add_argument("--revalidate-paper-gate", action="store_true")
     parser.add_argument("--docker-bridge", nargs=argparse.REMAINDER)
     parser.add_argument("--publish-runtime-evidence", action="store_true")
     args = parser.parse_args(argv)
     try:
         identity = Identity.current()
         if args.publish_runtime_evidence:
-            require(args.unit is None and not args.verify_iol_rest and args.docker_bridge is None,
+            require(args.unit is None and not args.verify_iol_rest and not args.revalidate_paper_gate
+                    and args.docker_bridge is None,
                     "SCHEDULER_UNIT_SCOPE")
             publish_runtime_evidence(identity)
             return 0
         if args.docker_bridge is not None:
+            require(not args.revalidate_paper_gate, "SCHEDULER_UNIT_SCOPE")
             command = publisher_command(args.docker_bridge)
             with scheduler_lock(identity):
                 manager, current, _ = verified_host(Path("/opt/porota-trading"), identity)
                 execute_commands(manager, current, "observer", (command,))
             return 0
         require(args.unit is not None, "SCHEDULER_UNIT_REQUIRED")
-        result = run_job(args.unit, identity=identity, verify_rest=args.verify_iol_rest)
+        result = run_job(args.unit, identity=identity, verify_rest=args.verify_iol_rest,
+                         revalidate_paper_gate=args.revalidate_paper_gate)
         print(json.dumps(result, sort_keys=True))
         return result["exit_code"]
     except Exception as exc:

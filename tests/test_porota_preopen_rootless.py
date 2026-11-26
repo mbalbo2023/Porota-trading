@@ -304,6 +304,48 @@ def test_host_publishes_private_gate_only_from_green_existing_active_intent(oper
     assert operator["intent_path"].read_bytes() == before
 
 
+def test_intraday_revalidation_keeps_daily_receipt_and_requires_exact_release(operator, monkeypatch):
+    at = AT.replace(hour=13)
+    daily = operator["identity"].operator / "paper-preopen-v2.json"
+    original = gate.publish_preopen({"status": "GREEN", "phase": "T_MINUS_10"}, now=AT)
+    old_release = "e" * 40
+    daily_raw = write_private(daily, {**original, "candidate_sha": old_release})
+    ready = {"status": "GREEN", "phase": gate.REVALIDATION_PHASE}
+    revalidated = gate.publish_release_revalidation(ready, now=at, expected_source_sha=SHA)
+    assert revalidated["status"] == "GO_PAPER_SCALPING"
+    assert revalidated["candidate_sha"] == SHA and revalidated["issued_at_ar"] == at.isoformat()
+    assert revalidated["daily_gate_sha256"] == hashlib.sha256(daily_raw).hexdigest()
+    assert daily.read_bytes() == daily_raw and revalidated["phase"] != original["phase"]
+
+    # The verified bind mount maps this fixture's SSH UID to namespace root.
+    read_gate = gate._read_gate
+    monkeypatch.setattr(gate, "_read_gate", lambda path, **kwargs: read_gate(path, root_owned=False))
+    monkeypatch.setattr(gate, "RUNTIME_V2_RECEIPT", daily)
+    monkeypatch.setattr(gate, "evaluate_rearm", lambda now, **_: rearm.evaluate_rearm(now=now, context="host"))
+    assert gate.admission_status(now=at, candidate_sha=SHA) == (True, "")
+    assert not gate.admission_status(now=at, candidate_sha="f" * 40)[0]
+    assert not gate.admission_status(now=at.replace(day=at.day + 1), candidate_sha=SHA)[0]
+    assert not gate.admission_status(now=at.replace(hour=17), candidate_sha=SHA)[0]
+    write_private(daily, {**original, "candidate_sha": old_release, "reason": "CHANGED"})
+    assert not gate.admission_status(now=at, candidate_sha=SHA)[0]
+
+
+@pytest.mark.parametrize("issue", ["red", "wrong_release", "missing_t10", "after_hours", "pause"])
+def test_intraday_revalidation_does_not_create_go_without_its_authorities(operator, issue):
+    daily = operator["identity"].operator / "paper-preopen-v2.json"
+    if issue != "missing_t10":
+        original = gate.publish_preopen({"status": "GREEN", "phase": "T_MINUS_10"}, now=AT)
+        write_private(daily, {**original, "candidate_sha": "e" * 40})
+    if issue == "pause":
+        paused = {key: value for key, value in operator["intent"].items() if key in rearm._PAUSED_KEYS}
+        write_private(operator["intent_path"], {**paused, "status": rearm.PAUSE_STATUS})
+    now = AT.replace(hour=17 if issue == "after_hours" else 13)
+    redone = gate.publish_release_revalidation(
+        {"status": "RED" if issue == "red" else "GREEN", "phase": gate.REVALIDATION_PHASE},
+        now=now, expected_source_sha="f" * 40 if issue == "wrong_release" else SHA)
+    assert redone["status"] == "NO_GO_PAPER_SCALPING"
+
+
 def test_pause_survives_invalid_release_and_never_creates_consent(operator):
     paused = {key: value for key, value in operator["intent"].items() if key in rearm._PAUSED_KEYS}
     paused["status"] = rearm.PAUSE_STATUS

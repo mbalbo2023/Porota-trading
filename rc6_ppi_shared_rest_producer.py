@@ -176,7 +176,8 @@ class MarketOnlyRESTProducer:
         self._catalog_digest = catalog_source_digest
         self._session = session_fingerprint  # Local owner generation, NOT PPI-signed.
 
-    def capture(self, method: str, five_key: Any, *, priority: str) -> dict:
+    def capture(self, method: str, five_key: Any, *, priority: str,
+                observed_book_max_age=None) -> dict:
         """Fail closed BEFORE any source call if endpoint or guard proof absent.
 
         Only an external guard-owned source may issue a real read.  The source
@@ -217,6 +218,10 @@ class MarketOnlyRESTProducer:
             source["guard_wire_receipt"], method=method, priority=priority,
             five_key=identity, raw_sha256=raw_sha)
         if native > received:
+            if method == "book":
+                from rc6_ppi_shared_feed import NativeBookClockRejected
+                raise NativeBookClockRejected("BOOK_SOURCE_AFTER_RECEIPT", native, received,
+                                              datetime.now(timezone.utc))
             raise RESTProducerBlocked("PPI_REST_NATIVE_TIME_AFTER_RECEIVE")
         # The native receipt store is the ONLY fan-out publisher. This object
         # exposes no extra GET, budget or order method; no double lease.
@@ -228,6 +233,8 @@ class MarketOnlyRESTProducer:
             capture_type={"current": "REST_CURRENT", "book": "REST_BOOK",
                           "intraday": "REST_INTRADAY"}[method],
             allow_observed_current=method == "current",
+            **({"observed_book_max_age": observed_book_max_age}
+               if observed_book_max_age is not None else {}),
         )
         return {"schema": SCHEMA, "state": "OBSERVE_ONLY",
                 "ppi_catalog_authority": "NO_VERIFICADO",

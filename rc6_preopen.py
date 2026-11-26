@@ -24,7 +24,10 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
 from bu_instrument_catalog import rc6_underlying_opening_block
-from rc6_paper_admission_gate import focus_contracts, operator_pause_reason, publish_preopen
+from rc6_paper_admission_gate import (
+    REVALIDATION_PHASE, focus_contracts, operator_pause_reason, publish_preopen,
+    publish_release_revalidation,
+)
 from scripts import porota_rootless_host as rootless
 from scripts.rc6_operator_paper_rearm import evaluate_rearm, trusted_operator_pause
 
@@ -909,14 +912,18 @@ def foreign_market_policy(today):
             'policy':'OBSERVE_AND_RECORD_QUOTES; HOLD_NEW_CEDEAR_OPENINGS_WHILE_US_MARKET_CLOSED'}
 
 
-def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gate=False):
+def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gate=False,
+         revalidate_release=None):
     now = datetime.now(TZ)
     today = now.date()
     if not byma.es_dia_habil_operativo(today):
         result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
                           'status':'NOT_DUE','reason':'BYMA_NON_OPERATIONAL_DAY',
                           'read_only':not publish_paper_gate,'network_order_test_performed':False}
-        if publish_paper_gate:
+        if revalidate_release is not None:
+            result['paper_admission_receipt'] = {
+                'status': 'NO_GO_PAPER_SCALPING', 'reason': 'BYMA_NON_OPERATIONAL_DAY'}
+        elif publish_paper_gate:
             publish_preopen(result, now=now)
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         return 0
@@ -942,7 +949,7 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
         'history_quarantine': blocked_history_timers(),
         'foreign_market_policy': foreign_market_policy(today),
     }
-    if publish_paper_gate:
+    if publish_paper_gate or revalidate_release is not None:
         # Legacy function name is kept for compatibility; its evidence is now
         # a bounded *dynamic* catalog sample, never an eight-symbol whitelist.
         checks['paper_catalog_diagnostic'] = focus_contracts(DB)
@@ -961,12 +968,13 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
             and v.get('state') == 'RED']
     paused = checks['required_rc6_timers'].get('operator_paper_paused') is True
     result = {'schema':'POROTA_RC6_PREOPEN_V3','generated_at_ar':now.isoformat(timespec='seconds'),
-              'phase':phase_override or preopen_phase(now),
+              'phase':REVALIDATION_PHASE if revalidate_release is not None else phase_override or preopen_phase(now),
               'status':'RED' if reds else 'PAUSED_NO_GO' if paused else 'GREEN',
               'red_checks':reds,'checks':checks,
               'paper_admission_hold':operator_pause_reason(now, context='host') or None,
               'dry_equivalent':phase_override is not None,
-              'read_only':not publish_paper_gate,'network_order_test_performed':False,'direct_telegram_send':False}
+              'read_only':not publish_paper_gate and revalidate_release is None,
+              'network_order_test_performed':False,'direct_telegram_send':False}
     if deploy_scheduler_candidate is not None:
         alerts = [
             {'provider':checks[key].get('provider', provider), 'check':key,
@@ -993,7 +1001,16 @@ def main(phase_override=None, deploy_scheduler_candidate=None, publish_paper_gat
                 checks['required_rc6_timers']['operator_no_go_continuation'])
         if 'operator_pause_v2' in checks['required_rc6_timers']:
             result['operator_pause_v2'] = checks['required_rc6_timers']['operator_pause_v2']
-    if publish_paper_gate:
+    if revalidate_release is not None:
+        try:
+            result['paper_admission_receipt'] = publish_release_revalidation(
+                result, now=datetime.now(TZ), expected_source_sha=revalidate_release)
+        except (OSError, ValueError):
+            result['status'] = 'RED'
+            result['red_checks'].append('paper_admission_receipt')
+            result['paper_admission_receipt'] = {
+                'status': 'NO_GO_PAPER_SCALPING', 'reason': 'PAPER_RELEASE_REVALIDATION_WRITE_FAILED'}
+    elif publish_paper_gate:
         if paused and today.isoformat() >= '2026-10-29':
             # A125 LIVE gate is immutable. A176's historical continuation OR
             # the separately verified root-owned V2 operator PAUSE is the
@@ -1025,5 +1042,11 @@ if __name__ == '__main__':
     parser.add_argument('--phase', choices=('T_MINUS_45','T_MINUS_10'))
     parser.add_argument('--deploy-scheduler-candidate')
     parser.add_argument('--publish-paper-gate', action='store_true')
+    parser.add_argument('--revalidate-release')
     args = parser.parse_args()
-    raise SystemExit(main(args.phase, args.deploy_scheduler_candidate, args.publish_paper_gate))
+    if args.revalidate_release is not None and (
+            args.phase or args.deploy_scheduler_candidate or args.publish_paper_gate
+            or not re.fullmatch(r'[0-9a-f]{40}', args.revalidate_release)):
+        parser.error('invalid PAPER release revalidation scope')
+    raise SystemExit(main(args.phase, args.deploy_scheduler_candidate, args.publish_paper_gate,
+                          args.revalidate_release))
