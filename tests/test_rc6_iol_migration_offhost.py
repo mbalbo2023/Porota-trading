@@ -26,6 +26,7 @@ from rc6_iol_history_reference import ingest_daily_reference
 from rc6_iol_market_data import IOLMarketReader
 from rc6_iol_market_gateway import CONTROL_SCHEMA, IOLGatewayClient, IOLGatewayMarketReader, IOLMarketGateway
 from rc6_ppi_shared_feed import ReadOnlyUnixFeedServer
+from scripts.rc6_candle_inmarket_evidence import IOL_SAMPLE_SOURCE, main as verify_inmarket_candles
 from scripts.rc6_history_import_source_reported import _source_store
 from scripts.porota_actions_release import promotion_source
 from scripts.porota_build_deploy_bundle_v2 import build_bundle
@@ -203,6 +204,43 @@ def test_iol_family_contract(identity, tmp_path):
     assert {json.loads(row[0])["resolution"] for row in rows} == {"1m", "5m"}
     assert all(json.loads(row[1])["quality"] == "SAMPLED" and json.loads(row[1])["volume"] is None
                for row in rows)
+
+
+def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, monkeypatch):
+    path = tmp_path / "sample.db"
+    store = PaperStore(str(path))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    market, _ = reader(tmp_path, GGAL)
+    sampled = market.observe(GGAL)
+    assert record_iol_trade_sample(store, sampled, as_of=AT.isoformat())
+    observed = (AT + timedelta(minutes=5)).isoformat()
+    materialized = SampleMaterializer(store).tick(observed)
+    assert (materialized["versions"], materialized["cursor"]) == (2, 0)
+    result_path = tmp_path / "evidence.json"
+    args = ["verify-candles", "--baseline-cursor", "0", "--observed-at", observed,
+            "--db-path", str(path), "--summary-path", str(result_path)]
+    monkeypatch.setattr(sys, "argv", args)
+    before = path.read_bytes()
+    assert verify_inmarket_candles() == 1
+    assert not json.loads(result_path.read_text())["checks"]["cursor_strictly_advanced"]
+    monkeypatch.setattr(sys, "argv", args + ["--sample-source", IOL_SAMPLE_SOURCE])
+    assert verify_inmarket_candles() == 0
+    result = json.loads(result_path.read_text())
+    assert result["source"] == "porota-rc6-candle-inmarket-iol-evidence"
+    assert result["iol_sampled_progress"] == {
+        "identity": list(GGAL), "known_at_by_resolution": {"1m": observed, "5m": observed},
+    }
+    assert not result["guarded_current_sampled_progress"]
+    assert path.read_bytes() == before
+    with store.connect() as db:
+        db.execute("UPDATE candle_worker_state SET cursor=5")
+        db.execute("UPDATE candle_samples SET snapshot_id=0 WHERE series_id IN "
+                   "(SELECT series_id FROM candle_series WHERE json_extract(identity_json,'$.resolution')='5m')")
+    assert verify_inmarket_candles() == 1
+    result = json.loads(result_path.read_text())
+    assert result["current_cursor"] > result["baseline_cursor"]
+    assert not result["checks"]["iol_receipts_both_resolutions"]
+    assert not result["iol_sampled_progress"]
 
 
 def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):

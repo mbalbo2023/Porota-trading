@@ -120,8 +120,11 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                 ORDER BY julianday(event_at) DESC LIMIT ?""", (at.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(),
                                                     at.isoformat(), at.isoformat(), at.isoformat(), observation_limit+1),observation_limit+1)
         if "market_snapshots" in tables:
-            snapshot_rows = read_rows("MARKET_SNAPSHOTS", """SELECT symbol,asset_class,market,currency,settlement,
-                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind FROM market_snapshots NOT INDEXED
+            columns = {column["name"] for column in connection.execute("PRAGMA table_info(market_snapshots)")}
+            metadata_source = "metadata_source" if "metadata_source" in columns else "NULL"
+            snapshot_rows = read_rows("MARKET_SNAPSHOTS", f"""SELECT symbol,asset_class,market,currency,settlement,
+                last,trade_at,book_at,observed_at,bid,ask,bid_size,ask_size,last_kind,
+                {metadata_source} AS metadata_source FROM market_snapshots NOT INDEXED
                 WHERE id >= (SELECT MIN(id) FROM market_snapshots
                     WHERE julianday(observed_at)<=julianday(?)
                       AND julianday(observed_at)>=julianday(?))
@@ -215,11 +218,20 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
                         min(float(r["bid_size"]), float(r["ask_size"])) > 0)
                 except (ValueError, TypeError):
                     continue
+                metadata_source = r["metadata_source"] or ""
+                if metadata_source == "IOL_REST":
+                    source = "IOL_REST"
+                elif metadata_source.startswith("PPI_CATALOG:"):
+                    source = "PPI_MARKETDATA_CURRENT"
+                else:
+                    source = "NO_VERIFICADO"
+                is_trade = r["last_kind"] == "TRADE"
+                known_origin = source != "NO_VERIFICADO"
                 key = tuple(r[k] for k in ("symbol", "asset_class", "market", "currency", "settlement"))
                 observations.append({"identity": key, "source_at": r["trade_at"], "received_at": r["observed_at"],
-                    "source": "PPI_MARKETDATA_CURRENT", "endpoint": "current", "useful": current_fresh,
-                    "book_at": r["book_at"], "book_useful": book_fresh,
-                    "is_trade": r["last_kind"] == "TRADE",
+                    "source": source, "endpoint": "current", "useful": current_fresh and known_origin and is_trade,
+                    "book_at": r["book_at"], "book_useful": book_fresh and known_origin,
+                    "is_trade": is_trade,
                     "fields": {"price": r["last"], **({"spread_bps":
                         (float(r["ask"])/float(r["bid"])-1)*10000} if book_fresh else {})},
                     "entry_authority": False})
