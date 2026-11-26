@@ -1,156 +1,195 @@
-name: RC6 A667 governed shard diagnostic
+name: RC6 contratos exactos READ_ONLY
+run-name: RC6 rueda PAPER control posterior de cotizaciones y motores
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
     paths: [.github/workflows/rc6-market-watch-readonly.yml]
-permissions:
-  contents: read
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Verificar la serie exacta A3 y el cambio histórico
+        type: choice
+        options: [read_only]
+        default: read_only
+        required: true
+permissions: {}
 jobs:
-  diagnose:
+  contratos:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
-      github.actor == 'mbalbo2023'
+      github.ref == 'refs/heads/audit/rc6-caucion-hold-readonly-20261125' &&
+      github.actor == 'mbalbo2023' &&
+      (github.event_name == 'push' || inputs.operation == 'read_only')
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 3
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN: ${{ secrets.DO_KNOWN_HOSTS }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: 90099ddf2399a59c544214d9138ea2f193c235cb
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          load: true
-          tags: porota-a667-debug:exact-source
-          build-args: |
-            POROTA_BUILD_SHA=90099ddf2399a59c544214d9138ea2f193c235cb
-            POROTA_CANDIDATE_TREE_SHA=69de3030b0e61b8462df3d1573350c0638ee0604
-          labels: |
-            porota.commit=90099ddf2399a59c544214d9138ea2f193c235cb
-            porota.predeploy=v2
-          cache-from: type=gha,scope=porota-rc6-predeploy-v2
-      - name: Classify the failing synthetic ledger read
+      - name: Read exact contract gate in SQLite query-only
         shell: bash
         run: |
           set -Eeuo pipefail
-          export RC6_A667_CHECKOUT_SOURCE=90099ddf2399a59c544214d9138ea2f193c235cb
-          test "$(git rev-parse HEAD)" = "$RC6_A667_CHECKOUT_SOURCE"
-          test "$(git rev-parse 'HEAD^{tree}')" = 69de3030b0e61b8462df3d1573350c0638ee0604
-          probe="$RUNNER_TEMP/porota_a667_trace.py"
-          cat > "$probe" <<'PY'
-          from contextlib import contextmanager
+          umask 077
+          probe_dir=$(mktemp -d)
+          trap 'rm -f -- "$probe_dir/key" "$probe_dir/hosts"; rmdir "$probe_dir"' EXIT
+          printf '%s\n' "$DO_KEY" > "$probe_dir/key"
+          printf '%s\n' "$DO_KNOWN" > "$probe_dir/hosts"
+          ssh -F /dev/null -i "$probe_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$probe_dir/hosts" \
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 105 bash -s' <<'HOST'
+          set -Eeuo pipefail
+          test "$(id -u)" = 1000 && test "$(id -un)" = porotaadmin
+          docker=(docker -H unix:///run/user/1000/porota-rc6-docker.sock)
+          cid=$("${docker[@]}" ps --no-trunc -q --filter label=io.porota.project=rc6 --filter label=io.porota.role=observer)
+          [[ "$cid" =~ ^[0-9a-f]{64}$ ]]
+          [[ $("${docker[@]}" inspect --format '{{.Image}}' "$cid") == sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067 ]]
+          "${docker[@]}" exec -i "$cid" python -B - <<'PY'
+          from collections import Counter
+          from contextlib import closing
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
           import json
-          import os
-          from pathlib import Path
           import re
-          import subprocess
-          import sys
-          import tempfile
+          import sqlite3
           import time
-
-          import pytest
-
-          ROOT = Path("/app")
-          TARGET = "test_material_changed_between_lease_acquire_and_start_revokes_send"
-
-          def trace(label, value):
-              with open(os.environ["POROTA_A667_TRACE"], "a", encoding="utf-8") as f:
-                  f.write(label + "=" + json.dumps(value) + "\n")
-
-          @pytest.hookimpl(hookwrapper=True)
-          def pytest_runtest_call(item):
-              if TARGET not in item.nodeid:
-                  yield
-                  return
-              import rc6_ppi_global_budget as budget
-              before = budget._ledger_snapshot
-
-              @contextmanager
-              def snapshot(*args, **kwargs):
-                  start = time.monotonic()
-                  try:
-                      with before(*args, **kwargs) as connection:
-                          yield connection
-                  except Exception as exc:
-                      value = exc.args[0] if len(exc.args) == 1 else ""
-                      reason = value if isinstance(value, str) and re.fullmatch(r"[A-Z_]{4,90}", value) else "UNCLASSIFIED"
-                      trace("A667_SNAPSHOT_FAILURE", {
-                          "reason": reason, "type": type(exc).__name__,
-                          "elapsed_ms": round((time.monotonic() - start)*1000, 2),
-                          "errno": getattr(exc, "errno", None),
-                      })
-                      raise
+          
+          from cg_paper_workspace import database_path
+          from rc6_paper_admission_gate import admission_status
+          from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+          from rc6_ppi_shared_feed import ReadOnlyUnixFeedClient
+          
+          
+          def detail(value):
+              return value if isinstance(value,str) and re.fullmatch(r"[A-Z0-9_:=; -]{1,350}", value) else None
+          
+          
+          path = database_path()
+          local=datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+          delay=(local.replace(hour=10,minute=31,second=5,microsecond=0)-local).total_seconds()
+          if 0 < delay <= 85:
+              time.sleep(delay)
+          at = datetime.now(timezone.utc).isoformat()
+          result = {"at":at}
+          try:
+              service = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(path), timeout_seconds=.75)
+              owner = service.owner_status()
+              result["gateway"] = {key:owner.get(key) for key in (
+                  "state","owner_pid","session_recovery_pending","guard_login_wire_attempts",
+                  "guard_http_allowed","guard_http_blocked","aux_last_http_status","native_last_http_status",
+                  "native_backoff_remaining_seconds","aux_retry_after_seconds_observed",
+                  "native_retry_after_seconds_observed","real_order_routes_exposed",
+              )}
+              result["gateway"]["generation_present"]=bool(owner.get("session_generation"))
+              receipt=owner.get("provider_rate_limit_response_observed")
+              if isinstance(receipt,dict):
+                  result["gateway"]["rate_limit_headers"]=dict(
+                      (key,receipt.get(key)) for key in ("limit","remaining","http_status")
+                      if type(receipt.get(key)) is int)
+              status=owner.get("native_router")
+              if isinstance(status,dict):
+                  result["gateway"]["router"]={name:value for name,value in status.items()
+                        if isinstance(name,str) and re.fullmatch(r"[a-z0-9_]{1,48}",name) and type(value) in (int,bool)}
+          except (RuntimeError,OSError,ValueError) as exc:
+              result["gateway"]={"state":detail(str(exc)) or type(exc).__name__}
+          
+          admitted, why = admission_status()
+          result["paper_gate"] = {"allowed":admitted,"reason":detail(why)}
+          with closing(sqlite3.connect(path.as_uri()+"?mode=ro",uri=True,timeout=.4)) as db:
+              db.execute("PRAGMA query_only=ON")
+              db.execute("BEGIN")
+              deadline=time.monotonic()+4
+              db.set_progress_handler(lambda:time.monotonic()>=deadline,1000)
+              row=db.execute("""SELECT mode,real_orders_sent,session_state,process_state,ppi_auth,
+                                        heartbeat_at,last_market_data_at FROM observer_state WHERE id=1""").fetchone()
+              if row is None or row[:2]!=("PRODUCTION_PAPER",0):
+                  raise SystemExit("PAPER_ZERO_FAILED")
+              result["observer"]=dict(zip(("mode","real_orders_sent","phase","process_state","ppi_auth",
+                                         "heartbeat_at","last_market_data_at"), row))
+              result["catalog"]={}
+              for family in ("ACCIONES","CEDEARS","BONOS","LETRAS","OBLIGACIONES","OPCIONES","FUTUROS","FCI","CAUCIONES","ETFS","INDICES"):
+                  coverage=db.execute("""SELECT checked_at,discovery_status,declared,ready_paper_count FROM catalog_family_coverage
+                                       WHERE instrument_type=?""",(family,)).fetchone()
+                  if coverage:
+                      result["catalog"][family]=coverage
+              result["samples"]={}
+              for ticker in ("GGAL","AAPL","AO29","D30N6","AFCQC","ALUC1000DI","DLR/NOV26","DLR/DIC26","BZ.AHORRO.A","BZ.AHORRO.B","PESOS1"):
+                  rows=db.execute("""SELECT market,currency,settlement,can_simulate,status,detail,checked_at
+                                   FROM candidate_identity_v2 WHERE ticker=? LIMIT 5""",(ticker,)).fetchall()
+                  result["samples"][ticker]=[(*s[:5],detail(s[5]),s[6]) for s in rows]
+              result["events"] = {}
+              for kind in ("CATALOG_CONFIGURATION_UNAVAILABLE","CATALOG_DISCOVERY_DEFERRED",
+                           "PPI_GATEWAY_OWNER_OPEN","PPI_GATEWAY_HOLD","PPI_GATEWAY_AUTH_REFRESH",
+                           "PPI_GATEWAY_ATTACHED","PPI_GATEWAY_METRICS_UNVERIFIED",
+                           "PPI_DIRECT_REST_PROBE_HOLD","PPI_NATIVE_SETTLEMENT_ATTESTED",
+                           "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS","PPI_GATEWAY_REATTACH_REQUIRED",
+                           "DATA_ERROR","DATA_REJECTED"):
+                  rows=db.execute("""SELECT event_at,detail FROM paper_events WHERE event_type=?
+                                AND julianday(event_at)>=julianday(?, '-45 minutes')
+                                ORDER BY julianday(event_at) DESC LIMIT 8""",(kind,at)).fetchall()
+                  if kind=="PPI_DIRECT_REST_NATIVE_WIRE_WITNESS":
+                      valid=[]
+                      for seen, text in rows:
+                          match=re.search(r"(?:^|;)identity5=([A-Z0-9 ./_+():$-]{2,180});endpoint=(current|book);http_status=(200);wire_received_at_utc=([0-9T:Z+._A-Z-]{0,64});market_timestamp_utc=([0-9T:Z+._A-Z-]{0,64});response_settlement_status=([A-Z_]{1,56});",text)
+                          if match:
+                              valid.append((seen,*match.groups()))
+                      result["events"][kind]=valid
+                  elif kind=="PPI_GATEWAY_ATTACHED":
+                      result["events"][kind]=[(seen,text) for seen,text in rows
+                          if text in ("consumer=scanner;no_sdk_login","consumer=scanner_manual;no_sdk_login")]
+                  elif kind in ("DATA_ERROR","DATA_REJECTED"):
+                      result["events"][kind]=[(seen,text) for seen,text in rows
+                             if re.fullmatch(r"[A-Z0-9./_+ -]{1,36}: [A-Z0-9_]{1,110}", text)]
                   else:
-                      trace("A667_SNAPSHOT_PASS_MS", round((time.monotonic() - start)*1000, 2))
-
-              budget._ledger_snapshot = snapshot
-              try:
-                  yield
-              finally:
-                  budget._ledger_snapshot = before
-
-          def pytest_runtest_logreport(report):
-              if report.when == "call" and TARGET in report.nodeid:
-                  trace("A667_TARGET", report.outcome)
-
-          def main():
-              sys.path.insert(0, str(ROOT))
-              from scripts import porota_ci, rc6_ci_parallel_runner as runner, rc6_ci_shard_quorum as shards
-              env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
-                         PYTHONPATH="/tmp:/app", RC6_CI_IDENTITY_PROOF="1",
-                         RC6_CI_SOURCE_SHA="90099ddf2399a59c544214d9138ea2f193c235cb",
-                         RC6_CI_SOURCE_TREE_SHA="69de3030b0e61b8462df3d1573350c0638ee0604", RUNNER_TEMP="/var/tmp")
-              for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "RC6_CI_MODULE_TRACE"):
-                  env.pop(key, None)
-              python = sys.executable
-              plugin = ["-p", "scripts.rc6_ci_pytest_identity", "-p", "no:cacheprovider"]
-              with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir="/var/tmp") as scratch:
-                  folder = Path(scratch)
-                  trace_path = folder / "a667-capture.jsonl"
-                  manifest = folder / "collected.json"
-                  env["RC6_CI_MANIFEST_PATH"] = str(manifest)
-                  result = subprocess.run([python, "-m", "pytest", *plugin, "--collect-only", "-q",
-                                           *runner._test_args(ROOT)], cwd=ROOT, env=env,
-                                          capture_output=True, text=True)
-                  if result.returncode:
-                      return result.returncode
-                  _, retired = porota_ci._policy(ROOT)
-                  original = shards._validate_manifest(json.loads(manifest.read_text()))
-                  selected = [node for node in original["nodeids"] if node.split("[", 1)[0] not in retired]
-                  groups = shards.partition(shards.manifest("90099ddf2399a59c544214d9138ea2f193c235cb", "69de3030b0e61b8462df3d1573350c0638ee0604", selected), 16)
-                  target_index = next(i for i, group in enumerate(groups) if any(TARGET in node for node in group))
-                  print(f"A667_GOVERNED_SHARD={target_index};cases={len(groups[target_index])};retired={len(original['nodeids'])-len(selected)}", flush=True)
-                  for index, group in enumerate(groups[:target_index + 1]):
-                      shard = folder / f"shard-{index}"
-                      shard.mkdir(mode=0o700)
-                      child_env = dict(env, RC6_CI_MANIFEST_PATH=str(shard / "executed.json"),
-                                       RC6_CI_MODULE_TRACE="1", RC6_CI_INTERNAL_ERROR_PATH=str(shard / "internalerror.json"),
-                                       RC6_CI_FAILURE_PATH=str(shard / "first-failure.json"))
-                      trace_plugin = []
-                      if index == target_index:
-                          child_env["POROTA_A667_TRACE"] = str(trace_path)
-                          trace_plugin = ["-p", "porota_a667_trace"]
-                      result = subprocess.run([python, "-m", "pytest", *plugin, *trace_plugin, "-q",
-                          "-o", "xfail_strict=true", f"--junitxml={shard/'junit.xml'}",
-                          f"--basetemp={shard/'basetemp'}", "--", *group],
-                          cwd=ROOT, env=child_env, capture_output=True, text=True)
-                      print(f"A667_SHARD_EXIT={index}:{result.returncode}", flush=True)
-                      if trace_path.is_file():
-                          for line in trace_path.read_text(encoding="utf-8").splitlines():
-                              if re.fullmatch(r"A667_[A-Z_]+=[\x20-\x7e]{1,300}", line):
-                                  print(line)
-                      if result.returncode:
-                          break
-                  return 0
-
-          if __name__ == "__main__":
-              raise SystemExit(main())
+                      result["events"][kind]=[(seen, detail(text)) for seen,text in rows]
+              result["health"]={}
+              for name,state,checked,success,info in db.execute("""SELECT component,state,checked_at,
+                     last_success_at,detail FROM api_health WHERE component IN
+                     ('PPI_PRODUCTION_MARKETDATA','PPI_DIRECT_REST_RECOVERY','PPI_PRODUCTION_CATALOG',
+                      'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST')"""):
+                  summary=detail(info)
+                  if name=="PPI_DIRECT_REST_RECOVERY":
+                      summary=info if re.fullmatch(r"turnos=[0-9]+;intentos=[0-9]+;pares_frescos=[0-9]+;plazos=[0-9]+(?:;reason=[A-Z0-9_]+)?",info) else None
+                  if name=="PPI_PRODUCTION_MARKETDATA":
+                      summary=info if re.fullmatch(r"[0-9A-Za-z_ /áéíóú.]{1,135}",info) else None
+                  result["health"][name]=(state,checked,success,summary)
+              result["latest_quotes"]={}
+              for ticker in result["samples"]:
+                  result["latest_quotes"][ticker]=db.execute("""SELECT source,asset_class,settlement,
+                       observed_at,trade_at,book_at FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT 2""",
+                       (ticker,)).fetchall()
+              result["gateway_http_audit"]={}
+              cutoff=db.execute("SELECT COALESCE(MAX(id),0)-4000 FROM http_audit").fetchone()[0]
+              allowed={"/api/1.0/marketdata/current","/api/1.0/marketdata/book","/api/1.0/configuration/instrumenttypes"}
+              for http_path in allowed:
+                  stats=Counter()
+                  for outcome, in db.execute("""SELECT result FROM http_audit
+                         WHERE id>? AND method='GET' AND path=? AND julianday(happened_at)>=julianday(?, '-25 minutes')""",
+                                          (cutoff,http_path,at)):
+                      stats[detail(outcome) or "OTHER"]+=1
+                  result["gateway_http_audit"][http_path]=dict(stats)
+              result["history_coverage"]={}
+              for table in ("production_history","production_history_attempts"):
+                  columns={row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+                  if not columns:
+                      result["history_coverage"][table]={"present":False}
+                      continue
+                  clocks={"downloaded_at","attempted_at","checked_at"} & columns
+                  result["history_coverage"][table]={
+                      "columns":sorted(columns),
+                      "series":db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0],
+                      "last":{column:db.execute(f"SELECT MAX({column}) FROM {table}").fetchone()[0]
+                              for column in sorted(clocks)},
+                  }
+              result["workers"]={
+                  "caucion":db.execute("SELECT heartbeat_at,state,code FROM paper_caucion_cash_sweep_state WHERE id=1").fetchone(),
+                  "candles":db.execute("SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1").fetchone(),
+                  "scalping":db.execute("SELECT heartbeat_at,state,selected,successful,failed FROM intraday_scalping_worker_state WHERE id=1").fetchone(),
+                  "exit":db.execute("SELECT heartbeat_at,state FROM paper_exit_reader_state WHERE id=1").fetchone(),
+              }
+          
+          print("RC6_OPEN_LATE="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
-          docker run --rm --pull never --network none --cap-drop ALL --security-opt no-new-privileges:true \
-            --pids-limit 512 --memory 6g --mount "type=bind,src=$PWD/.git,dst=/app/.git,readonly" \
-            --mount "type=bind,src=$PWD/docs,dst=/app/docs,readonly" \
-            --mount "type=bind,src=$probe,dst=/tmp/porota_a667_trace.py,readonly" \
-            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app \
-            --entrypoint python porota-a667-debug:exact-source -B /tmp/porota_a667_trace.py
+          HOST
