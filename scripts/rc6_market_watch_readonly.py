@@ -1944,7 +1944,7 @@ def _iol_scheduler_evidence(source_sha):
         options = [arg for unit in _IOL_SERVICE_ROLES for arg in ("--unit", unit)]
         scan = subprocess.run(
             ["/usr/bin/journalctl", "--quiet", "--no-pager", "--output=json",
-             "--output-fields=_SYSTEMD_UNIT,MESSAGE", "--since=-15min", "--lines=32", *options],
+             "--output-fields=_SYSTEMD_UNIT,MESSAGE", "--since=-25min", "--lines=88", *options],
             capture_output=True, timeout=2, check=False)
         if scan.returncode or len(scan.stdout) > 131072:
             raise ValueError("IOL_JOURNAL_UNAVAILABLE")
@@ -1959,7 +1959,7 @@ def _iol_scheduler_evidence(source_sha):
             if not isinstance(job, dict) or job.get("schema") != "porota.rootless.job.v1":
                 continue
             state = job.get("state")
-            if state not in ("BLOCKED", "BLOQUEADO", "SKIPPED", "EXECUTED"):
+            if state not in ("BLOQUEADO", "SKIPPED", "EXECUTED"):
                 continue
             if not isinstance(stamp, str) or not re.fullmatch(r"[0-9]{16}", stamp):
                 continue
@@ -1968,6 +1968,8 @@ def _iol_scheduler_evidence(source_sha):
             signature = job.get("failure_signature")
             if signature in _IOL_SCHEDULER_CODES:
                 row["failure_signature"] = signature
+                if state != "EXECUTED":
+                    services[role]["latest_hold"] = row
             if (row["release_matched"] and type(job.get("real_orders_sent")) is int
                     and job["real_orders_sent"] == 0):
                 commands = job.get("commands") or []
@@ -1978,7 +1980,7 @@ def _iol_scheduler_evidence(source_sha):
                     row.update(result=result if result in _IOL_SCHEDULER_CODES else None,
                                http_status=http if type(http) is int and 100 <= http <= 599 else None,
                                cycle=cycle if cycle in ("COMPLETE", "DEGRADED", "NOT_DUE", "BLOCKED") else None)
-            services[role].update(row)
+            services[role]["latest_job"] = row
     except (OSError, ValueError, AttributeError, TypeError, OverflowError, subprocess.TimeoutExpired):
         pass
     return {"status": "OBSERVED" if any(services.values()) else "NO_VERIFICADO", "services": services}
