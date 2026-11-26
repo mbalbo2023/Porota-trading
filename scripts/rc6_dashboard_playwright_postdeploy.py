@@ -180,7 +180,7 @@ def navigate(base_url, receipt):
 
     deadline = time.monotonic() + PROXY_SECONDS - 25
     with sync_playwright() as playwright:
-        with playwright.chromium.launch() as browser:
+        with playwright.chromium.launch(channel="chrome") as browser:
             context = browser.new_context(viewport={"width": 1440, "height": 900}, service_workers="block")
             context.route("**/*", restrict)
             page = context.new_page()

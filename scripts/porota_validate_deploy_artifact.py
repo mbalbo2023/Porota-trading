@@ -48,6 +48,7 @@ RUNTIME_EXACT = {
     "requirements.lock.txt",
     "n_instrument_watchlist.json",
     "POROTA_SECTOR_MAP_V1.csv",
+    "docs/evidence/rc6-fi-paper-sale-sources.json",
 }
 # These are two declared PAPER roots used by porota_mode_manager.py. The
 # Dockerfile CMD and literal Python subprocess children are discovered below;
@@ -61,11 +62,11 @@ HOST_POLICY_ROLES = {
 
 
 def is_runtime_relevant(path: str) -> bool:
+    if path in RUNTIME_EXACT:
+        return True
     p = Path(path)
     if p.parts and p.parts[0] in {"tests", "docs", ".github", ".agents"}:
         return False
-    if path in RUNTIME_EXACT:
-        return True
     if path.startswith(RUNTIME_METADATA_PREFIXES):
         return True
     if p.suffix in RUNTIME_SUFFIXES:

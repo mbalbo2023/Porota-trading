@@ -198,6 +198,17 @@ jobs:
           test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$code")" = '0|false'
           test "$functional_result" -eq 0
           test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$functional")" = '0|false'
+          if test -f scripts/rc6_iol_installed_replay.py; then
+            replay="$(docker create "${common[@]}" --read-only --pids-limit 96 --memory 512m --cpus 0.75 \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=192m --no-healthcheck \
+              -e POROTA_IOL_OFFHOST_IPC=1 --entrypoint python "$IMAGE_ID" \
+              -B -m scripts.rc6_iol_installed_replay)"
+            OWNED_CIDS+=("$replay")
+            owned "$replay"
+            timeout 385 docker start --attach "$replay" > "$STAGE/isolated-replay.json"
+            cat "$STAGE/isolated-replay.json"
+            jq -e '.status == "PASS" and .iol_gateway_transport == "AF_UNIX_PEERCRED"' "$STAGE/isolated-replay.json" >/dev/null
+          fi
 
       - name: Export and validate the immutable release
         if: steps.impact.outputs.classification == 'APPLICATION_RELEASE'

@@ -88,8 +88,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 -m venv "$RUNNER_TEMP/porota/playwright-venv"
-          "$RUNNER_TEMP/porota/playwright-venv/bin/pip" install --disable-pip-version-check playwright==1.51.1
-          "$RUNNER_TEMP/porota/playwright-venv/bin/python" -m playwright install chromium
+          "$RUNNER_TEMP/porota/playwright-venv/bin/pip" install --disable-pip-version-check playwright==1.55.0
+          command -v google-chrome >/dev/null
 
       - name: Verify the actual authenticated dashboard with Playwright
         if: steps.iol.outputs.installed == 'true'
