@@ -285,10 +285,21 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
     first = run_paper_sweep(broker, offers, **options)
     retry = run_paper_sweep(broker, offers, **options)
     assert first["status"] == retry["status"] == "PLACED_SIMULATED"
-    assert first["allocation"]["paper_id"] == retry["allocation"]["paper_id"]
+    paper_id = first["allocation"]["paper_id"]
+    assert paper_id == retry["allocation"]["paper_id"]
+    due = datetime.fromisoformat(offers[0].maturity_at)
+    assert broker.settle_cauciones(due - timedelta(seconds=1)) == []
+    assert broker.settle_cauciones(due) == [paper_id]
+    assert broker.settle_cauciones(due) == []
     with store.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
         assert connection.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+        row = connection.execute(
+            "SELECT status,gross_interest,total_fees,maturity_at FROM paper_cauciones WHERE paper_id=?",
+            (paper_id,)).fetchone()
+        assert row["status"] == "MATURED" and row["maturity_at"] == due.isoformat()
+        net_interest = Decimal(row["gross_interest"]) - Decimal(row["total_fees"])
+        assert broker._cash(due, "ARS") == Decimal("2000000") + net_interest
 
 
 def test_live_book_is_separate_dynamic_state_and_participation_is_conservative(tmp_path,monkeypatch):

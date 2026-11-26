@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from be_paper_engine import PaperBroker, PaperStore
+from bf_production_paper_observer import _scanner_trade_temporal_rejection
 from bl_candle_engine import SampleMaterializer, record_iol_trade_sample
 from bm_exit_supervisor import PositionExitSupervisor
 from cu_history_store_v2_hf6 import Candle, append_candle, read_as_of
@@ -169,13 +170,15 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
         transport.price = float(price)
         observed = market.observe(GGAL)
         store.add_quote(observed.quote)
+        assert not _scanner_trade_temporal_rejection(
+            observed.quote, broker, store, checked_at=transport.now.isoformat())
     broker.on_quote(observed.quote)
     assert store.open_positions()
     position = store.open_positions()[0]
     transport.price = float(Decimal(position["target_price"]) + Decimal("0.20"))
     transport.now += timedelta(minutes=5)
     closing = market.observe(GGAL, exit_only=True).quote
-    assert transport.calls[-2:] == ["GGAL", "depth"]
+    assert transport.calls == ["token"] + ["GGAL", "quote", "depth"] * 9 + ["GGAL", "depth"]
     key = tuple(position[name] for name in ("symbol", "asset_class", "settlement", "currency", "market"))
     verdict = PositionExitSupervisor(broker, clock_fn=lambda: transport.now.isoformat()).tick({key: closing})[0]
     assert (verdict.state, verdict.cause) == ("CLOSED", "TAKE_PROFIT_PAPER")

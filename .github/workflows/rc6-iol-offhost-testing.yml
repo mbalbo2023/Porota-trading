@@ -86,6 +86,7 @@ jobs:
           [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
           owner="iol-offhost-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           boxes=()
+          timer_unit=""
           owned() {
             [[ "$1" =~ ^[0-9a-f]{64}$ ]] &&
               test "$(docker inspect -f '{{.Id}}|{{.Image}}|{{index .Config.Labels "porota.test_run"}}' "$1")" = "$1|$image_id|$owner"
@@ -93,6 +94,9 @@ jobs:
           cleanup() {
             rc=$?
             trap - EXIT
+            if [[ -n "$timer_unit" ]]; then
+              sudo -n systemctl stop "$timer_unit.timer" "$timer_unit.service" >/dev/null || rc=1
+            fi
             for box in "${boxes[@]}"; do
               if owned "$box"; then docker rm -f "$box" >/dev/null || rc=1; else rc=1; fi
             done
@@ -100,6 +104,37 @@ jobs:
           }
           trap cleanup EXIT
           ids=(--source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE_SHA" --image-id "$image_id")
+          run_scheduled_focus() {
+            local box="$1" timeout_seconds="$2" uid deadline state trigger
+            uid="$(id -u)"
+            test "$uid" -ne 0 && test -S /var/run/docker.sock || return 1
+            timer_unit="$owner-focus"
+            sudo -n systemd-run --unit="$timer_unit" --uid="$uid" --on-active=2s \
+              --timer-property=AccuracySec=100ms --property=Type=oneshot --property=RemainAfterExit=yes \
+              --property=NoNewPrivileges=yes --property="TimeoutStartSec=${timeout_seconds}s" \
+              /usr/bin/docker --host unix:///var/run/docker.sock start --attach "$box" || return 1
+            deadline=$((SECONDS + timeout_seconds + 15))
+            while (( SECONDS < deadline )); do
+              state="$(systemctl show "$timer_unit.service" -p ActiveState --value)" || return 1
+              [[ "$state" != failed ]] || return 1
+              [[ "$state" != active ]] || break
+              sleep 1
+            done
+            trigger="$(systemctl show "$timer_unit.timer" -p LastTriggerUSecMonotonic --value)" || return 1
+            test "$state" = active && test -n "$trigger" && test "$trigger" != 0 \
+              && test "$(systemctl show "$timer_unit.service" -p Result --value)" = success \
+              && test "$(systemctl show "$timer_unit.service" -p User --value)" = "$uid" \
+              && test "$(docker inspect -f '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$box")" = 'exited|0|false' \
+              || return 1
+            python3 -B - "$report/timer.json" "$image_id" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          timer = {"schema": "porota.iol.offhost.timer.v1", "source_sha": os.environ["CANDIDATE_SHA"],
+                   "source_tree": os.environ["CANDIDATE_TREE_SHA"], "image_id": sys.argv[2],
+                   "scheduler": "SYSTEMD_TRANSIENT_TIMER", "triggered": True, "worker_completed": True}
+          Path(sys.argv[1]).write_text(json.dumps(timer, sort_keys=True) + "\n")
+          PY
+          }
           run_box() {
             local kind="$1" max_time="$2" box rc
             shift 2
@@ -109,12 +144,17 @@ jobs:
               --mount "type=bind,src=$PWD/.git,dst=/app/.git,readonly" \
               --mount "type=bind,src=$PWD/docs,dst=/app/docs,readonly" \
               -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app \
-              -e POROTA_IOL_OFFHOST=1 --entrypoint python "$image_id" -B "$@")"
+              -e POROTA_IOL_OFFHOST=1 -e POROTA_IOL_OFFHOST_IPC=1 \
+              --entrypoint python "$image_id" -B "$@")"
             boxes+=("$box")
             owned "$box"
             test "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$box")" = none
             set +e
-            timeout "$max_time" docker start -a "$box" > "$RUNNER_TEMP/rc6-iol-$kind.log" 2>&1
+            if [[ "$kind" == focus ]]; then
+              run_scheduled_focus "$box" "$max_time"
+            else
+              timeout "$max_time" docker start -a "$box" > "$RUNNER_TEMP/rc6-iol-$kind.log" 2>&1
+            fi
             rc=$?
             set -e
             if ! docker cp "$box:/tmp/$kind.json" "$report/$kind.json"; then
@@ -145,6 +185,7 @@ jobs:
               output.write(f"market_viability={result['market_viability']}\n")
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"## IOL RC6 offhost\n\nPruebas aisladas: {result['offhost_tests']}\n\n")
+              summary.write(f"Timer efectivo: {result['systemd_timer']} · Gateway: {result['native_gateway_transport']}\n\n")
               summary.write(f"Viabilidad en rueda: **{result['market_viability']}**\n\n")
               summary.write("Promoción: **BLOQUEADA**. Artefacto de evidencia de pruebas.\n")
           PY
