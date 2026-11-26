@@ -86,3 +86,33 @@ def test_marketdata_failed_queue_write_leaves_incident_retriable(monkeypatch):
         assert connection.execute('SELECT * FROM paper_marketdata_alert').fetchone() is None
         assert market_cycle(connection, 1, 'ROJO', 'ROJO')
         assert len(outbox(connection)) == 1
+
+
+def test_two_quoting_instruments_during_gateway_pause_cannot_confirm_recovery(tmp_path, monkeypatch):
+    from be_paper_engine import PaperStore
+    import bf_production_paper_observer as observer
+
+    store = PaperStore(str(tmp_path / 'paper.db'))
+    observer._support_schema(store)
+
+    def publish(minute, pause_seconds=0, discovery=None, session_invalid=False):
+        checked_at = (AT + timedelta(minutes=minute)).isoformat()
+        monkeypatch.setattr(observer, 'now_iso', lambda: checked_at)
+        observer._publish_ppi_marketdata_health(
+            store, catalog_status='ELIGIBLE_INSTRUMENTS', selected=2, requested=2, useful=2,
+            discovery=discovery or {}, pause_seconds=pause_seconds, session_invalid=session_invalid)
+
+    publish(0, 55, {'attempted': 1, 'reason': 'PPI_NATIVE_HTTP_429'})
+    publish(1)
+    publish(2, 23)
+    publish(3)
+    publish(4, session_invalid=True)
+    publish(5)
+    with store.connect() as connection:
+        [red] = outbox(connection)
+        assert red[1] == 'OPERATIONAL_HEALTH_RED'
+        assert '2/2 instrumentos' in red[2] and 'PPI_NATIVE_HTTP_429' in red[2]
+    publish(6)
+    with store.connect() as connection:
+        assert [row[1] for row in outbox(connection)] == [
+            'OPERATIONAL_HEALTH_RED', 'OPERATIONAL_HEALTH_RECOVERY']

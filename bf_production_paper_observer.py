@@ -566,6 +566,33 @@ def _health(store, component, state, detail, source, success=False):
             c.execute("INSERT INTO paper_events(event_at,source,event_type,paper_id,detail) VALUES(?,?,?,?,?)",(checked,'OPERATIONAL_ALERT_BRIDGE','OPERATIONAL_ALERT_ERROR',None,type(exc).__name__))
 
 
+def _publish_ppi_marketdata_health(store, *, catalog_status, selected, requested, useful,
+                                   discovery, pause_seconds, session_invalid):
+    fresh_pairs = discovery.get("fresh_pairs", 0)
+    if requested:
+        detail = f"{useful}/{selected} instrumentos con cotización útil."
+    elif discovery.get("attempted"):
+        detail = f"{catalog_status}. Intentos de descubrimiento: {discovery['attempted']}."
+    else:
+        detail = f"{catalog_status} sin consultas de cotización en el ciclo."
+    if fresh_pairs:
+        detail += f" Pares Current/Book frescos en descubrimiento: {fresh_pairs}."
+
+    if session_invalid:
+        state = "ROJO"
+        detail += " Sesión del Gateway pendiente de recuperación."
+    elif pause_seconds:
+        state = "COOLDOWN"
+        detail += f" Gateway PPI en pausa por {pause_seconds} s."
+        if discovery.get("reason") in NATIVE_PROVIDER_BACKPRESSURE:
+            detail += f" Motivo {discovery['reason']}."
+    else:
+        state = "VERDE" if useful or fresh_pairs else "ROJO" if requested else "AMARILLO"
+
+    _health(store, "PPI_PRODUCTION_MARKETDATA", state, detail, "PPI Producción",
+            success=state == "VERDE")
+
+
 def _sync_state(store, source, status, items, detail, success=False):
     attempted = now_iso()
     with store.connect() as c:
@@ -3622,7 +3649,7 @@ def run():
             catalog_read_error = active_plan.get("catalog_status") == "CATALOG_READ_ERROR"
             observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
                                 "CATALOG_READ_ERROR" if catalog_read_error else "")
-            fresh_observation = False
+            discovery = {}
             # Readiness completed; a long current/book round must not leave
             # the heartbeat frozen at the previous cycle's completion.
             store.state(heartbeat_at=now_iso(), real_orders_sent=0)
@@ -3810,14 +3837,11 @@ def run():
                             "http_blocked": metrics["http_blocked"]} if metrics else {}),
                         real_orders_sent=0,
                         detail=cycle_detail)
-            market_detail = f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."
-            if cycle_requested:
-                market_detail = f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
-            if fresh_observation:
-                market_detail = f"{market_detail} Pares Current/Book frescos en descubrimiento: {discovery['fresh_pairs']}."
-            _health(store, "PPI_PRODUCTION_MARKETDATA",
-                    "VERDE" if cycle_ok or fresh_observation else "ROJO" if cycle_requested else "AMARILLO",
-                    market_detail, "PPI Producción", success=bool(cycle_ok or fresh_observation))
+            _publish_ppi_marketdata_health(
+                store, catalog_status=active_plan["catalog_status"], selected=len(symbols),
+                requested=cycle_requested, useful=cycle_ok, discovery=discovery,
+                pause_seconds=(metrics or {}).get("native_backoff_remaining_seconds"),
+                session_invalid=cycle_session_invalid)
             _publish_economic_shadow_health(store)
             if cycle_session_invalid:
                 reader.close()
