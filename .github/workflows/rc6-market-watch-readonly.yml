@@ -1,5 +1,5 @@
 name: RC6 PPI REST directo GGAL
-run-name: RC6 REST GGAL con catálogo normalizado y pausa respetada
+run-name: RC6 REST GGAL después de vencer la pausa de autenticación
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          printf '%s  %s\n' '0823bc9ed38adcae061160add4cdfeaf46fb26176ab64778d8da2b837c1171f7' scripts/rc6_ppi_direct_ggal_once.sh | sha256sum -c
+          printf '%s  %s\n' 'f1c7af459f3f61ab7001fe6b5d62cfa663be83288c8d57d9fbd345838243214c' scripts/rc6_ppi_direct_ggal_once.sh | sha256sum -c
           bash -n scripts/rc6_ppi_direct_ggal_once.sh
 
       - name: Run the guarded one-shot direct REST probe on the Droplet
