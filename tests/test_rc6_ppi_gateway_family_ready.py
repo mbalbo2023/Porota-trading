@@ -83,14 +83,16 @@ def _derivative_economics(store, family):
         catalog.sync_candidate_universe(con, AT.isoformat())
 
 
-@pytest.mark.parametrize(("ticker", "family", "market", "term", "trade_age", "book_age"), [
-    *(pytest.param(*case, 0, 0, id=case[1]) for case in CASES),
-    pytest.param(*CASES[0], 45, 45, id="GGAL_SPOT_CLOCKS_OUTSIDE_CACHE"),
-    pytest.param(*CASES[0], 121, 0, id="GGAL_STALE_CURRENT_DOES_NOT_REQUEST_BOOK"),
+@pytest.mark.parametrize(("ticker", "family", "market", "term", "trade_age", "book_age", "scan_delay"), [
+    *(pytest.param(*case, 0, 0, 0, id=case[1]) for case in CASES),
+    pytest.param(*CASES[0], 45, 45, 0, id="GGAL_SPOT_CLOCKS_OUTSIDE_CACHE"),
+    pytest.param(*CASES[0], 121, 0, 0, id="GGAL_STALE_CURRENT_DOES_NOT_REQUEST_BOOK"),
+    pytest.param(*CASES[0], 119.9, 1, 0.2, id="GGAL_FRESH_AT_RECEIPT_CROSSES_CUTOFF_IN_IPC"),
 ])
 def test_one_instrument_per_family_through_gateway_and_engine(
-        tmp_path, monkeypatch, ticker, family, market, term, trade_age, book_age):
+        tmp_path, monkeypatch, ticker, family, market, term, trade_age, book_age, scan_delay):
     key = (ticker, family, market, "ARS", term)
+    monkeypatch.setattr(ReplayClock, "value", AT)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     observer._support_schema(store)
@@ -162,12 +164,18 @@ def test_one_instrument_per_family_through_gateway_and_engine(
     )
     gateway._native.clock = lambda: ReplayClock.value
     gateway.open_once()
+
+    def acquire(role, **kwargs):
+        received = gateway.dispatch_native_acquire(consumer=role, **kwargs)
+        if kwargs["method"] == "current" and scan_delay:
+            ReplayClock.value += timedelta(seconds=scan_delay)
+        return received
+
     try:
         adapter = SharedPPIReaderAdapter(
             consumer="scanner", catalog_source_digest=digest,
             client=SimpleNamespace(owner_status=gateway.status, pull=lambda *_: pytest.fail("stream not expected"),
-                                   acquire_native=lambda role, **kw:
-                                   gateway.dispatch_native_acquire(consumer=role, **kw)))
+                                   acquire_native=acquire))
         adapter.login_once()
         observed = observer._ppi_direct_rest_observe_only(
             adapter, store, family=family, confirm_settlement=True)
@@ -187,6 +195,13 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         assert observed["status"] == "FRESH_OBSERVED"
         assert observed["settlement_attested"]
         assert calls == ["Current", "Book"]
+        if scan_delay:
+            with store.connect() as connection:
+                row = connection.execute("SELECT detail FROM paper_events WHERE event_type=?",
+                                         ("PPI_DISCOVERY_CURRENT_CLOCK",)).fetchone()
+            clocks = json.loads(row[0])
+            assert clocks == {"outcome": "ACCEPTED_AT_RECEIPT", "received_age_seconds": 119.9,
+                              "scanner_age_seconds": 120.1}
         from bl_candle_engine import SampleMaterializer
 
         SampleMaterializer(store).tick(AT + timedelta(minutes=5))
@@ -212,7 +227,11 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         live_quote = observer._read_scanner_quote(adapter, store, ticker, family, term, identity=key)
         assert calls == ["Current", "Book", "Current", "Book"]
         assert not live_quote.opening_block_reason
-        assert not live_quote.time_error(ReplayClock.value.isoformat(), require_trade=True)
+        from bv_paper_runtime import broker_from_environment
+        broker = broker_from_environment(store)
+        assert not live_quote.time_error(ReplayClock.value.isoformat(), require_trade=True,
+                                         max_age_seconds=broker.quote_max_age_seconds,
+                                         max_trade_age_seconds=broker.trade_max_age_seconds)
         assert admission.paper_admission_guard(live_quote, store) == (True, "")
         assert not store.open_positions()
     finally:

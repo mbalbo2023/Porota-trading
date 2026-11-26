@@ -1029,6 +1029,7 @@ def test_native_discovery_stops_on_wire_backoff_and_new_exit(
                 "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
                 "http_method": "GET", "http_status_code": 200, "adapter_send_invoked": True,
                 "adapter_response_completed": True,
+                "received_at_utc": data["date"],
                 "request_identity_3key": [identity[0], identity[1], identity[4]],
                 "claimed_five_key": list(identity), "raw_body_sha256": "a" * 64}}
 

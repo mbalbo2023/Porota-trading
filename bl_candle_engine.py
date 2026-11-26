@@ -373,7 +373,7 @@ def record_guarded_current_sample(store, identity, capture, *, priority, as_of,
         guard, method="current", priority=priority, five_key=key, raw_sha256=_sha(payload))
     assert_native_ppi_response_identity(payload, key)
     event, received, checked = (stamp(value) for value in (payload["date"], received_at, as_of))
-    age = (aware_datetime(checked) - aware_datetime(event)).total_seconds()
+    age = (aware_datetime(received) - aware_datetime(event)).total_seconds()
     if not event <= received <= checked or not 0 <= age <= 120:
         return False
     price = format(decimal_value(payload["price"], "precio", positive=True).normalize(), "f")

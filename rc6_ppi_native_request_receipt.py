@@ -55,6 +55,10 @@ def _clock(value):
     return point.astimezone(timezone.utc)
 
 
+def settlement_source_age_seconds(native_at, received_at):
+    return (_clock(received_at) - _clock(native_at)).total_seconds()
+
+
 def _positive(value):
     number = Decimal(str(value))
     return number.is_finite() and number > 0
@@ -126,7 +130,7 @@ def _valid_wire(wire):
         and all(isinstance(wire[h], str) and _SHA64.fullmatch(wire[h])
                 for h in ("guard_sha256", "body_sha256", "lease_sha256"))
         and type(wire["monotonic_ns"]) is int and wire["monotonic_ns"] > 0
-        and 0 <= (_clock(wire["received_at"]) - _clock(wire["native_at"])).total_seconds()
+        and 0 <= settlement_source_age_seconds(wire["native_at"], wire["received_at"])
         <= SETTLEMENT_PAIR_MAX_SECONDS
     )
 
