@@ -1,5 +1,15 @@
 # Handoff de Porota Trading RC6
 
+## Recuperación de familias y datos en Deploy V2 #210
+
+**VALIDADO_RUNTIME** a las **20:45 ART** del 25/11. El producto `8fd9070728b89ae7891758f4b463baef28d875f8` instaló el candidato `f04b6a956f0c1d3b17b0062445ce027b6a5c7688` de [#1282](https://github.com/mbalbo2023/Porota-trading/pull/1282). El [Predeploy #1331](https://github.com/mbalbo2023/Porota-trading/actions/runs/45720928754/artifacts/15072907104) validó la imagen exacta y el [recibo de Promote](https://github.com/mbalbo2023/Porota-trading/actions/runs/45722718055/artifacts/15072503967) acredita dashboard saludable, observer en ejecución, `PRODUCTION_PAPER / SIMULATION`, `orders_guard=BLOCKED` y `real_orders_sent=0`.
+
+- **DLR.** La revisión contractual aceptó los dos cambios exactos. La base confirmó 177 referencias de DLR/NOV26 y 180 de DLR/DIC26, ambas hasta el 25/11. El cierre 21/09 de RAW permanece `PARTIAL`, con **cero** filas y versiones RAW, y requiere una fuente con moneda, plazo y ajuste acreditados. [Lote A3](https://github.com/mbalbo2023/Porota-trading/actions/runs/45723908716/artifacts/15072889954) · [Postflight](https://github.com/mbalbo2023/Porota-trading/actions/runs/45724479060)
+- **Velas y scalping.** AO29 dejó 1m y 5m `SAMPLED` en snapshots PAPER con huella validada. Current firmado tiene cero muestras en la base. En la próxima rueda válida, medir el primer par de resoluciones por clave, la rotación del lote mínimo, el volumen nativo, el ingreso PAPER y la ronda EXIT. [Procedencia de velas](https://github.com/mbalbo2023/Porota-trading/actions/runs/45724653566)
+- **Familias.** Para cauciones, medir el Book colocador en su ventana, el plazo, la tarifa y el asiento PAPER. Para futuros DLR, medir el libro vigente y la admisión con margen y tarifa. FCI BZ.AHORRO.A/B requieren vínculo de clase, plazo literal y autoridad de liquidación. Los índices quedaron sin enumerar en el último descubrimiento PPI. [Postflight](https://github.com/mbalbo2023/Porota-trading/actions/runs/45724479060)
+
+El [RCA](RCA_DATOS_PREOPEN_2026-11-25.md#validación-posterior-del-deploy-v2-210) y el [checkpoint](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7177577647) conservan el detalle y los bloqueos. La carga incremental general conserva [su owner](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7135331826).
+
 ## Continuación de datos, preopen y Gateway
 
 **VALIDADO_RUNTIME** a las **10:05:44 ART** del 25/11/2026. [Deploy V2 #209](https://github.com/mbalbo2023/Porota-trading/actions/runs/45618943128/artifacts/15023674360) acredita producto `44ee181dcc452215ab05fae7f3919e344e7601d7`, candidato `55bb80daa2834df6b8c7ae6f90b7db9d74ed0eae` y árbol `95493d68d9dd02014d364c0ec24c971a75923cc8`. El [Predeploy #1330](https://github.com/mbalbo2023/Porota-trading/actions/runs/45616489476/artifacts/15022852754) aprobó 9.190 pruebas y validó la misma imagen.

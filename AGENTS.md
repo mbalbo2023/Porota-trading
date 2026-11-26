@@ -1,5 +1,9 @@
 # Porota Trading RC6 — instrucciones para agentes
 
+## Recuperación PAPER del 25/11/2026 a las 20:45 ART
+
+El [Deploy V2 #210](https://github.com/mbalbo2023/Porota-trading/actions/runs/45722718055/artifacts/15072503967) acredita `8fd9070728b89ae7891758f4b463baef28d875f8`, PAPER/0. Para retomar, usar el [handoff](docs/auditoria-rc6/HANDOFF.md), el [RCA](docs/auditoria-rc6/RCA_DATOS_PREOPEN_2026-11-25.md) y el [checkpoint operativo](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7177577647). El cierre por frente exige el recibo de su flujo en rueda o el registro del bloqueo probado y su condición de salida.
+
 ## Datos, preopen y Gateway del 25/11/2026
 
 Seguir el [RCA de datos y preopen](docs/auditoria-rc6/RCA_DATOS_PREOPEN_2026-11-25.md), el [handoff](docs/auditoria-rc6/HANDOFF.md) y [#1275](https://github.com/mbalbo2023/Porota-trading/pull/1275). El [Deploy V2 #209](https://github.com/mbalbo2023/Porota-trading/actions/runs/45618943128/artifacts/15023674360) quedó `VALIDADO_RUNTIME` en `44ee181dcc452215ab05fae7f3919e344e7601d7` a las 10:05:44 ART, PAPER/0. Usar el censo de las 07:50 ART como referencia previa a #208. En el T−10 acreditar la publicación contractual por familia, vigencia de identidad, primer dato fresco y capacidad EXIT. La evidencia almacenada de plazo se reutiliza con la misma clave y vigencia. El cupo PPI sólo se acredita con evidencia específica del proveedor.
