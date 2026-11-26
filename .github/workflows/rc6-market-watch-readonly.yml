@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 un instrumento por familia y recibos nativos existentes READ_ONLY
+run-name: RC6 procedencia ETF y reloj real de preapertura READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -169,6 +169,29 @@ jobs:
                          "has_financial_terms":isinstance(metadata.get("financial_contract_v17"),dict),
                          "paper_gate":[bool(policy[0]),code(policy[1]),code(policy[2])] if policy else None,
                          "stored_native_http":physical_receipts.get(key,{})}
+              from datetime import timedelta
+              from bf_production_paper_observer import MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE, PREOPEN_MINUTES, _market_phase
+              from zoneinfo import ZoneInfo
+              clock = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+              open_at = clock.replace(hour=MARKET_OPEN_HOUR,minute=MARKET_OPEN_MINUTE,second=0,microsecond=0)
+              result["runtime_clock"] = {"phase":_market_phase(clock),
+                  "preopen_art":(open_at-timedelta(minutes=PREOPEN_MINUTES)).isoformat(),
+                  "open_art":open_at.isoformat()}
+              result["etf_sources"] = {}
+              for row in db.execute("""SELECT status, coalesce(json_extract(metadata_json, '$._discovery_source'),'UNKNOWN'),
+                         count(*) FROM financial_instrument_catalog
+                         WHERE instrument_type='ETFS' AND json_valid(metadata_json) GROUP BY 1,2 LIMIT 20"""):
+                  result["etf_sources"].setdefault(code(row[0]),{})[code(row[1])]=row[2]
+              result["etf_observation"] = None
+              for row in db.execute("""SELECT ticker,instrument_type,market,currency,settlement,settlement_source,
+                           status,capability,json_extract(metadata_json, '$._discovery_source')
+                         FROM financial_instrument_catalog WHERE instrument_type='ETFS'
+                         AND json_valid(metadata_json) ORDER BY CASE WHEN status='AVAILABLE' THEN 0 ELSE 1 END,
+                           last_seen_at DESC,ticker LIMIT 8"""):
+                  if all(safe_key.fullmatch(part) for part in row[:5]):
+                      result["etf_observation"]={"identity":row[:5],"settlement_source":code(row[5]),
+                          "catalog_state":code(row[6]),"capability":code(row[7]),"origin":code(row[8])}
+                      break
               result["fci_facts"] = {}
               for ticker in ("BZ.AHORRO.A","BZ.AHORRO.B"):
                   row = db.execute("""SELECT settlement_source, metadata_json FROM financial_instrument_catalog
