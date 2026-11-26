@@ -13,9 +13,9 @@ import subprocess
 import sys
 import time
 
-IMAGE = 'sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541'
-PRODUCT = '44ee181dcc452215ab05fae7f3919e344e7601d7'
-HOST_LOCK_WAIT_S = 240
+IMAGE = 'sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067'
+PRODUCT = '8fd9070728b89ae7891758f4b463baef28d875f8'
+HOST_LOCK_WAIT_S = 30
 COOLDOWN_WAIT_LIMIT_S = 20 * 60
 
 PROBE = r'''
@@ -42,6 +42,8 @@ from bd_ppi_readonly_guard import ppi_rate_limit_headers, ppi_retry_after_second
 from bf_production_paper_observer import _market_phase, _secret
 from bv_paper_runtime import ppi_gateway_lifetime_lease
 from cg_paper_workspace import database_path
+from bs_instrument_contracts import cash_currency
+from rc6_multisource_discovery import canonical_family, canonical_market
 from ppi_client.api.constants import ACCOUNT_LOGIN_API, MARKETDATA_BOOK, MARKETDATA_CURRENT
 from ppi_client.ppi import PPI
 from ppi_client.ppi_api_client import PPIClient
@@ -207,7 +209,7 @@ def direct_pair(rest, keypair, budget, out):
         return 'PPI_LOGIN_SIN_TOKEN_VALIDO'
     heads['Authorization'] = 'Bearer ' + token
     ticker, family, _, _, settlement = KEY
-    for endpoint, template in (('Current', MARKETDATA_CURRENT), ('Book', MARKETDATA_BOOK)):
+    for endpoint, template in (('Book', MARKETDATA_BOOK), ('Current', MARKETDATA_CURRENT)):
         evidence = out[endpoint] = {'attempted': False}
         lease = budget.acquire(endpoint.lower(), priority='DISCOVERY')['lease']
         with budget.wire_scope(lease):
@@ -253,13 +255,37 @@ def probe(out):
     db = database_path()
     out['before'] = paper_state(db)
     require(out['before']['open_paper'] == 0, 'RC6_POSICIONES_PAPER_ABIERTAS')
-    require(_market_phase() == 'OPEN' and datetime.now(ART).hour >= 11, 'RC6_RUEDA_SPOT_CERRADA')
+    out['market_phase'] = _market_phase()
+    require(out['market_phase'] in {'OPEN', 'CLOSED'}, 'RC6_RUEDA_EN_TRANSICION')
     require(version('ppi-client') == '1.3.0', 'PPI_SDK_DISTINTO_AL_COMPARADO')
     sdk = PPIClient(PPI.version, False).get_rest_client()
     credentials = _secret()
     path = gateway_socket_path(db)
     budget = PaperDirectReadBudget(db)
     interlock = ScannerLoginInterlock(db, AUTH_COOLDOWN_SECONDS)
+    local_remaining = budget_wait(budget)
+    out['before'].update(local_get_wait_s=local_remaining, get_wait_s=local_remaining,
+                         login_wait_s=login_wait(interlock))
+    require(out['before']['get_wait_s'] == 0 and out['before']['login_wait_s'] == 0,
+            'PPI_PAUSA_ACTIVA')
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        require(out['market_phase'] == 'CLOSED', 'PPI_GATEWAY_SOCKET_AUSENTE_EN_RUEDA')
+        out['lease_path'] = 'ABSENT_SOCKET_EXCLUSIVE_DIAGNOSTIC'
+        with ppi_gateway_lifetime_lease(path):
+            require(paper_state(db)['open_paper'] == 0, 'RC6_EXPOSICION_CAMBIO')
+            require(budget_wait(budget) == 0 and login_wait(interlock) == 0, 'PPI_PAUSA_ACTIVA')
+            require(interlock.reserve() == 'ALLOWED', 'PPI_INTERLOCK_LOGIN_BLOQUEADO')
+            signal.signal(signal.SIGALRM, alarm_deadline)
+            signal.setitimer(signal.ITIMER_REAL, 23)
+            try:
+                out['state'] = direct_pair(sdk, credentials, budget, out)
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                out['after'] = paper_state(db)
+        return
+    out['lease_path'] = 'SUPERVISED_GATEWAY_HANDOVER'
     remote = owner_status(path)
     remaining = remote.get('native_backoff_remaining_seconds')
     require(type(remaining) is int and remaining >= 0, 'PPI_PAUSA_NO_VERIFICADA')
