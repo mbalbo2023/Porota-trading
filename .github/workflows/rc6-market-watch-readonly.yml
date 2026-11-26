@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 apertura PAPER trazabilidad Current Book API Gateway motores
+run-name: RC6 rueda PAPER prueba de recuperación de Current y Book
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -117,6 +117,7 @@ jobs:
               result["events"] = {}
               for kind in ("CATALOG_CONFIGURATION_UNAVAILABLE","CATALOG_DISCOVERY_DEFERRED",
                            "PPI_GATEWAY_OWNER_OPEN","PPI_GATEWAY_HOLD","PPI_GATEWAY_AUTH_REFRESH",
+                           "PPI_GATEWAY_ATTACHED","PPI_GATEWAY_METRICS_UNVERIFIED",
                            "PPI_DIRECT_REST_PROBE_HOLD","PPI_NATIVE_SETTLEMENT_ATTESTED",
                            "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS","PPI_GATEWAY_REATTACH_REQUIRED",
                            "DATA_ERROR","DATA_REJECTED"):
@@ -126,10 +127,13 @@ jobs:
                   if kind=="PPI_DIRECT_REST_NATIVE_WIRE_WITNESS":
                       valid=[]
                       for seen, text in rows:
-                          match=re.search(r"(?:^|;)identity5=([A-Z0-9 ./_+():$-]{2,180});endpoint=(current|book);http_status=(200);",text)
+                          match=re.search(r"(?:^|;)identity5=([A-Z0-9 ./_+():$-]{2,180});endpoint=(current|book);http_status=(200);wire_received_at_utc=([0-9T:Z+._A-Z-]{0,64});market_timestamp_utc=([0-9T:Z+._A-Z-]{0,64});response_settlement_status=([A-Z_]{1,56});",text)
                           if match:
                               valid.append((seen,*match.groups()))
                       result["events"][kind]=valid
+                  elif kind=="PPI_GATEWAY_ATTACHED":
+                      result["events"][kind]=[(seen,text) for seen,text in rows
+                          if text in ("consumer=scanner;no_sdk_login","consumer=scanner_manual;no_sdk_login")]
                   elif kind in ("DATA_ERROR","DATA_REJECTED"):
                       result["events"][kind]=[(seen,text) for seen,text in rows
                              if re.fullmatch(r"[A-Z0-9./_+ -]{1,36}: [A-Z0-9_]{1,110}", text)]
@@ -141,6 +145,8 @@ jobs:
                      ('PPI_PRODUCTION_MARKETDATA','PPI_DIRECT_REST_RECOVERY','PPI_PRODUCTION_CATALOG',
                       'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST')"""):
                   summary=detail(info)
+                  if name=="PPI_DIRECT_REST_RECOVERY":
+                      summary=info if re.fullmatch(r"turnos=[0-9]+;intentos=[0-9]+;pares_frescos=[0-9]+;plazos=[0-9]+(?:;reason=[A-Z0-9_]+)?",info) else None
                   if name=="PPI_PRODUCTION_MARKETDATA":
                       summary=info if re.fullmatch(r"[0-9A-Za-z_ /áéíóú.]{1,135}",info) else None
                   result["health"][name]=(state,checked,success,summary)
@@ -166,6 +172,6 @@ jobs:
                   "exit":db.execute("SELECT heartbeat_at,state FROM paper_exit_reader_state WHERE id=1").fetchone(),
               }
           
-          print("RC6_OPEN_CURRENT_BOOK="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
+          print("RC6_OPEN_FOLLOWUP="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
           HOST
