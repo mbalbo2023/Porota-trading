@@ -1,7 +1,7 @@
 """IOL REST market-data adapter for the existing RC6 SHADOW collector."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import json
 import math
 import os
@@ -209,10 +209,30 @@ class IOLRestReadOnly:
                 self.auth_blocked = True
             raise
 
+    def read_market_data(self, endpoint, symbol, market, term):
+        """Return one provider response without rebuilding or merging its clocks."""
+        if (endpoint not in {"quote", "depth"} or not isinstance(symbol, str)
+                or not SYMBOL.fullmatch(symbol) or market not in MARKETS
+                or term not in {"T0", "T1"}):
+            raise IOLRestError("IOL_REST_MARKET_IDENTITY_UNSUPPORTED")
+        return self._get(f"/broker/market-data/{quote(symbol, safe='')}/{endpoint}",
+                         {"market": market, "term": term})
+
+    def read_daily_bars(self, symbol, market, start, end):
+        if (not isinstance(symbol, str) or not SYMBOL.fullmatch(symbol) or market not in MARKETS
+                or type(start) is not date or type(end) is not date or not 0 <= (end - start).days <= 365):
+            raise IOLRestError("IOL_REST_HISTORICAL_QUERY_UNSUPPORTED")
+        result = self._get(f"/broker/market-data/{quote(symbol, safe='')}/bars",
+                           {"market": market, "from": f"{start} 00:00:00", "to": f"{end} 23:59:59"})
+        if (not isinstance(result, dict) or (result.get("symbol"), result.get("market")) != (symbol, market)
+                or not isinstance(result.get("bars"), list)
+                or type(result.get("total_bars")) is not int
+                or result["total_bars"] != len(result["bars"]) or len(result["bars"]) > 366):
+            raise IOLRestError("IOL_REST_HISTORICAL_RESPONSE_UNVERIFIED")
+        return result
+
     def _quote(self, symbol, market, term):
-        params = {"market": market, "term": term}
-        path = f"/broker/market-data/{quote(symbol, safe='')}/"
-        data = _object(self._get(path + "quote", params))
+        data = _object(self.read_market_data("quote", symbol, market, term))
         if (data.get("symbol"), str(data.get("market", "")).upper(),
                 str(data.get("settlement_term", "")).upper()) != (symbol, market, term):
             raise IOLRestError("IOL_REST_QUOTE_IDENTITY_UNVERIFIED")
@@ -223,7 +243,7 @@ class IOLRestReadOnly:
                   "provider_observed_at": quote_at,
                   "currency": data.get("currency") if data.get("currency") in CURRENCIES else None}
         try:
-            depth = _object(self._get(path + "depth", params))
+            depth = _object(self.read_market_data("depth", symbol, market, term))
         except IOLRestError as error:
             if error.status_code in (401, 403, 429):
                 raise

@@ -12,8 +12,10 @@ from pathlib import Path
 
 try:
     from scripts.porota_validate_deploy_artifact import is_runtime_relevant
+    from scripts.porota_testing_scope import require_release_scope
 except ModuleNotFoundError:
     from porota_validate_deploy_artifact import is_runtime_relevant
+    from porota_testing_scope import require_release_scope
 
 METADATA_PREFIXES = ("ops/policy/", "ops/state/")
 
@@ -41,7 +43,9 @@ def sha256(path: Path) -> str:
 
 
 def build_bundle(repo_root: Path, output: Path, manifest_out: Path | None = None) -> dict:
-    selected = select_bundle_paths(tracked_files(repo_root))
+    paths = tracked_files(repo_root)
+    require_release_scope(paths)
+    selected = select_bundle_paths(paths)
     missing = [p for p in selected if not (repo_root / p).is_file()]
     if missing:
         raise RuntimeError("TRACKED_BUNDLE_INPUT_MISSING:" + ",".join(missing))

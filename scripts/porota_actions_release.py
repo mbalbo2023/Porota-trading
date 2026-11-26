@@ -14,6 +14,8 @@ import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from scripts.porota_testing_scope import require_release_tree
+
 REPOSITORY = "mbalbo2023/Porota-trading"
 WORKFLOW = ".github/workflows/porota-predeploy-v2.yml"
 MEMBERS = frozenset({"release.json", "porota-predeploy-image.tar.gz",
@@ -119,6 +121,7 @@ def promotion_source(repository, requested_sha=None):
     require(requested_sha or len(parents) == 3, "PROMOTION_REQUIRES_MERGE_OR_EXPLICIT_SOURCE")
     source = requested_sha or parents[2]
     require(re.fullmatch(r"[0-9a-f]{40}", source) is not None, "SOURCE_SHA_INVALID")
+    require_release_tree(repository, source)
     subprocess.run(["git", "-C", str(repository), "merge-base", "--is-ancestor", source, "HEAD"], check=True)
     tree = git(repository, "rev-parse", source + "^{tree}")
     require(tree == git(repository, "rev-parse", "HEAD^{tree}"), "PROMOTION_TREE_CHANGED_AFTER_TEST")
