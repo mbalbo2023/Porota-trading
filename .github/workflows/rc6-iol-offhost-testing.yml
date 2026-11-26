@@ -173,6 +173,8 @@ jobs:
           run_box functional 120 -m scripts.porota_ci_functional --output /tmp/functional.json "${ids[@]}"
           functional_result=$result
           set +e
+          python3 -B -m scripts.rc6_iol_offhost_timers "${ids[@]}" --output "$report/timer_inventory.json"
+          inventory_result=$?
           python3 -B -m scripts.rc6_iol_offhost verdict --directory "$report" \
             --output "$report/report.json" "${ids[@]}"
           verdict_result=$?
@@ -186,10 +188,11 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"## IOL RC6 offhost\n\nPruebas aisladas: {result['offhost_tests']}\n\n")
               summary.write(f"Timer efectivo: {result['systemd_timer']} · Gateway: {result['native_gateway_transport']}\n\n")
+              summary.write(f"Timers activos con disparo aislado: {result['active_timer_dispatches']}\n\n")
               summary.write(f"Viabilidad en rueda: **{result['market_viability']}**\n\n")
               summary.write("Promoción: **BLOQUEADA**. Artefacto de evidencia de pruebas.\n")
           PY
-          test "$focus_result$code_result$functional_result$verdict_result" = 0000
+          test "$focus_result$code_result$functional_result$inventory_result$verdict_result" = 00000
 
       - name: Publish only bounded offhost test evidence
         if: always()

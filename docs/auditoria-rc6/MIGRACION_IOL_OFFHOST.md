@@ -1,6 +1,6 @@
 # Migración de Porota RC6 a la API de IOL
 
-**Estado PROPUESTO · 26/11/2026 ART**
+**Migración PROPUESTA · Integración aislada EN PRUEBAS · 26/11/2026 ART**
 
 El objetivo es que RC6 obtenga de IOL sus datos de mercado en vivo y deje de iniciar sesiones, suscripciones y consultas a PPI. Se mantienen el modo PAPER/SHADOW, los guardas de admisión por instrumento, el broker simulado y la operación independiente de PPI Watch. El cambio termina con un único Deploy V2 del candidato integrado. La línea base de código es el producto `a6cc6e3` y el SHA físico acreditado `414771d` de #212. [Recibo de #212](https://github.com/mbalbo2023/Porota-trading/actions/runs/45871190344/artifacts/15143505124)
 
@@ -78,7 +78,7 @@ El titular autorizó el desarrollo y las pruebas. El marcador `ops/policy/rc6-io
 | Área | Prueba en este candidato | Evidencia que aún se necesita para una aceptación de rueda |
 | --- | --- | --- |
 | API e identidad | Cliente REST real con transporte de prueba. Auth, ficha, T0/T1, quote/depth, separación de relojes, moneda, timestamps de libro y trade, 429, libro cruzado y pausa de profundidad tras Current rechazado. | Captura fresca por identidad con un contrato de reloj acreditado. Cuota compartida y capacidad EXIT. |
-| Timers y workers | Contratos vigentes de las fases, uso de locks, control de los workers y recibo de arranque rootless en el entorno aislado. Smoke HTTP de PAPER en la misma imagen. | Prueba de wiring del futuro perfil IOL con su gateway y tareas completas. Los tests de systemd usan sus dobles de prueba y no acreditan timers reales del Droplet. |
+| Timers y workers | Contratos vigentes de las fases, locks y control de los workers. El runner dispara las pruebas del candidato con un timer real y despacha un verificador de archivos por timer activo. Smoke HTTP de PAPER en la misma imagen. | Ejecución de los comandos originales de cada servicio con las dependencias aisladas del perfil IOL. |
 | Históricos y velas | GET `bars` e ingesta idempotente en base separada de referencia. Lectura `as_of` original idéntica antes y después. Trade IOL alimenta el archivo de muestras de 1m y 5m con origen propio y volumen ausente. | Calificar una serie canónica nueva con base, moneda, plazo y reloj acreditados. |
 | Motores, embudo y PAPER | Cotizaciones IOL de prueba de GGAL entran por `PaperBroker.on_quote`, producen señal, compra y salida por supervisor. Ledger y rutas reales verificados. Regresión separada de letras, futuros, FCI, cauciones y embudo. | Ejercicio de entrada y EXIT con datos IOL acreditados por familia. Probar recibos independientes de los dos libros en las rutas que los exigen. |
 | Familias | Siete familias con par sintético válido de cotización y profundidad. FUTUROS, CAUCIONES y FCI verifican el HOLD cuando la fuente aplicable carece de evidencia. La matriz publica los resultados para cada una de las diez familias. | Futuro A3 en la cuenta, Book colocador con reloj de autoridad y NAV/corte por clase. Las siete rutas con par sintético requieren también dato de rueda verificable. |
@@ -107,9 +107,9 @@ La preapertura publica un recibo PAPER en un directorio temporal, con rearmado y
 | Acciones | Compra y venta desde Gateway, escáner y broker PAPER. GGAL también recorre el motor con respuestas de IOL. | Datos de rueda y reloj de origen para calificar otro proveedor. |
 | CEDEARs | Compra y venta desde Gateway y escáner con identidad exacta. | Calificar variantes de moneda y mercado con datos de rueda. |
 | ETF | El caso genérico genera señal BUY y bloquea apertura por `COST_COMPONENT_UNKNOWN:rights`. MERV completa compra y venta al suministrar la política de costos de prueba, acotada a su clave. | Política con derechos, comisión y mínimos de la plaza y variante exactas. [Derechos BYMA](https://www.byma.com.ar/mercado/regulacion/derechos-membresias) |
-| Bonos | Current/Book y admisión de contrato comprobados. El motor espera el vínculo de salida para abrir. La salida con Book2 se prueba desde un lote previo reproducido. | Unir apertura con evidencia económica revisada y con Book2 causal en una misma operación. |
+| Bonos | Current/Book y admisión de contrato comprobados en el replay de Gateway. Otro replay parte de cero posiciones, compra el lote revisado y vende usando el primer Book posterior al ACK firmado. | Acreditar términos y costos de la variante, y llevar al escáner la atestación vigente del testigo EXIT mediante el canal autenticado. |
 | Letras | Compra PAPER y cobro al vencimiento tras casar el evento de pago de prueba. | Unir la observación y el evento del emisor en el mismo caso integrado. |
-| ON | Current/Book y admisión de contrato comprobados. Venta causal PAPER desde lote previo reproducido. | Acreditar política económica y autoridad de salida para una apertura y venta en el mismo caso. |
+| ON | Current/Book y admisión de contrato comprobados. Compra del lote revisado y venta causal con Book2 firmado en la misma DB temporal. | Calificar la evidencia independiente del emisor y vincular la autoridad de salida al proceso del escáner. |
 | Opciones | Serie y subyacente pasan por Gateway, decisión long, compra y venta en el ledger. | Calificar la serie exacta y sus libros valorados en rueda. |
 | Futuros | DLR recorre entrada, reserva, variación, Book de salida y cierre con contrato A3. | Confirmar cobertura de mercado y permisos de datos para el proveedor evaluado. [Contrato A3](https://a3mercados.com.ar/productos/futuros-y-opciones/monedas/dolar) |
 | Cauciones | El worker consume libro colocador de prueba, coloca, liquida al vencimiento y acredita capital e interés una sola vez. | Acreditar versión del contrato y libro fresco con TNA, monto, lado, plazo, moneda y reloj. |
@@ -127,3 +127,26 @@ Consulta del 26/11/2026. La ficha CAFCI identifica la clase 3697 del fondo 1301,
 ### RCA del recibo de salida de Futuros
 
 La compra, reserva y salida DLR quedaron escritas en SQLite. El embudo falló con `IMMUTABLE_DECISION_KEY_MISMATCH` al leer el Book de marca o cierre. El ledger guarda ese recibo y la decisión en la misma tabla inmutable con esquemas distintos. El cambio valida el digest y el vínculo del recibo tipado con su evento, y lo deja en el camino de liquidación sin contar una nueva decisión. La regresión pasa el ledger original por los dos lectores y verifica el rechazo si se altera el hash. No requiere migrar ni reescribir filas previas. [Scope del RCA](https://github.com/mbalbo2023/Porota-trading/issues/980#issuecomment-7201612862)
+
+## De COLD a la señal de compra
+
+| Etapa | Comportamiento que se verifica |
+| --- | --- |
+| Catálogo READY | Clave exacta de símbolo, familia, mercado, moneda y plazo. El catálogo y el candidato PIT deben concordar. El estado acredita identidad y contrato. |
+| COLD / DISCOVERY | El escáner rota un cupo acotado del universo. El modo dinámico usa ranking congelado en preapertura y evidencia contemporánea para promover un instrumento a observación sostenida. Las posiciones abiertas conservan prioridad para EXIT. |
+| WARM | Un conjunto acotado acumula muestras válidas. El planificador deduplica el reloj de origen y exige que el dato corresponda a la estrategia. Spot usa Current y Book. Scalping usa Intraday con volumen confirmado y Book. |
+| HOT | En dinámica aprobada hay presupuesto vigente, calentamiento completo y libro fresco. Sólo las claves HOT con muestras listas y liquidez acreditada pasan a selección de entrada. En fallback, el escáner pide PIT READY y cupo de entrada de la clave exacta. En ambos casos el broker vuelve a validar los datos. |
+| Señal BUY | El motor spot compara la media de los últimos tres negocios con la de hasta ocho, penaliza el spread y aplica el umbral configurado. El valor por defecto del runtime es 0,62, con seis muestras en 90 minutos. Se aplican además los controles temporales. Scalping evalúa su propia evidencia de rango, volumen y costo. Las demás familias delegan a su estrategia financiera. |
+| Admisión y fill | El broker congela la decisión y verifica sesión, preapertura, identidad, costos, caja, exposición, riesgo concurrente, lote y profundidad. Registra `BUY_SIMULATED` bajo bloqueo SQLite si todos los controles aplicables pasan. Sólo entonces hay posición PAPER para el lector independiente de EXIT. |
+
+La prueba SHADOW del planificador reproduce DISCOVERY → WARM → HOT, preserva la configuración congelada y verifica cero decisiones o fills. El replay de GGAL usa un catálogo PPI de prueba para la identidad, ficha/quote/depth IOL para las observaciones, el selector real del escáner y el recibo temporal de preapertura. El primer trade produce `SIGNAL_WARMUP`. Con nueve muestras progresivas se registran compra y venta PAPER. El dato conserva origen IOL y un contrato con plazo distinto se rechaza antes de pedir datos. La custodia IOL en el proceso Gateway y la selección dinámica con autoridad IOL siguen pendientes. [Planificador de observación](../../rc6_dynamic_universe/orchestrator.py) · [Selección del escáner](../../bf_production_paper_observer.py) · [Motor PAPER](../../be_paper_engine.py)
+
+### RCA y defensa de Bonos y ON
+
+La estrategia devolvía `FI_NATIVE_EVENT_EXIT_ENGINE_NOT_BOUND` aun con el escenario, los costos y el OOS de prueba revisados. El adaptador de apertura reconocía únicamente la salida por vencimiento de Letras. El circuito posterior de venta con Book2 firmado era capaz de liquidar lotes ya existentes.
+
+El cambio conecta la compra al circuito de venta ya definido. Exige la política vigente para la clave exacta y el testigo independiente anclado al release. Congela el lote VN y el costo revisados, reserva el principal, vuelve a comprobar la autoridad bajo el bloqueo SQLite y registra posición, compra y alta en el ledger económico juntos. El supervisor respeta el horizonte más restrictivo. La regresión reinicia el broker, registra el ACK posterior al commit de venta y selecciona el primer Book estrictamente posterior. Una prueba revoca el firmante entre señal y admisión y comprueba que no quedan posición, fill ni lote. El replay usa evidencia sintética. Falta acreditar en procesos separados cómo el escáner recibe, valida y revoca la autoridad pública del testigo que el supervisor custodia actualmente.
+
+### Disparo de los timers del inventario activo
+
+El plan de pruebas lee el manifiesto de control plane y liga cada timer instalado y activo con su servicio y hashes. `systemd-analyze` interpreta las expresiones originales. En el runner hospedado un timer transitorio por cada entrada dispara un worker no privilegiado que verifica ambos archivos en modo de sólo lectura. El artefacto `timer_inventory.json` exige disparo y finalización de cada uno. El timer de la suite focal sigue ejecutando la regresión funcional en la imagen sin red. Los comandos de producción de cada servicio quedan pendientes de prueba con dependencias aisladas. [Inventario de timers](../../scripts/rc6_iol_offhost_timers.py) · [Workflow aislado](../../.github/workflows/rc6-iol-offhost-testing.yml)

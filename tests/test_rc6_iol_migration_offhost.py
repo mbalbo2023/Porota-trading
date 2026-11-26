@@ -1,4 +1,5 @@
 """Run IOL through the real client, clock guards, PAPER broker and isolated SQLite."""
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
@@ -154,9 +155,36 @@ def test_iol_family_contract(identity, tmp_path):
 
 
 def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
+    import bf_production_paper_observer as observer
+    import bu_instrument_catalog as catalog
+    from bq_exit_policy import PaperSessionPolicy
+    from rc6_paper_admission_gate import paper_admission_guard
+    from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
+
     market, transport = reader(tmp_path)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    observer._support_schema(store)
+    monkeypatch.setattr(ReplayClock, "value", AT)
+    monkeypatch.setattr(catalog, "datetime", ReplayClock)
+    monkeypatch.setattr(observer, "now_iso", lambda: transport.now.isoformat())
+    _preopen(tmp_path, monkeypatch)
+    request = GGAL[0], GGAL[1], GGAL[4]
+    assert request not in observer._runtime_readiness(store)[1]
+    primary = catalog.normalize_record({
+        "ticker": GGAL[0], "type": GGAL[1], "market": GGAL[2], "currency": GGAL[3],
+        "settlement": GGAL[4], "_discovery_source": "PPI_PRIMARY",
+    }, None, AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+    with store.connect() as db:
+        catalog.persist(db, primary)
+        catalog.sync_candidate_universe(db, AT.isoformat())
+    contract = catalog.contract_for(catalog.lookup(store, *request, market=GGAL[2], currency=GGAL[3]))
+    focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
+    assert request in selected
+    assert observer._scanner_opening_capacity(request, focus=focus, feasibility=feasibility) == (True, "")
+    with pytest.raises(IOLRestError, match="IOL_EXACT_CONTRACT_MISMATCH"):
+        market.observe(GGAL, contract=replace(contract, settlement="INMEDIATA"))
+    assert transport.calls == []
     sector_map = tmp_path / "sector-map.csv"
     sector_map.write_text(
         "ticker,family,market,currency,settlement,sector,source,author,effective_at,reviewed\n"
@@ -164,20 +192,26 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
     monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sector_map))
     monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
     broker = PaperBroker(store, clock_fn=lambda: transport.now.isoformat(), ai_mode="OFF",
-                         economics_mode="SHADOW")
+                         economics_mode="SHADOW", session_policy=PaperSessionPolicy(),
+                         admission_guard=paper_admission_guard)
     for index, price in enumerate(range(95, 104)):
         transport.now = AT + timedelta(minutes=index)
+        ReplayClock.value = transport.now
         transport.price = float(price)
-        observed = market.observe(GGAL)
+        observed = market.observe(GGAL, contract=contract)
+        assert observed.quote.metadata_source == "IOL_REST"
         store.add_quote(observed.quote)
         assert not _scanner_trade_temporal_rejection(
             observed.quote, broker, store, checked_at=transport.now.isoformat())
+        if index == 0:
+            action, _, _, fields = broker.decide(observed.quote)
+            assert (action, fields["reason_code"]) == ("HOLD", "SIGNAL_WARMUP")
     broker.on_quote(observed.quote)
     assert store.open_positions()
     position = store.open_positions()[0]
     transport.price = float(Decimal(position["target_price"]) + Decimal("0.20"))
     transport.now += timedelta(minutes=5)
-    closing = market.observe(GGAL, exit_only=True).quote
+    closing = market.observe(GGAL, contract=contract, exit_only=True).quote
     assert transport.calls == ["token"] + ["GGAL", "quote", "depth"] * 9 + ["GGAL", "depth"]
     key = tuple(position[name] for name in ("symbol", "asset_class", "settlement", "currency", "market"))
     verdict = PositionExitSupervisor(broker, clock_fn=lambda: transport.now.isoformat()).tick({key: closing})[0]

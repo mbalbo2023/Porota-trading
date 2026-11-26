@@ -78,6 +78,8 @@ class IOLMarketReader:
         symbol, family, market, currency, term = identity
         if family not in SPOT or market not in MARKETS or term not in TERMS:
             raise IOLRestError("IOL_MARKET_IDENTITY_UNSUPPORTED")
+        if contract is not None and contract.key != tuple(identity):
+            raise IOLRestError("IOL_EXACT_CONTRACT_MISMATCH")
         venue_key = symbol, MARKETS[market], TERMS[term]
         # The depth response can omit currency. Bind it to an independent exact
         # asset response as well as to the symbol/market/term depth response.

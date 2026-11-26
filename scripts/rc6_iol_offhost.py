@@ -13,6 +13,7 @@ import tempfile
 from xml.etree import ElementTree
 
 from scripts.porota_testing_scope import TESTING_ONLY_MARKER
+from scripts.rc6_iol_offhost_timers import DISPATCH, SCHEMA as TIMER_INVENTORY_SCHEMA, timer_inventory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,11 @@ NATIVE_REPLAY = "tests/test_rc6_ppi_gateway_family_ready.py"
 NATIVE_CASE = NATIVE_REPLAY + "::test_one_instrument_per_family_through_gateway_and_engine"
 FI_RUNTIME = "tests/test_rc6_fixed_income_runtime.py"
 FI_EXIT = "tests/test_rc6_fi_market_sale_authority.py::test_exit_reader_and_supervisor_replay_archived_wheel_books"
+FI_ROUNDTRIP = "tests/test_rc6_fi_market_sale_authority.py::test_reviewed_market_lot_buys_then_sells_after_signer_ack"
+FI_LOCKED_EXIT_GUARD = ("tests/test_rc6_fi_market_sale_authority.py"
+                       "::test_market_buy_freeze_cannot_admit_after_exit_signer_is_revoked")
+COLD_TO_HOT = ("tests/test_rc6_shadow_runtime_wiring.py"
+               "::test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens")
 CAUCION_SWEEP = ("tests/test_ws_caucion_12_live_ppi_wiring.py"
                  "::test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid")
 FCI_CALENDAR = ("tests/test_rc6_a232_fund_caucion_market_entry.py"
@@ -35,12 +41,14 @@ PAPER_CYCLES = {
     "CEDEARS": ("BUY_SELL_SIMULATED", (NATIVE_CASE + "[CEDEARS]",)),
     "ETFS": ("BUY_SELL_WITH_TEST_FEES_UNVERIFIED_COST_HOLD",
              (NATIVE_CASE + "[ETFS]", NATIVE_CASE + "[MERV_TEST_FEE_CYCLE]")),
-    "BONOS": ("ENTRY_HOLD_AND_SEEDED_BOOK2_SALE", (
+    "BONOS": ("BUY_AND_SIGNED_BOOK2_SALE_SIMULATED", (
+        FI_ROUNDTRIP + "[BONOS]",
         FI_RUNTIME + "::test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound[BONOS]",
         FI_EXIT + "[GD30]")),
     "LETRAS": ("BUY_AND_REDEMPTION_SIMULATED", (
         FI_RUNTIME + "::test_reviewed_letter_opens_exact_vn_and_closes_only_after_the_matched_payment",)),
-    "OBLIGACIONES": ("ENTRY_HOLD_AND_SEEDED_BOOK2_SALE", (
+    "OBLIGACIONES": ("BUY_AND_SIGNED_BOOK2_SALE_SIMULATED", (
+        FI_ROUNDTRIP + "[OBLIGACIONES]",
         FI_RUNTIME + "::test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound[OBLIGACIONES]",
         FI_EXIT + "[YMCJO]")),
     "OPCIONES": ("BUY_SELL_SIMULATED", (NATIVE_CASE + "[OPCIONES]",)),
@@ -62,10 +70,11 @@ DOMAINS = {
                 "tests/test_rc6_a232_fund_caucion_market_entry.py", "tests/test_cash_sweep_runtime_hf6.py",
                 "tests/test_rc6_fund_paper_allocator.py"),
     "funnels": ("tests/test_rc6_shadow_operational_funnel.py", "tests/test_rc6_shadow_entry_signals.py",
-                LAB + "::test_ggal_paper_ledger_and_exit"),
+                COLD_TO_HOT, LAB + "::test_ggal_paper_ledger_and_exit"),
     "paper_exit": ("tests/test_rc6_take_profit_regression.py", LAB + "::test_ggal_paper_ledger_and_exit"),
     "native_gateway_scanner": (NATIVE_REPLAY,),
-    "family_lifecycles": (FI_RUNTIME, FI_EXIT, CAUCION_SWEEP, FCI_CALENDAR, FCI_SETTLEMENT),
+    "family_lifecycles": (FI_RUNTIME, FI_EXIT, FI_ROUNDTRIP, FI_LOCKED_EXIT_GUARD,
+                          CAUCION_SWEEP, FCI_CALENDAR, FCI_SETTLEMENT),
     "complementary_sources": ("tests/test_rc6_a234_cafci_fci_reference.py",
                               "tests/test_rc6_ppi_public_fci_reference.py",
                               "tests/test_rc6_future_contract_policy.py",
@@ -163,6 +172,7 @@ def verdict(directory, identity):
     code = _read(directory, "code.json")
     functional = _read(directory, "functional.json")
     timer = _read(directory, "timer.json")
+    timer_dispatch = _read(directory, "timer_inventory.json")
     def exact(value):
         return all(value.get(key) == expected for key, expected in identity.items())
 
@@ -187,12 +197,21 @@ def verdict(directory, identity):
                  and timer.get("scheduler") == "SYSTEMD_TRANSIENT_TIMER"
                  and exact(timer) and timer.get("triggered") is True
                  and timer.get("worker_completed") is True)
+    expected_timers = timer_inventory(ROOT, identity["source_sha"])
+    dispatched = (timer_dispatch.get("schema") == TIMER_INVENTORY_SCHEMA and exact(timer_dispatch)
+                  and timer_dispatch.get("dispatch") == DISPATCH
+                  and timer_dispatch.get("worker") == "READ_ONLY_SOURCE_HASH_CHECK"
+                  and timer_dispatch.get("production_service_bodies") == "NOT_EXECUTED"
+                  and timer_dispatch.get("timers") == {
+                      name: {**source, "triggered": True, "worker_completed": True}
+                      for name, source in expected_timers.items()})
     return {"schema": "porota.iol.offhost.v1", **identity,
             "environment": "OFFHOST_REPLAY", "regression": "PASS" if regression else "FAIL",
             "paper_and_http": "PASS" if paper else "FAIL", "focused": "PASS" if focused else "FAIL",
             "systemd_timer": "PASS" if scheduled else "FAIL",
+            "active_timer_dispatches": len(expected_timers) if dispatched else 0,
             "native_gateway_transport": focus.get("native_gateway_transport", "UNVERIFIED"),
-            "offhost_tests": "PASS" if regression and paper and focused and scheduled else "FAIL",
+            "offhost_tests": "PASS" if regression and paper and focused and scheduled and dispatched else "FAIL",
             "regression_tests": code.get("executed") if regression else None,
             "real_orders_sent": 0 if paper else None, "deployment_allowed": False,
             "market_viability": "INVIABLE", "reason": "IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED",
