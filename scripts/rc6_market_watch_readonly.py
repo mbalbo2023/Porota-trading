@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+from bisect import bisect_left, bisect_right
 from collections import Counter
+import csv
 import io
 import zipfile
 from contextlib import closing
@@ -1868,6 +1870,16 @@ _GATEWAY_CONSTRUCTION_REASONS = _GATEWAY_CATALOG_REASONS | frozenset({
 _GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
 _GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
 _PPI_OBSERVATION_ENDPOINTS = ("current", "book", "intraday")
+_PPI_AUDIT_PATHS = {
+    "/api/1.0/marketdata/" + name: "GET:" + name
+    for name in (*_PPI_OBSERVATION_ENDPOINTS, "searchinstrument", "search", "bonds/estimate")
+} | {
+    "/api/1.0/configuration/" + name: "GET:configuration/" + name
+    for name in ("instrumenttypes", "markets", "settlements", "quantitytypes",
+                 "operationterms", "operationtypes", "operations", "holidays", "islocalholiday")
+} | {"/api/1.0/account/" + name: "POST:" + name for name in ("loginapi", "refreshtoken")}
+_PPI_TRAFFIC_VALUES = ("admitted", "backpressure", "blocked", "native_200", "provider_429")
+_PPI_TRAFFIC_VERDICTS = {"ALLOWED": "admitted", "BACKPRESSURE": "backpressure", "BLOCKED": "blocked"}
 _OPERATIONAL_ALERT_COMPONENTS = {
     "PPI_PRODUCTION_AUTH", "PPI_PRODUCTION_MARKETDATA", "PPI_PRODUCTION_HISTORY",
 }
@@ -1880,6 +1892,160 @@ def _ppi_intake_reason(value):
                                    value == "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID"):
         return value
     return "UNCLASSIFIED" if value else None
+
+
+def _ppi_wheel_traffic(path, *, at=None):
+    """Second-by-second audit and response witnesses in the regular ART session."""
+    seen_at = (at or now_utc()).astimezone(ART)
+    opened = seen_at.replace(hour=10, minute=30, second=0, microsecond=0)
+    closed = seen_at.replace(hour=17, minute=0, second=0, microsecond=0)
+    ceiling = min(seen_at.replace(microsecond=0), closed)
+    seconds = int((ceiling - opened).total_seconds())
+    result = {"status": "NO_VERIFICADO", "read_only": True,
+              "start": opened.isoformat(), "end": ceiling.isoformat()}
+    if seconds <= 0:
+        return result
+    per_second, endpoints, origins, hours = {}, {}, Counter(), {}
+    response_429, allowed_times, owner_events, cycle_clocks = [], [], [], []
+    limit = 20001
+    oldest = None
+    complete = True
+    def tally(seen, field):
+        offset = int((seen - opened).total_seconds())
+        per_second.setdefault(offset, Counter())[field] += 1
+        hour = (offset + 1800) // 3600 + 10
+        hours.setdefault(hour, Counter())[field] += 1
+
+    try:
+        uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True, timeout=.2)) as db:
+            db.execute("PRAGMA query_only=ON")
+            deadline = time.monotonic() + 1.65
+            db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            db.execute("BEGIN")
+            if db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone() != (
+                    "PRODUCTION_PAPER", 0):
+                return result
+            audit = db.execute("""SELECT happened_at,method,substr(path,1,180),result
+                                FROM http_audit ORDER BY id DESC LIMIT ?""", (limit,)).fetchall()
+            for clock, method, route, verdict in audit:
+                seen = timestamp(clock)
+                if seen is None:
+                    continue
+                oldest = seen if oldest is None else min(oldest, seen)
+                endpoint = _PPI_AUDIT_PATHS.get(route)
+                field = _PPI_TRAFFIC_VERDICTS.get(verdict)
+                if not (opened <= seen < ceiling and endpoint and isinstance(method, str)
+                        and endpoint.startswith(method + ":") and field):
+                    continue
+                tally(seen, field)
+                endpoints.setdefault(endpoint, Counter())[field] += 1
+                if field == "admitted":
+                    allowed_times.append(seen.timestamp())
+            complete = len(audit) < limit or (oldest is not None and oldest <= opened)
+
+            event_kinds = {
+                "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS": "scanner_discovery",
+                "PPI_DIRECT_REST_PROBE_HOLD": "scanner_discovery",
+                "DATA_ERROR": "scanner",
+                "INTRADAY_SCALPING_BACKPRESSURE": "scalping",
+                "INTRADAY_SCALPING_ERROR": "scalping",
+                "PPI_GATEWAY_AUTH_REFRESH": "gateway_auth",
+            }
+            for event, origin in event_kinds.items():
+                events = db.execute("""SELECT event_at,substr(detail,1,700) FROM paper_events
+                    WHERE event_type=? AND julianday(event_at)>=julianday(?)
+                    AND julianday(event_at)<julianday(?) ORDER BY julianday(event_at) LIMIT ?""",
+                    (event, opened.isoformat(), ceiling.isoformat(), limit)).fetchall()
+                complete = complete and len(events) < limit
+                for clock, detail in events:
+                    seen = timestamp(clock)
+                    if seen is None or not isinstance(detail, str):
+                        continue
+                    if event == "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS":
+                        fields = dict(part.split("=", 1) for part in detail.split(";") if "=" in part)
+                        received = timestamp(fields.get("wire_received_at_utc"))
+                        endpoint = fields.get("endpoint")
+                        if (received is not None and opened <= received < ceiling
+                                and endpoint in _PPI_OBSERVATION_ENDPOINTS and fields.get("http_status") == "200"):
+                            tally(received, "native_200")
+                            endpoints.setdefault("GET:" + endpoint, Counter())["native_200"] += 1
+                        continue
+                    code = detail.split(": ", 1)[-1].split(";", 1)[0]
+                    if opened <= seen < ceiling and code in {
+                            "PPI_NATIVE_HTTP_429", "PPI_AUX_HTTP_429", "PPI_OWNER_REFRESH_HTTP_429"}:
+                        tally(seen, "provider_429")
+                        origins[origin] += 1
+                        response_429.append((seen, origin))
+
+            # Availability of the previous reader and changes after close matter
+            # when reconciling the independently archived scanner counters.
+            for kind in ("PPI_GATEWAY_OWNER_OPEN", "PPI_GATEWAY_AUTH_RECOVERY", "PPI_GATEWAY_HOLD"):
+                clocks = db.execute("""SELECT event_at FROM paper_events WHERE event_type=?
+                    AND julianday(event_at)>=julianday(?) AND julianday(event_at)<=julianday(?)
+                    ORDER BY julianday(event_at) LIMIT 257""",
+                    (kind, (opened - timedelta(hours=2)).isoformat(), seen_at.isoformat())).fetchall()
+                complete = complete and len(clocks) <= 256
+                for (clock,) in clocks:
+                    parsed = timestamp(clock)
+                    if parsed is not None:
+                        owner_events.append((parsed.astimezone(ART).isoformat(), kind))
+            for (clock,) in db.execute("""SELECT finished_at FROM universe_cycle_metrics
+                    WHERE julianday(finished_at)>=julianday(?) AND julianday(finished_at)<=julianday(?)
+                    ORDER BY id LIMIT 4097""", (opened.isoformat(), seen_at.isoformat())):
+                parsed = timestamp(clock)
+                if parsed is not None:
+                    cycle_clocks.append(parsed.astimezone(ART).isoformat())
+            saved = db.execute("SELECT http_allowed FROM observer_state WHERE id=1").fetchone()
+    except (OSError, sqlite3.Error):
+        return result
+
+    totals = Counter()
+    per_second_rows = []
+    for offset in sorted(per_second):
+        counts = per_second[offset]
+        totals.update(counts)
+        per_second_rows.append([offset, *(counts[field] for field in _PPI_TRAFFIC_VALUES)])
+    allowed_times.sort()
+    # Audit timestamp drives the demand windows. The 429 timestamp is the
+    # runtime's report of the provider response, not a request-start time.
+    surrounding = []
+    for seen, origin in sorted(response_429):
+        stop = bisect_right(allowed_times, seen.timestamp())
+        preceding = {str(span): stop - bisect_left(allowed_times, seen.timestamp() - span, hi=stop)
+                     for span in (1, 10, 60)}
+        surrounding.append({"at": seen.astimezone(ART).isoformat(), "origin": origin,
+                            "admitted_preceding_seconds": preceding})
+    rolling_peak = max((i + 1 - bisect_left(allowed_times, when - 60, hi=i + 1)
+                        for i, when in enumerate(allowed_times)), default=0)
+    return {**result, "status": ("FULL_RECORDED_SESSION" if complete and ceiling == closed else "PARTIAL"),
+            "seconds": seconds, "fields": list(_PPI_TRAFFIC_VALUES), "per_second": per_second_rows,
+            "totals": {field: totals[field] for field in _PPI_TRAFFIC_VALUES},
+            "by_endpoint": endpoints, "by_hour_art": hours, "provider_429_by_origin": origins,
+            "provider_429_surrounding_admissions": surrounding,
+            "peak_admissions_per_second": max((row[1] for row in per_second_rows), default=0),
+            "peak_admissions_rolling_60s": rolling_peak,
+            "admitted_per_second_average": round(totals["admitted"] / seconds, 6),
+            "seconds_with_admissions": sum(row[1] > 0 for row in per_second_rows),
+            "native_total_sends_status": "NO_VERIFICADO_NO_CONTINUOUS_WIRE_COUNTER",
+            "gateway_owner_events": sorted(owner_events),
+            "scanner_cycles_finished_at": cycle_clocks,
+            "last_scanner_saved_send_counter": saved[0] if saved and type(saved[0]) is int else None}
+
+
+def _write_ppi_wheel_csv(report, path):
+    opened = timestamp(report.get("start"))
+    seconds = report.get("seconds")
+    if (opened is None or type(seconds) is not int or not 0 < seconds <= 23400
+            or report.get("status") != "FULL_RECORDED_SESSION"):
+        return
+    counts = {row[0]: row[1:] for row in report["per_second"]}
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["hora_art", *report["fields"]])
+        for offset in range(seconds):
+            at = (opened + timedelta(seconds=offset)).astimezone(ART)
+            writer.writerow([at.isoformat(), *counts.get(offset, (0,) * len(_PPI_TRAFFIC_VALUES))])
 
 
 def _ppi_telegram_timeline(db, floor, at, throttle_times):
@@ -2075,6 +2241,7 @@ try:
     result["owner"] = owner["state"]
     result["registered_roles"] = list(owner["registered_roles"])
     result["guard_login_wire_attempts"] = owner["guard_login_wire_attempts"]
+    result["guard_http_allowed_total"] = owner["guard_http_allowed"]
     result["provider_transport"] = {
         "last_native_http_rejection": status.get("native_last_http_status"),
         "retry_after_seconds": status.get("native_retry_after_seconds_observed"),
@@ -2191,7 +2358,8 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
         if context.current["source_tree"] != expected_tree_sha:
             return {**receipt, "reason": "PRODUCT_TREE_MISMATCH"}
         receipt.update(source_sha=context.current["source_sha"], source_tree=expected_tree_sha,
-                       intake=_ppi_intake_evidence(ROOT / DB_REL))
+                       intake=_ppi_intake_evidence(ROOT / DB_REL),
+                       wheel_traffic=_ppi_wheel_traffic(ROOT / DB_REL))
         result = context.host.docker.command_result(
             "container", "exec", context.roles["observer"], "python", "-B", "-c",
             _GATEWAY_DIAGNOSTIC_CHILD, timeout=26)
@@ -2216,6 +2384,9 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
             and all(isinstance(role, str) and role in _GATEWAY_LOCAL_ROLES for role in roles)
             and len(roles) == len(set(roles))):
         receipt.update(owner=owner, registered_roles=sorted(roles), guard_login_wire_attempts=1)
+        cumulative = values.get("guard_http_allowed_total")
+        if type(cumulative) is int and 1 <= cumulative <= 10**9:
+            receipt["current_owner_cumulative_adapter_sends"] = cumulative
         receipt["provider_transport"] = _gateway_provider_transport(values.get("provider_transport"))
         receipt["wire_counter_window"] = _gateway_wire_counter_window(values.get("wire_counter_window"))
     catalog = values.get("catalog")
@@ -2685,6 +2856,9 @@ def main(argv=None):
     actions.add_parser("shadow-diagnostic-host")
     gateway = actions.add_parser("ppi-gateway-diagnostic-host")
     gateway.add_argument("--expected-tree-sha", required=True)
+    traffic_csv = actions.add_parser("ppi-wheel-csv")
+    traffic_csv.add_argument("--receipt", type=Path, required=True)
+    traffic_csv.add_argument("--output", type=Path, required=True)
     actions.add_parser("schedule-api-host")
     actions.add_parser("observer-lifecycle-host")
     actions.add_parser("recent-critical-host")
@@ -2736,6 +2910,10 @@ def main(argv=None):
         if not re.fullmatch(r"[0-9a-f]{40}", args.expected_tree_sha):
             raise SystemExit("INVALID_EXPECTED_TREE_SHA")
         data = ppi_gateway_diagnostic_host(args.expected_tree_sha)
+    elif args.action == "ppi-wheel-csv":
+        evidence = load_bounded(args.receipt) or {}
+        _write_ppi_wheel_csv(evidence.get("wheel_traffic", {}), args.output)
+        return 0
     elif args.action == "schedule-api-host":
         data = schedule_api_host()
     elif args.action == "observer-lifecycle-host":

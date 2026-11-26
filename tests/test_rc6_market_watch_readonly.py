@@ -533,6 +533,62 @@ class MonitorContracts(unittest.TestCase):
         self.assertNotIn("DO_NOT_LEAK", json.dumps(evidence))
         self.assertEqual(self.db.read_bytes(), before)
 
+    def test_wheel_traffic_uses_regular_session_edges_and_separate_wire_evidence(self):
+        path = self.root / "paper-traffic.db"
+        opened = datetime(2026, 11, 26, 13, 30, tzinfo=timezone.utc)
+        market_close = opened + timedelta(hours=6, minutes=30)
+        current = "/api/1.0/marketdata/current"
+        book = "/api/1.0/marketdata/book"
+        with sqlite3.connect(path) as db:
+            db.executescript("""CREATE TABLE observer_state (
+                id INTEGER PRIMARY KEY, mode TEXT, real_orders_sent INTEGER, http_allowed INTEGER);
+                INSERT INTO observer_state VALUES(1,'PRODUCTION_PAPER',0,6);
+                CREATE TABLE http_audit (id INTEGER PRIMARY KEY, happened_at TEXT, method TEXT,
+                    path TEXT, result TEXT);
+                CREATE TABLE paper_events (id INTEGER PRIMARY KEY, event_at TEXT, event_type TEXT, detail TEXT);
+                CREATE TABLE universe_cycle_metrics (id INTEGER PRIMARY KEY, finished_at TEXT);""")
+            db.executemany("INSERT INTO http_audit VALUES(NULL,?,?,?,?)", [
+                ((opened - timedelta(seconds=1)).isoformat(), "GET", current, "ALLOWED"),
+                (opened.isoformat(), "GET", current, "ALLOWED"),
+                ((opened + timedelta(milliseconds=90)).isoformat(), "GET", current, "ALLOWED"),
+                ((opened + timedelta(milliseconds=120)).isoformat(), "GET", book, "ALLOWED"),
+                ((opened + timedelta(milliseconds=150)).isoformat(), "GET", book, "BACKPRESSURE"),
+                ((opened + timedelta(seconds=3)).isoformat(), "GET", "/PRIVATE", "BLOCKED"),
+                ((market_close - timedelta(seconds=1)).isoformat(), "POST", "/api/1.0/account/loginapi", "ALLOWED"),
+                (market_close.isoformat(), "GET", current, "ALLOWED"),
+            ])
+            seen = opened + timedelta(seconds=2)
+            db.executemany("INSERT INTO paper_events VALUES(NULL,?,?,?)", [
+                (opened.isoformat(), "PPI_GATEWAY_OWNER_OPEN", "PRIVATE"),
+                (seen.isoformat(), "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS",
+                 "identity5=PRIVATE;endpoint=current;http_status=200;"
+                 f"wire_received_at_utc={opened.isoformat()}"),
+                (seen.isoformat(), "PPI_DIRECT_REST_PROBE_HOLD", "PPI_NATIVE_HTTP_429"),
+                (seen.isoformat(), "PPI_DIRECT_REST_PROBE_HOLD", "PPI_NATIVE_PROVIDER_BACKOFF_ACTIVE"),
+                (market_close.isoformat(), "PPI_DIRECT_REST_PROBE_HOLD", "PPI_NATIVE_HTTP_429"),
+            ])
+        previous = path.read_bytes()
+        report = monitor._ppi_wheel_traffic(path, at=market_close + timedelta(minutes=10))
+        self.assertEqual(report["status"], "FULL_RECORDED_SESSION")
+        self.assertEqual(report["seconds"], 23400)
+        self.assertEqual(report["totals"], {
+            "admitted": 4, "backpressure": 1, "blocked": 0, "native_200": 1, "provider_429": 1})
+        self.assertEqual(report["per_second"], [[0, 3, 1, 0, 1, 0],
+                                                 [2, 0, 0, 0, 0, 1],
+                                                 [23399, 1, 0, 0, 0, 0]])
+        self.assertEqual(report["peak_admissions_per_second"], 3)
+        self.assertEqual(report["provider_429_surrounding_admissions"][0]["admitted_preceding_seconds"],
+                         {"1": 0, "10": 3, "60": 3})
+        self.assertNotIn("PRIVATE", json.dumps(report))
+        self.assertEqual(path.read_bytes(), previous)
+        csv_path = self.root / "wheel-by-second.csv"
+        monitor._write_ppi_wheel_csv(report, csv_path)
+        records = csv_path.read_text().splitlines()
+        self.assertEqual(len(records), 23401)
+        self.assertEqual(records[0], "hora_art,admitted,backpressure,blocked,native_200,provider_429")
+        self.assertEqual(records[1], "2026-11-26T10:30:00-03:00,3,1,0,1,0")
+        self.assertEqual(records[-1], "2026-11-26T16:59:59-03:00,1,0,0,0,0")
+
     def test_wire_sampling_uses_verified_counter_deltas_and_actual_monotonic_intervals(self):
         raw = {"started_at": NOW.isoformat(), "samples": [[0, 10], [10**9, 12], [2 * 10**9, 13]]}
         observed = monitor._gateway_wire_counter_window(raw)

@@ -202,6 +202,8 @@ jobs:
           if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/ppi_gateway.json >/dev/null 2>&1; then
             printf '%s\n' '{"schema":"rc6.ppi-gateway-diagnostic-readonly.v1","read_only":true,"status":"NO_VERIFICADO","reason":"REMOTE_PROBE_UNAVAILABLE"}' > evidence/ppi_gateway.json
           fi
+          python3 scripts/rc6_market_watch_readonly.py ppi-wheel-csv \
+            --receipt evidence/ppi_gateway.json --output evidence/ppi_wheel_by_second.csv
       - name: Diagnose SHADOW SQLite stages on manual runs only
         if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
         shell: bash
@@ -395,6 +397,7 @@ jobs:
             evidence/observer_lifecycle.json
             evidence/recent_critical.json
             evidence/ppi_gateway.json
+            evidence/ppi_wheel_by_second.csv
             evidence/dashboard_audit.json
             evidence/delivery.json
             evidence/previous/source.json
