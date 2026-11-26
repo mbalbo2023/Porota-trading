@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 causalidad física configuración Índices y autoridad FCI
+run-name: RC6 un instrumento por familia y recibos nativos existentes READ_ONLY
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -117,6 +117,58 @@ jobs:
                              ORDER BY id LIMIT 30""",(floor,cutoff,cutoff)):
                       if path in allowed_paths:
                           result["configuration_wire"].append([at,path,code(state)])
+              from contextlib import nullcontext
+              from types import SimpleNamespace
+              from bf_production_paper_observer import _ppi_direct_rest_probe_candidates
+              
+              preferred = {
+                  "ACCIONES": ("GGAL","ACCIONES","BYMA","ARS","A-24HS"),
+                  "CEDEARS": ("AAPL","CEDEARS","BYMA","ARS","A-24HS"),
+                  "BONOS": ("AL30","BONOS","BYMA","ARS","A-24HS"),
+                  "FUTUROS": ("DLR/NOV26","FUTUROS","A3","ARS","INMEDIATA"),
+                  "CAUCIONES": ("PESOS1","CAUCIONES","BYMA","ARS","INMEDIATA"),
+                  "FCI": ("BZ.AHORRO.A","FCI","BYMA","ARS","INMEDIATA"),
+              }
+              families = ("ACCIONES","CEDEARS","ETFS","BONOS","LETRAS","OBLIGACIONES",
+                          "OPCIONES","FUTUROS","CAUCIONES","FCI","INDICES")
+              safe_key = re.compile(r"^[A-Z0-9][A-Z0-9 ._+/$()-]{0,79}$")
+              physical_receipts = {}
+              for event_at, detail in db.execute("""SELECT event_at,detail FROM paper_events
+                     WHERE event_type='PPI_DIRECT_REST_NATIVE_WIRE_WITNESS'
+                       AND julianday(event_at)>=julianday(?, '-3 days')
+                     ORDER BY julianday(event_at) DESC LIMIT 240""",(result["at"],)):
+                  match = re.search(r"(?:^|;)identity5=([^;]+);endpoint=(current|book);http_status=(200);", detail)
+                  if not match:
+                      continue
+                  key = tuple(match[1].split(":"))
+                  if len(key)!=5 or not all(safe_key.fullmatch(part) for part in key):
+                      continue
+                  physical_receipts.setdefault(key,{}).setdefault(match[2], {"http":200,"at":event_at})
+              sample_status = """SELECT settlement_source, status, capability, metadata_json
+                  FROM financial_instrument_catalog
+                  WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?"""
+              result["samples"] = {}
+              view = SimpleNamespace(connect=lambda: nullcontext(db))
+              for family in families:
+                  key = preferred.get(family)
+                  record = db.execute(sample_status,key).fetchone() if key else None
+                  if not record and family!="INDICES":
+                      candidates = _ppi_direct_rest_probe_candidates(view, limit=1, family=family)
+                      key = candidates[0] if candidates else None
+                      record = db.execute(sample_status,key).fetchone() if key else None
+                  if not record or not all(safe_key.fullmatch(part) for part in key):
+                      result["samples"][family] = {"state":"NO_EXACT_PPI_SAMPLE"}
+                      continue
+                  source, state, capability, data = record
+                  metadata = json.loads(data)
+                  policy = db.execute("""SELECT can_simulate,status,detail FROM candidate_identity_v2
+                                      WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?""",key).fetchone()
+                  result["samples"][family] = {"identity":key,"catalog_state":code(state),
+                         "capability":code(capability),"settlement_source":code(source),
+                         "origin":code(metadata.get("_discovery_source")),
+                         "has_financial_terms":isinstance(metadata.get("financial_contract_v17"),dict),
+                         "paper_gate":[bool(policy[0]),code(policy[1]),code(policy[2])] if policy else None,
+                         "stored_native_http":physical_receipts.get(key,{})}
               result["fci_facts"] = {}
               for ticker in ("BZ.AHORRO.A","BZ.AHORRO.B"):
                   row = db.execute("""SELECT settlement_source, metadata_json FROM financial_instrument_catalog
