@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from collections import Counter
 import io
 import zipfile
 from contextlib import closing
@@ -1867,6 +1868,10 @@ _GATEWAY_CONSTRUCTION_REASONS = _GATEWAY_CATALOG_REASONS | frozenset({
 _GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
 _GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
 _PPI_OBSERVATION_ENDPOINTS = ("current", "book", "intraday")
+_OPERATIONAL_ALERT_COMPONENTS = {
+    "PPI_PRODUCTION_AUTH", "PPI_PRODUCTION_MARKETDATA", "PPI_PRODUCTION_HISTORY",
+}
+_OPERATIONAL_ALERT_STATES = {"PENDING", "SENDING", "SENT", "DEAD", "SUPPRESSED_WEEKEND"}
 
 
 def _ppi_intake_reason(value):
@@ -1875,6 +1880,72 @@ def _ppi_intake_reason(value):
                                    value == "NATIVE_CURRENT_OR_BOOK_STALE_OR_INVALID"):
         return value
     return "UNCLASSIFIED" if value else None
+
+
+def _ppi_telegram_timeline(db, floor, at, throttle_times):
+    """Export bounded presend and delivery records with their own time bases."""
+    by_second = Counter()
+    by_endpoint = Counter()
+    recent_endpoints = Counter()
+    oldest = None
+    rows = db.execute("""SELECT happened_at,method,substr(path,1,180),result
+                           FROM http_audit ORDER BY id DESC LIMIT 4097""").fetchall()
+    recent_floor = at - timedelta(seconds=90)
+    for happened_at, method, route, verdict in rows:
+        seen = timestamp(happened_at)
+        if seen is None:
+            continue
+        oldest = seen if oldest is None else min(oldest, seen)
+        if method != "GET" or verdict != "ALLOWED" or not floor <= seen <= at:
+            continue
+        endpoint = route.rsplit("/", 1)[-1].lower() if isinstance(route, str) else ""
+        if endpoint in _PPI_OBSERVATION_ENDPOINTS:
+            by_endpoint[endpoint] += 1
+            by_second[int(seen.timestamp())] += 1
+            if seen >= recent_floor:
+                recent_endpoints[endpoint] += 1
+    peak = max(by_second, key=lambda second: (by_second[second], second), default=None)
+    presend = {"status": "BOUNDED_TAIL" if len(rows) == 4097 and (oldest is None or oldest > floor)
+               else "WINDOW_OBSERVED", "window_start": floor.isoformat(),
+               "by_endpoint": dict(by_endpoint), "last_90s_by_endpoint": dict(recent_endpoints),
+               "last_90s_average_per_second": round(sum(recent_endpoints.values()) / 90, 4),
+               "peak_utc_second": datetime.fromtimestamp(peak, timezone.utc).isoformat()
+               if peak is not None else None, "peak_admissions": by_second[peak] if peak is not None else 0}
+    telegram = {"status": "OUTBOX_ABSENT"}
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_notification_outbox'").fetchone():
+        rows = db.execute("""SELECT substr(event_key,1,100),kind,created_at,sent_at,state,attempts,
+                           message_id IS NOT NULL,last_error='429',substr(body,1,420)
+                           FROM paper_notification_outbox
+                           WHERE kind IN ('OPERATIONAL_HEALTH_RED','OPERATIONAL_HEALTH_RECOVERY')
+                           ORDER BY id DESC LIMIT 161""").fetchall()
+        deliveries = []
+        cutoff = min(floor, at - timedelta(hours=6))
+        for key, kind, created, sent, state, attempts, ack, rate_limited, body in rows:
+            seen = timestamp(created)
+            delivered = timestamp(sent)
+            component = key.split(":", 2)[1] if isinstance(key, str) and key.count(":") >= 2 else ""
+            if not seen or not cutoff <= seen <= at or component not in _OPERATIONAL_ALERT_COMPONENTS:
+                continue
+            ack_time = delivered if state == "SENT" and ack and delivered and seen <= delivered <= at else None
+            coverage = re.search(r"\b(\d{1,5})/(\d{1,5}) instrumentos con cotizaci[oó]n", body or "")
+            preceding = max((event for event in throttle_times if event <= (ack_time or seen)), default=None)
+            following = min((event for event in throttle_times if event > (ack_time or seen)), default=None)
+            deliveries.append({"component": component, "kind": kind, "created_at": seen.isoformat(),
+                               "ack_at": ack_time.isoformat() if ack_time else None,
+                               "state": state if state in _OPERATIONAL_ALERT_STATES else "OTHER",
+                               "attempts": attempts if type(attempts) is int and 0 <= attempts <= 100 else None,
+                               "telegram_429": bool(rate_limited),
+                               "quoting_instruments": [int(value) for value in coverage.groups()]
+                               if coverage else None,
+                               "preceding_ppi_429_at": preceding.isoformat() if preceding else None,
+                               "following_ppi_429_at": following.isoformat() if following else None})
+        telegram = {"status": "BOUNDED_TAIL" if len(rows) == 161 else "WINDOW_OBSERVED",
+                    "window_start": cutoff.isoformat(), "observed_count": len(deliveries),
+                    "counts_by_kind_and_state": dict(Counter(
+                        item["kind"] + ":" + item["state"] for item in deliveries)),
+                    "latest": deliveries[:32]}
+    return {"presend_admissions": presend, "telegram_outbox": telegram,
+            "provider_429_observed_at": [item.isoformat() for item in throttle_times[:24]]}
 
 
 def _ppi_intake_evidence(path, *, at=None):
@@ -1923,7 +1994,7 @@ def _ppi_intake_evidence(path, *, at=None):
                                       for name in ("slots", "attempted", "fresh_pairs", "attested")},
                                    "reason": _ppi_intake_reason(discovery.get("reason"))}})
 
-            native, holds, last_hold_at = {}, {}, {}
+            native, holds, last_hold_at, throttle_times = {}, {}, {}, []
             for event in ("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", "PPI_DIRECT_REST_PROBE_HOLD"):
                 rows = db.execute("""SELECT event_at,substr(detail,1,512)
                     FROM paper_events WHERE event_type=? AND julianday(event_at)>=julianday(?)
@@ -1936,6 +2007,8 @@ def _ppi_intake_evidence(path, *, at=None):
                         reason = _ppi_intake_reason(detail) or "UNCLASSIFIED"
                         holds[reason] = holds.get(reason, 0) + 1
                         last_hold_at.setdefault(reason, seen.isoformat())
+                        if reason in {"PPI_NATIVE_HTTP_429", "PPI_HTTP_429"}:
+                            throttle_times.append(seen)
                         continue
                     fields = dict(field.split("=", 1) for field in detail.split(";") if "=" in field)
                     endpoint = fields.get("endpoint")
@@ -1978,12 +2051,15 @@ def _ppi_intake_evidence(path, *, at=None):
                     "last_cycle": cycles[0] if cycles else None,
                     "discovery_hold_events": holds, "discovery_last_hold_at_utc": last_hold_at,
                     "native_wire": native,
-                    "http_presend": http, "exit_round": exit_round}
+                    "http_presend": http, "exit_round": exit_round,
+                    "ppi_telegram_timeline": _ppi_telegram_timeline(db, floor, at, throttle_times)}
     except (OSError, sqlite3.Error):
         return result
 
 _GATEWAY_DIAGNOSTIC_CHILD = '''
 import json
+import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from cg_paper_workspace import database_path
 from rc6_ppi_gateway_reader_adapter import gateway_socket_path, local_gateway_owner_custody
@@ -1993,7 +2069,8 @@ from rc6_ppi_shared_session_owner import load_primary_ppi_catalog_snapshot
 database = database_path()
 result = {}
 try:
-    status = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database), timeout_seconds=2).owner_status()
+    client = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database), timeout_seconds=2)
+    status = client.owner_status()
     owner = local_gateway_owner_custody(status)
     result["owner"] = owner["state"]
     result["registered_roles"] = list(owner["registered_roles"])
@@ -2004,6 +2081,25 @@ try:
         "remaining_pause_seconds": status.get("native_backoff_remaining_seconds"),
         "response_headers": owner["provider_rate_limit_response_observed"],
     }
+    start = time.monotonic_ns()
+    sample_start = datetime.now(timezone.utc).isoformat()
+    identity = (owner["owner_pid"], owner["session_generation"])
+    samples = [[0, owner["guard_http_allowed"]]]
+    for second in range(1, 9):
+        time.sleep(max(0, (start + second * 10**9 - time.monotonic_ns()) / 10**9))
+        try:
+            current = client.owner_status()
+        except Exception:
+            break
+        if (current.get("state") != "OPEN"
+                or (current.get("owner_pid"), current.get("session_generation")) != identity):
+            break
+        elapsed = time.monotonic_ns() - start
+        count = current.get("guard_http_allowed")
+        if type(count) is not int or elapsed > 11 * 10**9:
+            break
+        samples.append([elapsed, count])
+    result["wire_counter_window"] = {"started_at": sample_start, "samples": samples}
 except Exception as error:
     result["owner"] = str(error)
 
@@ -2027,6 +2123,33 @@ except Exception as error:
     result["construction"] = str(error)
 print(json.dumps(result))
 '''
+
+
+def _gateway_wire_counter_window(value):
+    """Summarize actual adapter invocation deltas within one verified owner."""
+    if not isinstance(value, dict) or not (start := timestamp(value.get("started_at"))):
+        return {"status": "SAMPLE_UNAVAILABLE"}
+    samples = value.get("samples")
+    if (not isinstance(samples, list) or not 2 <= len(samples) <= 9
+            or any(not isinstance(row, list) or len(row) != 2 or
+                   any(type(item) is not int or item < 0 for item in row) for row in samples)
+            or samples[0][0] != 0 or samples[-1][0] > 11 * 10**9):
+        return {"status": "SAMPLE_UNAVAILABLE"}
+    intervals = []
+    for (prior_at, prior_count), (current_at, current_count) in zip(samples, samples[1:]):
+        if current_at <= prior_at or current_count < prior_count:
+            return {"status": "COUNTER_NOT_COMPARABLE"}
+        delta = current_count - prior_count
+        seconds = (current_at - prior_at) / 10**9
+        intervals.append({"offset_seconds": round(prior_at / 10**9, 3),
+                          "seconds": round(seconds, 3), "attempts": delta})
+    duration = samples[-1][0] / 10**9
+    attempts = samples[-1][1] - samples[0][1]
+    return {"status": "OBSERVED" if len(samples) == 9 else "PARTIAL_OBSERVATION",
+            "started_at": start.isoformat(), "seconds": round(duration, 3),
+            "attempts": attempts, "average_attempts_per_second": round(attempts / duration, 4),
+            "peak_attempts_per_interval": max(row["attempts"] for row in intervals),
+            "intervals": intervals}
 
 
 def _gateway_provider_transport(value):
@@ -2067,20 +2190,22 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
         context = _rootless_context()
         if context.current["source_tree"] != expected_tree_sha:
             return {**receipt, "reason": "PRODUCT_TREE_MISMATCH"}
+        receipt.update(source_sha=context.current["source_sha"], source_tree=expected_tree_sha,
+                       intake=_ppi_intake_evidence(ROOT / DB_REL))
         result = context.host.docker.command_result(
             "container", "exec", context.roles["observer"], "python", "-B", "-c",
-            _GATEWAY_DIAGNOSTIC_CHILD, timeout=9)
+            _GATEWAY_DIAGNOSTIC_CHILD, timeout=26)
         if result.returncode != 0 or len(result.stdout) > 4096:
             return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
         values = json.loads(result.stdout)
         if not isinstance(values, dict):
             return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
-    except (KeyError, OSError, TypeError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        return {**receipt, "reason": "CONTAINER_PROBE_TIMEOUT"}
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError):
         return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
 
-    receipt.update(source_sha=context.current["source_sha"],
-                   source_tree=expected_tree_sha, owner="NO_VERIFICADO",
-                   catalog="NO_VERIFICADO", construction="NO_VERIFICADO")
+    receipt.update(owner="NO_VERIFICADO", catalog="NO_VERIFICADO", construction="NO_VERIFICADO")
     owner = values.get("owner")
     if isinstance(owner, str) and owner in _GATEWAY_ATTACH_REASONS:
         receipt["owner"] = owner
@@ -2092,6 +2217,7 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
             and len(roles) == len(set(roles))):
         receipt.update(owner=owner, registered_roles=sorted(roles), guard_login_wire_attempts=1)
         receipt["provider_transport"] = _gateway_provider_transport(values.get("provider_transport"))
+        receipt["wire_counter_window"] = _gateway_wire_counter_window(values.get("wire_counter_window"))
     catalog = values.get("catalog")
     if isinstance(catalog, str) and catalog in _GATEWAY_CATALOG_REASONS:
         receipt["catalog"] = catalog
@@ -2105,7 +2231,6 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
         receipt["construction"] = construction
     if any(receipt[key] != "NO_VERIFICADO" for key in ("owner", "catalog", "construction")):
         receipt["status"] = "OBSERVED"
-    receipt["intake"] = _ppi_intake_evidence(ROOT / DB_REL)
     return receipt
 
 
