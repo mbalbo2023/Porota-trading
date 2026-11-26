@@ -2085,7 +2085,7 @@ try:
     sample_start = datetime.now(timezone.utc).isoformat()
     identity = (owner["owner_pid"], owner["session_generation"])
     samples = [[0, owner["guard_http_allowed"]]]
-    for second in range(1, 23):
+    for second in range(1, 9):
         time.sleep(max(0, (start + second * 10**9 - time.monotonic_ns()) / 10**9))
         try:
             current = client.owner_status()
@@ -2096,7 +2096,7 @@ try:
             break
         elapsed = time.monotonic_ns() - start
         count = current.get("guard_http_allowed")
-        if type(count) is not int or elapsed > 25 * 10**9:
+        if type(count) is not int or elapsed > 11 * 10**9:
             break
         samples.append([elapsed, count])
     result["wire_counter_window"] = {"started_at": sample_start, "samples": samples}
@@ -2130,10 +2130,10 @@ def _gateway_wire_counter_window(value):
     if not isinstance(value, dict) or not (start := timestamp(value.get("started_at"))):
         return {"status": "SAMPLE_UNAVAILABLE"}
     samples = value.get("samples")
-    if (not isinstance(samples, list) or not 2 <= len(samples) <= 23
+    if (not isinstance(samples, list) or not 2 <= len(samples) <= 9
             or any(not isinstance(row, list) or len(row) != 2 or
                    any(type(item) is not int or item < 0 for item in row) for row in samples)
-            or samples[0][0] != 0 or samples[-1][0] > 25 * 10**9):
+            or samples[0][0] != 0 or samples[-1][0] > 11 * 10**9):
         return {"status": "SAMPLE_UNAVAILABLE"}
     intervals = []
     for (prior_at, prior_count), (current_at, current_count) in zip(samples, samples[1:]):
@@ -2145,7 +2145,7 @@ def _gateway_wire_counter_window(value):
                           "seconds": round(seconds, 3), "attempts": delta})
     duration = samples[-1][0] / 10**9
     attempts = samples[-1][1] - samples[0][1]
-    return {"status": "OBSERVED" if len(samples) == 23 else "PARTIAL_OBSERVATION",
+    return {"status": "OBSERVED" if len(samples) == 9 else "PARTIAL_OBSERVATION",
             "started_at": start.isoformat(), "seconds": round(duration, 3),
             "attempts": attempts, "average_attempts_per_second": round(attempts / duration, 4),
             "peak_attempts_per_interval": max(row["attempts"] for row in intervals),
@@ -2194,13 +2194,15 @@ def ppi_gateway_diagnostic_host(expected_tree_sha):
                        intake=_ppi_intake_evidence(ROOT / DB_REL))
         result = context.host.docker.command_result(
             "container", "exec", context.roles["observer"], "python", "-B", "-c",
-            _GATEWAY_DIAGNOSTIC_CHILD, timeout=29)
+            _GATEWAY_DIAGNOSTIC_CHILD, timeout=26)
         if result.returncode != 0 or len(result.stdout) > 4096:
             return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
         values = json.loads(result.stdout)
         if not isinstance(values, dict):
             return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
-    except (KeyError, OSError, TypeError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        return {**receipt, "reason": "CONTAINER_PROBE_TIMEOUT"}
+    except (KeyError, OSError, TypeError, ValueError, RuntimeError):
         return {**receipt, "reason": "CONTAINER_PROBE_UNAVAILABLE"}
 
     receipt.update(owner="NO_VERIFICADO", catalog="NO_VERIFICADO", construction="NO_VERIFICADO")

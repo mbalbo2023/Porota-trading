@@ -461,10 +461,10 @@ class MonitorContracts(unittest.TestCase):
             self.assertEqual(blocked["owner"], "PPI_GATEWAY_UNAVAILABLE")
             self.assertEqual(blocked["catalog"], "QUERY_KEYS_OBSERVED")
             self.assertEqual(blocked["construction"], "PPI_IDENTITY_COMPONENT_INVALID")
-            docker.command_result.side_effect = subprocess.TimeoutExpired("read-only-probe", 29)
+            docker.command_result.side_effect = subprocess.TimeoutExpired("read-only-probe", 26)
             with patch.object(monitor, "_ppi_intake_evidence", return_value={"status": "OBSERVED"}):
                 partial = monitor.ppi_gateway_diagnostic_host(SHA)
-            self.assertEqual(partial["reason"], "CONTAINER_PROBE_UNAVAILABLE")
+            self.assertEqual(partial["reason"], "CONTAINER_PROBE_TIMEOUT")
             self.assertEqual(partial["intake"], {"status": "OBSERVED"})
             self.assertLessEqual(docker.command_result.call_args.kwargs["timeout"], 30)
 
