@@ -160,7 +160,8 @@ def normalize_record(raw, settlement_hint, observed_at, run_id):
     value = dict(ticker=ticker, instrument_type=kind, market=market, currency=currency,
                  settlement=settlement, settlement_source="PPI_FIELD" if raw.get("settlement") else "REQUEST_CANDIDATE",
                  description=str(raw.get("description") or ""), last_seen_at=observed_at,
-                 run_id=run_id, status="AVAILABLE", capability="", raw=raw)
+                 run_id=run_id, status="OBSERVED_SHADOW" if kind == "INDICES" else "AVAILABLE",
+                 capability="", raw=raw)
     value["capability"] = capability(value)
     return value
 
@@ -250,6 +251,8 @@ def contract_for(record):
 
 
 def capability(record):
+    if record["instrument_type"] == "INDICES":
+        return "INDEX_REFERENCE_ONLY"
     try:
         spec = contract_for(record)
     except ValueError as exc:

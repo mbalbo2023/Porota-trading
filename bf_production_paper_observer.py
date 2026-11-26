@@ -273,14 +273,15 @@ def _cooldown_session_state(phase, now=None):
     return "BOOT_CALENDAR"
 
 
-def _candidate_universe():
+def _candidate_universe(*, include_reference_indices=False):
     """Plan de discovery automático.
 
     No usa watchlist/tickers versionados como autoridad. Los prefijos se generan
     por código y rotan; PPI confirma existencia. IOL/BYMA se fusionan después
     como fuentes complementarias y nunca reemplazan un campo PPI presente.
     """
-    return ppi_query_plan(day=datetime.now(TZ).date())
+    return ppi_query_plan(day=datetime.now(TZ).date(),
+                          include_reference_indices=include_reference_indices)
 
 
 def _walk_numbers(value, keys):
@@ -421,7 +422,7 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
             book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
         except Exception:
             if current_capture is not None and isinstance(current_capture.get("guard_wire_receipt"), dict):
-                _record_candle_current_on_book_failure(store, identity, current_capture, priority)
+                _record_scanner_current_sample(store, identity, current_capture, priority)
             raise
     metadata = None
     if not catalog_read_error:
@@ -473,8 +474,8 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     return quote
 
 
-def _record_candle_current_on_book_failure(store, identity, capture, priority):
-    """Preserve Current for candles without publishing a quote or rescuing Book."""
+def _record_scanner_current_sample(store, identity, capture, priority):
+    """Preserve a guarded Current for the existing sampled candle queue."""
     from bl_candle_engine import record_guarded_current_sample
 
     symbol, family, market, currency, settlement = identity
@@ -777,7 +778,9 @@ def _download_catalog_generation(reader, store):
                 types_by_family.setdefault(canonical_family(literal), []).append(literal)
             for literal in configuration["markets"]:
                 markets_by_key.setdefault(canonical_market(literal), []).append(literal)
-    for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in _candidate_universe():
+    plan = (_candidate_universe(include_reference_indices=True)
+            if "INDICES" in types_by_family else _candidate_universe())
+    for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in plan:
         if deferred_reason:
             break
         status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
@@ -1370,9 +1373,21 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
 
 def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
     pending = ""
+    contract_priority = ""
     archived_priority = ""
     if pending_settlement:
+        # Only identities whose venue and currency can be attested should
+        # consume discovery turns. A currency/venue sibling at another term
+        # would invalidate the proof when it is published.
         pending = """AND f.status='AVAILABLE' AND f.settlement_source='REQUEST_CANDIDATE'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM financial_instrument_catalog other
+                    WHERE other.ticker=f.ticker AND other.instrument_type=f.instrument_type
+                      AND other.status IN ('AVAILABLE','STALE')
+                      AND other.market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND other.currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND (other.market!=f.market OR other.currency!=f.currency)
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM candidate_identity_v2 p
                     WHERE p.ticker=f.ticker AND p.instrument_type=f.instrument_type
@@ -1380,6 +1395,7 @@ def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
                       AND p.settlement=f.settlement
                       AND p.status='AVAILABLE' AND p.can_simulate=1
                   )"""
+        contract_priority = "CASE WHEN f.capability LIKE 'READY_PAPER_%' THEN 0 ELSE 1 END,"
         # A stored TRADE and Book select the first key to revisit. They are
         # insufficient for live freshness or settlement authority.
         archived_priority = """EXISTS (
@@ -1392,6 +1408,7 @@ def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
                   ) DESC,"""
     if after is None:
         order = f"""CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                   {contract_priority}
                    {archived_priority}
                    CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
                    f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement"""
@@ -1592,6 +1609,7 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
                     observation["settlement_attested"] = True
                     store.event("PPI_NATIVE_SETTLEMENT_ATTESTED",
                                 ":".join(key) + ";source=PPI_NATIVE_REQUEST_RECEIPT")
+                    _record_scanner_current_sample(store, key, witnessed_current, "DISCOVERY")
             except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
                 store.event("PPI_NATIVE_SETTLEMENT_PUBLISH_HOLD", type(exc).__name__)
         if update_market_clock:

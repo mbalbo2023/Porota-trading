@@ -64,6 +64,48 @@ def test_complement_revalidation_is_running_before_final_projection(tmp_path, mo
     assert state(store) == "COMPLETE"
 
 
+@pytest.mark.parametrize("declared_index", (None, "INDICE"))
+def test_only_a_declared_index_filter_runs_and_remains_observational(
+        tmp_path, monkeypatch, declared_index):
+    store = prepared(tmp_path, monkeypatch)
+    market_day = datetime(2026, 11, 26, tzinfo=observer.TZ).date()
+    monkeypatch.setattr(observer, "_candidate_universe", lambda *, include_reference_indices=False:
+                        observer.ppi_query_plan(day=market_day, prefixes_per_family=1,
+                                                include_reference_indices=include_reference_indices))
+    declared = ["ETF"] + ([declared_index] if declared_index else [])
+    calls = []
+    with store.connect() as connection:
+        catalog.persist_family_coverage(
+            connection, {"instrument_types": ["INDICES"]}, [], [], "previous", observer.now_iso())
+
+    class Reader:
+        def market_configuration(self):
+            return {"instrument_types": declared, "markets": ["BYMA"], "settlements": ["A-24HS"],
+                    "quantity_types": [], "operation_terms": [], "operation_types": [],
+                    "operations": []}
+
+        def search_instruments(self, ticker, provider_type, *, name, market):
+            calls.append((provider_type, market))
+            assert ticker and name
+            symbol = "TEST_ETF" if provider_type == "ETF" else "TEST_INDEX"
+            return [{"ticker": symbol, "type": provider_type, "market": market, "currency": "ARS"}]
+
+    assert observer._download_catalog(Reader(), store) == len(declared)
+    assert calls == [(kind, "BYMA") for kind in declared]
+    with store.connect() as connection:
+        rows = {row[0]: tuple(row[1:]) for row in connection.execute(
+            "SELECT instrument_type,status,capability,settlement FROM financial_instrument_catalog")}
+        assert rows["ETFS"] == ("AVAILABLE", "READY_PAPER_SPOT", "A-24HS")
+        index = connection.execute("""SELECT declared,discovery_status FROM catalog_family_coverage
+            WHERE instrument_type='INDICES'""").fetchone()
+        if declared_index:
+            assert rows["INDICES"] == ("OBSERVED_SHADOW", "INDEX_REFERENCE_ONLY", "")
+            assert tuple(index) == (1, "INSTRUMENTS_OBSERVED")
+        else:
+            assert "INDICES" not in rows
+            assert tuple(index) == (0, "NOT_ENUMERATED")
+
+
 def test_policy_exception_leaves_failed_generation_not_previous_complete(tmp_path, monkeypatch):
     store = prepared(tmp_path, monkeypatch)
     class Reader:
