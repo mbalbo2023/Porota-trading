@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 rueda PAPER estado y esquema histórico verificado
+run-name: RC6 rueda PAPER corte de Current Book y continuidad de motores
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -190,6 +190,6 @@ jobs:
                   "exit":db.execute("SELECT heartbeat_at,state FROM paper_exit_reader_state WHERE id=1").fetchone(),
               }
           
-          print("RC6_OPEN_BACKLOG="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
+          print("RC6_OPEN_LATEST="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
           HOST
