@@ -1,497 +1,133 @@
-name: RC6 Market Watch READ_ONLY
-
+name: RC6 A667 release CI diagnostic
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/rc6-market-watch-readonly.yml'
-      - 'scripts/rc6_market_watch_readonly.py'
-      - 'tests/test_rc6_market_watch_readonly.py'
-      - 'scripts/rc6_operator_dashboard_readonly.py'
-      - 'tests/test_rc6_operator_dashboard_readonly.py'
-      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
   push:
-    branches: [main]
-    paths:
-      - '.github/workflows/rc6-market-watch-readonly.yml'
-      - 'scripts/rc6_market_watch_readonly.py'
-      - 'tests/test_rc6_market_watch_readonly.py'
-      - 'scripts/rc6_operator_dashboard_readonly.py'
-      - 'tests/test_rc6_operator_dashboard_readonly.py'
-      - 'docs/ops/RC6_MARKET_WATCH_READONLY.md'
-  schedule:
-    # Argentina UTC-3; the job's local-time gate restricts monitoring to rueda.
-    - cron: '7-57/10 13-20 * * 1-5'
-    # COM19031 (02-Nov): bounded T+1 equity/CEDEAR surveillance after 17:00.
-    # One last 18:07 ART attempt; gate rejects ticks after 18:15.
-    - cron: '7 21 * * 1-5'
-  workflow_dispatch:
-    inputs:
-      notification_mode:
-        description: 'normal delivers transitions; read_only records evidence without sending or creating delivery state'
-        type: choice
-        options: [normal, read_only]
-        default: normal
-        required: true
-
+    branches: [audit/rc6-caucion-hold-readonly-20261125]
+    paths: [.github/workflows/rc6-market-watch-readonly.yml]
 permissions:
   contents: read
-  actions: read
-
-concurrency:
-  group: rc6-market-watch-readonly-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  contracts:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compile and test isolated monitor without network
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 -m py_compile scripts/rc6_market_watch_readonly.py tests/test_rc6_market_watch_readonly.py
-          python3 -m unittest discover -s tests -p test_rc6_market_watch_readonly.py -v
-          python3 -m unittest discover -s tests -p test_rc6_a359_cron_equivalence.py -v
-          python3 -m py_compile scripts/rc6_operator_dashboard_readonly.py
-          python3 -m unittest discover -s tests -p test_rc6_operator_dashboard_readonly.py -v
-          git diff --check
-
-  watch:
-    needs: contracts
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  diagnose:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
-    env:
-      DO_HOST: ${{ secrets.DO_HOST }}
-      DO_USER: ${{ secrets.DO_USER }}
-      SSH_KEY: ${{ secrets.DO_SSH_KEY }}
-      KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Gate market-hours schedule
-        id: window
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import os
-          from datetime import date, datetime, timezone
-          from zoneinfo import ZoneInfo
-          local = datetime.now(timezone.utc).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
-          minutes = local.hour*60 + local.minute
-          # Only surveillance extends; PAPER entry, FI and caucion do not.
-          late = date(2026,11,2) <= local.date() <= date(2026,12,31)
-          close = 18*60+15 if late else 17*60+15
-          active = (os.environ.get('GITHUB_EVENT_NAME') != 'schedule' or
-                    (local.weekday() < 5 and 10*60+30 <= minutes < close))
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-              out.write('active=' + ('1' if active else '0') + '\n')
-          print('MARKET_WATCH_TIME_GATE=' + ('ACTIVE' if active else 'SKIP_OFF_HOURS'))
-          PY
-      - name: Resolve productive commit and tree directly from GitHub
-        id: productive
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 - <<'PY'
-          import json, os, urllib.request, urllib.parse
-          repo = os.environ['GITHUB_REPOSITORY']
-          branch = urllib.parse.quote('deploy/rc6-pr69-isolated-20260915', safe='')
-          url = f'https://api.github.com/repos/{repo}/branches/{branch}'
-          request = urllib.request.Request(url, headers={
-              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-              'Accept': 'application/vnd.github+json'})
-          with urllib.request.urlopen(request, timeout=20) as response:
-              info = json.load(response)
-          sha = info['commit']['sha']
-          assert len(sha) == 40 and all(c in '0123456789abcdef' for c in sha)
-          # The immutable release source commit may differ from this branch
-          # HEAD while resolving to exactly the same Git tree.
-          commit_url = f'https://api.github.com/repos/{repo}/git/commits/{sha}'
-          commit_request = urllib.request.Request(commit_url, headers={
-              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-              'Accept': 'application/vnd.github+json'})
-          with urllib.request.urlopen(commit_request, timeout=20) as response:
-              git_commit = json.load(response)
-          tree_sha = git_commit['tree']['sha']
-          assert len(tree_sha) == 40 and all(c in '0123456789abcdef' for c in tree_sha)
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-              out.write('sha=' + sha + '\n')
-              out.write('tree_sha=' + tree_sha + '\n')
-          print('RC6_PRODUCTIVE_SHA=' + sha)
-          print('RC6_PRODUCTIVE_TREE=' + tree_sha)
-          PY
-      - name: Prepare strict SSH
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          mkdir -p evidence
-          test -n "$DO_HOST" && test -n "$DO_USER"
-          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
-          install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/rc6_market_watch"
-          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          chmod 600 "$HOME/.ssh/rc6_market_watch" "$HOME/.ssh/known_hosts"
-      - name: Collect bounded read-only host truth
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        env:
-          EXPECTED_SHA: ${{ steps.productive.outputs.sha }}
-          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 20 python3 - probe --expected-sha '$EXPECTED_SHA' --expected-tree-sha '$EXPECTED_TREE_SHA'" \
-            < scripts/rc6_market_watch_readonly.py > evidence/snapshot.json 2> evidence/.transport.stderr
-          rc=$?
-          set -e
-          PROBE_EXIT_CODE="$rc" python3 scripts/rc6_market_watch_readonly.py transport-diagnostic \
-            --stderr evidence/.transport.stderr > evidence/transport.json
-          rm -f evidence/.transport.stderr
-          if [ "$rc" -ne 0 ] || [ ! -s evidence/snapshot.json ]; then
-            python3 scripts/rc6_market_watch_readonly.py transport-error > evidence/snapshot.json
-            echo "::warning::Remote READ_ONLY probe unavailable. Evidence is fail-closed."
-          fi
-          python3 -m json.tool evidence/snapshot.json >/dev/null
-      - name: Classify recent critical signatures without exporting logs
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 18 python3 - recent-critical-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/recent_critical.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/recent_critical.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.recent-critical-readonly.v1","read_only":true,"status":"UNAVAILABLE"}' > evidence/recent_critical.json
-          fi
-      - name: Observe the exact PPI Gateway and local catalog without provider requests
-        if: github.event_name == 'workflow_dispatch' && inputs.notification_mode == 'read_only' && steps.window.outputs.active == '1'
-        shell: bash
-        env:
-          EXPECTED_TREE_SHA: ${{ steps.productive.outputs.tree_sha }}
-        run: |
-          set -Eeuo pipefail
-          [[ "$EXPECTED_TREE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 15 python3 - ppi-gateway-diagnostic-host --expected-tree-sha '$EXPECTED_TREE_SHA'" \
-            < scripts/rc6_market_watch_readonly.py > evidence/ppi_gateway.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/ppi_gateway.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.ppi-gateway-diagnostic-readonly.v1","read_only":true,"status":"NO_VERIFICADO","reason":"REMOTE_PROBE_UNAVAILABLE"}' > evidence/ppi_gateway.json
-          fi
-      - name: Diagnose SHADOW SQLite stages on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 12 python3 - shadow-diagnostic-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/shadow_diagnostic.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/shadow_diagnostic.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.shadow-readonly-diagnostic.v1","status":"REMOTE_DIAGNOSTIC_UNAVAILABLE","read_only":true}' > evidence/shadow_diagnostic.json
-          fi
-      - name: Probe public GitHub schedule API from observer on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 10 python3 - schedule-api-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/schedule_api.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/schedule_api.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.market-schedule-api.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true}' > evidence/schedule_api.json
-          fi
-      - name: Sample observer Docker lifecycle metadata on manual runs only
-        if: github.event_name == 'workflow_dispatch' && steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 9 python3 - observer-lifecycle-host" \
-            < scripts/rc6_market_watch_readonly.py > evidence/observer_lifecycle.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/observer_lifecycle.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.observer-lifecycle.v1","status":"REMOTE_PROBE_UNAVAILABLE","read_only":true,"events":[]}' > evidence/observer_lifecycle.json
-          fi
-      - name: Audit authenticated dashboard routes and connector states without exporting content
-        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          set +e
-          ssh -i "$HOME/.ssh/rc6_market_watch" \
-            -o BatchMode=yes -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-            "$DO_USER@$DO_HOST" \
-            "timeout 160 python3 - dashboard-host" \
-            < scripts/rc6_operator_dashboard_readonly.py > evidence/dashboard_audit.json 2>/dev/null
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/dashboard_audit.json >/dev/null 2>&1; then
-            printf '%s\n' '{"schema":"rc6.operator-dashboard-readonly.v1","read_only":true,"status":"NO_VERIFICADO","routes":[],"sources":[],"source_status":"NO_VERIFICADO"}' > evidence/dashboard_audit.json
-          fi
-          python3 - <<'PY'
-          import json
-          result=json.load(open('evidence/dashboard_audit.json',encoding='utf-8'))
-          print('RC6_DASHBOARD_AUDIT_SCOPE='+str(result.get('audit_scope','NO_VERIFICADO')))
-          print('RC6_DASHBOARD_AUDIT_STATUS='+str(result.get('status','NO_VERIFICADO')))
-          print('RC6_DASHBOARD_ROUTE_STATUS='+json.dumps([
-              {'path':r.get('path'),'http':r.get('http'),'nav':r.get('nav'),
-               'content':r.get('content'),'error':r.get('error'),
-               'elapsed_ms':r.get('elapsed_ms'),'slow_2s':r.get('slow_2s'),
-               'projection_ms':r.get('projection_ms'),'read_queries':r.get('read_queries'),
-               'unverified_mentions':r.get('unverified_mentions')}
-              for r in result.get('routes',[])],sort_keys=True,separators=(',',':')))
-          print('RC6_DASHBOARD_PROFILE_STATUS='+str(result.get('profile_status','NO_VERIFICADO')))
-          print('RC6_DASHBOARD_PROFILE='+json.dumps(result.get('profile',[]),
-              sort_keys=True,separators=(',',':')))
-          print('RC6_DASHBOARD_BALANCE_QUERIES='+json.dumps(result.get('balance_queries',[]),
-              sort_keys=True,separators=(',',':')))
-          print('RC6_CONNECTOR_STATES='+json.dumps(result.get('sources',[]),
-              sort_keys=True,separators=(',',':')))
-          PY
-      - name: Record genuine schedule cadence independently of observer
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 scripts/rc6_market_watch_readonly.py schedule-health --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY"
-      - name: Read previous committed monitor artifact (best effort)
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 scripts/rc6_market_watch_readonly.py select-previous \
-            --current evidence/snapshot.json --repo "$GITHUB_REPOSITORY" \
-            --workflow-id 384354765 --run-id "$GITHUB_RUN_ID" \
-            --destination evidence/previous
-      - name: Compare snapshots and detect transitions
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 scripts/rc6_market_watch_readonly.py classify \
-            --current evidence/snapshot.json \
-            --previous evidence/previous/snapshot.json \
-            --previous-decision evidence/previous/decision.json > evidence/decision.json
-          python3 - <<'PY'
-          import json, os, re
-          snap=json.load(open('evidence/snapshot.json',encoding='utf-8'))
-          decision=json.load(open('evidence/decision.json',encoding='utf-8'))
-          def sha(field):
-              value=snap.get(field)
-              return value if type(value) is str and re.fullmatch('[0-9a-f]{40}',value) else 'NO_VERIFICADO'
-          identity=snap.get('provenance_identity')
-          allowed={'ROOTLESS_PRODUCT_TREE_MATCHED','PRODUCT_TREE_NOT_PROVIDED',
-                   'PRODUCT_TREE_MISMATCH','PRIVATE_RELEASE_SOURCE_MISMATCH',
-                   'LEGACY_DEPLOY_SHA_MATCHED','LEGACY_DEPLOY_SHA_MISMATCH'}
-          text=['## POROTA RC6 | Market Watch READ_ONLY',
-                '- Product branch HEAD: '+sha('expected_deploy_sha'),
-                '- Candidate source SHA: '+sha('observed_candidate_sha'),
-                '- Expected product tree: '+sha('expected_product_tree'),
-                '- Provenance identity: '+(identity if type(identity) is str and identity in allowed else 'NO_VERIFICADO'),
-                '- Severity: '+str(snap.get('severity','NO_VERIFICADO')),
-                '- Alerts: '+', '.join(decision['new_alerts'] or ['none']),
-                '- Recovery: '+', '.join(decision['recovered'] or ['none']),
-                '- Pending P1 confirmation: '+', '.join(decision['pending_confirmation'] or ['none']),
-                '- Orders actually sent: no claim unless exact DB counter verified.',
-                '- Trading mutations: NONE; provider calls: NONE; PPI Watch: NOT ACCESSED.',
-                '- Alert delivery uses a separate bounded receipt only when requested.']
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as f:
-              f.write('\n'.join(text)+'\n')
-          print('RC6_MONITOR_STATUS='+decision['status'])
-          print('RC6_MONITOR_NOTIFICATION='+decision['notification'])
-          PY
-      - name: Send transition through existing PAPER Telegram transport
-        if: steps.window.outputs.active == '1'
-        shell: bash
-        env:
-          NOTIFICATION_MODE: ${{ github.event_name == 'schedule' && 'normal' || (github.event_name == 'workflow_dispatch' && inputs.notification_mode || 'read_only') }}
-        run: |
-          set -Eeuo pipefail
-          request="$(python3 scripts/rc6_market_watch_readonly.py prepare-alert \
-            --decision evidence/decision.json)"
-          if [ "$NOTIFICATION_MODE" = 'read_only' ]; then
-            printf '%s\n' '{"status":"NOT_REQUESTED","read_only":true}' > evidence/delivery.json
-          elif [ -z "$request" ]; then
-            printf '%s\n' '{"status":"NO_TRANSITION"}' > evidence/delivery.json
-          else
-            set +e
-            ssh -i "$HOME/.ssh/rc6_market_watch" \
-              -o BatchMode=yes -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-              -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2 \
-              "$DO_USER@$DO_HOST" \
-              "timeout 25 python3 - alert-host '$request'" \
-              < scripts/rc6_market_watch_readonly.py > evidence/delivery.json 2>/dev/null
-            rc=$?
-            set -e
-            if [ "$rc" -ne 0 ] || ! python3 -m json.tool evidence/delivery.json >/dev/null 2>&1; then
-              printf '%s\n' '{"status":"UNVERIFIED"}' > evidence/delivery.json
-            fi
-          fi
-          python3 scripts/rc6_market_watch_readonly.py finalize-delivery \
-            --decision evidence/decision.json --receipt evidence/delivery.json
-          python3 - <<'PY'
-          import json
-          data=json.load(open('evidence/decision.json',encoding='utf-8'))
-          print('MARKET_WATCH_TELEGRAM='+data['delivery_status'])
-          PY
-      - name: Save immutable per-run evidence
-        if: always() && steps.window.outputs.active == '1'
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          name: rc6-market-watch-${{ github.run_id }}
-          path: |
-            evidence/snapshot.json
-            evidence/transport.json
-            evidence/decision.json
-            evidence/shadow_diagnostic.json
-            evidence/schedule_api.json
-            evidence/observer_lifecycle.json
-            evidence/recent_critical.json
-            evidence/ppi_gateway.json
-            evidence/dashboard_audit.json
-            evidence/delivery.json
-            evidence/previous/source.json
-          if-no-files-found: error
-          retention-days: 7
-      - name: Fail checks on verified critical or confirmed P1
-        if: steps.window.outputs.active == '1'
+          ref: 90099ddf2399a59c544214d9138ea2f193c235cb
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: porota-a667-debug:exact-source
+          cache-from: type=gha,scope=porota-rc6-predeploy-v2
+      - name: Classify the failing synthetic ledger read
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json,re
-          data=json.load(open('evidence/decision.json', encoding='utf-8'))
-          snap=json.load(open('evidence/snapshot.json', encoding='utf-8'))
-          findings=snap.get('findings')
-          codes=sorted({code for row in (findings if isinstance(findings,list) else [])
-              if isinstance(row,dict) for code in [row.get('code')]
-              if type(code) is str and re.fullmatch(r'[A-Za-z0-9_:]{1,100}',code)})
-          shadow=snap.get('shadow') if isinstance(snap.get('shadow'),dict) else {}
-          context={}
-          for key,allowed in {
-              'status': {'FAIL_CLOSED','SHADOW_OBSERVING','PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION'},
-              'error_class': {'OperationalError','ValueError','EvidencePayloadLimit'},
-              'error_module': {'runtime','worker','preopen','promotion','stages','families',
-                               'lab','entry_signals','funnel','source_reads','read_contract',
-                               'persistence','snapshot','common','live'},
-              'evidence_file': {'latest.json.gz','checkpoint.json.gz','status.json','preopen','other'},
-          }.items():
-              if type(shadow.get(key)) is str and shadow[key] in allowed:
-                  context[key]=shadow[key]
-          for key in ('error_line','evidence_measured_bytes','evidence_limit_bytes'):
-              value=shadow.get(key)
-              if type(value) is int and 0 <= value <= 2*1024**3:
-                  context[key]=value
-          label=shadow.get('sqlite_errorname')
-          if type(label) is str and re.fullmatch(r'SQLITE_[A-Z0-9_]{1,40}',label):
-              context['sqlite_errorname']=label
-          print('RC6_MONITOR_SAFE_FINDINGS='+','.join(codes))
-          print('RC6_MONITOR_SAFE_SHADOW='+json.dumps(context,sort_keys=True,separators=(',',':')))
-          ops=snap.get('sqlite_ops') if isinstance(snap.get('sqlite_ops'),dict) else {}
-          safe_ops={}
-          for key in ('DAILY_BACKUP','HISTORY_BACKUP','SRE_SNAPSHOT','latest_backup','candle_worker'):
-              item=ops.get(key)
-              if not isinstance(item,dict):
-                  continue
-              safe={}
-              for field in ('last_run_at','created_at','heartbeat_at'):
-                  value=item.get(field)
-                  if type(value) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.+-][0-9:]+)?',value):
-                      safe[field]=value
-              state=item.get('state')
-              if type(state) is str and re.fullmatch(r'[A-Za-zÁÉÍÓÚáéíóú_]{1,32}',state):
-                  safe['state']=state
-              if key=='latest_backup' and item.get('kind') in ('DAILY','HISTORY'):
-                  safe['kind']=item['kind']
-              for field in ('size_bytes','cursor'):
-                  value=item.get(field)
-                  if type(value) is int and 0 <= value <= 2**53:
-                      safe[field]=value
-              safe_ops[key]=safe
-          print('RC6_MONITOR_SAFE_SQLITE_OPS='+json.dumps(safe_ops,sort_keys=True,separators=(',',':')))
-          try:
-              recent=json.load(open('evidence/recent_critical.json', encoding='utf-8'))
-          except (OSError,ValueError):
-              recent={}
-          containers=recent.get('containers') if isinstance(recent,dict) else {}
-          containers=containers if isinstance(containers,dict) else {}
-          traces=[]
-          for name in ('observer','dashboard'):
-              item=containers.get(name)
-              rows=item.get('tracebacks') if isinstance(item,dict) else []
-              for row in (rows[-12:] if isinstance(rows,list) else []):
-                  if not isinstance(row,dict):
-                      continue
-                  frame=row.get('last_app_frame')
-                  frame=frame if isinstance(frame,dict) else {}
-                  cls=row.get('exception_class')
-                  module=frame.get('module')
-                  function=frame.get('function')
-                  line=frame.get('line')
-                  observed=row.get('observed_utc')
-                  hint=row.get('sqlite_hint')
-                  if (type(cls) is str and cls in {'sqlite3.OperationalError','ValueError','RuntimeError'}
-                          and type(module) is str and re.fullmatch(r'[a-z0-9_]{1,70}\.py',module)
-                          and type(function) is str and re.fullmatch(r'[A-Za-z0-9_]{1,80}',function)
-                          and type(line) is int and 0 < line <= 1000000
-                          and type(observed) is str and re.fullmatch(r'20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z',observed)):
-                      traces.append({'container':name,'class':cls,'module':module,
-                          'function':function,'line':line,'utc':observed,
-                          'sqlite_hint':hint if type(hint) is str and hint in {'SQLITE_BUSY_LOCKED','SQLITE_INTERRUPT',
-                              'SQLITE_FULL','SQLITE_IOERR','SQLITE_CANTOPEN','SQLITE_UNKNOWN'} else None})
-          print('RC6_MONITOR_SAFE_RECENT_CRITICAL='+json.dumps(traces[-12:],sort_keys=True,separators=(',',':')))
-          if data['confirmed']:
-              print('::error::RC6 Market Watch incident: '+', '.join(data['confirmed']))
-              raise SystemExit(2)
-          print('RC6_MONITOR_CHECK=GREEN_OR_UNCONFIRMED')
-          PY
-      - name: Destroy SSH credential
-        if: always()
-        run: rm -f "$HOME/.ssh/rc6_market_watch"
+          set -Eeuo pipefail
+          export RC6_A667_CHECKOUT_SOURCE=90099ddf2399a59c544214d9138ea2f193c235cb
+          test "$(git rev-parse HEAD)" = "$RC6_A667_CHECKOUT_SOURCE"
+          test "$(git rev-parse 'HEAD^{tree}')" = 69de3030b0e61b8462df3d1573350c0638ee0604
+          probe="$RUNNER_TEMP/porota_a667_trace.py"
+          cat > "$probe" <<'PY'
+          from contextlib import contextmanager
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+          import tempfile
+          import time
 
+          import pytest
+
+          ROOT = Path("/app")
+          TARGET = "test_material_changed_between_lease_acquire_and_start_revokes_send"
+
+          @pytest.hookimpl(hookwrapper=True)
+          def pytest_runtest_call(item):
+              if TARGET not in item.nodeid:
+                  yield
+                  return
+              import rc6_ppi_global_budget as budget
+              before = budget._ledger_snapshot
+
+              @contextmanager
+              def snapshot(*args, **kwargs):
+                  start = time.monotonic()
+                  try:
+                      with before(*args, **kwargs) as connection:
+                          yield connection
+                  except (OSError, ValueError, RuntimeError) as exc:
+                      value = exc.args[0] if len(exc.args) == 1 else ""
+                      reason = value if isinstance(value, str) and re.fullmatch(r"[A-Z_]{4,90}", value) else "UNCLASSIFIED"
+                      print("A667_SNAPSHOT_FAILURE=" + json.dumps({
+                          "reason": reason, "type": type(exc).__name__,
+                          "elapsed_ms": round((time.monotonic() - start)*1000, 2),
+                          "errno": getattr(exc, "errno", None),
+                      }), flush=True)
+                      raise
+                  else:
+                      print("A667_SNAPSHOT_PASS_MS=" + str(round((time.monotonic() - start)*1000, 2)), flush=True)
+
+              budget._ledger_snapshot = snapshot
+              try:
+                  yield
+              finally:
+                  budget._ledger_snapshot = before
+
+          def pytest_runtest_logreport(report):
+              if report.when == "call" and TARGET in report.nodeid:
+                  print("A667_TARGET=" + report.outcome, flush=True)
+
+          def main():
+              sys.path.insert(0, str(ROOT))
+              from scripts import rc6_ci_parallel_runner as runner, rc6_ci_shard_quorum as shards
+              env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+                         PYTHONPATH="/tmp:/app", RC6_CI_IDENTITY_PROOF="1",
+                         RC6_CI_SOURCE_SHA="90099ddf2399a59c544214d9138ea2f193c235cb",
+                         RC6_CI_SOURCE_TREE_SHA="69de3030b0e61b8462df3d1573350c0638ee0604")
+              for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "RC6_CI_MODULE_TRACE"):
+                  env.pop(key, None)
+              python = sys.executable
+              plugin = ["-p", "scripts.rc6_ci_pytest_identity", "-p", "no:cacheprovider"]
+              with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir="/var/tmp") as scratch:
+                  folder = Path(scratch)
+                  manifest = folder / "collected.json"
+                  env["RC6_CI_MANIFEST_PATH"] = str(manifest)
+                  result = subprocess.run([python, "-m", "pytest", *plugin, "--collect-only", "-q",
+                                           *runner._test_args(ROOT)],
+                                          cwd=ROOT, env=env, capture_output=True, text=True)
+                  if result.returncode:
+                      return result.returncode
+                  groups = shards.partition(json.loads(manifest.read_text()), 16)
+                  group = next(group for group in groups if any(TARGET in item for item in group))
+                  shard = folder / "shard-6"
+                  shard.mkdir(mode=0o700)
+                  env["RC6_CI_MANIFEST_PATH"] = str(shard / "executed.json")
+                  print("A667_SHARD_CASES=" + str(len(group)))
+                  result = subprocess.run([python, "-m", "pytest", *plugin, "-p", "porota_a667_trace",
+                      "-s", "-q", "-o", "xfail_strict=true", "--maxfail=1",
+                      f"--basetemp={shard/'basetemp'}", "--", *group],
+                      cwd=ROOT, env=env, capture_output=True, text=True)
+                  for line in result.stdout.splitlines():
+                      match = re.search(r"A667_(?:SNAPSHOT_FAILURE|SNAPSHOT_PASS_MS|TARGET)=.*$", line)
+                      if match:
+                          print(match.group())
+                  print("A667_SHARD_EXIT=" + str(result.returncode))
+                  return 0
+
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PY
+          docker run --rm --pull never --network none --cap-drop ALL --security-opt no-new-privileges:true \
+            --pids-limit 512 --memory 6g --mount "type=bind,src=$PWD/.git,dst=/app/.git,readonly" \
+            --mount "type=bind,src=$PWD/docs,dst=/app/docs,readonly" \
+            --mount "type=bind,src=$probe,dst=/tmp/porota_a667_trace.py,readonly" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app \
+            --entrypoint python porota-a667-debug:exact-source -B /tmp/porota_a667_trace.py
