@@ -215,6 +215,47 @@ def test_preopen_rechecks_the_scanner_pin_before_publishing_ready(tmp_path, monk
             WHERE event_type='PPI_GATEWAY_REATTACH_REQUIRED'""").fetchone()[0] == reason
 
 
+@pytest.mark.parametrize(("reason", "continue_rotation"), [
+    ("PPI_NATIVE_DEMAND_IDENTITY_DENIED", True),
+    ("PPI_NATIVE_HTTP_429", False),
+    ("PPI_DIRECT_PROVIDER_429_BREAKER", False),
+])
+def test_only_a_per_identity_gateway_denial_can_continue_the_rotation(
+        monkeypatch, reason, continue_rotation):
+    keys = {
+        "ACCIONES": ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"),
+        "CEDEARS": ("AAPL", "CEDEARS", "BYMA", "ARS", "A-24HS"),
+    }
+    seen = []
+
+    def candidates(_store, *, family, **kwargs):
+        return [keys[family]] if family in keys else []
+
+    def observe(_reader, _store, key, **kwargs):
+        seen.append(key)
+        if key == keys["ACCIONES"]:
+            return {"status": "PROVIDER_OR_CONTRACT_HOLD", "reason": reason, "native_receipts": []}
+        return {"status": "FRESH_OBSERVED", "native_receipts": ["current", "book"]}
+
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates", candidates)
+    monkeypatch.setattr(observer, "_ppi_rest_probe_keys", lambda *args, **kwargs: [])
+    monkeypatch.setattr(observer, "_observe_native_candidate", observe)
+    monkeypatch.setattr(observer, "_pulse_observed_progress", lambda _store, last: last)
+    _, _, result = observer._discover_native_settlements(
+        object(), object(), slots=2, deadline=observer.time.monotonic() + 15,
+        cursor=0, after={}, last_pulse=0)
+
+    assert result["fresh_pairs"] == int(continue_rotation)
+    if continue_rotation:
+        assert seen == [keys["ACCIONES"], keys["CEDEARS"]]
+        assert result["identities_denied_by_gateway"] == [list(keys["ACCIONES"])]
+        assert "reason" not in result
+    else:
+        assert seen == [keys["ACCIONES"]]
+        assert result["reason"] == reason
+
+
 @pytest.mark.parametrize("value,age,error", (
     ("RUNNING", 0, RuntimeError), ("RUNNING", 301, AssertionError),
     ("FAILED", 0, AssertionError),

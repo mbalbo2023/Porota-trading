@@ -1664,6 +1664,9 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
             last_pulse = _pulse_observed_progress(store, last_pulse)
         result["fresh_pairs"] += status == "FRESH_OBSERVED"
         result["attested"] += observed.get("settlement_attested") is True
+        if reason == "PPI_NATIVE_DEMAND_IDENTITY_DENIED":
+            result.setdefault("identities_denied_by_gateway", []).append(list(key))
+            continue
         if status == "PRE_WIRE_GUARD_HOLD" or (
                 status == "PROVIDER_OR_CONTRACT_HOLD" and reason not in {
                     "PPI_INSTRUMENT_NOT_FOUND", "PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED",
