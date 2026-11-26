@@ -296,6 +296,11 @@ def probe(out):
     path = gateway_socket_path(db)
     budget = PaperDirectReadBudget(db)
     interlock = ScannerLoginInterlock(db, AUTH_COOLDOWN_SECONDS)
+    local_remaining = budget_wait(budget)
+    out['before'].update(local_get_wait_s=local_remaining, get_wait_s=local_remaining,
+                         login_wait_s=login_wait(interlock))
+    require(out['before']['get_wait_s'] == 0 and out['before']['login_wait_s'] == 0,
+            'PPI_PAUSA_ACTIVA')
     remote = owner_status(path)
     remaining = remote.get('native_backoff_remaining_seconds')
     require(type(remaining) is int and remaining >= 0, 'PPI_PAUSA_NO_VERIFICADA')
