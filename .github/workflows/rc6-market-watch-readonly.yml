@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 procedencia ETF y reloj real de preapertura READ_ONLY
+run-name: RC6 verificar interlock antes de la preapertura y recibos por familia
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -177,6 +177,31 @@ jobs:
               result["runtime_clock"] = {"phase":_market_phase(clock),
                   "preopen_art":(open_at-timedelta(minutes=PREOPEN_MINUTES)).isoformat(),
                   "open_art":open_at.isoformat()}
+              import math
+              import os
+              from rc6_scanner_login_interlock import ScannerLoginInterlock
+              from rc6_ppi_shared_session_owner import AUTH_COOLDOWN_SECONDS
+              
+              gate = ScannerLoginInterlock(database_path(), AUTH_COOLDOWN_SECONDS)
+              root = os.open(gate.root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+              try:
+                  marker = gate._read(root)
+              finally:
+                  os.close(root)
+              if marker and marker["boot_id"] == gate.boot_id() and gate.monotonic_ns() >= marker["monotonic_ns"]:
+                  wait_s = max(0,math.ceil((marker["monotonic_ns"]+
+                                   max(gate.cooldown_ns,marker["cooldown_ns"])-gate.monotonic_ns())/1e9))
+                  earliest = clock+timedelta(seconds=wait_s)
+                  # Reuse the direct probe's existing 23s wire limit and 52s restart observation.
+                  observed_recovery_limit = earliest+timedelta(seconds=AUTH_COOLDOWN_SECONDS+23+52)
+                  result["handover_preopen"]={"remaining_login_s":wait_s,"earliest_new_login_art":earliest.isoformat(),
+                     "probe_and_auth_recovery_by_art":observed_recovery_limit.isoformat(),
+                     "preopen_conflict":observed_recovery_limit>=open_at-timedelta(minutes=PREOPEN_MINUTES)}
+              else:
+                  result["handover_preopen"]={"state":"AUTH_INTERLOCK_CLOCK_UNVERIFIED"}
+              result["family_recent_native_success"]={}
+              for identity, endpoints in physical_receipts.items():
+                  result["family_recent_native_success"].setdefault(identity[1],{"identity":identity,"http":endpoints})
               result["etf_sources"] = {}
               for row in db.execute("""SELECT status, coalesce(json_extract(metadata_json, '$._discovery_source'),'UNKNOWN'),
                          count(*) FROM financial_instrument_catalog
