@@ -16,7 +16,7 @@ import time
 IMAGE = 'sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067'
 PRODUCT = '8fd9070728b89ae7891758f4b463baef28d875f8'
 HOST_LOCK_WAIT_S = 30
-COOLDOWN_WAIT_LIMIT_S = 20 * 60
+COOLDOWN_WAIT_LIMIT_S = 33 * 60
 
 PROBE = r'''
 from contextlib import closing, redirect_stderr, redirect_stdout
@@ -209,7 +209,7 @@ def direct_pair(rest, keypair, budget, out):
         return 'PPI_LOGIN_SIN_TOKEN_VALIDO'
     heads['Authorization'] = 'Bearer ' + token
     ticker, family, _, _, settlement = KEY
-    for endpoint, template in (('Current', MARKETDATA_CURRENT), ('Book', MARKETDATA_BOOK)):
+    for endpoint, template in (('Book', MARKETDATA_BOOK),):
         evidence = out[endpoint] = {'attempted': False}
         lease = budget.acquire(endpoint.lower(), priority='DISCOVERY')['lease']
         with budget.wire_scope(lease):
@@ -221,7 +221,7 @@ def direct_pair(rest, keypair, budget, out):
         if evidence.get('http') != 200:
             return 'PPI_RESPUESTA_HTTP_DISTINTA_DE_200'
         evidence['data'] = describe(body, at, endpoint)
-    return 'PPI_DOS_RESPUESTAS_HTTP_200'
+    return 'PPI_BOOK_HTTP_200'
 
 
 def observe_restart(parent, path, old, interlock):
@@ -494,14 +494,16 @@ def run_with_cooldown_wait():
     deadline = time.monotonic() + COOLDOWN_WAIT_LIMIT_S
     report = run_host_attempt()
     checks = 1
-    while report.get('state') == 'PPI_PAUSA_ACTIVA' and report.get('gateway_sigterm') is False:
+    waiting_states = {'PPI_PAUSA_ACTIVA', 'PPI_GATEWAY_UNAVAILABLE',
+                      'PPI_GATEWAY_LIFETIME_LEASE_HELD'}
+    while report.get('state') in waiting_states and report.get('gateway_sigterm') is False:
         before = report.get('before')
         if not isinstance(before, dict):
             break
         delays = (before.get('get_wait_s'), before.get('login_wait_s'))
-        if any(type(delay) is not int or delay < 0 for delay in delays) or max(delays) == 0:
+        if any(type(delay) is not int or delay < 0 for delay in delays):
             break
-        delay = max(delays)
+        delay = max(*delays, 45)
         if time.monotonic() + delay >= deadline:
             report['cooldown_wait_limit_reached'] = True
             break
