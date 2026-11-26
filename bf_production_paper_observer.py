@@ -92,6 +92,7 @@ SIGNAL_WINDOW_MINUTES = max(15, int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90
 HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
 CATALOG_DEFERRED_STATUS = "DEFERRED_PROVIDER"
+CATALOG_GATEWAY_DEFERRED_STATUS = "DEFERRED_GATEWAY_REATTACH"
 CATALOG_PROVIDER_BACKPRESSURE = PAPER_DIRECT_WIRE_BACKPRESSURE | {
     "PPI_AUX_HTTP_401",
     "PPI_AUX_HTTP_429",
@@ -272,14 +273,15 @@ def _cooldown_session_state(phase, now=None):
     return "BOOT_CALENDAR"
 
 
-def _candidate_universe():
+def _candidate_universe(*, include_reference_indices=False):
     """Plan de discovery automático.
 
     No usa watchlist/tickers versionados como autoridad. Los prefijos se generan
     por código y rotan; PPI confirma existencia. IOL/BYMA se fusionan después
     como fuentes complementarias y nunca reemplazan un campo PPI presente.
     """
-    return ppi_query_plan(day=datetime.now(TZ).date())
+    return ppi_query_plan(day=datetime.now(TZ).date(),
+                          include_reference_indices=include_reference_indices)
 
 
 def _walk_numbers(value, keys):
@@ -420,7 +422,7 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
             book = retry_read(lambda: reader.book(symbol, asset_class, settlement), retries=1)
         except Exception:
             if current_capture is not None and isinstance(current_capture.get("guard_wire_receipt"), dict):
-                _record_candle_current_on_book_failure(store, identity, current_capture, priority)
+                _record_scanner_current_sample(store, identity, current_capture, priority)
             raise
     metadata = None
     if not catalog_read_error:
@@ -472,8 +474,8 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     return quote
 
 
-def _record_candle_current_on_book_failure(store, identity, capture, priority):
-    """Preserve Current for candles without publishing a quote or rescuing Book."""
+def _record_scanner_current_sample(store, identity, capture, priority):
+    """Preserve a guarded Current for the existing sampled candle queue."""
     from bl_candle_engine import record_guarded_current_sample
 
     symbol, family, market, currency, settlement = identity
@@ -688,6 +690,10 @@ def _catalog_records(value):
     return found
 
 
+class _CatalogGatewayDisconnected(RuntimeError):
+    """Catalog reads lost their gateway pin before the first catalog write."""
+
+
 @contextmanager
 def _candidate_publication(store):
     """Mark discovery, policy and projection as one incomplete publication.
@@ -696,19 +702,33 @@ def _candidate_publication(store):
     A nested complementary pass finishes the last candidate write before the
     outer download records its health/source-sync receipts.
     """
+    started_at = now_iso()
     with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         connection.execute("""CREATE TABLE IF NOT EXISTS candidate_refresh_state(
             id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL,
             checked_at TEXT NOT NULL)""")
+        previous = connection.execute(
+            "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1"
+        ).fetchone()
         connection.execute("""INSERT INTO candidate_refresh_state VALUES(1,'RUNNING',?)
             ON CONFLICT(id) DO UPDATE SET state=excluded.state,
-            checked_at=excluded.checked_at""", (now_iso(),))
+            checked_at=excluded.checked_at""", (started_at,))
     try:
         yield
     except BaseException as error:
         try:
             with store.connect() as connection:
-                connection.execute("UPDATE candidate_refresh_state SET state='FAILED' WHERE id=1")
+                if isinstance(error, _CatalogGatewayDisconnected):
+                    if previous is None:
+                        connection.execute("""DELETE FROM candidate_refresh_state
+                            WHERE id=1 AND state='RUNNING' AND checked_at=?""", (started_at,))
+                    else:
+                        connection.execute("""UPDATE candidate_refresh_state SET state=?,checked_at=?
+                            WHERE id=1 AND state='RUNNING' AND checked_at=?""",
+                            (*previous, started_at))
+                else:
+                    connection.execute("UPDATE candidate_refresh_state SET state='FAILED' WHERE id=1")
         except Exception as marker_error:
             error.add_note("CANDIDATE_REFRESH_FAILURE_MARKER:" + type(marker_error).__name__)
         raise
@@ -718,8 +738,15 @@ def _candidate_publication(store):
 
 
 def _download_catalog(reader, store):
-    with _candidate_publication(store):
-        return _download_catalog_generation(reader, store)
+    try:
+        with _candidate_publication(store):
+            return _download_catalog_generation(reader, store)
+    except _CatalogGatewayDisconnected as exc:
+        reason = str(exc)
+        _sync_state(store, "PPI_PRODUCTION_CATALOG", CATALOG_GATEWAY_DEFERRED_STATUS, 0, reason)
+        _health(store, "PPI_PRODUCTION_CATALOG", "AMARILLO", reason, "PPI Producción")
+        store.event("CATALOG_DISCOVERY_DEFERRED", reason)
+        raise
 
 
 def _download_catalog_generation(reader, store):
@@ -744,12 +771,16 @@ def _download_catalog_generation(reader, store):
             store.event("CATALOG_CONFIGURATION_UNAVAILABLE", reason)
             if reason in CATALOG_PROVIDER_BACKPRESSURE:
                 deferred_reason = reason
+            elif _scanner_gateway_reader_lost(exc):
+                raise _CatalogGatewayDisconnected(reason) from exc
         else:
             for literal in configuration["instrument_types"]:
                 types_by_family.setdefault(canonical_family(literal), []).append(literal)
             for literal in configuration["markets"]:
                 markets_by_key.setdefault(canonical_market(literal), []).append(literal)
-    for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in _candidate_universe():
+    plan = (_candidate_universe(include_reference_indices=True)
+            if "INDICES" in types_by_family else _candidate_universe())
+    for ticker_query, provider_type, fallback_settlement, market_query, _, instrument_type in plan:
         if deferred_reason:
             break
         status, detail = "EMPTY_FILTER_RESULT", "Este filtro no devolvió coincidencias; no prueba indisponibilidad."
@@ -801,6 +832,8 @@ def _download_catalog_generation(reader, store):
             detail = _scanner_ppi_error(exc)
             if detail in CATALOG_PROVIDER_BACKPRESSURE:
                 deferred_reason = detail
+            elif _scanner_gateway_reader_lost(exc):
+                raise _CatalogGatewayDisconnected(detail) from exc
             status = CATALOG_DEFERRED_STATUS if deferred_reason else "ERROR"
         query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
         if CATALOG_QUERY_SLEEP_SECONDS and not deferred_reason:
@@ -1340,9 +1373,21 @@ def _ppi_direct_rest_probe_candidates(store, *, limit=1, family=None, after=None
 
 def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
     pending = ""
+    contract_priority = ""
     archived_priority = ""
     if pending_settlement:
+        # Only identities whose venue and currency can be attested should
+        # consume discovery turns. A currency/venue sibling at another term
+        # would invalidate the proof when it is published.
         pending = """AND f.status='AVAILABLE' AND f.settlement_source='REQUEST_CANDIDATE'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM financial_instrument_catalog other
+                    WHERE other.ticker=f.ticker AND other.instrument_type=f.instrument_type
+                      AND other.status IN ('AVAILABLE','STALE')
+                      AND other.market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND other.currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND (other.market!=f.market OR other.currency!=f.currency)
+                  )
                   AND NOT EXISTS (
                     SELECT 1 FROM candidate_identity_v2 p
                     WHERE p.ticker=f.ticker AND p.instrument_type=f.instrument_type
@@ -1350,6 +1395,7 @@ def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
                       AND p.settlement=f.settlement
                       AND p.status='AVAILABLE' AND p.can_simulate=1
                   )"""
+        contract_priority = "CASE WHEN f.capability LIKE 'READY_PAPER_%' THEN 0 ELSE 1 END,"
         # A stored TRADE and Book select the first key to revisit. They are
         # insufficient for live freshness or settlement authority.
         archived_priority = """EXISTS (
@@ -1362,6 +1408,7 @@ def _ppi_rest_probe_keys(store, *, limit, family, after, pending_settlement):
                   ) DESC,"""
     if after is None:
         order = f"""CASE WHEN f.status='AVAILABLE' THEN 0 ELSE 1 END,
+                   {contract_priority}
                    {archived_priority}
                    CASE WHEN f.ticker IN ('GGAL','AL30','AAPL') THEN 0 ELSE 1 END,
                    f.last_seen_at DESC,f.instrument_type,f.ticker,f.settlement"""
@@ -1562,6 +1609,7 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
                     observation["settlement_attested"] = True
                     store.event("PPI_NATIVE_SETTLEMENT_ATTESTED",
                                 ":".join(key) + ";source=PPI_NATIVE_REQUEST_RECEIPT")
+                    _record_scanner_current_sample(store, key, witnessed_current, "DISCOVERY")
             except (sqlite3.Error, OSError, TypeError, ValueError) as exc:
                 store.event("PPI_NATIVE_SETTLEMENT_PUBLISH_HOLD", type(exc).__name__)
         if update_market_clock:
@@ -1634,6 +1682,9 @@ def _discover_native_settlements(reader, store, *, slots, deadline, cursor, afte
             last_pulse = _pulse_observed_progress(store, last_pulse)
         result["fresh_pairs"] += status == "FRESH_OBSERVED"
         result["attested"] += observed.get("settlement_attested") is True
+        if reason == "PPI_NATIVE_DEMAND_IDENTITY_DENIED":
+            result.setdefault("identities_denied_by_gateway", []).append(list(key))
+            continue
         if status == "PRE_WIRE_GUARD_HOLD" or (
                 status == "PROVIDER_OR_CONTRACT_HOLD" and reason not in {
                     "PPI_INSTRUMENT_NOT_FOUND", "PPI_CATALOG_INDEPENDENT_AUTHORITY_UNVERIFIED",
@@ -2973,6 +3024,8 @@ def _source_sync_due(store, source, now=None):
                 if status == CATALOG_DEFERRED_STATUS:
                     # Any longer provider hold still applies at the gateway.
                     return (now - attempt).total_seconds() >= LOGIN_COOLDOWN_SECONDS
+                if status == CATALOG_GATEWAY_DEFERRED_STATUS:
+                    return (now - attempt).total_seconds() >= GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
                 if status == "ROJO":
                     # Unclassified failures, including older releases, can be
                     # revisited once after the same session closes.
@@ -3008,6 +3061,7 @@ def _daily_sync_needed(store, now=None):
 
 
 def _daily_sync(reader, store, now=None):
+    """Return true when the scanner must drop its obsolete local reader."""
     now = now or datetime.now(TZ)
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
@@ -3030,6 +3084,10 @@ def _daily_sync(reader, store, now=None):
             f"{catalog} instrumentos; {histories} filas históricas; "
             f"catalog_due={catalog_due}; history_due={history_due}.",
         )
+    except _CatalogGatewayDisconnected as exc:
+        reader.close()
+        store.event("PPI_GATEWAY_REATTACH_REQUIRED", str(exc))
+        return True
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _sync_state(store, "PPI_PRODUCTION_DAILY_SYNC", "ROJO", 0, detail)
@@ -3148,6 +3206,13 @@ def _run_command(store, reader, command, gemini_gate=None, login_interlock=None)
             problems.append("Gemini: " + gemini_detail[:120])
     try:
         catalog = _download_catalog(reader, store)
+    except _CatalogGatewayDisconnected as exc:
+        reader.close()
+        reason = str(exc)
+        store.event("PPI_GATEWAY_REATTACH_REQUIRED", reason)
+        _finish_command(store, command_id, "PARTIAL", reason)
+        store.state(ppi_auth="ERROR", detail=reason)
+        return None
     except Exception as exc:
         catalog = 0
         problems.append(f"catálogo: {type(exc).__name__}")
@@ -3443,10 +3508,30 @@ def run():
                         time.monotonic()))
                 if caucion_ledger_blocked and phase != "OPEN":
                     continue
+            if phase == "PREOPEN":
+                # Verify the scanner's pin even when preopen issues no market GET.
+                try:
+                    reason = ("" if reader.metrics.get("authenticated") is True
+                              else "PPI_GATEWAY_SESSION_RECOVERY_PENDING")
+                except Exception as exc:
+                    if not _scanner_gateway_reader_lost(exc):
+                        raise
+                    reason = _scanner_ppi_error(exc)
+                if reason:
+                    reader.close()
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    _health(store, "PPI_PRODUCTION_AUTH", "ROJO", reason, "PPI Producción")
+                    store.event("PPI_GATEWAY_REATTACH_REQUIRED", reason)
+                    store.state(process_state="DEGRADED", ppi_auth="ERROR", session_state=phase,
+                                heartbeat_at=now_iso(), real_orders_sent=0, detail=reason)
+                    continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             if not caucion_ledger_blocked:
-                if attached and phase != "OPEN":
-                    _daily_sync(reader, store)
+                if attached and phase != "OPEN" and _daily_sync(reader, store):
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    continue
                 operations.service_tick(store, phase)
                 if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                     try:
@@ -3470,7 +3555,10 @@ def run():
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
-                _daily_sync(reader, store)
+                if _daily_sync(reader, store):
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    continue
                 _background_ingest(reader, store)
                 if time.time() - last_readiness_check >= READINESS_CHECK_SECONDS:
                     _runtime_readiness(store)

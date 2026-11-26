@@ -644,7 +644,8 @@ class PPISharedSessionOwner:
     def _guarded_provider_error(self, wire_calls):
         if self._guarded_wire_advanced(wire_calls):
             outcome = getattr(self._reader, "last_provider_response", None)
-            if isinstance(outcome, tuple) and len(outcome) == 2 and outcome[0] in {401, 403, 429}:
+            if (isinstance(outcome, tuple) and len(outcome) == 2
+                    and type(outcome[0]) is int and 400 <= outcome[0] <= 599):
                 return outcome
         return None
 
@@ -679,6 +680,14 @@ class PPISharedSessionOwner:
                     self._native_retry_after = retry_after if status == 429 else None
                     self._native_hold_until = self._provider_hold(status, retry_after)
                     raise SessionOwnerBlocked(f"PPI_NATIVE_HTTP_{status}") from None
+                if guarded is not None:
+                    # SDK get() can raise only the response body. Keep the HTTP
+                    # status observed by the guard without exporting that body.
+                    from bd_ppi_readonly_guard import instrument_not_found
+                    reason = ("PPI_INSTRUMENT_NOT_FOUND"
+                              if status in {400, 404} and instrument_not_found(exc)
+                              else f"PPI_NATIVE_HTTP_{status}")
+                    raise SessionOwnerBlocked(reason) from None
                 raise
 
     def dispatch_native_acquire(self, *, consumer: str, method: str,

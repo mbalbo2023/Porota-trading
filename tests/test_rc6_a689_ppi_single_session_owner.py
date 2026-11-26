@@ -420,6 +420,119 @@ def test_owner_rpc_native_acquire_with_real_budgeted_reader_no_socket(harness):
         owner.close()
 
 
+@pytest.mark.parametrize(("trade_age", "trade_error"), [(45, ""), (930, "TRADE_STALE")])
+def test_scanner_pairs_current_outside_the_native_cache_with_fresh_book(
+    harness, tmp_path, trade_age, trade_error,
+):
+    from be_paper_engine import PaperStore
+    from bf_production_paper_observer import _read_scanner_quote
+    from bu_instrument_catalog import init_schema
+    from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
+
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    init_schema(store)
+    owner = harness.make_owner()
+    current = {"date": (datetime.now(timezone.utc) - timedelta(seconds=trade_age)).isoformat(),
+               "price": 100, "volume": 33, "openingPrice": 99, "max": 101, "min": 98}
+    responses = {}
+
+    def acquire(consumer, *, method, five_key, priority):
+        payload = current if method == "current" else harness.native_book
+        harness.wire.body = json.dumps(payload).encode()
+        result = owner.dispatch_native_acquire(consumer=consumer, method=method,
+                                               five_key=five_key, priority=priority)
+        responses[method] = result
+        return result
+
+    try:
+        owner.open_once()
+        client = types.SimpleNamespace(
+            pull=lambda **kwargs: pytest.fail("REST acquisition must not pull the stream"),
+            # The fixture login does not perform a wire send. Pin its local
+            # owner at the same boundary used by the real scanner adapter.
+            owner_status=lambda: {**owner.status(), "guard_login_wire_attempts": 1},
+            acquire_native=acquire,
+        )
+        reader = SharedPPIReaderAdapter(
+            client=client, consumer="scanner", catalog_source_digest="f" * 64)
+        reader.login_once()
+        quote = _read_scanner_quote(reader, store, FIVE[0], FIVE[1], FIVE[4],
+                                    identity=FIVE)
+        assert list(responses) == ["current", "book"]
+        assert all(result["guard_wire_receipt"]["http_status_code"] == 200
+                   for result in responses.values())
+        assert responses["current"]["receipt"]["cache_state"] == "PPI_NATIVE_RECEIPT_STALE"
+        assert responses["current"]["receipt"]["paper_ready"] is False
+        assert quote.trade_at == current["date"]
+        assert quote.book_at == harness.native_book["date"]
+        assert quote.time_error(datetime.now(timezone.utc).isoformat(), require_trade=True,
+                                max_trade_age_seconds=900) == trade_error
+        assert owner._native.read_native(consumer="scanner", method="current", five_key=FIVE)[
+            "state"] == "NO_AUTHENTIC_NATIVE_RECEIPT"
+        assert owner._native.read_native(consumer="exit_reader", method="book", five_key=FIVE)[
+            "state"] == "OK"
+        assert harness.counts["gets"] == 2
+    finally:
+        owner.close()
+
+
+def test_repeated_current_is_a_new_http_response_but_never_a_new_cached_trade(harness):
+    from rc6_ppi_native_request_receipt import SettlementReceiptSigner
+
+    owner = harness.make_owner(catalog_authority=FakeExternalCapacity({
+        "PPI_NATIVE_QUERY_IDENTITY_UNIQUE"}))
+    owner._settlement_signer = SettlementReceiptSigner(["a" * 40, "b" * 40])
+    try:
+        owner.open_once()
+
+        def acquire(method, payload):
+            harness.wire.body = json.dumps(payload).encode()
+            return owner.dispatch_native_acquire(
+                consumer="scanner", method=method, five_key=FIVE, priority="DISCOVERY")
+
+        current = {"date": harness.native_book["date"], "price": 100, "volume": 33,
+                   "openingPrice": 99, "max": 101, "min": 98}
+        first = acquire("current", current)
+        assert "cache_state" not in first["receipt"]
+        assert owner._settlement_signer._current is not None
+        repeated = acquire("current", current)
+        assert repeated["guard_wire_receipt"]["http_status_code"] == 200
+        assert repeated["receipt"]["native_at_utc"] == first["receipt"]["native_at_utc"]
+        assert repeated["receipt"]["cache_state"] == "PPI_NATIVE_RECEIPT_NOT_NEWER"
+        assert owner._settlement_signer._current is None
+        book = acquire("book", harness.native_book)
+        assert "settlement_proof" not in book
+        assert owner._native.read_native(consumer="scanner", method="current", five_key=FIVE)[
+            "receipt"] == first["receipt"]
+        assert harness.counts["gets"] == 3
+    finally:
+        owner.close()
+
+
+@pytest.mark.parametrize(("method", "date_offset", "error"), [
+    ("book", -45, "PPI_NATIVE_RECEIPT_CLOCK_INVALID"),
+    ("current", 30, "PPI_REST_NATIVE_TIME_AFTER_RECEIVE"),
+])
+def test_observing_current_does_not_change_book_freshness_or_timestamp_order(
+    harness, method, date_offset, error,
+):
+    owner = harness.make_owner()
+    payload = (harness.native_book if method == "book" else {
+        "price": 100, "volume": 33, "openingPrice": 99, "max": 101, "min": 98,
+    })
+    stamp = datetime.now(timezone.utc) + timedelta(seconds=date_offset)
+    harness.wire.body = json.dumps({**payload, "date": stamp.isoformat()}).encode()
+    try:
+        owner.open_once()
+        with pytest.raises((ValueError, RuntimeError), match=error):
+            owner.dispatch_native_acquire(consumer="scanner", method=method,
+                                          five_key=FIVE, priority="DISCOVERY")
+        assert owner._native.stats()["retained_raw_receipts"] == 0
+        assert harness.counts["gets"] == 1
+    finally:
+        owner.close()
+
+
 def test_single_owner_serves_bounded_scanner_catalog_history_configuration(harness):
     owner = harness.make_owner(capacity=FakeExternalCapacity({
         "OWNER_AUTHENTICATE", "REST_NATIVE_ACQUIRE", "REST_AUXILIARY_ACQUIRE"}))
@@ -534,6 +647,34 @@ def test_aux_observed_429_retry_after_blocks_next_get_without_claiming_quota(har
         assert owner.status()["aux_retry_after_seconds_observed"] == 120
         assert owner.status()["session_recovery_pending"] is False
         assert not owner.session_recovery_due()
+    finally:
+        owner.close()
+
+
+@pytest.mark.parametrize(("http_status", "body", "reason"), [
+    (404, "Instrument not found", "PPI_INSTRUMENT_NOT_FOUND"),
+    (404, "UNTRUSTED_RESPONSE_BODY", "PPI_NATIVE_HTTP_404"),
+    (503, "UNTRUSTED_RESPONSE_BODY", "PPI_NATIVE_HTTP_503"),
+])
+def test_owner_reports_guarded_native_http_failure_when_sdk_raises_only_the_body(
+        harness, http_status, body, reason):
+    owner = harness.make_owner()
+    try:
+        owner.open_once()
+        harness.wire.status = http_status
+        harness.wire.body = json.dumps(body).encode()
+        sdk = owner._reader._ProductionMarketReader__client.marketdata
+        original_current = sdk.current
+
+        def sdk_current(*args):
+            raise Exception(original_current(*args))
+
+        sdk.current = sdk_current
+        with pytest.raises(SessionOwnerBlocked, match=f"^{reason}$"):
+            owner.capture_native("current", FIVE, priority="DISCOVERY")
+        assert harness.counts["gets"] == 1
+        assert owner.status()["session_recovery_pending"] is False
+        assert owner.status()["native_backoff_remaining_seconds"] == 0
     finally:
         owner.close()
 

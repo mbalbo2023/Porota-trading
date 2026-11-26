@@ -30,7 +30,7 @@ PPI_MARKETS={
     "ACCIONES":("BYMA",),"CEDEARS":("BYMA",),"ETFS":("BYMA",),
     "BONOS":("BYMA",),"LETRAS":("BYMA",),"OBLIGACIONES":("BYMA",),
     "OPCIONES":("BYMA",),"FUTUROS":("ROFEX","A3"),
-    "CAUCIONES":("BYMA",),"FCI":("BYMA",),
+    "CAUCIONES":("BYMA",),"FCI":("BYMA",),"INDICES":("BYMA",),
 }
 DEFAULT_SETTLEMENT={
     "ACCIONES":"A-24HS","CEDEARS":"A-24HS","ETFS":"A-24HS",
@@ -48,7 +48,8 @@ def canonical_family(value: Any) -> str:
         key=str(value or "").strip().upper()
         aliases={"TIT. PUBLICOS":"BONOS","OBL.NEG.":"OBLIGACIONES",
                  "OBL.PYME":"OBLIGACIONES","FONDO COMÚN DE INVERSIÓN":"FCI",
-                 "FDOS.INV":"FCI","FONDOS COTIZ.":"ETFS","LETRA / NOTA":"LETRAS"}
+                 "FDOS.INV":"FCI","FONDOS COTIZ.":"ETFS","LETRA / NOTA":"LETRAS",
+                 "INDICE":"INDICES"}
         return aliases.get(key,key)
 
 def canonical_market(value: Any) -> str:
@@ -60,7 +61,8 @@ def canonical_settlement(value: Any, family: str="") -> str:
     if raw:return TERM_ALIAS.get(raw,raw)
     return DEFAULT_SETTLEMENT.get(canonical_family(family),"")
 
-def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
+def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None,
+                   include_reference_indices=False):
     """Rotate on audited trading sessions, matching the catalog scheduler.
 
     Prefixes are generated code, never a ticker allowlist. A record returned by
@@ -78,7 +80,7 @@ def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
     )
     start = (session_index * width) % len(PREFIXES)
     out=[]
-    families=tuple(PPI_QUERY_TYPES)
+    families=(*PPI_QUERY_TYPES,"INDICES") if include_reference_indices else tuple(PPI_QUERY_TYPES)
     for offset,family in enumerate(families):
         # PPI's documented/read-only caucion adapter uses the family alias
         # CAUCION and expands it to the exact PESOS{días}/DOLAR{días} set.
@@ -94,7 +96,8 @@ def ppi_query_plan(*, day: date|None=None, prefixes_per_family: int|None=None):
         chosen=[PREFIXES[(base+i)%len(PREFIXES)] for i in range(width)]
         for market in PPI_MARKETS[family]:
             for prefix in chosen:
-                out.append((prefix,PPI_QUERY_TYPES[family],DEFAULT_SETTLEMENT[family],market,True,family))
+                out.append((prefix,PPI_QUERY_TYPES.get(family,family),
+                            DEFAULT_SETTLEMENT.get(family,""),market,True,family))
     return out
 
 def _rows(path: Path, source: str):

@@ -174,7 +174,20 @@ def test_one_instrument_per_family_through_gateway_and_engine(
                 "_admission_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
             return
         assert observed["status"] == "FRESH_OBSERVED"
+        assert observed["settlement_attested"]
         assert calls == ["Current", "Book"]
+        from bl_candle_engine import SampleMaterializer
+
+        SampleMaterializer(store).tick(AT + timedelta(minutes=5))
+        with store.connect() as connection:
+            guarded_bars = connection.execute("""SELECT json_extract(s.identity_json,'$.resolution'),
+                v.body_json FROM candle_versions v JOIN candle_series s USING(series_id)
+                WHERE json_extract(s.identity_json,'$.source')='PPI_GUARDED_CURRENT'
+                ORDER BY 1""").fetchall()
+        assert [row[0] for row in guarded_bars] == ["1m", "5m"]
+        for _, body in guarded_bars:
+            candle = json.loads(body)
+            assert candle["quality"] == "SAMPLED" and candle["volume"] is None
         if family in {"OPCIONES", "FUTUROS"}:
             _derivative_economics(store, family)
         item = catalog.lookup(store, ticker, family, term, market=market, currency="ARS")

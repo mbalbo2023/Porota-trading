@@ -4,6 +4,7 @@ No PPI login, real provider GET, external Watch process, or host filesystem.
 The fixture public key is ephemeral and never authorizes a real deployment.
 """
 
+from contextlib import closing
 from copy import deepcopy
 from datetime import timedelta
 import hashlib
@@ -211,14 +212,17 @@ def test_material_changed_between_lease_acquire_and_start_revokes_send(
     budget = RuntimePPIBudget(store.path,
         RuntimeCapacityController(store.path, environ=environ,
                                   policy=deepcopy(DEFAULT_POLICY)), clock=clock.now)
-    admitted = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
-    assert admitted["allowed"] and admitted["lease"]
-    watch = tmp_path / "a667-watch-synthetic.json"
-    body = json.loads(watch.read_text())
-    body["global_reserve"] += 1
-    _write_material(watch, body)
-    with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
-        budget.start(admitted["lease"])
+    # Keep the synthetic WAL open when idle setup connections are finalized.
+    # A last-close checkpoint would change the source during its verified copy.
+    with closing(store.connect()):
+        admitted = budget.acquire("book", consumer="EXIT_READER", priority="EXIT_CRITICAL")
+        assert admitted["allowed"] and admitted["lease"]
+        watch = tmp_path / "a667-watch-synthetic.json"
+        body = json.loads(watch.read_text())
+        body["global_reserve"] += 1
+        _write_material(watch, body)
+        with pytest.raises(BudgetBackpressure, match="PPI_STATIC_SHARED_AUTHORITY_UNVERIFIED"):
+            budget.start(admitted["lease"])
     assert not requests_seen
 
 

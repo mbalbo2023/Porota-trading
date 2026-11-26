@@ -227,6 +227,7 @@ class MarketOnlyRESTProducer:
             guard_budget_receipt_sha256=guard_receipt,
             capture_type={"current": "REST_CURRENT", "book": "REST_BOOK",
                           "intraday": "REST_INTRADAY"}[method],
+            allow_observed_current=method == "current",
         )
         return {"schema": SCHEMA, "state": "OBSERVE_ONLY",
                 "ppi_catalog_authority": "NO_VERIFICADO",

@@ -1,12 +1,16 @@
-"""A catalog generation is incomplete until discovery and policy finish."""
+"""Catalog publication and scanner recovery preserve gateway custody."""
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 import bf_production_paper_observer as observer
 import bu_instrument_catalog as catalog
+import bv_paper_runtime as runtime
 import cr_contract_evidence_v2_mass_hf6 as mass
+import rc6_ppi_gateway_reader_adapter as gateway
 from be_paper_engine import PaperStore
+from rc6_ppi_shared_feed import SharedFeedUnavailable
 from scripts import rc6_zero_known_error_runtime_audit as audit
 from tests.test_ws_integ_03_runtime_audit import _snapshot
 
@@ -60,6 +64,48 @@ def test_complement_revalidation_is_running_before_final_projection(tmp_path, mo
     assert state(store) == "COMPLETE"
 
 
+@pytest.mark.parametrize("declared_index", (None, "INDICE"))
+def test_only_a_declared_index_filter_runs_and_remains_observational(
+        tmp_path, monkeypatch, declared_index):
+    store = prepared(tmp_path, monkeypatch)
+    market_day = datetime(2026, 11, 26, tzinfo=observer.TZ).date()
+    monkeypatch.setattr(observer, "_candidate_universe", lambda *, include_reference_indices=False:
+                        observer.ppi_query_plan(day=market_day, prefixes_per_family=1,
+                                                include_reference_indices=include_reference_indices))
+    declared = ["ETF"] + ([declared_index] if declared_index else [])
+    calls = []
+    with store.connect() as connection:
+        catalog.persist_family_coverage(
+            connection, {"instrument_types": ["INDICES"]}, [], [], "previous", observer.now_iso())
+
+    class Reader:
+        def market_configuration(self):
+            return {"instrument_types": declared, "markets": ["BYMA"], "settlements": ["A-24HS"],
+                    "quantity_types": [], "operation_terms": [], "operation_types": [],
+                    "operations": []}
+
+        def search_instruments(self, ticker, provider_type, *, name, market):
+            calls.append((provider_type, market))
+            assert ticker and name
+            symbol = "TEST_ETF" if provider_type == "ETF" else "TEST_INDEX"
+            return [{"ticker": symbol, "type": provider_type, "market": market, "currency": "ARS"}]
+
+    assert observer._download_catalog(Reader(), store) == len(declared)
+    assert calls == [(kind, "BYMA") for kind in declared]
+    with store.connect() as connection:
+        rows = {row[0]: tuple(row[1:]) for row in connection.execute(
+            "SELECT instrument_type,status,capability,settlement FROM financial_instrument_catalog")}
+        assert rows["ETFS"] == ("AVAILABLE", "READY_PAPER_SPOT", "A-24HS")
+        index = connection.execute("""SELECT declared,discovery_status FROM catalog_family_coverage
+            WHERE instrument_type='INDICES'""").fetchone()
+        if declared_index:
+            assert rows["INDICES"] == ("OBSERVED_SHADOW", "INDEX_REFERENCE_ONLY", "")
+            assert tuple(index) == (1, "INSTRUMENTS_OBSERVED")
+        else:
+            assert "INDICES" not in rows
+            assert tuple(index) == (0, "NOT_ENUMERATED")
+
+
 def test_policy_exception_leaves_failed_generation_not_previous_complete(tmp_path, monkeypatch):
     store = prepared(tmp_path, monkeypatch)
     class Reader:
@@ -71,6 +117,185 @@ def test_policy_exception_leaves_failed_generation_not_previous_complete(tmp_pat
     with pytest.raises(RuntimeError, match="POLICY_FIXTURE_FAILURE"):
         observer._download_catalog(Reader(), store)
     assert state(store) == "FAILED"
+
+
+@pytest.mark.parametrize(("rotation", "prior_state"), [
+    ("configuration", None),
+    ("configuration", "FAILED"),
+    ("search", "COMPLETE"),
+])
+def test_owner_change_retries_without_publishing_partial_catalog(
+        tmp_path, monkeypatch, rotation, prior_state):
+    store = prepared(tmp_path, monkeypatch)
+    now = datetime(2026, 11, 26, 0, 30, tzinfo=observer.TZ)
+    old = (now - timedelta(days=1)).isoformat()
+    monkeypatch.setattr(observer, "now_iso", now.isoformat)
+    source = "PPI_PRODUCTION_CATALOG"
+    reason = "PPI_GATEWAY_OWNER_CHANGED"
+    old_config = {"instrument_types": ["ACCIONES"], "markets": ["BYMA"], "settlements": [],
+                  "quantity_types": [], "operation_terms": [], "operation_types": [], "operations": []}
+    record = {"type": "ACCIONES", "currency": "ARS", "market": "BYMA", "settlement": "A-24HS"}
+    with store.connect() as connection:
+        if prior_state is None:
+            connection.execute("DELETE FROM candidate_refresh_state")
+        else:
+            connection.execute("UPDATE candidate_refresh_state SET state=?,checked_at=?",
+                               (prior_state, old))
+        catalog.persist(connection, catalog.normalize_record(
+            dict(record, ticker="PREVIOUS"), "A-24HS", old, "previous"))
+        catalog.persist_family_coverage(connection, old_config, [], [], "previous", old)
+        connection.execute("INSERT INTO broker_market_configuration VALUES('markets',?,?)",
+                           (old, '["BYMA"]'))
+        connection.execute("INSERT INTO source_sync VALUES(?,'VERDE',?,?,1,'previous')",
+                           (source, old, old))
+    monkeypatch.setattr(observer, "_candidate_universe", lambda: [
+        (ticker, "ACCIONES", "A-24HS", "BYMA", False, "ACCIONES")
+        for ticker in ("FIRST", "SECOND", "THIRD")])
+    monkeypatch.setattr(observer, "_history_daily_sync_due", lambda *args: True)
+    calls = []
+
+    class Reader:
+        def market_configuration(self):
+            assert state(store) == "RUNNING"
+            calls.append("configuration")
+            if rotation == "configuration":
+                raise SharedFeedUnavailable(reason)
+            return dict(old_config, markets=["BYMA", "NASDAQ"])
+
+        def search_instruments(self, ticker, *_args, **_kwargs):
+            calls.append(ticker)
+            if ticker == "SECOND":
+                raise SharedFeedUnavailable(reason)
+            return [dict(record, ticker=ticker)]
+
+        def close(self):
+            calls.append("close")
+
+    monkeypatch.setattr(observer, "_download_histories",
+                        lambda *args, **kwargs: pytest.fail("History used the obsolete reader"))
+    assert observer._daily_sync(Reader(), store, now) is True
+    assert calls == (["configuration", "close"] if rotation == "configuration"
+                     else ["configuration", "FIRST", "SECOND", "close"])
+    with store.connect() as connection:
+        marker = connection.execute("SELECT state,checked_at FROM candidate_refresh_state").fetchone()
+        assert (tuple(marker) if marker else None) == ((prior_state, old) if prior_state else None)
+        assert connection.execute("SELECT ticker FROM financial_instrument_catalog").fetchone()[0] == "PREVIOUS"
+        assert connection.execute("SELECT COUNT(*) FROM financial_instrument_catalog").fetchone()[0] == 1
+        assert connection.execute("SELECT run_id FROM catalog_family_coverage").fetchone()[0] == "previous"
+        assert tuple(connection.execute("SELECT checked_at,payload_json FROM broker_market_configuration "
+                                        "WHERE name='markets'").fetchone()) == (old, '["BYMA"]')
+        assert connection.execute("SELECT COUNT(*) FROM catalog_query_results").fetchone()[0] == 0
+        assert tuple(connection.execute(
+            "SELECT status,last_success_at,detail FROM source_sync WHERE source=?", (source,)
+        ).fetchone()) == ("DEFERRED_GATEWAY_REATTACH", old, reason)
+    retry = timedelta(seconds=observer.GATEWAY_LOCAL_ATTACH_RETRY_SECONDS)
+    assert not observer._source_sync_due(store, source, now + retry - timedelta(seconds=1))
+    assert observer._source_sync_due(store, source, now + retry)
+
+
+def test_preopen_rechecks_the_scanner_pin_before_publishing_ready(tmp_path, monkeypatch):
+    store = prepared(tmp_path, monkeypatch)
+    reason = "PPI_GATEWAY_OWNER_CHANGED"
+    start = 100_000
+    clock = [start]
+    attachments = []
+    ready = []
+
+    class Reader:
+        def __init__(self, obsolete):
+            self.obsolete = obsolete
+            self.closed = False
+
+        @property
+        def metrics(self):
+            if self.obsolete:
+                raise SharedFeedUnavailable(reason)
+            return {"authenticated": True}
+
+        def close(self):
+            self.closed = True
+
+    readers = [Reader(obsolete=True), Reader(obsolete=False)]
+
+    def attach(database, *, consumer):
+        assert (database, consumer) == (store.path, "scanner")
+        attachments.append(clock[0])
+        return readers[len(attachments) - 1]
+
+    def sleep(seconds):
+        clock[0] += seconds
+        assert clock[0] <= start + 60
+        with store.connect() as connection:
+            item = connection.execute("""SELECT process_state,ppi_auth,real_orders_sent
+                FROM observer_state WHERE id=1""").fetchone()
+        if item[0] == "READY_PREOPEN":
+            ready.append(tuple(item))
+            monkeypatch.setattr(observer, "STOP", True)
+
+    monkeypatch.delenv("POROTA_RUNTIME_SCHEMA_READY", raising=False)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer, "runtime_store", lambda _: store)
+    monkeypatch.setattr(observer, "_market_phase", lambda: "PREOPEN")
+    monkeypatch.setattr(observer, "_daily_sync", lambda *_: None)
+    monkeypatch.setattr(observer, "_public_probe", lambda *_: None)
+    monkeypatch.setattr(observer, "_periodic_complementary_reconcile", lambda *args: args[2])
+    monkeypatch.setattr(observer.operations, "service_tick", lambda *_: None)
+    monkeypatch.setattr(observer.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(observer, "time", SimpleNamespace(
+        time=lambda: clock[0], monotonic=lambda: clock[0], sleep=sleep))
+    monkeypatch.setattr(gateway, "connect_paper_gateway_reader", attach)
+    monkeypatch.setattr(runtime, "broker_from_environment", lambda *args, **kwargs:
+                        SimpleNamespace(settle_cauciones=lambda: None))
+
+    assert observer.run() == 0
+    assert readers[0].closed
+    assert attachments == [start, start + observer.GATEWAY_LOCAL_ATTACH_RETRY_SECONDS]
+    assert ready == [("READY_PREOPEN", "OK", 0)]
+    with store.connect() as connection:
+        assert connection.execute("""SELECT detail FROM paper_events
+            WHERE event_type='PPI_GATEWAY_REATTACH_REQUIRED'""").fetchone()[0] == reason
+
+
+@pytest.mark.parametrize(("reason", "continue_rotation"), [
+    ("PPI_NATIVE_DEMAND_IDENTITY_DENIED", True),
+    ("PPI_NATIVE_HTTP_429", False),
+    ("PPI_DIRECT_PROVIDER_429_BREAKER", False),
+])
+def test_only_a_per_identity_gateway_denial_can_continue_the_rotation(
+        monkeypatch, reason, continue_rotation):
+    keys = {
+        "ACCIONES": ("GGAL", "ACCIONES", "BYMA", "ARS", "A-24HS"),
+        "CEDEARS": ("AAPL", "CEDEARS", "BYMA", "ARS", "A-24HS"),
+    }
+    seen = []
+
+    def candidates(_store, *, family, **kwargs):
+        return [keys[family]] if family in keys else []
+
+    def observe(_reader, _store, key, **kwargs):
+        seen.append(key)
+        if key == keys["ACCIONES"]:
+            return {"status": "PROVIDER_OR_CONTRACT_HOLD", "reason": reason, "native_receipts": []}
+        return {"status": "FRESH_OBSERVED", "native_receipts": ["current", "book"]}
+
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer, "_ppi_direct_rest_probe_candidates", candidates)
+    monkeypatch.setattr(observer, "_ppi_rest_probe_keys", lambda *args, **kwargs: [])
+    monkeypatch.setattr(observer, "_observe_native_candidate", observe)
+    monkeypatch.setattr(observer, "_pulse_observed_progress", lambda _store, last: last)
+    _, _, result = observer._discover_native_settlements(
+        object(), object(), slots=2, deadline=observer.time.monotonic() + 15,
+        cursor=0, after={}, last_pulse=0)
+
+    assert result["fresh_pairs"] == int(continue_rotation)
+    if continue_rotation:
+        assert seen == [keys["ACCIONES"], keys["CEDEARS"]]
+        assert result["identities_denied_by_gateway"] == [list(keys["ACCIONES"])]
+        assert "reason" not in result
+    else:
+        assert seen == [keys["ACCIONES"]]
+        assert result["reason"] == reason
 
 
 @pytest.mark.parametrize("value,age,error", (

@@ -279,6 +279,11 @@ def test_catalog_rejects_a_second_market_or_currency_even_on_another_term(tmp_pa
         catalog.sync_candidate_universe(connection, AT.isoformat(), bounded_batch=128)
     assert not catalog.publish_native_settlement_receipt(
         store, KEY, sign_pair(signer), (AT + timedelta(seconds=3)).isoformat())
+    from bf_production_paper_observer import _ppi_direct_rest_probe_candidates
+
+    assert KEY in _ppi_direct_rest_probe_candidates(store, family="BONOS")
+    assert _ppi_direct_rest_probe_candidates(
+        store, family="BONOS", pending_settlement=True) == []
     with store.connect() as connection:
         rows = connection.execute("""SELECT metadata_json FROM financial_instrument_catalog""").fetchall()
         assert all(FIELD not in json.loads(row[0]) for row in rows)
