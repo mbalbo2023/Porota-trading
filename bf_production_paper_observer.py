@@ -3324,7 +3324,14 @@ def _announce_phase(store, previous, current):
     if current not in messages:
         return
     from bn_telegram_bus import enqueue
+    from rc6_iol_market_gateway import iol_primary_enabled
     title, detail = messages[current]
+    if iol_primary_enabled():
+        detail = {
+            "PREOPEN": "Preapertura IOL. La admisión PAPER requiere evidencia de rueda.",
+            "OPEN": "Rueda abierta. La admisión PAPER sigue en HOLD hasta calificar IOL.",
+            "CLOSED": "Rueda cerrada. Se conservan históricos y dashboard.",
+        }[current]
     at = now_iso()
     local_day = datetime.now(TZ).date().isoformat()
     try:
@@ -3777,7 +3784,7 @@ def run():
                                     "Gateway cambió/no responde o auth inválida; reconexión local")
                         break
                     if read_error in NATIVE_PROVIDER_BACKPRESSURE or iol and read_error in {
-                            "IOL_HTTP_401", "IOL_HTTP_403", "IOL_HTTP_429", "IOL_GATEWAY_RATE_HOLD"}:
+                            "IOL_HTTP_401", "IOL_HTTP_429", "IOL_GATEWAY_RATE_HOLD"}:
                         observation_hold = read_error
                         break
                 finally:

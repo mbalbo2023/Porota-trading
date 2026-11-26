@@ -67,11 +67,12 @@ class IOLRestReadOnly:
     source = SOURCE
 
     def __init__(self, state_dir, *, config=CONFIG, allow_renew=True, governor=None,
-                 clock=time.time, opener=None):
+                 clock=time.time, opener=None, owner_managed_auth=False):
         self.directory = Path(state_dir)
         self.store = self.directory / "session.json"
         self.config = Path(config)
         self.allow_renew = allow_renew
+        self.owner_managed_auth = owner_managed_auth and allow_renew
         self.governor = governor
         self.clock = clock
         self.opener = opener if opener is not None else build_opener(_NoRedirect)
@@ -193,6 +194,8 @@ class IOLRestReadOnly:
                 raise
             state = {"access_token": access, "refresh_token": refresh,
                      "renew_at": now + seconds - min(60, seconds / 4)}
+            if self.owner_managed_auth and _positive(cached.get("reauth_after")):
+                state["reauth_after"] = cached["reauth_after"]
             write_json(self.store, state)
             return state
 
@@ -204,15 +207,42 @@ class IOLRestReadOnly:
             try:
                 self.active = self._session(now)
             except IOLRestError:
-                self.auth_blocked = True
+                if not self.owner_managed_auth:
+                    self.auth_blocked = True
                 raise
+
+    def _invalidate_owned_access(self):
+        from scripts.porota_rootless_host import Hold, user_lock, write_json
+
+        rejected = self.active["access_token"]
+        self.active = None
+        now = self.clock()
+        try:
+            with user_lock(self.directory / "session.lock"):
+                cached = self._cached()
+                if cached.get("access_token") != rejected:
+                    return  # preserve a newer session
+                previous = cached.get("reauth_after")
+                if _positive(previous) and previous > now:
+                    state = {"refresh_token": cached["refresh_token"],
+                             "reauth_after": previous, "retry_at": previous}
+                else:
+                    state = {"refresh_token": cached["refresh_token"],
+                             "reauth_after": now + AUTH_RETRY_SECONDS}
+                write_json(self.store, state)
+        except (Hold, OSError, IOLRestError, KeyError):
+            # The next request must not replay a token whose invalidation
+            # could not be durably written by this owner.
+            self.auth_blocked = True
 
     def _get(self, path, params):
         self.authenticate()
         try:
             return self._request(path, query=params, token=self.active["access_token"])
         except IOLRestError as error:
-            if error.status_code in (401, 403):
+            if self.owner_managed_auth and error.status_code == 401:
+                self._invalidate_owned_access()
+            elif not self.owner_managed_auth and error.status_code in (401, 403):
                 self.auth_blocked = True
             raise
 

@@ -196,7 +196,7 @@ def _make_iol_gateway_owner(store, socket_path):
     # Use the bounded collector capacity in the testing profile. This supplies
     # an isolated backpressure policy, not evidence of a live account quota.
     rest = IOLRestReadOnly(socket_path.parent / "rest-session",
-        governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0))
+        governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True)
     return IOLMarketGateway(rest, allowed={"scanner": scan_keys, "exit_reader": scan_keys | exit_keys},
                             socket_path=socket_path, supervisor_pid=os.getppid())
 

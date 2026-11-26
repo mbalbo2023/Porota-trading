@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 from threading import Thread
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
@@ -260,6 +261,62 @@ def test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach(tmp_
     with store.connect() as connection:
         rows = connection.execute("SELECT status,result FROM observer_commands ORDER BY id").fetchall()
     assert [tuple(row) for row in rows] == [("NOT_APPLICABLE", "IOL_REST_PROFILE_PPI_COMMAND_RETIRED")] * 3
+
+
+def test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock(tmp_path, monkeypatch, iol_gateway):
+    import bf_production_paper_observer as observer
+    import rc6_iol_market_gateway as gateway
+    import rc6_ppi_gateway_reader_adapter as ppi
+
+    server, client, transport, _advance = iol_gateway
+    register(client, "scanner")
+    monkeypatch.setattr(gateway, "iol_gateway_socket_path", lambda _database: server.socket_path)
+    monkeypatch.setattr(gateway, "IOLGatewayClient", type(client))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    monkeypatch.setattr(observer, "DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(observer.operations, "service_tick", lambda *_: None)
+    monkeypatch.setattr(observer, "_public_probe", lambda *a, **kw: None)
+    monkeypatch.setattr(observer, "_publish_economic_shadow_health", lambda *_: None)
+
+    def unexpected_ppi(*args, **kwargs):
+        pytest.fail("the IOL scanner reached a legacy PPI operation")
+
+    monkeypatch.setattr(ppi, "connect_paper_gateway_reader", unexpected_ppi)
+    for operation in ("_daily_sync", "_background_ingest", "_discover_native_settlements",
+                      "_periodic_complementary_reconcile"):
+        monkeypatch.setattr(observer, operation, unexpected_ppi)
+    phases = ["CLOSED", "PREOPEN", "OPEN"]
+    monkeypatch.setattr(observer, "_market_phase", lambda: phases[0])
+    request = (GGAL[0], GGAL[1], GGAL[4])
+
+    def finish_phase(_seconds):
+        phases.pop(0)
+        if not phases:
+            observer.STOP = True
+
+    def readiness(_store, **_kw):
+        plan = {"catalog_status": "AVAILABLE", "read_scopes": [
+            {"request": request, "identity": GGAL, "priority": "HOT"}]}
+        return {}, [request], 1, 0, 0, {"active_plan": plan}
+
+    monkeypatch.setattr(observer, "_runtime_readiness", readiness)
+    monkeypatch.setattr(observer, "time", SimpleNamespace(
+        **{name: getattr(observer.time, name) for name in ("time", "monotonic", "perf_counter")},
+        sleep=finish_phase))
+
+    assert observer.run() == 0
+    assert transport.calls == ["token", "GGAL", "quote"]
+    store = PaperStore(observer.DB_PATH)
+    assert not store.open_positions()
+    with store.connect() as connection:
+        auth, count = connection.execute("SELECT ppi_auth,real_orders_sent FROM observer_state").fetchone()
+        events = connection.execute("SELECT detail FROM paper_events WHERE event_type='DATA_ERROR'").fetchall()
+    assert (auth, count) == ("NOT_ATTEMPTED", 0)
+    assert [row[0] for row in events] == ["GGAL: IOL_LAST_TRADE_CLOCK_UNVERIFIED"]
 
 
 @pytest.mark.parametrize("identity", FAMILIES, ids=[case[1] for case in FAMILIES])
