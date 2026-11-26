@@ -6,13 +6,15 @@ from functools import partial
 import os
 import re
 from secrets import token_hex
+import time
 
 from bs_instrument_contracts import aware_datetime
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SYMBOL
 from iol_shadow_collector_rc6 import CircuitOpenError, RateGovernor
 from rc6_iol_market_data import IOLMarketReader, MARKETS, SPOT, TERMS, read_iol_market_payload
 from rc6_ppi_shared_feed import (
-    NATIVE_RPC_WAIT_SECONDS, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer, _canonical_bytes, _sha,
+    NATIVE_RPC_WAIT_SECONDS, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer,
+    SharedFeedUnavailable, _canonical_bytes, _sha,
 )
 
 
@@ -26,6 +28,39 @@ ROLE_ENDPOINTS = {"scanner": frozenset({"asset", "quote", "depth"}),
                   "exit_reader": frozenset({"asset", "depth"})}
 REQUEST_FIELDS = {"op", "consumer", "endpoint", "identity", "priority", "session_generation"}
 _REASON = re.compile(r"IOL_[A-Z0-9_]{1,100}\Z")
+PROFILE_ENV = "POROTA_RC6_MARKET_PROVIDER"
+
+
+def iol_primary_enabled():
+    provider = os.getenv(PROFILE_ENV, "PPI")
+    if provider not in {"PPI", "IOL_REST"}:
+        raise ValueError("RC6_MARKET_PROVIDER_INVALID")
+    return provider == "IOL_REST"
+
+
+def iol_gateway_socket_path(database):
+    from cg_paper_workspace import artifact_root
+
+    return artifact_root(database) / "iol-gateway" / "market.sock"
+
+
+def iol_gateway_identities(keys):
+    """Use exact local keys only as a read scope, not as provider attestations."""
+    scoped = set()
+    for key in keys:
+        try:
+            scoped.add(_identity(key))
+        except ValueError:
+            continue
+    return frozenset(scoped)
+
+
+def iol_gateway_reader_needs_reattach(error):
+    return isinstance(error, SharedFeedUnavailable) or (
+        isinstance(error, IOLRestError) and str(error) in {
+            "IOL_GATEWAY_OWNER_CHANGED", "IOL_GATEWAY_OWNER_NOT_PINNED",
+            "IOL_GATEWAY_UNREGISTERED_CLIENT",
+        })
 
 
 def _identity(value):
@@ -61,7 +96,10 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
 
     def _status(self):
         return {"state": "OPEN", "provider": "IOL_REST", "wire_budget_attached": True,
-                "owner_pid": os.getpid(), "session_generation": self._generation}
+                "owner_pid": os.getpid(), "session_generation": self._generation,
+                "authenticated": self._rest.session_current,
+                "wire_attempts": self._rest.governor.calls_total,
+                "rate_limited_attempts": self._rest.governor.calls_429}
 
     def _response(self, state, *, wire_calls=0, **fields):
         return {"schema": DATA_SCHEMA, **self._status(), "state": state,
@@ -145,9 +183,10 @@ class IOLGatewayClient(ReadOnlyUnixFeedClient):
             "endpoint": endpoint, "identity": list(identity), "priority": priority,
             "session_generation": generation}, require_owner_identity=True)
         if (response.get("schema") != DATA_SCHEMA or response.get("provider") != "IOL_REST"
-                or response.get("owner_pid") != owner_pid or response.get("session_generation") != generation
                 or response.get("paper_ready") is not False or response.get("order_route") != "NOT_PRESENT"):
             raise IOLRestError("IOL_GATEWAY_RECEIPT_UNVERIFIED")
+        if (response.get("owner_pid"), response.get("session_generation")) != (owner_pid, generation):
+            raise SharedFeedUnavailable("IOL_GATEWAY_OWNER_CHANGED")
         state = response.get("state")
         if state != "OK":
             if (not isinstance(state, str) or not _REASON.fullmatch(state)
@@ -180,3 +219,33 @@ class IOLGatewayMarketReader:
         capture = partial(self.client.market_read, consumer=self.consumer, priority=priority)
         return IOLMarketReader(None, capture=capture, trade_clock=self.trade_clock,
                                clock=self.clock).observe(identity, contract=contract, exit_only=exit_only)
+
+    @property
+    def metrics(self):
+        return self.client.owner_status()
+
+    def close(self):
+        # Every RPC opens its own bounded socket. There is no provider session
+        # on this side of the transport.
+        self.client = None
+
+
+def connect_iol_gateway_reader(database, *, consumer, trade_clock=None):
+    """Attach only after the runtime parent registers this PID and birth tick."""
+    if consumer not in ROLE_PRIORITIES:
+        raise ValueError("IOL_GATEWAY_ROLE_SCOPE_REQUIRED")
+    client = IOLGatewayClient(socket_path=iol_gateway_socket_path(database),
+                              timeout_seconds=5)
+    pid = os.getpid()
+    tick = ReadOnlyUnixFeedServer.process_starttime(pid)
+    if tick is None:
+        raise SharedFeedUnavailable("IOL_GATEWAY_CLIENT_PID_STARTTIME_UNVERIFIED")
+    deadline = time.monotonic() + 5
+    while True:
+        status = client.owner_status()
+        registered = (status.get("registered_clients") or {}).get(consumer)
+        if registered == {"pid": pid, "proc_starttime": tick}:
+            return IOLGatewayMarketReader(client, consumer=consumer, trade_clock=trade_clock)
+        if time.monotonic() >= deadline:
+            raise SharedFeedUnavailable("IOL_GATEWAY_CLIENT_ROLE_NOT_REGISTERED")
+        time.sleep(.2)

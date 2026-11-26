@@ -167,6 +167,101 @@ def register(client, role, pid=None):
     assert registration["registered_role"] == role
 
 
+def test_runtime_iol_profile_excludes_ppi_and_its_market_workers(tmp_path, monkeypatch):
+    import bv_paper_runtime as runtime
+
+    database = tmp_path / "paper.db"
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(database))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    monkeypatch.setattr(runtime.signal, "signal", lambda *_: None)
+    controller = {}
+
+    def inspect_clock(store, children, _stop):
+        controller.update(children.commands)
+        assert store.path == str(database)
+        assert children.gateway_role == "iol_gateway"
+
+    monkeypatch.setattr(runtime, "run_clock", inspect_clock)
+    assert runtime.main([]) == 0
+    assert set(controller) == {"iol_gateway", "scanner", "exit_reader", "dynamic_shadow",
+                               "candles", "notifications"}
+    assert controller["iol_gateway"][-1] == "--iol-gateway-worker"
+    for worker in ("--ppi-gateway-worker", "--intraday-scalping-worker", "--caucion-cash-sweep-worker"):
+        with pytest.raises(ValueError, match="RC6_WORKER_MARKET_PROVIDER_MISMATCH"):
+            runtime.main([worker])
+    with PaperStore(str(database)).connect() as connection:
+        assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
+
+
+def test_runtime_parent_registers_iol_scanner_and_exit_on_owner_rotation(tmp_path, monkeypatch, iol_gateway):
+    import bv_paper_runtime as runtime
+    import rc6_iol_market_gateway as gateway
+    from rc6_ppi_shared_feed import SharedFeedUnavailable
+
+    server, client, transport, _advance = iol_gateway
+    monkeypatch.setattr(runtime, "database_path", lambda: tmp_path / "paper.db")
+    monkeypatch.setattr(gateway, "iol_gateway_socket_path", lambda _database: server.socket_path)
+    monkeypatch.setattr(gateway, "IOLGatewayClient", type(client))
+    pid = os.getpid()
+
+    class Child:
+        def poll(self):
+            return None
+
+    processes = {role: Child() for role in ("iol_gateway", "scanner", "exit_reader")}
+    for process in processes.values():
+        process.pid = pid
+    children = runtime.ChildProcesses({role: [] for role in processes})
+    children.processes.update(processes)
+    children._register_gateway_clients(0)
+    starttime = ReadOnlyUnixFeedServer.process_starttime(pid)
+    registered = {role: {"pid": pid, "proc_starttime": starttime}
+                  for role in ("scanner", "exit_reader")}
+    assert client.owner_status()["registered_clients"] == registered
+    scanner = gateway.connect_iol_gateway_reader(tmp_path / "paper.db", consumer="scanner")
+    assert scanner.metrics["wire_attempts"] == 0
+    assert scanner.metrics["authenticated"] is False
+
+    # A fresh owner generation has no inherited registrations or client pin.
+    server._generation = "b" * 64
+    server._registered_clients.clear()
+    with pytest.raises(SharedFeedUnavailable, match="GATEWAY_OWNER_CHANGED"):
+        _ = scanner.metrics
+    children._register_gateway_clients(16)
+    scanner = gateway.connect_iol_gateway_reader(tmp_path / "paper.db", consumer="scanner")
+    assert scanner.metrics["registered_clients"] == registered
+    assert scanner.metrics["session_generation"] == "b" * 64
+    assert transport.calls == []
+
+
+def test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach(tmp_path, monkeypatch):
+    import bf_production_paper_observer as observer
+    import rc6_ppi_gateway_reader_adapter as ppi
+
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(ppi, "connect_paper_gateway_reader",
+                        lambda *a, **kw: pytest.fail("unexpected PPI gateway attach"))
+    commands = ["LOGIN_AND_SYNC", observer._PPI_OPEN_COMMAND_PREFIX + "probe",
+                observer._PPI_POSTCLOSE_COMMAND_PREFIX + "probe"]
+    with store.connect() as connection:
+        connection.executemany("INSERT INTO observer_commands(command,status,created_at)"
+                               " VALUES (?,'QUEUED',?)", ((name, AT.isoformat()) for name in commands))
+    for name in commands:
+        command = observer._claim_command(store)
+        assert command[1] == name
+        assert observer._run_command(store, None, command) is None
+    with store.connect() as connection:
+        rows = connection.execute("SELECT status,result FROM observer_commands ORDER BY id").fetchall()
+    assert [tuple(row) for row in rows] == [("NOT_APPLICABLE", "IOL_REST_PROFILE_PPI_COMMAND_RETIRED")] * 3
+
+
 @pytest.mark.parametrize("identity", FAMILIES, ids=[case[1] for case in FAMILIES])
 def test_iol_family_contract(identity, tmp_path):
     market, transport = reader(tmp_path, identity)

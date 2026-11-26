@@ -80,6 +80,9 @@ DOMAINS = {
     "native_gateway_scanner": (NATIVE_REPLAY,),
     "iol_gateway_scanner_exit": (
         LAB + "::test_ggal_paper_ledger_and_exit",
+        LAB + "::test_runtime_iol_profile_excludes_ppi_and_its_market_workers",
+        LAB + "::test_runtime_parent_registers_iol_scanner_and_exit_on_owner_rotation",
+        LAB + "::test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach",
         LAB + "::test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers",
         LAB + "::test_iol_gateway_rolling_budget_defers_without_waiting_or_requesting_book",
         LAB + "::test_iol_gateway_binds_roles_to_separate_processes_and_rejects_stale_generation",

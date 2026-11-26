@@ -82,6 +82,13 @@ class IOLRestReadOnly:
     def uses_wire_budget(self):
         return self.governor is not None
 
+    @property
+    def session_current(self):
+        """Inspect the owner's token state without logging in or exposing it."""
+        cached = self.active
+        return (not self.auth_blocked and cached is not None
+                and self._current(cached, self.clock()))
+
     def _request(self, path, *, query=None, auth=None, token=None):
         headers = {"Accept": "application/json", "User-Agent": "Porota-Trading-RC6 (IOL REST market data)"}
         if auth is not None:
