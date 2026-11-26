@@ -501,6 +501,7 @@ def _record_scanner_current_sample(store, identity, capture, priority):
 
 
 def _support_schema(store):
+    from rc6_operational_alerts import init_schema as init_marketdata_alert_schema
     with store.connect() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS observer_commands(
@@ -542,6 +543,7 @@ def _support_schema(store):
           instrument_key TEXT NOT NULL, book_at TEXT NOT NULL,
           side TEXT NOT NULL, quantity TEXT NOT NULL, book_json TEXT NOT NULL);
         """)
+        init_marketdata_alert_schema(c)
     operations.init_schema(store)
     financial_catalog.init_schema(store)
 
@@ -1538,14 +1540,23 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
                         f"response_settlement_literal={settlement_literal};"
                         f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
             if endpoint == "current" and confirm_settlement and len(endpoints) == 2:
-                from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS
+                from rc6_ppi_native_request_receipt import (
+                    SETTLEMENT_PAIR_MAX_SECONDS, settlement_source_age_seconds,
+                )
 
+                received_age = scanner_age = None
                 try:
-                    trade_at = datetime.fromisoformat(native_time.replace("Z", "+00:00"))
-                    age = (datetime.fromisoformat(now_iso()) - trade_at).total_seconds()
-                    valid = 0 <= age <= SETTLEMENT_PAIR_MAX_SECONDS and D(payload["price"]) > 0
+                    received_age = settlement_source_age_seconds(native_time, receipt.get("received_at_utc"))
+                    scanner_age = settlement_source_age_seconds(native_time, now_iso())
+                    valid = (0 <= received_age <= SETTLEMENT_PAIR_MAX_SECONDS and scanner_age >= 0
+                             and D(payload["price"]) > 0)
                 except (AttributeError, KeyError, TypeError, ValueError, ArithmeticError):
                     valid = False
+                if not valid or scanner_age > SETTLEMENT_PAIR_MAX_SECONDS:
+                    store.event("PPI_DISCOVERY_CURRENT_CLOCK", json.dumps({
+                        "received_age_seconds": received_age, "scanner_age_seconds": scanner_age,
+                        "outcome": "ACCEPTED_AT_RECEIPT" if valid else "REJECTED",
+                    }, sort_keys=True))
                 if not valid:
                     reason = "PPI_DISCOVERY_CURRENT_STALE_OR_INVALID"
                     store.event("PPI_DIRECT_REST_PROBE_HOLD", reason)
@@ -1601,7 +1612,10 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
         # trade and a fresh two-sided Book with strictly positive size and a
         # non-crossed spread before labeling the *diagnostic* FRESH_OBSERVED.
         # This is still weaker than PIT/Book1/decision/Book2/costs/EXIT READY.
-        if (quote.time_error(now_iso(), require_trade=True) or
+        # Settlement discovery already checked Current with its own guarded receipt.
+        # Reuse the live Book check here and leave the entry age policy to the broker.
+        if (quote.time_error(now_iso(), require_trade=not confirm_settlement) or
+                quote.last_kind != "TRADE" or
                 quote.last <= 0 or quote.bid <= 0 or quote.ask <= 0 or
                 quote.bid_size <= 0 or quote.ask_size <= 0 or
                 quote.bid > quote.ask):
@@ -3797,10 +3811,10 @@ def run():
                         real_orders_sent=0,
                         detail=cycle_detail)
             market_detail = f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."
-            if fresh_observation:
-                market_detail = "Par Current/Book nativo fresco en observación."
             if cycle_requested:
                 market_detail = f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
+            if fresh_observation:
+                market_detail = f"{market_detail} Pares Current/Book frescos en descubrimiento: {discovery['fresh_pairs']}."
             _health(store, "PPI_PRODUCTION_MARKETDATA",
                     "VERDE" if cycle_ok or fresh_observation else "ROJO" if cycle_requested else "AMARILLO",
                     market_detail, "PPI Producción", success=bool(cycle_ok or fresh_observation))
