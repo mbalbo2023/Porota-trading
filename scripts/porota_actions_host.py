@@ -204,6 +204,19 @@ def scheduler_postflight(ssh, release, role, source):
     return {**unverified, 'reason': reason, 'exit_code': proc.returncode}
 
 
+def installed_iol_postflight(ssh, stage, release, attempt, operation, *, timeout):
+    command = ['python3', '-B', stage+'/source/scripts/porota_rootless_host.py', operation,
+               '--source-sha', release['source_sha'], '--source-tree', release['source_tree'], '--attempt', attempt]
+    try:
+        proc = ssh_run(ssh, command, timeout=timeout)
+        proof = decode_receipt(proc.stdout)
+    except ValueError:
+        return {'status': 'NO_VERIFICADO', 'reason': 'INSTALLED_POSTFLIGHT_TRANSPORT_UNAVAILABLE'}
+    if proc.returncode == 0 and all(proof.get(key) == release[key] for key in ('source_sha', 'source_tree', 'image_id')):
+        return proof
+    return {'status': 'NO_VERIFICADO', 'reason': proof.get('failure_signature', 'INSTALLED_POSTFLIGHT_RECEIPT_UNVERIFIED')}
+
+
 def execute(operation, repository, release_dir=None, *, env=None):
     env = env or os.environ
     require(operation in {'inspect', 'prepare', 'deploy', 'migrate'}, 'HOST_OPERATION_INVALID')
@@ -308,6 +321,11 @@ def execute(operation, repository, release_dir=None, *, env=None):
                         validate_runtime_receipt(result, release, proc.returncode, download=download)
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
+                    if operation == 'deploy' and result.get('market_provider') == 'IOL_REST':
+                        result['installed_inventory'] = installed_iol_postflight(ssh, stage, release, attempt,
+                                                                                'inventory', timeout=75)
+                        result['synthetic_replay'] = installed_iol_postflight(ssh, stage, release, attempt,
+                                                                              'replay', timeout=420)
                     try:
                         if operation == 'deploy':
                             result['paper_opening'] = scheduler_postflight(

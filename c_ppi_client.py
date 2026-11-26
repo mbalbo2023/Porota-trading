@@ -357,6 +357,10 @@ def _order_terms(instrument_type, quantity_type, order_type, term, operation,
 
 class ResilientPPIClient:
     def __init__(self, notifier):
+        from rc6_iol_market_gateway import iol_primary_enabled
+
+        if iol_primary_enabled():
+            raise RuntimeError("RC6_PPI_OPERATIONAL_ACCESS_DISABLED")
         self.api_key = os.getenv("PPI_API_KEY")
         self.api_secret = os.getenv("PPI_API_SECRET")
         self.is_sandbox = os.getenv("ENVIRONMENT", "SANDBOX").upper() == "SANDBOX"

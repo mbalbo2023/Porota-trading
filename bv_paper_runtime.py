@@ -1,4 +1,4 @@
-"""Runtime PAPER: reloj, gateway PPI, escáner, lector y archivo aislados.
+"""Runtime PAPER: reloj, gateway, escáner, lector y archivo aislados.
 
 No envía órdenes. Un hijo gateway es dueño del único login PPI de estos
 consumidores; scanner/EXIT/scalping sólo demandan lectura por AF_UNIX.
@@ -178,6 +178,52 @@ def run_ppi_gateway_worker(store, stop):
     socket_path = gateway_socket_path(store.path)
     with ppi_gateway_lifetime_lease(socket_path):
         _run_ppi_gateway_owned_loop(store, stop)
+
+
+def _make_iol_gateway_owner(store, socket_path):
+    from iol_rest_readonly_rc6 import IOLRestReadOnly
+    from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
+    from rc6_iol_market_gateway import IOLMarketGateway, iol_gateway_identities
+
+    with store.connect() as connection:
+        rows = connection.execute("""SELECT ticker,instrument_type,market,currency,settlement
+            FROM financial_instrument_catalog WHERE status IN ('AVAILABLE','STALE')""").fetchall()
+    scan_keys = iol_gateway_identities(tuple(row) for row in rows)
+    opened, _ = store.exit_positions()
+    exit_keys = iol_gateway_identities(
+        (position['symbol'], position['asset_class'], position['market'],
+         position['currency'], position['settlement']) for position in opened)
+    # Share the bounded collector policy across scanner and EXIT via this owner.
+    config = os.getenv("POROTA_IOL_REST_CONFIG")
+    credentials = {"config": config} if config else {}
+    rest = IOLRestReadOnly(socket_path.parent / "rest-session",
+        governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True,
+        **credentials)
+    return IOLMarketGateway(rest, allowed={"scanner": scan_keys, "exit_reader": scan_keys | exit_keys},
+                            socket_path=socket_path, supervisor_pid=os.getppid())
+
+
+def run_iol_gateway_worker(store, stop):
+    from rc6_iol_market_gateway import iol_gateway_socket_path
+
+    socket_path = iol_gateway_socket_path(store.path)
+    with ppi_gateway_lifetime_lease(socket_path):
+        owner = _make_iol_gateway_owner(store, socket_path)
+        owner.start()
+        server = threading.Thread(target=owner.serve_forever, daemon=True,
+                                  name="iol-owner-unix-server")
+        server.start()
+        try:
+            while not stop.wait(1):
+                if not server.is_alive():
+                    raise RuntimeError("IOL_GATEWAY_SERVER_THREAD_EXITED")
+        finally:
+            if server.is_alive():
+                owner.shutdown()
+                server.join(timeout=5)
+                if server.is_alive():
+                    raise RuntimeError("IOL_GATEWAY_SOCKET_DRAIN_UNVERIFIED")
+            owner.close()
 
 
 def _start_ppi_gateway_server(owner):
@@ -376,6 +422,10 @@ class ChildProcesses:
         self._gateway_registered = {}
         self._gateway_generation = None
         self._gateway_registration_due = started
+        gateway_roles = {"iol_gateway", "ppi_gateway"}.intersection(commands)
+        if len(gateway_roles) > 1:
+            raise ValueError("RC6_MULTIPLE_MARKET_GATEWAYS")
+        self.gateway_role = next(iter(gateway_roles), None)
         from rc6_fixed_income_sale_authority import deployed_sale_model
         from rc6_fixed_income_sale_witness import ExitReaderKeyChannel
 
@@ -384,12 +434,12 @@ class ChildProcesses:
         self.health = {name: {"state": "STARTUP_WAIT", "pid": None,
             "restarts": 0, "spawn_failures": 0, "started_at": None,
             "last_exit_at": None, "last_error": None} for name in commands}
-        first = "ppi_gateway" if "ppi_gateway" in commands else "scanner"
+        first = self.gateway_role or "scanner"
         # Gateway owns the session first; scanner must still precede the
         # read-only shadow workload to avoid simultaneous startup SQLite IO.
         self.next_start = {
             name: (started if name == first else started + startup_grace_seconds * (
-                2 if name == "dynamic_shadow" and "ppi_gateway" in commands else 1))
+                2 if name == "dynamic_shadow" and self.gateway_role else 1))
             for name in commands
         }
 
@@ -412,7 +462,7 @@ class ChildProcesses:
                     self.health[name].update(state="RUNNING",
                         pid=getattr(self.processes[name], "pid", None),
                         started_at=now_iso(), last_error=None)
-                    if name in {"ppi_gateway", "scanner", "exit_reader", "intraday_scalping"}:
+                    if name in {self.gateway_role, "scanner", "exit_reader", "intraday_scalping"}:
                         # A fresh PID/role must be registered immediately;
                         # an earlier owner-status poll may have deferred its
                         # next census for 15s before this child even existed.
@@ -422,7 +472,7 @@ class ChildProcesses:
                     self.health[name].update(state="SPAWN_FAILED", pid=None,
                         spawn_failures=self.health[name]["spawn_failures"] + 1,
                         last_error="CHILD_SPAWN_FAILED")
-        if "ppi_gateway" in self.commands and now >= self._gateway_registration_due:
+        if self.gateway_role and now >= self._gateway_registration_due:
             self._register_gateway_clients(now)
         if self.exit_sale:
             self.exit_sale.poll(self.processes.get("exit_reader"))
@@ -434,20 +484,28 @@ class ChildProcesses:
         captured parent PID. Failed registration leaves children denied; no
         consumer gains a provider credential or retries a local login.
         """
-        roles = {"scanner": "scanner", "exit_reader": "exit_reader",
-                 "intraday_scalping": "scalping"}
+        roles = {"scanner": "scanner", "exit_reader": "exit_reader"}
         try:
-            from rc6_ppi_gateway_reader_adapter import gateway_socket_path
             from rc6_ppi_shared_feed import (ReadOnlyUnixFeedClient,
                                              ReadOnlyUnixFeedServer)
-            gateway = self.processes.get("ppi_gateway")
+            gateway = self.processes.get(self.gateway_role)
             if gateway is None or gateway.poll() is not None:
-                raise RuntimeError("PPI_GATEWAY_PROCESS_NOT_RUNNING")
-            client = ReadOnlyUnixFeedClient(
-                socket_path=gateway_socket_path(database_path()),
-                timeout_seconds=.4)
+                raise RuntimeError("RC6_GATEWAY_PROCESS_NOT_RUNNING")
+            if self.gateway_role == "iol_gateway":
+                from rc6_iol_market_gateway import IOLGatewayClient, iol_gateway_socket_path
+
+                client = IOLGatewayClient(socket_path=iol_gateway_socket_path(database_path()),
+                                          timeout_seconds=.4)
+            else:
+                from rc6_ppi_gateway_reader_adapter import gateway_socket_path
+
+                roles["intraday_scalping"] = "scalping"
+                client = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(database_path()),
+                                                timeout_seconds=.4)
             status = client.owner_status()
-            if "settlement_signer_public_key" in status:
+            if self.gateway_role == "iol_gateway" and status.get("owner_pid") != gateway.pid:
+                raise RuntimeError("IOL_GATEWAY_SUPERVISED_PID_MISMATCH")
+            if self.gateway_role == "ppi_gateway" and "settlement_signer_public_key" in status:
                 from rc6_ppi_native_request_receipt import pin_gateway_signer
 
                 try:
@@ -516,14 +574,16 @@ def publish_child_health(store, children, *, recorded_at):
         sha = None
     if not isinstance(tree, str) or not re.fullmatch(r"[0-9a-f]{40}", tree):
         tree = None
-    budget_observation = {"status": "UNVERIFIED"}
-    try:
-        from rc6_ppi_global_budget import runtime_budget_snapshot
-        budget_observation = runtime_budget_snapshot(store.path, as_of=recorded_at)
-    except (ImportError, OSError, ValueError, sqlite3.Error):
-        pass
+    iol = getattr(children, "gateway_role", None) == "iol_gateway"
+    budget_observation = {"status": "NOT_APPLICABLE" if iol else "UNVERIFIED"}
+    if not iol:
+        try:
+            from rc6_ppi_global_budget import runtime_budget_snapshot
+            budget_observation = runtime_budget_snapshot(store.path, as_of=recorded_at)
+        except (ImportError, OSError, ValueError, sqlite3.Error):
+            pass
     payload = {"schema": "rc6.runtime-child-health.v1", "recorded_at": recorded_at,
-        "ppi_budget": budget_observation,
+        "ppi_budget": budget_observation, "market_provider": "IOL_REST" if iol else "PPI",
         "source_sha": sha, "candidate_tree_sha": tree,
         "children": children.snapshot(), "mode": "PRODUCTION_PAPER",
         "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
@@ -597,6 +657,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from bs_instrument_contracts import contract_from_metadata
     from rc6_fixed_income_sale_authority import SALE_FAMILIES, native_book_fields, native_market_sale_enabled
     from bd_ppi_readonly_guard import retry_read, session_invalid
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_iol_market_gateway import IOLGatewayMarketReader, iol_gateway_reader_needs_reattach
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
@@ -617,50 +680,57 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             stage = "BROKER_BOOK"
             scope = getattr(reader, "read_scope", None)
             identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
-            native_book_reader = getattr(reader, "book_with_native_receipt", None)
-            native_book = None
-            decision = None
-            native_sale = (p["asset_class"] in SALE_FAMILIES and callable(native_book_reader)
-                           and native_market_sale_enabled(identity))
-            if native_sale and sale_witness:
-                try:
-                    decision = sale_witness.acknowledge(p["paper_id"])
-                except (OSError, ValueError, sqlite3.Error) as exc:
-                    LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
-            with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
-                if native_sale:
-                    native_book = retry_read(lambda: native_book_reader(
-                        p["symbol"], p["asset_class"], p["settlement"]), retries=1)
-                    book = native_book["raw_payload"]
-                else:
-                    book = retry_read(lambda: reader.book(
-                        p["symbol"],p["asset_class"],p["settlement"]), retries=1)
-            if decision:
-                try:
-                    sale_witness.witness_first_later_book(decision)
-                except (OSError, ValueError, sqlite3.Error) as exc:
-                    LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
-            stage = "CATALOG_LOOKUP"
-            metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
-                                      market=p["market"], currency=p["currency"])
-            stage = "NORMALIZE_QUOTE"
-            q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
-                                metadata=metadata, identity=identity)
-            if native_book is not None:
-                try:
-                    native_book_fields(native_book, identity)
-                    held_contract = contract_from_metadata(p["symbol"], p["asset_class"],
-                        json.loads(p["features_json"])["financial_contract"])
-                    if held_contract.key == identity:
-                        q = replace(q, contract=held_contract, ppi_native_rest_book=native_book)
-                except (ValueError, KeyError, TypeError, ArithmeticError):
-                    # Preserve the ordinary exit mark, without binding an ambiguous witness.
-                    pass
-            if is_future:
-                # Request identity is the exact position; catalog changes cannot
-                # invent new exit terms or grant fresh entry authority.
-                q = replace(q, contract=original_contract, currency=p["currency"],
-                            market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
+            if isinstance(reader, IOLGatewayMarketReader):
+                if p["asset_class"] not in EQUITY_FAMILIES:
+                    raise IOLRestError("IOL_SPECIALIZED_EXIT_EVIDENCE_REQUIRED")
+                terms = json.loads(p.get("features_json") or "{}").get("financial_contract")
+                held_contract = contract_from_metadata(p["symbol"], p["asset_class"], terms) if terms else None
+                q = reader.observe(identity, contract=held_contract, priority="EXIT_CRITICAL", exit_only=True).quote
+            else:
+                native_book_reader = getattr(reader, "book_with_native_receipt", None)
+                native_book = None
+                decision = None
+                native_sale = (p["asset_class"] in SALE_FAMILIES and callable(native_book_reader)
+                               and native_market_sale_enabled(identity))
+                if native_sale and sale_witness:
+                    try:
+                        decision = sale_witness.acknowledge(p["paper_id"])
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
+                with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
+                    if native_sale:
+                        native_book = retry_read(lambda: native_book_reader(
+                            p["symbol"], p["asset_class"], p["settlement"]), retries=1)
+                        book = native_book["raw_payload"]
+                    else:
+                        book = retry_read(lambda: reader.book(
+                            p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+                if decision:
+                    try:
+                        sale_witness.witness_first_later_book(decision)
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
+                stage = "CATALOG_LOOKUP"
+                metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
+                                          market=p["market"], currency=p["currency"])
+                stage = "NORMALIZE_QUOTE"
+                q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
+                                    metadata=metadata, identity=identity)
+                if native_book is not None:
+                    try:
+                        native_book_fields(native_book, identity)
+                        held_contract = contract_from_metadata(p["symbol"], p["asset_class"],
+                            json.loads(p["features_json"])["financial_contract"])
+                        if held_contract.key == identity:
+                            q = replace(q, contract=held_contract, ppi_native_rest_book=native_book)
+                    except (ValueError, KeyError, TypeError, ArithmeticError):
+                        # Preserve the ordinary exit mark, without binding an ambiguous witness.
+                        pass
+                if is_future:
+                    # Request identity is the exact position; catalog changes cannot
+                    # invent new exit terms or grant fresh entry authority.
+                    q = replace(q, contract=original_contract, currency=p["currency"],
+                                market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
             stage = "PERSIST_QUOTE"
             store.add_quote(q)
             stage = "VALIDATE_QUOTE"
@@ -668,8 +738,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
                 failures += 1
             q.monetary_identity()
         except Exception as exc:
-            if session_invalid(exc) or (stage == "BROKER_BOOK"
-                                        and gateway_reader_needs_reattach(exc)):
+            if session_invalid(exc) or (stage == "BROKER_BOOK" and (
+                    gateway_reader_needs_reattach(exc) or isinstance(reader, IOLGatewayMarketReader)
+                    and iol_gateway_reader_needs_reattach(exc))):
                 raise
             failures += 1
             sqlite_code = str(getattr(exc, "sqlite_errorname", "") or "")
@@ -702,6 +773,9 @@ def run_reader(store, stop):
     # ni comparte cliente HTTP mutable con el escáner.
     from bd_ppi_readonly_guard import session_invalid
     from bf_production_paper_observer import _support_schema, _market_phase
+    from rc6_iol_market_gateway import (
+        connect_iol_gateway_reader, iol_gateway_reader_needs_reattach, iol_primary_enabled,
+    )
     from rc6_ppi_gateway_reader_adapter import (
         connect_paper_gateway_reader, gateway_reader_needs_reattach)
     from rc6_dynamic_universe.promotion import DEFAULT_POLICY
@@ -710,6 +784,8 @@ def run_reader(store, stop):
         _support_schema(store)
     policy = PaperSessionPolicy()
     sale_witness = exit_reader_witness_from_environment(store)
+    iol = iol_primary_enabled()
+    connect_gateway = connect_iol_gateway_reader if iol else connect_paper_gateway_reader
     reader, next_login = None, 0.0
     pending_scope_reset = False
     def status(state,detail=""):
@@ -726,11 +802,12 @@ def run_reader(store, stop):
                     stop.wait(5)
                     continue
                 try:
-                    reader = connect_paper_gateway_reader(store.path, consumer="exit_reader")
+                    reader = connect_gateway(store.path, consumer="exit_reader")
                     if pending_scope_reset:
                         reader.discard_exit_round_scope()
                         pending_scope_reset = False
-                    store.event("PPI_GATEWAY_ATTACHED", "consumer=exit_reader;no_sdk_login")
+                    store.event("IOL_GATEWAY_ATTACHED" if iol else "PPI_GATEWAY_ATTACHED",
+                                "consumer=exit_reader;no_sdk_login")
                     status("VERIFYING", "Lector conectado; verificando cobertura de salida")
                 except Exception as exc:
                     if reader:
@@ -743,7 +820,7 @@ def run_reader(store, stop):
             try:
                 round_started=time.monotonic()
                 cadence=exit_reader_cadence(store,now_iso())
-                budget_round="NOT_OBSERVED"
+                budget_round="NO_VERIFICADO" if iol else "NOT_OBSERVED"
                 try:
                     failures = collect_exit_books(
                         reader, store, policy, now_iso(), should_stop=stop.is_set,
@@ -757,7 +834,7 @@ def run_reader(store, stop):
                     # native leases, failures and deadline before COMPLETE.
                     # A stop can make collect_exit_books return zero after a
                     # partial traversal; it must never certify that round.
-                    if not stop.is_set():
+                    if not iol and not stop.is_set():
                         try:
                             observed=reader.observe_exit_round(
                                 elapsed_seconds=elapsed,
@@ -781,18 +858,16 @@ def run_reader(store, stop):
                     # scope reset performs no PPI GET or sidecar mutation.
                     # If reset itself fails, stop this reader; reusing its
                     # unproven scope could authorize a false COMPLETE later.
-                    try:
-                        reader.discard_exit_round_scope()
-                    except Exception as exc:
-                        if gateway_reader_needs_reattach(exc):
-                            # A replacement may share the gateway PID and
-                            # a transient outage may keep the old router.
-                            # Verify reset on the next pin before any read.
-                            pending_scope_reset = True
-                            raise
-                        # A sqlite3.OperationalError here must NOT be caught
-                        # as recoverable book contention by the outer loop.
-                        raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc
+                    if not iol:
+                        try:
+                            reader.discard_exit_round_scope()
+                        except Exception as exc:
+                            if gateway_reader_needs_reattach(exc):
+                                # Verify reset on the next pin before any read.
+                                pending_scope_reset = True
+                                raise
+                            # A reset failure cannot be recovered as Book contention.
+                            raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc
             except sqlite3.OperationalError as exc:
                 if not _sqlite_contention(exc):
                     raise
@@ -802,10 +877,11 @@ def run_reader(store, stop):
                 stop.wait(1)
                 continue
             except Exception as exc:
-                if not session_invalid(exc) and not gateway_reader_needs_reattach(exc):
+                if not (session_invalid(exc) or gateway_reader_needs_reattach(exc)
+                        or iol and iol_gateway_reader_needs_reattach(exc)):
                     raise
                 _best_effort_runtime_event(store, "EXIT_READER_GATEWAY_REATTACH", type(exc).__name__)
-                status("ERROR", "Gateway PPI ausente/rotado o auth inválida; reattach local sin login")
+                status("ERROR", "Gateway ausente, rotado o auth inválida; reconexión local")
                 reader.close()
                 reader = None
                 next_login = time.monotonic() + 60
@@ -829,10 +905,17 @@ def run_reader(store, stop):
 
 
 def main(argv=None):
+    from rc6_iol_market_gateway import iol_primary_enabled
+
     argv = sys.argv[1:] if argv is None else argv
-    if argv not in ([], ['--ppi-gateway-worker'], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--dynamic-shadow-worker'],
+    if argv not in ([], ['--ppi-gateway-worker'], ['--iol-gateway-worker'], ['--exit-reader'], ['--notification-worker'], ['--candle-worker'], ['--dynamic-shadow-worker'],
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
+    iol = iol_primary_enabled()
+    if (iol and argv in (['--ppi-gateway-worker'], ['--intraday-scalping-worker'],
+                         ['--caucion-cash-sweep-worker']) or
+            not iol and argv == ['--iol-gateway-worker']):
+        raise ValueError("RC6_WORKER_MARKET_PROVIDER_MISMATCH")
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
@@ -862,6 +945,9 @@ def main(argv=None):
     if argv == ["--ppi-gateway-worker"]:
         run_ppi_gateway_worker(store, stop)
         return 0
+    if argv == ["--iol-gateway-worker"]:
+        run_iol_gateway_worker(store, stop)
+        return 0
     if argv == ["--exit-reader"]:
         run_reader(store, stop)
         return 0
@@ -884,17 +970,19 @@ def main(argv=None):
     # Un reloj por libro, incluso si se intenta iniciar otro contenedor.
     with open(store.path + ".runtime.lock", "a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        gateway = "iol_gateway" if iol else "ppi_gateway"
+        gateway_flag = "--iol-gateway-worker" if iol else "--ppi-gateway-worker"
         children = ChildProcesses({
-            "ppi_gateway": [sys.executable, str(Path(__file__).resolve()), "--ppi-gateway-worker"],
+            gateway: [sys.executable, str(Path(__file__).resolve()), gateway_flag],
             "scanner": [sys.executable, str(ROOT / "bf_production_paper_observer.py")],
             "dynamic_shadow": [sys.executable, str(Path(__file__).resolve()), "--dynamic-shadow-worker"],
             "exit_reader": [sys.executable, str(Path(__file__).resolve()), "--exit-reader"],
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
             **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
-              if os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
+              if not iol and os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
             **({"caucion_cash_sweep": [sys.executable, str(Path(__file__).resolve()), "--caucion-cash-sweep-worker"]}
-              if os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
+              if not iol and os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
         })
         run_clock(store,children,stop)
     return 0

@@ -26,11 +26,6 @@ services:
     env_file:
       - path: ${POROTA_ENV_DIR:?private_env_required}/observer.env
         format: raw
-    # Recover the existing guarded REST Current/Book/Intraday data plane.
-    # This is a PAPER-only cross-process wire arbiter with observed HTTP429
-    # backpressure, NOT a PPI broker quota or the rejected 2 GET/hour limit.
-    environment:
-      POROTA_PPI_DIRECT_REST_RECOVERY: "1"
     labels:
       io.porota.project: rc6
       io.porota.role: observer
@@ -45,8 +40,8 @@ services:
         target: /app/data
         bind: {create_host_path: false}
       - type: bind
-        source: ${POROTA_ROOT}/.secrets/ppi_production.json
-        target: /run/secrets/ppi_production.json
+        source: ${POROTA_ENV_DIR}/iol-rest.env
+        target: /run/secrets/rc6_iol_rest.env
         read_only: true
         bind: {create_host_path: false}
       - type: bind

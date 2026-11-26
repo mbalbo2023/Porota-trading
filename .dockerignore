@@ -28,7 +28,10 @@ __pycache__/
 htmlcov/
 venv/
 .venv/
-docs/
+docs/*
+!docs/evidence/
+docs/evidence/*
+!docs/evidence/rc6-fi-paper-sale-sources.json
 *.pdf
 .secrets
 data/observer

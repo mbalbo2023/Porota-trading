@@ -355,6 +355,8 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
             env.update({"POROTA_RUNTIME_BACKEND": "ROOTLESS", "PYTHONDONTWRITEBYTECODE": "1",
                         "PYTHONPATH": str(source), "PAPER_V17_DB_PATH": str(root / DB_RELATIVE),
                         "DOCKER_HOST": f"unix://{identity.socket}"})
+            if current.get("market_provider") == "IOL_REST":
+                env["POROTA_RC6_MARKET_PROVIDER"] = "IOL_REST"
             if unit == PREOPEN:
                 command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"))
                 command += (("--revalidate-release", current["source_sha"]) if revalidate_paper_gate

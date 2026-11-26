@@ -439,6 +439,8 @@ class ReadOnlyTransportGuard:
             self._scope.read_error_code = code
 
     def check(self, method: str, url: str, *, count_login: bool = False) -> tuple[str, str]:
+        if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
+            raise ReadOnlyPolicyViolation("RC6_PPI_OPERATIONAL_ACCESS_DISABLED")
         parsed = urlsplit(str(url))
         method = str(method or "").upper()
         path = _normal_path(url)

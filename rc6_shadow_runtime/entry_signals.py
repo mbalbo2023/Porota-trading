@@ -18,6 +18,7 @@ from statistics import stdev
 from time import monotonic
 from zoneinfo import ZoneInfo
 
+from rc6_paper_family_lifecycle import FUTURE_QUOTE_PROOF_SCHEMA
 from rc6_performance.common import canonical, digest, identity, number, stamp
 from rc6_performance.costs import FeeModel, expected_round_trip_cost, paper_fee_model
 from rc6_performance.metrics import auc, distribution
@@ -47,7 +48,7 @@ DEFINITIONS = (
     {"id": "time-horizon", "version": "v1", "kind": "time_horizon", "threshold": "0"},
 )
 READ_COLUMNS = {
-    "decision_evidence_snapshots": ("decision_key", "captured_at", "payload_sha256", "payload_json"),
+    "decision_evidence_snapshots": ("decision_key", "captured_at", "schema_version", "payload_sha256", "payload_json"),
     "market_snapshots": ("source", "metadata_source", "symbol", "asset_class", "settlement", "currency", "market",
         "observed_at", "book_at", "trade_at", "last_kind", "last", "bid", "ask", "bid_size", "ask_size"),
     "paper_fills": ("id", "paper_id", "side", "quantity", "price", "costs", "filled_at", "reason"),
@@ -198,12 +199,25 @@ def _read_rows(database, *, as_of, tables, cursors=None, source_key=None, row_li
 
 
 def _native_payload(row, at, *, require_signal=True):
+    """Return a decision, or None for a verified futures Book receipt."""
     if row.get("_oversize"):
         raise ValueError("IMMUTABLE_DECISION_ROW_OVERSIZE")
     raw = row.get("payload_json")
     if not isinstance(raw, str) or hashlib.sha256(raw.encode()).hexdigest() != row.get("payload_sha256"):
         raise ValueError("IMMUTABLE_DECISION_HASH_MISMATCH")
     payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+    if row.get("schema_version") == FUTURE_QUOTE_PROOF_SCHEMA:
+        phase, event_id = payload.get("phase"), payload.get("event_id")
+        if (payload.get("schema") != FUTURE_QUOTE_PROOF_SCHEMA or phase not in ("MARK", "CLOSE")
+                or not isinstance(event_id, str) or not event_id
+                or row.get("decision_key") != f"PAPER_FUTURE_{phase}:{event_id}"
+                or row.get("captured_at") != payload.get("recorded_at")
+                or payload.get("execution") != "PRODUCTION_PAPER_SIMULATED"
+                or payload.get("real_routes_used") != []):
+            raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
+        return None
     if payload.get("decision_key") != row.get("decision_key"):
         raise ValueError("IMMUTABLE_DECISION_KEY_MISMATCH")
     from rc6_performance.common import decision_snapshot_phase
@@ -582,7 +596,7 @@ def evaluate_runtime_entry_signals(database, *, as_of, previous=None, row_limit=
                 continue
             try:
                 payload = _native_payload(row, at)
-                if payload.get("capture_phase") == "ATOMIC_PAPER_ADMISSION":
+                if payload is None or payload.get("capture_phase") == "ATOMIC_PAPER_ADMISSION":
                     checkpoint["cursors"]["decision_evidence_snapshots"] = row["_rowid"]
                     continue
                 checkpoint["native_decisions_observed"] += 1

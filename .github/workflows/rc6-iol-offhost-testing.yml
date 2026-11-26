@@ -1,0 +1,226 @@
+name: RC6 IOL isolated testing
+
+on:
+  push:
+    branches: [qa-rc6-iol-migration-20261126, fix/rc6-iol-primary-wiring-20261126]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-iol-offhost-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offhost:
+    name: RC6 IOL isolated regression and replay
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      (github.ref == 'refs/heads/qa-rc6-iol-migration-20261126' ||
+       github.ref == 'refs/heads/fix/rc6-iol-primary-wiring-20261126')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      IMAGE: porota-iol-offhost:${{ github.sha }}
+      CANDIDATE_SHA: ${{ github.sha }}
+    outputs:
+      market_viability: ${{ steps.test.outputs.market_viability }}
+    steps:
+      - name: Check out the exact isolated candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the release prohibition and source identity before building
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git ls-files --error-unmatch ops/policy/rc6-iol-testing-only.json >/dev/null
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import json
+          from scripts.porota_testing_scope import RELEASE_BLOCKED, require_release_tree
+          marker = json.loads(Path('ops/policy/rc6-iol-testing-only.json').read_bytes())
+          assert marker['environment'] == 'OFFHOST_TESTING'
+          assert marker['release_allowed'] is False and marker['operator_authorization_required'] is True
+          try:
+              require_release_tree(Path.cwd(), 'HEAD')
+          except ValueError as error:
+              assert str(error) == RELEASE_BLOCKED
+          else:
+              raise SystemExit('TESTING_ONLY_GUARD_MISSING')
+          PY
+          python3 -B scripts/porota_secret_scan.py --repo-root .
+          echo "CANDIDATE_TREE_SHA=$(git rev-parse HEAD^{tree})" >> "$GITHUB_ENV"
+
+      - name: Prepare the runner-local build
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build an ephemeral test image
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            POROTA_BUILD_SHA=${{ env.CANDIDATE_SHA }}
+            POROTA_CANDIDATE_TREE_SHA=${{ env.CANDIDATE_TREE_SHA }}
+          cache-from: type=gha,scope=porota-rc6-iol-offhost
+          cache-to: type=gha,scope=porota-rc6-iol-offhost,mode=max,timeout=2m,ignore-error=true
+
+      - name: Test the candidate without network or host data mounts
+        id: test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          report="$RUNNER_TEMP/rc6-iol-proofs"
+          mkdir "$report"
+          image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          owner="iol-offhost-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          boxes=()
+          timer_unit=""
+          owned() {
+            [[ "$1" =~ ^[0-9a-f]{64}$ ]] &&
+              test "$(docker inspect -f '{{.Id}}|{{.Image}}|{{index .Config.Labels "porota.test_run"}}' "$1")" = "$1|$image_id|$owner"
+          }
+          cleanup() {
+            rc=$?
+            trap - EXIT
+            if [[ -n "$timer_unit" ]]; then
+              sudo -n systemctl stop "$timer_unit.timer" "$timer_unit.service" >/dev/null || rc=1
+            fi
+            for box in "${boxes[@]}"; do
+              if owned "$box"; then docker rm -f "$box" >/dev/null || rc=1; else rc=1; fi
+            done
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          ids=(--source-sha "$CANDIDATE_SHA" --source-tree "$CANDIDATE_TREE_SHA" --image-id "$image_id")
+          run_scheduled_focus() {
+            local box="$1" timeout_seconds="$2" uid deadline state trigger
+            uid="$(id -u)"
+            test "$uid" -ne 0 && test -S /var/run/docker.sock || return 1
+            timer_unit="$owner-focus"
+            sudo -n systemd-run --unit="$timer_unit" --uid="$uid" --on-active=2s \
+              --timer-property=AccuracySec=100ms --property=Type=oneshot --property=RemainAfterExit=yes \
+              --property=NoNewPrivileges=yes --property="TimeoutStartSec=${timeout_seconds}s" \
+              /usr/bin/docker --host unix:///var/run/docker.sock start --attach "$box" || return 1
+            deadline=$((SECONDS + timeout_seconds + 15))
+            while (( SECONDS < deadline )); do
+              state="$(systemctl show "$timer_unit.service" -p ActiveState --value)" || return 1
+              [[ "$state" != failed ]] || return 1
+              [[ "$state" != active ]] || break
+              sleep 1
+            done
+            trigger="$(systemctl show "$timer_unit.timer" -p LastTriggerUSecMonotonic --value)" || return 1
+            test "$state" = active && test -n "$trigger" && test "$trigger" != 0 \
+              && test "$(systemctl show "$timer_unit.service" -p Result --value)" = success \
+              && test "$(systemctl show "$timer_unit.service" -p User --value)" = "$uid" \
+              && test "$(docker inspect -f '{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}' "$box")" = 'exited|0|false' \
+              || return 1
+            python3 -B - "$report/timer.json" "$image_id" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          timer = {"schema": "porota.iol.offhost.timer.v1", "source_sha": os.environ["CANDIDATE_SHA"],
+                   "source_tree": os.environ["CANDIDATE_TREE_SHA"], "image_id": sys.argv[2],
+                   "scheduler": "SYSTEMD_TRANSIENT_TIMER", "triggered": True, "worker_completed": True}
+          Path(sys.argv[1]).write_text(json.dumps(timer, sort_keys=True) + "\n")
+          PY
+          }
+          run_box() {
+            local kind="$1" max_time="$2" box rc
+            shift 2
+            box="$(docker create --pull never --network none --cap-drop ALL \
+              --security-opt no-new-privileges:true --pids-limit 512 --memory 6g \
+              --label "porota.test_run=$owner" \
+              --mount "type=bind,src=$PWD/.git,dst=/app/.git,readonly" \
+              --mount "type=bind,src=$PWD/docs,dst=/app/docs,readonly" \
+              -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app \
+              -e POROTA_IOL_OFFHOST=1 -e POROTA_IOL_OFFHOST_IPC=1 \
+              --entrypoint python "$image_id" -B "$@")"
+            boxes+=("$box")
+            owned "$box"
+            test "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$box")" = none
+            set +e
+            if [[ "$kind" == focus ]]; then
+              run_scheduled_focus "$box" "$max_time"
+            else
+              timeout "$max_time" docker start -a "$box" > "$RUNNER_TEMP/rc6-iol-$kind.log" 2>&1
+            fi
+            rc=$?
+            set -e
+            if ! docker cp "$box:/tmp/$kind.json" "$report/$kind.json"; then
+              printf '{}\n' > "$report/$kind.json"
+            fi
+            if test "$rc" -eq 0 && test "$(docker inspect -f '{{.State.ExitCode}}|{{.State.OOMKilled}}' "$box")" = '0|false'; then
+              result=0
+            else
+              result=1
+            fi
+          }
+          run_box focus 420 -m scripts.rc6_iol_offhost focus --output /tmp/focus.json
+          focus_result=$result
+          run_box code 2500 -m scripts.porota_ci --output /tmp/code.json "${ids[@]}"
+          code_result=$result
+          run_box functional 120 -m scripts.porota_ci_functional --output /tmp/functional.json "${ids[@]}"
+          functional_result=$result
+          set +e
+          python3 -B -m scripts.rc6_iol_offhost_timers "${ids[@]}" --output "$report/timer_inventory.json"
+          inventory_result=$?
+          python3 -B -m scripts.rc6_iol_offhost verdict --directory "$report" \
+            --output "$report/report.json" "${ids[@]}"
+          verdict_result=$?
+          set -e
+          python3 -B - "$report/report.json" <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          result = json.loads(Path(sys.argv[1]).read_bytes())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"market_viability={result['market_viability']}\n")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"## IOL RC6 offhost\n\nPruebas aisladas: {result['offhost_tests']}\n\n")
+              summary.write(f"Timer efectivo: {result['systemd_timer']} · Gateway: {result['native_gateway_transport']}\n\n")
+              summary.write(f"Gateway IOL: {result['iol_gateway_transport']}\n\n")
+              summary.write(f"Timers activos con disparo aislado: {result['active_timer_dispatches']}\n\n")
+              summary.write(f"Viabilidad en rueda: **{result['market_viability']}**\n\n")
+              summary.write("Promoción: **BLOQUEADA**. Artefacto de evidencia de pruebas.\n")
+          PY
+          test "$focus_result$code_result$functional_result$inventory_result$verdict_result" = 00000
+
+      - name: Publish only bounded offhost test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-offhost-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/rc6-iol-proofs/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+  market-viability:
+    name: RC6 IOL market coverage gate
+    needs: offhost
+    if: always() && github.repository == 'mbalbo2023/Porota-trading'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      OFFHOST_RESULT: ${{ needs.offhost.result }}
+      MARKET_VIABILITY: ${{ needs.offhost.outputs.market_viability }}
+    steps:
+      - name: Reject incomplete market evidence
+        shell: bash
+        run: |
+          if [[ "$OFFHOST_RESULT" != success || "$MARKET_VIABILITY" != VIABLE ]]; then
+            echo '::error::INVIABLE. La regresión aislada y la capacidad de rueda son evidencias distintas. La promoción está bloqueada.'
+            exit 1
+          fi

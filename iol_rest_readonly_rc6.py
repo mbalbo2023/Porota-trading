@@ -1,7 +1,7 @@
 """IOL REST market-data adapter for the existing RC6 SHADOW collector."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import json
 import math
 import os
@@ -67,11 +67,12 @@ class IOLRestReadOnly:
     source = SOURCE
 
     def __init__(self, state_dir, *, config=CONFIG, allow_renew=True, governor=None,
-                 clock=time.time, opener=None):
+                 clock=time.time, opener=None, owner_managed_auth=False):
         self.directory = Path(state_dir)
         self.store = self.directory / "session.json"
         self.config = Path(config)
         self.allow_renew = allow_renew
+        self.owner_managed_auth = owner_managed_auth and allow_renew
         self.governor = governor
         self.clock = clock
         self.opener = opener if opener is not None else build_opener(_NoRedirect)
@@ -81,6 +82,13 @@ class IOLRestReadOnly:
     @property
     def uses_wire_budget(self):
         return self.governor is not None
+
+    @property
+    def session_current(self):
+        """Inspect the owner's token state without logging in or exposing it."""
+        cached = self.active
+        return (not self.auth_blocked and cached is not None
+                and self._current(cached, self.clock()))
 
     def _request(self, path, *, query=None, auth=None, token=None):
         headers = {"Accept": "application/json", "User-Agent": "Porota-Trading-RC6 (IOL REST market data)"}
@@ -186,6 +194,8 @@ class IOLRestReadOnly:
                 raise
             state = {"access_token": access, "refresh_token": refresh,
                      "renew_at": now + seconds - min(60, seconds / 4)}
+            if self.owner_managed_auth and _positive(cached.get("reauth_after")):
+                state["reauth_after"] = cached["reauth_after"]
             write_json(self.store, state)
             return state
 
@@ -197,22 +207,69 @@ class IOLRestReadOnly:
             try:
                 self.active = self._session(now)
             except IOLRestError:
-                self.auth_blocked = True
+                if not self.owner_managed_auth:
+                    self.auth_blocked = True
                 raise
+
+    def _invalidate_owned_access(self):
+        from scripts.porota_rootless_host import Hold, user_lock, write_json
+
+        rejected = self.active["access_token"]
+        self.active = None
+        now = self.clock()
+        try:
+            with user_lock(self.directory / "session.lock"):
+                cached = self._cached()
+                if cached.get("access_token") != rejected:
+                    return  # preserve a newer session
+                previous = cached.get("reauth_after")
+                if _positive(previous) and previous > now:
+                    state = {"refresh_token": cached["refresh_token"],
+                             "reauth_after": previous, "retry_at": previous}
+                else:
+                    state = {"refresh_token": cached["refresh_token"],
+                             "reauth_after": now + AUTH_RETRY_SECONDS}
+                write_json(self.store, state)
+        except (Hold, OSError, IOLRestError, KeyError):
+            # The next request must not replay a token whose invalidation
+            # could not be durably written by this owner.
+            self.auth_blocked = True
 
     def _get(self, path, params):
         self.authenticate()
         try:
             return self._request(path, query=params, token=self.active["access_token"])
         except IOLRestError as error:
-            if error.status_code in (401, 403):
+            if self.owner_managed_auth and error.status_code == 401:
+                self._invalidate_owned_access()
+            elif not self.owner_managed_auth and error.status_code in (401, 403):
                 self.auth_blocked = True
             raise
 
+    def read_market_data(self, endpoint, symbol, market, term):
+        """Return one provider response without rebuilding or merging its clocks."""
+        if (endpoint not in {"quote", "depth"} or not isinstance(symbol, str)
+                or not SYMBOL.fullmatch(symbol) or market not in MARKETS
+                or term not in {"T0", "T1"}):
+            raise IOLRestError("IOL_REST_MARKET_IDENTITY_UNSUPPORTED")
+        return self._get(f"/broker/market-data/{quote(symbol, safe='')}/{endpoint}",
+                         {"market": market, "term": term})
+
+    def read_daily_bars(self, symbol, market, start, end):
+        if (not isinstance(symbol, str) or not SYMBOL.fullmatch(symbol) or market not in MARKETS
+                or type(start) is not date or type(end) is not date or not 0 <= (end - start).days <= 365):
+            raise IOLRestError("IOL_REST_HISTORICAL_QUERY_UNSUPPORTED")
+        result = self._get(f"/broker/market-data/{quote(symbol, safe='')}/bars",
+                           {"market": market, "from": f"{start} 00:00:00", "to": f"{end} 23:59:59"})
+        if (not isinstance(result, dict) or (result.get("symbol"), result.get("market")) != (symbol, market)
+                or not isinstance(result.get("bars"), list)
+                or type(result.get("total_bars")) is not int
+                or result["total_bars"] != len(result["bars"]) or len(result["bars"]) > 366):
+            raise IOLRestError("IOL_REST_HISTORICAL_RESPONSE_UNVERIFIED")
+        return result
+
     def _quote(self, symbol, market, term):
-        params = {"market": market, "term": term}
-        path = f"/broker/market-data/{quote(symbol, safe='')}/"
-        data = _object(self._get(path + "quote", params))
+        data = _object(self.read_market_data("quote", symbol, market, term))
         if (data.get("symbol"), str(data.get("market", "")).upper(),
                 str(data.get("settlement_term", "")).upper()) != (symbol, market, term):
             raise IOLRestError("IOL_REST_QUOTE_IDENTITY_UNVERIFIED")
@@ -223,7 +280,7 @@ class IOLRestReadOnly:
                   "provider_observed_at": quote_at,
                   "currency": data.get("currency") if data.get("currency") in CURRENCIES else None}
         try:
-            depth = _object(self._get(path + "depth", params))
+            depth = _object(self.read_market_data("depth", symbol, market, term))
         except IOLRestError as error:
             if error.status_code in (401, 403, 429):
                 raise

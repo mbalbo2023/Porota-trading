@@ -1,7 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
-from contextlib import closing, contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext, suppress
 from dataclasses import replace
 
 import faulthandler
@@ -215,6 +215,20 @@ def _scanner_ppi_error(error):
     return classify_read_error(error)
 
 
+def _scanner_iol_error(error):
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_iol_market_gateway import iol_gateway_reader_needs_reattach
+
+    if isinstance(error, IOLRestError):
+        if error.status_code in (401, 403, 429):
+            return f"IOL_HTTP_{error.status_code}"
+        if re.fullmatch(r"IOL_[A-Z0-9_]{1,100}", str(error)):
+            return str(error)
+    if iol_gateway_reader_needs_reattach(error):
+        return "IOL_GATEWAY_UNAVAILABLE"
+    return "IOL_MARKET_OBSERVATION_FAILED"
+
+
 # Calendario BYMA RC6, fuente auditada: https://www.byma.com.ar/mercado/calendario-bursatil
 # Está deliberadamente embebido en el observer: el primer pulso no debe depender
 # de una importación diferida ni de I/O del filesystem del contenedor.
@@ -402,6 +416,33 @@ def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=N
     return exact
 
 
+def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catalog_read_error):
+    from bl_candle_engine import record_iol_trade_sample
+    from bs_instrument_contracts import aware_datetime
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+
+    if (not identity or len(identity) != 5
+            or (identity[0], identity[1], identity[4]) != request):
+        raise IOLRestError("IOL_GATEWAY_EXACT_IDENTITY_REQUIRED")
+    metadata = None
+    if not catalog_read_error:
+        metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
+    terms = financial_catalog.quote_terms(metadata, now=aware_datetime(now_iso()))
+    observation = reader.observe(identity, contract=terms.get("contract"), priority=priority)
+    reason = ("CATALOG_READ_ERROR" if catalog_read_error else terms["opening_block_reason"])
+    if identity[1] not in EQUITY_FAMILIES:
+        reason = reason or "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
+    if reason:
+        return replace(observation.quote, opening_block_reason=reason)
+    try:
+        record_iol_trade_sample(store, observation, as_of=now_iso())
+    except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
+        with suppress(OSError, sqlite3.Error):
+            store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
+    return observation.quote
+
+
 def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
                         priority="DISCOVERY", identity=None, scanner_primary=None,
                         catalog_read_error=False):
@@ -410,7 +451,13 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     A missing/ambiguous five-key cannot bind the diagnostic hash; it does not
     authorize retry, new provider requests, BUY or bypass PAPER holds.
     """
+    from rc6_iol_market_gateway import IOLGatewayMarketReader
     from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
+
+    if isinstance(reader, IOLGatewayMarketReader):
+        return _read_iol_scanner_quote(reader, store, request=(symbol, asset_class, settlement),
+                                       identity=identity, priority=priority,
+                                       catalog_read_error=catalog_read_error)
 
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
@@ -3179,7 +3226,13 @@ def _background_ingest(reader, store, *, force=False):
 
 
 def _run_command(store, reader, command, gemini_gate=None, login_interlock=None):
+    from rc6_iol_market_gateway import iol_primary_enabled
+
     command_id, name = command
+    if iol_primary_enabled() and (name == "LOGIN_AND_SYNC" or name.startswith(
+            (_PPI_OPEN_COMMAND_PREFIX, _PPI_POSTCLOSE_COMMAND_PREFIX))):
+        _finish_command(store, command_id, "NOT_APPLICABLE", "IOL_REST_PROFILE_PPI_COMMAND_RETIRED")
+        return reader
     if name.startswith(_PPI_OPEN_COMMAND_PREFIX):
         return _run_ppi_open_command(store, reader, command_id, name)
     if name.startswith(_PPI_POSTCLOSE_COMMAND_PREFIX):
@@ -3271,7 +3324,14 @@ def _announce_phase(store, previous, current):
     if current not in messages:
         return
     from bn_telegram_bus import enqueue
+    from rc6_iol_market_gateway import iol_primary_enabled
     title, detail = messages[current]
+    if iol_primary_enabled():
+        detail = {
+            "PREOPEN": "Preapertura IOL. La admisión PAPER requiere evidencia de rueda.",
+            "OPEN": "Rueda abierta. La admisión PAPER sigue en HOLD hasta calificar IOL.",
+            "CLOSED": "Rueda cerrada. Se conservan históricos y dashboard.",
+        }[current]
     at = now_iso()
     local_day = datetime.now(TZ).date().isoformat()
     try:
@@ -3380,6 +3440,16 @@ def _settle_cauciones_fail_closed(broker, blocked, next_retry, tick):
 
 
 def run():
+    from rc6_iol_market_gateway import (
+        connect_iol_gateway_reader, iol_gateway_reader_needs_reattach, iol_primary_enabled,
+    )
+    from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
+
+    iol = iol_primary_enabled()
+    source_label = "IOL REST" if iol else "PPI Producción"
+    auth_component = "IOL_REST_AUTH" if iol else "PPI_PRODUCTION_AUTH"
+    market_component = "IOL_REST_MARKETDATA" if iol else "PPI_PRODUCTION_MARKETDATA"
+    read_error_code = _scanner_iol_error if iol else _scanner_ppi_error
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     # Sólo ante un arranque anormalmente lento se vuelca la pila Python para
@@ -3407,7 +3477,7 @@ def run():
     broker = None
     store.state(process_state="STARTING", session_state="CHECKING",
                 ppi_auth="NOT_ATTEMPTED", real_orders_sent=0,
-                detail="Iniciando sesión PPI de solo lectura antes del motor PAPER.")
+                detail=f"Inicializando Gateway de sólo lectura {source_label} antes del motor PAPER.")
     # La fase de mercado se resuelve dentro del ciclo, después de publicar
     # BOOT_COMMAND/BOOT_CALENDAR. Así un calendario lento nunca deja al
     # operador con STARTING/CHECKING sin evidencia del punto de arranque.
@@ -3416,7 +3486,7 @@ def run():
     quotes = {}
     # Diagnostic evidence only: reuse the scanner's existing current+book
     # result. PRODUCTION_PAPER remains an execution mode, not PPI provenance.
-    scanner_primary = ScannerPrimaryRecorder(
+    scanner_primary = None if iol else ScannerPrimaryRecorder(
         Path(os.getenv("DATA_DIR", "/app/data")) / "market" / PPI_SCANNER_RECEIPT_FILENAME)
     last_public_check = 0.0
     last_direct_rest_probe = 0.0
@@ -3468,8 +3538,9 @@ def run():
                             heartbeat_at=now_iso(), real_orders_sent=0,
                             detail="CAUCION_LEDGER_INVALID: PAPER admission blocked; "
                                    "cost evidence requires reconciliation.")
-                last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
-                    store, phase, last_complementary_reconcile)
+                if not iol:
+                    last_complementary_reconcile = _caucion_blocked_closed_catalog_tick(
+                        store, phase, last_complementary_reconcile)
                 if phase != "OPEN":
                     time.sleep(max(30, COMMAND_POLL_SECONDS))
                     continue
@@ -3479,40 +3550,44 @@ def run():
             attached = reader is None
             if attached:
                 if time.time() < next_login_at:
-                    store.state(process_state="DEGRADED", ppi_auth="COOLDOWN",
+                    store.state(process_state="DEGRADED", ppi_auth="NOT_ATTEMPTED" if iol else "COOLDOWN",
                                 session_state=_cooldown_session_state(phase),
                                 heartbeat_at=now_iso(), real_orders_sent=0,
-                                detail="PPI en espera de reintento; no se abre una tormenta de logins.")
+                                detail=f"Gateway {source_label} en espera de reconexión local.")
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
-                store.state(session_state="BOOT_PPI_GATEWAY", ppi_auth="NOT_ATTEMPTED",
-                            heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Arranque: conectando al gateway PPI propietario.")
+                store.state(session_state="BOOT_IOL_GATEWAY" if iol else "BOOT_PPI_GATEWAY",
+                            ppi_auth="NOT_ATTEMPTED", heartbeat_at=now_iso(), real_orders_sent=0,
+                            detail=f"Arranque: conectando al Gateway {source_label}.")
                 try:
-                    store.state(session_state="BOOT_PPI_GATEWAY_IDENTITY", ppi_auth="NOT_ATTEMPTED",
+                    store.state(session_state="BOOT_IOL_GATEWAY_IDENTITY" if iol else "BOOT_PPI_GATEWAY_IDENTITY",
+                                ppi_auth="NOT_ATTEMPTED",
                                 heartbeat_at=now_iso(), real_orders_sent=0,
                                 detail="Arranque: comprobando PID/generación del propietario.")
-                    from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
-                    reader = connect_paper_gateway_reader(store.path, consumer="scanner")
-                    store.event("PPI_GATEWAY_ATTACHED", "consumer=scanner;no_sdk_login")
-                    _health(store, "PPI_PRODUCTION_AUTH", "VERDE",
+                    if iol:
+                        reader = connect_iol_gateway_reader(store.path, consumer="scanner")
+                    else:
+                        reader = connect_paper_gateway_reader(store.path, consumer="scanner")
+                    store.event("IOL_GATEWAY_ATTACHED" if iol else "PPI_GATEWAY_ATTACHED",
+                                "consumer=scanner;no_sdk_login")
+                    _health(store, auth_component, "AMARILLO" if iol else "VERDE",
+                            "Gateway local verificado; sesión IOL se comprueba al leer." if iol else
                             "Gateway local autenticado; identidad del productor comprobada.",
-                            "PPI Producción", success=True)
+                            source_label, success=not iol)
                     # A successful login can follow a 900s interlock hold.
                     # Clear its DEGRADED process state atomically with auth;
                     # readiness remains STARTING until the PAPER engine and
                     # closed-session services finish initialization.
-                    store.state(process_state="STARTING", ppi_auth="OK",
+                    store.state(process_state="STARTING", ppi_auth="NOT_ATTEMPTED" if iol else "OK",
                                 session_state=phase, heartbeat_at=now_iso(),
                                 real_orders_sent=0,
                                 detail="Gateway único conectado; inicializando motor PAPER.")
                 except Exception as exc:
-                    reason = _scanner_ppi_error(exc)
-                    _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
-                            f"{type(exc).__name__}: {reason}", "PPI Producción")
-                    store.state(process_state="DEGRADED", ppi_auth="ERROR",
-                                heartbeat_at=now_iso(), detail=f"Gateway PPI: {reason}")
-                    local_attach_failure = reader is None or _scanner_gateway_reader_lost(exc)
+                    reason = read_error_code(exc)
+                    _health(store, auth_component, "ROJO", f"{type(exc).__name__}: {reason}", source_label)
+                    store.state(process_state="DEGRADED", ppi_auth="NOT_ATTEMPTED" if iol else "ERROR",
+                                heartbeat_at=now_iso(), detail=f"Gateway {source_label}: {reason}")
+                    local_attach_failure = iol or reader is None or _scanner_gateway_reader_lost(exc)
                     if reader is not None:
                         reader.close()
                     reader = None
@@ -3522,9 +3597,15 @@ def run():
                     time.sleep(COMMAND_POLL_SECONDS)
                     continue
             if broker is None:
+                # The inherited PPI receipt cannot authorize opens in the IOL
+                # profile. A live IOL receipt and exact authority still have to
+                # be qualified before this testing profile can admit entries.
+                def iol_admission_hold(_quote, _store):
+                    return False, "IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED"
+
                 broker = broker_from_environment(store, ai_gate=None, require_ai=False,
                                                  ai_mode="OFF", context_fn=None,
-                                                 admission_guard=paper_admission_guard)
+                                                 admission_guard=iol_admission_hold if iol else paper_admission_guard)
                 # Validate before the first strategy tick, including startup
                 # during OPEN with an already invalid historical ledger.
                 caucion_ledger_blocked, next_caucion_ledger_recheck = (
@@ -3533,7 +3614,7 @@ def run():
                         time.monotonic()))
                 if caucion_ledger_blocked and phase != "OPEN":
                     continue
-            if phase == "PREOPEN":
+            if phase == "PREOPEN" and not iol:
                 # Verify the scanner's pin even when preopen issues no market GET.
                 try:
                     reason = ("" if reader.metrics.get("authenticated") is True
@@ -3553,12 +3634,12 @@ def run():
                     continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             if not caucion_ledger_blocked:
-                if attached and phase != "OPEN" and _daily_sync(reader, store):
+                if not iol and attached and phase != "OPEN" and _daily_sync(reader, store):
                     reader = None
                     next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
                     continue
                 operations.service_tick(store, phase)
-                if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
+                if not iol and phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                     try:
                         import dj_caucion_live_ppi_rc6 as caucion_live
                         if caucion_live.collection_window(datetime.now(TZ)):
@@ -3575,30 +3656,31 @@ def run():
                 if should_capture or closing_snapshot:
                     _public_probe(store, structured=True)
                     last_structured_capture = time.time()
-                last_complementary_reconcile = _periodic_complementary_reconcile(
-                    store, phase, last_complementary_reconcile)
+                if not iol:
+                    last_complementary_reconcile = _periodic_complementary_reconcile(
+                        store, phase, last_complementary_reconcile)
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
-                if _daily_sync(reader, store):
+                if not iol and _daily_sync(reader, store):
                     reader = None
                     next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
                     continue
-                _background_ingest(reader, store)
+                if not iol:
+                    _background_ingest(reader, store)
                 if time.time() - last_readiness_check >= READINESS_CHECK_SECONDS:
                     _runtime_readiness(store)
                     _publish_economic_shadow_health(store)
                     last_readiness_check = time.time()
                 store.state(process_state="WAITING_MARKET", session_state="MARKET_CLOSED",
                             heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="PPI de solo lectura activo; ingesta histórica disponible. "
-                                   "Estrategia y market data vivo detenidos por mercado cerrado.")
+                            detail=f"Gateway {source_label} conectado. Estrategia y market data vivo detenidos por mercado cerrado.")
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
             if phase == "PREOPEN":
                 store.state(process_state="READY_PREOPEN", session_state="PREOPEN",
                             heartbeat_at=now_iso(), real_orders_sent=0,
-                            detail="Preapertura: login e ingesta activos; cero evaluaciones y cero operaciones.")
+                            detail="Preapertura: Gateway conectado; cero evaluaciones y cero operaciones.")
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
@@ -3626,7 +3708,7 @@ def run():
             latencies = []
             scopes = {tuple(s["request"]): s for s in active_plan.get("read_scopes", [])}
             opened_identities = {}
-            if getattr(reader, "budget_enabled", False):
+            if iol or getattr(reader, "budget_enabled", False):
                 for p in store.open_positions():
                     opened_identities.setdefault((p["symbol"], p["asset_class"], p["settlement"]), set()).add(
                         (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"]))
@@ -3647,7 +3729,8 @@ def run():
                     if scope_identity is None:
                         cycle_identity_rejections += 1
                         cycle_failures += 1
-                        store.event("DATA_REJECTED", f"{symbol}: PPI_GATEWAY_EXACT_IDENTITY_REQUIRED")
+                        reason = "IOL_GATEWAY_EXACT_IDENTITY_REQUIRED" if iol else "PPI_GATEWAY_EXACT_IDENTITY_REQUIRED"
+                        store.event("DATA_REJECTED", f"{symbol}: {reason}")
                         continue
                     cycle_requested += 1
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
@@ -3655,13 +3738,13 @@ def run():
                         catalog_read_error=catalog_read_error)
                     if observation_hold:
                         q = replace(q, opening_block_reason=observation_hold)
-                    try:
-                        scanner_primary.capture(q, request=request_key)
-                    except Exception as origin_error:
-                        # A receipt failure cannot interrupt PAPER quote/EXIT
-                        # processing or create an additional provider request.
-                        print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
-                              file=sys.stderr, flush=True)
+                    if scanner_primary is not None:
+                        try:
+                            scanner_primary.capture(q, request=request_key)
+                        except Exception as origin_error:
+                            # A receipt failure cannot interrupt PAPER quote/EXIT.
+                            print("PPI_SCANNER_PRIMARY_CAPTURE_ERROR=" + type(origin_error).__name__,
+                                  file=sys.stderr, flush=True)
                     # Stale Book never reaches the broker; stale trade with a
                     # fresh Book can supervise exits only, never new entry.
                     store.add_quote(q)
@@ -3694,14 +3777,16 @@ def run():
                     store.state(process_state="DEGRADED", detail="La barrera bloqueo una ruta no permitida.")
                 except Exception as exc:
                     cycle_failures += 1
-                    read_error = _scanner_ppi_error(exc)
+                    read_error = read_error_code(exc)
                     store.event("DATA_ERROR", f"{symbol}: {read_error}")
-                    if session_invalid(exc) or _scanner_gateway_reader_lost(exc):
+                    if (session_invalid(exc) or _scanner_gateway_reader_lost(exc)
+                            or iol and iol_gateway_reader_needs_reattach(exc)):
                         cycle_session_invalid = True
-                        store.event("PPI_GATEWAY_REATTACH_REQUIRED",
-                                    "Owner PPI cambió/no responde o auth inválida; reconexión AF_UNIX sin login")
+                        store.event("IOL_GATEWAY_REATTACH_REQUIRED" if iol else "PPI_GATEWAY_REATTACH_REQUIRED",
+                                    "Gateway cambió/no responde o auth inválida; reconexión local")
                         break
-                    if read_error in NATIVE_PROVIDER_BACKPRESSURE:
+                    if read_error in NATIVE_PROVIDER_BACKPRESSURE or iol and read_error in {
+                            "IOL_HTTP_401", "IOL_HTTP_429", "IOL_GATEWAY_RATE_HOLD"}:
                         observation_hold = read_error
                         break
                 finally:
@@ -3710,9 +3795,9 @@ def run():
                     _write_scanner_metrics(store, "SYMBOL",
                           (cycle_started, symbol, latency,
                            "VERDE" if latency < INTERVAL * 500 else "AMARILLO",
-                           "current + book; PPI Producción solo lectura"))
+                           f"current + book; {source_label} sólo lectura"))
                     last_cycle_pulse = _pulse_observed_progress(store, last_cycle_pulse)
-            if (not observation_hold and not cycle_session_invalid
+            if (not iol and not observation_hold and not cycle_session_invalid
                     and os.getenv("POROTA_PPI_DIRECT_REST_RECOVERY") == "1"
                     and last_direct_rest_probe + 60 <= time.monotonic() < cycle_deadline
                     and not store.open_positions() and not store.active_future_positions()):
@@ -3733,13 +3818,14 @@ def run():
                 _health(store, "PPI_DIRECT_REST_RECOVERY",
                         "VERDE" if fresh_observation else "AMARILLO",
                         detail, "PPI Producción", success=fresh_observation)
-            try:
-                primary_receipt = scanner_primary.publish()
-                print("PPI_SCANNER_PRIMARY_RECEIPT=" + json.dumps(primary_receipt, sort_keys=True),
-                      file=sys.stderr, flush=True)
-            except Exception as origin_error:
-                print("PPI_SCANNER_PRIMARY_PUBLISH_ERROR=" + type(origin_error).__name__,
-                      file=sys.stderr, flush=True)
+            if scanner_primary is not None:
+                try:
+                    primary_receipt = scanner_primary.publish()
+                    print("PPI_SCANNER_PRIMARY_RECEIPT=" + json.dumps(primary_receipt, sort_keys=True),
+                          file=sys.stderr, flush=True)
+                except Exception as origin_error:
+                    print("PPI_SCANNER_PRIMARY_PUBLISH_ERROR=" + type(origin_error).__name__,
+                          file=sys.stderr, flush=True)
             if not observation_hold:
                 try:
                     broker.mark_equity(quotes)
@@ -3771,18 +3857,24 @@ def run():
                    f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             try:
                 metrics = reader.metrics
-                if metrics.get("authenticated") is False:
+                if iol:
+                    authenticated = metrics.get("authenticated") is True
+                    _health(store, auth_component, "VERDE" if authenticated else "AMARILLO",
+                            "Sesión IOL vigente." if authenticated else "Sesión IOL sin vigencia acreditada.",
+                            source_label, success=authenticated)
+                elif metrics.get("authenticated") is False:
                     cycle_session_invalid = True
             except Exception as exc:
-                if not _scanner_gateway_reader_lost(exc):
+                if not (_scanner_gateway_reader_lost(exc) or iol and iol_gateway_reader_needs_reattach(exc)):
                     raise
                 cycle_session_invalid = True
                 metrics = None  # keep last physical owner HTTP counts, never false zeros
-                store.event("PPI_GATEWAY_METRICS_UNVERIFIED", type(exc).__name__)
+                store.event("IOL_GATEWAY_METRICS_UNVERIFIED" if iol else "PPI_GATEWAY_METRICS_UNVERIFIED",
+                            type(exc).__name__)
             if cycle_session_invalid:
-                _health(store, "PPI_PRODUCTION_AUTH", "ROJO",
+                _health(store, auth_component, "ROJO",
                         "Sesión del gateway pendiente de recuperación o de nueva conexión local.",
-                        "PPI Producción")
+                        source_label)
             cycle_detail = (f"{cycle_ok}/{len(symbols)} instrumentos actualizados de "
                             f"{eligible_total} elegibles; rotación activa; operaciones solo simuladas.")
             if observation_hold:
@@ -3791,9 +3883,9 @@ def run():
                 cycle_detail = "Login fallo: sesión del gateway pendiente o desconectada. " + cycle_detail
             store.state(process_state="DEGRADED" if observation_hold or cycle_session_invalid or not cycle_ok else "RUNNING",
                         session_state="MARKET_OPEN", heartbeat_at=now_iso(),
-                        ppi_auth="ERROR" if cycle_session_invalid else "OK",
+                        ppi_auth="NOT_ATTEMPTED" if iol else "ERROR" if cycle_session_invalid else "OK",
                         **({"http_allowed": metrics["http_allowed"],
-                            "http_blocked": metrics["http_blocked"]} if metrics else {}),
+                            "http_blocked": metrics["http_blocked"]} if metrics and not iol else {}),
                         real_orders_sent=0,
                         detail=cycle_detail)
             market_detail = f"{active_plan['catalog_status']} sin consultas de cotización en el ciclo."
@@ -3801,9 +3893,9 @@ def run():
                 market_detail = "Par Current/Book nativo fresco en observación."
             if cycle_requested:
                 market_detail = f"{cycle_ok}/{len(symbols)} instrumentos con cotización útil."
-            _health(store, "PPI_PRODUCTION_MARKETDATA",
+            _health(store, market_component,
                     "VERDE" if cycle_ok or fresh_observation else "ROJO" if cycle_requested else "AMARILLO",
-                    market_detail, "PPI Producción", success=bool(cycle_ok or fresh_observation))
+                    market_detail, source_label, success=bool(cycle_ok or fresh_observation))
             _publish_economic_shadow_health(store)
             if cycle_session_invalid:
                 reader.close()

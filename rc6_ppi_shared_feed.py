@@ -793,6 +793,7 @@ _NATIVE_DEMAND_PRIORITY = {
     "SCALPING_HOT": 2, "STRATEGY_HOT": 2, "HOT": 2,
     "WARM": 3, "DISCOVERY": 4,
 }
+NATIVE_RPC_WAIT_SECONDS = 4.0
 
 
 class _PrioritizedNativeDemandRouter:
@@ -836,7 +837,7 @@ class _PrioritizedNativeDemandRouter:
                     return
                 priority, _, item = heapq.heappop(self._queue)
                 elapsed = time.monotonic() - item["enqueued_at"]
-                if elapsed >= 4.0:
+                if elapsed >= NATIVE_RPC_WAIT_SECONDS:
                     item["exception"] = TimeoutError("PPI_NATIVE_GATEWAY_DEADLINE_UNVERIFIED")
                     item["finished"].set()
                     continue
@@ -869,7 +870,7 @@ class _PrioritizedNativeDemandRouter:
             heapq.heappush(self._queue,
                            (_NATIVE_DEMAND_PRIORITY[priority], next(self._sequence), item))
             self._cv.notify()
-        if not item["finished"].wait(4.0):
+        if not item["finished"].wait(NATIVE_RPC_WAIT_SECONDS):
             with self._cv:
                 self._queue = [entry for entry in self._queue if entry[2] is not item]
                 heapq.heapify(self._queue)
@@ -898,7 +899,7 @@ class _PrioritizedNativeDemandRouter:
             self._cv.notify_all()
         thread = self._thread
         if thread is not None:
-            thread.join(timeout=4.0)
+            thread.join(timeout=NATIVE_RPC_WAIT_SECONDS)
             if thread.is_alive():
                 raise RuntimeError("PPI_NATIVE_ROUTER_INFLIGHT_UNVERIFIED")
             self._thread = None
@@ -912,6 +913,8 @@ class ReadOnlyUnixFeedServer:
     injected single owner, never a provider/client imported in this module.
     Watch UID/permissions remain to be independently verified.
     """
+
+    control_schema = NATIVE_ACQUIRE_SCHEMA
 
     def __init__(self, bus: PPISharedMarketFeed, *, socket_path: Path,
                  native_receipts: PPIReadOnlyNativeReceiptStore | None = None,
@@ -1011,7 +1014,7 @@ class ReadOnlyUnixFeedServer:
                     or self._supervisor_starttime is None
                     or peer_pid != self._supervisor_pid
                     or self.process_starttime(peer_pid) != self._supervisor_starttime):
-                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                return {"schema": self.control_schema,
                         "state": "PPI_GATEWAY_SUPERVISOR_PEER_DENIED"}
             role = request.get("consumer")
             pid = request.get("client_pid")
@@ -1019,20 +1022,20 @@ class ReadOnlyUnixFeedServer:
             if (role not in {"scanner", "exit_reader", "scalping"}
                     or type(pid) is not int or type(tick) is not str
                     or self.process_starttime(pid) != tick):
-                return {"schema": NATIVE_ACQUIRE_SCHEMA,
+                return {"schema": self.control_schema,
                         "state": "PPI_GATEWAY_ROLE_PROCESS_UNVERIFIED"}
             with self._role_lock:
                 self._registered_clients[role] = (pid, tick)
             status = self.owner_status() if callable(self.owner_status) else {}
-            return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "REGISTERED",
+            return {"schema": self.control_schema, "state": "REGISTERED",
                     "owner_pid": status.get("owner_pid"),
                     "session_generation": status.get("session_generation"),
                     "registered_role": role, "registered_pid": pid}
         if isinstance(request, dict) and request.get("op") == "owner_status":
             if set(request) != {"op"} or not callable(self.owner_status):
-                return {"schema": NATIVE_ACQUIRE_SCHEMA, "state": "PPI_GATEWAY_OWNER_UNAVAILABLE"}
+                return {"schema": self.control_schema, "state": "PPI_GATEWAY_OWNER_UNAVAILABLE"}
             status = self.owner_status()
-            return {**status, "schema": NATIVE_ACQUIRE_SCHEMA,
+            return {**status, "schema": self.control_schema,
                     "native_router": self.native_router_status(),
                     "registered_clients": self.role_registry_status()}
         if isinstance(request, dict) and request.get("op") in {
@@ -1331,6 +1334,8 @@ class ReadOnlyUnixFeedClient:
     `SharedFeedUnavailable` / `GAP` with PAPER decision hold and evidence.
     """
 
+    control_schema = NATIVE_ACQUIRE_SCHEMA
+
     def __init__(self, *, socket_path: Path, timeout_seconds: float = 0.5):
         if (isinstance(timeout_seconds, bool) or
             not isinstance(timeout_seconds, (int, float)) or
@@ -1404,18 +1409,21 @@ class ReadOnlyUnixFeedClient:
     def owner_status(self) -> dict:
         """Pin Linux AF_UNIX peer PID and one owner generation for this client."""
         response = self._request({"op": "owner_status"}, require_owner_identity=True)
-        if (response.get("schema") != NATIVE_ACQUIRE_SCHEMA
+        if (response.get("schema") != self.control_schema
                 or response.get("state") != "OPEN"
                 or type(response.get("owner_pid")) is not int
                 or response["owner_pid"] <= 0
                 or not _SHA256.fullmatch(str(response.get("session_generation")))
-                or response.get("login_invocations_by_owner") != 1):
+                or not self._owner_status_matches_provider(response)):
             raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_UNVERIFIED")
         actual = (response["owner_pid"], response["session_generation"])
         if self._pinned_owner is not None and self._pinned_owner != actual:
             raise SharedFeedUnavailable("PPI_GATEWAY_OWNER_CHANGED")
         self._pinned_owner = actual
         return response
+
+    def _owner_status_matches_provider(self, response):
+        return response.get("login_invocations_by_owner") == 1
 
     def register_client(self, consumer: str, *, pid: int, proc_starttime: str) -> dict:
         """Supervisor-only OS peer PID registration, never broker data/GET."""
@@ -1429,7 +1437,7 @@ class ReadOnlyUnixFeedClient:
                                 "client_pid": pid,
                                 "client_starttime": proc_starttime},
                                require_owner_identity=True)
-        if (result.get("schema") != NATIVE_ACQUIRE_SCHEMA
+        if (result.get("schema") != self.control_schema
                 or result.get("state") != "REGISTERED"
                 or (result.get("owner_pid"), result.get("session_generation")) != self._pinned_owner
                 or result.get("registered_role") != consumer

@@ -218,6 +218,16 @@ class PositionExitSupervisor:
                                       os.getenv("PAPER_SCALPING_MAX_HOLD_MINUTES", "30")))
             except (ValueError, TypeError, AttributeError):
                 hold_limit = self.max_hold_minutes
+                features = {}
+            if family in {"BONOS", "OBLIGACIONES"}:
+                from rc6_fixed_income_paper_strategy import NATIVE_MARKET_EXIT_MODE
+                plan = features.get("fixed_income_exit_plan")
+                if isinstance(plan, dict) and plan.get("mode") == NATIVE_MARKET_EXIT_MODE:
+                    reviewed_hold = (utc_microseconds(plan.get("exit_at")) -
+                                     utc_microseconds(p["opened_at"])) / 60_000_000
+                    if reviewed_hold <= 0:
+                        return verdict("WATCH_INVALID_CLOCK", "Horizonte auditado anterior a la apertura")
+                    hold_limit = min(hold_limit, reviewed_hold)
             if not cause and age >= hold_limit:
                 cause = "SCALPING_MAX_HOLD_PAPER" if is_scalping else "MAX_HOLD_PAPER"
         except (ValueError, TypeError):

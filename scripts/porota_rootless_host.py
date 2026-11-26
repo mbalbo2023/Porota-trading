@@ -7,7 +7,7 @@ available here.  Initial legacy quiescence belongs to porota_rootless_setup.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import fcntl
@@ -56,6 +56,12 @@ PRESERVED_RELEASE_SOURCES = (
 # operator-disabled and must never return as an expected/accepted child.
 CONTROLLER_CHILDREN = ("ppi_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
                        "candles", "intraday_scalping", "caucion_cash_sweep")
+IOL_CONTROLLER_CHILDREN = ("iol_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications", "candles")
+IOL_CREDENTIAL_MOUNT = "/run/secrets/rc6_iol_rest.env"
+IOL_CREDENTIALS_FILE = "iol-rest.env"
+MARKET_PROVIDER_ENV = "POROTA_RC6_MARKET_PROVIDER"
+PPI_LOCAL_HISTORY = {"PPI_HISTORY_EVIDENCE_ROOT": "/app/data/evidence/ppi_history_exact_v1",
+                     "PPI_HISTORY_RAW_STORAGE_MODE": "EXTERNAL_EXACT_V1"}
 DOCKER_OPERATIONS = {
     ("image", "load"): "IMAGE_LOAD", ("image", "inspect"): "IMAGE_INSPECT",
     ("image", "ls"): "IMAGE_LS", ("image", "rm"): "IMAGE_RM",
@@ -382,7 +388,7 @@ def download_evidence(raw, release):
     return {"deployment_sha": receipt["deployment_sha"], "download_receipt_sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def publish_release_marker(root, release, *, validated, manifest=None, download=None):
+def publish_release_marker(root, release, *, validated, manifest=None, download=None, provider="PPI"):
     """Keep the existing operator rearm reader compatible and fail closed."""
     directory = no_alias(root / "data/deploy")
     directory.mkdir(mode=0o755, exist_ok=True)
@@ -400,6 +406,8 @@ def publish_release_marker(root, release, *, validated, manifest=None, download=
     if validated and download:
         marker.update(deployment_sha=download["deployment_sha"],
                       download_receipt_sha256=download["download_receipt_sha256"])
+    if provider == "IOL_REST":
+        marker["market_provider"] = provider
     if manifest is not None:
         require(hashlib.sha256(manifest).hexdigest() ==
                 release["members"]["porota-deploy-bundle-v2-manifest.json"]["sha256"], "MANIFEST_CHANGED")
@@ -410,6 +418,8 @@ def publish_release_marker(root, release, *, validated, manifest=None, download=
             "engine": "PYTHON", "execution": "SIMULATED",
             "apis": {"PPI_PRODUCTION": "MARKET_DATA_READ_ONLY", "PPI_ORDERS": "BLOCKED"},
             "changed_at": marker["recorded_at"], "telegram_notification": "NOT_SENT"}
+    if provider == "IOL_REST":
+        mode["apis"].update(IOL_REST="MARKET_DATA_READ_ONLY", PPI_PRODUCTION="DISABLED")
     atomic_write(root / "data/operation_mode.json", (json.dumps(mode, sort_keys=True) + "\n").encode(), private=False)
 
 
@@ -547,7 +557,7 @@ def parse_env(raw):
     return result
 
 
-def runtime_environments(config, dashboard, sha, tree):
+def runtime_environments(config, dashboard, sha, tree, *, provider="PPI"):
     from porota_mode_manager import paper_settings, ppi_budget_observer_selectors
     for values in (config, dashboard):
         require(str(values.get("ALLOW_REAL_ORDERS", "false")).lower() in ("false", "0", ""),
@@ -561,12 +571,21 @@ def runtime_environments(config, dashboard, sha, tree):
                    "SERVER_TIMEZONE": "America/Argentina/Buenos_Aires",
                    "DASHBOARD_OPERATION_MODE": "PRODUCTION_PAPER",
                    "EXECUTION_MODE": "SIMULATION", "REAL_ORDER_CAPABILITY": "BLOCKED"})
-    observer = dict(common, **ppi_budget_observer_selectors(config))
+    require(provider in {"PPI", "IOL_REST"}, "RELEASE_MARKET_PROVIDER_INVALID")
+    if provider == "IOL_REST":
+        common = {key: value for key, value in common.items() if not key.startswith("PPI_")}
+        common.update(PPI_LOCAL_HISTORY)
+    observer = dict(common)
     observer.update({key: config.get(key, "") for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")})
     observer.update({"PAPER_T1_FULL_DATE_RELEASE": "true",
-                     "PPI_PRODUCTION_SECRET_FILE": "/run/secrets/ppi_production.json",
-                     "POROTA_FI_HISTORICAL_PAPER_SALE": "1",
                      "POROTA_CONTRACT_EVIDENCE_MODE": config.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED")})
+    if provider == "IOL_REST":
+        observer.update({MARKET_PROVIDER_ENV: provider, "POROTA_IOL_REST_CONFIG": IOL_CREDENTIAL_MOUNT})
+        common[MARKET_PROVIDER_ENV] = provider
+    else:
+        observer.update(ppi_budget_observer_selectors(config))
+        observer.update({"PPI_PRODUCTION_SECRET_FILE": "/run/secrets/ppi_production.json",
+                         "POROTA_FI_HISTORICAL_PAPER_SALE": "1"})
     safe = {key: value for key, value in dashboard.items()
             if key.startswith(("DASHBOARD_", "COOKIE_", "SESSION_")) and
             not key.startswith(("DASHBOARD_OPERATION_MODE", "DASHBOARD_PORT", "DASHBOARD_HOST"))}
@@ -574,6 +593,25 @@ def runtime_environments(config, dashboard, sha, tree):
     safe.update({"DASHBOARD_HOST": "0.0.0.0", "DASHBOARD_PORT": "8000", "DASHBOARD_REFRESH_SECONDS": "30"})
     require(bool(safe.get("DASHBOARD_ACCESS_TOKEN")), "DASHBOARD_AUTH_REQUIRED")
     return observer, safe
+
+
+def write_iol_credentials(path, config):
+    require(config.get("IOL_ENABLED", "").lower() == "true", "IOL_REST_CREDENTIALS_UNCONFIGURED")
+    values = {key: config.get(key, "") for key in ("IOL_USERNAME", "IOL_PASSWORD")}
+    require(all(values.values()) and all("\n" not in value and "\r" not in value for value in values.values()),
+            "IOL_REST_CREDENTIALS_UNCONFIGURED")
+    raw = "IOL_ENABLED=true\n" + "".join(f"{key}={value}\n" for key, value in values.items())
+    require(parse_env(raw) == dict(values, IOL_ENABLED="true"), "IOL_REST_CREDENTIALS_UNCONFIGURED")
+    atomic_write(path, raw.encode("utf-8"))
+
+
+def require_iol_cutover_flat(path):
+    """Hold the first cutover while its predecessor has open PAPER contracts."""
+    with closing(sqlite3.connect(no_alias(path).as_uri() + "?mode=ro", uri=True, timeout=3)) as connection:
+        for table, status in (("paper_positions", "OPEN"), ("paper_cauciones", "OPEN"),
+                              ("paper_future_positions", "ACTIVE")):
+            require(connection.execute(f"SELECT 1 FROM {table} WHERE status = ? LIMIT 1", (status,)).fetchone()
+                    is None, "IOL_CUTOVER_OPEN_PAPER_CONTRACTS")
 
 
 def database_snapshot(path):
@@ -634,7 +672,7 @@ def remove_unreferenced_image(docker, image_id):
     return "REMOVED_UNREFERENCED"
 
 
-def classify_runtime(row, *, now, started):
+def classify_runtime(row, *, now, started, provider="PPI"):
     require(isinstance(row, dict) and row.get("mode") == "PRODUCTION_PAPER" and
             type(row.get("real_orders_sent")) is int and row["real_orders_sent"] == 0,
             "PAPER_RUNTIME_SAFETY")
@@ -652,6 +690,23 @@ def classify_runtime(row, *, now, started):
     if not fresh(row.get("heartbeat_at"), 120) or not new_heartbeat:
         return {"status": "PENDING", "source_alert": "NO_VERIFICADO"}
     auth, process = row.get("ppi_auth"), row.get("process_state")
+    if provider == "IOL_REST":
+        require(auth == "NOT_ATTEMPTED", "IOL_RELEASE_PPI_ACCESS_DETECTED")
+        phase = row.get("session_state")
+        if ((process, phase) in {("WAITING_MARKET", "MARKET_CLOSED"), ("READY_PREOPEN", "PREOPEN"),
+                                  ("RUNNING", "MARKET_OPEN")}):
+            stale = phase == "MARKET_OPEN" and not fresh(row.get("last_market_data_at"), 300)
+            return {"status": "READY", "source_alert": "AMBER_IOL_MARKET_DATA_STALE" if stale else "NONE"}
+        if (process == "DEGRADED" and phase == "MARKET_OPEN" and re.fullmatch(
+                r"0/\d+ instrumentos actualizados de \d+ elegibles; rotación activa; operaciones solo simuladas\.",
+                str(row.get("detail", "")))):
+            return {"status": "READY", "source_alert": "AMBER_IOL_NO_QUALIFIED_MARKET_DATA"}
+        if process == "STARTING" or (process == "DEGRADED" and phase in {
+                "BOOT_COMMAND", "BOOT_CALENDAR", "BOOT_IOL_GATEWAY", "BOOT_IOL_GATEWAY_IDENTITY"}):
+            return {"status": "PENDING", "source_alert": "NO_VERIFICADO"}
+        if process == "DEGRADED" and str(row.get("detail", "")).startswith("Gateway IOL REST"):
+            return {"status": "PENDING", "source_alert": "NO_VERIFICADO"}
+        raise Hold("IOL_RUNTIME_UNCLASSIFIED_DEGRADED")
     if process in {"RUNNING", "WAITING_MARKET", "READY_PREOPEN"} and auth == "OK":
         stale = row.get("session_state") == "MARKET_OPEN" and not fresh(row.get("last_market_data_at"), 300)
         return {"status": "READY", "source_alert": "AMBER_PPI_MARKET_DATA_STALE" if stale else "NONE"}
@@ -677,7 +732,11 @@ def classify_runtime(row, *, now, started):
     raise Hold("RUNTIME_UNCLASSIFIED_DEGRADED")
 
 
-def read_controller_health(path):
+def controller_roles(provider):
+    return IOL_CONTROLLER_CHILDREN if provider == "IOL_REST" else CONTROLLER_CHILDREN
+
+
+def read_controller_health(path, *, provider="PPI"):
     """Observe bounded controller evidence and live child PIDs inside its container."""
     try:
         health = decode(read_regular(path))
@@ -686,15 +745,16 @@ def read_controller_health(path):
     if not isinstance(health, dict) or not isinstance(health.get("children"), dict):
         return None
     result = {key: health.get(key) for key in (
-        "schema", "source_sha", "candidate_tree_sha", "recorded_at")}
+        "schema", "source_sha", "candidate_tree_sha", "recorded_at", "market_provider")}
     sale = health.get("fixed_income_sale")
     if isinstance(sale, dict):
         result["fixed_income_sale"] = {key: sale.get(key) for key in (
             "state", "model", "variants", "release_sha256", "policy_sha256",
             "signer_key_sha256", "signer_pid")}
-    result["roles_match"] = set(health["children"]) == set(CONTROLLER_CHILDREN)
+    roles = controller_roles(provider)
+    result["roles_match"] = set(health["children"]) == set(roles)
     result["children"] = {}
-    for name in CONTROLLER_CHILDREN:
+    for name in roles:
         child = health["children"].get(name)
         if not isinstance(child, dict):
             continue
@@ -712,7 +772,7 @@ def read_controller_health(path):
     return result
 
 
-def classify_controller(health, *, source_sha, source_tree, now, started, expected_sale=None):
+def classify_controller(health, *, source_sha, source_tree, now, started, expected_sale=None, provider="PPI"):
     """Startup may retain an older file; only fresh current live children pass."""
     def pending(reason, **details):
         return {"status": "PENDING", "reason": reason, **details}
@@ -726,15 +786,18 @@ def classify_controller(health, *, source_sha, source_tree, now, started, expect
         return pending("CONTROLLER_HEALTH_UNAVAILABLE")
     if health.get("source_sha") != source_sha or health.get("candidate_tree_sha") != source_tree:
         return pending("CONTROLLER_SOURCE_MISMATCH")
+    if health.get("market_provider", "PPI") != provider:
+        return pending("CONTROLLER_PROVIDER_MISMATCH")
     stamp = current_stamp(health.get("recorded_at"))
     if stamp is None or (now - stamp).total_seconds() > 120:
         return pending("CONTROLLER_HEALTH_STALE")
     children = health.get("children")
-    if health.get("roles_match") is not True or not isinstance(children, dict) or set(children) != set(CONTROLLER_CHILDREN):
+    roles = controller_roles(provider)
+    if health.get("roles_match") is not True or not isinstance(children, dict) or set(children) != set(roles):
         return pending("CONTROLLER_CHILD_ROLES_MISMATCH")
     waiting = []
     pids = set()
-    for name in CONTROLLER_CHILDREN:
+    for name in roles:
         child = children[name]
         if not isinstance(child, dict):
             waiting.append(name)
@@ -764,7 +827,8 @@ def classify_controller(health, *, source_sha, source_tree, now, started, expect
     return result
 
 
-def validate_container(item, *, role, image_id, source_sha, source_tree, attempt, root, operator=None):
+def validate_container(item, *, role, image_id, source_sha, source_tree, attempt, root, operator=None,
+                       market_provider="PPI", attempts=None):
     require(role in ROLES and isinstance(item, dict), "CONTAINER_SCOPE")
     config = item.get("Config") or {}
     labels = config.get("Labels") or {}
@@ -787,6 +851,14 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
             "RUNTIME_PAPER_CONFIG")
     require(role == "observer" or "POROTA_FI_HISTORICAL_PAPER_SALE" not in env,
             "RUNTIME_FI_SALE_ROLE_BOUNDARY")
+    require(market_provider in {"PPI", "IOL_REST"} and env.get(MARKET_PROVIDER_ENV, "PPI") == market_provider,
+            "RUNTIME_MARKET_PROVIDER_MISMATCH")
+    if market_provider == "IOL_REST":
+        require({key: value for key, value in env.items() if key.startswith(("PPI_", "POROTA_PPI_"))}
+                == PPI_LOCAL_HISTORY and
+                {"IOL_USERNAME", "IOL_PASSWORD"}.isdisjoint(env) and
+                env.get("POROTA_IOL_REST_CONFIG") == (IOL_CREDENTIAL_MOUNT if role == "observer" else None),
+                "RUNTIME_PROVIDER_CREDENTIALS_BOUNDARY")
     settings = item.get("HostConfig") or {}
     require(settings.get("ReadonlyRootfs") is True and settings.get("Privileged") is False and
             settings.get("CapDrop") == ["ALL"] and not settings.get("CapAdd") and
@@ -800,7 +872,9 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
             0 < settings.get("PidsLimit", 0) <= 512,
             "RUNTIME_ISOLATION")
     expected = {"/app/data": (str(root / "data"), True), "/app/operator": (str(operator), False)}
-    if role == "observer":
+    if role == "observer" and market_provider == "IOL_REST":
+        expected[IOL_CREDENTIAL_MOUNT] = (str(attempts / attempt / IOL_CREDENTIALS_FILE), False)
+    elif role == "observer":
         expected["/run/secrets/ppi_production.json"] = (str(root / ".secrets/ppi_production.json"), False)
     mounts = item.get("Mounts", [])
     binds = [m for m in mounts if m.get("Type") == "bind"]
@@ -829,9 +903,31 @@ def validate_container(item, *, role, image_id, source_sha, source_tree, attempt
     return item["Id"]
 
 
+def observe_iol_owner(database):
+    from rc6_iol_market_gateway import IOLGatewayClient, iol_gateway_socket_path
+    from rc6_ppi_shared_feed import ReadOnlyUnixFeedServer, SharedFeedUnavailable
+
+    try:
+        owner = IOLGatewayClient(socket_path=iol_gateway_socket_path(database), timeout_seconds=1).owner_status()
+    except SharedFeedUnavailable:
+        return None
+    registered = {}
+    for role in ("scanner", "exit_reader"):
+        child = owner.get("registered_clients", {}).get(role, {})
+        pid = child.get("pid")
+        tick = child.get("proc_starttime")
+        if (type(pid) is not int or pid <= 0 or not isinstance(tick, str) or
+                ReadOnlyUnixFeedServer.process_starttime(pid) != tick):
+            return None
+        registered[role] = pid
+    return {"owner_pid": owner["owner_pid"], "registered": registered,
+            "authenticated": owner.get("authenticated") is True, "wire_attempts": owner.get("wire_attempts")}
+
+
 RUNTIME_PROBE = '''import json,os,sqlite3
 from bd_ppi_readonly_guard import ReadOnlyTransportGuard,ReadOnlyPolicyViolation
-from scripts.porota_rootless_host import read_controller_health
+from scripts.porota_rootless_host import observe_iol_owner,read_controller_health
+provider=os.getenv('POROTA_RC6_MARKET_PROVIDER','PPI')
 guard=ReadOnlyTransportGuard()
 for path in ('/api/1.0/orders/confirm','/api/1.0/orders/create','/api/1.0/orders/cancel'):
     try: guard.check('POST','https://clientapi.portfoliopersonal.com'+path)
@@ -843,7 +939,16 @@ c.execute('PRAGMA query_only=ON')
 rows=c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at,detail FROM observer_state WHERE id=1').fetchall()
 assert len(rows)==1
 result=dict(rows[0])
-result['controller']=read_controller_health('/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json')
+health_path='/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
+if provider=='IOL_REST':
+    from iol_rest_readonly_rc6 import IOLRestError,IOLRestReadOnly
+    result['controller']=read_controller_health(health_path,provider=provider)
+    try: IOLRestReadOnly('/tmp').call('create_order',{})
+    except IOLRestError as exc: assert str(exc)=='IOL_REST_CAPABILITY_UNVERIFIED'
+    else: raise SystemExit(21)
+    result['iol_gateway']=observe_iol_owner('/app/data/paper_v17/observer_v17.db')
+else:
+    result['controller']=read_controller_health(health_path)
 if os.getenv('POROTA_FI_HISTORICAL_PAPER_SALE')=='1':
     from rc6_fixed_income_sale_authority import deployed_sale_model
     sale=deployed_sale_model()
@@ -887,7 +992,9 @@ class Host:
         item = self.inspect(cid)
         validate_container(item, role=role, image_id=document["image_id"],
                            source_sha=document["source_sha"], source_tree=document["source_tree"],
-                           attempt=document["attempt"], root=self.root, operator=self.identity.operator)
+                           attempt=document["attempt"], root=self.root, operator=self.identity.operator,
+                           market_provider=document.get("market_provider", "PPI"),
+                           attempts=self.identity.state / "attempts")
         return item
 
     def check_inventory(self, current, *, allow_empty_migration=False):
@@ -979,15 +1086,15 @@ class Host:
     def prepare_environment(self, directory, release):
         config = parse_env(read_regular(self.root / ".env").decode())
         dashboard = parse_env(read_regular(self.root / "data/diagnosticos/dashboard_preview_v1633.env").decode())
-        observer, dashboard = runtime_environments(config, dashboard, release["source_sha"], release["source_tree"])
+        self.receipt["market_provider"] = "IOL_REST"
+        observer, dashboard = runtime_environments(config, dashboard, release["source_sha"], release["source_tree"],
+                                                   provider=self.receipt["market_provider"])
         self.receipt["fixed_income_sale_requested"] = observer.get("POROTA_FI_HISTORICAL_PAPER_SALE") == "1"
         for role, values in (("observer", observer), ("dashboard", dashboard)):
             require(all("\n" not in v and "\r" not in v for v in values.values()), "ENV_INVALID")
             atomic_write(directory / (role + ".env"),
                          ("\n".join(f"{key}={value}" for key, value in values.items()) + "\n").encode())
-        secret = self.root / ".secrets/ppi_production.json"
-        require(secret.is_file() and not no_alias(secret).stat().st_mode & 0o077 and os.access(secret, os.R_OK),
-                "PPI_SECRET_ACCESS_REQUIRED")
+        write_iol_credentials(directory / IOL_CREDENTIALS_FILE, config)
         operator = no_alias(self.identity.operator)
         meta = operator.stat()
         require(stat.S_ISDIR(meta.st_mode) and meta.st_uid == self.identity.uid and not meta.st_mode & 0o077,
@@ -1044,11 +1151,13 @@ class Host:
             require(role in ROLES and role not in roles, "ATTEMPT_CLEANUP_AMBIGUOUS")
             validate_container(item, role=role, image_id=document["image_id"],
                 source_sha=document["source_sha"], source_tree=document["source_tree"],
-                attempt=document["attempt"], root=self.root, operator=self.identity.operator)
+                attempt=document["attempt"], root=self.root, operator=self.identity.operator,
+                market_provider=document.get("market_provider", "PPI"), attempts=self.identity.state / "attempts")
             roles[role] = cid
         return dict(document, roles=roles)
 
     def postflight(self, document, started, *, budget=1200, sleep=time.sleep, clock=time.monotonic, guard=None):
+        provider = document.get("market_provider", "PPI")
         deadline = clock() + budget
         while clock() < deadline:
             if guard:
@@ -1059,16 +1168,27 @@ class Host:
             row = self.docker.json("container", "exec", document["roles"]["observer"],
                                    "python", "-c", RUNTIME_PROBE)
             now = datetime.now(timezone.utc)
-            status = classify_runtime(row, now=now, started=started)
+            status = classify_runtime(row, now=now, started=started, provider=provider)
             expected_sale = (row.get("expected_fixed_income_sale") or {}
                              if document.get("fixed_income_sale_requested") else None)
             controller = classify_controller(row.get("controller"), source_sha=document["source_sha"],
-                source_tree=document["source_tree"], now=now, started=started, expected_sale=expected_sale)
+                source_tree=document["source_tree"], now=now, started=started, expected_sale=expected_sale,
+                provider=provider)
             self.receipt["controller"] = controller
             health = dashboard["State"].get("Health", {}).get("Status")
             if health == "healthy" and status["status"] == "READY" and controller["status"] == "READY":
-                return {"dashboard": "healthy", "observer": "running", "orders_guard": "BLOCKED",
-                        "source_alert": status["source_alert"], "paper_readiness": "FAIL_CLOSED_PER_INSTRUMENT"}
+                evidence = {"dashboard": "healthy", "observer": "running", "orders_guard": "BLOCKED",
+                            "source_alert": status["source_alert"], "paper_readiness": "FAIL_CLOSED_PER_INSTRUMENT"}
+                if provider == "IOL_REST":
+                    owner = row.get("iol_gateway") or {}
+                    children = row["controller"]["children"]
+                    if (owner.get("owner_pid") != children["iol_gateway"]["pid"] or
+                            owner.get("registered") != {role: children[role]["pid"] for role in ("scanner", "exit_reader")}):
+                        sleep(5)
+                        continue
+                    evidence.update({"iol_gateway": owner, "ppi_auth": row["ppi_auth"],
+                                     "market_session": row["session_state"]})
+                return evidence
             sleep(5)
         raise Hold("RUNTIME_STARTUP_TIMEOUT")
 
@@ -1118,6 +1238,10 @@ class Host:
             before = database_snapshot(self.root / DB_RELATIVE)
             self.receipt["database"] = before
             self.prepare_environment(directory, release)
+            first_iol = (self.receipt.get("market_provider") == "IOL_REST" and
+                         (current or {}).get("market_provider", "PPI") == "PPI")
+            if first_iol:
+                require_iol_cutover_flat(self.root / DB_RELATIVE)
             disk_before = shutil.disk_usage(self.identity.store).free
             data_free = shutil.disk_usage(self.root / "data").free
             required = required_free_bytes(release)
@@ -1158,10 +1282,13 @@ class Host:
                 require(database_snapshot(self.root / DB_RELATIVE) == before, "DATABASE_CHANGED_IDENTITY")
                 if guard:
                     guard()
+                if first_iol:
+                    require_iol_cutover_flat(self.root / DB_RELATIVE)
                 self.receipt["phase"] = "QUIESCE"
                 transitioned = True  # A partially failed transition is still a mutation attempt.
                 write_json(journal, self.receipt)
-                publish_release_marker(self.root, release, validated=False, manifest=manifest)
+                provider = self.receipt.get("market_provider", "PPI")
+                publish_release_marker(self.root, release, validated=False, manifest=manifest, provider=provider)
                 if transition:
                     # Producer and consumer share this process, user lock and
                     # the bootstrap's root-owned global lock. No supplied flag.
@@ -1194,7 +1321,10 @@ class Host:
                 if current:
                     self.receipt["cleanup_pending"] = {key: current[key] for key in
                         ("source_sha", "source_tree", "image_id", "attempt", "roles")}
-                publish_release_marker(self.root, release, validated=True, manifest=manifest, download=download)
+                    if "market_provider" in current:
+                        self.receipt["cleanup_pending"]["market_provider"] = current["market_provider"]
+                publish_release_marker(self.root, release, validated=True, manifest=manifest, download=download,
+                                       provider=provider)
                 write_json(current_path, self.receipt)
                 committed = True
                 self.receipt["phase"] = "CLEANUP"
@@ -1233,7 +1363,8 @@ class Host:
                     except Exception as cleanup_exc:
                         self.receipt["cleanup"].update(failure_evidence(cleanup_exc))
                     if transitioned:
-                        publish_release_marker(self.root, release, validated=False, manifest=manifest)
+                        publish_release_marker(self.root, release, validated=False, manifest=manifest,
+                                               provider=self.receipt.get("market_provider", "PPI"))
                         failed = dict(current or self.receipt)
                         if not current:
                             failed["roles"] = {}
@@ -1249,7 +1380,7 @@ class Host:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("inspect", "deploy"))
+    parser.add_argument("operation", choices=("inspect", "deploy", "inventory", "replay"))
     parser.add_argument("--root", type=Path, default=Path("/opt/porota-trading"))
     parser.add_argument("--release-dir", type=Path)
     parser.add_argument("--source-sha")
@@ -1262,6 +1393,20 @@ def main(argv=None):
         if args.operation == "inspect":
             result = {"schema": "porota.rootless.runtime-inspect.v1", "state": "NO_VERIFICADO",
                       "daemon_id": manager.boundary(), "host_mutations": 0}
+        elif args.operation == "replay":
+            from scripts.rc6_iol_installed_replay import run_host
+
+            result = run_host(manager, args.source_sha, args.source_tree, args.attempt)
+        elif args.operation == "inventory":
+            from scripts.porota_rootless_jobs import scheduler_lock, verified_host
+            from scripts.rc6_iol_installed_inventory import run_host_inventory
+
+            with scheduler_lock(manager.identity):
+                manager, current, release = verified_host(manager.root, manager.identity)
+                require((release["source_sha"], release["source_tree"], current["attempt"],
+                         current.get("market_provider")) == (args.source_sha, args.source_tree, args.attempt, "IOL_REST"),
+                        "INVENTORY_INSTALLED_RELEASE_MISMATCH")
+                result = run_host_inventory(manager, current)
         else:
             require(all((args.release_dir, args.source_sha, args.source_tree, args.attempt)), "RELEASE_ARGUMENTS_REQUIRED")
             result = manager.deploy(args.release_dir, args.source_sha, args.source_tree, args.attempt)

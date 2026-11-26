@@ -37,7 +37,7 @@ def make_store(tmp_path, count=25):
 def quote(asset, at, bid="100", ask="100.2"):
     return Quote(asset["ticker"], asset["instrument_type"], asset["settlement"],
         D(bid), D(bid), D(ask), D(1000), D(1000), at.isoformat(),
-        currency="ARS", market="BYMA", metadata_source="TEST_FIXTURE",
+        currency="ARS", market="BYMA", metadata_source=f"PPI_CATALOG:{PRE.isoformat()}",
         book_at=at.isoformat(), trade_at=at.isoformat(), last_kind="TRADE")
 
 

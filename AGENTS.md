@@ -1,5 +1,17 @@
 # Porota Trading RC6 — instrucciones para agentes
 
+## Migración a IOL REST
+
+- IOL REST es el proveedor del release PAPER. El observer recibe únicamente
+  las credenciales de IOL por un archivo privado de solo lectura. PPI Watch
+  opera de forma independiente y los históricos conservan su procedencia.
+- El comparador #1290 sigue limitado a testing por su marcador. La revisión
+  de release usa Predeploy V2 y Promote V2. El replay posdeploy usa el digest
+  instalado en un contenedor sin red ni datos de la rueda.
+- Acreditar GO, READY, apertura y salida con evidencia independiente por familia.
+  Registrar el primer fallo, el RCA y los avances en la
+  [matriz de migración](docs/auditoria-rc6/MATRIZ_MIGRACION_RUEDA.md).
+
 Este es el único punto de entrada de trabajo. El procedimiento está en
 [docs/RUNBOOK.md](docs/RUNBOOK.md); los documentos retirados se consultan desde
 [el índice histórico](docs/history/README.md). La documentación describe reglas;

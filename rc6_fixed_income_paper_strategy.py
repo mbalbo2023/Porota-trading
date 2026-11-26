@@ -27,6 +27,7 @@ from rc6_fixed_income_strategy_shadow import ShadowScenario
 PAPER_ONLY = True
 REAL_ROUTES_USED = ()
 STRATEGY_VERSION = "rc6-fixed-income-paper-signal-v1"
+NATIVE_MARKET_EXIT_MODE = "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT"
 FAMILIES = frozenset({"BONOS", "LETRAS", "OBLIGACIONES"})
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _VALID_BOOKS = frozenset({"PPI_PRIMARY", "IOL_MCP", "BYMA_PUBLIC"})
@@ -102,6 +103,25 @@ def native_maturity_quantity(quote, plan, at):
     if (not cutoff < ex_at <= record_at <= maturity_at or settled is None
             or not cutoff <= settled <= record_at):
         raise ValueError("FI_NATIVE_MATURITY_ENTITLEMENT_UNVERIFIED")
+    return quantity
+
+
+def native_market_exit_quantity(quote, plan, at):
+    """Check the reviewed market-exit lot and its financial horizon."""
+    family = family_name(quote.asset_class)
+    identity = (quote.symbol, family, quote.market, quote.currency, quote.settlement)
+    quantity = quote.contract.quantity(plan["quantity_vn"])
+    decision_at, exit_at = aware_datetime(at), aware_datetime(plan["exit_at"])
+    minutes = plan["max_hold_minutes"]
+    if (family not in {"BONOS", "OBLIGACIONES"} or quote.contract.key != identity
+            or quote.contract.minimum_quantity is None or quantity != quantity.to_integral_value()
+            or plan.get("identity") != list(identity) or plan["mode"] != NATIVE_MARKET_EXIT_MODE
+            or plan["strategy_id"] != STRATEGY_IDS[family] or plan.get("verified") is not True
+            or plan.get("coupon_ledger_required") is not True
+            or plan.get("economic_event_policy") != "EXACT_NOMINAL_EVENT_REDUCER_V1"
+            or type(minutes) is not int or minutes <= 0
+            or not decision_at < exit_at <= decision_at + timedelta(minutes=minutes)):
+        raise ValueError("FI_NATIVE_MARKET_EXIT_PLAN_INVALID")
     return quantity
 
 
@@ -226,9 +246,15 @@ def decide_fixed_income_from_inputs(quote, *, decision_at, scenario,
         return _hold("FI_EXIT_MODE_UNSUPPORTED", family)
 
     exit_plan = {
-        "mode": "FIXED_INCOME_EVENT_DRIVEN_MARKET_EXIT",
+        "mode": NATIVE_MARKET_EXIT_MODE,
         "verified": True,
         "strategy_id": STRATEGY_IDS[family],
+        "identity": list(key),
+        "quantity_vn": str(scenario.quantity_vn),
+        "fee_policy_sha256": scenario.fee_policy_sha256,
+        "reviewed_entry_cash": str(scenario.entry_cash),
+        "reviewed_net_cash": str(scenario.scenario_net),
+        "minimum_scenario_net_bps": str(min_gain_bps),
         "max_hold_minutes": native_exit_minutes,
         "exit_at": exit_at.isoformat(),
         "coupon_ledger_required": True,

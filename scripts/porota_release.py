@@ -11,6 +11,11 @@ import argparse
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+
+try:
+    from scripts.porota_testing_scope import require_release_scope, require_release_tree
+except ModuleNotFoundError:
+    from porota_testing_scope import require_release_scope, require_release_tree
 import re
 import stat
 import subprocess
@@ -83,6 +88,7 @@ def _source_files(repository, sha, tree):
         header, name = row.split(b"\t", 1)
         mode, kind, blob = header.decode().split()
         entries[name.decode()] = (mode, kind, blob)
+    require_release_scope(entries)
     result = {}
     for name in select_bundle_paths(list(entries)):
         mode, kind, blob = entries[name]
@@ -121,6 +127,7 @@ def _verify_bundle(directory, release, repository):
         _require(_safe_name(name) and name not in expected and DIGEST.fullmatch(str(row["sha256"]))
                  and type(row["bytes"]) is int and row["bytes"] >= 0, "BUNDLE_MANIFEST_ENTRY")
         expected[name] = row
+    require_release_scope(expected)
     _require(manifest.get("bundle_sha256") == release["members"]["porota-deploy-bundle-v2.tgz"]["sha256"],
              "BUNDLE_DIGEST")
     source = _source_files(repository, release["source_sha"], release["source_tree"]) if repository else None
@@ -229,6 +236,7 @@ def create_release(directory, repository, *, image_id, image_size_bytes, run_id,
     _require(directory.is_dir() and not directory.is_symlink(), "RELEASE_DIRECTORY")
     _require(not _git(repository, "status", "--porcelain", "--untracked-files=all").strip(), "CHECKOUT_DIRTY")
     sha = _git(repository, "rev-parse", "HEAD").decode().strip()
+    require_release_tree(repository, sha)
     tree = _git(repository, "rev-parse", "HEAD^{tree}").decode().strip()
     _require(set(path.name for path in directory.iterdir()) <= MEMBERS | {"release.json"}, "RELEASE_MEMBERS")
     path = directory / "release.json"
