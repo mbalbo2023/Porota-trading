@@ -78,6 +78,16 @@ class EventRejected(ValueError):
     """Malformed, stale, conflicted or causally invalid source event."""
 
 
+class NativeBookClockRejected(EventRejected):
+    """Bounded Book clock evidence from an already verified HTTP response."""
+
+    def __init__(self, reason, native_at, received_at, checked_at):
+        super().__init__("PPI_NATIVE_RECEIPT_CLOCK_INVALID")
+        self.evidence = {"reason": reason, "native_at_utc": native_at.isoformat(),
+                         "received_at_utc": received_at.isoformat(),
+                         "checked_at_utc": checked_at.isoformat()}
+
+
 class SharedFeedUnavailable(ConnectionError):
     """Producer unavailable; consumers MUST pause rather than use stale data."""
 
@@ -587,7 +597,8 @@ class PPIReadOnlyNativeReceiptStore:
                                     received_monotonic_ns,
                                     session_fingerprint,
                                     guard_budget_receipt_sha256,
-                                    capture_type, allow_observed_current=False):
+                                    capture_type, allow_observed_current=False,
+                                    observed_book_max_age=None):
         """Return a validated receipt and cache only fresh, advancing data."""
         if method not in _NATIVE_REST_METHODS or capture_type != "REST_" + str(method).upper():
             raise EventRejected("PPI_NATIVE_CAPTURE_TYPE_INVALID")
@@ -604,8 +615,15 @@ class PPIReadOnlyNativeReceiptStore:
         now_time = _time(self.clock(), reason="NATIVE_CLOCK")
         lag = (recv_time - native_time).total_seconds()
         observe_current = method == "current" and allow_observed_current is True
+        observe_book = (method == "book" and type(observed_book_max_age) is int
+                        and 0 <= lag <= observed_book_max_age <= 120)
         stale = lag > self.max_age_seconds
-        if lag < 0 or recv_time > now_time or (stale and not observe_current):
+        if lag < 0 or recv_time > now_time or (stale and not (observe_current or observe_book)):
+            if method == "book":
+                reason = ("BOOK_SOURCE_AFTER_RECEIPT" if lag < 0 else
+                          "BOOK_RECEIPT_AFTER_LOCAL_CLOCK" if recv_time > now_time else
+                          "BOOK_SOURCE_TOO_OLD")
+                raise NativeBookClockRejected(reason, native_time, recv_time, now_time)
             raise EventRejected("PPI_NATIVE_RECEIPT_CLOCK_INVALID")
         raw = self._native_raw(raw_payload, method=method)
         # Source date must be from the exact REST raw body, never a caller-
@@ -648,9 +666,8 @@ class PPIReadOnlyNativeReceiptStore:
             if previous is not None and (native_time < previous or (repeated and not observe_current)):
                 raise EventRejected("PPI_NATIVE_RECEIPT_NOT_NEWER")
             if stale or repeated:
-                # Current.date can lag the HTTP receipt or repeat the same
-                # trade. Let the receiving scanner apply its trade-age rule.
-                # This response cannot refresh or enter the native cache.
+                # These observations keep their raw clocks. They cannot
+                # refresh the native cache used for PIT/EXIT evidence.
                 receipt["cache_state"] = ("PPI_NATIVE_RECEIPT_STALE" if stale
                                           else "PPI_NATIVE_RECEIPT_NOT_NEWER")
             receipt["receipt_sha256"] = _sha(receipt)

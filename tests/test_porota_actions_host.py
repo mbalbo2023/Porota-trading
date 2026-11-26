@@ -54,6 +54,14 @@ class HostTransportTests(unittest.TestCase):
             if host.STAGE_CREATE in command:
                 return subprocess.CompletedProcess(command, 0,
                     b'/home/porotaadmin/.local/state/porota-rc6/stage.A12bc\n', b'')
+            if host.SCHEDULER_UNIT_PROBE in command:
+                self.assertEqual(command[-1], 'paper_opening')
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    **self.release, 'schema': 'porota.rootless.job.v1',
+                    'state': 'EXECUTED', 'real_orders_sent': 0, 'commands': [
+                        {'source': 'PAPER_RELEASE_REVALIDATION', 'exit_code': 0,
+                         'result': 'GO_PAPER_SCALPING', 'reason': 'PAPER_CURRENT_RELEASE_REVALIDATED'}],
+                }).encode(), b'')
             return subprocess.CompletedProcess(command, 0, json.dumps(runtime).encode(), b'')
 
         def transfer(command, **_kwargs):
@@ -81,10 +89,25 @@ class HostTransportTests(unittest.TestCase):
                 self.assertEqual(calls, [])
                 head.return_value = download['deployment_sha']
                 observed = host.execute('deploy', repo, release_dir, env=env)
+                opening = observed.pop('paper_opening')
+                self.assertEqual(opening['result'], 'GO_PAPER_SCALPING')
                 self.assertEqual(observed, {**runtime, 'transfer_cleanup': 'COMPLETE'})
                 runtime.pop('download_receipt_sha256')
                 with self.assertRaisesRegex(host.HostFailure, 'RUNTIME_DEPLOYMENT_PROVENANCE_MISMATCH'):
                     host.execute('deploy', repo, release_dir, env=env)
+
+    def test_missing_iol_probe_is_advisory_but_explicit_wrong_runtime_blocks(self):
+        with patch.object(host, 'ssh_run', return_value=subprocess.CompletedProcess([], 1, b'', b'private')):
+            outcome = host.scheduler_postflight([], self.release, 'health', 'IOL_REST')
+        self.assertEqual(outcome['state'], 'NO_VERIFICADO')
+        self.assertEqual(outcome['reason'], 'SCHEDULER_PROBE_RECEIPT_INVALID')
+        for changed, reason in (({'source_sha': 'd' * 40}, 'RUNTIME_RELEASE_MISMATCH'),
+                                ({'real_orders_sent': 1}, 'RUNTIME_PAPER_ZERO_UNVERIFIED'),
+                                ({'failure_signature': 'PAPER_DATABASE_SAFETY'}, 'PAPER_DATABASE_SAFETY')):
+            data = {**self.release, 'state': 'BLOQUEADO', 'real_orders_sent': 0, **changed}
+            with patch.object(host, 'ssh_run', return_value=subprocess.CompletedProcess([], 1, json.dumps(data).encode(), b'')):
+                with self.assertRaisesRegex(ValueError, reason):
+                    host.scheduler_postflight([], self.release, 'health', 'IOL_REST')
 
     def test_credentials_validate_without_echoing_their_values(self):
         env = {'DO_HOST': 'host.example.com', 'DO_USER': 'porotaadmin',

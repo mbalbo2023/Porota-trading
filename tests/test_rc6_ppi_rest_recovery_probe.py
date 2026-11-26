@@ -1024,7 +1024,7 @@ def test_native_discovery_stops_on_wire_backoff_and_new_exit(
             sent.append(endpoint)
             if endpoint == "book":
                 raise GatewayEvidenceRejected("PPI_NATIVE_HTTP_429")
-            data = {"date": "2026-11-24T15:00:00Z"}
+            data = {"date": observer.now_iso(), "price": 100}
             return {"native_payload": data, "guard_wire_receipt": {
                 "schema": "RC6_PPI_NATIVE_WIRE_RECEIPT_V1", "endpoint": endpoint,
                 "http_method": "GET", "http_status_code": 200, "adapter_send_invoked": True,
@@ -1038,7 +1038,7 @@ def test_native_discovery_stops_on_wire_backoff_and_new_exit(
         Reader(), catalog_store, slots=10, deadline=pulse + 20, cursor=0,
         after=after, last_pulse=pulse)
     assert sent == (["current", "book"] if second_read == "429" else ["current"])
-    assert after == {"BONOS": key}
+    assert after == ({} if second_read == "429" else {"BONOS": key})
     assert result == {"slots": 10, "attempted": 1, "fresh_pairs": 0,
                       "attested": 0, "reason": reason}
 

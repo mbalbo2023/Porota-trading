@@ -137,14 +137,14 @@ shutil.rmtree(p)
 '''
 
 
-IOL_UNIT_PROBE = '''import os,pathlib,pwd,sys
+SCHEDULER_UNIT_PROBE = '''import os,pathlib,pwd,sys
 account=pwd.getpwuid(os.getuid())
 assert account.pw_uid==os.geteuid()>0 and len(sys.argv)==2
-roles={'collector':'porota-iol-shadow-collector-rc6.service','health':'porota-iol-oauth-health-rc6.service'}
+roles={'health':('porota-iol-oauth-health-rc6.service','--verify-iol-rest'),
+       'paper_opening':('porota-preopen-rc6.service','--revalidate-paper-gate')}
 unit=sys.argv[1]
 launcher=pathlib.Path(account.pw_dir)/'.local/state/porota-rc6/scheduler-dispatch.py'
-args=['/usr/bin/python3','-B',str(launcher),'--unit',roles[unit]]
-if unit=='health': args.append('--verify-iol-rest')
+args=['/usr/bin/python3','-B',str(launcher),'--unit',*roles[unit]]
 os.chdir('/opt/porota-trading')
 os.execve(args[0],args,{'HOME':account.pw_dir,'USER':account.pw_name,'LOGNAME':account.pw_name,
            'PATH':'/usr/bin:/bin:/usr/sbin:/sbin','POROTA_RUNTIME_BACKEND':'ROOTLESS','PYTHONDONTWRITEBYTECODE':'1'})
@@ -161,16 +161,47 @@ def iol_rest_units(ssh, installer, mode):
     return receipt
 
 
-def iol_rest_probe(ssh, release, role):
-    proc = ssh_run(ssh, ['/usr/bin/python3', '-I', '-B', '-c', IOL_UNIT_PROBE, role], timeout=220)
-    receipt = decode_receipt(proc.stdout)
+def scheduler_postflight(ssh, release, role, source):
+    unverified = {'state': 'NO_VERIFICADO', 'source': source, 'role': role}
+    try:
+        proc = ssh_run(ssh, ['/usr/bin/python3', '-I', '-B', '-c', SCHEDULER_UNIT_PROBE, role], timeout=220)
+    except ValueError:
+        return {**unverified, 'reason': 'SCHEDULER_PROBE_TRANSPORT_UNAVAILABLE'}
+    try:
+        receipt = decode_receipt(proc.stdout)
+    except ValueError:
+        return {**unverified, 'reason': 'SCHEDULER_PROBE_RECEIPT_INVALID'}
+    for name, reason in (('source_sha', 'RUNTIME_RELEASE_MISMATCH'),
+                         ('image_id', 'RUNTIME_RELEASE_MISMATCH'),
+                         ('real_orders_sent', 'RUNTIME_PAPER_ZERO_UNVERIFIED')):
+        if name in receipt:
+            expected = 0 if name == 'real_orders_sent' else release[name]
+            require(type(receipt[name]) is type(expected) and receipt[name] == expected, reason)
+    failure = receipt.get('failure_signature')
+    if failure in ('SCHEDULER_DAEMON_CHANGED', 'SCHEDULER_RUNTIME_STOPPED', 'PAPER_DATABASE_SAFETY',
+                   'DATABASE_REPLACED', 'IOL_RELEASE_DATABASE_IDENTITY_UNVERIFIED',
+                   'IOL_RELEASE_DATABASE_IDENTITY_CHANGED', 'PAPER_RELEASE_DATABASE_IDENTITY_UNVERIFIED',
+                   'PAPER_RELEASE_DATABASE_IDENTITY_CHANGED'):
+        raise ValueError(failure)
     commands = receipt.get('commands') or []
-    require(proc.returncode in (0, 2) and receipt.get('state') == 'EXECUTED'
-            and receipt.get('source_sha') == release['source_sha'] and receipt.get('image_id') == release['image_id']
-            and type(receipt.get('real_orders_sent')) is int and receipt['real_orders_sent'] == 0
-            and len(commands) == 1 and commands[0].get('source') == 'IOL_REST'
-            and commands[0].get('exit_code') == proc.returncode, 'IOL_REST_RELEASE_PROBE_UNVERIFIED')
-    return commands[0]
+    if (proc.returncode in (0, 2) and receipt.get('state') == 'EXECUTED'
+            and receipt.get('schema') == 'porota.rootless.job.v1'
+            and all(key in receipt for key in ('source_sha', 'image_id', 'real_orders_sent'))
+            and isinstance(commands, list) and len(commands) == 1 and type(commands[0]) is dict
+            and commands[0].get('source') == source and type(commands[0].get('exit_code')) is int
+            and commands[0]['exit_code'] == proc.returncode):
+        evidence = {'state': 'OBSERVED', 'source': source, 'role': role, 'exit_code': proc.returncode}
+        for field in ('result', 'reason'):
+            code = commands[0].get(field)
+            if isinstance(code, str) and re.fullmatch(r'[A-Z_0-9]{1,96}', code):
+                evidence[field] = code
+        http_status = commands[0].get('http_status')
+        if type(http_status) is int and 100 <= http_status <= 599:
+            evidence['http_status'] = http_status
+        return evidence
+    reason = (failure if isinstance(failure, str) and re.fullmatch(r'[A-Z_0-9]{1,96}', failure)
+              else 'SCHEDULER_PROBE_CONTRACT_UNVERIFIED')
+    return {**unverified, 'reason': reason, 'exit_code': proc.returncode}
 
 
 def execute(operation, repository, release_dir=None, *, env=None):
@@ -277,15 +308,17 @@ def execute(operation, repository, release_dir=None, *, env=None):
                         validate_runtime_receipt(result, release, proc.returncode, download=download)
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
-                    if iol_installer is not None:
-                        try:
+                    try:
+                        if operation == 'deploy':
+                            result['paper_opening'] = scheduler_postflight(
+                                ssh, release, 'paper_opening', 'PAPER_RELEASE_REVALIDATION')
+                        if iol_installer is not None:
                             result['iol_rest'] = iol_rest_units(ssh, iol_installer, 'install')
-                            result['iol_rest']['collector'] = iol_rest_probe(ssh, release, 'collector')
-                            result['iol_rest']['health'] = iol_rest_probe(ssh, release, 'health')
-                        except ValueError as exc:
-                            current = result.get('iol_rest', {})
-                            result['iol_rest'] = {**current, 'state': 'NO_VERIFICADO', 'failure_signature': str(exc)}
-                            raise HostFailure(str(exc), result) from exc
+                            # The existing timer owns the collector's DB and output files.
+                            result['iol_rest']['collector'] = {'state': 'TIMER_MANAGED'}
+                            result['iol_rest']['health'] = scheduler_postflight(ssh, release, 'health', 'IOL_REST')
+                    except ValueError as exc:
+                        raise HostFailure(str(exc), result) from exc
                 else:
                     if proc.returncode != 0:
                         raise HostFailure('ROOTLESS_PREPARATION_FAILED', result)

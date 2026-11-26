@@ -7,6 +7,7 @@ contains no order client and never authorizes a real broker route.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sqlite3
@@ -28,6 +29,9 @@ RUNTIME_RECEIPT = Path("/app/data/deploy/paper_scalping_preopen_gate_v1.json")
 # its owner is namespace UID zero. Host rootless publication uses the SSH UID.
 HOST_V2_RECEIPT = OPERATOR_DIR_HOST / "paper-preopen-v2.json"
 RUNTIME_V2_RECEIPT = OPERATOR_DIR_RUNTIME / "paper-preopen-v2.json"
+REVALIDATION_NAME = "paper-preopen-release-v2.json"
+REVALIDATION_PHASE = "POST_DEPLOY_REVALIDATION"
+REVALIDATION_SCHEMA = "RC6_PAPER_POST_DEPLOY_GATE_V1"
 # An operational sampling preference is never an admission whitelist. Keep
 # diagnostics bounded independently of the configured sampling universe.
 CATALOG_DIAGNOSTIC_LIMIT = 64
@@ -166,9 +170,13 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     if (receipt_path == HOST_RECEIPT and
             now.date().isoformat() >= "2026-10-27"):
         raise ValueError("HISTORICAL_A125_LIVE_GATE_IMMUTABLE")
+    return _write_gate(receipt_path, receipt, private=private is not None)
+
+
+def _write_gate(receipt_path, receipt, *, private):
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir() or receipt_path.is_symlink():
         raise ValueError("UNSAFE_GATE_PATH")
-    if private is not None:
+    if private:
         from scripts.porota_operator_intent import private_read
         if os.path.lexists(receipt_path):
             private_read(receipt_path)
@@ -180,7 +188,7 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     fd, temporary = tempfile.mkstemp(prefix=".paper-gate-", dir=receipt_path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o600 if private is not None else 0o644)
+            os.fchmod(handle.fileno(), 0o600 if private else 0o644)
             json.dump(receipt, handle, sort_keys=True)
             handle.write("\n")
             handle.flush()
@@ -197,6 +205,98 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
     return receipt
 
 
+def _gate_time(receipt, now):
+    issued = datetime.fromisoformat(receipt["issued_at_ar"])
+    if issued.tzinfo is None or issued.utcoffset() != now.utcoffset():
+        raise ValueError("PREOPEN_CLOCK_INVALID")
+    return issued.astimezone(TZ)
+
+
+def _daily_gate_error(receipt, issued, now):
+    expected_schema = ("RC6_PAPER_PREOPEN_GATE_V2" if
+                       now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
+                       else "RC6_PAPER_PREOPEN_GATE_V1")
+    if (receipt.get("schema") != expected_schema or receipt.get("status") != "GO_PAPER_SCALPING"
+            or receipt.get("phase") != "T_MINUS_10"):
+        return "NO_GO_PAPER_SCALPING"
+    if receipt.get("trade_day_ar") != now.date().isoformat() or issued.date() != now.date():
+        return "PAPER_PREOPEN_TRADE_DAY_MISMATCH"
+    if (not 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
+            or not 0 <= (now - issued).total_seconds() <= 7 * 3600):
+        return "PAPER_PREOPEN_WINDOW_INVALID"
+    sha = receipt.get("candidate_sha")
+    if not isinstance(sha, str) or not SHA.fullmatch(sha):
+        return "PAPER_PREOPEN_RECEIPT_INVALID"
+    return ""
+
+
+def _intraday_revalidation_window(at):
+    return 10 * 60 + 30 <= at.hour * 60 + at.minute < 17 * 60
+
+
+def publish_release_revalidation(result, *, now, expected_source_sha):
+    """Recheck the installed release during the same authenticated PAPER day."""
+    now = now.astimezone(TZ)
+    reject = {"status": "NO_GO_PAPER_SCALPING"}
+    if not _intraday_revalidation_window(now):
+        return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_OUTSIDE_SESSION"}
+    private = rootless_host_operator_directory()
+    if private is None:
+        return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_ROOTLESS_REQUIRED"}
+    authorized, reason, intent = evaluate_rearm(now=now, context="host")
+    if not authorized:
+        return {**reject, "reason": reason}
+    if intent["candidate_sha"] != expected_source_sha:
+        return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_CANDIDATE_CHANGED"}
+    from scripts.porota_operator_intent import private_read
+
+    try:
+        daily_raw = private_read(private / HOST_V2_RECEIPT.name)
+        daily = json.loads(daily_raw)
+        issued = _gate_time(daily, now)
+        reason = _daily_gate_error(daily, issued, now)
+    except (OSError, TypeError, KeyError, ValueError):
+        return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_DAILY_GATE_UNAVAILABLE"}
+    if reason:
+        return {**reject, "reason": reason}
+    allowed = (result.get("status") == "GREEN" and result.get("phase") == REVALIDATION_PHASE)
+    if daily["candidate_sha"] == expected_source_sha:
+        return {"status": "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
+                "reason": "PAPER_DAILY_GO_ALREADY_CURRENT" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN"}
+    receipt = {"schema": REVALIDATION_SCHEMA, "phase": REVALIDATION_PHASE,
+               "status": "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
+               "reason": "PAPER_CURRENT_RELEASE_REVALIDATED" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN",
+               "candidate_sha": expected_source_sha, "trade_day_ar": now.date().isoformat(),
+               "issued_at_ar": now.isoformat(timespec="seconds"),
+               "daily_gate_sha256": hashlib.sha256(daily_raw).hexdigest(),
+               "operator_run_id": intent["rearm_run_id"]}
+    return _write_gate(private / REVALIDATION_NAME, receipt, private=True)
+
+
+def _read_gate(path, *, root_owned):
+    if root_owned:
+        parent = os.lstat(path.parent)
+        if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022):
+            raise ValueError("PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        entry = os.fstat(fd)
+        if (not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1
+                or not 0 < entry.st_size <= 4096
+                or (root_owned and (entry.st_uid != 0 or entry.st_mode & 0o022))):
+            raise ValueError("PAPER_PREOPEN_RECEIPT_UNSAFE")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            raw = stream.read(4097)
+        if len(raw) != entry.st_size:
+            raise ValueError("PAPER_PREOPEN_RECEIPT_CHANGED")
+    finally:
+        os.close(fd)
+    receipt = json.loads(raw)
+    if not isinstance(receipt, dict):
+        raise ValueError("PAPER_PREOPEN_RECEIPT_INVALID")
+    return receipt, raw
+
+
 def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     now = (now or datetime.now(TZ)).astimezone(TZ)
     pause_reason = operator_pause_reason(now)
@@ -209,51 +309,44 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     if not isinstance(candidate_sha, str) or not SHA.fullmatch(candidate_sha):
         return False, "PAPER_PREOPEN_BUILD_IDENTITY_MISSING"
     try:
-        if path == RUNTIME_V2_RECEIPT:
-            parent = os.lstat(path.parent)
-            if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or
-                    parent.st_mode & 0o022):
-                return False, "PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED"
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            entry = os.fstat(fd)
-            if (not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1 or
-                    not 0 < entry.st_size <= 4096 or
-                    (path == RUNTIME_V2_RECEIPT and
-                     (entry.st_uid != 0 or entry.st_mode & 0o022))):
-                return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
-            with os.fdopen(fd, "rb", closefd=False) as stream:
-                encoded = stream.read(4097)
-            if len(encoded) != entry.st_size:
-                return False, "PAPER_PREOPEN_RECEIPT_CHANGED"
-        finally:
-            os.close(fd)
-        receipt = json.loads(encoded)
-        issued = datetime.fromisoformat(receipt["issued_at_ar"])
-        if issued.tzinfo is None or issued.utcoffset() != now.utcoffset():
-            raise ValueError("PREOPEN_CLOCK_INVALID")
-        issued = issued.astimezone(TZ)
-        expected_schema = ("RC6_PAPER_PREOPEN_GATE_V2" if
-                           now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
-                           else "RC6_PAPER_PREOPEN_GATE_V1")
-        if (receipt.get("schema") != expected_schema
-                or receipt.get("status") != "GO_PAPER_SCALPING"
-                or receipt.get("phase") != "T_MINUS_10"):
-            return False, "NO_GO_PAPER_SCALPING"
-        if receipt.get("trade_day_ar") != now.date().isoformat() or issued.date() != now.date():
-            return False, "PAPER_PREOPEN_TRADE_DAY_MISMATCH"
-        if (not 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
-                or not 0 <= (now - issued).total_seconds() <= 7 * 3600):
-            return False, "PAPER_PREOPEN_WINDOW_INVALID"
-        receipt_sha = receipt.get("candidate_sha")
-        if not isinstance(receipt_sha, str) or not SHA.fullmatch(receipt_sha):
-            return False, "PAPER_PREOPEN_RECEIPT_INVALID"
-        if receipt_sha != candidate_sha:
+        root_owned = path == RUNTIME_V2_RECEIPT
+        receipt, raw = _read_gate(path, root_owned=root_owned)
+        issued = _gate_time(receipt, now)
+        reason = _daily_gate_error(receipt, issued, now)
+        if reason:
+            return False, reason
+        if receipt["candidate_sha"] == candidate_sha:
+            return True, ""
+        if not root_owned:
             return False, "PAPER_PREOPEN_RELEASE_MISMATCH"
-        return True, ""
+        try:
+            redone, _ = _read_gate(path.with_name(REVALIDATION_NAME), root_owned=True)
+        except FileNotFoundError:
+            return False, "PAPER_PREOPEN_RELEASE_MISMATCH"
+        revalidated_at = _gate_time(redone, now)
+        allowed, _, intent = evaluate_rearm(now=now)
+        if (allowed and intent["candidate_sha"] == candidate_sha
+                and redone.get("schema") == REVALIDATION_SCHEMA
+                and redone.get("phase") == REVALIDATION_PHASE
+                and redone.get("status") == "GO_PAPER_SCALPING"
+                and redone.get("candidate_sha") == candidate_sha
+                and redone.get("trade_day_ar") == now.date().isoformat()
+                and redone.get("daily_gate_sha256") == hashlib.sha256(raw).hexdigest()
+                and redone.get("operator_run_id") == intent["rearm_run_id"]
+                and revalidated_at.date() == now.date()
+                and _intraday_revalidation_window(now) and _intraday_revalidation_window(revalidated_at)
+                and issued < revalidated_at <= now):
+            return True, ""
+        return False, "PAPER_PREOPEN_RELEASE_REVALIDATION_INVALID"
     except FileNotFoundError:
         return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except ValueError as error:
+        reason = str(error)
+        if reason in {"PAPER_PREOPEN_RECEIPT_UNSAFE", "PAPER_PREOPEN_RECEIPT_CHANGED",
+                      "PAPER_V2_PREOPEN_ROOT_DIRECTORY_UNTRUSTED"}:
+            return False, reason
+        return False, "PAPER_PREOPEN_RECEIPT_INVALID"
+    except (OSError, KeyError, TypeError):
         return False, "PAPER_PREOPEN_RECEIPT_INVALID"
 
 

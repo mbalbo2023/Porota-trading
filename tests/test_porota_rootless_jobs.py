@@ -74,6 +74,30 @@ class DispatcherTests(unittest.TestCase):
              patch.object(jobs, "database_snapshot", return_value={}):
             jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run)
 
+    def test_post_deploy_preopen_uses_exact_release_and_preserves_typed_go_receipt(self):
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+        self.current["database"] = {"real_orders_sent": 0}
+
+        def run(command, **kwargs):
+            self.assertEqual(command, ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"),
+                                       "--revalidate-release", self.current["source_sha"]))
+            kwargs["stdout"].write(json.dumps({
+                "schema": "POROTA_RC6_PREOPEN_V3", "status": "GREEN",
+                "paper_admission_receipt": {"status": "GO_PAPER_SCALPING",
+                                            "reason": "PAPER_CURRENT_RELEASE_REVALIDATED"},
+                "raw": "PRIVATE_PAYLOAD",
+            }).encode())
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+             patch.object(jobs, "database_snapshot", return_value=self.current["database"]):
+            result = jobs.run_job(jobs.PREOPEN, root=self.root, identity=self.identity, run=run,
+                                  revalidate_paper_gate=True)
+        self.assertEqual(result["source_sha"], self.current["source_sha"])
+        self.assertEqual(result["commands"][0]["result"], "GO_PAPER_SCALPING")
+        self.assertNotIn("PRIVATE_PAYLOAD", json.dumps(result))
+
     def test_runtime_evidence_runs_the_verified_publisher_under_the_shared_lock(self):
         self.current["source_tree"] = "b" * 40
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"
