@@ -2,7 +2,7 @@ name: RC6 IOL isolated testing
 
 on:
   push:
-    branches: [qa-rc6-iol-migration-20261126]
+    branches: [qa-rc6-iol-migration-20261126, fix/rc6-iol-primary-wiring-20261126]
 
 permissions:
   contents: read
@@ -14,7 +14,10 @@ concurrency:
 jobs:
   offhost:
     name: RC6 IOL isolated regression and replay
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.ref == 'refs/heads/qa-rc6-iol-migration-20261126'
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      (github.ref == 'refs/heads/qa-rc6-iol-migration-20261126' ||
+       github.ref == 'refs/heads/fix/rc6-iol-primary-wiring-20261126')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:

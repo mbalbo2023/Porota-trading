@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 from threading import Thread
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
@@ -165,6 +166,157 @@ def register(client, role, pid=None):
     pid = os.getpid() if pid is None else pid
     registration = client.register_client(role, pid=pid, proc_starttime=ReadOnlyUnixFeedServer.process_starttime(pid))
     assert registration["registered_role"] == role
+
+
+def test_runtime_iol_profile_excludes_ppi_and_its_market_workers(tmp_path, monkeypatch):
+    import bv_paper_runtime as runtime
+
+    database = tmp_path / "paper.db"
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(database))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    monkeypatch.setattr(runtime.signal, "signal", lambda *_: None)
+    controller = {}
+
+    def inspect_clock(store, children, _stop):
+        controller.update(children.commands)
+        assert store.path == str(database)
+        assert children.gateway_role == "iol_gateway"
+
+    monkeypatch.setattr(runtime, "run_clock", inspect_clock)
+    assert runtime.main([]) == 0
+    assert set(controller) == {"iol_gateway", "scanner", "exit_reader", "dynamic_shadow",
+                               "candles", "notifications"}
+    assert controller["iol_gateway"][-1] == "--iol-gateway-worker"
+    for worker in ("--ppi-gateway-worker", "--intraday-scalping-worker", "--caucion-cash-sweep-worker"):
+        with pytest.raises(ValueError, match="RC6_WORKER_MARKET_PROVIDER_MISMATCH"):
+            runtime.main([worker])
+    with PaperStore(str(database)).connect() as connection:
+        assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
+
+
+def test_runtime_parent_registers_iol_scanner_and_exit_on_owner_rotation(tmp_path, monkeypatch, iol_gateway):
+    import bv_paper_runtime as runtime
+    import rc6_iol_market_gateway as gateway
+    from rc6_ppi_shared_feed import SharedFeedUnavailable
+
+    server, client, transport, _advance = iol_gateway
+    monkeypatch.setattr(runtime, "database_path", lambda: tmp_path / "paper.db")
+    monkeypatch.setattr(gateway, "iol_gateway_socket_path", lambda _database: server.socket_path)
+    monkeypatch.setattr(gateway, "IOLGatewayClient", type(client))
+    pid = os.getpid()
+
+    class Child:
+        def poll(self):
+            return None
+
+    processes = {role: Child() for role in ("iol_gateway", "scanner", "exit_reader")}
+    for process in processes.values():
+        process.pid = pid
+    children = runtime.ChildProcesses({role: [] for role in processes})
+    children.processes.update(processes)
+    children._register_gateway_clients(0)
+    starttime = ReadOnlyUnixFeedServer.process_starttime(pid)
+    registered = {role: {"pid": pid, "proc_starttime": starttime}
+                  for role in ("scanner", "exit_reader")}
+    assert client.owner_status()["registered_clients"] == registered
+    scanner = gateway.connect_iol_gateway_reader(tmp_path / "paper.db", consumer="scanner")
+    assert scanner.metrics["wire_attempts"] == 0
+    assert scanner.metrics["authenticated"] is False
+
+    # A fresh owner generation has no inherited registrations or client pin.
+    server._generation = "b" * 64
+    server._registered_clients.clear()
+    with pytest.raises(SharedFeedUnavailable, match="GATEWAY_OWNER_CHANGED"):
+        _ = scanner.metrics
+    children._register_gateway_clients(16)
+    scanner = gateway.connect_iol_gateway_reader(tmp_path / "paper.db", consumer="scanner")
+    assert scanner.metrics["registered_clients"] == registered
+    assert scanner.metrics["session_generation"] == "b" * 64
+    assert transport.calls == []
+
+
+def test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach(tmp_path, monkeypatch):
+    import bf_production_paper_observer as observer
+    import rc6_ppi_gateway_reader_adapter as ppi
+
+    store = PaperStore(str(tmp_path / "paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(ppi, "connect_paper_gateway_reader",
+                        lambda *a, **kw: pytest.fail("unexpected PPI gateway attach"))
+    commands = ["LOGIN_AND_SYNC", observer._PPI_OPEN_COMMAND_PREFIX + "probe",
+                observer._PPI_POSTCLOSE_COMMAND_PREFIX + "probe"]
+    with store.connect() as connection:
+        connection.executemany("INSERT INTO observer_commands(command,status,created_at)"
+                               " VALUES (?,'QUEUED',?)", ((name, AT.isoformat()) for name in commands))
+    for name in commands:
+        command = observer._claim_command(store)
+        assert command[1] == name
+        assert observer._run_command(store, None, command) is None
+    with store.connect() as connection:
+        rows = connection.execute("SELECT status,result FROM observer_commands ORDER BY id").fetchall()
+    assert [tuple(row) for row in rows] == [("NOT_APPLICABLE", "IOL_REST_PROFILE_PPI_COMMAND_RETIRED")] * 3
+
+
+def test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock(tmp_path, monkeypatch, iol_gateway):
+    import bf_production_paper_observer as observer
+    import rc6_iol_market_gateway as gateway
+    import rc6_ppi_gateway_reader_adapter as ppi
+
+    server, client, transport, _advance = iol_gateway
+    register(client, "scanner")
+    monkeypatch.setattr(gateway, "iol_gateway_socket_path", lambda _database: server.socket_path)
+    monkeypatch.setattr(gateway, "IOLGatewayClient", type(client))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("POROTA_PPI_DIRECT_REST_RECOVERY", "1")
+    monkeypatch.setenv("POROTA_RUNTIME_SCHEMA_READY", "0")
+    monkeypatch.setattr(observer, "DB_PATH", str(tmp_path / "paper.db"))
+    monkeypatch.setattr(observer, "STOP", False)
+    monkeypatch.setattr(observer.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(observer.operations, "service_tick", lambda *_: None)
+    monkeypatch.setattr(observer, "_public_probe", lambda *a, **kw: None)
+    monkeypatch.setattr(observer, "_publish_economic_shadow_health", lambda *_: None)
+
+    def unexpected_ppi(*args, **kwargs):
+        pytest.fail("the IOL scanner reached a legacy PPI operation")
+
+    monkeypatch.setattr(ppi, "connect_paper_gateway_reader", unexpected_ppi)
+    for operation in ("_daily_sync", "_background_ingest", "_discover_native_settlements",
+                      "_periodic_complementary_reconcile"):
+        monkeypatch.setattr(observer, operation, unexpected_ppi)
+    phases = ["CLOSED", "PREOPEN", "OPEN"]
+    monkeypatch.setattr(observer, "_market_phase", lambda: phases[0])
+    request = (GGAL[0], GGAL[1], GGAL[4])
+
+    def finish_phase(_seconds):
+        phases.pop(0)
+        if not phases:
+            observer.STOP = True
+
+    def readiness(_store, **_kw):
+        plan = {"catalog_status": "AVAILABLE", "read_scopes": [
+            {"request": request, "identity": GGAL, "priority": "HOT"}]}
+        return {}, [request], 1, 0, 0, {"active_plan": plan}
+
+    monkeypatch.setattr(observer, "_runtime_readiness", readiness)
+    monkeypatch.setattr(observer, "time", SimpleNamespace(
+        **{name: getattr(observer.time, name) for name in ("time", "monotonic", "perf_counter")},
+        sleep=finish_phase))
+
+    assert observer.run() == 0
+    assert transport.calls == ["token", "GGAL", "quote"]
+    store = PaperStore(observer.DB_PATH)
+    assert not store.open_positions()
+    with store.connect() as connection:
+        auth, count = connection.execute("SELECT ppi_auth,real_orders_sent FROM observer_state").fetchone()
+        events = connection.execute("SELECT detail FROM paper_events WHERE event_type='DATA_ERROR'").fetchall()
+    assert (auth, count) == ("NOT_ATTEMPTED", 0)
+    assert [row[0] for row in events] == ["GGAL: IOL_LAST_TRADE_CLOCK_UNVERIFIED"]
 
 
 @pytest.mark.parametrize("identity", FAMILIES, ids=[case[1] for case in FAMILIES])

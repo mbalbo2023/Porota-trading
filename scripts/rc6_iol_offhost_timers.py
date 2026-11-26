@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "porota.iol.offhost.timer-inventory.v1"
 CALENDAR_POLICY = "ops/policy/host-control-plane-reconciliation-v2.json"
 DISPATCH = "SYSTEMD_TRANSIENT_PER_ACTIVE_TIMER"
+OFFHOST_REFS = frozenset({
+    "refs/heads/qa-rc6-iol-migration-20261126",
+    "refs/heads/fix/rc6-iol-primary-wiring-20261126",
+})
 
 
 def _directives(path, section):
@@ -150,7 +154,7 @@ def main():
     attempt = os.getenv("GITHUB_RUN_ATTEMPT", "")
     uid = os.getuid()
     if (os.getenv("RUNNER_ENVIRONMENT") != "github-hosted" or os.getenv("GITHUB_ACTIONS") != "true"
-            or os.getenv("GITHUB_REF") != "refs/heads/qa-rc6-iol-migration-20261126"
+            or os.getenv("GITHUB_REF") not in OFFHOST_REFS
             or not run_id.isdecimal() or not attempt.isdecimal() or uid == 0
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", args.image_id)
             or _run("git", "-C", str(ROOT), "rev-parse", "HEAD", "HEAD^{tree}").splitlines()

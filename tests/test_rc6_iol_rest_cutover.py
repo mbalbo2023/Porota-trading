@@ -3,11 +3,12 @@ from io import BytesIO
 import json
 import sqlite3
 from types import SimpleNamespace
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 
 import pytest
 
-from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
+from iol_rest_readonly_rc6 import AUTH_RETRY_SECONDS, IOLRestError, IOLRestReadOnly
 from iol_shadow_collector_rc6 import run_batch
 from iol_shadow_decision_input_rc6 import read_for_decision
 from rc6_broker_parity_evidence import iol_structured_records
@@ -65,6 +66,66 @@ def test_rest_collects_explicit_clocks_and_keeps_legacy_rows_historical(tmp_path
         client.call("place_order", {})
     with pytest.raises(IOLRestError, match="IOL_REST_MARKET_IDENTITY_UNSUPPORTED"):
         client.call("get_asset_info", {"symbol": "../account"})
+
+
+def test_gateway_owner_recovers_401_and_keeps_403_local_to_the_read(tmp_path):
+    config = tmp_path / "fixture.env"
+    config.write_text("IOL_ENABLED=true\nIOL_USERNAME=fixture\nIOL_PASSWORD=fixture\n")
+    calls = []
+    attempts = [0]
+    clock = [NOW.timestamp()]
+    status = [401, None, 403, None, 401, None]
+
+    def open_request(request, timeout):
+        path = urlsplit(request.full_url).path
+        assert timeout == 8
+        calls.append((request.get_method(), path))
+        if path == "/auth/token":
+            attempt = attempts[0]
+            auth = json.loads(request.data)
+            if attempt == 0:
+                assert auth["grant_type"] == "password"
+            else:
+                assert auth == {"grant_type": "refresh_token", "refresh_token": f"fixture-refresh-{attempt}"}
+            attempts[0] += 1
+            data = {"access_token": f"fixture-access-{attempts[0]}",
+                    "refresh_token": f"fixture-refresh-{attempts[0]}", "expires_in": 900}
+        else:
+            assert request.get_method() == "GET"
+            assert request.get_header("Authorization") == f"Bearer fixture-access-{attempts[0]}"
+            outcome = status.pop(0)
+            if outcome:
+                raise HTTPError(request.full_url, outcome, "fixture", {}, BytesIO())
+            data = ASSET
+        return BytesIO(json.dumps({"data": data, "error": None}).encode())
+
+    def owner():
+        return IOLRestReadOnly(tmp_path / "private", config=config, clock=lambda: clock[0],
+                               opener=SimpleNamespace(open=open_request), owner_managed_auth=True)
+
+    def read(client):
+        return client.call("get_asset_info", {"symbol": "GGAL", "market": "BCBA"})
+
+    client = owner()
+    with pytest.raises(IOLRestError) as rejected:
+        read(client)
+    assert rejected.value.status_code == 401
+    assert len(calls) == 2 and not client.session_current
+    assert read(client)["symbol"] == "GGAL" and attempts == [2]
+    with pytest.raises(IOLRestError) as forbidden:
+        read(client)
+    assert forbidden.value.status_code == 403 and client.session_current
+    assert read(client)["symbol"] == "GGAL" and attempts == [2]
+    with pytest.raises(IOLRestError) as repeated:
+        read(client)
+    assert repeated.value.status_code == 401 and not client.session_current
+    count = len(calls)
+    client = owner()
+    with pytest.raises(IOLRestError, match="IOL_REST_AUTH_ON_HOLD"):
+        read(client)
+    assert len(calls) == count  # provider cooldown survives an owner restart
+    clock[0] += AUTH_RETRY_SECONDS
+    assert read(client)["symbol"] == "GGAL" and attempts == [3]
 
 
 def test_rest_fallback_needs_exact_ppi_and_field_native_clock():
