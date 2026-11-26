@@ -243,6 +243,48 @@ def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, mo
     assert not result["iol_sampled_progress"]
 
 
+def test_iol_local_eod_archive_does_not_certify_postclose_provider(tmp_path, monkeypatch):
+    from bf_production_paper_observer import _support_schema
+    from cg_paper_workspace import artifact_root
+    from rc6_decision_evidence_report import publish
+    from rc6_local_eod_history import RESERVE, consolidate
+    from rc6_postclose_review import build_review
+    from rc6_postclose_source_contract import PENDING, postclose_eod_receipt
+    from rc6_snapshot import build_snapshot, write_snapshot
+
+    database = tmp_path / "paper.db"
+    history = tmp_path / "local-eod.db"
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(database))
+    scratch = artifact_root(database) / "sqlite-read-scratch"
+    scratch.mkdir(mode=0o700, parents=True)
+    store = PaperStore(str(database))
+    _support_schema(store)
+    market, _ = reader(tmp_path, GGAL)
+    preopen = AT.replace(hour=13, minute=16)
+    postclose = AT.replace(hour=22, minute=30)
+    assert record_iol_trade_sample(store, market.observe(GGAL), as_of=AT.isoformat())
+    assert SampleMaterializer(store).tick(AT + timedelta(minutes=5))["versions"] == 2
+    store.state(session_state="MARKET_CLOSED", heartbeat_at=postclose.isoformat())
+    with store.connect() as db:
+        state = dict(db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone())
+    source = database.read_bytes()
+    assert build_snapshot("preopen", preopen, {"state": state})["status"] == "VERIFIED"
+    archive = consolidate(database, history, as_of=postclose, free_bytes=RESERVE)
+    assert (archive["state"], archive["imported"], archive["provider_requests"]) == ("LOCAL_EOD_READY", 2, 0)
+    receipt = postclose_eod_receipt(postclose, db_path=database)
+    assert receipt["reason"] == "PPI_EOD_SOURCE_NOT_GREEN"
+    snapshot = build_snapshot("postclose", postclose, {"state": state}, eod_source=receipt)
+    assert snapshot["status"] == PENDING and snapshot["paper_safety_status"] == "VERIFIED"
+    assert build_review(snapshot, postclose)["status"] == PENDING
+    target = tmp_path / "snapshot.json"
+    write_snapshot(snapshot, target)
+    report = publish(root=tmp_path / "reports", postclose=True, snapshot_path=target, source_at=postclose)
+    assert report["projection_status"] == "VERIFIED_PRIVATE_SOURCE"
+    assert report["postclose_report_status"] == PENDING
+    assert snapshot["real_orders_sent"] == 0
+    assert database.read_bytes() == source
+
+
 def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog

@@ -31,6 +31,7 @@ Corte del 26/11/2026 ART. Rama aislada del [PR #1287](https://github.com/mbalbo2
 | Recibos PIT, ACK, Book1/Book2 y firma de EXIT | Rojo | Bonos/ON y revocación pasan con política y firma de prueba. El testigo nativo es PPI y el pin vive fuera del proceso scanner. | Transferir la autoridad pública y su generación por el canal autenticado del supervisor. Adaptar el origen del recibo a IOL y probar entre procesos bajo lock y con el primer Book posterior a ACK. |
 | Históricos `history_versions_v2` y `history_canonical_v2` | Verde | El replay conserva consulta `as_of`, hashes y datos previos al anexar referencia IOL. | Fijar corte y reconciliar checksum, recuentos por partición y consultas `as_of`. Mantener identidad de base, fuente y versión. |
 | Importador IOL, cierre EOD y nueva serie canónica | Amarillo | `bars` entra como referencia separada e idempotente. El cierre EOD archivó dos velas IOL y la repetición importó cero en SQLite temporal. | Acreditar variante, plazo, base de precio y huecos posteriores al corte. Anexar sólo particiones calificadas e informar diferencias. |
+| Certificación de fuente postcierre y publicación del reporte | Rojo | El archivo EOD IOL queda `LOCAL_EOD_READY`. Snapshot, revisión y reporte de decisiones siguen `PROVISIONAL_POSTCLOSE_SOURCE_PENDING` con PAPER seguro. El verificador exige un recibo diario RAW PPI. | Incorporar un recibo diario IOL por identidad exacta, sesión, versión, cohorte y dataset después de calificar las barras diarias. El snapshot, la revisión y el reporte deben coincidir en el mismo recibo. |
 | Dashboard, API, reportes, M0/M1 | Amarillo | 106 rutas registradas. La sonda ASGI temporal obtuvo 88 HTTP 200 en 101 GET, sin 5xx. El comparador verificó cuatro rutas HTTP dentro de la imagen. | Probar acceso, contenido, redirecciones M0/M1 y las cinco mutaciones. Contrastar primeras filas y estado de proveedor con la DB. Cortar aliases legacy antes de ejecutar el handler. |
 | Riesgo, aprendizaje, validación, analítica y cierre | Amarillo | Lectores del embudo, ledger y costos tienen regresiones. La nueva cohorte y las fuentes requieren paridad de evidencia. | Reconciliar reloj de disponibilidad, fuente y costo por cohorte. Mantener aprendizaje en SHADOW y comprobar actualizaciones postcierre y M0/M1. |
 | Introspección, scheduler export, auditoría y publicación GitHub | Amarillo | Hay pruebas de lógica, vistas de scheduler, sanitización y disparos. El circuito íntegro usa rutas y permisos de host. | Ejecutar recolección RO con fixtures de procesos, cotejar `success → unknown` y publicar en destino de prueba, ligado al candidato. |
@@ -54,7 +55,20 @@ Corte del 26/11/2026 ART. Rama aislada del [PR #1287](https://github.com/mbalbo2
 
 Los índices se tratan como referencia. La consulta de instrumentos de EE.UU. queda en el alcance de fuentes y calendario correspondiente. El cuadro cubre las diez familias PAPER del inventario RC6.
 
-El corte #530 registró 17.483 filas de catálogo y cero READY de apertura en las diez familias. El seguimiento del candidato necesita el mismo denominador, corte horario y clave exacta. Para cada familia debe contar elegibles, con identidad acreditada, con fuente vigente, con READY de entrada y con ciclo PAPER completado. El diferencial IOL en rueda queda **NO_VERIFICADO**. [Censo #530](https://github.com/mbalbo2023/Porota-trading/actions/runs/45872015091/artifacts/15142279321)
+El corte #530 de las 14:57 ART registró 17.483 filas de catálogo y un elegible en Bonos. `readiness.ready` suma `catalog_eligible`. El READY de apertura por familia y el diferencial IOL quedan **NO_VERIFICADO** para ese corte. La comparación requiere el mismo denominador, clave exacta y fase de rueda, con categorías explícitas para elegibilidad de catálogo, fuente vigente, admisión y ciclo PAPER completado. [Censo #530](https://github.com/mbalbo2023/Porota-trading/actions/runs/45872015091/artifacts/15142279321)
+
+| Familia | Filas de catálogo #530 | Elegibles de catálogo #530 |
+| --- | ---: | ---: |
+| Acciones | 206 | 0 |
+| CEDEARs | 2.504 | 0 |
+| ETFS | 0 | 0 |
+| Bonos | 3.108 | 1 |
+| Letras | 59 | 0 |
+| Obligaciones negociables | 5.175 | 0 |
+| Opciones | 5.003 | 0 |
+| Futuros | 239 | 0 |
+| Cauciones | 10 | 0 |
+| FCI | 1.087 | 0 |
 
 ## Procesos del supervisor
 
@@ -91,7 +105,7 @@ El [manifiesto de host](../../scripts/porota_host_manifest_v2.py) concilia las 4
 | `porota-rc6-candle-inmarket-verify` | Amarillo | El CLI acredita ambas resoluciones con recibos IOL válidos. Falta conectar el comando, su condición de rueda y el consumidor de evidencia en el perfil aislado. |
 | `porota-runtime-evidence-rc6` | Amarillo | Correr recolección RO con identidad de DB, digest, conteo por familia y salida sanitizada. |
 | `porota-scheduler-export-rc6` | Amarillo | Ejecutar exportador desde systemd aislado. Contrastar disparo y resultado del servicio. |
-| `porota-snapshot-postclose-rc6` | Amarillo | Ejecutar snapshot, revisión y reporte sobre la misma DB y el mismo corte simulado. |
+| `porota-snapshot-postclose-rc6` | Rojo | Los tres productores se probaron sobre un mismo dataset IOL de prueba. El contrato de fuente diario conserva dependencia PPI. Falta publicar y consumir el recibo IOL común antes de habilitar el cierre certificado. |
 | `porota-snapshot-preopen-rc6` | Amarillo | Generar y leer snapshot IOL sin adelantar datos. Verificar lectura por preopen y dashboard. |
 
 | Unidad fuera de ejecución ordinaria | Disposición | Condición aplicable |
@@ -122,6 +136,7 @@ El lector de profundidad ahora selecciona mejores puntas por precio. Si varios n
 
 - **Prueba de velas intradiarias.** El CLI original devolvía RED sobre dos velas IOL válidas. Estas muestras alimentan la cola de velas por fuera del cursor de snapshots. El otro camino de progreso sólo buscaba `PPI_GUARDED_CURRENT`. La opción explícita `--sample-source IOL_REST_TRADE_SAMPLE` publica una prueba propia para 1m y 5m de la misma identidad. Verifica hashes, tiempos, calidad y vínculo de cada muestra con su recibo archivado. La regresión rompe el vínculo de 5m y exige RED aun con el cursor avanzado. El CLI publica JSON y abre SQLite de sólo lectura. [Verificador](../../scripts/rc6_candle_inmarket_evidence.py) · [Regresión](../../tests/test_rc6_iol_migration_offhost.py)
 - **Promoción de COLD a HOT.** El lector de snapshots publicaba cada observación como `PPI_MARKETDATA_CURRENT` y el planificador contaba cualquier Book útil para WARM. El lector reconoce IOL y comprueba el origen PPI explícito. La prueba conserva WARM ante un Book IOL en el plan PPI, y sólo lo completa al llegar el Book PPI. El camino SHADOW del plan IOL necesita su propia autoridad. El replay GGAL con IOL obtiene una señal de compra por el selector fallback y el broker. [Planificador](../../rc6_dynamic_universe/orchestrator.py) · [Regresión](../../tests/test_rc6_dynamic_orchestrator.py)
+- **Certificación del cierre.** El consolidado local archiva muestras IOL en frío. La certificación diaria recibe `PPI_EOD_SOURCE_NOT_GREEN` porque observa `PPI_PRODUCTION_HISTORY`. El ensayo de la cadena mantiene PAPER seguro y los tres reportes provisionales. La solución requiere una prueba diaria propia de IOL con barras certificadas y la misma fuente, cohorte, reloj y dataset en cada consumidor. Las velas muestreadas conservan su alcance intradiario. [Contrato de fuente](../../rc6_postclose_source_contract.py) · [Regresión](../../tests/test_rc6_iol_migration_offhost.py)
 
 ## Inventario de rutas del dashboard
 
