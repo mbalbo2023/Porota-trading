@@ -587,8 +587,8 @@ class PPIReadOnlyNativeReceiptStore:
                                     received_monotonic_ns,
                                     session_fingerprint,
                                     guard_budget_receipt_sha256,
-                                    capture_type):
-        """Internal producer seam; no socket operation can invoke this."""
+                                    capture_type, allow_observed_current=False):
+        """Return a validated receipt and cache only fresh, advancing data."""
         if method not in _NATIVE_REST_METHODS or capture_type != "REST_" + str(method).upper():
             raise EventRejected("PPI_NATIVE_CAPTURE_TYPE_INVALID")
         identity = self._registered_identity(five_key)
@@ -603,8 +603,9 @@ class PPIReadOnlyNativeReceiptStore:
         recv_time = _time(received_at, reason="NATIVE_RECEIVE_TIME")
         now_time = _time(self.clock(), reason="NATIVE_CLOCK")
         lag = (recv_time - native_time).total_seconds()
-        if (not 0 <= lag <= self.max_age_seconds
-                or recv_time > now_time):
+        observe_current = method == "current" and allow_observed_current is True
+        stale = lag > self.max_age_seconds
+        if lag < 0 or recv_time > now_time or (stale and not observe_current):
             raise EventRejected("PPI_NATIVE_RECEIPT_CLOCK_INVALID")
         raw = self._native_raw(raw_payload, method=method)
         # Source date must be from the exact REST raw body, never a caller-
@@ -640,12 +641,21 @@ class PPIReadOnlyNativeReceiptStore:
             "raw_payload": raw, "raw_sha256": _sha(raw),
             "paper_ready": False, "order_route": "NOT_PRESENT",
         }
-        receipt["receipt_sha256"] = _sha(receipt)
         with self._lock:
             scope = (identity, method)
             previous = self._latest_native.get(scope)
-            if previous is not None and native_time <= previous:
+            repeated = native_time == previous
+            if previous is not None and (native_time < previous or (repeated and not observe_current)):
                 raise EventRejected("PPI_NATIVE_RECEIPT_NOT_NEWER")
+            if stale or repeated:
+                # Current.date can lag the HTTP receipt or repeat the same
+                # trade. Let the receiving scanner apply its trade-age rule.
+                # This response cannot refresh or enter the native cache.
+                receipt["cache_state"] = ("PPI_NATIVE_RECEIPT_STALE" if stale
+                                          else "PPI_NATIVE_RECEIPT_NOT_NEWER")
+            receipt["receipt_sha256"] = _sha(receipt)
+            if "cache_state" in receipt:
+                return receipt
             if len(self._receipts) == self.max_receipts:
                 self._dropped += 1
                 evicted = self._receipts[0]

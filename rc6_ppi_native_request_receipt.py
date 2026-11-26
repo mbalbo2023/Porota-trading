@@ -73,6 +73,8 @@ def _wire_part(capture, endpoint, identity, *, priority="DISCOVERY"):
     from rc6_ppi_shared_rest_producer import _validate_guard_witness
 
     native = capture["native_receipt"]
+    if "cache_state" in native:
+        raise ValueError("PPI_NATIVE_SETTLEMENT_WIRE_CONTEXT_MISMATCH")
     payload = native["raw_payload"]
     guard = capture["guard_wire_receipt"]
     guard_hash, received, monotonic = _validate_guard_witness(
