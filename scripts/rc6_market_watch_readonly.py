@@ -63,6 +63,8 @@ ROOTLESS_SAFE_REASONS = frozenset({
 })
 TRACKED = ("paper_decisions", "trade_gate_evaluations", "paper_fills",
            "paper_events", "market_snapshots", "scalping_candidates")
+PAPER_FAMILIES = ("ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS",
+                  "OBLIGACIONES", "OPCIONES", "FUTUROS", "CAUCIONES", "FCI")
 MAX_JSON_BYTES = 1024 * 1024
 COM19031_EFFECTIVE = date(2026, 11, 2)
 COM19031_REVIEWED_THROUGH = date(2026, 12, 31)
@@ -1025,6 +1027,37 @@ def _ppi_gateway_last_events(db, tables):
     return events
 
 
+def _catalog_readiness(db):
+    columns = {row[1] for row in db.execute("PRAGMA table_info(candidate_identity_v2)")}
+    if not {"instrument_type", "detail"} <= columns:
+        row = db.execute("SELECT COUNT(*) total,"
+                         "SUM(can_simulate=1 AND upper(status)='AVAILABLE') ready "
+                         "FROM candidate_identity_v2").fetchone()
+        return {"total": int(row["total"]), "ready": int(row["ready"] or 0)}
+
+    groups = db.execute("""SELECT instrument_type,
+        can_simulate=1 AND upper(status)='AVAILABLE' AS eligible,
+        substr(detail || ';', 1, instr(detail || ';', ';') - 1) AS first_gate,
+        count(*) AS instruments
+        FROM candidate_identity_v2 GROUP BY instrument_type,eligible,first_gate""")
+    by_family = {family: {"total": 0, "catalog_eligible": 0, "first_gate": {}}
+                 for family in PAPER_FAMILIES}
+    total = ready = 0
+    for family, eligible, gate, count in groups:
+        total += count
+        ready += count if eligible else 0
+        item = by_family.get(family)
+        if item is None:
+            continue
+        item["total"] += count
+        if eligible:
+            item["catalog_eligible"] += count
+        else:
+            code = gate if re.fullmatch(r"[A-Z0-9_:]{1,100}", gate or "") else "UNCLASSIFIED"
+            item["first_gate"][code] = item["first_gate"].get(code, 0) + count
+    return {"total": total, "ready": ready, "by_family": by_family}
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -1108,11 +1141,7 @@ def _db_snapshot(path):
         readiness = None
         if "candidate_identity_v2" in tables:
             try:
-                row = db.execute("SELECT COUNT(*) total,"
-                    "SUM(CASE WHEN can_simulate=1 AND upper(status)='AVAILABLE' "
-                    "THEN 1 ELSE 0 END) ready FROM candidate_identity_v2").fetchone()
-                readiness = {"total": int(row["total"]),
-                             "ready": int(row["ready"] or 0)}
+                readiness = _catalog_readiness(db)
             except sqlite3.Error:
                 pass
         # Open ledger contracts are separate from today's trade counts and
@@ -1907,6 +1936,15 @@ def _ppi_intake_evidence(path, *, at=None):
                 plan = plan if isinstance(plan, dict) else {}
                 active = plan.get("active_plan")
                 catalog_status = active.get("catalog_status") if isinstance(active, dict) else None
+                openings = active.get("opening_identities") if isinstance(active, dict) else None
+                opening_plan_by_family = None
+                if (isinstance(openings, list) and len(openings) <= 1000
+                        and all(isinstance(key, list) and len(key) == 3
+                                and all(isinstance(part, str) for part in key) for key in openings)):
+                    opening_plan_by_family = dict.fromkeys(PAPER_FAMILIES, 0)
+                    for _, family, _ in {tuple(key) for key in openings}:
+                        if family in opening_plan_by_family:
+                            opening_plan_by_family[family] += 1
                 discovery = plan.get("native_settlement_discovery")
                 discovery = discovery if isinstance(discovery, dict) else {}
                 counters = dict(zip(("eligible", "selected", "successful", "failed"),
@@ -1917,6 +1955,7 @@ def _ppi_intake_evidence(path, *, at=None):
                                "catalog": catalog_status if catalog_status in (
                                    "NO_ELIGIBLE_INSTRUMENTS", "ELIGIBLE_INSTRUMENTS", "CATALOG_READ_ERROR",
                                    "CATALOG_IDENTITY_UNVERIFIED") else None,
+                               "opening_plan_by_family": opening_plan_by_family,
                                "discovery": {
                                    **{name: discovery.get(name) if type(discovery.get(name)) is int
                                       and 0 <= discovery[name] <= 1000 else None
