@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 rueda PAPER cierre de diagnóstico y verificación del backlog
+run-name: RC6 rueda PAPER estado y esquema histórico verificado
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -172,8 +172,17 @@ jobs:
                   result["gateway_http_audit"][http_path]=dict(stats)
               result["history_coverage"]={}
               for table in ("production_history","production_history_attempts"):
-                  result["history_coverage"][table]=db.execute(
-                      f"SELECT COUNT(*),MAX(downloaded_at) FROM {table}").fetchone()
+                  columns={row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+                  if not columns:
+                      result["history_coverage"][table]={"present":False}
+                      continue
+                  clocks={"downloaded_at","attempted_at","checked_at"} & columns
+                  result["history_coverage"][table]={
+                      "columns":sorted(columns),
+                      "series":db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0],
+                      "last":{column:db.execute(f"SELECT MAX({column}) FROM {table}").fetchone()[0]
+                              for column in sorted(clocks)},
+                  }
               result["workers"]={
                   "caucion":db.execute("SELECT heartbeat_at,state,code FROM paper_caucion_cash_sweep_state WHERE id=1").fetchone(),
                   "candles":db.execute("SELECT cursor,heartbeat_at,state FROM candle_worker_state WHERE id=1").fetchone(),
