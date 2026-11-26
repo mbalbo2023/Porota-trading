@@ -13,9 +13,9 @@ import subprocess
 import sys
 import time
 
-IMAGE = 'sha256:b2e7dcd7668c41f16659886fd38ce1333ce6cb4688cacd63eedbc81825537067'
-PRODUCT = '8fd9070728b89ae7891758f4b463baef28d875f8'
-HOST_LOCK_WAIT_S = 30
+IMAGE = 'sha256:c2752f066fdde7028efca5e36e2ed32433e3f87cd5ca29783d0f56baa8b3b541'
+PRODUCT = '44ee181dcc452215ab05fae7f3919e344e7601d7'
+HOST_LOCK_WAIT_S = 240
 COOLDOWN_WAIT_LIMIT_S = 20 * 60
 
 PROBE = r'''
@@ -42,8 +42,6 @@ from bd_ppi_readonly_guard import ppi_rate_limit_headers, ppi_retry_after_second
 from bf_production_paper_observer import _market_phase, _secret
 from bv_paper_runtime import ppi_gateway_lifetime_lease
 from cg_paper_workspace import database_path
-from bs_instrument_contracts import cash_currency
-from rc6_multisource_discovery import canonical_family, canonical_market
 from ppi_client.api.constants import ACCOUNT_LOGIN_API, MARKETDATA_BOOK, MARKETDATA_CURRENT
 from ppi_client.ppi import PPI
 from ppi_client.ppi_api_client import PPIClient
@@ -209,52 +207,19 @@ def direct_pair(rest, keypair, budget, out):
         return 'PPI_LOGIN_SIN_TOKEN_VALIDO'
     heads['Authorization'] = 'Bearer ' + token
     ticker, family, _, _, settlement = KEY
-    api_version = MARKETDATA_CURRENT.split('/MarketData/', 1)[0]
-    steps = (
-        ('Markets', 'configuration/markets', api_version + '/Configuration/Markets'),
-        ('SearchInstrument', 'marketdata/searchinstrument',
-         api_version + '/MarketData/SearchInstrument?Ticker=GGAL&Market=BYMA&Type=ACCIONES'),
-        ('Current', 'current', MARKETDATA_CURRENT.format(ticker, family, settlement)),
-        ('Book', 'book', MARKETDATA_BOOK.format(ticker, family, settlement)),
-    )
-    for endpoint, budget_endpoint, uri in steps:
+    for endpoint, template in (('Current', MARKETDATA_CURRENT), ('Book', MARKETDATA_BOOK)):
         evidence = out[endpoint] = {'attempted': False}
-        lease = budget.acquire(budget_endpoint, priority='DISCOVERY')['lease']
+        lease = budget.acquire(endpoint.lower(), priority='DISCOVERY')['lease']
         with budget.wire_scope(lease):
             budget.start(lease)
             try:
-                body, at = send(rest, 'GET', uri, heads, evidence)
+                body, at = send(rest, 'GET', template.format(ticker, family, settlement), heads, evidence)
             finally:
                 budget.finish(lease, status_code=evidence.get('http'), retry_after_seconds=evidence.get('retry_after_s'))
         if evidence.get('http') != 200:
             return 'PPI_RESPUESTA_HTTP_DISTINTA_DE_200'
-        if endpoint in {'Markets', 'SearchInstrument'}:
-            evidence['data'] = {'json_list': isinstance(body, list),
-                                'rows': len(body) if isinstance(body, list) else None}
-            if not isinstance(body, list):
-                return 'PPI_CATALOGO_RESPUESTA_INVALIDA'
-            if endpoint == 'SearchInstrument':
-                exact = 0
-                currencies = {'ARS': 0, 'OTHER': 0, 'UNKNOWN': 0}
-                for item in body:
-                    if not isinstance(item, dict) or str(item.get('ticker', '')).strip().upper() != ticker:
-                        continue
-                    if (canonical_family(item.get('type')) != family
-                            or canonical_market(item.get('market')) != 'BYMA'):
-                        continue
-                    try:
-                        currency = cash_currency(item.get('currency'))
-                    except ValueError:
-                        currencies['UNKNOWN'] += 1
-                        continue
-                    currencies['ARS' if currency == 'ARS' else 'OTHER'] += 1
-                    exact += currency == 'ARS'
-                evidence['data'].update(exact_matches=exact, matching_ticker_venue_by_currency=currencies)
-                if exact != 1:
-                    return 'PPI_CATALOGO_IDENTIDAD_NO_UNICA'
-        else:
-            evidence['data'] = describe(body, at, endpoint)
-    return 'PPI_CUATRO_CONSULTAS_HTTP_200'
+        evidence['data'] = describe(body, at, endpoint)
+    return 'PPI_DOS_RESPUESTAS_HTTP_200'
 
 
 def observe_restart(parent, path, old, interlock):
@@ -288,19 +253,13 @@ def probe(out):
     db = database_path()
     out['before'] = paper_state(db)
     require(out['before']['open_paper'] == 0, 'RC6_POSICIONES_PAPER_ABIERTAS')
-    out['market_phase'] = _market_phase()
-    require(out['market_phase'] in {'OPEN', 'CLOSED'}, 'RC6_RUEDA_EN_TRANSICION')
+    require(_market_phase() == 'OPEN' and datetime.now(ART).hour >= 11, 'RC6_RUEDA_SPOT_CERRADA')
     require(version('ppi-client') == '1.3.0', 'PPI_SDK_DISTINTO_AL_COMPARADO')
     sdk = PPIClient(PPI.version, False).get_rest_client()
     credentials = _secret()
     path = gateway_socket_path(db)
     budget = PaperDirectReadBudget(db)
     interlock = ScannerLoginInterlock(db, AUTH_COOLDOWN_SECONDS)
-    local_remaining = budget_wait(budget)
-    out['before'].update(local_get_wait_s=local_remaining, get_wait_s=local_remaining,
-                         login_wait_s=login_wait(interlock))
-    require(out['before']['get_wait_s'] == 0 and out['before']['login_wait_s'] == 0,
-            'PPI_PAUSA_ACTIVA')
     remote = owner_status(path)
     remaining = remote.get('native_backoff_remaining_seconds')
     require(type(remaining) is int and remaining >= 0, 'PPI_PAUSA_NO_VERIFICADA')
