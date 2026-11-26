@@ -1558,6 +1558,8 @@ def probe(*, root=ROOT, expected_sha, expected_tree_sha=None, at=None, inspect=N
 
     result["containers"] = containers or {}
     result["host_control_state"] = _host_control_state()
+    if inspect is None and provenance_identity == "ROOTLESS_PRODUCT_TREE_MATCHED":
+        result["iol_scheduler"] = _iol_scheduler_evidence(marker_sha)
     receipt = load_bounded(root / 'data/paper_v17/market_watch_silence.json',4096)
     ack = str((receipt or {}).get('message_id',''))
     if (receipt and receipt.get('schema')=='rc6.market-watch-silence.v1' and
@@ -1897,6 +1899,90 @@ _GATEWAY_LOCAL_ROLES = frozenset({"scanner", "exit_reader", "scalping"})
 _GATEWAY_PROBE_SCHEMA = "rc6.ppi-gateway-diagnostic-readonly.v1"
 _PPI_OBSERVATION_ENDPOINTS = ("current", "book", "intraday")
 
+_IOL_SERVICE_ROLES = {
+    "porota-iol-shadow-collector-rc6.service": "collector",
+    "porota-iol-oauth-health-rc6.service": "health",
+}
+_IOL_SCHEDULER_CODES = frozenset({
+    "SCHEDULER_LAUNCHER_CUSTODY", "DEPLOY_IN_PROGRESS", "SCHEDULER_LOCK_UNSAFE",
+    "SCHEDULER_DAEMON_CHANGED", "SCHEDULER_PAIR_REQUIRED", "SCHEDULER_RUNTIME_STOPPED",
+    "PAPER_DATABASE_SAFETY", "PAPER_DATABASE_UNREADABLE", "DATABASE_REPLACED",
+    "IOL_RELEASE_DATABASE_IDENTITY_UNVERIFIED", "IOL_RELEASE_DATABASE_IDENTITY_CHANGED",
+    "IOL_REST_REFERENCE_IDENTITY_UNVERIFIED", "UNCLASSIFIED_SCHEDULER_FAILURE",
+    "AUTHENTICATED", "REFERENCE_GD30_VERIFIED", "IOL_REST_CREDENTIALS_UNCONFIGURED",
+    "IOL_REST_CONFIG_UNAVAILABLE", "IOL_REST_AUTH_ON_HOLD", "IOL_REST_HTTP_ERROR",
+    "IOL_REST_TOKEN_CUSTODY_UNVERIFIED", "IOL_REST_TOKEN_UNVERIFIED",
+    "IOL_REST_RESPONSE_UNVERIFIED", "IOL_REST_TRANSPORT_UNAVAILABLE",
+})
+
+
+def _iol_scheduler_evidence(source_sha):
+    """Classify recent scheduler receipts without starting jobs or exporting logs."""
+    services = {role: {} for role in _IOL_SERVICE_ROLES.values()}
+    try:
+        units = subprocess.run(
+            ["/usr/bin/systemctl", "show", "--no-pager",
+             "--property=Id,ActiveState,Result,ExecMainStatus", *_IOL_SERVICE_ROLES],
+            capture_output=True, text=True, timeout=2, check=False)
+        if units.returncode == 0 and len(units.stdout) <= 4096:
+            for block in units.stdout.strip().split("\n\n"):
+                fields = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+                role = _IOL_SERVICE_ROLES.get(fields.get("Id"))
+                if role is None:
+                    continue
+                services[role] = {
+                    "unit_state": fields["ActiveState"] if fields.get("ActiveState") in
+                    ("active", "inactive", "activating", "deactivating", "failed") else None,
+                    "unit_result": fields["Result"] if fields.get("Result") in
+                    ("success", "exit-code", "timeout", "signal", "resources") else None,
+                    "unit_exit": int(fields["ExecMainStatus"]) if re.fullmatch(
+                        r"[0-9]{1,3}", fields.get("ExecMainStatus", "")) else None,
+                }
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        pass
+    try:
+        options = [arg for unit in _IOL_SERVICE_ROLES for arg in ("--unit", unit)]
+        scan = subprocess.run(
+            ["/usr/bin/journalctl", "--quiet", "--no-pager", "--output=json",
+             "--output-fields=_SYSTEMD_UNIT,MESSAGE", "--since=-15min", "--lines=32", *options],
+            capture_output=True, timeout=2, check=False)
+        if scan.returncode or len(scan.stdout) > 131072:
+            raise ValueError("IOL_JOURNAL_UNAVAILABLE")
+        for line in scan.stdout.splitlines():
+            event = json.loads(line)
+            role = _IOL_SERVICE_ROLES.get(event.get("_SYSTEMD_UNIT"))
+            message = event.get("MESSAGE")
+            stamp = event.get("__REALTIME_TIMESTAMP")
+            if role is None or not isinstance(message, str) or not message.startswith("{"):
+                continue
+            job = json.loads(message)
+            if not isinstance(job, dict) or job.get("schema") != "porota.rootless.job.v1":
+                continue
+            state = job.get("state")
+            if state not in ("BLOCKED", "BLOQUEADO", "SKIPPED", "EXECUTED"):
+                continue
+            if not isinstance(stamp, str) or not re.fullmatch(r"[0-9]{16}", stamp):
+                continue
+            row = {"at": datetime.fromtimestamp(int(stamp) / 1_000_000, timezone.utc).isoformat(),
+                   "job_state": state, "release_matched": job.get("source_sha") == source_sha}
+            signature = job.get("failure_signature")
+            if signature in _IOL_SCHEDULER_CODES:
+                row["failure_signature"] = signature
+            if (row["release_matched"] and type(job.get("real_orders_sent")) is int
+                    and job["real_orders_sent"] == 0):
+                commands = job.get("commands") or []
+                if len(commands) == 1 and commands[0].get("source") == "IOL_REST":
+                    result = commands[0].get("result")
+                    http = commands[0].get("http_status")
+                    cycle = (commands[0].get("source_cycle") or {}).get("status")
+                    row.update(result=result if result in _IOL_SCHEDULER_CODES else None,
+                               http_status=http if type(http) is int and 100 <= http <= 599 else None,
+                               cycle=cycle if cycle in ("COMPLETE", "DEGRADED", "NOT_DUE", "BLOCKED") else None)
+            services[role].update(row)
+    except (OSError, ValueError, AttributeError, TypeError, OverflowError, subprocess.TimeoutExpired):
+        pass
+    return {"status": "OBSERVED" if any(services.values()) else "NO_VERIFICADO", "services": services}
+
 
 def _ppi_intake_reason(value):
     # Same symbolic code boundary enforced by the Gateway native RPC.
@@ -1962,7 +2048,7 @@ def _ppi_intake_evidence(path, *, at=None):
                                       for name in ("slots", "attempted", "fresh_pairs", "attested")},
                                    "reason": _ppi_intake_reason(discovery.get("reason"))}})
 
-            native, holds, last_hold_at = {}, {}, {}
+            native, holds, last_hold_at, recent = {}, {}, {}, []
             for event in ("PPI_DIRECT_REST_NATIVE_WIRE_WITNESS", "PPI_DIRECT_REST_PROBE_HOLD"):
                 rows = db.execute("""SELECT event_at,substr(detail,1,512)
                     FROM paper_events WHERE event_type=? AND julianday(event_at)>=julianday(?)
@@ -1975,6 +2061,8 @@ def _ppi_intake_evidence(path, *, at=None):
                         reason = _ppi_intake_reason(detail) or "UNCLASSIFIED"
                         holds[reason] = holds.get(reason, 0) + 1
                         last_hold_at.setdefault(reason, seen.isoformat())
+                        if (at - seen).total_seconds() <= 600 and len(recent) < 32:
+                            recent.append({"at": seen.isoformat(), "kind": "hold", "reason": reason})
                         continue
                     fields = dict(field.split("=", 1) for field in detail.split(";") if "=" in field)
                     endpoint = fields.get("endpoint")
@@ -1986,6 +2074,10 @@ def _ppi_intake_evidence(path, *, at=None):
                             "http_200_witnesses": 0, "latest_received_at": received.isoformat(),
                             "latest_market_at": market_at.isoformat() if market_at else None})
                         observed["http_200_witnesses"] += 1
+                        if (at - seen).total_seconds() <= 600 and len(recent) < 48:
+                            recent.append({"at": seen.isoformat(), "kind": "http_200_witness",
+                                           "endpoint": endpoint, "received_at": received.isoformat(),
+                                           "market_at": market_at.isoformat() if market_at else None})
 
             http = {}
             rows = db.execute("""SELECT happened_at,method,substr(path,1,180),result
@@ -1998,6 +2090,9 @@ def _ppi_intake_evidence(path, *, at=None):
                 if endpoint in _PPI_OBSERVATION_ENDPOINTS and verdict in ("ALLOWED", "BLOCKED", "BACKPRESSURE"):
                     counter = http.setdefault(endpoint, {})
                     counter[verdict] = counter.get(verdict, 0) + 1
+                    if (at - seen).total_seconds() <= 600 and len(recent) < 72:
+                        recent.append({"at": seen.isoformat(), "kind": "http_presend",
+                                       "endpoint": endpoint, "verdict": verdict})
 
             exit_round = {}
             row = db.execute("SELECT heartbeat_at,state,substr(detail,1,500) "
@@ -2016,7 +2111,7 @@ def _ppi_intake_evidence(path, *, at=None):
                     "first_sampled_cycle": cycles[-1] if cycles else None,
                     "last_cycle": cycles[0] if cycles else None,
                     "discovery_hold_events": holds, "discovery_last_hold_at_utc": last_hold_at,
-                    "native_wire": native,
+                    "native_wire": native, "recent_sequence": sorted(recent, key=lambda row: row["at"])[-24:],
                     "http_presend": http, "exit_round": exit_round}
     except (OSError, sqlite3.Error):
         return result
