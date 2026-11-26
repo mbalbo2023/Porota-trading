@@ -597,6 +597,9 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from bs_instrument_contracts import contract_from_metadata
     from rc6_fixed_income_sale_authority import SALE_FAMILIES, native_book_fields, native_market_sale_enabled
     from bd_ppi_readonly_guard import retry_read, session_invalid
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_iol_market_gateway import IOLGatewayMarketReader
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
     positions, invalid = store.exit_positions()
@@ -617,50 +620,57 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             stage = "BROKER_BOOK"
             scope = getattr(reader, "read_scope", None)
             identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
-            native_book_reader = getattr(reader, "book_with_native_receipt", None)
-            native_book = None
-            decision = None
-            native_sale = (p["asset_class"] in SALE_FAMILIES and callable(native_book_reader)
-                           and native_market_sale_enabled(identity))
-            if native_sale and sale_witness:
-                try:
-                    decision = sale_witness.acknowledge(p["paper_id"])
-                except (OSError, ValueError, sqlite3.Error) as exc:
-                    LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
-            with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
-                if native_sale:
-                    native_book = retry_read(lambda: native_book_reader(
-                        p["symbol"], p["asset_class"], p["settlement"]), retries=1)
-                    book = native_book["raw_payload"]
-                else:
-                    book = retry_read(lambda: reader.book(
-                        p["symbol"],p["asset_class"],p["settlement"]), retries=1)
-            if decision:
-                try:
-                    sale_witness.witness_first_later_book(decision)
-                except (OSError, ValueError, sqlite3.Error) as exc:
-                    LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
-            stage = "CATALOG_LOOKUP"
-            metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
-                                      market=p["market"], currency=p["currency"])
-            stage = "NORMALIZE_QUOTE"
-            q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
-                                metadata=metadata, identity=identity)
-            if native_book is not None:
-                try:
-                    native_book_fields(native_book, identity)
-                    held_contract = contract_from_metadata(p["symbol"], p["asset_class"],
-                        json.loads(p["features_json"])["financial_contract"])
-                    if held_contract.key == identity:
-                        q = replace(q, contract=held_contract, ppi_native_rest_book=native_book)
-                except (ValueError, KeyError, TypeError, ArithmeticError):
-                    # Preserve the ordinary exit mark, without binding an ambiguous witness.
-                    pass
-            if is_future:
-                # Request identity is the exact position; catalog changes cannot
-                # invent new exit terms or grant fresh entry authority.
-                q = replace(q, contract=original_contract, currency=p["currency"],
-                            market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
+            if isinstance(reader, IOLGatewayMarketReader):
+                if p["asset_class"] not in EQUITY_FAMILIES:
+                    raise IOLRestError("IOL_SPECIALIZED_EXIT_EVIDENCE_REQUIRED")
+                terms = json.loads(p.get("features_json") or "{}").get("financial_contract")
+                held_contract = contract_from_metadata(p["symbol"], p["asset_class"], terms) if terms else None
+                q = reader.observe(identity, contract=held_contract, priority="EXIT_CRITICAL", exit_only=True).quote
+            else:
+                native_book_reader = getattr(reader, "book_with_native_receipt", None)
+                native_book = None
+                decision = None
+                native_sale = (p["asset_class"] in SALE_FAMILIES and callable(native_book_reader)
+                               and native_market_sale_enabled(identity))
+                if native_sale and sale_witness:
+                    try:
+                        decision = sale_witness.acknowledge(p["paper_id"])
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
+                with (scope(priority="EXIT_CRITICAL", identity=identity) if callable(scope) else nullcontext()):
+                    if native_sale:
+                        native_book = retry_read(lambda: native_book_reader(
+                            p["symbol"], p["asset_class"], p["settlement"]), retries=1)
+                        book = native_book["raw_payload"]
+                    else:
+                        book = retry_read(lambda: reader.book(
+                            p["symbol"],p["asset_class"],p["settlement"]), retries=1)
+                if decision:
+                    try:
+                        sale_witness.witness_first_later_book(decision)
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
+                stage = "CATALOG_LOOKUP"
+                metadata = catalog.lookup(store,p["symbol"],p["asset_class"],p["settlement"],
+                                          market=p["market"], currency=p["currency"])
+                stage = "NORMALIZE_QUOTE"
+                q = normalize_quote(p["symbol"],p["asset_class"],p["settlement"],{},book,
+                                    metadata=metadata, identity=identity)
+                if native_book is not None:
+                    try:
+                        native_book_fields(native_book, identity)
+                        held_contract = contract_from_metadata(p["symbol"], p["asset_class"],
+                            json.loads(p["features_json"])["financial_contract"])
+                        if held_contract.key == identity:
+                            q = replace(q, contract=held_contract, ppi_native_rest_book=native_book)
+                    except (ValueError, KeyError, TypeError, ArithmeticError):
+                        # Preserve the ordinary exit mark, without binding an ambiguous witness.
+                        pass
+                if is_future:
+                    # Request identity is the exact position; catalog changes cannot
+                    # invent new exit terms or grant fresh entry authority.
+                    q = replace(q, contract=original_contract, currency=p["currency"],
+                                market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
             stage = "PERSIST_QUOTE"
             store.add_quote(q)
             stage = "VALIDATE_QUOTE"

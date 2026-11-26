@@ -188,6 +188,7 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write(f"## IOL RC6 offhost\n\nPruebas aisladas: {result['offhost_tests']}\n\n")
               summary.write(f"Timer efectivo: {result['systemd_timer']} · Gateway: {result['native_gateway_transport']}\n\n")
+              summary.write(f"Gateway IOL: {result['iol_gateway_transport']}\n\n")
               summary.write(f"Timers activos con disparo aislado: {result['active_timer_dispatches']}\n\n")
               summary.write(f"Viabilidad en rueda: **{result['market_viability']}**\n\n")
               summary.write("Promoción: **BLOQUEADA**. Artefacto de evidencia de pruebas.\n")

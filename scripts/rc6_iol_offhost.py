@@ -73,6 +73,13 @@ DOMAINS = {
                 COLD_TO_HOT, LAB + "::test_ggal_paper_ledger_and_exit"),
     "paper_exit": ("tests/test_rc6_take_profit_regression.py", LAB + "::test_ggal_paper_ledger_and_exit"),
     "native_gateway_scanner": (NATIVE_REPLAY,),
+    "iol_gateway_scanner_exit": (
+        LAB + "::test_ggal_paper_ledger_and_exit",
+        LAB + "::test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers",
+        LAB + "::test_iol_gateway_rolling_budget_defers_without_waiting_or_requesting_book",
+        LAB + "::test_iol_gateway_binds_roles_to_separate_processes_and_rejects_stale_generation",
+        LAB + "::test_iol_book_selects_best_prices_and_rejects_ambiguous_best_size",
+    ),
     "family_lifecycles": (FI_RUNTIME, FI_EXIT, FI_ROUNDTRIP, FI_LOCKED_EXIT_GUARD,
                           CAUCION_SWEEP, FCI_CALENDAR, FCI_SETTLEMENT),
     "complementary_sources": ("tests/test_rc6_a234_cafci_fci_reference.py",
@@ -128,6 +135,8 @@ def summarize_focus(junit, exit_code, *, gateway_ipc):
     return {"schema": "porota.iol.focus.v1", "status": "PASS" if passed else "FAIL",
             "count": len(tests), "failed_or_skipped": sum(not passed for passed in tests.values()),
             "native_gateway_transport": "AF_UNIX_PEERCRED" if gateway_ipc and passed else "IN_PROCESS",
+            "iol_gateway_transport": ("AF_UNIX_PEERCRED" if gateway_ipc and
+                                      domains["iol_gateway_scanner_exit"] == "PASS" else "IN_PROCESS"),
             "domains": domains, "families": families}
 
 
@@ -187,6 +196,7 @@ def verdict(directory, identity):
     families, domains = focus.get("families"), focus.get("domains")
     focused = (focus.get("schema") == "porota.iol.focus.v1" and focus.get("status") == "PASS"
                and focus.get("native_gateway_transport") == "AF_UNIX_PEERCRED"
+               and focus.get("iol_gateway_transport") == "AF_UNIX_PEERCRED"
                and isinstance(families, dict) and set(families) == set(FAMILIES)
                and all(isinstance(row, dict) and row.get("fixture_test") == "PASS"
                        and row.get("paper_cycle") == PAPER_CYCLES[family][0]
@@ -211,6 +221,7 @@ def verdict(directory, identity):
             "systemd_timer": "PASS" if scheduled else "FAIL",
             "active_timer_dispatches": len(expected_timers) if dispatched else 0,
             "native_gateway_transport": focus.get("native_gateway_transport", "UNVERIFIED"),
+            "iol_gateway_transport": focus.get("iol_gateway_transport", "UNVERIFIED"),
             "offhost_tests": "PASS" if regression and paper and focused and scheduled and dispatched else "FAIL",
             "regression_tests": code.get("executed") if regression else None,
             "real_orders_sent": 0 if paper else None, "deployment_allowed": False,

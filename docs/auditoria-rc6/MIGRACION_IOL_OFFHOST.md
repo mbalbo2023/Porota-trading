@@ -2,6 +2,8 @@
 
 **Migración PROPUESTA · Integración aislada EN PRUEBAS · 26/11/2026 ART**
 
+La [matriz de migración para rueda](MATRIZ_MIGRACION_RUEDA.md) reúne el inventario operativo, el semáforo y la acción de cierre de cada componente.
+
 El objetivo es que RC6 obtenga de IOL sus datos de mercado en vivo y deje de iniciar sesiones, suscripciones y consultas a PPI. Se mantienen el modo PAPER/SHADOW, los guardas de admisión por instrumento, el broker simulado y la operación independiente de PPI Watch. El cambio termina con un único Deploy V2 del candidato integrado. La línea base de código es el producto `a6cc6e3` y el SHA físico acreditado `414771d` de #212. [Recibo de #212](https://github.com/mbalbo2023/Porota-trading/actions/runs/45871190344/artifacts/15143505124)
 
 ## Punto de partida

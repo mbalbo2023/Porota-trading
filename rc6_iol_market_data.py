@@ -36,6 +36,15 @@ class IOLObservation:
     book: MarketCapture
 
 
+def read_iol_market_payload(rest, endpoint, identity):
+    """Issue exactly the requested kind of market read with the existing REST client."""
+    symbol, _, market, _, term = identity
+    venue = MARKETS[market]
+    if endpoint == "asset":
+        return rest.call("get_asset_info", {"symbol": symbol, "market": venue})
+    return rest.read_market_data(endpoint, symbol, venue, TERMS[term])
+
+
 def _instant(stamp):
     try:
         return aware_datetime(stamp).astimezone(timezone.utc)
@@ -48,6 +57,17 @@ def _positive(value):
         return decimal_value(value, "IOL", positive=True)
     except ValueError:
         raise IOLRestError("IOL_MARKET_NUMERIC_UNVERIFIED") from None
+
+
+def _best_level(levels, *, bid):
+    if not isinstance(levels, list) or not levels or any(not isinstance(level, dict) for level in levels):
+        raise IOLRestError("IOL_BOOK_TWO_SIDED_UNVERIFIED")
+    levels = [(_positive(level.get("price")), _positive(level.get("size"))) for level in levels]
+    pick = max if bid else min
+    price, size = pick(levels, key=lambda level: level[0])
+    if sum(level[0] == price for level in levels) != 1:
+        raise IOLRestError("IOL_BOOK_BEST_LEVEL_AMBIGUOUS")
+    return price, size
 
 
 def _capture(data, *, received, venue_key, currency, source_time):
@@ -69,10 +89,19 @@ def _capture(data, *, received, venue_key, currency, source_time):
 class IOLMarketReader:
     """GET-only market observations for verified five-part instrument mappings."""
 
-    def __init__(self, rest, *, trade_clock=None, clock=None):
+    def __init__(self, rest, *, trade_clock=None, clock=None, capture=None):
         self.rest = rest
         self.trade_clock = trade_clock
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.capture = capture
+
+    def _read(self, endpoint, identity):
+        if self.capture is not None:
+            payload, received_at = self.capture(endpoint, identity)
+        else:
+            payload = read_iol_market_payload(self.rest, endpoint, identity)
+            received_at = self.clock()
+        return payload, _instant(received_at)
 
     def observe(self, identity, *, contract=None, exit_only=False, max_age_seconds=120):
         symbol, family, market, currency, term = identity
@@ -83,7 +112,10 @@ class IOLMarketReader:
         venue_key = symbol, MARKETS[market], TERMS[term]
         # The depth response can omit currency. Bind it to an independent exact
         # asset response as well as to the symbol/market/term depth response.
-        asset = self.rest.call("get_asset_info", {"symbol": symbol, "market": venue_key[1]})
+        asset, _ = self._read("asset", identity)
+        if (not isinstance(asset, dict)
+                or (asset.get("symbol"), asset.get("market")) != venue_key[:2]):
+            raise IOLRestError("IOL_ASSET_IDENTITY_MISMATCH")
         if asset.get("currency") != currency:
             raise IOLRestError("IOL_ASSET_CURRENCY_UNVERIFIED")
         if canonical_family(asset.get("type")) != family:
@@ -91,8 +123,7 @@ class IOLMarketReader:
 
         current = None
         if not exit_only:
-            raw = self.rest.read_market_data("quote", *venue_key)
-            received = _instant(self.clock())
+            raw, received = self._read("quote", identity)
             if not isinstance(raw, dict) or raw.get("currency") != currency:
                 raise IOLRestError("IOL_QUOTE_CURRENCY_UNVERIFIED")
             source_time = self.trade_clock(raw) if self.trade_clock is not None else None
@@ -105,15 +136,11 @@ class IOLMarketReader:
             prices = raw.get("prices")
             last = _positive(prices.get("current") if isinstance(prices, dict) else None)
 
-        depth = self.rest.read_market_data("depth", *venue_key)
-        received = _instant(self.clock())
+        depth, received = self._read("depth", identity)
         book = _capture(depth, received=received, venue_key=venue_key, currency=currency,
                         source_time=depth.get("last_updated") if isinstance(depth, dict) else None)
-        sides = depth.get("bids"), depth.get("asks")
-        if not all(isinstance(levels, list) and levels and isinstance(levels[0], dict) for levels in sides):
-            raise IOLRestError("IOL_BOOK_TWO_SIDED_UNVERIFIED")
-        bid, ask = [_positive(levels[0].get("price")) for levels in sides]
-        bid_size, ask_size = [_positive(levels[0].get("size")) for levels in sides]
+        bid, bid_size = _best_level(depth.get("bids"), bid=True)
+        ask, ask_size = _best_level(depth.get("asks"), bid=False)
         if bid > ask:
             raise IOLRestError("IOL_BOOK_CROSSED")
         quote = Quote(symbol, family, term, last if current else bid, bid, ask, bid_size, ask_size,
@@ -123,7 +150,8 @@ class IOLMarketReader:
                       last_kind="TRADE" if current else "REFERENCE",
                       opening_block_reason="IOL_EXIT_OBSERVATION_ONLY" if exit_only else "")
         quote.monetary_identity()
-        error = quote.time_error(book.received_at, require_trade=not exit_only, max_age_seconds=max_age_seconds)
+        error = quote.time_error(_instant(self.clock()).isoformat(), require_trade=not exit_only,
+                                 max_age_seconds=max_age_seconds)
         if error:
             raise IOLRestError(error)
         return IOLObservation(quote, current, book)

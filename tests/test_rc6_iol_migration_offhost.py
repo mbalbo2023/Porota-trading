@@ -4,8 +4,11 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
+from threading import Thread
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,8 +21,11 @@ from bm_exit_supervisor import PositionExitSupervisor
 from cu_history_store_v2_hf6 import Candle, append_candle, read_as_of
 from cv_history_store_adapter_hf6 import HistoricalStore
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
+from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
 from rc6_iol_history_reference import ingest_daily_reference
 from rc6_iol_market_data import IOLMarketReader
+from rc6_iol_market_gateway import CONTROL_SCHEMA, IOLGatewayClient, IOLGatewayMarketReader, IOLMarketGateway
+from rc6_ppi_shared_feed import ReadOnlyUnixFeedServer
 from scripts.rc6_history_import_source_reported import _source_store
 from scripts.porota_actions_release import promotion_source
 from scripts.porota_build_deploy_bundle_v2 import build_bundle
@@ -115,6 +121,51 @@ def reader(tmp_path, identity=GGAL):
                            clock=lambda: transport.now), transport
 
 
+@pytest.fixture
+def iol_gateway(tmp_path, tmp_path_factory):
+    market, transport = reader(tmp_path)
+    tick = {"monotonic": 0.0}
+
+    def advance(seconds):
+        tick["monotonic"] += seconds
+
+    market.rest.governor = RateGovernor(
+        CollectionPolicy(), clock=lambda: tick["monotonic"], sleep=advance, max_wait_seconds=1)
+    directory = tmp_path_factory.mktemp("iol-socket")
+    directory.chmod(0o700)
+    server = IOLMarketGateway(market.rest, allowed={"scanner": (GGAL,), "exit_reader": (GGAL,)},
+        socket_path=directory / "gateway.sock", supervisor_pid=os.getpid(), clock=lambda: transport.now)
+
+    class InProcessClient(IOLGatewayClient):
+        def _request(self, packet, **kwargs):
+            return server.dispatch(packet, peer_pid=os.getpid())
+
+    thread = None
+    if os.environ.get("POROTA_IOL_OFFHOST_IPC") == "1":
+        server.start()
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = IOLGatewayClient(socket_path=server.socket_path, timeout_seconds=5)
+    else:
+        server.start_native_priority_router()
+        client = InProcessClient(socket_path=server.socket_path)
+    assert client.owner_status()["schema"] == CONTROL_SCHEMA
+    try:
+        yield server, client, transport, advance
+    finally:
+        if thread is not None:
+            server.shutdown()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+        server.close()
+
+
+def register(client, role, pid=None):
+    pid = os.getpid() if pid is None else pid
+    registration = client.register_client(role, pid=pid, proc_starttime=ReadOnlyUnixFeedServer.process_starttime(pid))
+    assert registration["registered_role"] == role
+
+
 @pytest.mark.parametrize("identity", FAMILIES, ids=[case[1] for case in FAMILIES])
 def test_iol_family_contract(identity, tmp_path):
     market, transport = reader(tmp_path, identity)
@@ -154,14 +205,20 @@ def test_iol_family_contract(identity, tmp_path):
                for row in rows)
 
 
-def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
+def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
+    from bv_paper_runtime import collect_exit_books
     from rc6_paper_admission_gate import paper_admission_guard
     from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
 
-    market, transport = reader(tmp_path)
+    _, client, transport, _ = iol_gateway
+    register(client, "scanner")
+    register(client, "exit_reader")
+    scanner = IOLGatewayMarketReader(client, consumer="scanner", trade_clock=lambda row: row["last_updated"],
+                                    clock=lambda: transport.now)
+    exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     observer._support_schema(store)
@@ -183,7 +240,7 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
     assert request in selected
     assert observer._scanner_opening_capacity(request, focus=focus, feasibility=feasibility) == (True, "")
     with pytest.raises(IOLRestError, match="IOL_EXACT_CONTRACT_MISMATCH"):
-        market.observe(GGAL, contract=replace(contract, settlement="INMEDIATA"))
+        scanner.observe(GGAL, contract=replace(contract, settlement="INMEDIATA"))
     assert transport.calls == []
     sector_map = tmp_path / "sector-map.csv"
     sector_map.write_text(
@@ -198,29 +255,134 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch):
         transport.now = AT + timedelta(minutes=index)
         ReplayClock.value = transport.now
         transport.price = float(price)
-        observed = market.observe(GGAL, contract=contract)
-        assert observed.quote.metadata_source == "IOL_REST"
-        store.add_quote(observed.quote)
+        observed = observer._read_scanner_quote(scanner, store, *request, identity=GGAL, priority="HOT")
+        assert observed.metadata_source == "IOL_REST" and not observed.opening_block_reason
+        store.add_quote(observed)
         assert not _scanner_trade_temporal_rejection(
-            observed.quote, broker, store, checked_at=transport.now.isoformat())
+            observed, broker, store, checked_at=transport.now.isoformat())
         if index == 0:
-            action, _, _, fields = broker.decide(observed.quote)
+            action, _, _, fields = broker.decide(observed)
             assert (action, fields["reason_code"]) == ("HOLD", "SIGNAL_WARMUP")
-    broker.on_quote(observed.quote)
+    broker.on_quote(observed)
     assert store.open_positions()
     position = store.open_positions()[0]
     transport.price = float(Decimal(position["target_price"]) + Decimal("0.20"))
     transport.now += timedelta(minutes=5)
-    closing = market.observe(GGAL, contract=contract, exit_only=True).quote
+    assert collect_exit_books(exit_reader, store, PaperSessionPolicy(), transport.now.isoformat()) == 0
+    closing = store.latest_quote(position)
+    assert closing.metadata_source == "IOL_REST" and closing.trade_at is None
+    assert closing.opening_block_reason == "IOL_EXIT_OBSERVATION_ONLY"
     assert transport.calls == ["token"] + ["GGAL", "quote", "depth"] * 9 + ["GGAL", "depth"]
     key = tuple(position[name] for name in ("symbol", "asset_class", "settlement", "currency", "market"))
     verdict = PositionExitSupervisor(broker, clock_fn=lambda: transport.now.isoformat()).tick({key: closing})[0]
     assert (verdict.state, verdict.cause) == ("CLOSED", "TAKE_PROFIT_PAPER")
     assert not store.open_positions()
+    SampleMaterializer(store).tick(transport.now)
     with store.connect() as db:
+        rows = db.execute("""SELECT DISTINCT json_extract(identity_json,'$.resolution') FROM candle_series
+            WHERE json_extract(identity_json,'$.source')='IOL_REST_TRADE_SAMPLE'""").fetchall()
+        assert {row[0] for row in rows} == {"1m", "5m"}
         assert [row[0] for row in db.execute("SELECT side FROM paper_fills ORDER BY id")] == [
             "BUY_SIMULATED", "SELL_SIMULATED"]
         assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+
+
+def test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers(iol_gateway):
+    _, client, transport, advance = iol_gateway
+    register(client, "scanner")
+    register(client, "exit_reader")
+    scanner = IOLGatewayMarketReader(client, consumer="scanner", trade_clock=lambda row: row["last_updated"],
+                                    clock=lambda: transport.now)
+    exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
+    transport.reject = "quote"
+    with pytest.raises(IOLRestError, match="IOL_REST_HTTP_ERROR") as hold:
+        scanner.observe(GGAL)
+    assert (hold.value.status_code, hold.value.retry_after) == (429, 7)
+    assert transport.calls == ["token", "GGAL", "quote"]
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        exit_reader.observe(GGAL, priority="EXIT_CRITICAL", exit_only=True)
+    assert transport.calls == ["token", "GGAL", "quote"]
+    advance(7)
+    observation = exit_reader.observe(GGAL, priority="EXIT_CRITICAL", exit_only=True)
+    assert observation.current is None and transport.calls[-2:] == ["GGAL", "depth"]
+
+
+def test_iol_gateway_rolling_budget_defers_without_waiting_or_requesting_book(iol_gateway):
+    server, client, transport, advance = iol_gateway
+    server._rest.governor.policy = CollectionPolicy(max_calls_per_minute=1)
+    register(client, "scanner")
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        client.market_read("quote", GGAL, consumer="scanner", priority="HOT")
+    assert transport.calls == ["token"]
+    advance(60)
+    data, _ = client.market_read("quote", GGAL, consumer="scanner", priority="HOT")
+    assert data["symbol"] == "GGAL" and transport.calls == ["token", "quote"]
+
+
+def test_iol_gateway_binds_roles_to_separate_processes_and_rejects_stale_generation(iol_gateway):
+    server, client, transport, _ = iol_gateway
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_UNREGISTERED_CLIENT"):
+        client.market_read("quote", GGAL, consumer="scanner", priority="HOT")
+    register(client, "scanner")
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_IDENTITY_SCOPE_DENIED"):
+        client.market_read("quote", (*GGAL[:4], "INMEDIATA"), consumer="scanner", priority="HOT")
+    stale = {"op": "iol_market_read", "consumer": "scanner", "endpoint": "quote",
+             "identity": list(GGAL), "priority": "HOT", "session_generation": "0" * 64}
+    assert client._request(stale, require_owner_identity=True)["state"] == "IOL_GATEWAY_OWNER_CHANGED"
+    assert client._request({"op": "submit_order"}, require_owner_identity=True)["state"] == "IOL_GATEWAY_REQUEST_DENIED"
+    assert transport.calls == []
+    # The foreign process uses the same Unix UID. Only its registered PID/birth
+    # tick can use the EXIT role, and it cannot request a last trade for EXIT.
+    child_code = """import json, sys
+from pathlib import Path
+from rc6_iol_market_gateway import IOLGatewayClient
+from iol_rest_readonly_rc6 import IOLRestError
+run_socket, identity = json.loads(sys.stdin.readline())
+if run_socket:
+    client = IOLGatewayClient(socket_path=Path(sys.argv[1]), timeout_seconds=5)
+    client.owner_status()
+    failures = []
+    for role, priority in (("scanner", "HOT"), ("exit_reader", "EXIT_CRITICAL")):
+        try:
+            client.market_read("quote", identity, consumer=role, priority=priority)
+        except IOLRestError as error:
+            failures.append(str(error))
+    payload, _ = client.market_read("depth", identity, consumer="exit_reader", priority="EXIT_CRITICAL")
+    print(json.dumps([failures, payload["symbol"]]))
+"""
+    with subprocess.Popen([sys.executable, "-B", "-c", child_code, str(server.socket_path)],
+                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as child:
+        register(client, "exit_reader", child.pid)
+        with pytest.raises(IOLRestError, match="IOL_GATEWAY_UNREGISTERED_CLIENT"):
+            client.market_read("depth", GGAL, consumer="exit_reader", priority="EXIT_CRITICAL")
+        if os.environ.get("POROTA_IOL_OFFHOST_IPC") == "1":
+            output, error = child.communicate(json.dumps([True, GGAL]) + "\n", timeout=10)
+            assert child.returncode == 0, error
+            assert json.loads(output) == [
+                ["IOL_GATEWAY_UNREGISTERED_CLIENT", "IOL_GATEWAY_ROLE_SCOPE_DENIED"], "GGAL"]
+        else:
+            for role, priority, state in [
+                    ("scanner", "HOT", "IOL_GATEWAY_UNREGISTERED_CLIENT"),
+                    ("exit_reader", "EXIT_CRITICAL", "IOL_GATEWAY_ROLE_SCOPE_DENIED")]:
+                packet = stale | {"consumer": role, "priority": priority,
+                                  "session_generation": client._pinned_owner[1]}
+                assert server.dispatch(packet, peer_pid=child.pid)["state"] == state
+            packet = packet | {"endpoint": "depth"}
+            assert server.dispatch(packet, peer_pid=child.pid)["payload"]["symbol"] == "GGAL"
+            child.communicate(json.dumps([False, GGAL]) + "\n", timeout=10)
+    assert transport.calls == ["token", "depth"]
+
+
+def test_iol_book_selects_best_prices_and_rejects_ambiguous_best_size(tmp_path):
+    market, transport = reader(tmp_path)
+    depth = {"bids": [{"price": 98, "size": 4}, {"price": 99, "size": 5}],
+             "asks": [{"price": 103, "size": 6}, {"price": 101, "size": 7}]}
+    transport.overrides["depth"] = depth
+    quote = market.observe(GGAL).quote
+    assert (quote.bid, quote.bid_size, quote.ask, quote.ask_size) == (99, 5, 101, 7)
+    depth["bids"].append({"price": 99, "size": 1})
+    with pytest.raises(IOLRestError, match="IOL_BOOK_BEST_LEVEL_AMBIGUOUS"):
+        market.observe(GGAL)
 
 
 @pytest.mark.parametrize(("report", "fields", "reason"), [

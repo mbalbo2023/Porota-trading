@@ -1,7 +1,7 @@
 """Observador productivo con paper trading completo y cero capacidad operativa."""
 
 from __future__ import annotations
-from contextlib import closing, contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext, suppress
 from dataclasses import replace
 
 import faulthandler
@@ -402,6 +402,33 @@ def _ppi_native_book_identity(store, symbol, asset_class, settlement, identity=N
     return exact
 
 
+def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catalog_read_error):
+    from bl_candle_engine import record_iol_trade_sample
+    from bs_instrument_contracts import aware_datetime
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+
+    if (not identity or len(identity) != 5
+            or (identity[0], identity[1], identity[4]) != request):
+        raise IOLRestError("IOL_GATEWAY_EXACT_IDENTITY_REQUIRED")
+    metadata = None
+    if not catalog_read_error:
+        metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
+    terms = financial_catalog.quote_terms(metadata, now=aware_datetime(now_iso()))
+    observation = reader.observe(identity, contract=terms.get("contract"), priority=priority)
+    reason = ("CATALOG_READ_ERROR" if catalog_read_error else terms["opening_block_reason"])
+    if identity[1] not in EQUITY_FAMILIES:
+        reason = reason or "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
+    if reason:
+        return replace(observation.quote, opening_block_reason=reason)
+    try:
+        record_iol_trade_sample(store, observation, as_of=now_iso())
+    except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
+        with suppress(OSError, sqlite3.Error):
+            store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
+    return observation.quote
+
+
 def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
                         priority="DISCOVERY", identity=None, scanner_primary=None,
                         catalog_read_error=False):
@@ -410,7 +437,13 @@ def _read_scanner_quote(reader, store, symbol, asset_class, settlement, *,
     A missing/ambiguous five-key cannot bind the diagnostic hash; it does not
     authorize retry, new provider requests, BUY or bypass PAPER holds.
     """
+    from rc6_iol_market_gateway import IOLGatewayMarketReader
     from rc6_ppi_gateway_reader_adapter import SharedPPIReaderAdapter
+
+    if isinstance(reader, IOLGatewayMarketReader):
+        return _read_iol_scanner_quote(reader, store, request=(symbol, asset_class, settlement),
+                                       identity=identity, priority=priority,
+                                       catalog_read_error=catalog_read_error)
 
     scope = reader.read_scope(priority=priority, identity=identity) if hasattr(reader, "read_scope") else nullcontext()
     with scope:
