@@ -42,6 +42,8 @@ from bd_ppi_readonly_guard import ppi_rate_limit_headers, ppi_retry_after_second
 from bf_production_paper_observer import _market_phase, _secret
 from bv_paper_runtime import ppi_gateway_lifetime_lease
 from cg_paper_workspace import database_path
+from bs_instrument_contracts import cash_currency
+from rc6_multisource_discovery import canonical_family, canonical_market
 from ppi_client.api.constants import ACCOUNT_LOGIN_API, MARKETDATA_BOOK, MARKETDATA_CURRENT
 from ppi_client.ppi import PPI
 from ppi_client.ppi_api_client import PPIClient
@@ -232,11 +234,22 @@ def direct_pair(rest, keypair, budget, out):
             if not isinstance(body, list):
                 return 'PPI_CATALOGO_RESPUESTA_INVALIDA'
             if endpoint == 'SearchInstrument':
-                exact = sum(1 for item in body if isinstance(item, dict) and
-                            all(str(item.get(key, '')).upper() == expected
-                                for key, expected in (('ticker', ticker), ('type', family),
-                                                      ('market', 'BYMA'), ('currency', 'ARS'))))
-                evidence['data']['exact_matches'] = exact
+                exact = 0
+                currencies = {'ARS': 0, 'OTHER': 0, 'UNKNOWN': 0}
+                for item in body:
+                    if not isinstance(item, dict) or str(item.get('ticker', '')).strip().upper() != ticker:
+                        continue
+                    if (canonical_family(item.get('type')) != family
+                            or canonical_market(item.get('market')) != 'BYMA'):
+                        continue
+                    try:
+                        currency = cash_currency(item.get('currency'))
+                    except ValueError:
+                        currencies['UNKNOWN'] += 1
+                        continue
+                    currencies['ARS' if currency == 'ARS' else 'OTHER'] += 1
+                    exact += currency == 'ARS'
+                evidence['data'].update(exact_matches=exact, matching_ticker_venue_by_currency=currencies)
                 if exact != 1:
                     return 'PPI_CATALOGO_IDENTIDAD_NO_UNICA'
         else:
