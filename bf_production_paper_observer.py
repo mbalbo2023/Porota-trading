@@ -3449,7 +3449,6 @@ def run():
     source_label = "IOL REST" if iol else "PPI Producción"
     auth_component = "IOL_REST_AUTH" if iol else "PPI_PRODUCTION_AUTH"
     market_component = "IOL_REST_MARKETDATA" if iol else "PPI_PRODUCTION_MARKETDATA"
-    connect_gateway = connect_iol_gateway_reader if iol else connect_paper_gateway_reader
     read_error_code = _scanner_iol_error if iol else _scanner_ppi_error
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -3565,7 +3564,10 @@ def run():
                                 ppi_auth="NOT_ATTEMPTED",
                                 heartbeat_at=now_iso(), real_orders_sent=0,
                                 detail="Arranque: comprobando PID/generación del propietario.")
-                    reader = connect_gateway(store.path, consumer="scanner")
+                    if iol:
+                        reader = connect_iol_gateway_reader(store.path, consumer="scanner")
+                    else:
+                        reader = connect_paper_gateway_reader(store.path, consumer="scanner")
                     store.event("IOL_GATEWAY_ATTACHED" if iol else "PPI_GATEWAY_ATTACHED",
                                 "consumer=scanner;no_sdk_login")
                     _health(store, auth_component, "AMARILLO" if iol else "VERDE",
