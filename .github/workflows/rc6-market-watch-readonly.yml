@@ -1,4 +1,4 @@
-name: RC6 A667 release CI diagnostic
+name: RC6 A667 governed shard diagnostic
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -11,19 +11,25 @@ jobs:
       github.repository == 'mbalbo2023/Porota-trading' &&
       github.actor == 'mbalbo2023'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: 90099ddf2399a59c544214d9138ea2f193c235cb
           persist-credentials: false
           fetch-depth: 0
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           load: true
           tags: porota-a667-debug:exact-source
+          build-args: |
+            POROTA_BUILD_SHA=90099ddf2399a59c544214d9138ea2f193c235cb
+            POROTA_CANDIDATE_TREE_SHA=69de3030b0e61b8462df3d1573350c0638ee0604
+          labels: |
+            porota.commit=90099ddf2399a59c544214d9138ea2f193c235cb
+            porota.predeploy=v2
           cache-from: type=gha,scope=porota-rc6-predeploy-v2
       - name: Classify the failing synthetic ledger read
         shell: bash
@@ -49,6 +55,10 @@ jobs:
           ROOT = Path("/app")
           TARGET = "test_material_changed_between_lease_acquire_and_start_revokes_send"
 
+          def trace(label, value):
+              with open(os.environ["POROTA_A667_TRACE"], "a", encoding="utf-8") as f:
+                  f.write(label + "=" + json.dumps(value) + "\n")
+
           @pytest.hookimpl(hookwrapper=True)
           def pytest_runtest_call(item):
               if TARGET not in item.nodeid:
@@ -63,17 +73,17 @@ jobs:
                   try:
                       with before(*args, **kwargs) as connection:
                           yield connection
-                  except (OSError, ValueError, RuntimeError) as exc:
+                  except Exception as exc:
                       value = exc.args[0] if len(exc.args) == 1 else ""
                       reason = value if isinstance(value, str) and re.fullmatch(r"[A-Z_]{4,90}", value) else "UNCLASSIFIED"
-                      print("A667_SNAPSHOT_FAILURE=" + json.dumps({
+                      trace("A667_SNAPSHOT_FAILURE", {
                           "reason": reason, "type": type(exc).__name__,
                           "elapsed_ms": round((time.monotonic() - start)*1000, 2),
                           "errno": getattr(exc, "errno", None),
-                      }), flush=True)
+                      })
                       raise
                   else:
-                      print("A667_SNAPSHOT_PASS_MS=" + str(round((time.monotonic() - start)*1000, 2)), flush=True)
+                      trace("A667_SNAPSHOT_PASS_MS", round((time.monotonic() - start)*1000, 2))
 
               budget._ledger_snapshot = snapshot
               try:
@@ -83,43 +93,56 @@ jobs:
 
           def pytest_runtest_logreport(report):
               if report.when == "call" and TARGET in report.nodeid:
-                  print("A667_TARGET=" + report.outcome, flush=True)
+                  trace("A667_TARGET", report.outcome)
 
           def main():
               sys.path.insert(0, str(ROOT))
-              from scripts import rc6_ci_parallel_runner as runner, rc6_ci_shard_quorum as shards
+              from scripts import porota_ci, rc6_ci_parallel_runner as runner, rc6_ci_shard_quorum as shards
               env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                          PYTHONPATH="/tmp:/app", RC6_CI_IDENTITY_PROOF="1",
                          RC6_CI_SOURCE_SHA="90099ddf2399a59c544214d9138ea2f193c235cb",
-                         RC6_CI_SOURCE_TREE_SHA="69de3030b0e61b8462df3d1573350c0638ee0604")
+                         RC6_CI_SOURCE_TREE_SHA="69de3030b0e61b8462df3d1573350c0638ee0604", RUNNER_TEMP="/var/tmp")
               for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS", "RC6_CI_MODULE_TRACE"):
                   env.pop(key, None)
               python = sys.executable
               plugin = ["-p", "scripts.rc6_ci_pytest_identity", "-p", "no:cacheprovider"]
               with tempfile.TemporaryDirectory(prefix="rc6-ci-parallel-", dir="/var/tmp") as scratch:
                   folder = Path(scratch)
+                  trace_path = folder / "a667-capture.jsonl"
                   manifest = folder / "collected.json"
                   env["RC6_CI_MANIFEST_PATH"] = str(manifest)
                   result = subprocess.run([python, "-m", "pytest", *plugin, "--collect-only", "-q",
-                                           *runner._test_args(ROOT)],
-                                          cwd=ROOT, env=env, capture_output=True, text=True)
+                                           *runner._test_args(ROOT)], cwd=ROOT, env=env,
+                                          capture_output=True, text=True)
                   if result.returncode:
                       return result.returncode
-                  groups = shards.partition(json.loads(manifest.read_text()), 16)
-                  group = next(group for group in groups if any(TARGET in item for item in group))
-                  shard = folder / "shard-6"
-                  shard.mkdir(mode=0o700)
-                  env["RC6_CI_MANIFEST_PATH"] = str(shard / "executed.json")
-                  print("A667_SHARD_CASES=" + str(len(group)))
-                  result = subprocess.run([python, "-m", "pytest", *plugin, "-p", "porota_a667_trace",
-                      "-s", "-q", "-o", "xfail_strict=true", "--maxfail=1",
-                      f"--basetemp={shard/'basetemp'}", "--", *group],
-                      cwd=ROOT, env=env, capture_output=True, text=True)
-                  for line in result.stdout.splitlines():
-                      match = re.search(r"A667_(?:SNAPSHOT_FAILURE|SNAPSHOT_PASS_MS|TARGET)=.*$", line)
-                      if match:
-                          print(match.group())
-                  print("A667_SHARD_EXIT=" + str(result.returncode))
+                  _, retired = porota_ci._policy(ROOT)
+                  original = shards._validate_manifest(json.loads(manifest.read_text()))
+                  selected = [node for node in original["nodeids"] if node.split("[", 1)[0] not in retired]
+                  groups = shards.partition(shards.manifest("90099ddf2399a59c544214d9138ea2f193c235cb", "69de3030b0e61b8462df3d1573350c0638ee0604", selected), 16)
+                  target_index = next(i for i, group in enumerate(groups) if any(TARGET in node for node in group))
+                  print(f"A667_GOVERNED_SHARD={target_index};cases={len(groups[target_index])};retired={len(original['nodeids'])-len(selected)}", flush=True)
+                  for index, group in enumerate(groups[:target_index + 1]):
+                      shard = folder / f"shard-{index}"
+                      shard.mkdir(mode=0o700)
+                      child_env = dict(env, RC6_CI_MANIFEST_PATH=str(shard / "executed.json"),
+                                       RC6_CI_MODULE_TRACE="1", RC6_CI_INTERNAL_ERROR_PATH=str(shard / "internalerror.json"),
+                                       RC6_CI_FAILURE_PATH=str(shard / "first-failure.json"))
+                      trace_plugin = []
+                      if index == target_index:
+                          child_env["POROTA_A667_TRACE"] = str(trace_path)
+                          trace_plugin = ["-p", "porota_a667_trace"]
+                      result = subprocess.run([python, "-m", "pytest", *plugin, *trace_plugin, "-q",
+                          "-o", "xfail_strict=true", f"--junitxml={shard/'junit.xml'}",
+                          f"--basetemp={shard/'basetemp'}", "--", *group],
+                          cwd=ROOT, env=child_env, capture_output=True, text=True)
+                      print(f"A667_SHARD_EXIT={index}:{result.returncode}", flush=True)
+                      if trace_path.is_file():
+                          for line in trace_path.read_text(encoding="utf-8").splitlines():
+                              if re.fullmatch(r"A667_[A-Z_]+=[\x20-\x7e]{1,300}", line):
+                                  print(line)
+                      if result.returncode:
+                          break
                   return 0
 
           if __name__ == "__main__":
