@@ -38,7 +38,6 @@ from rc6_ppi_global_budget import (
     PAPER_DIRECT_WIRE_BACKPRESSURE,
     assert_native_ppi_response_identity, native_ppi_response_settlement,
 )
-from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS
 from rc6_paper_admission_gate import paper_admission_guard
 from rc6_scanner_login_interlock import ScannerLoginInterlock
 from rc6_scanner_storage_guard import scanner_with_storage_quarantine
@@ -1539,6 +1538,8 @@ def _observe_native_candidate(reader, store, key, *, command_id=None, pre_wire=N
                         f"response_settlement_literal={settlement_literal};"
                         f"wire_sha256={receipt['raw_body_sha256']};paper_ready=false")
             if endpoint == "current" and confirm_settlement and len(endpoints) == 2:
+                from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS
+
                 try:
                     trade_at = datetime.fromisoformat(native_time.replace("Z", "+00:00"))
                     age = (datetime.fromisoformat(now_iso()) - trade_at).total_seconds()

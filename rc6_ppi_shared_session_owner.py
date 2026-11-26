@@ -28,13 +28,11 @@ from typing import Any, Callable
 
 from rc6_ppi_shared_feed import (
     NATIVE_ACQUIRE_SCHEMA,
-    NativeBookClockRejected,
     _canonical_bytes,
     PPIReadOnlyNativeReceiptStore,
     PPISharedMarketFeed,
     ReadOnlyUnixFeedServer,
 )
-from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS, SPOT_SCANNER_FAMILIES
 from rc6_ppi_shared_producer import PPISharedSDKProducer
 from rc6_ppi_shared_rest_producer import MarketOnlyRESTProducer
 from bd_ppi_readonly_guard import MARKET_CONFIGURATION_FIELDS
@@ -670,6 +668,8 @@ class PPISharedSessionOwner:
                     **({"observed_book_max_age": observed_book_max_age}
                        if observed_book_max_age is not None else {}))
             except Exception as exc:
+                from rc6_ppi_shared_feed import NativeBookClockRejected
+
                 clock_error = exc if isinstance(exc, NativeBookClockRejected) else exc.__cause__
                 if isinstance(clock_error, NativeBookClockRejected):
                     self._native_book_clock_rejection = clock_error.evidence
@@ -725,12 +725,15 @@ class PPISharedSessionOwner:
                 raise SessionOwnerBlocked("PPI_NATIVE_DEMAND_IDENTITY_DENIED")
             # Spot scanning can validate an observed Book against its existing
             # horizon. EXIT, PIT acquisition and other families keep the native TTL.
-            observe_spot_book = (consumer == "scanner" and method == "book"
-                                 and identity[1] in SPOT_SCANNER_FAMILIES
-                                 and priority != "OPENED_CRITICAL")
+            observed_book_max_age = None
+            if consumer == "scanner" and method == "book" and priority != "OPENED_CRITICAL":
+                from rc6_ppi_native_request_receipt import SETTLEMENT_PAIR_MAX_SECONDS, SPOT_SCANNER_FAMILIES
+
+                if identity[1] in SPOT_SCANNER_FAMILIES:
+                    observed_book_max_age = SETTLEMENT_PAIR_MAX_SECONDS
             response = self.capture_native(method, identity, priority=priority,
-                **({"observed_book_max_age": SETTLEMENT_PAIR_MAX_SECONDS}
-                   if observe_spot_book else {}))
+                **({"observed_book_max_age": observed_book_max_age}
+                   if observed_book_max_age is not None else {}))
             proof = None
             caucion_book = (method == "book" and identity[1] == "CAUCIONES" and priority == "WARM")
             if (self._settlement_signer is not None and consumer == "scanner"
