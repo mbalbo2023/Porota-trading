@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 preopen Current Book y causas por clave sin tocar la sesión PPI
+run-name: RC6 apertura PAPER trazabilidad Current Book API Gateway motores
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -39,7 +39,7 @@ jobs:
           printf '%s\n' "$DO_KNOWN" > "$probe_dir/hosts"
           ssh -F /dev/null -i "$probe_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$probe_dir/hosts" \
-            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 15 bash -s' <<'HOST'
+            -o ConnectTimeout=10 "$DO_USER@$DO_HOST" 'timeout 105 bash -s' <<'HOST'
           set -Eeuo pipefail
           test "$(id -u)" = 1000 && test "$(id -un)" = porotaadmin
           docker=(docker -H unix:///run/user/1000/porota-rc6-docker.sock)
@@ -50,6 +50,7 @@ jobs:
           from collections import Counter
           from contextlib import closing
           from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
           import json
           import re
           import sqlite3
@@ -66,6 +67,10 @@ jobs:
           
           
           path = database_path()
+          local=datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+          delay=(local.replace(hour=10,minute=31,second=5,microsecond=0)-local).total_seconds()
+          if 0 < delay <= 85:
+              time.sleep(delay)
           at = datetime.now(timezone.utc).isoformat()
           result = {"at":at}
           try:
@@ -113,7 +118,8 @@ jobs:
               for kind in ("CATALOG_CONFIGURATION_UNAVAILABLE","CATALOG_DISCOVERY_DEFERRED",
                            "PPI_GATEWAY_OWNER_OPEN","PPI_GATEWAY_HOLD","PPI_GATEWAY_AUTH_REFRESH",
                            "PPI_DIRECT_REST_PROBE_HOLD","PPI_NATIVE_SETTLEMENT_ATTESTED",
-                           "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS"):
+                           "PPI_DIRECT_REST_NATIVE_WIRE_WITNESS","PPI_GATEWAY_REATTACH_REQUIRED",
+                           "DATA_ERROR","DATA_REJECTED"):
                   rows=db.execute("""SELECT event_at,detail FROM paper_events WHERE event_type=?
                                 AND julianday(event_at)>=julianday(?, '-45 minutes')
                                 ORDER BY julianday(event_at) DESC LIMIT 8""",(kind,at)).fetchall()
@@ -124,8 +130,25 @@ jobs:
                           if match:
                               valid.append((seen,*match.groups()))
                       result["events"][kind]=valid
+                  elif kind in ("DATA_ERROR","DATA_REJECTED"):
+                      result["events"][kind]=[(seen,text) for seen,text in rows
+                             if re.fullmatch(r"[A-Z0-9./_+ -]{1,36}: [A-Z0-9_]{1,110}", text)]
                   else:
                       result["events"][kind]=[(seen, detail(text)) for seen,text in rows]
+              result["health"]={}
+              for name,state,checked,success,info in db.execute("""SELECT component,state,checked_at,
+                     last_success_at,detail FROM api_health WHERE component IN
+                     ('PPI_PRODUCTION_MARKETDATA','PPI_DIRECT_REST_RECOVERY','PPI_PRODUCTION_CATALOG',
+                      'PPI_PRODUCTION_HISTORY','PPI_BACKGROUND_INGEST')"""):
+                  summary=detail(info)
+                  if name=="PPI_PRODUCTION_MARKETDATA":
+                      summary=info if re.fullmatch(r"[0-9A-Za-z_ /áéíóú.]{1,135}",info) else None
+                  result["health"][name]=(state,checked,success,summary)
+              result["latest_quotes"]={}
+              for ticker in result["samples"]:
+                  result["latest_quotes"][ticker]=db.execute("""SELECT source,asset_class,settlement,
+                       observed_at,trade_at,book_at FROM market_snapshots WHERE symbol=? ORDER BY id DESC LIMIT 2""",
+                       (ticker,)).fetchall()
               result["gateway_http_audit"]={}
               cutoff=db.execute("SELECT COALESCE(MAX(id),0)-4000 FROM http_audit").fetchone()[0]
               allowed={"/api/1.0/marketdata/current","/api/1.0/marketdata/book","/api/1.0/configuration/instrumenttypes"}
@@ -143,6 +166,6 @@ jobs:
                   "exit":db.execute("SELECT heartbeat_at,state FROM paper_exit_reader_state WHERE id=1").fetchone(),
               }
           
-          print("RC6_PREOPEN_CURRENT_BOOK="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
+          print("RC6_OPEN_CURRENT_BOOK="+json.dumps(result,separators=(",",":"),ensure_ascii=True))
           PY
           HOST
