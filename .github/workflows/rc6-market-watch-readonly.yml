@@ -1,5 +1,5 @@
 name: RC6 contratos exactos READ_ONLY
-run-name: RC6 verificar interlock antes de la preapertura y recibos por familia
+run-name: RC6 errores de catálogo y recibos API por las once familias
 on:
   push:
     branches: [audit/rc6-caucion-hold-readonly-20261125]
@@ -86,7 +86,7 @@ jobs:
                       item.update(indices_listed="INDICES" in allowed, fci_listed="FCI" in allowed)
                   result["latest_complete_config"][name] = item
               result["family_runs"] = {}
-              for family in ("INDICES","FCI","CAUCIONES","FUTUROS"):
+              for family in ("ACCIONES","CEDEARS","ETFS","BONOS","LETRAS","OBLIGACIONES","OPCIONES","FUTUROS","CAUCIONES","FCI","INDICES"):
                   row = db.execute("""SELECT run_id, declared, queries, observed_count, ready_paper_count,
                                        discovery_status, checked_at
                                     FROM catalog_family_coverage WHERE instrument_type=?""", (family,)).fetchone()
