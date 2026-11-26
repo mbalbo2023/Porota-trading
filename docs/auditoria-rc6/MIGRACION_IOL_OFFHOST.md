@@ -2,6 +2,11 @@
 
 **Migración PROPUESTA · Integración aislada EN PRUEBAS · 26/11/2026 ART**
 
+Para ejecutar el reemplazo, seguir el [handoff paso a paso](HANDOFF_IOL_PRIMARIO_2026-11-26.md)
+y el [checkpoint con estado, RCA y lecciones](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
+El objetivo operativo de RC6 incluye retirar el acceso a PPI como alternativa.
+Este documento preserva el trabajo y las limitaciones del entorno aislado.
+
 La [matriz de migración para rueda](MATRIZ_MIGRACION_RUEDA.md) reúne el inventario operativo, el semáforo y la acción de cierre de cada componente.
 
 El objetivo es que RC6 obtenga de IOL sus datos de mercado en vivo y deje de iniciar sesiones, suscripciones y consultas a PPI. Se mantienen el modo PAPER/SHADOW, los guardas de admisión por instrumento, el broker simulado y la operación independiente de PPI Watch. El cambio termina con un único Deploy V2 del candidato integrado. La línea base de código es el producto `a6cc6e3` y el SHA físico acreditado `414771d` de #212. [Recibo de #212](https://github.com/mbalbo2023/Porota-trading/actions/runs/45871190344/artifacts/15143505124)
@@ -11,6 +16,8 @@ El objetivo es que RC6 obtenga de IOL sus datos de mercado en vivo y deje de ini
 El estudio del 25/11 acredita IOL REST como fuente de referencia. Hay autenticación física, cotización de GGAL, fichas de GD30 y YMCJO, cadena de opciones de GGAL y plazos de caución. El recolector de la rueda del 24/11 completó 1.812 consultas, obtuvo reloj del proveedor en 706 y registró cero cotizaciones frescas dentro de 120 segundos. La muestra de profundidad de GGAL y cauciones tomada en feriado estaba vacía. En #212 se verificó la referencia GD30 con el cliente actual. Estos cortes sirven como controles para calificar la rueda y la cuenta actuales. [Estudio del backlog](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7165552784) · [Pruebas REST en el Droplet](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7106189412) · [IOL REST desplegado](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7108327492)
 
 El censo #530 observó 17.483 registros de catálogo y un elegible en `BONOS`. El campo `readiness.ready` de ese recibo suma elegibilidad de catálogo. El READY de apertura por familia queda **NO_VERIFICADO** para ese corte. La prueba de IOL debe medir equivalencia, dato fresco, admisión y ciclo PAPER reproducible por separado. [Censo #530](https://github.com/mbalbo2023/Porota-trading/actions/runs/45872015091/artifacts/15142279321)
+
+El censo final #541 verificó 17.583 claves, tres Bonos elegibles de catálogo y cero aperturas del ledger general. El recibo #212 acredita la revalidación intradiaria del GO. El T−10 del release anterior sigue visible como evidencia histórica. El [checkpoint del corte IOL](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md) documenta cómo conciliar los dos recibos y los respectivos criterios de confianza.
 
 ## Arquitectura
 

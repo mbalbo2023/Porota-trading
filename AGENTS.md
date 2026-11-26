@@ -1,8 +1,25 @@
 # Porota Trading RC6 — instrucciones para agentes
 
-## Aislamiento obligatorio de la migración IOL
+## Entrada para el reemplazo de PPI por IOL
 
-- Este candidato se desarrolla y prueba fuera del Droplet. Usar la rama de
+- Retomar desde el [handoff ejecutable del 26/11](docs/auditoria-rc6/HANDOFF_IOL_PRIMARIO_2026-11-26.md)
+  y el [checkpoint con RCA y lecciones](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
+  Acreditar el HEAD, ownership, estado instalado y pruebas ya hechas antes de
+  implementar. Converger en un candidato y una única promoción bajo el control
+  de operador vigente.
+- El objetivo del reemplazo es IOL REST primario y cero accesos operativos de
+  RC6 a la API de PPI. Retirar PPI también como alternativa. Preservar bases,
+  versiones y procedencia históricas, autoridades especializadas acreditadas y
+  la operación independiente de PPI Watch.
+- Después de instalar el candidato autorizado, repetir en el Droplet el
+  backtesting integral con el digest instalado, datos de replay aislados,
+  todas las familias PAPER, los workers, timers y servicios efectivos.
+  Comprobar infraestructura y dashboard real con Playwright. Cerrar con los
+  recibos de runtime y `real_orders_sent=0`.
+
+## Aislamiento obligatorio del comparador #1287
+
+- El candidato etiquetado OFFHOST se desarrolla y prueba fuera del Droplet. Usar la rama de
   testing, runner GitHub hospedado, contenedores sin red y bases temporales.
 - El marcador `ops/policy/rc6-iol-testing-only.json` veta Predeploy V2, el
   paquete de release y Promote V2. La publicación se limita a evidencia de
@@ -88,8 +105,11 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 
 ## Datos y resultados
 
-- PPI es autoridad primaria de identidad; IOL/BYMA/A3/ROFEX complementan con
-  evidencia. No sobrescribir identidad PPI ni escoger identidades ambiguas.
+- Acreditar la autoridad de identidad del perfil activo por clave exacta y
+  período de vigencia. El baseline del reemplazo usa identidad PPI. En el
+  corte IOL se exige equivalencia IOL o de fuente especializada acreditada.
+  Preservar las versiones de identidad ya publicadas y mantener HOLD en
+  variantes ambiguas.
 - Readiness es por instrumento y fail-closed. `ALL_CONTRACT_FAMILIES` no significa
   todos READY; CI verde, más operaciones o un replay rentable no prueban edge.
 - Cambios de estrategia conservan baseline, causalidad temporal y costos;
