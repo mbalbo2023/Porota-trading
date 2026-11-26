@@ -1058,6 +1058,39 @@ def _catalog_readiness(db):
     return {"total": total, "ready": ready, "by_family": by_family}
 
 
+def _dedicated_family_activity(db, tables, at):
+    """Read the ledgers that do not go through paper_positions."""
+    start = at.astimezone(ART).replace(hour=0, minute=0, second=0, microsecond=0)
+    window = (start.isoformat(), at.isoformat())
+    result = {"day_ar": start.date().isoformat(), "through_utc": at.isoformat()}
+    queries = (
+        ("fci_events_today", "paper_family_lifecycle_events", """
+          SELECT to_state, count(*) FROM paper_family_lifecycle_events WHERE family='FCI'
+             AND julianday(occurred_at) BETWEEN julianday(?) AND julianday(?) GROUP BY to_state""", window),
+        ("fci_lifecycle", "paper_family_lifecycle", """
+          SELECT state, count(*) FROM paper_family_lifecycle WHERE family='FCI' GROUP BY state""", ()),
+        ("caucion_attempts_today", "paper_caucion_cash_sweep_attempts", """
+          SELECT status, count(*) FROM paper_caucion_cash_sweep_attempts
+             WHERE julianday(evaluated_at) BETWEEN julianday(?) AND julianday(?) GROUP BY status""", window),
+        ("caucion_books_today", "paper_caucion_live_book", """
+          SELECT state, count(*) FROM paper_caucion_live_book WHERE source='PPI_MARKETDATA_BOOK_READONLY'
+             AND julianday(observed_at) BETWEEN julianday(?) AND julianday(?) GROUP BY state""", window),
+    )
+    for label, table, sql, args in queries:
+        result[label] = {"status": "NO_VERIFICADO"}
+        if table not in tables:
+            continue
+        try:
+            counts = {}
+            for state, count in db.execute(sql, args):
+                normalized = state if isinstance(state, str) and re.fullmatch(r"[A-Z0-9_:]{1,110}", state) else "OTHER"
+                counts[normalized] = counts.get(normalized, 0) + count
+            result[label] = {"status": "OBSERVED", "total": sum(counts.values()), "by_state": counts}
+        except sqlite3.Error:
+            continue
+    return result
+
+
 def _db_snapshot(path):
     """Finite SQLite reads only; no full scans, schema changes or writes."""
     uri = "file:" + quote(str(path), safe="/") + "?mode=ro"
@@ -1166,7 +1199,10 @@ def _db_snapshot(path):
                 "ppi_auth_last_attempt": _ppi_auth_last_attempt(db, tables),
                 "ppi_gateway_last_events": _ppi_gateway_last_events(db, tables),
                 "scalping_recent_error_codes": scalping_codes,
-                'paper_open_contracts':activity}
+                'paper_open_contracts':activity,
+                "dedicated_family_activity": _dedicated_family_activity(db, tables, datetime.now(timezone.utc))
+                if (observer.get("mode") == "PRODUCTION_PAPER" and type(observer.get("real_orders_sent")) is int
+                    and observer["real_orders_sent"] == 0) else None}
 
 
 def _performance_recorded_period(path):
