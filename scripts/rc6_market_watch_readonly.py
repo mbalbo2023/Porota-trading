@@ -19,6 +19,7 @@ import pwd
 import re
 import sqlite3
 import stat
+from statistics import median
 import subprocess
 import sys
 import tempfile
@@ -1894,6 +1895,79 @@ def _ppi_intake_reason(value):
     return "UNCLASSIFIED" if value else None
 
 
+def _sample_summary(values):
+    if not values:
+        return {"count": 0}
+    return {"count": len(values), "min": min(values), "median": round(median(values), 2),
+            "max": max(values)}
+
+
+def _ppi_timing_correlations(admissions, reports):
+    """One-to-one log matches, not wire latency or a causal request identifier."""
+    groups = {None: sorted(admissions)}
+    for candidate in groups[None]:
+        groups.setdefault(candidate[1], []).append(candidate)
+    times = {endpoint: [when for when, _ in rows] for endpoint, rows in groups.items()}
+    matches = []
+    for reported, deadline, status, known_endpoint in reports:
+        clocks = times.get(known_endpoint, [])
+        left = bisect_left(clocks, reported - 5)
+        right = bisect_right(clocks, deadline)
+        if right - left == 1:
+            matches.append((groups[known_endpoint][left], reported, status))
+    occurrences = Counter(candidate for candidate, _, _ in matches)
+    values = {}
+    for candidate, reported, status in matches:
+        if occurrences[candidate] == 1:
+            before, endpoint = candidate
+            values.setdefault(status, {}).setdefault(endpoint, []).append(round((reported - before) * 1000, 2))
+    return {status: {endpoint: _sample_summary(sample) for endpoint, sample in routes.items()}
+            for status, routes in values.items()}
+
+
+def _stored_ppi_observations(db, opened, ceiling):
+    """Return only aggregate measurements of previously persisted PAPER data."""
+    out = {}
+    window = (opened.isoformat(), ceiling.isoformat())
+    try:
+        rows = db.execute("""SELECT symbol.latency_ms FROM symbol_cycle_metrics AS symbol
+            JOIN universe_cycle_metrics AS cycle ON cycle.started_at=symbol.cycle_started_at
+            WHERE julianday(cycle.started_at)>=julianday(?) AND julianday(cycle.finished_at)<julianday(?)
+            AND cycle.selected_count=cycle.successful_count AND cycle.successful_count>0
+            AND cycle.failed_count=0 ORDER BY symbol.id LIMIT 10001""", window).fetchall()
+        if len(rows) <= 10000:
+            out["completed_scanner_turn_ms"] = _sample_summary(
+                [v for (v,) in rows if type(v) in (int, float) and 0 <= v <= 600000])
+    except sqlite3.OperationalError:
+        pass
+    try:
+        rows = db.execute("""SELECT substr(ppi_native_rest_book,1,131073) FROM market_snapshots
+            WHERE source='PRODUCTION_PAPER' AND ppi_native_rest_book IS NOT NULL
+            AND julianday(observed_at)>=julianday(?) AND julianday(observed_at)<julianday(?)
+            ORDER BY id LIMIT 257""", window).fetchall()
+        values = []
+        for (serialized,) in rows:
+            if not isinstance(serialized, str) or len(serialized) > 131072:
+                continue
+            try:
+                entry = json.loads(serialized)
+                body = entry.get("raw_payload") if isinstance(entry, dict) else None
+                if not isinstance(body, dict) or not all(
+                        isinstance(body.get(name), list) for name in ("bids", "offers")):
+                    continue
+                canonical = json.dumps(body, sort_keys=True, separators=(",", ":"),
+                                       ensure_ascii=False, allow_nan=False).encode("utf-8")
+            except (ValueError, TypeError, RecursionError):
+                continue
+            if len(canonical) <= 65536 and hashlib.sha256(canonical).hexdigest() == entry.get("raw_sha256"):
+                values.append(len(canonical))
+        if len(rows) <= 256:
+            out["persisted_book_canonical_bytes"] = _sample_summary(values)
+    except sqlite3.OperationalError:
+        pass
+    return out
+
+
 def _ppi_wheel_traffic(path, *, at=None):
     """Second-by-second audit and response witnesses in the regular ART session."""
     seen_at = (at or now_utc()).astimezone(ART)
@@ -1907,6 +1981,7 @@ def _ppi_wheel_traffic(path, *, at=None):
         return result
     per_second, endpoints, origins, hours = {}, {}, Counter(), {}
     response_429, allowed_times, owner_events, cycle_clocks = [], [], [], []
+    requests, responses, ggal = [], [], {}
     limit = 20001
     oldest = None
     complete = True
@@ -1942,6 +2017,8 @@ def _ppi_wheel_traffic(path, *, at=None):
                 endpoints.setdefault(endpoint, Counter())[field] += 1
                 if field == "admitted":
                     allowed_times.append(seen.timestamp())
+                    if endpoint in {"GET:current", "GET:book", "GET:intraday"}:
+                        requests.append((seen.timestamp(), endpoint[4:]))
             complete = len(audit) < limit or (oldest is not None and oldest <= opened)
 
             event_kinds = {
@@ -1970,6 +2047,13 @@ def _ppi_wheel_traffic(path, *, at=None):
                                 and endpoint in _PPI_OBSERVATION_ENDPOINTS and fields.get("http_status") == "200"):
                             tally(received, "native_200")
                             endpoints.setdefault("GET:" + endpoint, Counter())["native_200"] += 1
+                            reported = seen.timestamp()
+                            responses.append((reported, min(reported, received.timestamp() + 1), "200", endpoint))
+                            identity = (fields.get("identity5") or "").split(":")
+                            if (len(identity) == 5 and identity[0] == "GGAL"
+                                    and all(re.fullmatch(r"[A-Z0-9_.-]{1,30}", part) for part in identity)):
+                                ggal[endpoint] = {"identity": [identity[0], identity[1], identity[4]],
+                                                  "received_at_art": received.astimezone(ART).isoformat()}
                         continue
                     code = detail.split(": ", 1)[-1].split(";", 1)[0]
                     if opened <= seen < ceiling and code in {
@@ -1977,6 +2061,9 @@ def _ppi_wheel_traffic(path, *, at=None):
                         tally(seen, "provider_429")
                         origins[origin] += 1
                         response_429.append((seen, origin))
+                        if code == "PPI_NATIVE_HTTP_429":
+                            reported = seen.timestamp()
+                            responses.append((reported, reported, "429", None))
 
             # Availability of the previous reader and changes after close matter
             # when reconciling the independently archived scanner counters.
@@ -1997,6 +2084,9 @@ def _ppi_wheel_traffic(path, *, at=None):
                 if parsed is not None:
                     cycle_clocks.append(parsed.astimezone(ART).isoformat())
             saved = db.execute("SELECT http_allowed FROM observer_state WHERE id=1").fetchone()
+            # If an optional table cannot be read, retain the wheel and exact
+            # response witnesses already collected under their original budget.
+            stored_observations = _stored_ppi_observations(db, opened, ceiling)
     except (OSError, sqlite3.Error):
         return result
 
@@ -2028,6 +2118,14 @@ def _ppi_wheel_traffic(path, *, at=None):
             "admitted_per_second_average": round(totals["admitted"] / seconds, 6),
             "seconds_with_admissions": sum(row[1] > 0 for row in per_second_rows),
             "native_total_sends_status": "NO_VERIFICADO_NO_CONTINUOUS_WIRE_COUNTER",
+            "response_timing": {
+                "method": "UNIQUE_LOG_CORRELATION_WITHIN_5S",
+                "interval": "PREWIRE_AUDIT_TO_RESULT_EVENT",
+                "elapsed_ms_by_status_route": _ppi_timing_correlations(requests, responses),
+                "result_events_considered": dict(Counter(report[2] for report in responses)),
+                "latest_ggal_http_200": ggal,
+                **stored_observations,
+            },
             "gateway_owner_events": sorted(owner_events),
             "scanner_cycles_finished_at": cycle_clocks,
             "last_scanner_saved_send_counter": saved[0] if saved and type(saved[0]) is int else None}

@@ -589,6 +589,24 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(records[1], "2026-11-26T10:30:00-03:00,3,1,0,1,0")
         self.assertEqual(records[-1], "2026-11-26T16:59:59-03:00,1,0,0,0,0")
 
+    def test_ppi_timing_requires_one_precise_candidate_per_result(self):
+        admissions = [(10.1, "current"), (11.1, "book"), (20.1, "intraday"),
+                      (30.1, "book"), (40.0, "current"), (40.1, "current")]
+        events = [(10.3, 10.3, "200", "current"),
+                  (11.6, 11.6, "200", "book"),
+                  (20.4, 20.4, "429", None),
+                  (30.25, 30.25, "200", "book"),
+                  (30.4, 30.4, "429", None),  # collides with Book above
+                  (40.5, 40.5, "429", None),  # two admissions
+                  (60.0, 59.0, "200", "book")]
+        self.assertEqual(monitor._ppi_timing_correlations(admissions, events), {
+            "200": {
+                "current": {"count": 1, "min": 200.0, "median": 200.0, "max": 200.0},
+                "book": {"count": 1, "min": 500.0, "median": 500.0, "max": 500.0},
+            },
+            "429": {"intraday": {"count": 1, "min": 300.0, "median": 300.0, "max": 300.0}},
+        })
+
     def test_wire_sampling_uses_verified_counter_deltas_and_actual_monotonic_intervals(self):
         raw = {"started_at": NOW.isoformat(), "samples": [[0, 10], [10**9, 12], [2 * 10**9, 13]]}
         observed = monitor._gateway_wire_counter_window(raw)
