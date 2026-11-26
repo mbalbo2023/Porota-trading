@@ -34,6 +34,7 @@ from rc6_ppi_shared_session_owner import (
 from rc6_shadow_runtime.entry_signals import evaluate_runtime_entry_signals
 from rc6_shadow_runtime.funnel import evaluate_runtime_funnel
 from tests.test_rc6_a680_ppi_guard_wire_receipt import FakeBudget
+from tests.test_rc6_etf_cost_cycle import synthetic_terms
 from tests.test_rc6_ppi_native_request_receipt import PARTS, RELEASE, pin
 
 
@@ -125,13 +126,14 @@ def _preopen(tmp_path, monkeypatch):
     assert admission.admission_status() == (True, "")
 
 
-@pytest.mark.parametrize(("ticker", "family", "market", "term", "trade_age", "book_age"), [
-    *(pytest.param(*case, 0, 0, id=case[1]) for case in CASES),
-    pytest.param(*CASES[0], 45, 45, id="GGAL_SPOT_CLOCKS_OUTSIDE_CACHE"),
-    pytest.param(*CASES[0], 121, 0, id="GGAL_STALE_CURRENT_DOES_NOT_REQUEST_BOOK"),
+@pytest.mark.parametrize(("ticker", "family", "market", "term", "trade_age", "book_age", "test_fees"), [
+    *(pytest.param(*case, 0, 0, False, id=case[1]) for case in CASES),
+    pytest.param(*CASES[0], 45, 45, False, id="GGAL_SPOT_CLOCKS_OUTSIDE_CACHE"),
+    pytest.param(*CASES[0], 121, 0, False, id="GGAL_STALE_CURRENT_DOES_NOT_REQUEST_BOOK"),
+    pytest.param("MERV", "ETFS", "BYMA", "A-24HS", 0, 0, True, id="MERV_TEST_FEE_CYCLE"),
 ])
 def test_one_instrument_per_family_through_gateway_and_engine(
-        tmp_path, monkeypatch, gateway_socket, ticker, family, market, term, trade_age, book_age):
+        tmp_path, monkeypatch, gateway_socket, ticker, family, market, term, trade_age, book_age, test_fees):
     key = (ticker, family, market, "ARS", term)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
@@ -288,6 +290,19 @@ def test_one_instrument_per_family_through_gateway_and_engine(
             + ",".join((*key, "TEST_SECTOR", "REVIEWED_FIXTURE", "RC6_TEST", "2026-09-10", "true")) + "\n")
         monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sector_map))
         monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+        if test_fees:
+            from rc6_performance import costs
+
+            reviewed_test_policy = synthetic_terms()
+            exact_cost = costs.paper_cost_contract
+
+            def test_fee_contract(family, currency, decision_at, **identity):
+                if (family, currency, identity.get("symbol"), identity.get("market"),
+                        identity.get("settlement")) == ("ETFS", "ARS", "MERV", "BYMA", "A-24HS"):
+                    return reviewed_test_policy
+                return exact_cost(family, currency, decision_at, **identity)
+
+            monkeypatch.setattr(costs, "paper_cost_contract", test_fee_contract)
         policy = PaperSessionPolicy()
         broker = PaperBroker(store, clock_fn=lambda: ReplayClock.value.isoformat(), ai_mode="OFF",
                              economics_mode="SHADOW", admission_guard=admission.paper_admission_guard,
@@ -318,7 +333,7 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         with store.connect() as db:
             decisions = db.execute("SELECT action,reason FROM paper_decisions").fetchall()
             gates = db.execute("SELECT final_result,reason FROM trade_gate_evaluations").fetchall()
-        if family == "ETFS":
+        if family == "ETFS" and not test_fees:
             assert len(decisions) == 1 and decisions[0][0] == "BUY"
             assert [tuple(row) for row in gates] == [("BLOCKED", "COST_COMPONENT_UNKNOWN:rights")]
             assert store.open_positions() == []
