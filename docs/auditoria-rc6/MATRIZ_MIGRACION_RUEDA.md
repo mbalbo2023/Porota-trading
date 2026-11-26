@@ -76,9 +76,11 @@ El corte al cierre #541 registra 17.583 claves y tres Bonos elegibles de catálo
 
 El [arranque original](../../bv_paper_runtime.py) prepara la DB una vez, hereda la ruta absoluta y usa un lock por libro. El CLOCK padre y los seis roles ordinarios requieren una ejecución conjunta sobre la misma DB temporal. Los dos roles opcionales se prueban también con su configuración habilitada.
 
+El [perfil IOL del SHA `222a237`](https://github.com/mbalbo2023/Porota-trading/commit/222a237e3526f859fcbf08f5e4fcbe423824a929) cablea los puntos de entrada del dueño, el escáner y EXIT. La prueba de arranque descarta la ruta PPI aun con la configuración heredada, y la prueba de rotación comprueba el nuevo registro de los consumidores. La fase OPEN del perfil aislado registra HOLD para la cotización sin reloj de trade acreditado. Scalping y cauciones siguen pendientes de los contratos de datos indicados abajo. [Checkpoint vigente](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md#avance-del-cableado-iol--26112026-art)
+
 | Rol exacto | Migración | Criterio de aceptación encima de la prueba funcional |
 | --- | --- | --- |
-| `ppi_gateway` | Amarillo | Arrancar la variante IOL con OAuth simulado, cupo único y nuevo registro de clientes al cambiar la generación. |
+| `iol_gateway` en perfil IOL | Amarillo | Validar el proceso del dueño y la renovación OAuth con la custodia rootless, cuota de rueda y registro por generación de los procesos reales. |
 | `scanner` | Amarillo | Registrar el PID hijo y obtener GO, Current, Book, READY y BUY PAPER con recibos IOL. |
 | `dynamic_shadow` | Amarillo | Congelar plan, calificar las muestras IOL y emitir transiciones reproducibles con cero fills del worker. |
 | `exit_reader` | Amarillo | Servir profundidad al proceso independiente bajo cuota, reinicio y atraso de trade. Probar cierre de los lotes que requieren Book2. |

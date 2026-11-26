@@ -19,12 +19,17 @@
 
 ## Aislamiento obligatorio del comparador #1287
 
-- El candidato etiquetado OFFHOST se desarrolla y prueba fuera del Droplet. Usar la rama de
-  testing, runner GitHub hospedado, contenedores sin red y bases temporales.
+- Conservar [#1287](https://github.com/mbalbo2023/Porota-trading/pull/1287) y sus recibos como comparador.
+  Continuar el cableado desde la rama `fix/rc6-iol-primary-wiring-20261126` y el
+  SHA consignado en el [checkpoint](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
+  El perfil de pruebas `POROTA_RC6_MARKET_PROVIDER=IOL_REST` se ejerce en Actions
+  hospedado, con red deshabilitada, fixtures y SQLite temporal.
 - El marcador `ops/policy/rc6-iol-testing-only.json` veta Predeploy V2, el
   paquete de release y Promote V2. La publicación se limita a evidencia de
-  pruebas. El titular debe autorizar explícitamente una revisión distinta
-  antes de retirar el bloqueo. Un test verde no equivale a esa autorización.
+  pruebas. La autorización del titular cubre la promoción única de la revisión
+  de release de este corte. Esa revisión exige el control de promoción vigente,
+  los cambios de host y motores que falten, y evidencia de alcance y rueda por
+  clave. El candidato de pruebas conserva su marcador y su historial.
 - Regresar por Fix-Forward a partir del primer fallo con evidencia. Llevar el
   RCA, las lecciones y la matriz de viabilidad a
   [Migración IOL OFFHOST](docs/auditoria-rc6/MIGRACION_IOL_OFFHOST.md).
