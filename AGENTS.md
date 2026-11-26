@@ -1,5 +1,17 @@
 # Porota Trading RC6 — instrucciones para agentes
 
+## Aislamiento obligatorio de la migración IOL
+
+- Este candidato se desarrolla y prueba fuera del Droplet. Usar la rama de
+  testing, runner GitHub hospedado, contenedores sin red y bases temporales.
+- El marcador `ops/policy/rc6-iol-testing-only.json` veta Predeploy V2, el
+  paquete de release y Promote V2. La publicación se limita a evidencia de
+  pruebas. El titular debe autorizar explícitamente una revisión distinta
+  antes de retirar el bloqueo. Un test verde no equivale a esa autorización.
+- Regresar por Fix-Forward a partir del primer fallo con evidencia. Llevar el
+  RCA, las lecciones y la matriz de viabilidad a
+  [Migración IOL OFFHOST](docs/auditoria-rc6/MIGRACION_IOL_OFFHOST.md).
+
 Este es el único punto de entrada de trabajo. El procedimiento está en
 [docs/RUNBOOK.md](docs/RUNBOOK.md); los documentos retirados se consultan desde
 [el índice histórico](docs/history/README.md). La documentación describe reglas;

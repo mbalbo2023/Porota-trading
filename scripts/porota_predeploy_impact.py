@@ -10,6 +10,11 @@ import re
 import subprocess
 from urllib.parse import unquote, urlsplit
 
+try:
+    from scripts.porota_testing_scope import require_release_tree
+except ModuleNotFoundError:
+    from porota_testing_scope import require_release_tree
+
 
 def _git(repository, *arguments):
     try:
@@ -51,6 +56,7 @@ def classify(repository, base_sha, head_sha):
         raise ValueError('IMPACT_CHECKOUT_MISMATCH')
     if _git(repository, 'status', '--porcelain', '--untracked-files=all'):
         raise ValueError('IMPACT_CHECKOUT_DIRTY')
+    require_release_tree(repository, head_sha)
     # --no-renames preserves deletion of a non-Markdown source even if the
     # same bytes reappear with a .md suffix. Compare exact trees, not merge-base.
     changed = sorted(set(_git(repository, 'diff', '--name-only', '--no-renames', '-z',

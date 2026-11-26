@@ -115,6 +115,23 @@ def test_hot_strategy_and_book_freshness_cannot_be_revived_by_radar():
     assert report['telemetry'][0]['signal_result']=='NOT_READY'
 
 
+def test_iol_book_cannot_complete_native_ppi_spot_warmup():
+    assets = catalog(1)
+    policy = EnginePolicy(engine="EQUITY_SPOT", warmup_samples=3)
+    previous = plan(assets, policy=policy)
+    for minute in (1, 2, 3):
+        at = OPEN + timedelta(minutes=minute)
+        ppi = obs(assets[0], at, source="PPI_MARKETDATA_CURRENT", endpoint="current")
+        previous = plan(assets, at, previous=previous,
+                        observations=[{**ppi, "book_useful": False}], policy=policy)
+    assert previous["telemetry"][0]["warmup_progress"]["distinct_samples"] == 3
+    iol = obs(assets[0], at, source="IOL_REST", endpoint="current")
+    observed = plan(assets, at, previous=previous, observations=[iol], policy=policy)
+    assert observed["telemetry"][0]["signal_result"] == "NOT_READY"
+    native = plan(assets, at, previous=observed, observations=[ppi], policy=policy)
+    assert native["telemetry"][0]["signal_result"] == "SAMPLES_READY"
+
+
 def test_outside_preopen_event_promotes_prospectively_but_requires_dense_warmup():
     assets=catalog(30); freeze=frozen(assets,tradeable=False)
     before=plan(assets,freeze=freeze)
@@ -410,19 +427,28 @@ def test_option_discovery_requires_verified_underlying_and_keeps_ancillary_unkno
     assert option_observation_universe([wide],{'S0':underlying},as_of=OPEN)['excluded'][0]['reason_codes']==['SPREAD_TOO_WIDE']
 
 
-def test_runtime_current_book_has_distinct_clocks_and_cannot_promote_unconfirmed_volume(tmp_path):
+@pytest.mark.parametrize(("metadata_source", "expected_source", "valid_origin"), [
+    ("PPI_CATALOG:2026-10-05T13:30:00+00:00", "PPI_MARKETDATA_CURRENT", True),
+    ("IOL_REST", "IOL_REST", True),
+    (None, "NO_VERIFICADO", False),
+])
+def test_runtime_current_book_has_distinct_clocks_and_cannot_promote_unconfirmed_volume(
+        tmp_path, metadata_source, expected_source, valid_origin):
     from be_paper_engine import PaperStore
     from tests.test_production_paper_v1634 import quote
     from dataclasses import replace
     from bf_production_paper_observer import _support_schema
     store=PaperStore(str(tmp_path/'paper.db'));_support_schema(store)
     store.state(mode='PRODUCTION_PAPER',real_orders_sent=0)
-    q=replace(quote(),observed_at=OPEN.isoformat(),trade_at=OPEN.isoformat(),book_at=OPEN.isoformat())
+    q=replace(quote(),observed_at=OPEN.isoformat(),trade_at=OPEN.isoformat(),book_at=OPEN.isoformat(),
+              metadata_source=metadata_source)
     store.add_quote(q)
     report=read_runtime(store.path,as_of=OPEN)
     current=report['observations'][0]
     assert current['endpoint']=='current' and current['source_at']==OPEN.isoformat()
-    assert current['book_useful'] is True and current['received_at']==OPEN.isoformat()
+    assert current['source'] == expected_source and current['received_at']==OPEN.isoformat()
+    assert current['book_useful'] is valid_origin and current['useful'] is valid_origin
+    assert current['entry_authority'] is False
 
 
 @pytest.mark.parametrize('alias',['report_tmp','checkpoint_tmp','checkpoint_lock','report_is_lock'])

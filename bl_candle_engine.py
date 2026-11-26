@@ -377,7 +377,36 @@ def record_guarded_current_sample(store, identity, capture, *, priority, as_of,
     if not event <= received <= checked or not 0 <= age <= 120:
         return False
     price = format(decimal_value(payload["price"], "precio", positive=True).normalize(), "f")
-    source = "PPI_GUARDED_CURRENT"
+    return _record_sampled_trade(store, key, source="PPI_GUARDED_CURRENT", event=event,
+                                 received=received, price=price, receipt_id=digest,
+                                 wire_sha256=guard["raw_body_sha256"], cash_multiplier=cash_multiplier)
+
+
+def record_iol_trade_sample(store, observation, *, as_of):
+    """Append IOL samples with their source identity; never revise prior series."""
+    from rc6_iol_market_data import IOLObservation
+
+    if not isinstance(observation, IOLObservation) or observation.current is None:
+        return False
+    q, evidence = observation.quote, observation.current
+    if (q.metadata_source != "IOL_REST" or q.last_kind != "TRADE"
+            or q.trade_at != evidence.provider_at
+            or q.time_error(as_of, require_trade=True)):
+        return False
+    event, received = stamp(evidence.provider_at), stamp(evidence.received_at)
+    if not event <= received <= stamp(as_of):
+        return False
+    currency, market = q.monetary_identity()
+    identity = (q.symbol, q.asset_class, market, currency, q.settlement)
+    price = format(decimal_value(q.last, "precio", positive=True).normalize(), "f")
+    return _record_sampled_trade(store, identity, source="IOL_REST_TRADE_SAMPLE", event=event,
+                                 received=received, price=price, receipt_id=evidence.data_sha256,
+                                 wire_sha256=evidence.data_sha256,
+                                 cash_multiplier=(str(q.contract.cash_multiplier) if q.contract else "UNKNOWN"))
+
+
+def _record_sampled_trade(store, key, *, source, event, received, price, receipt_id,
+                          wire_sha256, cash_multiplier):
     series_items = [Series(*key, resolution, source, "RAW", "OBSERVED_NOMINAL_PRICE",
                            "TRADE_SAMPLES", "UNKNOWN", cash_multiplier)
                     for resolution in ("1m", "5m")]
@@ -392,9 +421,9 @@ def record_guarded_current_sample(store, identity, capture, *, priority, as_of,
             (series.key, event, price)).fetchone()]
         if not missing:
             return False
-        if not archive_raw(c, origin=source, row_key=digest, recorded_at=received,
+        if not archive_raw(c, origin=source, row_key=receipt_id, recorded_at=received,
                            quality="SAMPLED", payload={"identity": key, "trade_at": event,
-                           "price": price, "wire_sha256": guard["raw_body_sha256"]}):
+                           "price": price, "wire_sha256": wire_sha256}):
             return False
         sample_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
         for series in missing:

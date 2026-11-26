@@ -359,6 +359,8 @@ def measure_discovery_outcomes(evidence, *, as_of):
 
 def _decision_stages(checkpoint, row, at):
     payload = _native_payload(row, at, require_signal=False)
+    if payload is None:
+        return
     decision = payload["decision"]
     runtime, inputs = payload["runtime"], payload.get("inputs_used") or {}
     ident = identity(payload["quote_used"])

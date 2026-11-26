@@ -12,6 +12,11 @@ from .common import stamp, digest, identity, percentile, number
 from .routing import strategy_route, PIPELINE, EQUITY_FAMILIES
 
 
+NATIVE_PPI_BOOK_SOURCES = frozenset({
+    "PPI_MARKETDATA_CURRENT", "PPI_MARKETDATA_INTRADAY", "PPI_MARKETDATA_BOOK",
+})
+
+
 @dataclass(frozen=True)
 class EnginePolicy:
     engine: str = "SCALPING"
@@ -131,7 +136,8 @@ class UniverseOrchestrator:
                             s["source_failures"].append(failure)
             else:
                 s["source_failures"] = [f for f in s["source_failures"] if f[1] != obs.get("source")]
-            if obs.get("book_at") and obs.get("book_useful") is True:
+            if (obs.get("book_at") and obs.get("book_useful") is True
+                    and obs.get("source") in NATIVE_PPI_BOOK_SOURCES):
                 book_at = stamp(obs["book_at"])
                 if book_at > received:
                     raise ValueError("FUTURE_BOOK_OBSERVATION")

@@ -26,6 +26,9 @@ DELEGATED_CHECK = "DELEGATED_TO_RC6_FULL_DB_INTEGRITY"
 GLOBAL_INTEGRITY_OWNER = "porota-full-db-integrity-rc6.service"
 QUERY_BUDGET_SECONDS = 2.0
 RECENT_VERSION_LIMIT = 256
+PPI_SAMPLE_SOURCE = "PPI_GUARDED_CURRENT"
+IOL_SAMPLE_SOURCE = "IOL_REST_TRADE_SAMPLE"
+SAMPLE_SOURCES = (PPI_SAMPLE_SOURCE, IOL_SAMPLE_SOURCE)
 
 
 def _as_nonnegative_int(value: Any, field: str) -> int:
@@ -57,8 +60,28 @@ def is_fresh(summary: dict[str, Any], *, now: datetime | None = None) -> bool:
     return 0 <= age <= ttl
 
 
-def _materialized_guarded_samples(conn, observed_at):
-    """Current-only samples bypass the snapshot cursor; prove closed bars instead."""
+def _iol_samples_match_receipts(conn, series_id, identity, candle, known_at):
+    rows = conn.execute("""
+        SELECT s.event_at,s.price,s.received_at,r.row_key,r.body_json,r.body_hash
+        FROM candle_samples s JOIN historical_raw_archive r ON r.id=s.snapshot_id
+        WHERE s.series_id=? AND s.event_at>=? AND s.event_at<? AND s.received_at<=?
+          AND r.origin=? AND r.quality='SAMPLED' AND r.recorded_at=s.received_at
+        ORDER BY s.event_at
+    """, (series_id, candle["start"], candle["end"], known_at, IOL_SAMPLE_SOURCE)).fetchall()
+    if len(rows) != candle["samples"]:
+        return False
+    for event, price, received, digest, body, body_hash in rows:
+        if (not _parse_iso(event) <= _parse_iso(received) <= _parse_iso(known_at)
+                or len(digest) != 64 or any(digit not in "0123456789abcdef" for digit in digest)
+                or hashlib.sha256(body.encode("utf-8")).hexdigest() != body_hash
+                or json.loads(body) != {"identity": list(identity), "trade_at": event,
+                                         "price": price, "wire_sha256": digest}):
+            return False
+    return True
+
+
+def _materialized_guarded_samples(conn, observed_at, sample_source):
+    """Source samples bypass the snapshot cursor; prove closed bars instead."""
     frames = {}
     seen = set()
     for series_id, bar_start, known_at, bar_end, body, body_hash, identity in conn.execute("""
@@ -76,17 +99,21 @@ def _materialized_guarded_samples(conn, observed_at):
         seen.add(version_key)
         series = json.loads(identity)
         resolution = series.get("resolution")
-        if (series.get("source") != "PPI_GUARDED_CURRENT" or
+        if (series.get("source") != sample_source or
                 series.get("price_kind") != "TRADE_SAMPLES" or resolution not in ("1m", "5m")):
             continue
         if hashlib.sha256(body.encode("utf-8")).hexdigest() != body_hash:
             raise ValueError("GUARDED_CANDLE_BODY_HASH_MISMATCH")
         candle = json.loads(body)
-        if (candle.get("quality") != "SAMPLED" or candle.get("end") != bar_end
+        if (candle.get("quality") != "SAMPLED" or candle.get("start") != bar_start
+                or candle.get("end") != bar_end
                 or candle.get("synthetic") is not False or candle.get("volume") is not None
                 or type(candle.get("samples")) is not int or candle["samples"] < 1):
             continue
         key = tuple(series[name] for name in ("symbol", "asset_class", "market", "currency", "settlement"))
+        if sample_source == IOL_SAMPLE_SOURCE and not _iol_samples_match_receipts(
+                conn, series_id, key, candle, known_at):
+            continue
         basis = tuple(series[name] for name in ("adjustment", "adjustment_basis", "cash_multiplier"))
         group = frames.setdefault((key, basis), {})
         group.setdefault(resolution, known.isoformat())
@@ -95,7 +122,7 @@ def _materialized_guarded_samples(conn, observed_at):
     return {}
 
 
-def collect_inputs(*, db_path: str, observed_at: str,
+def collect_inputs(*, db_path: str, observed_at: str, sample_source: str = PPI_SAMPLE_SOURCE,
                    query_budget_seconds: float = QUERY_BUDGET_SECONDS) -> dict[str, Any]:
     """Check the owned candle btrees and inputs in one bounded RO snapshot.
 
@@ -103,6 +130,8 @@ def collect_inputs(*, db_path: str, observed_at: str,
     that unrelated multi-GB scan in this ten-minute evidence producer evicts
     the live PAPER working set; a candle proof must not claim global integrity.
     """
+    if sample_source not in SAMPLE_SOURCES:
+        raise ValueError("CANDLE_EVIDENCE_SAMPLE_SOURCE_INVALID")
     if (type(query_budget_seconds) not in (int, float)
             or not 0 < query_budget_seconds <= QUERY_BUDGET_SECONDS):
         raise ValueError("CANDLE_EVIDENCE_QUERY_BUDGET_INVALID")
@@ -146,8 +175,11 @@ def collect_inputs(*, db_path: str, observed_at: str,
             "SELECT COUNT(*) FROM candle_dirty "
             "WHERE julianday(bar_end) > julianday(?)", (observed,)
         ).fetchone()[0]
-        sampled_progress = (_materialized_guarded_samples(conn, _parse_iso(observed))
-                            if {"candle_versions", "candle_series"} <= tables else {})
+        sample_tables = {"candle_versions", "candle_series"}
+        if sample_source == IOL_SAMPLE_SOURCE:
+            sample_tables.update(("candle_samples", "historical_raw_archive"))
+        sampled_progress = (_materialized_guarded_samples(conn, _parse_iso(observed), sample_source)
+                            if sample_tables <= tables else {})
         return {
             "current_cursor": worker[0],
             "heartbeat_at": worker[1],
@@ -157,7 +189,9 @@ def collect_inputs(*, db_path: str, observed_at: str,
             "dirty_due_bars": dirty_due_bars,
             "dirty_open_bars": dirty_open_bars,
             "invalid_dirty_timestamp_count": invalid_dirty_timestamp_count,
-            "guarded_current_sampled_progress": sampled_progress,
+            "sample_source": sample_source,
+            "guarded_current_sampled_progress": sampled_progress if sample_source == PPI_SAMPLE_SOURCE else {},
+            "iol_sampled_progress": sampled_progress if sample_source == IOL_SAMPLE_SOURCE else {},
             "required_tables": sorted(required),
         }
     finally:
@@ -172,8 +206,12 @@ def build_summary(
     required_tables: list[str] | None = None,
     table_quick_checks: dict[str, str] | None = None,
     guarded_current_sampled_progress: dict[str, Any] | None = None,
+    sample_source: str = PPI_SAMPLE_SOURCE,
+    iol_sampled_progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build fail-closed proof. Open bars are reported but never treated as dirty."""
+    if sample_source not in SAMPLE_SOURCES:
+        raise ValueError("CANDLE_EVIDENCE_SAMPLE_SOURCE_INVALID")
     baseline = _as_nonnegative_int(baseline_cursor, "baseline_cursor")
     current = _as_nonnegative_int(current_cursor, "current_cursor")
     due = _as_nonnegative_int(dirty_due_bars, "dirty_due_bars")
@@ -192,11 +230,16 @@ def build_summary(
         fresh_heartbeat = 0 <= heartbeat_age <= FRESHNESS_TTL_SECONDS
     except ValueError:
         fresh_heartbeat = False
-    sampled = bool(guarded_current_sampled_progress)
+    iol_selected = sample_source == IOL_SAMPLE_SOURCE
+    if iol_selected:
+        progress_check = {"iol_receipts_both_resolutions": bool(iol_sampled_progress)}
+    elif guarded_current_sampled_progress:
+        progress_check = {"guarded_current_both_resolutions": True}
+    else:
+        progress_check = {"cursor_strictly_advanced": current > baseline}
     checks = {
         "schema_collected": not collection_error,
-        ("guarded_current_both_resolutions" if sampled else "cursor_strictly_advanced"):
-            sampled or current > baseline,
+        **progress_check,
         "candle_worker_running": worker_state == "RUNNING",
         "candle_heartbeat_fresh": fresh_heartbeat,
         ("candle_tables_quick_check_ok" if scoped else "sqlite_quick_check_ok"): integrity_ok,
@@ -205,7 +248,8 @@ def build_summary(
     }
     return {
         "schema_version": SCHEMA_VERSION,
-        "source": "porota-rc6-candle-inmarket-verify",
+        "source": ("porota-rc6-candle-inmarket-iol-evidence" if iol_selected
+                   else "porota-rc6-candle-inmarket-verify"),
         "mode": "READ_ONLY_EVIDENCE",
         "observed_at": observed.isoformat(),
         "expires_at": (observed + timedelta(seconds=FRESHNESS_TTL_SECONDS)).isoformat(),
@@ -213,7 +257,9 @@ def build_summary(
         "status": "GREEN" if all(checks.values()) else "RED",
         "baseline_cursor": baseline,
         "current_cursor": current,
-        "guarded_current_sampled_progress": guarded_current_sampled_progress or {},
+        "guarded_current_sampled_progress": ({} if iol_selected else guarded_current_sampled_progress or {}),
+        **({"sample_source": sample_source, "iol_sampled_progress": iol_sampled_progress or {}}
+           if iol_selected else {}),
         "worker_state": worker_state,
         "heartbeat_at": heartbeat_at,
         "sqlite_quick_check": quick_check,
@@ -258,9 +304,11 @@ def main() -> int:
     parser.add_argument("--db-path", default=DEFAULT_DB_PATH)
     parser.add_argument("--observed-at", default=datetime.now(timezone.utc).isoformat())
     parser.add_argument("--summary-path", required=True, type=Path)
+    parser.add_argument("--sample-source", choices=SAMPLE_SOURCES, default=PPI_SAMPLE_SOURCE)
     args = parser.parse_args()
     try:
-        collected = collect_inputs(db_path=args.db_path, observed_at=args.observed_at)
+        collected = collect_inputs(db_path=args.db_path, observed_at=args.observed_at,
+                                   sample_source=args.sample_source)
         summary = build_summary(
             baseline_cursor=args.baseline_cursor, observed_at=args.observed_at, **collected
         )
@@ -270,7 +318,7 @@ def main() -> int:
             heartbeat_at="", quick_check="UNKNOWN", dirty_due_bars=0, dirty_open_bars=0,
             invalid_dirty_timestamp_count=0, observed_at=args.observed_at,
             collection_error=f"{type(exc).__name__}:{exc}",
-            table_quick_checks={},
+            table_quick_checks={}, sample_source=args.sample_source,
         )
     atomic_write_json(args.summary_path, summary)
     print(f"INMARKET_CANDLE_EVIDENCE={summary['status']}|SUMMARY:{args.summary_path}")

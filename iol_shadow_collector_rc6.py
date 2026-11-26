@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as byma
 import json
+from math import isfinite
 import os
 from pathlib import Path
 import random
@@ -165,8 +166,14 @@ class RateGovernor:
     """Single-process global cadence, bounded rolling window and 429 circuit breaker."""
 
     def __init__(self, policy: CollectionPolicy, *, clock: Callable[[], float] = time.monotonic,
-                 sleep: Callable[[float], None] = time.sleep, jitter: Callable[[], float] = random.random) -> None:
+                 sleep: Callable[[float], None] = time.sleep, jitter: Callable[[], float] = random.random,
+                 max_wait_seconds: float | None = None) -> None:
+        if max_wait_seconds is not None and (
+                type(max_wait_seconds) not in (int, float) or not isfinite(max_wait_seconds)
+                or max_wait_seconds < 0):
+            raise ValueError("IOL_WIRE_WAIT_BUDGET_INVALID")
         self.policy, self.clock, self.sleep, self.jitter = policy, clock, sleep, jitter
+        self.max_wait_seconds = max_wait_seconds
         self.calls: list[float] = []
         self.last: float | None = None
         self.open_until = 0.0
@@ -184,6 +191,8 @@ class RateGovernor:
         if len(self.calls) >= self.policy.max_calls_per_minute:
             waits.append(60.0 - (now - self.calls[0]))
         delay = max([0.0, *waits])
+        if self.max_wait_seconds is not None and delay > self.max_wait_seconds:
+            raise CircuitOpenError("IOL_WIRE_BUDGET_HOLD")
         if delay:
             self.sleep(delay)
         now = self.clock()

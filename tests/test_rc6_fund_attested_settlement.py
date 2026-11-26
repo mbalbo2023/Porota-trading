@@ -14,12 +14,17 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import bu_instrument_catalog as catalog
 import rc6_paper_family_lifecycle as lifecycle
 from be_paper_engine import PaperBroker, PaperStore
+from rc6_fund_paper_allocator import (
+    FundAllocationBudget, FundAllocationEvidence, FundNavMark,
+    assess_fund_cash_parking, simulate_fund_subscription,
+)
 from rc6_fund_paper_reconciler import FundClassEvidence, FundReceipt, fund_evidence_digest
 from rc6_fund_source_quarantine import (
     SETTLEMENT_AUTHORITY_FILE, SETTLEMENT_AUTHORITY_SCHEMA, SETTLEMENT_SCHEMA,
     settlement_attestation_bytes,
 )
 from scripts import rc6_operator_paper_rearm as operator
+from tests.test_rc6_a234_cafci_fci_reference import parse, reference_row, synthetic_xlsx
 
 
 SYMBOL = "FCI.FIXTURE.B"
@@ -47,10 +52,34 @@ def paper_fund(tmp_path, monkeypatch):
                                     "SYNTHETIC_TERMS", subscription_min="1000",
                                     subscription_step="0.01")
     evidence = FundClassEvidence(terms, SYMBOL, "SYNTHETIC_REGULATION", DIGEST, KNOWN)
-    # Seed a previously committed PAPER subscription on a private fixture.
-    # The settlement entry point never has authority to create that debit.
-    broker.family_paper.subscribe_fund(
-        terms, lifecycle_id="fund-1", event_id="e0", amount="1001.01", occurred_at=OPEN)
+    # Use the real CAFCI parser and allocation guard on local, explicitly
+    # synthetic inputs. The class binding, cutoff and fees are fixture data.
+    reference, = parse(synthetic_xlsx(reference_row(name="Fondo de prueba - Clase B",
+        effective="20/11/26", nav_mil="10000", cafci_id="900001", cnv_id="9000")),
+        captured_at=KNOWN, http_last_modified_at="Fri, 20 Nov 2026 23:20:00 GMT",
+        source_filename="20261120_Planilla_Diaria_A.xlsx").classes
+    assert reference.runtime_entry_authority is False and reference.currency_raw == terms.currency
+    assert reference.minimum_subscription_reported == terms.subscription_min
+    nav = FundNavMark(
+        reference.nav_per_unit, reference.nav_effective_date.isoformat() + "T17:30:00-03:00",
+        "2026-11-20T20:20:00-03:00", reference.known_at.isoformat(),
+        f"SYNTHETIC_CAFCI_CLASS:{reference.cafci_class_id}", reference.source_sha256)
+    allocation_evidence = FundAllocationEvidence(
+        evidence, "SYNTHETIC_TEST_ONLY", OPEN[:10], "SYNTHETIC_CLASS_CALENDAR", DIGEST,
+        KNOWN, "15:00", "America/Argentina/Buenos_Aires", 2, Decimal(0),
+        "SYNTHETIC_ACCOUNT_FEES", DIGEST, KNOWN, nav)
+    budget = FundAllocationBudget(Decimal("2000"), Decimal("250"), Decimal("1500"),
+                                  Decimal("1001.01"), 4, 5)
+    external = assess_fund_cash_parking(replace(allocation_evidence, provenance="UNVERIFIED_EXTERNAL"),
+                                        budget, as_of=OPEN)
+    assert external.status == "HOLD" and "FCI_EXTERNAL_PROVENANCE_NOT_AUTHENTICATED" in external.reason_codes
+    late = assess_fund_cash_parking(allocation_evidence, budget, as_of=OPEN.replace("T13:", "T15:"))
+    assert late.status == "HOLD" and "FCI_CLASS_CUTOFF_PASSED" in late.reason_codes
+    result = simulate_fund_subscription(broker.family_paper, evidence=allocation_evidence,
+        budget=budget, lifecycle_id="fund-1", event_id="e0", occurred_at=OPEN,
+        cash_guard=lambda db: broker._cash(OPEN, "ARS", connection=db, for_execution=True),
+        admission_guard=lambda _db: "")
+    assert result["state"] == "SUBSCRIBE_REQUESTED" and broker._cash(OPEN, "ARS") == Decimal("998.99")
     monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
     def trusted_operator_fixture(directory, *, receipt_name):
         assert directory == operator.OPERATOR_DIR_RUNTIME
