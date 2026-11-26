@@ -474,6 +474,9 @@ class MonitorContracts(unittest.TestCase):
                 CREATE TABLE paper_events (id INTEGER PRIMARY KEY, event_at TEXT, event_type TEXT, detail TEXT);
                 CREATE TABLE http_audit (id INTEGER PRIMARY KEY, happened_at TEXT, method TEXT,
                     path TEXT, result TEXT);
+                CREATE TABLE paper_notification_outbox (id INTEGER PRIMARY KEY, event_key TEXT,
+                    kind TEXT, created_at TEXT, sent_at TEXT, state TEXT, attempts INTEGER,
+                    message_id TEXT, last_error TEXT, body TEXT);
                 CREATE TABLE paper_exit_reader_state (id INTEGER PRIMARY KEY, heartbeat_at TEXT,
                     state TEXT, detail TEXT);""")
             plan = {"active_plan": {"catalog_status": "NO_ELIGIBLE_INSTRUMENTS"},
@@ -494,6 +497,11 @@ class MonitorContracts(unittest.TestCase):
                 (observed, "GET", "/api/marketdata/current", "ALLOWED"),
                 (observed, "GET", "/api/marketdata/book", "BACKPRESSURE"),
             ])
+            ack = (at - timedelta(seconds=55)).isoformat()
+            db.execute("INSERT INTO paper_notification_outbox VALUES(NULL,?,?,?,?,?,?,?,?,?)", (
+                "operational-health:PPI_PRODUCTION_MARKETDATA:BAD:DO_NOT_LEAK",
+                "OPERATIONAL_HEALTH_RED", observed, ack, "SENT", 1, "DO_NOT_LEAK", "",
+                "Causa: 0/1 instrumentos con cotización útil. DO_NOT_LEAK"))
             db.execute("INSERT INTO paper_exit_reader_state VALUES(1,?,?,?)",
                        (observed, "DEGRADED", "0 errores de lectura de abiertas; round_seconds=0.0001; "
                         "baseline_cadence=NO_VERIFICADO; budget_round=BASELINE_NOT_MEASURED"))
@@ -506,10 +514,29 @@ class MonitorContracts(unittest.TestCase):
         self.assertEqual(evidence["native_wire"]["current"]["latest_market_at"], old)
         self.assertNotIn("book", evidence["native_wire"])
         self.assertEqual(evidence["http_presend"]["book"], {"BACKPRESSURE": 1})
+        timeline = evidence["ppi_telegram_timeline"]
+        self.assertEqual(timeline["presend_admissions"]["last_90s_by_endpoint"], {"current": 1})
+        self.assertEqual(timeline["provider_429_observed_at"], [observed])
+        delivered = timeline["telegram_outbox"]["latest"][0]
+        self.assertEqual(delivered["ack_at"], ack)
+        self.assertEqual(delivered["preceding_ppi_429_at"], observed)
+        self.assertEqual(delivered["quoting_instruments"], [0, 1])
+        self.assertFalse(delivered["telegram_429"])
         self.assertEqual(evidence["exit_round"]["budget_round"], "BASELINE_NOT_MEASURED")
         self.assertEqual(evidence["exit_round"]["observed_book_errors"], 0)
         self.assertNotIn("DO_NOT_LEAK", json.dumps(evidence))
         self.assertEqual(self.db.read_bytes(), before)
+
+    def test_wire_sampling_uses_verified_counter_deltas_and_actual_monotonic_intervals(self):
+        raw = {"started_at": NOW.isoformat(), "samples": [[0, 10], [10**9, 12], [2 * 10**9, 13]]}
+        observed = monitor._gateway_wire_counter_window(raw)
+        self.assertEqual(observed["status"], "PARTIAL_OBSERVATION")
+        self.assertEqual(observed["attempts"], 3)
+        self.assertEqual(observed["average_attempts_per_second"], 1.5)
+        self.assertEqual(observed["peak_attempts_per_interval"], 2)
+        self.assertEqual(observed["intervals"][1], {"offset_seconds": 1.0, "seconds": 1.0, "attempts": 1})
+        raw["samples"].append([3 * 10**9, 5])
+        self.assertEqual(monitor._gateway_wire_counter_window(raw)["status"], "COUNTER_NOT_COMPARABLE")
 
     def test_gateway_provider_transport_exports_only_passive_timing_and_valid_limit_numbers(self):
         raw = {"last_native_http_rejection": 429, "retry_after_seconds": 1,
@@ -1159,7 +1186,7 @@ class MonitorContracts(unittest.TestCase):
             "- name: Diagnose SHADOW", 1)[0]
         self.assertIn("github.event_name == 'workflow_dispatch'", gateway)
         self.assertIn("inputs.notification_mode == 'read_only'", gateway)
-        self.assertIn("timeout 15 python3 - ppi-gateway-diagnostic-host", gateway)
+        self.assertIn("timeout 78 python3 - ppi-gateway-diagnostic-host", gateway)
         self.assertIn("github.event_name == 'schedule' && 'normal'", workflow)
         self.assertIn("inputs.notification_mode || 'read_only'", workflow)
         self.assertIn("for name in ('observer','dashboard')", workflow)
