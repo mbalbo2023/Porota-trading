@@ -92,6 +92,7 @@ SIGNAL_WINDOW_MINUTES = max(15, int(os.getenv("PAPER_SIGNAL_WINDOW_MINUTES", "90
 HISTORY_BATCH_LIMIT = max(5, min(int(os.getenv("PPI_HISTORY_BATCH_LIMIT", "40")), 100))
 CATALOG_QUERY_SLEEP_SECONDS = max(0.0, float(os.getenv("PPI_CATALOG_QUERY_SLEEP_SECONDS", "0.05")))
 CATALOG_DEFERRED_STATUS = "DEFERRED_PROVIDER"
+CATALOG_GATEWAY_DEFERRED_STATUS = "DEFERRED_GATEWAY_REATTACH"
 CATALOG_PROVIDER_BACKPRESSURE = PAPER_DIRECT_WIRE_BACKPRESSURE | {
     "PPI_AUX_HTTP_401",
     "PPI_AUX_HTTP_429",
@@ -688,6 +689,10 @@ def _catalog_records(value):
     return found
 
 
+class _CatalogGatewayDisconnected(RuntimeError):
+    """Catalog reads lost their gateway pin before the first catalog write."""
+
+
 @contextmanager
 def _candidate_publication(store):
     """Mark discovery, policy and projection as one incomplete publication.
@@ -696,19 +701,33 @@ def _candidate_publication(store):
     A nested complementary pass finishes the last candidate write before the
     outer download records its health/source-sync receipts.
     """
+    started_at = now_iso()
     with store.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         connection.execute("""CREATE TABLE IF NOT EXISTS candidate_refresh_state(
             id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL,
             checked_at TEXT NOT NULL)""")
+        previous = connection.execute(
+            "SELECT state,checked_at FROM candidate_refresh_state WHERE id=1"
+        ).fetchone()
         connection.execute("""INSERT INTO candidate_refresh_state VALUES(1,'RUNNING',?)
             ON CONFLICT(id) DO UPDATE SET state=excluded.state,
-            checked_at=excluded.checked_at""", (now_iso(),))
+            checked_at=excluded.checked_at""", (started_at,))
     try:
         yield
     except BaseException as error:
         try:
             with store.connect() as connection:
-                connection.execute("UPDATE candidate_refresh_state SET state='FAILED' WHERE id=1")
+                if isinstance(error, _CatalogGatewayDisconnected):
+                    if previous is None:
+                        connection.execute("""DELETE FROM candidate_refresh_state
+                            WHERE id=1 AND state='RUNNING' AND checked_at=?""", (started_at,))
+                    else:
+                        connection.execute("""UPDATE candidate_refresh_state SET state=?,checked_at=?
+                            WHERE id=1 AND state='RUNNING' AND checked_at=?""",
+                            (*previous, started_at))
+                else:
+                    connection.execute("UPDATE candidate_refresh_state SET state='FAILED' WHERE id=1")
         except Exception as marker_error:
             error.add_note("CANDIDATE_REFRESH_FAILURE_MARKER:" + type(marker_error).__name__)
         raise
@@ -718,8 +737,15 @@ def _candidate_publication(store):
 
 
 def _download_catalog(reader, store):
-    with _candidate_publication(store):
-        return _download_catalog_generation(reader, store)
+    try:
+        with _candidate_publication(store):
+            return _download_catalog_generation(reader, store)
+    except _CatalogGatewayDisconnected as exc:
+        reason = str(exc)
+        _sync_state(store, "PPI_PRODUCTION_CATALOG", CATALOG_GATEWAY_DEFERRED_STATUS, 0, reason)
+        _health(store, "PPI_PRODUCTION_CATALOG", "AMARILLO", reason, "PPI Producción")
+        store.event("CATALOG_DISCOVERY_DEFERRED", reason)
+        raise
 
 
 def _download_catalog_generation(reader, store):
@@ -744,6 +770,8 @@ def _download_catalog_generation(reader, store):
             store.event("CATALOG_CONFIGURATION_UNAVAILABLE", reason)
             if reason in CATALOG_PROVIDER_BACKPRESSURE:
                 deferred_reason = reason
+            elif _scanner_gateway_reader_lost(exc):
+                raise _CatalogGatewayDisconnected(reason) from exc
         else:
             for literal in configuration["instrument_types"]:
                 types_by_family.setdefault(canonical_family(literal), []).append(literal)
@@ -801,6 +829,8 @@ def _download_catalog_generation(reader, store):
             detail = _scanner_ppi_error(exc)
             if detail in CATALOG_PROVIDER_BACKPRESSURE:
                 deferred_reason = detail
+            elif _scanner_gateway_reader_lost(exc):
+                raise _CatalogGatewayDisconnected(detail) from exc
             status = CATALOG_DEFERRED_STATUS if deferred_reason else "ERROR"
         query_results.append((run_id, ticker_query, name_query, instrument_type, market_query, status, count, detail))
         if CATALOG_QUERY_SLEEP_SECONDS and not deferred_reason:
@@ -2973,6 +3003,8 @@ def _source_sync_due(store, source, now=None):
                 if status == CATALOG_DEFERRED_STATUS:
                     # Any longer provider hold still applies at the gateway.
                     return (now - attempt).total_seconds() >= LOGIN_COOLDOWN_SECONDS
+                if status == CATALOG_GATEWAY_DEFERRED_STATUS:
+                    return (now - attempt).total_seconds() >= GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
                 if status == "ROJO":
                     # Unclassified failures, including older releases, can be
                     # revisited once after the same session closes.
@@ -3008,6 +3040,7 @@ def _daily_sync_needed(store, now=None):
 
 
 def _daily_sync(reader, store, now=None):
+    """Return true when the scanner must drop its obsolete local reader."""
     now = now or datetime.now(TZ)
     if now.tzinfo is None:
         now = now.replace(tzinfo=TZ)
@@ -3030,6 +3063,10 @@ def _daily_sync(reader, store, now=None):
             f"{catalog} instrumentos; {histories} filas históricas; "
             f"catalog_due={catalog_due}; history_due={history_due}.",
         )
+    except _CatalogGatewayDisconnected as exc:
+        reader.close()
+        store.event("PPI_GATEWAY_REATTACH_REQUIRED", str(exc))
+        return True
     except Exception as exc:
         detail = f"{type(exc).__name__}: {str(exc)[:500]}"
         _sync_state(store, "PPI_PRODUCTION_DAILY_SYNC", "ROJO", 0, detail)
@@ -3148,6 +3185,13 @@ def _run_command(store, reader, command, gemini_gate=None, login_interlock=None)
             problems.append("Gemini: " + gemini_detail[:120])
     try:
         catalog = _download_catalog(reader, store)
+    except _CatalogGatewayDisconnected as exc:
+        reader.close()
+        reason = str(exc)
+        store.event("PPI_GATEWAY_REATTACH_REQUIRED", reason)
+        _finish_command(store, command_id, "PARTIAL", reason)
+        store.state(ppi_auth="ERROR", detail=reason)
+        return None
     except Exception as exc:
         catalog = 0
         problems.append(f"catálogo: {type(exc).__name__}")
@@ -3443,10 +3487,30 @@ def run():
                         time.monotonic()))
                 if caucion_ledger_blocked and phase != "OPEN":
                     continue
+            if phase == "PREOPEN":
+                # Verify the scanner's pin even when preopen issues no market GET.
+                try:
+                    reason = ("" if reader.metrics.get("authenticated") is True
+                              else "PPI_GATEWAY_SESSION_RECOVERY_PENDING")
+                except Exception as exc:
+                    if not _scanner_gateway_reader_lost(exc):
+                        raise
+                    reason = _scanner_ppi_error(exc)
+                if reason:
+                    reader.close()
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    _health(store, "PPI_PRODUCTION_AUTH", "ROJO", reason, "PPI Producción")
+                    store.event("PPI_GATEWAY_REATTACH_REQUIRED", reason)
+                    store.state(process_state="DEGRADED", ppi_auth="ERROR", session_state=phase,
+                                heartbeat_at=now_iso(), real_orders_sent=0, detail=reason)
+                    continue
             # Login listo: recién ahora corren servicios no críticos por TTL.
             if not caucion_ledger_blocked:
-                if attached and phase != "OPEN":
-                    _daily_sync(reader, store)
+                if attached and phase != "OPEN" and _daily_sync(reader, store):
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    continue
                 operations.service_tick(store, phase)
                 if phase == "OPEN" and time.time() - last_caucion_live_refresh >= CAUCION_LIVE_REFRESH_SECONDS:
                     try:
@@ -3470,7 +3534,10 @@ def run():
             if phase == "CLOSED":
                 # El catálogo se renueva una vez por fecha local. Los históricos
                 # avanzan en lotes con TTL aunque sea noche, fin de semana o feriado.
-                _daily_sync(reader, store)
+                if _daily_sync(reader, store):
+                    reader = None
+                    next_login_at = time.time() + GATEWAY_LOCAL_ATTACH_RETRY_SECONDS
+                    continue
                 _background_ingest(reader, store)
                 if time.time() - last_readiness_check >= READINESS_CHECK_SECONDS:
                     _runtime_readiness(store)
