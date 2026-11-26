@@ -939,13 +939,16 @@ c.execute('PRAGMA query_only=ON')
 rows=c.execute('SELECT mode,real_orders_sent,ppi_auth,process_state,session_state,last_market_data_at,heartbeat_at,detail FROM observer_state WHERE id=1').fetchall()
 assert len(rows)==1
 result=dict(rows[0])
-result['controller']=read_controller_health('/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json',provider=provider)
+health_path='/app/data/paper_v17/artifacts/observer_v17.db/runtime-health.json'
 if provider=='IOL_REST':
     from iol_rest_readonly_rc6 import IOLRestError,IOLRestReadOnly
+    result['controller']=read_controller_health(health_path,provider=provider)
     try: IOLRestReadOnly('/tmp').call('create_order',{})
     except IOLRestError as exc: assert str(exc)=='IOL_REST_CAPABILITY_UNVERIFIED'
     else: raise SystemExit(21)
     result['iol_gateway']=observe_iol_owner('/app/data/paper_v17/observer_v17.db')
+else:
+    result['controller']=read_controller_health(health_path)
 if os.getenv('POROTA_FI_HISTORICAL_PAPER_SALE')=='1':
     from rc6_fixed_income_sale_authority import deployed_sale_model
     sale=deployed_sale_model()

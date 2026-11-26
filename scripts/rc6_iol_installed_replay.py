@@ -19,10 +19,11 @@ def run_host(manager, source_sha, source_tree, attempt):
         require(before == current["database"], "REPLAY_DATABASE_IDENTITY_UNVERIFIED")
         image = current["image_id"]
         name = "porota-rc6-iol-replay-" + attempt
+        # SQLite audit snapshots need disk-backed scratch. Use this disposable container's writable layer.
         cid = manager.docker.call("container", "create", "--name", name, "--label", "io.porota.scope=rc6-iol-replay",
-            "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+            "--network", "none", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
             "--user", "1000:1000", "--cpus", "0.75", "--memory", "512m", "--pids-limit", "96",
-            "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=192m", "--env", "POROTA_IOL_OFFHOST_IPC=1",
+            "--env", "POROTA_IOL_OFFHOST_IPC=1",
             "--no-healthcheck", "--entrypoint", "python", image, "-B", "-m", "scripts.rc6_iol_installed_replay")
         require(CID.fullmatch(cid), "REPLAY_CONTAINER_ID_INVALID")
 
@@ -36,10 +37,8 @@ def run_host(manager, source_sha, source_tree, attempt):
         try:
             item = inspect()
             settings = item["HostConfig"]
-            require(settings.get("NetworkMode") == "none" and settings.get("ReadonlyRootfs") is True and
-                    not settings.get("Binds") and not settings.get("Mounts") and
-                    all(mount.get("Type") == "tmpfs" and mount.get("Destination") == "/tmp"
-                        for mount in item.get("Mounts", [])), "REPLAY_ISOLATION_UNVERIFIED")
+            require(settings.get("NetworkMode") == "none" and not item.get("Mounts") and
+                    not settings.get("Binds") and not settings.get("Mounts"), "REPLAY_ISOLATION_UNVERIFIED")
             proc = manager.docker.command_result("container", "start", "--attach", cid, timeout=385)
             result = decode(proc.stdout.strip())
             require(result.get("schema") == "porota.iol.focus.v1" and
@@ -52,7 +51,7 @@ def run_host(manager, source_sha, source_tree, attempt):
         require(database_snapshot(manager.root / DB_RELATIVE) == before, "REPLAY_DATABASE_IDENTITY_CHANGED")
         result.update({"source_sha": source_sha, "source_tree": source_tree, "image_id": image,
                        "attempt": attempt, "dataset": "SYNTHETIC_ISOLATED", "network": "NONE",
-                       "operational_mounts": 0, "real_orders_sent": 0,
+                       "operational_mounts": 0, "workspace": "DISPOSABLE_CONTAINER", "real_orders_sent": 0,
                        "observed_at": datetime.now(timezone.utc).isoformat()})
         return result
 
