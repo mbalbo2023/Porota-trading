@@ -193,10 +193,12 @@ def _make_iol_gateway_owner(store, socket_path):
     exit_keys = iol_gateway_identities(
         (position['symbol'], position['asset_class'], position['market'],
          position['currency'], position['settlement']) for position in opened)
-    # Use the bounded collector capacity in the testing profile. This supplies
-    # an isolated backpressure policy, not evidence of a live account quota.
+    # Share the bounded collector policy across scanner and EXIT via this owner.
+    config = os.getenv("POROTA_IOL_REST_CONFIG")
+    credentials = {"config": config} if config else {}
     rest = IOLRestReadOnly(socket_path.parent / "rest-session",
-        governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True)
+        governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True,
+        **credentials)
     return IOLMarketGateway(rest, allowed={"scanner": scan_keys, "exit_reader": scan_keys | exit_keys},
                             socket_path=socket_path, supervisor_pid=os.getppid())
 

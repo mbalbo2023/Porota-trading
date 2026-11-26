@@ -146,6 +146,45 @@ class RootlessContracts(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", dashboard)
         self.assertNotIn("POROTA_FI_HISTORICAL_PAPER_SALE", dashboard)
 
+    def test_iol_release_mounts_only_its_minimal_readonly_secret(self):
+        config = {"PPI_API_KEY": "legacy", "IOL_PASSWORD": "literal$()!", "IOL_USERNAME": "fixture",
+                  "IOL_ENABLED": "true"}
+        observer, dashboard = host.runtime_environments(config, {"DASHBOARD_ACCESS_TOKEN": "auth"}, SHA, TREE,
+                                                         provider="IOL_REST")
+        self.assertEqual(observer.get("POROTA_IOL_REST_CONFIG"), host.IOL_CREDENTIAL_MOUNT)
+        self.assertNotIn("POROTA_IOL_REST_CONFIG", dashboard)
+        for env in (observer, dashboard):
+            self.assertEqual(env["POROTA_RC6_MARKET_PROVIDER"], "IOL_REST")
+            self.assertTrue(config.keys().isdisjoint(env))
+        attempts = self.base / "attempts"
+        (attempts / "next").mkdir(parents=True, mode=0o700)
+        secret = attempts / "next" / host.IOL_CREDENTIALS_FILE
+        host.write_iol_credentials(secret, config)
+        self.assertEqual(secret.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(host.parse_env(secret.read_text()), {k: v for k, v in config.items() if k.startswith("IOL_")})
+
+        operator = self.base / "operator"
+        item = container_fixture(self.base, operator, "observer")
+        item["Config"]["Env"] = [f"{key}={value}" for key, value in observer.items()]
+        def validate():
+            return host.validate_container(item, role="observer", image_id=IMAGE, source_sha=SHA, source_tree=TREE,
+                attempt="next", root=self.base, operator=operator, market_provider="IOL_REST", attempts=attempts)
+        with self.assertRaisesRegex(host.Hold, "RUNTIME_STORAGE_MISMATCH"):
+            validate()
+        item["Mounts"][-1].update(Destination=host.IOL_CREDENTIAL_MOUNT, Source=str(secret))
+        self.assertEqual(validate(), "1" * 64)
+        item["Config"]["Env"].append("POROTA_PPI_DIRECT_REST_RECOVERY=1")
+        with self.assertRaisesRegex(host.Hold, "RUNTIME_PROVIDER_CREDENTIALS_BOUNDARY"):
+            validate()
+
+    def test_iol_closed_market_health_does_not_accept_ppi_session(self):
+        now = datetime.now(timezone.utc)
+        row = {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "NOT_ATTEMPTED",
+               "process_state": "WAITING_MARKET", "session_state": "MARKET_CLOSED", "heartbeat_at": now.isoformat()}
+        self.assertEqual(host.classify_runtime(row, now=now, started=now, provider="IOL_REST")["status"], "READY")
+        with self.assertRaisesRegex(host.Hold, "IOL_RELEASE_PPI_ACCESS_DETECTED"):
+            host.classify_runtime(dict(row, ppi_auth="OK"), now=now, started=now, provider="IOL_REST")
+
     def test_real_configuration_is_refused_before_any_command(self):
         for values in ({"ALLOW_REAL_ORDERS": "true"}, {"REAL_ORDER_CAPABILITY": "ENABLED"},
                        {"EXECUTION_MODE": "REAL"}):

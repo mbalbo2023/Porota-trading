@@ -72,6 +72,38 @@ jobs:
             --release-dir "$RUNNER_TEMP/porota/release" \
             --receipt "$RUNNER_TEMP/porota/runtime.json"
 
+      - name: Identify the installed IOL release
+        id: iol
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if jq -e '.state == "VALIDADO_RUNTIME" and .market_provider == "IOL_REST"' \
+            "$RUNNER_TEMP/porota/runtime.json" >/dev/null; then
+            echo 'installed=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare Chromium on the Actions runner
+        if: steps.iol.outputs.installed == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/porota/playwright-venv"
+          "$RUNNER_TEMP/porota/playwright-venv/bin/pip" install --disable-pip-version-check playwright==1.51.1
+          "$RUNNER_TEMP/porota/playwright-venv/bin/python" -m playwright install chromium
+
+      - name: Verify the actual authenticated dashboard with Playwright
+        if: steps.iol.outputs.installed == 'true'
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/porota/playwright-venv/bin/python" -B -m scripts.rc6_dashboard_playwright_postdeploy \
+            --runtime-receipt "$RUNNER_TEMP/porota/runtime.json" \
+            --receipt "$RUNNER_TEMP/porota/dashboard-playwright.json"
+
       - name: Preserve physical evidence, including failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,6 +112,7 @@ jobs:
           path: |
             ${{ runner.temp }}/porota/download.json
             ${{ runner.temp }}/porota/runtime.json
+            ${{ runner.temp }}/porota/dashboard-playwright.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -95,3 +128,12 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
               out.write('## Porota runtime\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
           PY
+
+      - name: Require isolated fixture results for the installed image
+        if: always() && steps.iol.outputs.installed == 'true'
+        shell: bash
+        run: |
+          jq -e '(.synthetic_replay.status == "PASS") and
+            (.synthetic_replay.image_id == .image_id) and (.synthetic_replay.source_sha == .source_sha) and
+            (.synthetic_replay.network == "NONE") and (.synthetic_replay.operational_mounts == 0) and
+            (.synthetic_replay.real_orders_sent == 0)' "$RUNNER_TEMP/porota/runtime.json" >/dev/null

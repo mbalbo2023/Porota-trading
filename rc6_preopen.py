@@ -316,6 +316,11 @@ def observer_db():
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
         phase = str(state.get('session_state') or '').upper()
+        if os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST':
+            # Closed-market fixture success cannot authorize entry or inherit a PPI GO.
+            c.close()
+            return {'state':'RED','bounded_readonly_probe':'GREEN','schema_version':schema_version,
+                    'reason':'IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED', 'observer_state':state}
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
@@ -428,6 +433,9 @@ def runtime_contracts(connection, now):
 
 def iol_reference_state(today):
     """IOL failure is a provenance state, never a synthetic zero value."""
+    if os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST':
+        return {'state':'AMBER','source':'IOL_REST','reason':'IOL_REFERENCE_ONLY',
+                'fallback_order':[], 'decision_effect':'OBSERVE_ONLY'}
     try:
         payload = json.loads(IOL_FAMILY_REFERENCE.read_text(encoding='utf-8'))
         cache = str(payload.get('cache_state') or '').upper()

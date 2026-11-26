@@ -1,6 +1,0 @@
-{
-  "schema": "porota.rc6.iol-testing-only.v1",
-  "environment": "OFFHOST_TESTING",
-  "release_allowed": false,
-  "operator_authorization_required": true
-}

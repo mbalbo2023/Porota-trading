@@ -1,5 +1,17 @@
 # Migración de Porota RC6 a la API de IOL
 
+## Revisión de release PAPER del 26/11/2026
+
+El comparador #1290 conserva el veto de pruebas. La revisión separada `fix/rc6-iol-paper-release-20261126` conecta el supervisor de IOL REST al Compose del Droplet. Predeploy V2 y Promote V2 conservan la verificación de árbol, el paquete inmutable y el control de promoción. Después de instalar el digest, Actions observa workers y SQLite y corre los replays en un contenedor sin red, credenciales ni datos operativos. [Comparador #1290](https://github.com/mbalbo2023/Porota-trading/pull/1290) · [Checkpoint del comparador](https://github.com/mbalbo2023/Porota-trading/issues/1093#issuecomment-7205263772)
+
+El primer problema confirmado en la revisión era de wiring. El Compose de publicación montaba credenciales PPI y el verificador sólo admitía ocho procesos de ese perfil. La corrección monta exclusivamente el archivo IOL en el observer, verifica PID y registro Unix del único Gateway para scanner y EXIT, rechaza rutas operativas del cliente PPI y comprueba la custodia del contenedor anterior por su propio perfil. PPI Watch sigue independiente. Los datos históricos conservan su origen.
+
+**Condición de cierre de rueda.** El último inventario anterior observó tres identidades elegibles de 17.583, las tres de Bonos. Faltan un reloj del último trade autenticado de IOL y la autoridad nueva de catálogo/GO. La salida del scanner conserva HOLD. Bonos, Letras, ON y Opciones requieren además sus contratos de ejecución específicos. Futuros, Cauciones y FCI requieren, respectivamente, evidencia A3, un libro de tasas con reloj y NAV/calendario por clase. Los escenarios sintéticos de las diez familias verifican los motores contra sus fixtures. GGAL verifica el ciclo integrado por Gateway IOL. [Matriz de migración](MATRIZ_MIGRACION_RUEDA.md)
+
+**Lección.** Un PID correcto y un test de señal verde acreditan wiring y lógica. La fecha del último negocio, el libro, la intención GO y la autorización de la clave exacta se comprueban en rueda con recibos de su propio ámbito. El recibo de replay publica su dataset sintético y se liga al mismo SHA, árbol e imagen que el recibo físico.
+
+## Desarrollo inicial y comparadores
+
 **Migración PROPUESTA · Integración aislada EN PRUEBAS · 26/11/2026 ART**
 
 La [matriz de migración para rueda](MATRIZ_MIGRACION_RUEDA.md) reúne el inventario operativo, el semáforo y la acción de cierre de cada componente.

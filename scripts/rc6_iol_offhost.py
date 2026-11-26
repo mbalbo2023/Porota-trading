@@ -157,6 +157,13 @@ def run_focus(output):
             or forbidden.intersection(name for name in os.environ if os.environ[name])
             or not (ROOT / TESTING_ONLY_MARKER).is_file()):
         raise ValueError("IOL_OFFHOST_ISOLATION_REQUIRED")
+    report = run_fixture_suite()
+    output.write_text(json.dumps(report, sort_keys=True) + "\n")
+    return report["status"] == "PASS"
+
+
+def run_fixture_suite():
+    """Run the established fixture suite and retain only its typed summary."""
     with tempfile.TemporaryDirectory(prefix="rc6-iol-validation-") as temporary:
         directory = Path(temporary)
         junit = directory / "focused.xml"
@@ -168,10 +175,8 @@ def run_focus(output):
                                  "--junitxml", str(junit), *selected], cwd=ROOT, check=False,
                                 timeout=360, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 env=dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"))
-        report = summarize_focus(junit, result.returncode,
-                                 gateway_ipc=os.environ.get("POROTA_IOL_OFFHOST_IPC") == "1")
-        output.write_text(json.dumps(report, sort_keys=True) + "\n")
-    return report["status"] == "PASS"
+        return summarize_focus(junit, result.returncode,
+                               gateway_ipc=os.environ.get("POROTA_IOL_OFFHOST_IPC") == "1")
 
 
 def _read(directory, name):
