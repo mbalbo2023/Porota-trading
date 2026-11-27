@@ -929,3 +929,29 @@ def test_predeploy_packaging_and_promotion_reject_testing_tree(tmp_path):
     assert not bundle.exists()
     with pytest.raises(ValueError, match=RELEASE_BLOCKED):
         promotion_source(repository, head)
+
+
+@pytest.mark.parametrize(("counter", "expected"), [(1800, "1800"), (-1, None), (None, None)])
+def test_iol_archive_distinguishes_day_nominals_from_trade_matching_field(tmp_path, iol_gateway, counter, expected):
+    from rc6_iol_trade_stream import last_trade
+
+    server, client, transport, _ = iol_gateway
+    register(client, "scanner")
+    event = {"type": "T", "code": 200, "msg": {"S": GGAL[0], "M": "BCBA", "T": transport.term,
+             "D": (transport.now - timedelta(seconds=2)).isoformat(), "P": transport.price, "X": 100}}
+    if counter is not None:
+        event["msg"]["TS"] = counter
+    wire, evidence = last_trade(event, transport.now - timedelta(seconds=1))
+    server.trade_stream = SimpleNamespace(want=lambda key: None,
+                                          evidence=lambda key: evidence if key == wire else None, state="SUBSCRIBED")
+    market = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+    store = PaperStore(str(tmp_path / "volume.db"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    assert record_iol_trade_sample(store, market.observe(GGAL), as_of=transport.now)
+    with store.connect() as db:
+        raw, = db.execute("SELECT body_json FROM historical_raw_archive").fetchone()
+    archived = json.loads(raw).get("iol_day_counter")
+    if expected is None:
+        assert archived is None
+    else:
+        assert archived == {"nominals": expected, "gateway_generation": server._generation}

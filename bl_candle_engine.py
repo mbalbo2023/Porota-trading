@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
+import re
 from pathlib import Path
 import sqlite3
 from zoneinfo import ZoneInfo
@@ -399,14 +400,25 @@ def record_iol_trade_sample(store, observation, *, as_of):
     currency, market = q.monetary_identity()
     identity = (q.symbol, q.asset_class, market, currency, q.settlement)
     price = format(decimal_value(q.last, "precio", positive=True).normalize(), "f")
+    counter = None
+    trade = q.iol_trade_evidence
+    if (isinstance(trade, dict) and trade.get("identity") == list(identity)
+            and trade.get("trade_at") == q.trade_at
+            and isinstance(trade.get("gateway_generation"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", trade["gateway_generation"])):
+        try:
+            count = decimal_value(trade.get("day_nominals"), "IOL TS", nonnegative=True)
+            counter = {"nominals": str(count), "gateway_generation": trade["gateway_generation"]}
+        except (ValueError, TypeError, ArithmeticError):
+            pass
     return _record_sampled_trade(store, identity, source="IOL_REST_TRADE_SAMPLE", event=event,
                                  received=received, price=price, receipt_id=evidence.data_sha256,
-                                 wire_sha256=evidence.data_sha256,
+                                 wire_sha256=evidence.data_sha256, day_counter=counter,
                                  cash_multiplier=(str(q.contract.cash_multiplier) if q.contract else "UNKNOWN"))
 
 
 def _record_sampled_trade(store, key, *, source, event, received, price, receipt_id,
-                          wire_sha256, cash_multiplier):
+                          wire_sha256, cash_multiplier, day_counter=None):
     series_items = [Series(*key, resolution, source, "RAW", "OBSERVED_NOMINAL_PRICE",
                            "TRADE_SAMPLES", "UNKNOWN", cash_multiplier)
                     for resolution in ("1m", "5m")]
@@ -423,7 +435,8 @@ def _record_sampled_trade(store, key, *, source, event, received, price, receipt
             return False
         if not archive_raw(c, origin=source, row_key=receipt_id, recorded_at=received,
                            quality="SAMPLED", payload={"identity": key, "trade_at": event,
-                           "price": price, "wire_sha256": wire_sha256}):
+                           "price": price, "wire_sha256": wire_sha256,
+                           **({"iol_day_counter": day_counter} if day_counter is not None else {})}):
             return False
         sample_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
         for series in missing:

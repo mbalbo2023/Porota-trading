@@ -61,8 +61,16 @@ def last_trade(message, received):
         return None
     if at > received:
         return None
-    return key, {"trade_at": at.isoformat(), "received_at": received.isoformat(),
-                 "price": str(price), "shares": str(shares)}
+    evidence = {"trade_at": at.isoformat(), "received_at": received.isoformat(),
+                "price": str(price), "shares": str(shares)}
+    # IOL documents TS as the day's cumulative nominal quantity. X is the
+    # REST matching field and must not be used as interval volume.
+    if "TS" in payload:
+        try:
+            evidence["day_nominals"] = str(decimal_value(payload["TS"], "IOL TS", nonnegative=True))
+        except (ValueError, TypeError, ArithmeticError):
+            pass
+    return key, evidence
 
 
 def matched_trade(evidence, quote, received):
