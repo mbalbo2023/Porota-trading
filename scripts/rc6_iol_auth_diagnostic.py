@@ -99,7 +99,7 @@ def _asset_receipt(client, cached):
     return {"state": "REFERENCE_GD30_VERIFIED" if valid else "ASSET_IDENTITY_UNVERIFIED", "http_status": None}
 
 
-def observe_auth(manager, current):
+def observe_auth(manager, current, *, probe_asset=True):
     """Accept only a verified IOL release under the caller's shared release lock."""
     require(current.get("state") == "VALIDADO_RUNTIME" and current.get("market_provider") == "IOL_REST",
             "INSTALLED_IOL_RELEASE_REQUIRED")
@@ -108,7 +108,8 @@ def observe_auth(manager, current):
     owner = _owner_status(manager, current)
     health = IOLRestReadOnly(manager.identity.state / "iol-rest", allow_renew=False)
     cache, cached = _inspect_health_cache(health)
-    endpoint = _asset_receipt(health, cached)
+    endpoint = (_asset_receipt(health, cached) if probe_asset else
+                {"state": "NOT_PROBED_READ_ONLY_EVIDENCE", "http_status": None})
     after = database_snapshot(manager.root / DB_RELATIVE)
     require(after == before, "DIAGNOSTIC_DATABASE_IDENTITY_CHANGED")
     return {
