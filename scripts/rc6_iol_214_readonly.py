@@ -14,7 +14,7 @@ EXPECTED = {"source_sha": "eba76703be86e6a6b1406db36e5cb4cb87b21330",
             "image_id": "sha256:274b143fd323ab0b79aff90890f54a7f5ce0ed84c3323fedd385ce85f28e83d2",
             "attempt": "45921311817-1"}
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "porota.iol.installed-214-preopen-inventory.v1"
+SCHEMA = "porota.iol.installed-214-preopen-market-pair.v1"
 
 REMOTE = '''
 from contextlib import closing
@@ -121,7 +121,10 @@ def run_probe():
                 0 <= (datetime.now(timezone.utc)-stamp).total_seconds() <= 120,'AUDIT_PAPER_HEARTBEAT_REQUIRED')
         namespace = {'__name__':'rc6_iol_214_reference_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
         exec(compile(auth_source,'rc6_iol_214_reference_auth','exec'),namespace)
-        auth = namespace['observe_auth'](manager,current,probe_asset=row[0] in ('MARKET_CLOSED','CLOSED','PREOPEN'))
+        auth = namespace['observe_auth'](manager,current,probe_asset=False)
+        market_pair = {'state':'NOT_PROBED_IN_MARKET','wire_attempts':0,'endpoints':{}}
+        if row[0] in ('MARKET_CLOSED','CLOSED','PREOPEN'):
+            market_pair = namespace['observe_gd30_market_pair'](identity.state)
         common = ('Id','LoadState','ActiveState','SubState','UnitFileState')
         units = {}
         for unit,fields in ((TIMER,('Unit','Triggers','LastTriggerUSec','NextElapseUSecRealtime')),
@@ -140,12 +143,12 @@ def run_probe():
             require(inspected['State'].get('Running') is True and type(inspected.get('RestartCount')) is int,
                     'AUDIT_CONTAINER_STATE_UNVERIFIED')
             inventory[role+'_restarts'] = inspected['RestartCount']
-        requests = auth.get('market_requests_generated',0)
-        require(type(requests) is int and requests in (0,1) and auth.get('oauth_grants_sent') == 0 and
+        requests = market_pair['wire_attempts']
+        require(type(requests) is int and requests in (0,1,2) and auth.get('oauth_grants_sent') == 0 and
                 database_snapshot(root / DB_RELATIVE) == original,'AUDIT_REFERENCE_BOUNDARY_UNVERIFIED')
         return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
-                'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,
+                'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
                 'units':units,'journal':history,'inventory':inventory,
                 'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
@@ -174,7 +177,7 @@ def main():
         if proc.returncode == 0:
             require(observed.get("read_only") is True and all(type(observed.get(k)) is int and observed[k] == 0
                     for k in ("real_orders_sent", "grants_generated")) and
-                    type(observed.get("market_requests_generated")) is int and observed["market_requests_generated"] in (0,1) and
+                    type(observed.get("market_requests_generated")) is int and observed["market_requests_generated"] in (0,1,2) and
                     observed.get("auth_probe_sha256") == hashlib.sha256(auth.encode()).hexdigest(),
                     "AUDIT_PAPER_SAFETY_UNVERIFIED")
         receipt = observed

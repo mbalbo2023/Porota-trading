@@ -26,14 +26,15 @@ print(json.dumps({'source_sha': os.getenv('POROTA_BUILD_SHA'),
 class _SingleReferenceGET:
     """Observe one GET on the existing no-redirect IOL transport."""
 
-    def __init__(self, opener):
+    def __init__(self, opener, route="/broker/assets/GD30?market=BCBA"):
         self.opener = opener
+        self.route = route
         self.attempts = 0
         self.http_status = None
 
     def open(self, request, *, timeout):
         if (self.attempts or request.get_method() != "GET" or
-                request.full_url != API + "/broker/assets/GD30?market=BCBA"):
+                request.full_url != API + self.route):
             raise PermissionError("IOL_DIAGNOSTIC_ROUTE_DENIED")
         self.attempts += 1
         try:
@@ -124,6 +125,55 @@ def _asset_receipt(client, cached):
     valid = (asset.get("symbol"), asset.get("market"), asset.get("type"), asset.get("currency"), asset.get("term")) == (
         "GD30", "BCBA", "BONOS", "ARS", "T1")
     return {"state": "REFERENCE_GD30_VERIFIED" if valid else "ASSET_IDENTITY_UNVERIFIED", "http_status": None}
+
+
+def observe_gd30_market_pair(state_dir):
+    """Record only shape and clock evidence, within two GETs and zero grants."""
+    client = IOLRestReadOnly(state_dir / "iol-rest", allow_renew=False)
+    cache, cached = _inspect_health_cache(client)
+    if cached is None:
+        return {"state": "NO_CURRENT_CACHED_BEARER", "cache": cache, "wire_attempts": 0,
+                "endpoints": {}}
+    client.active = cached
+    opener = client.opener
+    endpoints = {}
+    attempts = 0
+    for endpoint in ("quote", "depth"):
+        route = f"/broker/market-data/GD30/{endpoint}?market=BCBA&term=T1"
+        transport = _SingleReferenceGET(opener, route)
+        client.opener = transport
+        try:
+            payload = client.read_market_data(endpoint, "GD30", "BCBA", "T1")
+        except IOLRestError as error:
+            endpoints[endpoint] = {"state": "READ_HOLD", "http_status": transport.http_status}
+            attempts += transport.attempts
+            if not transport.attempts or error.status_code in (401, 403, 429):
+                break
+            continue
+        attempts += transport.attempts
+        exact = (isinstance(payload, dict) and
+                 (payload.get("symbol"), payload.get("market"), payload.get("settlement_term")) == ("GD30", "BCBA", "T1"))
+        currency = payload.get("currency") if exact else None
+        matched = exact and (currency == "ARS" or endpoint == "depth" and currency is None)
+        item = {"state": "OBSERVED" if matched else "RESPONSE_IDENTITY_UNVERIFIED",
+                "http_status": transport.http_status, "currency_explicit_and_matching": currency == "ARS"}
+        if matched:
+            value = payload.get("last_updated")
+            if isinstance(value, str):
+                try:
+                    updated = datetime.fromisoformat(value)
+                    if updated.utcoffset() is not None and updated <= datetime.now(timezone.utc):
+                        item["provider_update_at"] = updated.astimezone(timezone.utc).isoformat()
+                except (ValueError, OverflowError):
+                    pass
+            if endpoint == "depth":
+                item["two_sided"] = all(isinstance(payload.get(side), list) and payload[side]
+                                        for side in ("bids", "asks"))
+            else:
+                prices = payload.get("prices")
+                item["current_present"] = isinstance(prices, dict) and type(prices.get("current")) in (int, float)
+        endpoints[endpoint] = item
+    return {"state": "OBSERVED", "cache": cache, "wire_attempts": attempts, "endpoints": endpoints}
 
 
 def observe_auth(manager, current, *, probe_asset=True):
