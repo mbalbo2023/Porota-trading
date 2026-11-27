@@ -19,7 +19,7 @@ PRODUCT = {
     "attempt": "45921311817-1",
     "market_provider": "IOL_REST",
 }
-SCHEMA = "porota.rc6.rootless.cold-recovery.v1"
+SCHEMA = "rc6.rootless.cold-recovery.v1"
 MODULES = (
     "scripts/porota_rootless_host.py",
     "scripts/rc6_cold2_quarantine.py",
