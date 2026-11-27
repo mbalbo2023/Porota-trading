@@ -156,6 +156,9 @@ def init_schema(store):
           id INTEGER PRIMARY KEY AUTOINCREMENT, origin TEXT NOT NULL, row_key TEXT NOT NULL,
           body_hash TEXT NOT NULL, recorded_at TEXT NOT NULL, quality TEXT NOT NULL,
           body_json TEXT NOT NULL, UNIQUE(origin,row_key,body_hash));
+        CREATE INDEX IF NOT EXISTS idx_iol_trade_sample_time
+          ON historical_raw_archive(recorded_at,id)
+          WHERE origin='IOL_REST_TRADE_SAMPLE' AND quality='SAMPLED';
         ''')
 
 
@@ -409,6 +412,8 @@ def record_iol_trade_sample(store, observation, *, as_of):
         try:
             count = decimal_value(trade.get("day_nominals"), "IOL TS", nonnegative=True)
             counter = {"nominals": str(count), "gateway_generation": trade["gateway_generation"]}
+            if re.fullmatch(r"[0-9a-f]{64}", str(trade.get("stream_session", ""))):
+                counter["stream_session"] = trade["stream_session"]
         except (ValueError, TypeError, ArithmeticError):
             pass
     return _record_sampled_trade(store, identity, source="IOL_REST_TRADE_SAMPLE", event=event,
@@ -431,7 +436,7 @@ def _record_sampled_trade(store, key, *, source, event, received, price, receipt
         missing = [series for series in series_items if not c.execute("""
             SELECT 1 FROM candle_samples WHERE series_id=? AND event_at=? AND price=?""",
             (series.key, event, price)).fetchone()]
-        if not missing:
+        if not missing and source != "IOL_REST_TRADE_SAMPLE":
             return False
         if not archive_raw(c, origin=source, row_key=receipt_id, recorded_at=received,
                            quality="SAMPLED", payload={"identity": key, "trade_at": event,

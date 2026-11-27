@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from datetime import datetime, timezone
 import json
+from secrets import token_hex
 from threading import Lock
 import time
 
@@ -163,12 +164,14 @@ class IOLTradeStream:
 
     def _session(self, socket, token, stop):
         active = set()
+        stream_session = token_hex(32)
 
         def record(message):
             sample = last_trade(message, self._clock())
             if sample is None or sample[0] not in active:
                 return
             key, evidence = sample
+            evidence["stream_session"] = stream_session
             with self._lock:
                 previous = self._trades.get(key)
                 if key in self._wanted and (previous is None or evidence["trade_at"] >= previous["trade_at"]):

@@ -138,23 +138,24 @@ def test_iol_equity_shadow_requires_its_own_trades_and_book(family):
     assets[0]["instrument_type"] = family
     planner = UniverseOrchestrator(assets, policy=EnginePolicy(engine="EQUITY_SPOT", warmup_samples=3))
     scope = dict(session_open=OPEN, frozen=frozen(assets), market_provider="IOL_REST")
+    measured = dict(capacity(), measured_identities=[identity(assets[0])])
     previous = planner.plan(at=OPEN, capacity={}, **scope)
     assert previous["telemetry"][0]["state"] == "DISCOVERY"
-    previous = planner.plan(at=OPEN, capacity=capacity(), previous=previous, **scope)
+    previous = planner.plan(at=OPEN, capacity=measured, previous=previous, **scope)
     assert previous["telemetry"][0]["state"] == "WARM"
 
     for minute in (1, 2, 3):
         at = OPEN + timedelta(minutes=minute)
         ppi = obs(assets[0], at, source="PPI_MARKETDATA_CURRENT", endpoint="current")
         iol = obs(assets[0], at, source="IOL_REST", endpoint="current")
-        previous = planner.plan(at=at, capacity=capacity(), previous=previous,
+        previous = planner.plan(at=at, capacity=measured, previous=previous,
                                 observations=[ppi, iol], **scope)
     assert previous["telemetry"][0]["warmup_progress"]["distinct_samples"] == 0
 
     for minute in (4, 5, 6):
         at = OPEN + timedelta(minutes=minute)
         iol = dict(obs(assets[0], at, source="IOL_REST", endpoint="current"), is_trade=True)
-        previous = planner.plan(at=at, capacity=capacity(), previous=previous,
+        previous = planner.plan(at=at, capacity=measured, previous=previous,
                                 observations=[iol], **scope)
     first = previous["telemetry"][0]
     assert first["state"] == "HOT" and first["signal_result"] == "SAMPLES_READY"
@@ -162,7 +163,7 @@ def test_iol_equity_shadow_requires_its_own_trades_and_book(family):
 
     after_expiry = at + timedelta(minutes=3)
     ppi = obs(assets[0], after_expiry, source="PPI_MARKETDATA_CURRENT", endpoint="current")
-    expired = planner.plan(at=after_expiry, capacity=capacity(), previous=previous,
+    expired = planner.plan(at=after_expiry, capacity=measured, previous=previous,
                            observations=[ppi], **scope)
     assert expired["telemetry"][0]["signal_result"] == "NOT_READY"
 

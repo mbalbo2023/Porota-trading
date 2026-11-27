@@ -1,8 +1,8 @@
 """Colector intradiario y scanner de scalping PAPER v17 HF3.
 
 El perfil PPI calcula señales con su serie intradiaria y libro ejecutable.
-El perfil IOL observa las muestras de trades verificadas por el scanner.
-Las muestras rotativas carecen de un volumen de intervalo apto para scalping.
+El perfil IOL verifica intervalos del contador de operaciones autenticado
+y evalúa con el libro del mismo instrumento que dejó el Gateway.
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ from rc6_signal_contracts import (
 )
 from co_market_sessions_hf6 import byma_paper_spot_open
 from fg_intraday_contract_policy_rc6 import classify_revision, previous_for_session
+import rc6_iol_intraday as iol_intraday
 
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
@@ -367,7 +368,7 @@ def _intraday_read_error_code(reader, error, classify_read_error):
 
 def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
                          observations=(), events=(), opened=(), previous=None,
-                         phase="OPEN", policy=None, market_provider="PPI"):
+                         phase="OPEN", policy=None, market_provider="PPI", iol_windows=None):
     """Separate dense SHADOW scheduler; no change to the productive 40 policy.
 
     Uses the existing exact equity-family contract. Caller supplies empirical
@@ -383,7 +384,7 @@ def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
     return UniverseOrchestrator(catalog, policy=selected_policy).plan(
         at=at, session_open=session_open, frozen=frozen, capacity=capacity,
         observations=observations, events=events, opened=opened,
-        previous=previous, phase=phase, market_provider=market_provider)
+        previous=previous, phase=phase, market_provider=market_provider, iol_windows=iol_windows)
 
 
 def _stamp(value):
@@ -911,8 +912,16 @@ def _intraday_freshness_reason(contract, *, at, latest_event_at):
     return ""
 
 
-def scalping_intraday_reason(connection, identity, at):
+def scalping_intraday_reason(connection, identity, at, *, quote=None, iol_window_end=None):
     """Revalidate the same price source on the broker's write transaction."""
+    if quote is not None and quote.metadata_source == "IOL_REST":
+        window = iol_intraday.read_windows(connection, at).get(identity)
+        points, contract = iol_intraday.inputs(window)
+        latest = points[-1]["event_at"] if points else None
+        return (_intraday_freshness_reason(contract, at=at, latest_event_at=latest)
+                or event_window_contract(points, at)["reason_code"]
+                or ("IOL_SCALPING_CURRENT_MISMATCH" if not iol_intraday.quote_matches(quote, window) else "")
+                or ("IOL_SCALPING_WINDOW_CHANGED" if latest != iol_window_end else ""))
     return _intraday_freshness_reason(_read_intraday_state(connection, identity) or {},
         at=at, latest_event_at=_latest_intraday_event_at(connection, identity))
 
@@ -991,29 +1000,33 @@ def sized_etf_range(connection, quote, policy, entry_notional, *, features, at):
             "entry_notional": str(entry_notional)}
 
 
-def evaluate_candidate(store, record, *, at):
+def evaluate_candidate(store, record, *, at, iol_windows=None):
     identity = _identity(record)
-    contract = _state(store, identity) or {}
-    capability = _capability_detail(contract)
-    warmup_after = (capability or {}).get("warmup_after")
     reason = ""
     action = "HOLD"
     score = Decimal("0")
     economics = {"binding": True, "execution_enabled": False, "passed": False}
     from be_paper_engine import PaperStore
+    iol = iol_windows is not None
+    window = iol_windows.get(identity) if iol else None
     with store.connect() as connection:
-        register_exact_time(connection)
-        points = connection.execute("""SELECT event_at,price,volume,first_received_at,last_verified_at,source FROM ppi_intraday_points
+        if iol:
+            points, contract = iol_intraday.inputs(window)
+        else:
+            contract = _read_intraday_state(connection, identity) or {}
+            warmup_after = (_capability_detail(contract) or {}).get("warmup_after")
+            register_exact_time(connection)
+            points = connection.execute("""SELECT event_at,price,volume,first_received_at,last_verified_at,source FROM ppi_intraday_points
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
             AND rc6_instant_us(event_at)>=rc6_instant_us(?) AND rc6_instant_us(event_at)<=rc6_instant_us(?)
             AND rc6_instant_us(first_received_at)<=rc6_instant_us(?)
             AND rc6_instant_us(last_verified_at)<=rc6_instant_us(?)
             AND (? IS NULL OR rc6_instant_us(event_at)>rc6_instant_us(?))
           ORDER BY event_at DESC LIMIT 30""",
-          (*identity, _stamp(aware_datetime(at)-timedelta(minutes=45)), _stamp(at), _stamp(at), _stamp(at),
-           warmup_after, warmup_after)).fetchall()
+              (*identity, _stamp(aware_datetime(at)-timedelta(minutes=45)), _stamp(at), _stamp(at), _stamp(at),
+               warmup_after, warmup_after)).fetchall()
+            points = list(reversed(points))
         quote = PaperStore.latest_quote_row(connection, _quote_identity(record))
-    points = list(reversed(points))
     temporal = event_window_contract(points, at)
     economics["temporal_contract"] = temporal
     freshness_reason = _intraday_freshness_reason(
@@ -1039,9 +1052,19 @@ def evaluate_candidate(store, record, *, at):
     else:
         try:
             executable_quote = PaperStore.quote_from_snapshot(quote)
+            if iol:
+                from am_us_equity_calendar_rc6 import cedear_opening_gate
+                allowed, calendar_reason = cedear_opening_gate(record["instrument_type"], aware_datetime(at))
+                if not allowed:
+                    raise ValueError(calendar_reason)
+                if not iol_intraday.quote_matches(executable_quote, window):
+                    raise ValueError("IOL_SCALPING_CURRENT_MISMATCH")
             spread = scalping_book_spread(executable_quote, at)
             prices = [_decimal(row["price"], positive=True) for row in points]
-            volume_evidence, volume_reason = _volume_diagnostics(record, [row["volume"] for row in points], at)
+            if iol:
+                volume_evidence, volume_reason = contract["volume"], ""
+            else:
+                volume_evidence, volume_reason = _volume_diagnostics(record, [row["volume"] for row in points], at)
             economics["volume_contract"] = volume_evidence
             if volume_reason:
                 economics["volume_diagnostic"] = volume_reason
@@ -1133,6 +1156,9 @@ def _record_native_entry_snapshot(connection, record, points, quote, contract, *
                     and economics.get("volume_contract") else "NO_VERIFICADO"),
             "volume_unit": (economics.get("volume_contract") or {}).get("unit", "NO_VERIFICADO"),
             "volume_contract": economics.get("volume_contract"), "rvol_status": "NO_VERIFICADO"}}
+    if points and points[-1]["source"] == iol_intraday.SOURCE:
+        inputs["iol_interval_receipts"] = [[p["interval_start"], p["start_receipt"], p["end_receipt"]]
+                                          for p in points]
     exact_quote = {name: quote.get(name) for name in ("symbol", "asset_class", "settlement", "currency", "market",
         "bid", "ask", "bid_size", "ask_size", "last", "book_at", "trade_at", "observed_at",
         "market_snapshot_id", "financial_contract_sha256")}
@@ -1178,7 +1204,6 @@ def promote_paper_candidate(store, record, *, at):
     identity = _identity(record)
     with store.connect() as connection:
         register_exact_time(connection)
-        contract = _read_intraday_state(connection, identity) or {}
         scalp_open = 0
         for row in connection.execute("SELECT features_json FROM paper_positions WHERE status='OPEN'"):
             try:
@@ -1191,7 +1216,14 @@ def promote_paper_candidate(store, record, *, at):
         candidate = connection.execute("""SELECT * FROM scalping_candidates
           WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
           ORDER BY id DESC LIMIT 1""", identity).fetchone()
-        latest_event_at = _latest_intraday_event_at(connection, identity)
+        iol = quote_row is not None and quote_row["metadata_source"] == "IOL_REST"
+        if iol:
+            window = iol_intraday.read_windows(connection, at).get(identity)
+            points, contract = iol_intraday.inputs(window)
+            latest_event_at = points[-1]["event_at"] if points else None
+        else:
+            contract = _read_intraday_state(connection, identity) or {}
+            latest_event_at = _latest_intraday_event_at(connection, identity)
     freshness_reason = _intraday_freshness_reason(contract, at=at, latest_event_at=latest_event_at)
     if freshness_reason:
         return freshness_reason
@@ -1248,6 +1280,15 @@ def promote_paper_candidate(store, record, *, at):
     contract_sha = _contract_digest(q)
     if signal_quote.get("financial_contract_sha256") != contract_sha:
         return "SCALPING_BOOK_CONTRACT_CHANGED"
+    if iol:
+        from am_us_equity_calendar_rc6 import cedear_opening_gate
+        allowed, calendar_reason = cedear_opening_gate(record["instrument_type"], aware_datetime(at))
+        if not allowed:
+            return calendar_reason
+        if (not iol_intraday.quote_matches(q, window)
+                or signal_inputs.get("iol_interval_receipts", [])[-1:] !=
+                [[points[-1]["interval_start"], points[-1]["start_receipt"], points[-1]["end_receipt"]]]):
+            return "IOL_SCALPING_WINDOW_CHANGED"
     economics = json.loads(candidate["economics_json"] or "{}")
     # Range screening is retrospective; the shared broker recomputes actual
     # net reward/risk for its Stop/TP and complete PAPER cost contract.
@@ -1265,6 +1306,8 @@ def promote_paper_candidate(store, record, *, at):
     }
     key = "SCALPING:" + ":".join(_identity(record)) + ":" + str(candidate["evaluated_at"])
     features["native_decision_key"] = key
+    if iol:
+        features["iol_scalping_window_end"] = latest_event_at
     if not store.record_decision(key, q, "BUY", Decimal(candidate["score"]),
                                  "Candidato scalping validado", features):
         return "DUPLICATE_DECISION"
@@ -1319,40 +1362,9 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 
 
 
-def _iol_observed_samples(store, at, limit):
-    """Use the scanner's validated trades as observations, with no new reads."""
-    now = aware_datetime(at)
-    floor = now - timedelta(seconds=INTRADAY_SOURCE_MAX_AGE_SECONDS)
-    with closing(store.connect()) as connection:
-        rows = connection.execute("""SELECT row_key,body_hash,recorded_at,body_json
-          FROM historical_raw_archive
-          WHERE origin='IOL_REST_TRADE_SAMPLE' AND quality='SAMPLED'
-            AND recorded_at BETWEEN ? AND ?
-          ORDER BY id DESC LIMIT ?""", (_stamp(floor), _stamp(now), limit)).fetchall()
-    identities, accepted = set(), 0
-    for row_key, body_hash, received_at, body_json in rows:
-        try:
-            body = json.loads(body_json)
-            identity = tuple(body["identity"])
-            received = aware_datetime(received_at)
-            trade_at = aware_datetime(body["trade_at"])
-            if (len(identity) != 5 or identity[1] not in SCALPING_STRATEGY_FAMILIES
-                    or not all(isinstance(part, str) and part for part in identity)
-                    or not floor <= trade_at <= received <= now
-                    or (body["wire_sha256"] != row_key or not re.fullmatch(r"[0-9a-f]{64}", row_key))
-                    or hashlib.sha256(body_json.encode("utf-8")).hexdigest() != body_hash):
-                continue
-            decimal_value(body["price"], "IOL trade price", positive=True)
-        except (ValueError, TypeError, KeyError, ArithmeticError):
-            continue
-        accepted += 1
-        identities.add(identity)
-    return len(identities), accepted, len(rows) - accepted
+def _run_iol_scalping(store, stop, *, clock_fn, interval, batch_limit):
+    from bu_instrument_catalog import iol_spot_catalog
 
-
-def _observe_iol_scalping(store, stop, *, clock_fn, interval, batch_limit):
-    # Observations from a rotating scanner do not establish interval volume.
-    # Keep them out of the legacy native signal policy and out of the ledger.
     try:
         while not stop.is_set():
             at = aware_datetime(clock_fn())
@@ -1362,15 +1374,35 @@ def _observe_iol_scalping(store, stop, *, clock_fn, interval, batch_limit):
                 stop.wait(20)
                 continue
             try:
-                keys, samples, rejected = _iol_observed_samples(store, at, batch_limit)
-                reason = "IOL_INTERVAL_VOLUME_UNVERIFIED" if samples else "IOL_FRESH_TRADE_SAMPLE_UNAVAILABLE"
-                _heartbeat(store, at=at, state="OBSERVING_IOL", cursor=0,
-                           selected=keys, successful=samples, failed=rejected,
-                           detail=f"source=IOL_REST_TRADE_SAMPLE; entry=HOLD; reason={reason}")
+                with closing(store.connect()) as connection:
+                    windows = iol_intraday.read_windows(connection, at)
+                recent = sorted((key for key, window in windows.items()
+                    if 0 <= (at - window["fresh_trade_at"]).total_seconds() <= INTRADAY_SOURCE_MAX_AGE_SECONDS),
+                    key=lambda key: (-len(windows[key]["points"]), key))[:batch_limit]
+                evaluated, confirmed, candidates = [], 0, 0
+                if any(windows[key]["points"] for key in recent):
+                    eligible = iol_spot_catalog(store, now=at)
+                    for key in recent:
+                        if key not in eligible:
+                            continue
+                        action = evaluate_candidate(store, eligible[key], at=at, iol_windows=windows)
+                        evaluated.append(key)
+                        points, _ = iol_intraday.inputs(windows[key])
+                        confirmed += int(event_window_contract(points, at)["passed"])
+                        if action == "BUY_CANDIDATE":
+                            candidates += 1
+                            promote_paper_candidate(store, eligible[key], at=at)
+                reason = ("IOL_SCALPING_EVALUATING" if confirmed else
+                          "IOL_SCALPING_WINDOW_WARMING" if evaluated else
+                          "IOL_INTERVAL_VOLUME_UNVERIFIED" if recent else "IOL_FRESH_TRADE_SAMPLE_UNAVAILABLE")
+                _heartbeat(store, at=at, state="RUNNING" if confirmed else "OBSERVING_IOL", cursor=0,
+                           selected=len(recent), successful=len(recent), confirmed=confirmed, candidates=candidates,
+                           detail=json.dumps({"source": iol_intraday.SOURCE, "reason": reason,
+                               "observed": recent, "evaluated": evaluated}, sort_keys=True))
             except sqlite3.OperationalError:
                 _heartbeat(store, at=at, state="DEGRADED", cursor=0, failed=1,
                            detail="IOL_SCALPING_SAMPLE_READ_UNAVAILABLE")
-            stop.wait(interval)
+            stop.wait(min(interval, 60))
     finally:
         _heartbeat(store, at=clock_fn(), state="STOPPED", cursor=0)
 
@@ -1385,7 +1417,7 @@ def run_worker(store, stop, *, clock_fn):
     batch_limit = max(8, min(40, int(os.getenv(
         "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT)))))
     if iol_primary_enabled():
-        return _observe_iol_scalping(store, stop, clock_fn=clock_fn,
+        return _run_iol_scalping(store, stop, clock_fn=clock_fn,
                                      interval=interval, batch_limit=batch_limit)
 
     from bd_ppi_readonly_guard import classify_read_error, instrument_not_found

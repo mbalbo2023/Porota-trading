@@ -53,7 +53,7 @@ class UniverseOrchestrator:
             raise ValueError("DUPLICATE_EXACT_IDENTITY")
 
     def plan(self, *, at, session_open, frozen, capacity, observations=(), events=(),
-             opened=(), previous=None, phase="OPEN", market_provider="PPI"):
+             opened=(), previous=None, phase="OPEN", market_provider="PPI", iol_windows=None):
         at, opening = stamp(at), stamp(session_open)
         if phase not in {"OPEN", "PREOPEN", "CLOSED"}:
             raise ValueError("INVALID_MARKET_PHASE")
@@ -93,6 +93,9 @@ class UniverseOrchestrator:
                          "opening": opening.isoformat()}
         if iol:
             configuration["market_provider"] = market_provider
+            # IOL's window advances every scanner cycle. Re-evaluate its budget
+            # each tick while retaining measured warmup and scheduling clocks.
+            configuration.pop("capacity")
         config = digest(configuration)
         old = deepcopy(previous or {})
         reused = old.get("configuration_fingerprint") == config
@@ -173,6 +176,17 @@ class UniverseOrchestrator:
                     s["intraday_confirmed"] = obs.get("intraday_confirmed") is True
                 if not iol or iol_trade:
                     s["last_useful_observation_at"] = value
+        if iol and self.policy.engine == "SCALPING":
+            # Replace rather than accumulate: an interrupted counter segment
+            # immediately revokes its previous warmup, even with a fresh book.
+            for s in current.values():
+                window = (iol_windows or {}).get(tuple(s["identity"]))
+                s["samples"] = window["samples"] if window else []
+                s["intraday_confirmed"] = bool(window)
+                if window:
+                    s["source"] = "IOL_WS_TRADE_TS"
+                    s["book_at"] = window["book_at"]
+                    s["last_useful_observation_at"] = s["samples"][-1]
         for event in events:
             k = tuple(event["identity"])
             s = current.get(digest(k))
@@ -229,14 +243,18 @@ class UniverseOrchestrator:
             row = ranks.get(tuple(s["identity"]), {})
             return (not bool(s["event_at"]), -float(row.get("tradeability_score") or 0), s["identity"])
         tradeable = {k for k in eligible if ranks.get(k, {}).get("tradeable")}
-        prospects = sorted([s for s in current.values() if tuple(s["identity"]) in tradeable or s["event_at"]], key=priority)
+        measured = set(map(tuple, capacity.get("measured_identities", []))) if iol else eligible
+        prospects = sorted([s for s in current.values() if tuple(s["identity"]) in measured
+            and (tuple(s["identity"]) in tradeable or s["event_at"])], key=priority)
         free = max(0, safe_limit-len(opened))
-        discovery_slots = 1 if free else 0
+        discovery_slots = int(free > int(iol))
         hot_slots = min(max(0, free-discovery_slots), floor(free*self.policy.hot_share))
-        warm_slots = max(0, free-discovery_slots-hot_slots)
-        warm_capacity = warm_slots * max(1, floor(self.policy.warm_seconds/self.policy.hot_seconds))
+        if iol and free > discovery_slots:
+            hot_slots = max(1, hot_slots)
         hot = {tuple(s["identity"]) for s in prospects if warmed(s) and s["state"] in {"WARM", "HOT"}}
         hot = set(sorted(hot, key=lambda k: priority(current[digest(k)]))[:hot_slots])
+        warm_slots = max(0, free - discovery_slots - (len(hot) if iol else hot_slots))
+        warm_capacity = warm_slots * max(1, floor(self.policy.warm_seconds/self.policy.hot_seconds))
         warm = {tuple(s["identity"]) for s in prospects if tuple(s["identity"]) not in hot}
         warm = set(sorted(warm, key=lambda k: priority(current[digest(k)]))[:warm_capacity])
         for s in current.values():
@@ -361,13 +379,14 @@ class UniverseOrchestrator:
             "real_orders_sent": 0, "real_routes": "NOT_CALLED"}
 
 
-def reconcile_endpoint_slots(plans, slots_by_endpoint, *, global_slots=None):
+def reconcile_endpoint_slots(plans, slots_by_endpoint, *, global_slots=None, paired_current_and_intraday=False):
     """One aggregate observed budget across engines; open/HOT tasks come first.
 
     Expose reservation overflow instead of dropping existing positions. Engines
     with overlapping endpoint demand cannot both claim the whole measurement.
     """
     remaining = {k: int(number(v)) for k, v in slots_by_endpoint.items()}
+    endpoint_for = {"intraday": "current"} if paired_current_and_intraday else {}
     global_remaining = int(number(global_slots)) if global_slots is not None else min(remaining.values(), default=0)
     global_paid = set()
     tasks = []
@@ -382,21 +401,25 @@ def reconcile_endpoint_slots(plans, slots_by_endpoint, *, global_slots=None):
             tasks.append((priority, financial_rank, policy.engine, tuple(k), policy.endpoints))
     accepted, rejected, shared = [], [], set()
     for priority, _, engine, key, endpoints in sorted(tasks):
-        needed = [e for e in endpoints if (e, key) not in shared]
-        enough = all(remaining.get(e, 0) > 0 for e in needed) and (key in global_paid or global_remaining > 0)
+        consumed = {e: endpoint_for.get(e, e) for e in endpoints}
+        needed = [e for e, budget in consumed.items() if (budget, key) not in shared]
+        enough = all(remaining.get(consumed[e], 0) > 0 for e in needed) and (key in global_paid or global_remaining > 0)
         if enough or priority == 0:
             if key not in global_paid:
                 global_remaining -= 1
                 global_paid.add(key)
             for e in needed:
-                remaining[e] = remaining.get(e, 0)-1
-                shared.add((e, key))
+                budget = consumed[e]
+                remaining[budget] = remaining.get(budget, 0)-1
+                shared.add((budget, key))
             accepted.append({"engine": engine, "identity": key, "endpoints": endpoints,
                              "priority": ("OPENED_CRITICAL", "SCALPING_HOT", "STRATEGY_HOT", "WARM", "DISCOVERY", "DISCOVERY")[priority],
                              "reused_endpoints": [e for e in endpoints if e not in needed],
                              "reservation_overflow": not enough})
         else:
             rejected.append({"engine": engine, "identity": key, "reason": "SCANNER_CAPACITY"})
+    if paired_current_and_intraday and "current" in remaining:
+        remaining["intraday"] = remaining["current"]
     return {"tasks": accepted, "rejected": rejected, "remaining_slots": remaining,
             "remaining_global_slots": global_remaining,
             "deep_priority_authority": "STRATEGY_TRADEABILITY_CAPACITY", "family_quota": False,

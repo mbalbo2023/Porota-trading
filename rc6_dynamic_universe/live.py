@@ -2,6 +2,7 @@
 from dataclasses import asdict
 from .common import stamp
 from .capacity import safe_capacity
+from .iol_capacity import CADENCE_SECONDS, safe_iol_capacity
 from .orchestrator import (EnginePolicy, UniverseOrchestrator,
     reconcile_endpoint_slots, apply_shared_allocation)
 from .sources import audit_sources, source_observations
@@ -24,7 +25,13 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
     policies = [EnginePolicy(**(asdict(p) | bundle.get("policies", {}).get(p.engine, {}))) for p in policies]
     observations = list(bundle.get("observations", []))
     market_provider = bundle.get("market_provider", "PPI")
-    capacity_report = bundle.get("capacity_report", {}) if market_provider == "PPI" else {}
+    capacity_report = bundle.get("capacity_report", {})
+    iol = market_provider == "IOL_REST"
+    if iol:
+        policies = [EnginePolicy(**(asdict(p) | {"hot_seconds": CADENCE_SECONDS,
+            "warm_seconds": max(2 * CADENCE_SECONDS, p.warm_seconds),
+            "discovery_seconds": max(2 * CADENCE_SECONDS, p.discovery_seconds)})) for p in policies]
+        iol_capacity = safe_iol_capacity(capacity_report, as_of=at)
     capacity_policy = bundle.get("capacity_policy")
     if market_provider == "PPI" and capacity_policy and capacity_policy.get("status") == "APPROVED_DYNAMIC":
         # The canonical child may consume the approved measured profiles; OFF
@@ -72,7 +79,7 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
                             as_of=at, config=bundle.get("tradeability_config"))
     plans, frozen_reports = [], {}
     for policy in policies:
-        capacity = safe_capacity(capacity_report, endpoints=policy.endpoints,
+        capacity = iol_capacity if iol else safe_capacity(capacity_report, endpoints=policy.endpoints,
             cadence_seconds=policy.hot_seconds, window_seconds=policy.window_seconds,
             required_samples=policy.warmup_samples, latency_budget_seconds=policy.hot_seconds,
             as_of=at, **bundle.get("capacity_config", {}))
@@ -93,7 +100,7 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
         kwargs = dict(at=at, session_open=opening, frozen=frozen, capacity=capacity,
             observations=observations, events=events["events"], opened=bundle.get("opened", []),
             previous=(previous or {}).get("engines", previous or {}).get(policy.engine), phase=phase,
-            market_provider=market_provider)
+            market_provider=market_provider, iol_windows=bundle.get("iol_windows"))
         if policy.engine == "SCALPING":
             plan = shadow_sampling_plan(bundle["catalog"], policy=policy, **kwargs)
         else:
@@ -116,7 +123,8 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
         for endpoint, count in plan["capacity"].get("slots_by_endpoint", {}).items():
             equivalent = int(count*quantum/policy.hot_seconds)
             available[endpoint] = min(available.get(endpoint, equivalent), equivalent)
-    allocation = reconcile_endpoint_slots(plans, available, global_slots=min(global_limits, default=0))
+    allocation = reconcile_endpoint_slots(plans, available, global_slots=min(global_limits, default=0),
+                                          paired_current_and_intraday=iol)
     apply_shared_allocation(plans, allocation, previous)
     return {"mode": "SHADOW", "as_of": at.isoformat(), "engines": {p.engine: r for r, p in plans},
             "aggregate_schedule": allocation,

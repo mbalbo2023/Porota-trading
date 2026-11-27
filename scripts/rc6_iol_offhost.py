@@ -85,6 +85,8 @@ DOMAINS = {
                 "tests/test_rc6_fund_paper_allocator.py"),
     "funnels": ("tests/test_rc6_shadow_operational_funnel.py", "tests/test_rc6_shadow_entry_signals.py",
                 COLD_TO_HOT, LAB + "::test_ggal_paper_ledger_and_exit",
+                LAB + "::test_iol_scalping_native_consumes_interval_receipts_and_revokes_counter_reset",
+                LAB + "::test_iol_dynamic_capacity_uses_completed_live_cycle_evidence",
                 "tests/test_rc6_dynamic_orchestrator.py::test_iol_book_cannot_complete_native_ppi_spot_warmup",
                 "tests/test_rc6_dynamic_orchestrator.py::test_runtime_current_book_has_distinct_clocks_and_cannot_promote_unconfirmed_volume"),
     "paper_exit": ("tests/test_rc6_take_profit_regression.py", LAB + "::test_ggal_paper_ledger_and_exit"),
