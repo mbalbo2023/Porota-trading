@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -51,6 +53,26 @@ SOURCES = (
     "PPI_PRODUCTION_HISTORY_REPORTED", "PPI_GUARDED_CURRENT", "PPI_MARKETDATA_CURRENT",
     "DATA912", "BYMA_INTERVALORES", "A3_CEM_CLOSING",
 )
+PROBE_SOURCE_LIMIT = 64 * 1024
+RUNTIME_OUTPUT_LIMIT = 32 * 1024
+UNIT_OUTPUT_LIMIT = 8 * 1024
+UNIT_PROBE_WORKERS = 6
+RUNTIME_BOOTSTRAP = """import hashlib, json, sys
+source, expected = sys.argv[1:]
+actual = hashlib.sha256(source.encode('utf-8')).hexdigest()
+if actual != expected:
+    print(json.dumps({'state': 'NO_VERIFICADO', 'failure_signature': 'INVENTORY_PROBE_HASH_MISMATCH'}))
+    raise SystemExit(0)
+filename = '/app/scripts/rc6_iol_installed_inventory.py'
+namespace = {'__file__': filename, '__name__': 'rc6_installed_inventory_probe'}
+try:
+    exec(compile(source, filename, 'exec'), namespace)
+    result = namespace['_runtime_child_receipt']()
+except Exception:
+    result = {'state': 'NO_VERIFICADO', 'failure_signature': 'INVENTORY_RUNTIME_PROBE_CRASHED'}
+result['probe_source_sha256'] = actual
+print(json.dumps(result, sort_keys=True))
+"""
 
 
 def _controlled_units():
@@ -69,32 +91,54 @@ def _controlled_units():
         target = targets[0] if targets else name.removesuffix(".timer") + ".service"
         timers[name] = (role, target)
         units.setdefault(target, ("BOUND_SERVICE", None))
-    require(timers and all(UNIT.fullmatch(name) and "ppi-watch" not in name.lower()
+    require(timers and len(units) <= 100 and all(UNIT.fullmatch(name) and "ppi-watch" not in name.lower()
                            and "ppi_watch" not in name.lower() for name in units),
             "INVENTORY_UNIT_SCOPE_UNVERIFIED")
     return units, timers
 
 
-def _show(units):
-    """Systemctl may return 1 while supplying valid properties for absent units."""
+def _show_unit(unit):
+    """Pin each response to one requested unit without relying on separators."""
     try:
         process = subprocess.run(
             ["/usr/bin/systemctl", "show", "--all", "--no-pager",
-             "--property=" + ",".join(PROPERTIES), "--", *sorted(units)],
-            capture_output=True, text=True, check=False, timeout=8,
-            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TZ": "UTC"},
+             "--property=" + ",".join(PROPERTIES), "--", unit],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False, timeout=2.5,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TZ": "UTC", "SYSTEMD_COLORS": "0"},
         )
+    except subprocess.TimeoutExpired:
+        return {}, "INVENTORY_UNIT_SHOW_TIMEOUT"
     except (OSError, subprocess.SubprocessError, UnicodeError):
-        return {}
-    if process.returncode not in {0, 1} or len(process.stdout) > 256 * 1024:
-        return {}
-    rows = {}
-    for block in process.stdout.strip().split("\n\n"):
-        properties = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
-        name = properties.get("Id")
-        if name in units:
-            rows[name] = properties
-    return rows
+        return {}, "INVENTORY_UNIT_SHOW_UNAVAILABLE"
+    if not isinstance(process.stdout, str) or len(process.stdout) > UNIT_OUTPUT_LIMIT:
+        return {}, "INVENTORY_UNIT_OUTPUT_INVALID"
+    properties = {}
+    for line in process.stdout.splitlines():
+        name, separator, value = line.partition("=")
+        if not separator or name not in PROPERTIES:
+            continue
+        if name in properties:
+            return {}, "INVENTORY_UNIT_PROPERTY_DUPLICATE"
+        properties[name] = value
+    if process.returncode != 0 and not (process.returncode in {1, 4} and properties.get("LoadState") == "not-found"):
+        return {}, "INVENTORY_UNIT_SHOW_EXIT_NONZERO"
+    if properties.get("Id") != unit:
+        return {}, "INVENTORY_UNIT_ID_MISMATCH"
+    if properties.get("LoadState") not in KNOWN_STATES:
+        return {}, "INVENTORY_UNIT_LOAD_STATE_UNVERIFIED"
+    return properties, None
+
+
+def _show(units):
+    rows, failures = {}, {}
+    names = sorted(units)
+    with ThreadPoolExecutor(max_workers=UNIT_PROBE_WORKERS) as executor:
+        for unit, (properties, reason) in zip(names, executor.map(_show_unit, names)):
+            if reason is None:
+                rows[unit] = properties
+            else:
+                failures[unit] = reason
+    return rows, failures
 
 
 def _state(value):
@@ -123,11 +167,12 @@ def _service(properties, role, trigger=None):
 
 def _scheduler_inventory():
     units, timers = _controlled_units()
-    rows = _show(units)
+    rows, failures = _show(units)
     observed_timers = {}
     for name, (role, expected) in sorted(timers.items()):
         row = rows.get(name, {})
-        target = row.get("Unit") or row.get("Triggers")
+        targets = row.get("Triggers", "").split()
+        target = row.get("Unit") or (targets[0] if len(targets) == 1 else None)
         trigger = row.get("LastTriggerUSec")
         clock_id = time.CLOCK_BOOTTIME if row.get("WakeSystem") == "yes" else time.CLOCK_MONOTONIC
         monotonic_at = monotonic_target(row.get("NextElapseUSecMonotonic"),
@@ -157,6 +202,8 @@ def _scheduler_inventory():
             state = "NO_VERIFICADO"
         ppi_units[name] = state
     return {"scope": "RC6_POLICY_EXACT_UNITS", "requested_units": len(units), "observed_units": len(rows),
+            "state": "OBSERVED" if not failures else "PARTIAL" if rows else "NO_VERIFICADO",
+            "unit_probe_failures": failures,
             "timers": observed_timers, "services": services, "operational_ppi_units": ppi_units}
 
 
@@ -193,7 +240,7 @@ def _observe_database(path, expected, deadline, *, observer=False):
             query_only = connection.execute("PRAGMA query_only").fetchone()[0] == 1
             tables = _read_query(connection, deadline, "SELECT name FROM sqlite_master WHERE type='table'")
             if tables is None:
-                return {"state": "NO_VERIFICADO"}
+                return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_SCHEMA_UNVERIFIED"}
             present = {row[0] for row in tables} & set(expected)
             counts = {table: _scalar(connection, deadline, f"SELECT COUNT(*) FROM {table}") for table in sorted(present)}
             result = {"state": "OBSERVED", "query_only": query_only,
@@ -220,7 +267,7 @@ def _observe_database(path, expected, deadline, *, observer=False):
                 result["versions_by_source"] = _sources(connection, deadline, "history_versions_v2", "source")
             return result
     except (OSError, sqlite3.Error, Hold):
-        return {"state": "NO_VERIFICADO"}
+        return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_READ_UNAVAILABLE"}
 
 
 def _runtime_inventory():
@@ -231,6 +278,66 @@ def _runtime_inventory():
         "observer": _observe_database(OBSERVER, OBSERVER_TABLES, started + 3.5, observer=True),
         "history": _observe_database(HISTORY, HISTORY_TABLES, started + 7),
     }
+
+
+def _runtime_child_receipt():
+    if os.getenv("POROTA_RC6_MARKET_PROVIDER") != "IOL_REST":
+        return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_RUNTIME_PROVIDER_MISMATCH"}
+    try:
+        return _runtime_inventory()
+    except (OSError, RuntimeError, ValueError, TypeError, sqlite3.Error):
+        return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_RUNTIME_PROBE_CRASHED"}
+
+
+def _unavailable(reason, **fields):
+    return {"state": "NO_VERIFICADO", "failure_signature": reason, **fields}
+
+
+def _runtime_from_container(manager, current, coordinates, runtime_probe_source):
+    if runtime_probe_source is None:
+        args = ("-m", "scripts.rc6_iol_installed_inventory", "--runtime-db")
+        expected_hash = None
+    else:
+        require(isinstance(runtime_probe_source, str) and bool(runtime_probe_source)
+                and "\x00" not in runtime_probe_source and len(runtime_probe_source.encode("utf-8")) <= PROBE_SOURCE_LIMIT,
+                "INVENTORY_PROBE_SOURCE_INVALID")
+        expected_hash = hashlib.sha256(runtime_probe_source.encode("utf-8")).hexdigest()
+        args = ("-c", RUNTIME_BOOTSTRAP, runtime_probe_source, expected_hash)
+    try:
+        result = manager.docker.command_result("container", "exec", current["roles"]["observer"],
+                                               "timeout", "--kill-after=1s", "14s", "python", "-B", *args, timeout=17)
+    except (RuntimeError, OSError, ValueError, TypeError) as exc:
+        if getattr(exc, "public_details", {}).get("docker_failure", {}).get("result") == "TIMEOUT":
+            return _unavailable("INVENTORY_RUNTIME_EXEC_TIMEOUT")
+        return _unavailable("INVENTORY_RUNTIME_EXEC_UNAVAILABLE")
+    if type(result.returncode) is not int or result.returncode != 0:
+        code = result.returncode if type(result.returncode) is int and -255 <= result.returncode <= 255 else None
+        reason = "INVENTORY_RUNTIME_EXEC_TIMEOUT" if code in {124, 137} else "INVENTORY_RUNTIME_EXEC_NONZERO"
+        return _unavailable(reason, exec_exit_code=code)
+    if not isinstance(result.stdout, str) or len(result.stdout) > RUNTIME_OUTPUT_LIMIT:
+        return _unavailable("INVENTORY_RUNTIME_OUTPUT_INVALID")
+    try:
+        runtime = decode(result.stdout)
+    except Hold:
+        return _unavailable("INVENTORY_RUNTIME_JSON_INVALID")
+    if not isinstance(runtime, dict):
+        return _unavailable("INVENTORY_RUNTIME_OUTPUT_INVALID")
+    if expected_hash is not None and runtime.get("probe_source_sha256") != expected_hash:
+        return _unavailable("INVENTORY_PROBE_HASH_MISMATCH")
+    if runtime.get("state") == "NO_VERIFICADO":
+        reason = runtime.get("failure_signature")
+        if reason not in {"INVENTORY_RUNTIME_PROVIDER_MISMATCH", "INVENTORY_RUNTIME_PROBE_CRASHED"}:
+            reason = "INVENTORY_RUNTIME_OUTPUT_INVALID"
+        return _unavailable(reason, **({"probe_source_sha256": expected_hash} if expected_hash else {}))
+    if not isinstance(runtime.get("observer"), dict) or not isinstance(runtime.get("history"), dict):
+        return _unavailable("INVENTORY_RUNTIME_OUTPUT_INVALID")
+    if any(runtime.get(key) != coordinates[key] for key in ("source_sha", "source_tree")):
+        return _unavailable("INVENTORY_RUNTIME_RELEASE_CHANGED")
+    for key in ("source_sha", "source_tree"):
+        runtime.pop(key)
+    if expected_hash is not None:
+        runtime["probe_source_sha256"] = expected_hash
+    return runtime
 
 
 def _dashboard(manager, current):
@@ -250,25 +357,16 @@ def _dashboard(manager, current):
         return {"state": "NO_VERIFICADO"}
 
 
-def run_host_inventory(manager, current):
+def run_host_inventory(manager, current, *, runtime_probe_source=None):
     """Use the caller's verified rootless manager and release lock."""
     require(current.get("state") == "VALIDADO_RUNTIME" and current.get("market_provider") == "IOL_REST",
             "INSTALLED_IOL_RELEASE_REQUIRED")
     coordinates = {key: current[key] for key in ("source_sha", "source_tree", "image_id")}
-    try:
-        raw = manager.docker.call("container", "exec", current["roles"]["observer"], "timeout", "--kill-after=1s",
-                                  "9s", "python", "-B", "-m", "scripts.rc6_iol_installed_inventory",
-                                  "--runtime-db", timeout=11)
-        runtime = decode(raw)
-        require(isinstance(runtime, dict) and isinstance(runtime.get("observer"), dict) and
-                all(runtime.pop(key, None) == coordinates[key] for key in ("source_sha", "source_tree")),
-                "INVENTORY_RUNTIME_RELEASE_CHANGED")
-    except (RuntimeError, OSError, ValueError, TypeError):
-        runtime = {"state": "NO_VERIFICADO"}
+    runtime = _runtime_from_container(manager, current, coordinates, runtime_probe_source)
     try:
         scheduler = _scheduler_inventory()
     except (Hold, OSError, ValueError, TypeError, KeyError):
-        scheduler = {"state": "NO_VERIFICADO"}
+        scheduler = _unavailable("INVENTORY_SCHEDULER_SCOPE_UNVERIFIED")
     dashboard = _dashboard(manager, current)
     observer = runtime.get("observer", {})
     return {"schema": SCHEMA, **coordinates, "attempt": current["attempt"],
@@ -278,6 +376,6 @@ def run_host_inventory(manager, current):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] != ["--runtime-db"] or os.getenv("POROTA_RC6_MARKET_PROVIDER") != "IOL_REST":
+    if sys.argv[1:] != ["--runtime-db"]:
         raise SystemExit(2)
-    print(json.dumps(_runtime_inventory(), sort_keys=True))
+    print(json.dumps(_runtime_child_receipt(), sort_keys=True))
