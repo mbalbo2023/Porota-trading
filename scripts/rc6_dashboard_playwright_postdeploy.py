@@ -75,7 +75,7 @@ UNKNOWN_AUDIT = r"""root => {
             element.matches('dialog.row-dialog dl.facts > div > dd') &&
             normalize(element.previousElementSibling?.textContent) === 'motivo';
     }
-    const tally = {total: 0, explained: 0, unexplained: 0, reason_types: {}, unexplained_fields: {}};
+    const tally = {total: 0, explained: 0, unexplained: 0, reason_types: {}, unexplained_fields: {}, worker_unknown_by_label: {}};
     const bump = (map, key, count) => { map[key] = (map[key] || 0) + count; };
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -105,6 +105,16 @@ UNKNOWN_AUDIT = r"""root => {
         } else {
             tally.unexplained += count;
             bump(tally.unexplained_fields, field(el), count);
+            const dialog = el.closest('dialog.row-dialog');
+            const view = dialog?.closest('#terminal-content')?.dataset.view;
+            if (['en-vivo/workers','sistema/resumen','sistema/salud','sistema/workers'].includes(view)) {
+                const observedLabel = normalize(el.closest('dd')?.previousElementSibling?.textContent);
+                const headings = ['worker','estado','fuente','detalle tecnico','ultimo error','motivo operativo',
+                    'ultimo exito','ultimo intento','excepcion de coverage','heartbeat','edad (s)','vigencia'];
+                const label = headings.includes(observedLabel) ? observedLabel : 'otro campo';
+                bump(tally.worker_unknown_by_label, label, count);
+            }
+
         }
     }
     return tally;
@@ -247,7 +257,7 @@ def dashboard_tunnel(expected, env):
 
 def unknown_rollup(checks):
     result = {key: sum(row[key] for row in checks) for key in ("total", "explained", "unexplained")}
-    for name in ("reason_types", "unexplained_fields"):
+    for name in ("reason_types", "unexplained_fields", "worker_unknown_by_label"):
         combined = Counter()
         for row in checks:
             combined.update(row[name])
@@ -339,8 +349,13 @@ def audit_route(page, base_url, path, view, row):
                 if response is not None:
                     expected_url = clicked_url
                     row["navigation"] = "PRIMARY_MENU" if path in PRIMARY_ROUTES else "SUBMENU"
-            except Error:
+            except Error as error:
                 row["menu_navigation_failure"] = "MENU_CLICK_OR_RESPONSE_UNVERIFIED"
+                message = str(error).lower()
+                row["menu_diagnostic_category"] = (
+                    "POINTER_OBSTRUCTED" if "intercepts pointer" in message else
+                    "CLICK_TIMEOUT" if "locator.click" in message and "timeout" in message else
+                    "NAVIGATION_TIMEOUT" if "timeout" in message else "BROWSER_ERROR")
             if response is None:
                 row.setdefault("menu_navigation_failure", "MENU_CLICK_OR_RESPONSE_UNVERIFIED")
         else:

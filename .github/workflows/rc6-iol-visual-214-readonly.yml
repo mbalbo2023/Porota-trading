@@ -1,4 +1,4 @@
-name: RC6 IOL #214 visual audit
+name: "RC6 IOL #216 visual follow-up"
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Verify and sanitize the exact runtime receipt from Promote #214
+      - name: Verify and sanitize the exact runtime receipt from Promote #216
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -36,19 +36,19 @@ jobs:
           set -Eeuo pipefail
           directory="$RUNNER_TEMP/porota-visual-214"
           mkdir -p "$directory/download"
-          gh api repos/mbalbo2023/Porota-trading/actions/runs/45923312569 | jq -e '
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/46011162701 | jq -e '
             .status == "completed" and .conclusion == "success" and
-            .head_sha == "184166ffbd03cc3d268ffcff79280e450a173b9e"' >/dev/null
-          gh api repos/mbalbo2023/Porota-trading/actions/artifacts/15164823626 | jq -e '
-            .workflow_run.id == 45923312569 and .expired == false and
-            .digest == "sha256:08c49b8ca76691e229901346e5c31d3fcde258f2dd569aaa95f8a7316acd6b71"' >/dev/null
-          gh api repos/mbalbo2023/Porota-trading/actions/runs/45921311817 | jq -e '
-            .id == 45921311817 and .run_attempt == 1 and .event == "workflow_dispatch" and
+            .head_sha == "6da112dcc58268ac5ea3f93e5dddf4f87dabd141"' >/dev/null
+          gh api repos/mbalbo2023/Porota-trading/actions/artifacts/15206010255 | jq -e '
+            .workflow_run.id == 46011162701 and .expired == false and
+            .digest == "sha256:b8649e6b7d73aad5e1406211362b026656340f6b5356b458bdd4459bb1fa905d"' >/dev/null
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/46014207358 | jq -e '
+            .id == 46014207358 and .run_attempt == 1 and .event == "workflow_dispatch" and
             .status == "completed" and .head_branch == "deploy/rc6-pr69-isolated-20260915" and
-            .head_sha == "3236a969faf286032dc56502423471198e6d8dd1" and
+            .head_sha == "d35a39b45170a5af85e07443711eac69dde62ace" and
             (.path | split("@")[0]) == ".github/workflows/porota-deploy-v2-promote.yml"' >/dev/null
-          gh run download 45921311817 --repo mbalbo2023/Porota-trading \
-            --name porota-runtime-45921311817-1 --dir "$directory/download"
+          gh run download 46014207358 --repo mbalbo2023/Porota-trading \
+            --name porota-runtime-46014207358-1 --dir "$directory/download"
           python3 -B -m scripts.rc6_visual_214_receipt \
             --downloaded-receipt "$directory/download/runtime.json" --output "$directory/runtime.json"
 
@@ -78,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc6-iol-visual-214-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-iol-visual-216-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/porota-visual-214/runtime.json
             ${{ runner.temp }}/porota-visual-214/dashboard-playwright.json
