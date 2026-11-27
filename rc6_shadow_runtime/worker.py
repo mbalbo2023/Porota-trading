@@ -708,7 +708,10 @@ class ShadowRuntime:
 
     def _capacity(self, *, as_of=None, capacity_policy=None):
         if self.market_provider == "IOL_REST":
-            return {}
+            from contextlib import closing
+            from rc6_dynamic_universe.iol_capacity import read_cycles
+            with closing(sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=.05)) as connection:
+                return read_cycles(connection)
         if (capacity_policy or {}).get("status") == "APPROVED_DYNAMIC":
             return self.capacity_controller.validated_report(
                 as_of, expected_fingerprint=capacity_policy["fingerprint"])
@@ -800,7 +803,7 @@ class ShadowRuntime:
             if previous and stamp(previous["as_of"]) > at:
                 raise ValueError("SHADOW_CHECKPOINT_FROM_FUTURE")
             self.last_sqlite_diagnostics = {}
-            inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit,
+            inputs = read_runtime(self.database, as_of=at, row_limit=self.row_limit, market_provider=self.market_provider,
                                   query_budget_seconds=2.0,
                                   diagnostics=self.last_sqlite_diagnostics)
             source_id, failures = self._metadata(at, previous.get("as_of", at.isoformat()))
@@ -895,7 +898,9 @@ class ShadowRuntime:
                 report = {**result, **base, "status": "SHADOW_OBSERVING",
                     "preopen_quality": frozen["quality"],
                     "preopen_immutable": True, "preopen_file": freeze_name,
-                    "capacity_open_status": "NO_VERIFICADO" if not capacity else capacity.get("status"),
+                    "capacity_open_status": (result["engines"]["EQUITY_SPOT"]["capacity"]["status"]
+                        if self.market_provider == "IOL_REST" else
+                        "NO_VERIFICADO" if not capacity else capacity.get("status")),
                     "observation_execution": ("LOCAL_REUSE_ONLY; IOL REST"
                                               if self.market_provider == "IOL_REST" else
                                               "LOCAL_REUSE_ONLY; native PPI Intraday preserved"),

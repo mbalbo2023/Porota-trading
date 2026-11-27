@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from datetime import datetime, timezone
 import json
+from secrets import token_hex
 from threading import Lock
 import time
 
@@ -61,8 +62,16 @@ def last_trade(message, received):
         return None
     if at > received:
         return None
-    return key, {"trade_at": at.isoformat(), "received_at": received.isoformat(),
-                 "price": str(price), "shares": str(shares)}
+    evidence = {"trade_at": at.isoformat(), "received_at": received.isoformat(),
+                "price": str(price), "shares": str(shares)}
+    # IOL documents TS as the day's cumulative nominal quantity. X is the
+    # REST matching field and must not be used as interval volume.
+    if "TS" in payload:
+        try:
+            evidence["day_nominals"] = str(decimal_value(payload["TS"], "IOL TS", nonnegative=True))
+        except (ValueError, TypeError, ArithmeticError):
+            pass
+    return key, evidence
 
 
 def matched_trade(evidence, quote, received):
@@ -155,12 +164,14 @@ class IOLTradeStream:
 
     def _session(self, socket, token, stop):
         active = set()
+        stream_session = token_hex(32)
 
         def record(message):
             sample = last_trade(message, self._clock())
             if sample is None or sample[0] not in active:
                 return
             key, evidence = sample
+            evidence["stream_session"] = stream_session
             with self._lock:
                 previous = self._trades.get(key)
                 if key in self._wanted and (previous is None or evidence["trade_at"] >= previous["trade_at"]):

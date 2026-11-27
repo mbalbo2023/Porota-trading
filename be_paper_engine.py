@@ -495,6 +495,7 @@ class PaperStore:
                     "last_kind": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
                     "contract_json": "TEXT", "metadata_source": "TEXT",
                     "ppi_native_rest_book": "TEXT",
+                    "iol_trade_evidence": "TEXT",
                     "opening_block_reason": "TEXT NOT NULL DEFAULT ''"},
             }.items():
                 columns = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
@@ -580,14 +581,16 @@ class PaperStore:
         with self.connect() as c:
             c.execute("""INSERT INTO market_snapshots
               (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market,
-               book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason,ppi_native_rest_book)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason,ppi_native_rest_book,
+               iol_trade_evidence)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
                        str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size),
                        currency, market, q.book_at, q.trade_at, q.last_kind,
                        json.dumps(asdict(q.contract), default=str) if q.contract else None,
                        q.metadata_source, q.opening_block_reason,
-                       json.dumps(q.ppi_native_rest_book, allow_nan=False) if q.ppi_native_rest_book else None))
+                       json.dumps(q.ppi_native_rest_book, allow_nan=False) if q.ppi_native_rest_book else None,
+                       json.dumps(q.iol_trade_evidence, allow_nan=False) if q.iol_trade_evidence else None))
 
     @staticmethod
     def latest_quote_row(connection, position):
@@ -612,7 +615,9 @@ class PaperStore:
                      **{k: D(values[k]) for k in ("last", "bid", "ask", "bid_size", "ask_size")},
                      contract=InstrumentContract(**spec) if spec is not None else None,
                      ppi_native_rest_book=json.loads(values["ppi_native_rest_book"])
-                     if values.get("ppi_native_rest_book") else None)
+                     if values.get("ppi_native_rest_book") else None,
+                     iol_trade_evidence=json.loads(values["iol_trade_evidence"])
+                     if values.get("iol_trade_evidence") else None)
 
     def latest_quote(self, position):
         with self.connect() as c:
@@ -3074,7 +3079,8 @@ class PaperBroker:
                             or self.store.quote_from_snapshot(locked_quote) != q):
                         return False, "SCALPING_BOOK_CHANGED_BEFORE_FILL", None
                     scalping_book_spread(q, at)
-                    error = scalping_intraday_reason(c, (q.symbol, family, market, currency, q.settlement), at)
+                    error = scalping_intraday_reason(c, (q.symbol, family, market, currency, q.settlement), at,
+                        quote=q, iol_window_end=features.get("iol_scalping_window_end"))
                     if error:
                         return False, error, None
                 except sqlite3.Error:

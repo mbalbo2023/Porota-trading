@@ -14,7 +14,7 @@ OBSERVATION_SOURCE_CAP = 3000
 
 
 def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
-                 diagnostics=None):
+                 diagnostics=None, market_provider="PPI"):
     """No schema/init/writer, history ingestion, provider calls or broker creation.
 
     Current revisions require last_verified_at at/before cutoff; older values
@@ -105,7 +105,28 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         contracts_payload = None
         intraday_rows = []
         snapshot_rows = []
-        if "ppi_intraday_points" in tables:
+        iol_windows = {}
+        if market_provider == "IOL_REST" and "market_snapshots" in tables:
+            from be_paper_engine import PaperStore
+            from rc6_iol_intraday import FRESH_SECONDS, inputs, quote_matches, read_windows
+            from rc6_signal_contracts import event_window_contract
+
+            for key, window in read_windows(connection, at).items():
+                points, _ = inputs(window)
+                if not event_window_contract(points, at)["passed"]:
+                    continue
+                if (at - stamp(points[-1]["event_at"])).total_seconds() > FRESH_SECONDS:
+                    continue
+                row = PaperStore.latest_quote_row(connection,
+                    dict(zip(("symbol", "asset_class", "market", "currency", "settlement"), key)))
+                if row:
+                    quote = PaperStore.quote_from_snapshot(row)
+                    if (quote_matches(quote, window) and not quote.opening_block_reason
+                            and not quote.time_error(at.isoformat(), require_trade=True)
+                            and 0 < quote.bid <= quote.ask and min(quote.bid_size, quote.ask_size) > 0):
+                        iol_windows[key] = {"samples": [p["event_at"] for p in points],
+                            "book_at": quote.book_at, "received_at": quote.observed_at}
+        if market_provider != "IOL_REST" and "ppi_intraday_points" in tables:
             if "ppi_intraday_contract_state" in tables:
                 contract_fields="symbol,asset_class,market,currency,settlement,state,last_source_at,checked_at"
                 contracts_payload = packed_rows("INTRADAY_CONTRACTS",contract_fields,
@@ -156,7 +177,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         catalog_columns = catalog_fields.split(',')
         full_catalog = [dict(zip(catalog_columns,r)) for r in json.loads(full_catalog_payload)]
         del full_catalog_payload
-        if "ppi_intraday_points" in tables:
+        if market_provider != "IOL_REST" and "ppi_intraday_points" in tables:
             intraday_columns = intraday_fields.split(',')
             intraday_rows=[dict(zip(intraday_columns,r)) for r in json.loads(intraday_payload)]
             del intraday_payload
@@ -241,6 +262,7 @@ def read_runtime(database, *, as_of, row_limit=20000, query_budget_seconds=0.5,
         if diagnostics is not None:
             diagnostics["transform_elapsed_ms"] = round((monotonic()-transform_started)*1000, 3)
         return {"catalog": catalog, "full_catalog": full_catalog, "opened": opened, "observations": observations,
+                "iol_windows": iol_windows,
                 "catalog_view": "ALL_READY_PAPER_IDENTITIES; financial catalogue unchanged",
                 "observation_read_truncated": truncated,
                 "safety": {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0,

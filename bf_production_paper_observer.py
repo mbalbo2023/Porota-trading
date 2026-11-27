@@ -3755,6 +3755,9 @@ def run():
             cycle_temporal_rejections = 0
             cycle_session_invalid = False
             latencies = []
+            iol_pairs = []
+            if iol:
+                from rc6_dynamic_universe.iol_capacity import cycle_evidence, paired_sample
             scopes = {tuple(s["request"]): s for s in active_plan.get("read_scopes", [])}
             opened_identities = {}
             if iol or getattr(reader, "budget_enabled", False):
@@ -3802,6 +3805,8 @@ def run():
                             q, broker, store, checked_at=now_iso(), observe_only=bool(observation_hold)):
                         cycle_temporal_rejections += 1
                         continue
+                    if iol and (pair := paired_sample(q, scope_identity)):
+                        iol_pairs.append(pair)
                     # The independent EXIT supervisor can use the exact
                     # persisted Book without granting a new entry or cash.
                     if not observation_hold:
@@ -3902,10 +3907,7 @@ def run():
                 recommended = min(recommended, max(5, ACTIVE_SYMBOL_LIMIT - 5))
             scanner_limit = active_plan.get("iol_rest_budget", {}).get("scanner_batch_limit", ACTIVE_SYMBOL_LIMIT)
             recommended = min(recommended, scanner_limit) if iol else recommended
-            _write_scanner_metrics(store, "UNIVERSE",
-                  (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
-                   cycle_failures, duration, cursor_before, cursor_after, recommended,
-                   f"Límite={scanner_limit}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
+            cycle_finished = now_iso()
             try:
                 metrics = reader.metrics
                 if iol:
@@ -3922,6 +3924,14 @@ def run():
                 metrics = None  # keep last physical owner HTTP counts, never false zeros
                 store.event("IOL_GATEWAY_METRICS_UNVERIFIED" if iol else "PPI_GATEWAY_METRICS_UNVERIFIED",
                             type(exc).__name__)
+            if iol:
+                feasibility["iol_capacity_cycle"] = cycle_evidence(
+                    metrics, iol_pairs, active_plan.get("iol_rest_budget", {}),
+                    complete=not (cycle_session_invalid or observation_hold or STOP))
+            _write_scanner_metrics(store, "UNIVERSE",
+                  (cycle_started, cycle_finished, eligible_total, len(symbols), cycle_ok,
+                   cycle_failures, duration, cursor_before, cursor_after, recommended,
+                   f"Límite={scanner_limit}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             if cycle_session_invalid:
                 _health(store, auth_component, "ROJO",
                         "Sesión del gateway pendiente de recuperación o de nueva conexión local.",

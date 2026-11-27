@@ -1,5 +1,5 @@
 """Run IOL through the real client, clock guards, PAPER broker and isolated SQLite."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -75,7 +75,10 @@ class ReplayHTTP:
         self.calls.append(path)
         if url.path == "/auth/token":
             assert request.get_method() == "POST"
-            assert json.loads(request.data)["grant_type"] == "password"
+            flow = json.loads(request.data)
+            assert flow["grant_type"] in {"password", "refresh_token"}
+            if flow["grant_type"] == "refresh_token":
+                assert flow["refresh_token"] == "OFFHOST_REFRESH_ONLY_FIXTURE"
             row = {"access_token": "OFFHOST_ACCESS_ONLY_FIXTURE", "refresh_token": "OFFHOST_REFRESH_ONLY_FIXTURE",
                    "expires_in": 900}
         else:
@@ -475,18 +478,23 @@ def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, mo
     args = ["verify-candles", "--baseline-cursor", "0", "--observed-at", observed,
             "--db-path", str(path), "--summary-path", str(result_path)]
     monkeypatch.setattr(sys, "argv", args)
-    before = path.read_bytes()
-    assert verify_inmarket_candles() == 1
-    assert not json.loads(result_path.read_text())["checks"]["cursor_strictly_advanced"]
-    monkeypatch.setattr(sys, "argv", args + ["--sample-source", IOL_SAMPLE_SOURCE])
-    assert verify_inmarket_candles() == 0
-    result = json.loads(result_path.read_text())
-    assert result["source"] == "porota-rc6-candle-inmarket-iol-evidence"
-    assert result["iol_sampled_progress"] == {
-        "identity": list(GGAL), "known_at_by_resolution": {"1m": observed, "5m": observed},
-    }
-    assert not result["guarded_current_sampled_progress"]
-    assert path.read_bytes() == before
+    # Finish fixture writes and keep a connection open so last-close
+    # checkpointing cannot change the SQLite file during the read-only probe.
+    with closing(store.connect()) as writer:
+        assert tuple(writer.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()) == (0, 0, 0)
+        wal = Path(str(path) + "-wal")
+        before = (path.read_bytes(), wal.read_bytes())
+        assert verify_inmarket_candles() == 1
+        assert not json.loads(result_path.read_text())["checks"]["cursor_strictly_advanced"]
+        monkeypatch.setattr(sys, "argv", args + ["--sample-source", IOL_SAMPLE_SOURCE])
+        assert verify_inmarket_candles() == 0
+        result = json.loads(result_path.read_text())
+        assert result["source"] == "porota-rc6-candle-inmarket-iol-evidence"
+        assert result["iol_sampled_progress"] == {
+            "identity": list(GGAL), "known_at_by_resolution": {"1m": observed, "5m": observed},
+        }
+        assert not result["guarded_current_sampled_progress"]
+        assert (path.read_bytes(), wal.read_bytes()) == before
     with store.connect() as db:
         db.execute("UPDATE candle_worker_state SET cursor=5")
         db.execute("UPDATE candle_samples SET snapshot_id=0 WHERE series_id IN "
@@ -634,7 +642,8 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     profile = dict(session_open=opening, frozen={"payload": freeze, "digest": digest(freeze)},
                    market_provider="IOL_REST")
     capacity = {"status": "SHADOW_RECOMMENDATION", "safe_limit": 8, "slots_by_endpoint": {"current": 8, "book": 8},
-                "generated_at": opening.isoformat(), "expires_at": (AT + timedelta(hours=1)).isoformat()}
+                "generated_at": opening.isoformat(), "expires_at": (AT + timedelta(hours=1)).isoformat(),
+                "measured_identities": [identity]}
     eligibility = read_runtime(store.path, as_of=opening)["catalog"]
     planner = UniverseOrchestrator(eligibility, policy=EnginePolicy(engine="EQUITY_SPOT", warmup_samples=3))
     funnel = planner.plan(at=opening, capacity={}, **profile)
@@ -929,3 +938,177 @@ def test_predeploy_packaging_and_promotion_reject_testing_tree(tmp_path):
     assert not bundle.exists()
     with pytest.raises(ValueError, match=RELEASE_BLOCKED):
         promotion_source(repository, head)
+
+
+@pytest.mark.parametrize(("counter", "expected"), [(1800, "1800"), (-1, None), (None, None)])
+def test_iol_archive_distinguishes_day_nominals_from_trade_matching_field(tmp_path, iol_gateway, counter, expected):
+    from rc6_iol_trade_stream import last_trade
+
+    server, client, transport, _ = iol_gateway
+    register(client, "scanner")
+    event = {"type": "T", "code": 200, "msg": {"S": GGAL[0], "M": "BCBA", "T": transport.term,
+             "D": (transport.now - timedelta(seconds=2)).isoformat(), "P": transport.price, "X": 100}}
+    if counter is not None:
+        event["msg"]["TS"] = counter
+    wire, evidence = last_trade(event, transport.now - timedelta(seconds=1))
+    server.trade_stream = SimpleNamespace(want=lambda key: None,
+                                          evidence=lambda key: evidence if key == wire else None, state="SUBSCRIBED")
+    market = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+    store = PaperStore(str(tmp_path / "volume.db"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    assert record_iol_trade_sample(store, market.observe(GGAL), as_of=transport.now)
+    with store.connect() as db:
+        raw, = db.execute("SELECT body_json FROM historical_raw_archive").fetchone()
+    archived = json.loads(raw).get("iol_day_counter")
+    if expected is None:
+        assert archived is None
+    else:
+        assert archived == {"nominals": expected, "gateway_generation": server._generation}
+
+
+def test_iol_scalping_native_consumes_interval_receipts_and_revokes_counter_reset(
+        tmp_path, monkeypatch, iol_gateway):
+    import bu_instrument_catalog as catalog
+    import bv_paper_runtime as runtime
+    import cf_intraday_scalping as scalping
+    from rc6_dynamic_universe.runtime import read_runtime
+    from rc6_iol_intraday import read_windows
+    from rc6_iol_trade_stream import last_trade
+    import rc6_paper_admission_gate as admission
+    from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
+
+    server, client, transport, advance = iol_gateway
+    register(client, "scanner")
+    register(client, "exit_reader")
+    store = PaperStore(str(tmp_path / "scalping-volume.db"))
+    scalping.init_schema(store)
+    from bf_production_paper_observer import _support_schema
+    _support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(ReplayClock, "value", AT)
+    monkeypatch.setattr(catalog, "datetime", ReplayClock)
+    monkeypatch.setattr(admission, "datetime", ReplayClock)
+    monkeypatch.setattr(runtime, "now_iso", lambda: transport.now.isoformat())
+    _preopen(tmp_path, monkeypatch, iol=True)
+    record = catalog.normalize_record({"ticker": GGAL[0], "type": GGAL[1],
+        "market": GGAL[2], "currency": GGAL[3], "_discovery_source": "PPI_PRIMARY"},
+        GGAL[4], AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+    with store.connect() as db:
+        catalog.persist(db, record)
+        catalog.sync_candidate_universe(db, AT.isoformat())
+    record = catalog.iol_spot_catalog(store, now=AT)[GGAL]
+    contract = catalog.contract_for(record)
+    counter, stream_session = 1000, "a" * 64
+
+    def trade_evidence(key):
+        event = {"type": "T", "code": 200, "msg": {"S": GGAL[0], "M": "BCBA", "T": transport.term,
+                 "D": (transport.now - timedelta(seconds=2)).isoformat(), "P": transport.price,
+                 "X": 100, "TS": counter}}
+        wire, evidence = last_trade(event, transport.now - timedelta(seconds=1))
+        assert wire == key
+        return {**evidence, "stream_session": stream_session}
+
+    server.trade_stream = SimpleNamespace(want=lambda key: None, evidence=trade_evidence, state="SUBSCRIBED")
+    market = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+
+    def sample(minute):
+        advance(60)
+        transport.now = AT + timedelta(minutes=minute)
+        ReplayClock.value = transport.now
+        transport.price = 100 + minute
+        observation = market.observe(GGAL, contract=contract)
+        assert record_iol_trade_sample(store, observation, as_of=transport.now)
+        store.add_quote(observation.quote)
+        with store.connect() as db:
+            return read_windows(db, transport.now)
+
+    for minute in range(16):
+        counter += 17
+        windows = sample(minute)
+        assert len(windows[GGAL]["points"]) == minute
+    assert all(point["volume"] == Decimal(17) for point in windows[GGAL]["points"])
+    assert scalping.evaluate_candidate(store, record, at=transport.now, iol_windows=windows) == "BUY_CANDIDATE"
+    assert GGAL in read_runtime(store.path, as_of=transport.now, market_provider="IOL_REST")["iol_windows"]
+    with store.connect() as db:
+        payload, = db.execute("SELECT payload_json FROM decision_evidence_snapshots").fetchone()
+        evidence = json.loads(payload)["inputs_used"]["entry_signal_inputs"]
+        assert evidence["volume_contract"]["unit"] == "NOMINAL"
+        assert len(evidence["iol_interval_receipts"]) == 15
+        quote = PaperStore.quote_from_snapshot(PaperStore.latest_quote_row(db,
+            dict(zip(("symbol", "asset_class", "market", "currency", "settlement"), GGAL))))
+        end = windows[GGAL]["points"][-1]["event_at"]
+        assert not scalping.scalping_intraday_reason(db, GGAL, transport.now, quote=quote, iol_window_end=end)
+        assert db.execute("SELECT COUNT(*) FROM ppi_intraday_points").fetchone()[0] == 0
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    supervisor = PositionExitSupervisor(runtime.broker_from_environment(store),
+                                        clock_fn=lambda: transport.now.isoformat())
+    supervisor.tick()
+    exit_policy = runtime.PaperSessionPolicy()
+    exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
+    state, detail, _ = runtime._collect_iol_exit_round(exit_reader, store, exit_policy, transport.now,
+        Event(), beat=lambda: None, deadline_seconds=5)
+    assert state == "READY"
+    runtime._reader_status_write(store, state, detail)
+    assert scalping.promote_paper_candidate(store, record, at=transport.now) == "OPENED_SIMULATED"
+    position, = store.open_positions()
+    assert position["symbol"] == GGAL[0]
+    stream_session = "b" * 64
+    counter += 17
+    assert len(sample(16)[GGAL]["points"]) == 16
+    counter = 1
+    assert sample(17)[GGAL]["points"] == []
+    advance(60)
+    transport.now += timedelta(minutes=1)
+    transport.price = float(Decimal(position["target_price"]) + Decimal("0.30"))
+    state, detail, _ = runtime._collect_iol_exit_round(exit_reader, store, exit_policy, transport.now,
+        Event(), beat=lambda: None, deadline_seconds=5)
+    assert state == "READY" and "verified_books=1; budget_round=COMPLETE" in detail
+    position_key = tuple(position[name] for name in ("symbol", "asset_class", "settlement", "currency", "market"))
+    verdict, = supervisor.tick({position_key: store.latest_quote(position)})
+    assert (verdict.state, verdict.cause) == ("CLOSED", "TAKE_PROFIT_PAPER")
+    assert scalping.promote_paper_candidate(store, record, at=transport.now) == "IOL_INTERVAL_VOLUME_UNVERIFIED"
+    assert not read_runtime(store.path, as_of=transport.now, market_provider="IOL_REST")["iol_windows"]
+    with store.connect() as db:
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+
+
+def test_iol_dynamic_capacity_uses_completed_live_cycle_evidence():
+    from rc6_dynamic_universe.iol_capacity import cycle_evidence, safe_iol_capacity
+    from rc6_dynamic_universe.live import run_shadow
+    from tests.test_rc6_dynamic_orchestrator import OPEN, catalog, frozen, identity, obs
+
+    instruments = catalog(4)
+    keys = [identity(asset) for asset in instruments]
+    cycles = []
+    budget = {"calls_per_minute": 60, "scanner_batch_limit": 4, "scanner_calls_per_instrument": 3,
+              "batches_per_minute": 1, "planned_exit_calls": 2}
+    checkpoint = None
+    freeze = frozen(instruments)
+    for minute in range(1, 10):
+        start = OPEN + timedelta(minutes=minute)
+        at = start + timedelta(seconds=6)
+        metrics = {"provider": "IOL_REST", "authenticated": True, "trade_stream_state": "SUBSCRIBED",
+                   "session_generation": "a" * 64, "wire_attempts": 12 * minute, "rate_limited_attempts": 0}
+        pairs = [[list(key), start.isoformat(), (start + timedelta(seconds=1)).isoformat(), at.isoformat(),
+                  metrics["session_generation"]] for key in keys]
+        cycles.append({**cycle_evidence(metrics, pairs, budget, complete=True),
+                       "started_at": start.isoformat(), "finished_at": at.isoformat()})
+        observation = {**obs(instruments[0], start, source="IOL_REST", endpoint="current"),
+                       "received_at": at.isoformat(), "is_trade": True}
+        bundle = {"catalog": instruments, "as_of": at, "session_open": OPEN, "market_provider": "IOL_REST",
+                  "observations": [observation], "rankings": freeze["payload"],
+                  "safety": {"mode": "SIMULATION", "real_orders_sent": 0, "real_routes": "NOT_CALLED"},
+                  "capacity_report": cycles[-3:], "frozen": {"SCALPING": freeze, "EQUITY_SPOT": freeze}}
+        checkpoint = run_shadow(bundle, previous=checkpoint)
+        row = checkpoint["engines"]["EQUITY_SPOT"]["telemetry"][0]
+        if minute == 1:
+            assert row["state"] == "DISCOVERY"
+        if minute == 3:
+            assert row["state"] == "WARM"
+    assert row["state"] == "HOT" and row["signal_result"] == "SAMPLES_READY"
+    assert not row["entry_authority"] and checkpoint["real_orders_sent"] == 0
+    assert checkpoint["engines"]["EQUITY_SPOT"]["capacity"]["safe_limit"] == 3
+    assert checkpoint["engines"]["SCALPING"]["telemetry"][0]["signal_result"] == "NOT_READY"
+    changed = [*cycles[-3:-1], {**cycles[-1], "rate_limited_attempts": 1}]
+    assert safe_iol_capacity(changed, as_of=at)["reason_codes"] == ["IOL_CAPACITY_RATE_LIMITED"]
+    assert safe_iol_capacity(cycles[-3:], as_of=at + timedelta(minutes=3))["safe_limit"] == 0
