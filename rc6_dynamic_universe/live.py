@@ -23,8 +23,10 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
                 warm_seconds=300, discovery_seconds=600, warmup_samples=6, window_seconds=5400)]
     policies = [EnginePolicy(**(asdict(p) | bundle.get("policies", {}).get(p.engine, {}))) for p in policies]
     observations = list(bundle.get("observations", []))
+    market_provider = bundle.get("market_provider", "PPI")
+    capacity_report = bundle.get("capacity_report", {}) if market_provider == "PPI" else {}
     capacity_policy = bundle.get("capacity_policy")
-    if capacity_policy and capacity_policy.get("status") == "APPROVED_DYNAMIC":
+    if market_provider == "PPI" and capacity_policy and capacity_policy.get("status") == "APPROVED_DYNAMIC":
         # The canonical child may consume the approved measured profiles; OFF
         # still uses the identical SHADOW policies above and zero new calls.
         policies = [EnginePolicy(**(asdict(p) | {k: v for k, v in
@@ -70,7 +72,7 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
                             as_of=at, config=bundle.get("tradeability_config"))
     plans, frozen_reports = [], {}
     for policy in policies:
-        capacity = safe_capacity(bundle.get("capacity_report", {}), endpoints=policy.endpoints,
+        capacity = safe_capacity(capacity_report, endpoints=policy.endpoints,
             cadence_seconds=policy.hot_seconds, window_seconds=policy.window_seconds,
             required_samples=policy.warmup_samples, latency_budget_seconds=policy.hot_seconds,
             as_of=at, **bundle.get("capacity_config", {}))
@@ -90,7 +92,8 @@ def run_shadow(bundle, *, previous=None, frozen_only=False, owned_frozen=False):
             continue
         kwargs = dict(at=at, session_open=opening, frozen=frozen, capacity=capacity,
             observations=observations, events=events["events"], opened=bundle.get("opened", []),
-            previous=(previous or {}).get("engines", previous or {}).get(policy.engine), phase=phase)
+            previous=(previous or {}).get("engines", previous or {}).get(policy.engine), phase=phase,
+            market_provider=market_provider)
         if policy.engine == "SCALPING":
             plan = shadow_sampling_plan(bundle["catalog"], policy=policy, **kwargs)
         else:

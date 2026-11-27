@@ -625,6 +625,7 @@ class ShadowRuntime:
         self.policies = policies or {}
         from rc6_dynamic_universe.promotion import capacity_controller_from_environment
         self.capacity_controller = capacity_controller_from_environment(self.database)
+        self.market_provider = self.capacity_controller.environ.get("POROTA_RC6_MARKET_PROVIDER", "PPI")
         self.maximum_bytes, self.row_limit = maximum_bytes, row_limit
         self.source_paths = {source: [root / name for root in self.source_roots]
                              for source, name in SOURCE_FILES.items()}
@@ -706,6 +707,8 @@ class ShadowRuntime:
         return reports, errors
 
     def _capacity(self, *, as_of=None, capacity_policy=None):
+        if self.market_provider == "IOL_REST":
+            return {}
         if (capacity_policy or {}).get("status") == "APPROVED_DYNAMIC":
             return self.capacity_controller.validated_report(
                 as_of, expected_fingerprint=capacity_policy["fingerprint"])
@@ -826,7 +829,7 @@ class ShadowRuntime:
                     "session_open": context["opening"].isoformat(),
                     "preopen_cutoff": context["cutoff"].isoformat(), "frozen_at": at.isoformat(),
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
-                    "policies": self.policies, "observations": []}
+                    "policies": self.policies, "observations": [], "market_provider": self.market_provider}
                 pre_report = run_shadow(bundle, frozen_only=True, owned_frozen=True)
                 frozen = {"schema": VERSION, "source_identity": source_id,
                     "frozen": pre_report["frozen"], "quality": pre["quality"],
@@ -880,7 +883,7 @@ class ShadowRuntime:
                     "rankings": frozen["frozen"]["SCALPING"]["payload"],
                     "frozen": frozen["frozen"], "intraday_history": frozen["intraday_history"],
                     "capacity_report": capacity, "capacity_policy": capacity_policy,
-                    "policies": self.policies,
+                    "policies": self.policies, "market_provider": self.market_provider,
                     "observations": observations,
                     "source_observation_reports": source_reports,
                     "observation_not_before": started,
@@ -893,7 +896,9 @@ class ShadowRuntime:
                     "preopen_quality": frozen["quality"],
                     "preopen_immutable": True, "preopen_file": freeze_name,
                     "capacity_open_status": "NO_VERIFICADO" if not capacity else capacity.get("status"),
-                    "observation_execution": "LOCAL_REUSE_ONLY; native PPI Intraday preserved",
+                    "observation_execution": ("LOCAL_REUSE_ONLY; IOL REST"
+                                              if self.market_provider == "IOL_REST" else
+                                              "LOCAL_REUSE_ONLY; native PPI Intraday preserved"),
                     "active_paper_scanner_authority": "FACTUAL_SIGNAL_AND_ADMISSION_UNCHANGED; sampling_policy="
                         + capacity_policy["status"] + "; shadow fills NOT_CALLED"}
                 checkpoint["engines"] = result["engines"]

@@ -453,6 +453,9 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
     from bv_paper_runtime import collect_exit_books
+    from rc6_dynamic_universe.common import digest
+    from rc6_dynamic_universe.orchestrator import EnginePolicy, UniverseOrchestrator
+    from rc6_dynamic_universe.runtime import read_runtime
     from rc6_paper_admission_gate import paper_admission_guard
     from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
 
@@ -473,13 +476,15 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     _preopen(tmp_path, monkeypatch)
     request = ticker, family, term
     assert request not in observer._runtime_readiness(store)[1]
+    opening = AT.replace(hour=13, minute=30)
+    checked_at = (opening - timedelta(minutes=15)).isoformat()
     primary = catalog.normalize_record({
         "ticker": ticker, "type": family, "market": market, "currency": currency,
         "settlement": term, "_discovery_source": "PPI_PRIMARY",
-    }, None, AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+    }, None, checked_at, "OFFHOST_PPI_IDENTITY_FIXTURE")
     with store.connect() as db:
         catalog.persist(db, primary)
-        catalog.sync_candidate_universe(db, AT.isoformat())
+        catalog.sync_candidate_universe(db, checked_at)
     contract = catalog.contract_for(catalog.lookup(store, *request, market=market, currency=currency))
     focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
     assert request in selected
@@ -513,6 +518,19 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     broker = PaperBroker(store, clock_fn=lambda: transport.now.isoformat(), ai_mode="OFF",
                          economics_mode="SHADOW", session_policy=PaperSessionPolicy(),
                          admission_guard=paper_admission_guard)
+    freeze = {"cutoff": (opening - timedelta(days=1)).isoformat(),
+              "frozen_at": (opening - timedelta(minutes=10)).isoformat(), "session_open": opening.isoformat(),
+              "rows": [{"identity": identity, "rank": 1, "tradeable": True, "tradeability_score": 1}]}
+    profile = dict(session_open=opening, frozen={"payload": freeze, "digest": digest(freeze)},
+                   market_provider="IOL_REST")
+    capacity = {"status": "SHADOW_RECOMMENDATION", "safe_limit": 8, "slots_by_endpoint": {"current": 8, "book": 8},
+                "generated_at": opening.isoformat(), "expires_at": (AT + timedelta(hours=1)).isoformat()}
+    eligibility = read_runtime(store.path, as_of=opening)["catalog"]
+    planner = UniverseOrchestrator(eligibility, policy=EnginePolicy(engine="EQUITY_SPOT", warmup_samples=3))
+    funnel = planner.plan(at=opening, capacity={}, **profile)
+    assert funnel["telemetry"][0]["state"] == "DISCOVERY"
+    funnel = planner.plan(at=opening, capacity=capacity, previous=funnel, **profile)
+    assert funnel["telemetry"][0]["state"] == "WARM"
     for index, price in enumerate(range(95, 104)):
         transport.now = AT + timedelta(minutes=index)
         ReplayClock.value = transport.now
@@ -525,11 +543,16 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
         assert observed.book_at == (transport.now - timedelta(seconds=1)).isoformat()
         assert paper_admission_guard(observed, store) == (True, "")
         store.add_quote(observed)
+        snapshots = read_runtime(store.path, as_of=transport.now)["observations"]
+        funnel = planner.plan(at=transport.now, capacity=capacity, observations=snapshots, previous=funnel, **profile)
         assert not _scanner_trade_temporal_rejection(
             observed, broker, store, checked_at=transport.now.isoformat())
         if index == 0:
             action, _, _, fields = broker.decide(observed)
             assert (action, fields["reason_code"]) == ("HOLD", "SIGNAL_WARMUP")
+    reached = funnel["telemetry"][0]
+    assert tuple(reached["identity"]) == identity and reached["state"] == "HOT"
+    assert reached["signal_result"] == "SAMPLES_READY" and not reached["entry_authority"]
     broker.on_quote(observed, allow_new_openings=allowed, opening_block_reason=opening_reason)
     position, = store.open_positions()
     assert tuple(position[field] for field in ("symbol", "asset_class", "market", "currency", "settlement")) == identity
