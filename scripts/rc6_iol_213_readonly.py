@@ -19,7 +19,7 @@ SCHEMA = "porota.iol.readonly-postdeploy.v1"
 
 
 REMOTE = '''
-import hashlib, json, os, sys
+import hashlib, json, os, re, sys
 from pathlib import Path
 
 def run_probe():
@@ -30,6 +30,7 @@ def run_probe():
     sys.path.insert(0, str(source))
     from scripts.porota_rootless_host import DB_RELATIVE, Identity, database_snapshot, require
     from scripts.porota_rootless_jobs import scheduler_lock, verified_host
+    from scripts.rc6_cold2_successor import inspect as inspect_cold_successor
     identity = Identity.current()
     root = Path('/opt/porota-trading')
     with scheduler_lock(identity):
@@ -48,10 +49,21 @@ def run_probe():
         authentication = probes['auth_diagnostic']['observe_auth'](manager, current)
         archive = probes['213_eod_diagnostic']['observe_eod'](manager, current)
         metrics = probes['installed_runtime_metrics']['observe_runtime_metrics'](manager, current)
+        try:
+            pack = inspect_cold_successor(root, hash_pack=True)
+            cold_preflight = {key: pack[key] for key in ('snapshot_id', 'manifest_sha256',
+                'pack_sha256', 'pack_bytes', 'queue_failed', 'archive_complete', 'failure_code',
+                'failure_phase', 'failed_computed_report')}
+            cold_preflight['state'] = 'PACK_AND_FAILED_REPORT_VERIFIED'
+        except (OSError, ValueError, KeyError) as exc:
+            code = str(exc)
+            cold_preflight = {'state': 'BLOQUEADO',
+                'reason': code if re.fullmatch(r'COLD2_[A-Z0-9_]{1,96}', code) else type(exc).__name__}
         require(database_snapshot(root / DB_RELATIVE) == original, 'AUDIT_DATABASE_IDENTITY_CHANGED')
         return {'schema': schema, **expected, 'read_only': True, 'real_orders_sent': 0,
                 'inventory': inventory, 'authentication': authentication, 'local_eod_history': archive,
                 'runtime_metrics': metrics,
+                'cold_successor_preflight': cold_preflight,
                 'probe_sha256': {name: hashlib.sha256(body.encode()).hexdigest()
                                  for name,body in checked_sources.items()}}
 
