@@ -11,7 +11,7 @@ def family_fields(family):
 
 
 def render(p, destination, tab):
-    iol_profile = p.market_provider == "IOL_REST"
+    iol_profile = getattr(p, "market_provider", "PPI") == "IOL_REST"
     if tab in {"buscador", "ficha"}:
         page = p.catalog()
         if tab == "ficha" and p.filters.get("identity") and len(page.rows) == 1:

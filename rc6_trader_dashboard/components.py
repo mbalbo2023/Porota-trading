@@ -59,13 +59,16 @@ def clock(value):
         return UNKNOWN
 
 
-def unverified(reason, *, value=UNKNOWN, status=False):
+def unverified(reason, *, value=UNKNOWN, status=False, inline=False):
     """Keep uncertainty and the reason visible together in the same field."""
     label = (f"<span class='badge badge-unknown' data-status='{e(value)}'>"
              f"<span aria-hidden='true'>·</span> {e(value)}</span>" if status else e(value))
     message = str(sanitized(reason))[:240]
     if message == "[REDACTED] sensitive detail":
         message = "El recibo contiene un motivo sensible. Consultá la evidencia sanitizada."
+    if inline:
+        return (f"<span class='unverified-value'>"
+                f"<span class='unverified-reason'>{e(value)} · {e(message)}</span></span>")
     return (f"<span class='unverified-value'>{label}"
             f"<small class='unverified-reason'>{e(message)}</small></span>")
 
@@ -260,7 +263,8 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
         elif page.state == "AVAILABLE":
             message = "Sin registros en este scope."
         else:
-            message = unverified(PAGE_REASONS.get(page.reason, page.reason or "La fuente no aporta registros verificables para este alcance."))
+            message = unverified(PAGE_REASONS.get(page.reason,
+                page.reason or "La fuente no aporta registros verificables para este alcance."), inline=True)
         body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{message}</td></tr>")
     heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
     selection_required = page.reason in {"SELECT_EXACT_IDENTITY_FOR_MARKET", "SELECT_EXACT_IDENTITY_FOR_CONTRACT"}

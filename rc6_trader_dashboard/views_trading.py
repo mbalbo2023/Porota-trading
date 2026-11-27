@@ -56,7 +56,7 @@ def render(p, destination, tab):
                 + "<p class='source-line'>Catálogo y contrato · <a href='/instrumentos/buscador?family=CAUCIONES'>CAUCIONES</a> "
                   "· <a href='/instrumentos/buscador?family=CAUCION'>CAUCION</a>. " +
                   ("IOL REST es la fuente operativa. La decisión exige una tasa y un reloj de libro acreditados."
-                   if p.market_provider == "IOL_REST" else
+                   if getattr(p, "market_provider", "PPI") == "IOL_REST" else
                    "PPI es identidad primaria. IOL aporta referencia complementaria.") + "</p>")
         if decisions:
             return lead + render_table(

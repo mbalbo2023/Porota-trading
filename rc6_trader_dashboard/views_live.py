@@ -69,6 +69,6 @@ def render(p, destination, tab):
     panel+="</section>"
     return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
                         note=("IOL REST es la fuente operativa. Se conserva la procedencia histórica de PPI. "
-                              if p.market_provider == "IOL_REST" else "PPI es autoridad primaria. IOL complementa y BYMA público observa. ") +
+                              if getattr(p, "market_provider", "PPI") == "IOL_REST" else "PPI es autoridad primaria. IOL complementa y BYMA público observa. ") +
                             "PAPER_ECONOMIC_GATE_SHADOW muestra la salud del chequeo. La entrada PAPER exige su propio recibo de admisión.",
                         identity=False)
