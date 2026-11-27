@@ -28,7 +28,7 @@ def render(p, destination, tab):
         content += "<div class='split-panels'>" + preview(p.positions(limit=5), "1. Operaciones abiertas ahora", "/en-vivo/posiciones") + preview(p.positions(closed=True, today=True, limit=5), "2. Operaciones cerradas hoy", "/en-vivo/cierres") + "</div>"
         content += preview(p.decisions(), "3. Decisiones en vivo — BUY / HOLD / abstenciones", "/en-vivo/decisiones")
         content += preview(shadow_rows(p, "capacity"), "Capacidad & Coverage", "/en-vivo/capacidad", key="engine")
-        content += "<a class='text-link' href='/trading/scalping'>Abrir Scalping en Trading</a>"
+        content += "<a class='text-link' href='/scalping'>Abrir Scalping en Trading</a>"
         return content
     if tab == "oportunidades":
         events = shadow_rows(p, "events")

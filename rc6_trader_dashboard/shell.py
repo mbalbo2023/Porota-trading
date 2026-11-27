@@ -45,7 +45,7 @@ def render(destination, tab, projection, content):
     retained = urlencode({k: v for k, v in projection.filters.items() if v and k != "offset"})
     tabs = "".join(f"<a href='{view_path(destination, key)}{e('?' + retained) if retained else ''}' {current(key == tab)}>{label}</a>" for key, label in destination.tabs)
     real_order_status, real_order_alert = _real_order_receipt(state)
-    iol_profile = projection.market_provider == "IOL_REST"
+    iol_profile = getattr(projection, "market_provider", "PPI") == "IOL_REST"
     auth = projection.iol_authentication if iol_profile else {"state": state.get("ppi_auth"),
             "reason": "El registro del observer no aporta estado de autenticación PPI."}
     market_clock = state.get("last_market_data_at")
@@ -64,7 +64,7 @@ def render(destination, tab, projection, content):
     values = (
         ("Modo runtime", value_html(state, Field("mode", "Modo runtime"))),
         ("Sesión", value_html(state, Field("session_state", "Fase de rueda"))),
-        ("Selector / capacidad", badge(selector, reason="Falta un corte SHADOW vigente que acredite la capacidad.")),
+        ("Selector / capacidad", e(selector)),
         ("Autenticación IOL REST" if iol_profile else "Autenticación PPI", badge(auth["state"], reason=auth.get("reason"))),
         ("Órdenes reales observadas", e(real_order_status)),
         ("Heartbeat", clock_value("Antigüedad del heartbeat", state.get("heartbeat_at"), state.get("heartbeat_age"),
@@ -77,7 +77,11 @@ def render(destination, tab, projection, content):
     strip_parts = []
     for label, value in values:
         aria = " role='status' aria-live='polite'" if label == "Órdenes reales observadas" else ""
-        strip_parts.append(f"<div class='strip-item'{aria}><b>{e(label)}</b><span>{value}</span></div>")
+        missing_selector = label == "Selector / capacidad" and selector == UNKNOWN
+        classes = "strip-item unverified-value" if missing_selector else "strip-item"
+        explanation = ("<small class='unverified-reason'>Falta un corte SHADOW vigente que acredite la capacidad.</small>"
+                       if missing_selector else "")
+        strip_parts.append(f"<div class='{classes}'{aria}><b>{e(label)}</b><span>{value}</span>{explanation}</div>")
     strip = "".join(strip_parts)
     warning = (f"<div class='notice critical' role='alert'>{e(real_order_alert)}</div>"
                if real_order_alert else "")

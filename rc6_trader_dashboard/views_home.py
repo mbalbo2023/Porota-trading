@@ -49,7 +49,7 @@ def attention(p, positions, daily_risk=None):
         state = row.get("state") or UNKNOWN
         if state != "READY":
             detail = "falta una evaluación publicada" if state == UNKNOWN else str(state)
-            alerts.append((f"Riesgo diario {currency} · {detail}", currency, "/riesgo/limites"))
+            alerts.append((f"Riesgo diario {currency}: {detail}", currency, "/riesgo/limites"))
         elif row.get("freshness") != "FRESH":
             alerts.append(("Riesgo diario sin corte fresco", currency, "/riesgo/limites"))
     for row in positions.rows:

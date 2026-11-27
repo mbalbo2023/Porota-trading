@@ -53,8 +53,8 @@ def render(p, destination, tab):
                 + cards + notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
                        "Un registro PAPER no acredita una orden ni una tasa ejecutable actual.")
                 + f"<nav class='pager' aria-label='Vistas de cauciones'>{links}</nav>"
-                + "<p class='source-line'>Catálogo y contrato · <a href='/instrumentos?family=CAUCIONES'>CAUCIONES</a> "
-                  "· <a href='/instrumentos?family=CAUCION'>CAUCION</a>. " +
+                + "<p class='source-line'>Catálogo y contrato · <a href='/instrumentos/buscador?family=CAUCIONES'>CAUCIONES</a> "
+                  "· <a href='/instrumentos/buscador?family=CAUCION'>CAUCION</a>. " +
                   ("IOL REST es la fuente operativa. La decisión exige una tasa y un reloj de libro acreditados."
                    if p.market_provider == "IOL_REST" else
                    "PPI es identidad primaria. IOL aporta referencia complementaria.") + "</p>")
