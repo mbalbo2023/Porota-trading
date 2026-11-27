@@ -52,6 +52,23 @@ El [checkpoint](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md) fija la evidencia, los l�
 18. **Navegar visualmente el dashboard desplegado con Playwright.** Tomar [inventario ejecutable de rutas](../../scripts/rc6_dashboard_route_inventory.py) y reutilizar [el recorrido Playwright existente](../../tests/ci_trader_terminal_browser.py) y las pruebas de regresión del terminal. El script existente intercepta HTTP con datos sintéticos. Para el posdeploy usar la URL del dashboard efectivo a través del acceso autenticado ya previsto, con GET de lectura. Recorrer todas las rutas visibles y modales de detalle de la primera página, navegación canónica y aliases relevantes, M0/M1, operativa por familia, libro/cotizaciones, velas, históricos, salud, timers/workers, riesgo, reportes y trazabilidad. Verificar estado y reloj IOL, representación de un HOLD, paginación, filtros, foco/recarga, scroll, etiquetas accesibles y tamaños de pantalla móvil/tablet/escritorio ya cubiertos. Contrastar filas y agregados con DB/recibos del mismo corte. Registrar ruta, viewport, interacción, resultado, redirección, errores de consola/HTTP y capturas sanitizadas sin cuentas, secretos o datos privados. Probar mutaciones y permisos sólo en entorno aislado.
 19. **Reconciliar y cerrar con evidencia reproducible.** Para cada afirmación guardar evidencia directa, prueba, SHA/árbol, imagen, contexto, reproducción, denominador, fecha ART/UTC y resultado. Para incidentes usar `ERROR → RCA → FIX → GUARD → TEST → EVIDENCIA` y registrar la lección. Actualizar AGENTS.md, checkpoint y RCA/md existentes, matriz e issue #1093. En un segundo pase verificar links, hashes, fuente efectiva, cobertura, recuentos y resultados finales de Actions y del host. Publicar sólo agregados y evidencia sanitizada. Diferenciar promoción, instalación, salud, flujo PAPER y aceptación de rueda. Una causa abierta lleva prueba, dueño y condición de salida. Liberar `WRITE_OWNER` y `DEPLOY_OWNER` una vez registrado el estado.
 
+## Repetición del 26/11 · Guard, replay y diagnóstico físico
+
+Reusar el [inventario y las métricas instaladas](../../scripts/rc6_iol_installed_inventory.py)
+del candidato #1292. El [recibo del lote](https://github.com/mbalbo2023/Porota-trading/actions/runs/45917050255/artifacts/15163096166)
+acredita la recomposición del cursor EOD sobre la misma base. El [checkpoint](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md)
+documenta la defensa contra falta de espacio, los 30 escenarios sintéticos y
+el resultado de las sondas con el digest instalado.
+
+Los casos de rueda requieren validar el camino de admisión propio de IOL.
+El scanner usa actualmente un guard explícito que devuelve
+`IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED`. Conservarlo hasta ligar el GO
+calificado de IOL a su generación y a la clave exacta. Verificar trade y Book
+en la apertura, cargos, vigencia y autoridad de cada familia antes del fill.
+Los tres casos sintéticos por familia ejercitan los contratos en DB aparte y
+carecen de efecto operativo. Para el dashboard usar Chrome con la bandera
+`--require-explained` y el recibo físico del release.
+
 ## Evidencia que permite declarar el cierre
 
 - Ejecución única de Promote V2 del artefacto probado y recibo del Droplet con la identidad exacta.

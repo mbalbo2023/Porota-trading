@@ -6,9 +6,10 @@
   y el [checkpoint con RCA y lecciones](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
   Reconciliar HEAD, ownership, SHA de producto y recibos físicos. La revisión
   de release IOL REST está integrada en [#1291](https://github.com/mbalbo2023/Porota-trading/pull/1291).
-  El [Promote V2 #213](https://github.com/mbalbo2023/Porota-trading/actions/runs/45913851493)
-  quedó VALIDADO_RUNTIME en PAPER/SIMULATION. Consultar la auditoría exacta y
-  los bloqueos de rueda y archivado en el checkpoint antes de tocar runtime.
+  El [Promote V2 #214](https://github.com/mbalbo2023/Porota-trading/actions/runs/45921311817/artifacts/15165265389)
+  dejó el digest de #1292 VALIDADO_RUNTIME en PAPER/SIMULATION. El checkpoint
+  registra la evidencia exacta del replay, el corte SHADOW, el estado de
+  rueda y la validación visual de ese release.
 - El objetivo del reemplazo es IOL REST primario y cero accesos operativos de
   RC6 a la API de PPI. Retirar PPI también como alternativa. Preservar bases,
   versiones y procedencia históricas, autoridades especializadas acreditadas y
@@ -19,8 +20,21 @@
   Comprobar infraestructura y dashboard real con Playwright. Cerrar con los
   recibos de runtime y `real_orders_sent=0`.
 - La evidencia de rueda exige identidad exacta, reloj IOL del último trade,
-  libro vigente y GO efectivo. La auditoría #213 dejó el guard de admisión en
-  HOLD. Preservar el histórico original al resolver el límite del archivador.
+  libro vigente y GO efectivo. El scanner IOL mantiene el HOLD explícito de
+  entrada hasta contar con un puente al recibo de rueda propio del proveedor.
+  Las pruebas sintéticas validan el motor con tres claves por familia y la
+  base operativa conserva sus guardas.
+- Para el archivado diario, medir espacio libre y reservar 2 GiB, con
+  margen por lote. Confirmar en el recibo el cursor frío, el techo caliente,
+  el último recibo durable y la procedencia histórica. Evitar límites fijos
+  de crecimiento para el archivo acumulativo.
+- En el dashboard real, comprobar el clic desde todos los menús, las vistas
+  activas, los detalles y M0–M11. Cada estado sin evidencia debe mostrar el
+  dato o recibo concreto que falta. El auditor estricto registra el motivo
+  visible por campo, la interacción y la identidad de release. El href
+  conserva filtros explícitos y los de la vista. Comparar la URL completa de
+  mismo origen y comprobar la proyección y el documento recibido por el clic.
+  Reusar el [auditor corregido en 42d4843](https://github.com/mbalbo2023/Porota-trading/commit/42d4843aa92951ca21cd19ad9dbbf9c486167b57).
 
 ## Aislamiento obligatorio del comparador #1287
 

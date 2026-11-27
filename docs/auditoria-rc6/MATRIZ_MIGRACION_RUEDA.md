@@ -1,5 +1,22 @@
 # Porota RC6 · Matriz de migración a IOL para la rueda PAPER
 
+## Replay ampliado a 30 claves · PR #1292
+
+Cada escenario usa GO efectivo de prueba, reloj y libro o NAV y condiciones del contrato en SQLite aislada. El resultado prueba decisión, apertura, liquidación o salida PAPER y `real_orders_sent=0`. El fixture por IOL para instrumentos especializados verifica el rechazo requerido antes de ejercer el motor nativo. Los símbolos de FCI son clases sintéticas. Los 404 casos pasaron en el Droplet con el SHA `eba76703be86e6a6b1406db36e5cb4cb87b21330` y la imagen `sha256:274b143fd323ab0b79aff90890f54a7f5ce0ed84c3323fedd385ce85f28e83d2`. [Recibo físico y casos por clave](https://github.com/mbalbo2023/Porota-trading/actions/runs/45921311817/artifacts/15165265389)
+
+| Familia | Claves de la prueba | Camino y salida acreditada en el replay |
+| --- | --- | --- |
+| Acciones | GGAL, PAMP, YPFD | Gateway IOL, compra y venta PAPER |
+| CEDEARs | AAPL, MSFT, KO | Gateway IOL, compra y venta PAPER |
+| ETF | SPY, QQQ, IWM | Gateway IOL, compra y venta PAPER con costos del fixture |
+| Bonos | AL30, GD30, AE38 | Motor nativo, venta con primer Book2 firmado posterior al ACK |
+| Letras | S31O6, S30N6, S29E7 | Motor nativo, validación de pago y cierre del lote |
+| ON | YMCJO, IRCFO, TLCMO | Motor nativo, venta con primer Book2 firmado posterior al ACK |
+| Opciones | YPFC40500D, YPFC40750D, GFGC5000D | Motor nativo, cierre del contrato con referencia del subyacente |
+| Futuros | DLR/OCT26, DLR/NOV26, DLR/DIC26 | Motor nativo, reserva de margen, liquidación y cierre |
+| Cauciones | PESOS1, PESOS2, PESOS7 | Motor nativo, libro colocador acreditado en el escenario y liberación de caja |
+| FCI | FCI.FIXTURE.A, FCI.FIXTURE.B, FCI.FIXTURE.C | Motor nativo, NAV y clase acreditados en fixture, suscripción, rescate y pago |
+
 ## Replay ejecutado en el Droplet · Promote V2 #213
 
 Los 372 casos pasaron sobre la imagen `sha256:252c9705181005b03a4055bf61f5d01485832f46691a16c41ede440f4035bedf`, con el SHA `36617d9c1a1bd0f80a55bd519c3f052b33830944`, AF_UNIX, SQLite temporal, red deshabilitada y `real_orders_sent=0`. El único ciclo completo acreditado con Gateway IOL en el replay es GGAL. En las demás familias se verificaron adaptadores y recorridos de motor con los escenarios propios de cada fuente. El GO, la vigencia de mercado y el READY de entrada de la rueda siguen sin acreditar en las diez familias. [Recibo #213](https://github.com/mbalbo2023/Porota-trading/actions/runs/45913851493/artifacts/15160639638)
