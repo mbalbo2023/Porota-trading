@@ -338,6 +338,44 @@ def test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock(tmp_pa
     assert [row[0] for row in events] == ["GGAL: IOL_LAST_TRADE_CLOCK_UNVERIFIED"]
 
 
+@pytest.mark.parametrize(("seconds", "opened_count", "expected"), [
+    (60, 0, 12), (60, 2, 11), (30, 0, 6), (60, 21, 0),
+])
+def test_iol_scanner_plan_respects_wire_limit_and_leaves_room_for_exit(
+        tmp_path, monkeypatch, seconds, opened_count, expected):
+    import bf_production_paper_observer as observer
+    from be_paper_engine import PaperStore
+    from iol_shadow_collector_rc6 import CollectionPolicy
+
+    keys = [(f"TEST{i}", "ACCIONES", GGAL[2], GGAL[3], GGAL[4]) for i in range(64)]
+    store = PaperStore(tmp_path / "wire-budget.sqlite")
+    with store.connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS universe_cycle_metrics(cursor_after, detail, id)")
+    opened = [
+        {"symbol": key[0], "asset_class": key[1], "settlement": key[4]}
+        for key in keys[:opened_count]
+    ]
+    monkeypatch.setattr(store, "open_positions", lambda: opened)
+    monkeypatch.setattr(observer.financial_catalog, "iol_spot_catalog", lambda *_, **__: keys)
+    monkeypatch.setattr(observer, "INTERVAL", seconds)
+    monkeypatch.setattr(observer, "ACTIVE_SYMBOL_LIMIT", 20)
+    monkeypatch.setattr(observer, "now_iso", lambda: AT.isoformat())
+
+    selected, eligible, _, _, plan = observer._cycle_plan(store, iol=True)
+
+    budget = plan["iol_rest_budget"]
+    assert eligible == len(keys)
+    assert len(selected) == budget["scanner_batch_limit"] == expected
+    opened_requests = tuple((key[0], key[1], key[4]) for key in keys[:min(opened_count, expected)])
+    assert selected[:opened_count] == opened_requests
+    assert set(map(tuple, plan["cold"])).isdisjoint(map(tuple, plan["opening_identities"]))
+    if expected:
+        planned_calls = expected * budget["scanner_calls_per_instrument"] * budget["batches_per_minute"]
+        assert planned_calls + budget["planned_exit_calls"] + 1 <= CollectionPolicy().max_calls_per_minute
+    else:
+        assert not plan["opening_identities"]
+
+
 @pytest.mark.parametrize("identity", FAMILIES, ids=[case[1] for case in FAMILIES])
 def test_iol_family_contract(identity, tmp_path):
     market, transport = reader(tmp_path, identity)

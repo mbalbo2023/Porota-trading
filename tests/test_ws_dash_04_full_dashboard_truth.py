@@ -319,6 +319,21 @@ def test_universe_route_treats_null_catalog_aggregate_as_zero(monkeypatch):
     assert "ACCIONES" in page
 
 
+def test_exit_reader_detail_explains_unverified_cadence_and_budget():
+    from rc6_trader_dashboard.components import value_html
+    from rc6_trader_dashboard.view_common import WORKER_DETAIL
+
+    detail = next(field for field in WORKER_DETAIL if field.key == "detail")
+    row = {"source": "paper_exit_reader_state",
+           "detail": "0 errores; baseline_cadence=NO_VERIFICADO; budget_round=NO_VERIFICADO"}
+    html = value_html(row, detail)
+    assert "unverified-reason" in html
+    assert "baseline_cadence=NO_VERIFICADO" in html
+    assert "budget_round=NO_VERIFICADO" in html
+    assert "cadencia del lector de salidas" in html
+    assert "presupuesto compartido" in html
+
+
 def test_dashboard_sources_parse_with_runtime_python_311():
     for path in ("bh_universe_dashboard_hf6.py", "o_dashboard.py"):
         source = Path(path).read_text(encoding="utf-8")

@@ -330,11 +330,13 @@ def test_intraday_revalidation_keeps_daily_receipt_and_requires_exact_release(op
     assert not gate.admission_status(now=at, candidate_sha=SHA)[0]
 
 
-@pytest.mark.parametrize("issue", ["red", "wrong_release", "missing_t10", "after_hours", "pause"])
+@pytest.mark.parametrize("issue", ["red", "wrong_release", "missing_t10", "prior_no_go", "after_hours", "pause"])
 def test_intraday_revalidation_does_not_create_go_without_its_authorities(operator, issue):
     daily = operator["identity"].operator / "paper-preopen-v2.json"
     if issue != "missing_t10":
         original = gate.publish_preopen({"status": "GREEN", "phase": "T_MINUS_10"}, now=AT)
+        if issue == "prior_no_go":
+            original.update(status="NO_GO_PAPER_SCALPING", reason="PREOPEN_OR_RELEASE_NOT_GREEN")
         write_private(daily, {**original, "candidate_sha": "e" * 40})
     if issue == "pause":
         paused = {key: value for key, value in operator["intent"].items() if key in rearm._PAUSED_KEYS}
@@ -344,6 +346,8 @@ def test_intraday_revalidation_does_not_create_go_without_its_authorities(operat
         {"status": "RED" if issue == "red" else "GREEN", "phase": gate.REVALIDATION_PHASE},
         now=now, expected_source_sha="f" * 40 if issue == "wrong_release" else SHA)
     assert redone["status"] == "NO_GO_PAPER_SCALPING"
+    if issue == "prior_no_go":
+        assert not daily.with_name(gate.REVALIDATION_NAME).exists()
 
 
 def test_pause_survives_invalid_release_and_never_creates_consent(operator):

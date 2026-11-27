@@ -184,7 +184,16 @@ def value_html(row, field):
                       if field.key == "workers" else f"El registro no acredita los valores marcados de {field.label}.")
             return unverified(reason, value=text)
         return e(text)
-    return e(str(sanitized(value))[:4096])
+    text = str(sanitized(value))[:4096]
+    if field.key == "detail" and row.get("source") == "paper_exit_reader_state":
+        reasons = []
+        if "baseline_cadence=NO_VERIFICADO" in text:
+            reasons.append("Falta certificar la cadencia del lector de salidas.")
+        if "budget_round=NO_VERIFICADO" in text:
+            reasons.append("El presupuesto compartido aún no acredita este recorrido de salidas.")
+        if reasons:
+            return unverified(" ".join(reasons), value=text)
+    return e(text)
 
 
 IDENTITY = fields("symbol|Ticker;family|Familia;market|Mercado;currency|Moneda;settlement|Settlement")
