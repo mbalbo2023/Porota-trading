@@ -9,10 +9,10 @@ from pathlib import Path
 from scripts.porota_actions_host import connection, decode_receipt, require, ssh_run
 
 
-EXPECTED = {"source_sha": "80eb9efdce30fe567cb640e5d3471ff0f6f6e1d9",
-            "source_tree": "322cc617d4bf15fbc94388c1137abbfc89e6cbad",
-            "image_id": "sha256:175103e66ad86cdea53960fdb83a9c5463ecce6a37abd50d3d95cfa9d3bd1a54",
-            "attempt": "46043664818-1"}
+EXPECTED = {"source_sha": "1a04c5bae138bf2da59e98a69c77c408106d4b4d",
+            "source_tree": "d59db6a55f4eed90bfc8428535f38545c4cce84c",
+            "image_id": "sha256:62227a2add3624835f9d39a1726c721f393cc10f8b6209259dfe06111e12cf2d",
+            "attempt": "46052331831-1"}
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "porota.iol.intraday-preopen-postflight.v1"
 
