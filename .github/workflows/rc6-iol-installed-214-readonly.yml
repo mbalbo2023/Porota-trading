@@ -1,4 +1,4 @@
-name: RC6 IOL OAuth evidence on installed release 214
+name: RC6 IOL reference GD30 on installed release 214
 
 on:
   push:
@@ -13,14 +13,14 @@ concurrency:
 
 jobs:
   evidence:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Observe existing OAuth state without making provider requests
+      - name: Verify GD30 with one GET using the existing cached bearer
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -31,7 +31,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-iol-installed-214-auth-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-iol-installed-214-reference-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rc6-iol-installed-214-auth.json
           if-no-files-found: error
           retention-days: 30

@@ -7,8 +7,9 @@ import math
 import os
 import stat
 import time
+from urllib.error import HTTPError
 
-from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
+from iol_rest_readonly_rc6 import API, IOLRestError, IOLRestReadOnly
 from scripts.porota_rootless_host import DB_RELATIVE, database_snapshot, decode, no_alias, require
 
 
@@ -20,6 +21,32 @@ print(json.dumps({'source_sha': os.getenv('POROTA_BUILD_SHA'),
                   'source_tree': os.getenv('POROTA_CANDIDATE_TREE_SHA'),
                   'owner': observe_iol_owner('/app/data/paper_v17/observer_v17.db')}))
 """
+
+
+class _SingleReferenceGET:
+    """Observe one GET on the existing no-redirect IOL transport."""
+
+    def __init__(self, opener):
+        self.opener = opener
+        self.attempts = 0
+        self.http_status = None
+
+    def open(self, request, *, timeout):
+        if (self.attempts or request.get_method() != "GET" or
+                request.full_url != API + "/broker/assets/GD30?market=BCBA"):
+            raise PermissionError("IOL_DIAGNOSTIC_ROUTE_DENIED")
+        self.attempts += 1
+        try:
+            response = self.opener.open(request, timeout=timeout)
+        except HTTPError as error:
+            self._status(error.code)
+            raise
+        self._status(response.getcode())
+        return response
+
+    def _status(self, value):
+        if type(value) is int and 100 <= value <= 599:
+            self.http_status = value
 
 
 def _owner_status(manager, current):
@@ -107,9 +134,12 @@ def observe_auth(manager, current, *, probe_asset=True):
     require(before == current.get("database"), "DIAGNOSTIC_DATABASE_IDENTITY_CHANGED")
     owner = _owner_status(manager, current)
     health = IOLRestReadOnly(manager.identity.state / "iol-rest", allow_renew=False)
+    transport = _SingleReferenceGET(health.opener)
+    health.opener = transport
     cache, cached = _inspect_health_cache(health)
     endpoint = (_asset_receipt(health, cached) if probe_asset else
                 {"state": "NOT_PROBED_READ_ONLY_EVIDENCE", "http_status": None})
+    endpoint["http_status"] = transport.http_status
     after = database_snapshot(manager.root / DB_RELATIVE)
     require(after == before, "DIAGNOSTIC_DATABASE_IDENTITY_CHANGED")
     return {
@@ -117,5 +147,5 @@ def observe_auth(manager, current, *, probe_asset=True):
         **{key: current[key] for key in ("source_sha", "source_tree", "image_id", "attempt")},
         "read_only": True, "real_orders_sent": after["real_orders_sent"], "owner": owner,
         "independent_health": {"cache": cache, "asset": endpoint},
-        "oauth_grants_sent": 0, "ppi_watch_queried": False,
+        "oauth_grants_sent": 0, "market_requests_generated": transport.attempts, "ppi_watch_queried": False,
     }

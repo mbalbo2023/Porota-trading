@@ -1,4 +1,4 @@
-"""Collect passive IOL OAuth and timer evidence from installed release #214."""
+"""Observe installed release #214 and verify one IOL reference with its cached bearer."""
 
 import argparse
 import hashlib
@@ -14,11 +14,12 @@ EXPECTED = {"source_sha": "eba76703be86e6a6b1406db36e5cb4cb87b21330",
             "image_id": "sha256:274b143fd323ab0b79aff90890f54a7f5ce0ed84c3323fedd385ce85f28e83d2",
             "attempt": "45921311817-1"}
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "porota.iol.installed-214-passive-auth.v1"
+SCHEMA = "porota.iol.installed-214-reference-auth.v1"
 
 REMOTE = '''
+from contextlib import closing
 from datetime import datetime, timezone
-import hashlib, json, os, subprocess, sys
+import hashlib, json, os, sqlite3, subprocess, sys
 from pathlib import Path
 
 SERVICE = 'porota-iol-oauth-health-rc6.service'
@@ -110,9 +111,15 @@ def run_probe():
         require(installed is not None,'AUDIT_INSTALLED_TIME_MISSING')
         original = database_snapshot(root / DB_RELATIVE)
         require(original == current.get('database'),'AUDIT_DATABASE_IDENTITY_UNVERIFIED')
-        namespace = {'__name__':'rc6_iol_214_passive_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
-        exec(compile(auth_source,'rc6_iol_214_passive_auth','exec'),namespace)
-        auth = namespace['observe_auth'](manager,current,probe_asset=False)
+        with closing(sqlite3.connect((root / DB_RELATIVE).as_uri()+'?mode=ro',uri=True,timeout=.3)) as db:
+            db.execute('PRAGMA query_only=ON')
+            row = db.execute('SELECT session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+        stamp = instant(row[1]) if row else None
+        require(stamp is not None and row[0] in ('MARKET_CLOSED','CLOSED') and
+                0 <= (datetime.now(timezone.utc)-stamp).total_seconds() <= 120,'AUDIT_CLOSED_MARKET_REQUIRED')
+        namespace = {'__name__':'rc6_iol_214_reference_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
+        exec(compile(auth_source,'rc6_iol_214_reference_auth','exec'),namespace)
+        auth = namespace['observe_auth'](manager,current,probe_asset=True)
         common = ('Id','LoadState','ActiveState','SubState','UnitFileState')
         units = {}
         for unit,fields in ((TIMER,('Unit','Triggers','LastTriggerUSec','NextElapseUSecRealtime')),
@@ -125,11 +132,11 @@ def run_probe():
             history = journal(installed,current)
         except (OSError,ValueError,subprocess.SubprocessError):
             history = {'state':'NO_VERIFICADO','health_runs':[]}
-        require(auth.get('independent_health',{}).get('asset',{}).get('state') == 'NOT_PROBED_READ_ONLY_EVIDENCE' and
-                auth.get('oauth_grants_sent') == 0 and database_snapshot(root / DB_RELATIVE) == original,
-                'AUDIT_PASSIVE_BOUNDARY_UNVERIFIED')
-        return {'schema':schema, **expected,'read_only':True,'real_orders_sent':0,'grants_generated':0,
-                'market_requests_generated':0,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
+        requests = auth.get('market_requests_generated')
+        require(type(requests) is int and requests in (0,1) and auth.get('oauth_grants_sent') == 0 and
+                database_snapshot(root / DB_RELATIVE) == original,'AUDIT_REFERENCE_BOUNDARY_UNVERIFIED')
+        return {'schema':schema, **expected,'read_only':True,'real_orders_sent':0,'grants_generated':0,'market_session':row[0],
+                'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,
                 'units':units,'journal':history,'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
@@ -157,7 +164,8 @@ def main():
                 "AUDIT_RELEASE_MISMATCH")
         if proc.returncode == 0:
             require(observed.get("read_only") is True and all(type(observed.get(k)) is int and observed[k] == 0
-                    for k in ("real_orders_sent", "grants_generated", "market_requests_generated")) and
+                    for k in ("real_orders_sent", "grants_generated")) and
+                    type(observed.get("market_requests_generated")) is int and observed["market_requests_generated"] in (0,1) and
                     observed.get("auth_probe_sha256") == hashlib.sha256(auth.encode()).hexdigest(),
                     "AUDIT_PAPER_SAFETY_UNVERIFIED")
         receipt = observed
