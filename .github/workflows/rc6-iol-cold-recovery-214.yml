@@ -1,0 +1,41 @@
+name: RC6 IOL COLD successor 214 read-only preflight
+
+on:
+  push:
+    branches: [diagnostic/rc6-iol-cold-recovery-214]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  cold:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.actor == 'mbalbo2023' && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Inspect the pinned COLD snapshot on the installed IOL release
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -B -m scripts.rc6_iol_cold_actions214 cold_inspect --output "$RUNNER_TEMP/rc6-iol-cold-214.json"
+      - name: Publish sanitized evidence of the operation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-cold-214-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-iol-cold-214.json
+          retention-days: 30
