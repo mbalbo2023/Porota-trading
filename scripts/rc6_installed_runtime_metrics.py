@@ -16,6 +16,7 @@ from collections import Counter
 from contextlib import closing
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -25,7 +26,8 @@ import time
 from bl_candle_engine import fingerprint
 from cg_paper_workspace import artifact_root
 from rc6_scheduler_snapshot import instant
-from scripts.porota_rootless_host import IOL_CONTROLLER_CHILDREN, Hold, read_controller_health, read_regular, observe_iol_owner
+from rc6_shadow_runtime.persistence import EvidenceFiles
+from scripts.porota_rootless_host import IOL_CONTROLLER_CHILDREN, read_controller_health, observe_iol_owner
 
 HOT = Path('/app/data/paper_v17/observer_v17.db')
 COLD = Path('/app/data/market_history.db')
@@ -36,7 +38,7 @@ STATES = {
     'DEGRADED', 'STOPPED', 'RESTART_WAIT', 'EXITED', 'FAILED', 'BACKOFF', 'COOLDOWN', 'IDLE',
     'MARKET_CLOSED', 'MARKET_OPEN', 'CLOSED', 'OPEN', 'PREOPEN', 'CHECKING', 'STOPPING',
     'SHADOW_OBSERVING', 'SHADOW_IDLE_MARKET_CLOSED', 'FAIL_CLOSED', 'LOCAL_EOD_READY', 'BACKLOG',
-    'COMPLETE', 'COMMITTED', 'NOT_ATTEMPTED', 'OK', 'ERROR',
+    'PREOPEN_SNAPSHOT_REQUIRED_DURING_SESSION', 'COMPLETE', 'COMMITTED', 'NOT_ATTEMPTED', 'OK', 'ERROR',
 }
 SOURCES = {'IOL_REST', 'IOL_REST_TRADE_SAMPLE', 'PPI_GUARDED_CURRENT', 'PPI_MARKETDATA_CURRENT',
            'PRODUCTION_PAPER_SNAPSHOTS', 'PRODUCTION_PAPER', 'IOL_MCP', 'A3_CEM_CLOSING',
@@ -119,18 +121,28 @@ def controller_metrics(sha, tree):
             'controller_age_s': stamp, 'fresh_within_120s': stamp is not None and 0 <= stamp <= 120,
             'recorded_at': timestamp(report.get('recorded_at')), 'workers': workers}
 
-def shadow_metrics():
-    root = artifact_root(HOT) / 'dynamic-shadow'
+def shadow_metrics(worker_started_at):
+    files = EvidenceFiles(artifact_root(HOT) / 'dynamic-shadow', payload_limit=131072)
     result = {}
     for name in ('idle', 'status'):
         try:
-            row = json.loads(read_regular(root / (name + '.json')))
-        except (OSError, ValueError, Hold):
-            result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_READ_UNAVAILABLE'}
+            row = files.read(name + '.json')
+        except (OSError, ValueError, AttributeError):
+            result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_READ_OR_DIGEST_UNVERIFIED'}
+            continue
+        if row is None:
+            result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_ABSENT'}
             continue
         if isinstance(row, dict) and row.get('real_routes') == 'NOT_CALLED' and type(row.get('real_orders_sent')) is int and row['real_orders_sent'] == 0:
             clock = row.get('heartbeat_at') if name == 'idle' else row.get('as_of')
-            result[name] = {'state': state(row.get('state') or row.get('status')), 'at': timestamp(clock), 'age_s': age(clock)}
+            observed, started = instant(clock), instant(worker_started_at)
+            receipt = {'state': state(row.get('state') or row.get('status')), 'at': timestamp(clock), 'age_s': age(clock),
+                       'after_worker_start': observed >= started if observed and started else None}
+            timing = row.get('generation_timing')
+            if isinstance(timing, dict) and name == 'status':
+                receipt['compute_seconds'] = {key: timing[key] for key in ('poll_seconds', 'tick_seconds', 'tick_cpu_seconds')
+                                              if type(timing.get(key)) in (int, float) and math.isfinite(timing[key]) and timing[key] >= 0}
+            result[name] = receipt
         else:
             result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_SAFETY_CONTRACT_UNVERIFIED'}
     return result
@@ -248,7 +260,9 @@ if role == 'observer':
                                  'elapsed_ms': round((time.perf_counter() - started) * 1000, 3),
                                  'authenticated': owner.get('authenticated') is True if owner else None,
                                  'wire_attempts': count(owner.get('wire_attempts')) if owner else None, 'provider_probed': False}
-    result.update({'controller': controller_metrics(sha, tree), 'dynamic_shadow': shadow_metrics(),
+    controller = controller_metrics(sha, tree)
+    shadow_started = controller.get('workers', {}).get('dynamic_shadow', {}).get('started_at')
+    result.update({'controller': controller, 'dynamic_shadow': shadow_metrics(shadow_started),
                    'hot': hot_metrics(), 'cold': cold_metrics()})
 print(json.dumps(result, sort_keys=True, allow_nan=False))
 '''

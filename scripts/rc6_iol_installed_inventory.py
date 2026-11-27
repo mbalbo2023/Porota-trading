@@ -283,6 +283,21 @@ def _history_sources(connection, deadline, table, *, seconds):
     return [{"source": source, "rows": count} for source, count in sorted(counts.items())], None
 
 
+def _canonical_sources(connection, deadline):
+    # The canonical table has no source index. Conditional counts avoid a
+    # temporary sort of the full table and retain an exact OTHER count.
+    counts = ", ".join("COUNT(CASE WHEN source = ? THEN 1 END)" for _ in SOURCES)
+    rows, reason = _bounded_query(connection, deadline,
+        f"SELECT COUNT(*), {counts} FROM history_canonical_v2", SOURCES, seconds=11)
+    if not rows:
+        return None, reason
+    total, *by_source = rows[0]
+    counts = [{"source": source, "rows": count} for source, count in zip(SOURCES, by_source) if count]
+    if other := total - sum(by_source):
+        counts.append({"source": "OTHER", "rows": other})
+    return counts, None
+
+
 def _observe_database(path, expected, deadline, *, observer=False):
     try:
         filename = no_alias(path).as_uri() + "?mode=ro"
@@ -318,11 +333,13 @@ def _observe_database(path, expected, deadline, *, observer=False):
                               "WHEN '1m' THEN '1m' WHEN '5m' THEN '5m' WHEN '1d' THEN '1d' ELSE 'OTHER' END ELSE 'OTHER' END")
                 result["candle_series_by_source"] = _sources(connection, deadline, "candle_series", source, (resolution,))
             else:
-                for key, table, seconds in (("versions_by_source", "history_versions_v2", 1.5),
-                                            ("canonical_by_source", "history_canonical_v2", 4)):
-                    result[key], failure = _history_sources(connection, deadline, table, seconds=seconds)
-                    if failure is not None:
-                        result[key + "_failure"] = failure
+                versions, version_failure = _history_sources(connection, deadline, "history_versions_v2", seconds=1.5)
+                canonical, canonical_failure = _canonical_sources(connection, deadline)
+                result.update({"versions_by_source": versions, "canonical_by_source": canonical})
+                if version_failure:
+                    result["versions_by_source_failure"] = version_failure
+                if canonical_failure:
+                    result["canonical_by_source_failure"] = canonical_failure
             return result
     except (OSError, sqlite3.Error, Hold):
         return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_READ_UNAVAILABLE"}
@@ -334,7 +351,7 @@ def _runtime_inventory():
         "source_sha": os.getenv("POROTA_BUILD_SHA"), "source_tree": os.getenv("POROTA_CANDIDATE_TREE_SHA"),
         "python": ".".join(str(part) for part in sys.version_info[:3]), "sqlite": sqlite3.sqlite_version,
         "observer": _observe_database(OBSERVER, OBSERVER_TABLES, started + 3.5, observer=True),
-        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 9),
+        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 18),
     }
 
 
@@ -363,7 +380,7 @@ def _runtime_from_container(manager, current, coordinates, runtime_probe_source)
         args = ("-c", RUNTIME_BOOTSTRAP, runtime_probe_source, expected_hash)
     try:
         result = manager.docker.command_result("container", "exec", current["roles"]["observer"],
-                                               "timeout", "--kill-after=1s", "14s", "python", "-B", *args, timeout=17)
+                                               "timeout", "--kill-after=1s", "23s", "python", "-B", *args, timeout=26)
     except (RuntimeError, OSError, ValueError, TypeError) as exc:
         if getattr(exc, "public_details", {}).get("docker_failure", {}).get("result") == "TIMEOUT":
             return _unavailable("INVENTORY_RUNTIME_EXEC_TIMEOUT")
