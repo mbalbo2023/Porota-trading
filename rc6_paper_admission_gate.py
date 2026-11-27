@@ -163,6 +163,10 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
                "reason": (pause_reason if pause_reason else
                           "PREOPEN_GREEN_RELEASE_PAPER_ZERO" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
+    if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
+        receipt["market_provider"] = "IOL_REST"
+        if result.get("checks", {}).get("observer_db", {}).get("market_provider") != "IOL_REST":
+            receipt.update(status="NO_GO_PAPER_SCALPING", reason="PAPER_PREOPEN_PROVIDER_MISMATCH")
     # A125's 27-Oct LIVE gate is an immutable link in the A138/A143 scheduler
     # recovery chain. Neither a manual preopen nor a subsequent day's T-10
     # may overwrite it while that chain is active. The separate A151 sidecar
@@ -219,6 +223,8 @@ def _daily_gate_error(receipt, issued, now):
     if (receipt.get("schema") != expected_schema or receipt.get("status") != "GO_PAPER_SCALPING"
             or receipt.get("phase") != "T_MINUS_10"):
         return "NO_GO_PAPER_SCALPING"
+    if receipt.get("market_provider", "PPI") != os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI"):
+        return "PAPER_PREOPEN_PROVIDER_MISMATCH"
     if receipt.get("trade_day_ar") != now.date().isoformat() or issued.date() != now.date():
         return "PAPER_PREOPEN_TRADE_DAY_MISMATCH"
     if (not 10 * 60 + 20 <= issued.hour * 60 + issued.minute < 10 * 60 + 30
@@ -260,6 +266,8 @@ def publish_release_revalidation(result, *, now, expected_source_sha):
     if reason:
         return {**reject, "reason": reason}
     allowed = (result.get("status") == "GREEN" and result.get("phase") == REVALIDATION_PHASE)
+    if daily.get("market_provider") == "IOL_REST":
+        allowed = allowed and result.get("checks", {}).get("observer_db", {}).get("market_provider") == "IOL_REST"
     if daily["candidate_sha"] == expected_source_sha:
         return {"status": "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
                 "reason": "PAPER_DAILY_GO_ALREADY_CURRENT" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN"}
@@ -270,6 +278,8 @@ def publish_release_revalidation(result, *, now, expected_source_sha):
                "issued_at_ar": now.isoformat(timespec="seconds"),
                "daily_gate_sha256": hashlib.sha256(daily_raw).hexdigest(),
                "operator_run_id": intent["rearm_run_id"]}
+    if daily.get("market_provider") == "IOL_REST":
+        receipt["market_provider"] = "IOL_REST"
     return _write_gate(private / REVALIDATION_NAME, receipt, private=True)
 
 
@@ -329,6 +339,7 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
                 and redone.get("schema") == REVALIDATION_SCHEMA
                 and redone.get("phase") == REVALIDATION_PHASE
                 and redone.get("status") == "GO_PAPER_SCALPING"
+                and redone.get("market_provider", "PPI") == receipt.get("market_provider", "PPI")
                 and redone.get("candidate_sha") == candidate_sha
                 and redone.get("trade_day_ar") == now.date().isoformat()
                 and redone.get("daily_gate_sha256") == hashlib.sha256(raw).hexdigest()
@@ -410,12 +421,57 @@ def _current_option_dependency_contract(connection, record, now):
     return contract_from_metadata(record["ticker"], record["instrument_type"], normalized["financial_contract_v17"])
 
 
+def _iol_spot_admission_reason(quote, store, now):
+    from bs_instrument_contracts import aware_datetime, decimal_value
+    from bu_instrument_catalog import iol_spot_catalog, quote_terms
+    from co_market_sessions_hf6 import byma_paper_spot_phase
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+
+    if quote.asset_class not in EQUITY_FAMILIES:
+        return "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
+    if quote.metadata_source != "IOL_REST" or quote.opening_block_reason:
+        return quote.opening_block_reason or "IOL_EXECUTABLE_SOURCE_UNVERIFIED"
+    temporal = quote.time_error(now, require_trade=True)
+    if temporal:
+        return temporal
+    evidence = quote.iol_trade_evidence
+    currency, market = quote.monetary_identity()
+    key = (quote.symbol, quote.asset_class, market, currency, quote.settlement)
+    if not isinstance(evidence, dict) or evidence.get("identity") != list(key):
+        return "IOL_LAST_TRADE_EVIDENCE_MISSING"
+    generation = evidence.get("gateway_generation")
+    if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{64}", generation):
+        return "IOL_LAST_TRADE_EVIDENCE_UNVERIFIED"
+    trade_at = aware_datetime(quote.trade_at)
+    book_at = aware_datetime(quote.book_at)
+    if (aware_datetime(evidence.get("trade_at")) != trade_at or
+            not trade_at <= aware_datetime(evidence.get("received_at")) <=
+            aware_datetime(evidence.get("quote_received_at")) <= aware_datetime(quote.observed_at) or
+            decimal_value(evidence.get("price"), "IOL last trade", positive=True) != quote.last):
+        return "IOL_LAST_TRADE_EVIDENCE_MISMATCH"
+    if any(at.astimezone(TZ).date() != now.date() or byma_paper_spot_phase(at) != "OPEN"
+           for at in (trade_at, book_at, now)):
+        return "IOL_MARKET_EVIDENCE_WRONG_SESSION"
+    if not (0 < quote.bid <= quote.ask and quote.bid_size > 0 and quote.ask_size > 0):
+        return "IOL_BOOK_TWO_SIDED_UNVERIFIED"
+    record = iol_spot_catalog(store, now=now, identity=key).get(key)
+    terms = quote_terms(record, now=now, iol_live_settlement=True)
+    if terms.get("opening_block_reason"):
+        return terms["opening_block_reason"]
+    if quote.contract is None or quote.contract != terms.get("contract"):
+        return "PAPER_EXACT_CONTRACT_MISMATCH"
+    return ""
+
+
 def paper_admission_guard(quote, store):
     """Recheck global GO and exact candidate terms at the final PAPER admission."""
     allowed, reason = admission_status()
     if not allowed:
         return False, reason
     try:
+        if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
+            reason = _iol_spot_admission_reason(quote, store, datetime.now(TZ))
+            return not reason, reason
         from bu_instrument_catalog import contract_for, lookup
         currency, market = quote.monetary_identity()
         record = lookup(store, quote.symbol, quote.asset_class, quote.settlement,

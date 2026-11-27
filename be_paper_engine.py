@@ -107,6 +107,7 @@ class Quote:
     # Not a PPI signature or an admission authority.
     ppi_book1_event_sha256: Optional[str] = None
     ppi_native_rest_book: Optional[dict] = None
+    iol_trade_evidence: Optional[dict] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -253,6 +254,7 @@ def _decision_evidence_payload(q: Quote, decision_key: str, technical: str,
             "last_kind": q.last_kind,
             "metadata_source": q.metadata_source,
             "financial_contract": contract,
+            **({"iol_trade_evidence": q.iol_trade_evidence} if q.iol_trade_evidence is not None else {}),
         },
         "runtime": {
             "source": SOURCE,

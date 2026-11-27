@@ -104,7 +104,7 @@ def gateway_socket(tmp_path_factory):
     return private / "market.sock"
 
 
-def _preopen(tmp_path, monkeypatch):
+def _preopen(tmp_path, monkeypatch, *, iol=False):
     receipt_path = tmp_path / "preopen.json"
     state_path = tmp_path / "release-state.json"
     state_path.write_text(json.dumps({
@@ -120,8 +120,13 @@ def _preopen(tmp_path, monkeypatch):
     assert not admission.admission_status()[0]
     preopen = AT.astimezone(admission.TZ).replace(hour=10, minute=21)
     assert observer._market_phase(preopen) == "PREOPEN"
-    receipt = admission.publish_preopen({"status": "GREEN", "phase": "T_MINUS_10"},
-        now=preopen, state_path=state_path, receipt_path=receipt_path)
+    result = {"status": "GREEN", "phase": "T_MINUS_10"}
+    if iol:
+        rejected = admission.publish_preopen(result, now=preopen, state_path=state_path, receipt_path=receipt_path)
+        assert rejected["reason"] == "PAPER_PREOPEN_PROVIDER_MISMATCH"
+        assert not admission.admission_status()[0]
+        result["checks"] = {"observer_db": {"market_provider": "IOL_REST"}}
+    receipt = admission.publish_preopen(result, now=preopen, state_path=state_path, receipt_path=receipt_path)
     assert receipt["status"] == "GO_PAPER_SCALPING"
     assert observer._market_phase(AT.astimezone(admission.TZ)) == "OPEN"
     assert admission.admission_status() == (True, "")

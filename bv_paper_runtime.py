@@ -184,6 +184,7 @@ def _make_iol_gateway_owner(store, socket_path):
     from iol_rest_readonly_rc6 import IOLRestReadOnly
     from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
     from rc6_iol_market_gateway import IOLMarketGateway, iol_gateway_identities
+    from rc6_iol_trade_stream import IOLTradeStream
 
     with store.connect() as connection:
         rows = connection.execute("""SELECT ticker,instrument_type,market,currency,settlement
@@ -200,7 +201,8 @@ def _make_iol_gateway_owner(store, socket_path):
         governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True,
         **credentials)
     return IOLMarketGateway(rest, allowed={"scanner": scan_keys, "exit_reader": scan_keys | exit_keys},
-                            socket_path=socket_path, supervisor_pid=os.getppid())
+                            socket_path=socket_path, supervisor_pid=os.getppid(),
+                            trade_stream=IOLTradeStream(rest.stream_bearer))
 
 
 def run_iol_gateway_worker(store, stop):
@@ -210,6 +212,10 @@ def run_iol_gateway_worker(store, stop):
     with ppi_gateway_lifetime_lease(socket_path):
         owner = _make_iol_gateway_owner(store, socket_path)
         owner.start()
+        trade_stop = threading.Event()
+        trade_reader = threading.Thread(target=owner.trade_stream.run, args=(trade_stop,),
+                                        name="iol-owner-trade-stream", daemon=True)
+        trade_reader.start()
         server = threading.Thread(target=owner.serve_forever, daemon=True,
                                   name="iol-owner-unix-server")
         server.start()
@@ -218,12 +224,14 @@ def run_iol_gateway_worker(store, stop):
                 if not server.is_alive():
                     raise RuntimeError("IOL_GATEWAY_SERVER_THREAD_EXITED")
         finally:
+            trade_stop.set()
             if server.is_alive():
                 owner.shutdown()
                 server.join(timeout=5)
                 if server.is_alive():
                     raise RuntimeError("IOL_GATEWAY_SOCKET_DRAIN_UNVERIFIED")
             owner.close()
+            trade_reader.join(timeout=5)
 
 
 def _start_ppi_gateway_server(owner):
