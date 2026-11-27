@@ -1,14 +1,14 @@
-name: RC6 motors and funnel on the installed IOL release
+name: RC6 IOL coverage for the 27 November wheel
 
 on:
   push:
-    branches: [diagnostic/rc6-iol-installed-214]
+    branches: [audit/rc6-iol-coverage-20261127]
 
 permissions:
   contents: read
 
 concurrency:
-  group: rc6-iol-installed-214-passive-auth
+  group: rc6-iol-wheel-coverage-readonly
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Read live IOL, EXIT, scalping, and funnel evidence
+      - name: Reconcile saved IOL selections, quotes and decisions
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -31,7 +31,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rc6-iol-installed-214-market-pair-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rc6-iol-wheel-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rc6-iol-installed-214-auth.json
           if-no-files-found: error
           retention-days: 30

@@ -338,7 +338,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     auth = (ROOT / "scripts/rc6_iol_auth_diagnostic.py").read_text(encoding="utf-8")
-    payload = (f"expected = {EXPECTED!r}\nauth_source = {auth!r}\nschema = {SCHEMA!r}\ninstalled_probe = {INSTALLED_PROBE!r}\n" + REMOTE).encode()
+    wheel = (ROOT / "scripts/rc6_iol_wheel_coverage.py").read_text(encoding="utf-8")
+    payload = (f"expected = {EXPECTED!r}\nauth_source = {auth!r}\nschema = {SCHEMA!r}\ninstalled_probe = {wheel!r}\n" + REMOTE).encode()
     receipt = {"schema": SCHEMA, **EXPECTED, "state": "NO_VERIFICADO", "reason": "AUDIT_TRANSPORT_UNVERIFIED"}
     try:
         with connection(os.environ) as (ssh, _, _):
@@ -349,7 +350,7 @@ def main():
         if proc.returncode == 0:
             require(observed.get("read_only") is True and all(type(observed.get(k)) is int and observed[k] == 0
                     for k in ("real_orders_sent", "grants_generated")) and
-                    type(observed.get("market_requests_generated")) is int and observed["market_requests_generated"] in (0,1,2) and
+                    type(observed.get("market_requests_generated")) is int and observed["market_requests_generated"] == 0 and
                     observed.get("auth_probe_sha256") == hashlib.sha256(auth.encode()).hexdigest(),
                     "AUDIT_PAPER_SAFETY_UNVERIFIED")
         receipt = observed
