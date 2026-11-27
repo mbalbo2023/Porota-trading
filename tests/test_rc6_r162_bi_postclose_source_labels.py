@@ -179,6 +179,7 @@ def render_report_and_summary(tmp_path, monkeypatch, *, source_detail):
 ])
 def test_pdf_json_and_telegram_use_only_scoped_source_status(
         tmp_path, monkeypatch, source_detail, expected):
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "PPI")
     payload, registry, body = render_report_and_summary(
         tmp_path, monkeypatch, source_detail=source_detail)
     assert payload["fuente_historial_eod"] == expected
@@ -190,6 +191,20 @@ def test_pdf_json_and_telegram_use_only_scoped_source_status(
     assert "Órdenes reales: NO_VERIFICADO" in body
     assert "Órdenes reales: 0" not in body
     assert payload["fuente_historial_eod"] != "VERIFIED"  # Never imply whole product certification.
+
+
+def test_iol_closing_summary_describes_its_own_historical_path(tmp_path, monkeypatch):
+    store = source_store(tmp_path)
+    fixed_clock(monkeypatch)
+    put_source(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(reports, "_period_data", empty_period)
+
+    assert reports.send_closing_summary(store) == "EN_COLA"
+    with store.connect() as c:
+        body, = c.execute("SELECT body FROM paper_notification_outbox WHERE kind='CLOSING_SUMMARY'").fetchone()
+    assert "Histórico EOD IOL REST: consolidación local de velas muestreadas" in body
+    assert "PPI" not in body
 
 
 def test_old_daily_and_multi_day_reports_remain_provisional(tmp_path, monkeypatch):

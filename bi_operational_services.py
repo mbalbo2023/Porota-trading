@@ -19,7 +19,7 @@ import shutil
 import sqlite3
 import statistics
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as wall_time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlencode
@@ -30,7 +30,9 @@ import cd_spot_ledger as spot_ledger
 from bs_instrument_contracts import aware_datetime
 from bt_caucion_paper import CaucionBook
 from cg_paper_workspace import artifact_root
+from co_market_sessions_hf6 import BYMA_PAPER_SPOT_CLOSE
 from rc6_backup_policy import backups_suspended
+from rc6_iol_market_gateway import iol_primary_enabled
 
 
 TZ = ZoneInfo(os.getenv("SERVER_TIMEZONE", "America/Argentina/Buenos_Aires"))
@@ -164,16 +166,17 @@ def _postclose_daily_due(store, key):
             # ledger) needs at most one routine POSTCLOSE attempt per local
             # trading day. A morning/noon report is not today's closing
             # report and MUST be rebuilt once the wheel actually closes.
-            # COM18782 closes the regular PPT at 17:00 through 01-Nov-2026;
-            # COM19024 extends it to 18:00 beginning 02-Nov-2026.
+            # IOL runs in the PAPER spot window. Legacy PPI reports track
+            # the extended market-data session since 02-Nov-2026.
             # Forced operator rechecks remain available.
             attempted = datetime.fromisoformat(row[2])
             if attempted.tzinfo is None:
                 raise ValueError("POSTCLOSE_REPORT_CLOCK_NAIVE")
             current = datetime.now(TZ)
             previous = attempted.astimezone(TZ)
-            cutoff_hour = 18 if current.date() >= date(2026, 11, 2) else 17
-            if previous.date() == current.date() and previous.hour >= cutoff_hour:
+            cutoff = (BYMA_PAPER_SPOT_CLOSE if iol_primary_enabled()
+                      else wall_time(18 if current.date() >= date(2026, 11, 2) else 17))
+            if previous.date() == current.date() and previous.time() >= cutoff:
                 return False
         except (TypeError, ValueError):
             pass
@@ -888,15 +891,19 @@ def send_closing_summary(store):
     win = "s/d" if data["win_rate"] is None else f"{data['win_rate']:.1f}%"
     pnl_text = ("NO_VERIFICADO" if data["pnl"] is None
                 else f"$ {data['pnl']:,.2f}")
-    eod_source = (PPI_EOD_SOURCE_VERIFIED if _postclose_history_source_ready(
-        store, datetime.now(TZ)) else PPI_EOD_SOURCE_PROVISIONAL)
+    if iol_primary_enabled():
+        eod_line = "Histórico EOD IOL REST: consolidación local de velas muestreadas después del cierre."
+    else:
+        eod_source = (PPI_EOD_SOURCE_VERIFIED if _postclose_history_source_ready(
+            store, datetime.now(TZ)) else PPI_EOD_SOURCE_PROVISIONAL)
+        eod_line = f"Fuente histórica EOD PPI: {eod_source}"
     text = ("📊 POROTA — CIERRE SIMULACIÓN PRODUCTIVA\n"
             f"Fecha: {today.isoformat()}\nOperaciones cerradas: {len(data['closed'])}\n"
             f"Win rate: {win}\nPnL paper neto ARS: {pnl_text}\n"
             f"Por moneda/plaza: {json.dumps(data.get('pnl_by_currency', {}), ensure_ascii=False)}\n"
             f"Cauciones vencidas: {len(data.get('cauciones_matured', []))}\n"
             f"Decisiones evaluadas: {len(data['decisions'])}\n"
-            f"Fuente histórica EOD PPI: {eod_source}\n"
+            f"{eod_line}\n"
             f"Órdenes reales: {REPORT_REAL_ORDERS_UNVERIFIED}\n"
             "Dashboard: disponible 24x7. Informe diario: menú Reportes.")
     at = now_iso()
