@@ -27,7 +27,9 @@ import time
 from bl_candle_engine import fingerprint
 from cg_paper_workspace import artifact_root
 from rc6_scheduler_snapshot import instant
+from rc6_shadow_runtime.cold_audit import Directory
 from rc6_shadow_runtime.persistence import EvidenceFiles
+from rc6_shadow_runtime.persistence import digest as evidence_digest
 from scripts.porota_rootless_host import IOL_CONTROLLER_CHILDREN, read_controller_health, observe_iol_owner
 
 HOT = Path('/app/data/paper_v17/observer_v17.db')
@@ -158,6 +160,28 @@ def shadow_metrics(worker_started_at):
             result[name] = receipt
         else:
             result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_SAFETY_CONTRACT_UNVERIFIED'}
+    if result.get('status', {}).get('state') == 'FAIL_CLOSED':
+        try:
+            with Directory(files) as directory:
+                queue = directory.read('queue.json')
+                ident = queue.get('snapshot_id') if isinstance(queue, dict) else None
+                if isinstance(ident, str) and re.fullmatch(r'[a-f0-9]{32}', ident):
+                    manifest = directory.read('manifest-' + ident + '.json')
+                    receipt = directory.read('receipt-' + ident + '.json')
+                    if (manifest and receipt and queue.get('state') == receipt.get('state') == 'FAILED'
+                        and queue.get('manifest_sha256') == receipt.get('manifest_sha256') == evidence_digest(manifest)
+                        and manifest.get('snapshot_id') == receipt.get('snapshot_id') == ident):
+                        result['cold_first_failure'] = {
+                            'snapshot_id': ident, 'manifest_sha256': queue['manifest_sha256'],
+                            'pack_sha256': manifest.get('pack_sha256'), 'pack_bytes': manifest.get('pack_bytes'),
+                            'sealed_at_epoch': manifest.get('sealed_at'), 'deadline_at_epoch': manifest.get('deadline_at'),
+                            'source_as_of': timestamp(manifest.get('source_as_of')),
+                            'failed_at_epoch': receipt.get('failed_at'), 'state': 'FAILED',
+                            **{key: receipt[key] for key in ('error_code', 'error_phase', 'error_class')
+                               if isinstance(receipt.get(key), str) and re.fullmatch(r'[A-Za-z0-9_]{1,120}', receipt[key])}
+                        }
+        except (OSError, ValueError, TypeError, AttributeError):
+            result['cold_first_failure'] = {'state': 'NO_VERIFICADO', 'reason': 'COLD_FAILURE_ENVELOPE_UNAVAILABLE'}
     return result
 
 def quote_provenance(value):
