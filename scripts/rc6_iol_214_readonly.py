@@ -14,7 +14,7 @@ EXPECTED = {"source_sha": "80eb9efdce30fe567cb640e5d3471ff0f6f6e1d9",
             "image_id": "sha256:175103e66ad86cdea53960fdb83a9c5463ecce6a37abd50d3d95cfa9d3bd1a54",
             "attempt": "46043664818-1"}
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "porota.iol.installed-218-paper-go.v1"
+SCHEMA = "porota.iol.intraday-preopen-postflight.v1"
 
 REMOTE = '''
 from contextlib import closing
@@ -197,6 +197,38 @@ def inspect_committed_shadow(root):
         "funnel_status":code(funnel.get("status")), "engines":engines}
 
 
+def observed_gate(private):
+    from scripts.porota_operator_intent import private_read
+    from rc6_paper_admission_gate import HOST_V2_RECEIPT, REVALIDATION_NAME
+
+    try:
+        raw = private_read(private / HOST_V2_RECEIPT.name)
+        daily = json.loads(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+    except (OSError, KeyError, TypeError, ValueError):
+        return {"state": "DAILY_GATE_UNVERIFIED"}
+    base = {key: daily.get(key) for key in ("candidate_sha", "issued_at_ar", "trade_day_ar",
+                                          "status", "phase", "reason", "market_provider")}
+    base["sha256"] = digest
+    try:
+        recovery = json.loads(private_read(private / REVALIDATION_NAME))
+        if type(recovery) is not dict:
+            raise ValueError("INVALID_RECOVERY")
+    except (OSError, KeyError, TypeError, ValueError):
+        return {"state": "RECOVERY_RECEIPT_UNVERIFIED", "daily": base}
+    exact = (recovery.get("daily_gate_sha256") == digest
+             and recovery.get("candidate_sha") == expected["source_sha"]
+             and recovery.get("candidate_tree_sha") == expected["source_tree"]
+             and recovery.get("image_id") == expected["image_id"]
+             and recovery.get("market_provider") == "IOL_REST"
+             and recovery.get("trade_day_ar") == base["trade_day_ar"])
+    return {"state": "EXACT_IDENTITY_CHAIN" if exact else "RECOVERY_BINDING_UNVERIFIED",
+            "daily": base, "recovery": {key: recovery.get(key) for key in
+            ("schema", "phase", "status", "issued_at_ar", "reason", "candidate_sha", "candidate_tree_sha",
+             "image_id", "market_provider", "trade_day_ar", "operator_run_id")},
+            "same_t10_bytes": recovery.get("daily_gate_sha256") == digest}
+
+
 def run_probe():
     assert 0 < os.getuid() == os.geteuid()
     source = Path.home() / '.local/state/porota-rc6/releases' / expected['source_sha'] / 'source'
@@ -283,6 +315,7 @@ def run_probe():
                 database_snapshot(root / DB_RELATIVE) == original,'AUDIT_REFERENCE_BOUNDARY_UNVERIFIED')
         return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
+                'opening_receipts':observed_gate(identity.operator),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
                 'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,'runtime_paper_go':status, 'shadow_generation':shadow_generation,
                 'preopen_rca':preopen_rca,'preopen_current_readonly':preopen_current,
