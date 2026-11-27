@@ -1,0 +1,81 @@
+name: RC6 EOD capacity fix and installed replay
+
+on:
+  push:
+    branches: [diagnostic/rc6-eod-capacity-fix-213]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  droplet:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DO_HOST: ${{ secrets.DO_HOST }}
+      DO_USER: ${{ secrets.DO_USER }}
+      DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+      DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Apply verified archive capacity fix to one bounded batch
+        run: python3 -B -m scripts.rc6_eod_capacity_213 archive --output "$RUNNER_TEMP/rc6-eod.json"
+      - name: Repeat the complete installed PAPER replay on Droplet
+        if: always()
+        run: python3 -B -m scripts.rc6_eod_capacity_213 replay --output "$RUNNER_TEMP/rc6-replay.json"
+      - name: Recheck installed services and data
+        if: always()
+        run: python3 -B -m scripts.rc6_iol_213_readonly --output "$RUNNER_TEMP/rc6-inventory.json"
+      - name: Publish sanitized Droplet evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-eod-and-installed-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/rc6-eod.json
+            ${{ runner.temp }}/rc6-replay.json
+            ${{ runner.temp }}/rc6-inventory.json
+          retention-days: 30
+
+  dashboard:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Recover the verified runtime receipt and prepare Playwright
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh run download 45913851493 --repo "$GITHUB_REPOSITORY" --name porota-runtime-45913851493-1 --dir "$RUNNER_TEMP/rc6-213"
+          test "$(sha256sum "$RUNNER_TEMP/rc6-213/runtime.json" | cut -d ' ' -f 1)" = 2e57b3568ee58494af02328e0e49fd5fb1f5d4f08097065e048dddca5b02a945
+          python3 -m venv "$RUNNER_TEMP/rc6-playwright"
+          "$RUNNER_TEMP/rc6-playwright/bin/pip" install --disable-pip-version-check playwright==1.55.0
+          command -v google-chrome >/dev/null
+      - name: Audit menus routes details and visible reasons on the installed dashboard
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          "$RUNNER_TEMP/rc6-playwright/bin/python" -B -m scripts.rc6_dashboard_playwright_postdeploy \
+            --runtime-receipt "$RUNNER_TEMP/rc6-213/runtime.json" --receipt "$RUNNER_TEMP/rc6-dashboard.json"
+      - name: Publish sanitized browser coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-dashboard-installed-213-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-dashboard.json
+          retention-days: 30
