@@ -98,6 +98,40 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(result["commands"][0]["result"], "GO_PAPER_SCALPING")
         self.assertNotIn("PRIVATE_PAYLOAD", json.dumps(result))
 
+    def test_existing_iol_health_revalidates_only_when_technical_retry_is_due(self):
+        self.current.update(market_provider="IOL_REST", database={"real_orders_sent": 0})
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+
+        def live_preopen(command, **kwargs):
+            self.assertEqual(command[-2:], ("--revalidate-release", self.current["source_sha"]))
+            self.assertEqual(kwargs["env"]["POROTA_RC6_MARKET_PROVIDER"], "IOL_REST")
+            self.assertLess(kwargs["timeout"], 60)
+            with self.assertRaisesRegex(host.Hold, "OWNER_BUSY"):
+                with host.user_lock(self.identity.state / "paper-preopen-revalidation.lock"):
+                    pass
+            kwargs["stdout"].write(json.dumps({
+                "schema": "POROTA_RC6_PREOPEN_V3", "status": "GREEN",
+                "paper_admission_receipt": {"status": "GO_PAPER_SCALPING",
+                                            "reason": "PAPER_INTRADAY_PREOPEN_RECOVERED"},
+            }).encode())
+            return subprocess.CompletedProcess(command, 0)
+
+        health = {"source": "IOL_REST", "result": "AUTHENTICATED", "exit_code": 0}
+        with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
+             patch.object(jobs, "database_snapshot", return_value=self.current["database"]), \
+             patch.object(jobs, "run_iol_job", return_value=health), \
+             patch.object(jobs, "iol_recovery_due", side_effect=[True, False]) as retry:
+            live = jobs.run_job(jobs.IOL_HEALTH, root=self.root, identity=self.identity, run=live_preopen)
+            self.assertEqual(live["paper_recovery"]["result"], "GO_PAPER_SCALPING")
+            self.assertEqual(live["commands"], [health])
+            repeated = jobs.run_job(jobs.IOL_HEALTH, root=self.root, identity=self.identity, run=live_preopen)
+            self.assertNotIn("paper_recovery", repeated)
+            reference = jobs.run_job(jobs.IOL_HEALTH, root=self.root, identity=self.identity, run=live_preopen,
+                                     verify_rest=True)
+            self.assertNotIn("paper_recovery", reference)
+            self.assertEqual(retry.call_count, 2)
+
     def test_runtime_evidence_runs_the_verified_publisher_under_the_shared_lock(self):
         self.current["source_tree"] = "b" * 40
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"

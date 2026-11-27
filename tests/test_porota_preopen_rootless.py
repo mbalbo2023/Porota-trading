@@ -546,3 +546,88 @@ def test_legacy_byma_review_keeps_original_host_path(runtime, byma_review, monke
     assert preopen.byma_morning_watch(AT.date())["reason"] == "BYMA_CRITICAL_REVIEWED_EXACT"
     paths["legacy"].unlink()
     assert preopen.byma_morning_watch(AT.date())["reason"] == "BYMA_AUTHORITY_CHANGE_REVIEW_REQUIRED"
+
+
+def live_iol_preopen(at):
+    return {"schema": "POROTA_RC6_PREOPEN_V3", "status": "GREEN", "phase": gate.REVALIDATION_PHASE,
+            "generated_at_ar": at.isoformat(), "red_checks": [], "dry_equivalent": False,
+            "checks": {"observer_db": {"state": "GREEN", "market_provider": "IOL_REST",
+                                       "iol_owner_authenticated": True,
+                                       "observer_state": {"mode": "PRODUCTION_PAPER",
+                                                          "session_state": "MARKET_OPEN",
+                                                          "process_state": "RUNNING",
+                                                          "real_orders_sent": 0}}}}
+
+
+@pytest.mark.parametrize("recorded_provider", ["IOL_REST", None])
+def test_iol_recovers_technical_t10_for_current_release_without_rewriting_daily(operator, monkeypatch, recorded_provider):
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    now = AT.replace(hour=15)
+    directory = operator["identity"].operator
+    daily = directory / gate.HOST_V2_RECEIPT.name
+    original = gate.publish_preopen({**live_iol_preopen(AT), "phase": "T_MINUS_10", "status": "RED"}, now=AT)
+    original["candidate_sha"] = "e" * 40
+    if recorded_provider is None:
+        del original["market_provider"]
+    raw = write_private(daily, original)
+    assert gate.iol_recovery_due(directory, now=now)
+
+    receipt = gate.publish_release_revalidation(live_iol_preopen(now), now=now, expected_source_sha=SHA)
+    assert receipt["status"] == "GO_PAPER_SCALPING"
+    assert receipt["phase"] == gate.RECOVERY_PHASE
+    assert receipt["reason"] == "PAPER_INTRADAY_PREOPEN_RECOVERED"
+    assert receipt["daily_gate_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert (receipt["candidate_sha"], receipt["candidate_tree_sha"], receipt["image_id"]) == (SHA, TREE, IMAGE)
+    assert daily.read_bytes() == raw
+    assert not gate.iol_recovery_due(directory, now=now)
+
+    read_gate = gate._read_gate
+    monkeypatch.setattr(gate, "_read_gate", lambda path, **kwargs: read_gate(path, root_owned=False))
+    monkeypatch.setattr(gate, "RUNTIME_V2_RECEIPT", daily)
+    monkeypatch.setattr(gate, "evaluate_rearm", lambda now, **_: rearm.evaluate_rearm(now=now, context="host"))
+    assert gate.admission_status(now=now, candidate_sha=SHA) == (True, "")
+    assert not gate.admission_status(now=now, candidate_sha="f" * 40)[0]
+    assert not gate.admission_status(now=now.replace(hour=17), candidate_sha=SHA)[0]
+    assert not gate.admission_status(now=now.replace(day=now.day + 1), candidate_sha=SHA)[0]
+    write_private(daily, {**original, "candidate_sha": "f" * 40})
+    assert not gate.admission_status(now=now, candidate_sha=SHA)[0]
+    write_private(daily, original)
+    write_private(directory / gate.REVALIDATION_NAME, {**receipt, "candidate_tree_sha": "f" * 40})
+    assert not gate.admission_status(now=now, candidate_sha=SHA)[0]
+
+
+@pytest.mark.parametrize("defect", ["operator_pause", "provider", "explicit_hold", "wrong_day", "late_t10",
+                                    "not_live", "probe_red", "stale_probe", "invalid_owner", "real_order"])
+def test_iol_recovery_keeps_operator_provider_clock_and_safety_holds(operator, monkeypatch, defect):
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    now = AT.replace(hour=15, minute=20)
+    directory = operator["identity"].operator
+    daily = directory / gate.HOST_V2_RECEIPT.name
+    original = gate.publish_preopen({**live_iol_preopen(AT), "phase": "T_MINUS_10", "status": "RED"}, now=AT)
+    result = live_iol_preopen(now)
+    observer = result["checks"]["observer_db"]
+    if defect == "operator_pause":
+        paused = {key: value for key, value in operator["intent"].items() if key in rearm._PAUSED_KEYS}
+        write_private(operator["intent_path"], {**paused, "status": rearm.PAUSE_STATUS})
+    elif defect == "provider":
+        original["market_provider"] = "PPI"
+    elif defect == "explicit_hold":
+        original["reason"] = "PAPER_PREOPEN_PROVIDER_MISMATCH"
+    elif defect == "wrong_day":
+        original["trade_day_ar"] = AT.replace(day=AT.day - 1).date().isoformat()
+    elif defect == "late_t10":
+        original["issued_at_ar"] = AT.replace(minute=30).isoformat()
+    elif defect == "not_live":
+        result["dry_equivalent"] = True
+    elif defect == "probe_red":
+        result["red_checks"] = ["observer_db"]
+    elif defect == "stale_probe":
+        result["generated_at_ar"] = now.replace(minute=10).isoformat()
+    elif defect == "invalid_owner":
+        observer["iol_owner_authenticated"] = False
+    elif defect == "real_order":
+        observer["observer_state"]["real_orders_sent"] = 1
+    raw = write_private(daily, original)
+    receipt = gate.publish_release_revalidation(result, now=now, expected_source_sha=SHA)
+    assert receipt["status"] == "NO_GO_PAPER_SCALPING"
+    assert daily.read_bytes() == raw
