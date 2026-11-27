@@ -2325,18 +2325,31 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
             previous = json.loads(text[text.index("{"):]).get("active_plan")
         except (ValueError, TypeError):
             pass
+    limit = ACTIVE_SYMBOL_LIMIT
     seconds_per_key = 2 * PPI_CALL_BUDGET_SECONDS
     if iol:
         from iol_shadow_collector_rc6 import CollectionPolicy
+        from rc6_iol_market_gateway import ROLE_ENDPOINTS
+
         policy = CollectionPolicy()
-        seconds_per_key = 3 * max(policy.min_interval_seconds, 60 / policy.max_calls_per_minute)
-    cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * seconds_per_key
+        scanner_calls = len(ROLE_ENDPOINTS["scanner"])
+        # Leave space for a full EXIT pass and an OAuth request in each rolling
+        # window. A shorter polling interval can place several batches in it.
+        exit_calls = len(ROLE_ENDPOINTS["exit_reader"]) * max(1, len(opened))
+        batches_per_minute = math.ceil(60 / INTERVAL)
+        available_calls = max(0, policy.max_calls_per_minute - exit_calls - 1)
+        limit = min(limit, available_calls // (scanner_calls * batches_per_minute))
+        seconds_per_key = scanner_calls * max(policy.min_interval_seconds, 60 / policy.max_calls_per_minute)
+        # The independent EXIT reader supervises the whole portfolio even when
+        # existing positions exhaust the scanner's observation budget.
+        opened = opened[:limit]
+    cycle_seconds = INTERVAL + max(limit, len(opened)) * seconds_per_key
     # Preserve historical focus ordering when starting a new IOL sampling plan.
     if iol:
         focus_candidates = tuple(dict.fromkeys((*FOCUS_SYMBOLS, *identities)))
     symbols, before, after, plan = sampling_plan(
         universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
-        limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
+        limit=limit, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
         now=checked_at, cursor=row[0] if row else 0, previous=previous)
     if not iol and not catalog_error and not legacy_catalog:
@@ -2361,6 +2374,14 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
                     feasible=False, focus_feasible=False, opening_identities=[])
     else:
         plan["catalog_status"] = "ELIGIBLE_INSTRUMENTS" if exact else "NO_ELIGIBLE_INSTRUMENTS"
+    if iol:
+        plan["iol_rest_budget"] = {
+            "calls_per_minute": policy.max_calls_per_minute,
+            "scanner_batch_limit": limit,
+            "scanner_calls_per_instrument": scanner_calls,
+            "batches_per_minute": batches_per_minute,
+            "planned_exit_calls": exit_calls,
+        }
     if not plan.get("dynamic_selection"):
         plan["read_scopes"] = [
             {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
@@ -3879,10 +3900,12 @@ def run():
             recommended = max(5, min(60, int(budget / max(avg_seconds, .05))))
             if cycle_failures / max(1, len(symbols)) > .10:
                 recommended = min(recommended, max(5, ACTIVE_SYMBOL_LIMIT - 5))
+            scanner_limit = active_plan.get("iol_rest_budget", {}).get("scanner_batch_limit", ACTIVE_SYMBOL_LIMIT)
+            recommended = min(recommended, scanner_limit) if iol else recommended
             _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, now_iso(), eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
-                   f"Límite={ACTIVE_SYMBOL_LIMIT}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
+                   f"Límite={scanner_limit}; foco+rotación; factibilidad={json.dumps(feasibility,sort_keys=True)}"))
             try:
                 metrics = reader.metrics
                 if iol:
