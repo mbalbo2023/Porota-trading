@@ -342,6 +342,76 @@ def check_ready_instruments(conn, now, market_open):
     return results
 
 
+def read_ready_shadow_cache(identities, now, market_open):
+    from scripts.porota_rootless_host import read_regular
+
+    cache = Path("/app/data/market/iol_shadow_latest.json")
+    try:
+        data = json.loads(read_regular(cache, 8 * 1024 * 1024))
+        if data.get("source") != "IOL_REST" or not isinstance(data.get("symbols"), list):
+            return {"status": "IOL_REST_SHADOW_CACHE_UNVERIFIED"}
+    except Exception as error:
+        return {"status": "SHADOW_CACHE_UNAVAILABLE", "error": type(error).__name__}
+    def stamp(value):
+        try:
+            at = datetime.fromisoformat(value)
+            return at if at.utcoffset() is not None and at <= now else None
+        except (ValueError, TypeError):
+            return None
+    def stamp_string(at):
+        return at.isoformat() if at is not None else None
+    observed = []
+    venue_map = {"BYMA":"BCBA"}
+    terms = {"A-24HS":"T1", "INMEDIATA":"T0"}
+    for identity in identities:
+        ticker, family, market, currency, term = identity
+        matches = [r for r in data["symbols"] if isinstance(r,dict) and
+                   (r.get("symbol"), r.get("market"), r.get("term")) == (ticker,venue_map.get(market),terms.get(term))]
+        if len(matches) != 1:
+            observed.append({"identity":identity, "status":"NO_EXACT_SHADOW_ROW" if not matches else "AMBIGUOUS_SHADOW_ROWS"})
+            continue
+        row = matches[0]
+        quote = row.get("quote")
+        quote = quote if isinstance(quote,dict) else {}
+        captured = stamp(row.get("captured_at"))
+        quote_at = stamp(quote.get("provider_observed_at"))
+        book_at = stamp(quote.get("provider_book_at"))
+        fresh_book = bool(book_at and captured and market_open <= book_at <= captured <= now
+                          and (now - book_at).total_seconds() <= 120)
+        depth = False
+        try:
+            bid, ask, bid_size, ask_size = [Decimal(str(quote.get(k))) for k in ("bid","ask","bid_size","ask_size")]
+            depth = 0 < bid <= ask and min(bid_size, ask_size) > 0
+        except ArithmeticError:
+            pass
+        observed.append({"identity":identity, "status":safe_code(row.get("state")) or "NO_VERIFICADO",
+            "source_state":safe_code(row.get("source_state")), "quote_currency_matches":quote.get("currency")==currency,
+            "captured_at":stamp_string(captured), "quote_update_at":stamp_string(quote_at), "book_at":stamp_string(book_at),
+            "fresh_two_sided_book":fresh_book and depth and quote.get("currency")==currency})
+    return {"status":"OBSERVED", "refreshed_at":stamp_string(stamp(data.get("refreshed_at"))),
+            "last_batch_state":safe_code(data.get("cache_state")), "rows":observed}
+
+
+def observe_market_owner_cache(database):
+    from iol_rest_readonly_rc6 import IOLRestReadOnly
+    state_dir = iol_gateway_socket_path(database).parent / "rest-session"
+    client = IOLRestReadOnly(state_dir, allow_renew=False)
+    try:
+        before = client.store.stat()
+        cached = client._cached()
+        after = client.store.stat()
+        if (before.st_ino,before.st_mtime_ns)!=(after.st_ino,after.st_mtime_ns):
+            return {"status":"CHANGED_DURING_READ"}
+        result = {"status":"OBSERVED", "updated_at":datetime.fromtimestamp(after.st_mtime,timezone.utc).isoformat()}
+        for key in ("renew_at","reauth_after","retry_at"):
+            timestamp=cached.get(key)
+            if type(timestamp) in (float,int) and 0 < timestamp < 4102444800:
+                result[key]=datetime.fromtimestamp(timestamp,timezone.utc).isoformat()
+        return result
+    except Exception as error:
+        return {"status":"NO_VERIFICADO", "error":type(error).__name__}
+
+
 def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
     window_start = max(market_open, now - timedelta(minutes=8)).isoformat()
     catalog = [dict(row) for row in conn.execute("""
@@ -456,8 +526,11 @@ def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
         if len(pieces) == 2 and re.fullmatch(r"[A-Z0-9.^_()/-]{1,36}", pieces[0]) and safe_code(pieces[1]):
             failure_counts[pieces[1]][pieces[0]] += 1
 
+    ready_details = check_ready_instruments(conn, now, market_open)
     return {"status": "OBSERVED", "lookback_start": window_start, "as_of": now.isoformat(),
-        "catalog": catalog, "catalog_ready_details": check_ready_instruments(conn, now, market_open),
+        "catalog": catalog, "catalog_ready_details": ready_details,
+        "shadow_cache": read_ready_shadow_cache([row["identity"] for row in ready_details], now, market_open),
+        "owner_oauth_cache": observe_market_owner_cache(database),
         "current_phase": byma_paper_spot_phase(now),
         "market_and_decisions_by_family": dict(statistics), "instrument_rows": sample,
         "scanning_failures": dict(failure_counts), "operational_gate": {
