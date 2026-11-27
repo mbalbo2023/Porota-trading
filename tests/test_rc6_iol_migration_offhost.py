@@ -1,5 +1,5 @@
 """Run IOL through the real client, clock guards, PAPER broker and isolated SQLite."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -478,18 +478,23 @@ def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, mo
     args = ["verify-candles", "--baseline-cursor", "0", "--observed-at", observed,
             "--db-path", str(path), "--summary-path", str(result_path)]
     monkeypatch.setattr(sys, "argv", args)
-    before = path.read_bytes()
-    assert verify_inmarket_candles() == 1
-    assert not json.loads(result_path.read_text())["checks"]["cursor_strictly_advanced"]
-    monkeypatch.setattr(sys, "argv", args + ["--sample-source", IOL_SAMPLE_SOURCE])
-    assert verify_inmarket_candles() == 0
-    result = json.loads(result_path.read_text())
-    assert result["source"] == "porota-rc6-candle-inmarket-iol-evidence"
-    assert result["iol_sampled_progress"] == {
-        "identity": list(GGAL), "known_at_by_resolution": {"1m": observed, "5m": observed},
-    }
-    assert not result["guarded_current_sampled_progress"]
-    assert path.read_bytes() == before
+    # Finish fixture writes and keep a connection open so last-close
+    # checkpointing cannot change the SQLite file during the read-only probe.
+    with closing(store.connect()) as writer:
+        assert tuple(writer.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()) == (0, 0, 0)
+        wal = Path(str(path) + "-wal")
+        before = (path.read_bytes(), wal.read_bytes())
+        assert verify_inmarket_candles() == 1
+        assert not json.loads(result_path.read_text())["checks"]["cursor_strictly_advanced"]
+        monkeypatch.setattr(sys, "argv", args + ["--sample-source", IOL_SAMPLE_SOURCE])
+        assert verify_inmarket_candles() == 0
+        result = json.loads(result_path.read_text())
+        assert result["source"] == "porota-rc6-candle-inmarket-iol-evidence"
+        assert result["iol_sampled_progress"] == {
+            "identity": list(GGAL), "known_at_by_resolution": {"1m": observed, "5m": observed},
+        }
+        assert not result["guarded_current_sampled_progress"]
+        assert (path.read_bytes(), wal.read_bytes()) == before
     with store.connect() as db:
         db.execute("UPDATE candle_worker_state SET cursor=5")
         db.execute("UPDATE candle_samples SET snapshot_id=0 WHERE series_id IN "
