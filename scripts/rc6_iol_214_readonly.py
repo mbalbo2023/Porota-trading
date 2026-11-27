@@ -161,6 +161,42 @@ def installed_preopen(source, root, identity):
     return {'state':state if state in {'GREEN','RED','PAUSED_NO_GO'} else 'NO_VERIFICADO',
             'exit_code':result.returncode,'checks':checks}
 
+def inspect_committed_shadow(root):
+    from cg_paper_workspace import artifact_root
+    from rc6_shadow_runtime.timing import generation_budget
+    from rc6_trader_dashboard.generation import read_shadow
+
+    def code(value):
+        return value if isinstance(value,str) and re.fullmatch("[A-Z][A-Z0-9_]{2,119}",value) else None
+
+    result = read_shadow(artifact_root(root / "data/paper_v17/observer_v17.db") / "dynamic-shadow")
+    report = result["report"]
+    if not report:
+        return {key:code(result.get(key)) for key in ("state","reason")}
+    as_of = datetime.fromisoformat(report["as_of"])
+    now = datetime.now(timezone.utc)
+    budget,_ = generation_budget(result.get("status"))
+    age=(now-as_of).total_seconds()
+    funnel=report.get("operational_funnel") or {}
+    engines={}
+    for name,engine in report.get("engines",{}).items():
+        if not code(name):
+            continue
+        capacity=engine.get("capacity") or {}
+        engines[name]={"capacity_status":code(capacity.get("status")),
+            "capacity_reasons":[code(r) for r in capacity.get("reason_codes",[]) if code(r)],
+            "selected_count":len(engine.get("selected",[])),
+            "telemetry_total":engine.get("telemetry_total")}
+    return {"state":result["state"],"as_of":as_of.isoformat(),"age_seconds":round(age,1),
+        "fresh":0<=age<=budget,"phase":code(report.get("phase")),"report_status":code(report.get("status")),
+        "capacity_open_status":code(report.get("capacity_open_status")),
+        "native_stages": [{**{key:code(row.get(key)) for key in ("currency","channel")},
+                           "stages":{key:v for key,v in (row.get("stages") or {}).items()
+                                     if code(key) and type(v) is int and v>=0}}
+                          for row in funnel.get("by_currency_channel",[]) if isinstance(row,dict)],
+        "funnel_status":code(funnel.get("status")), "engines":engines}
+
+
 def run_probe():
     assert 0 < os.getuid() == os.geteuid()
     source = Path.home() / '.local/state/porota-rc6/releases' / expected['source_sha'] / 'source'
@@ -214,6 +250,10 @@ def run_probe():
                     status['observer']['real_orders_sent'] == 0, 'AUDIT_PAPER_ZERO_REQUIRED')
         except (OSError, ValueError, TypeError, RuntimeError) as exc:
             status = {'state':'NO_VERIFICADO','reason':type(exc).__name__}
+        try:
+            shadow_generation = inspect_committed_shadow(root)
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            shadow_generation = {"state":"NO_VERIFICADO","error":type(error).__name__}
         common = ('Id','LoadState','ActiveState','SubState','UnitFileState')
         units = {}
         for unit,fields in ((TIMER,('Unit','Triggers','LastTriggerUSec','NextElapseUSecRealtime')),
@@ -244,7 +284,7 @@ def run_probe():
         return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
-                'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,'runtime_paper_go':status,
+                'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,'runtime_paper_go':status, 'shadow_generation':shadow_generation,
                 'preopen_rca':preopen_rca,'preopen_current_readonly':preopen_current,
                 'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
@@ -410,6 +450,95 @@ def observe_market_owner_cache(database):
         return result
     except Exception as error:
         return {"status":"NO_VERIFICADO", "error":type(error).__name__}
+
+
+def trace_scanner_and_paper(conn, now, market_open):
+    # Read committed scanner selection and match native decisions to the exact saved quote.
+    watches = ("YPFD", "GGAL", "AL30", "AL35", "AO29")
+    plan_rollup, watch_plans = defaultdict(Counter), defaultdict(list)
+    for cycle in conn.execute("""
+        SELECT started_at,finished_at,detail FROM
+          (SELECT id,started_at,finished_at,detail FROM universe_cycle_metrics
+           WHERE finished_at IS NOT NULL AND julianday(started_at) BETWEEN julianday(?) AND julianday(?)
+           ORDER BY id DESC LIMIT 64)
+        ORDER BY id
+    """, (market_open.isoformat(),now.isoformat())):
+        try:
+            plan = json.loads(str(cycle["detail"]).split("factibilidad=", 1)[1])["active_plan"]
+            pinned = {tuple(x) for x in plan.get("pinned",[])}
+            warm = {tuple(x) for x in plan.get("warm",[])}
+            cold = {tuple(x) for x in plan.get("cold",[])}
+            opening = {tuple(x) for x in plan.get("opening_identities",[])}
+        except (IndexError, AttributeError, ValueError, TypeError, KeyError):
+            continue
+        for read in plan.get("read_scopes",[]):
+            key = read.get("identity")
+            request = tuple(read.get("request",[]))
+            if not isinstance(key,list) or len(key)!=5 or len(request)!=3 or not all(
+                    isinstance(value,str) and re.fullmatch(r"[A-Z0-9.^_()/-]{1,36}",value) for value in key):
+                continue
+            set_name = ("PINNED" if request in pinned else "WARM_BASKET" if request in warm
+                        else "COLD_DISCOVERY" if request in cold else "OTHER")
+            priority = safe_code(read.get("priority"))
+            counts = plan_rollup[key[1]]
+            counts[set_name] += 1
+            if request in opening:
+                counts["SIGNAL_BUDGET_ELIGIBLE"] += 1
+            if priority == "STRATEGY_HOT":
+                counts["STRATEGY_HOT"] += 1
+            if key[0] in watches:
+                watch_plans[key[0]].append({"identity":key,"start":cycle["started_at"],
+                    "end":cycle["finished_at"],"plan":plan.get("schema"),
+                    "basket":set_name,"gateway_priority":priority,
+                    "signal_budget_eligible":request in opening,
+                    "dynamic_selection":plan.get("dynamic_selection") is True})
+    buys, buy_outcomes = [], Counter()
+    for decision in conn.execute("""
+        SELECT d.symbol,d.decided_at,d.strategy_version,d.decision_key,d.features_json,g.final_result,g.reason
+        FROM (SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 5000) d
+        LEFT JOIN trade_gate_evaluations g ON g.decision_key=d.decision_key
+        WHERE d.action='BUY' AND julianday(d.decided_at) BETWEEN julianday(?) AND julianday(?)
+        ORDER BY d.id DESC LIMIT 60
+    """, (market_open.isoformat(),now.isoformat())):
+        candidate = None
+        for quote_row in conn.execute("""
+            SELECT * FROM market_snapshots WHERE symbol=? AND observed_at=? ORDER BY id DESC LIMIT 8
+        """, (decision["symbol"],decision["decided_at"])):
+            key = safe_read_identity(quote_row)
+            if key is None or quote_row["metadata_source"] != "IOL_REST":
+                continue
+            symbol, family, market, currency, term = key
+            signature = ":" + ":".join((symbol,family,term,currency,market,quote_row["observed_at"][:16])) + ":"
+            if signature not in decision["decision_key"]:
+                continue
+            candidate = quote_row
+            break
+        if candidate is None:
+            buy_outcomes["EXACT_IOL_QUOTE_NOT_MATCHED"] += 1
+            continue
+        quote = PaperStore.quote_from_snapshot(candidate)
+        key = safe_read_identity(candidate)
+        gate = safe_code(decision["reason"])
+        final = safe_code(decision["final_result"])
+        features = json.loads(decision["features_json"])
+        lineage = features.get("performance_lineage") or {}
+        version = str(decision["strategy_version"])
+        observed = datetime.fromisoformat(candidate["observed_at"])
+        scope = next((s for s in reversed(watch_plans.get(key[0],[])) if s["identity"]==list(key)
+                      and datetime.fromisoformat(s["start"]) <= observed <= datetime.fromisoformat(s["end"])), None)
+        buy_outcomes[final or "FINAL_GATE_NO_VERIFICADO"] += 1
+        buys.append({"identity":key, "decided_at":decision["decided_at"], "trade_at":quote.trade_at,
+            "book_at":quote.book_at, "decision":safe_code(features.get("reason_code")),
+            "strategy":safe_code(lineage.get("strategy_id")),
+            "strategy_version":version if re.fullmatch(r"[A-Za-z0-9_.-]{1,70}",version) else None,
+            "fresh_at_saved_decision":not quote.time_error(observed.isoformat(),require_trade=True)
+                and 0 < quote.bid <= quote.ask and min(quote.bid_size,quote.ask_size)>0,
+            "final_result":final,"final_reason":gate,"scanner_scope":scope})
+    return {"status":"OBSERVED", "session_start":market_open.isoformat(),
+        "scans_by_family":dict(plan_rollup),
+        "watch_summary":{symbol:dict(Counter(row["basket"] for row in scopes))
+                         for symbol,scopes in watch_plans.items()},
+        "exact_iol_buy_outcomes":dict(buy_outcomes), "exact_buy_examples":buys[:12]}
 
 
 def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
@@ -669,8 +798,13 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1
     except (TypeError, ValueError, ArithmeticError, sqlite3.Error) as exc:
         live_ready = {"status": "NO_VERIFICADO", "error": type(exc).__name__}
 
+    try:
+        native_funnel = trace_scanner_and_paper(conn, now, market_open)
+    except (TypeError, ValueError, ArithmeticError, sqlite3.Error) as exc:
+        native_funnel = {"status":"NO_VERIFICADO", "error":type(exc).__name__}
+
 print(json.dumps({"observed_at": now.isoformat(), "market_phase": byma_paper_spot_phase(now),
-    "live_ready": live_ready, "observer": state, "go": {"allowed": allowed, "reason": reason},
+    "live_ready": live_ready, "native_funnel": native_funnel, "observer": state, "go": {"allowed": allowed, "reason": reason},
     "gateway": {name: gateway.get(name) for name in ("provider", "trade_stream_state", "authenticated",
                 "wire_attempts", "rate_limited_attempts")},
     "market_keys_by_family": dict(by_family), "scanner_cycle": cycle, "iol_wire_cycles": wire_cycles,
