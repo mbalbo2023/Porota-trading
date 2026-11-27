@@ -23,10 +23,11 @@ import tempfile
 REPO = Path(__file__).resolve().parent.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+from rc6_paper_admission_gate import iol_recovery_due
 from rc6_validation_runtime import PROOF_SOURCE
 from scripts.porota_rootless_host import (
     Hold, Host, Identity, DB_RELATIVE, database_snapshot, no_alias,
-    read_regular, read_release_state, require,
+    read_regular, read_release_state, require, user_lock,
 )
 
 POSTCLOSE = "porota-snapshot-postclose-rc6.service"
@@ -321,6 +322,38 @@ def run_iol_job(unit, root, identity, current, *, verify_rest=False, run=subproc
     return {"source": SOURCE, "result": "REFERENCE_GD30_VERIFIED" if verify_rest else "AUTHENTICATED", "exit_code": 0}
 
 
+def host_job_environment(root, identity, current, source):
+    env = identity.environment()
+    env.update({"POROTA_RUNTIME_BACKEND": "ROOTLESS", "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": str(source), "PAPER_V17_DB_PATH": str(root / DB_RELATIVE),
+                "DOCKER_HOST": f"unix://{identity.socket}"})
+    if current.get("market_provider") == "IOL_REST":
+        env["POROTA_RC6_MARKET_PROVIDER"] = "IOL_REST"
+    return env
+
+
+def run_paper_revalidation(root, identity, current, run, *, timeout):
+    db = root / DB_RELATIVE
+    require(database_snapshot(db) == current.get("database"), "PAPER_RELEASE_DATABASE_IDENTITY_UNVERIFIED")
+    source = source_directory(identity, current)
+    env = host_job_environment(root, identity, current, source)
+    command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"),
+               "--revalidate-release", current["source_sha"])
+    try:
+        with user_lock(identity.state / "paper-preopen-revalidation.lock"):
+            with tempfile.TemporaryFile(dir=identity.state) as output:
+                result = run(command, cwd=root, env=env, check=False, stdout=output,
+                             stderr=subprocess.DEVNULL, timeout=timeout)
+                receipt = read_release_revalidation(output, result.returncode)
+            require(database_snapshot(db) == current.get("database"), "PAPER_RELEASE_DATABASE_IDENTITY_CHANGED")
+            return receipt
+    except Hold as error:
+        if str(error) != "OWNER_BUSY":
+            raise
+        return {"source": "PAPER_RELEASE_REVALIDATION", "result": "NO_GO_PAPER_SCALPING",
+                "reason": "PAPER_RELEASE_REVALIDATION_IN_PROGRESS", "exit_code": 2}
+
+
 def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_rest=False,
             revalidate_paper_gate=False, run=subprocess.run):
     identity = identity or Identity.current()
@@ -328,10 +361,11 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
             and (not revalidate_paper_gate or unit == PREOPEN), "SCHEDULER_UNIT_SCOPE")
     with scheduler_lock(identity):
         manager, current, _ = verified_host(root, identity)
+        preopen_failure = None
+        paper_recovery = None
         if revalidate_paper_gate:
-            require(database_snapshot(root / DB_RELATIVE) == current.get("database"),
-                    "PAPER_RELEASE_DATABASE_IDENTITY_UNVERIFIED")
-        if unit in DOCKER_JOBS:
+            commands_result = [run_paper_revalidation(root, identity, current, run, timeout=120)]
+        elif unit in DOCKER_JOBS:
             role, commands = DOCKER_JOBS[unit]
             commands_result = execute_commands(manager, current, role, commands,
                 timeout=900 if unit == "porota-full-db-integrity-rc6.service" else 600,
@@ -339,7 +373,15 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
             if unit == POSTCLOSE:
                 commands_result.append(publish_validation(manager, current, root, identity))
         elif unit in IOL_JOBS:
-            commands_result = [run_iol_job(unit, root, identity, current, verify_rest=verify_rest, run=run)]
+            result = run_iol_job(unit, root, identity, current, verify_rest=verify_rest, run=run)
+            commands_result = [result]
+            if (unit == IOL_HEALTH and not verify_rest and current.get("market_provider") == "IOL_REST"
+                    and result["exit_code"] == 0 and iol_recovery_due(identity.operator, now=datetime.now(timezone.utc))):
+                try:
+                    paper_recovery = run_paper_revalidation(root, identity, current, run, timeout=45)
+                except subprocess.TimeoutExpired:
+                    paper_recovery = {"source": "PAPER_RELEASE_REVALIDATION", "result": "NO_GO_PAPER_SCALPING",
+                                      "reason": "PAPER_INTRADAY_REVALIDATION_TIMEOUT", "exit_code": 2}
         elif unit == INMARKET:
             baseline_path = identity.state / "inmarket-baseline-20260917"
             if not baseline_path.exists():
@@ -351,25 +393,15 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
                 "--summary-path", "/app/data/validation/candle_inmarket_latest.json"),))
         else:
             source = source_directory(identity, current)
-            env = identity.environment()
-            env.update({"POROTA_RUNTIME_BACKEND": "ROOTLESS", "PYTHONDONTWRITEBYTECODE": "1",
-                        "PYTHONPATH": str(source), "PAPER_V17_DB_PATH": str(root / DB_RELATIVE),
-                        "DOCKER_HOST": f"unix://{identity.socket}"})
-            if current.get("market_provider") == "IOL_REST":
-                env["POROTA_RC6_MARKET_PROVIDER"] = "IOL_REST"
+            env = host_job_environment(root, identity, current, source)
             if unit == PREOPEN:
-                command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"))
-                command += (("--revalidate-release", current["source_sha"]) if revalidate_paper_gate
-                            else ("--publish-paper-gate",))
+                command = ("/usr/bin/python3", "-B", str(source / "rc6_preopen.py"), "--publish-paper-gate")
                 # The child already emits a typed JSON receipt and exit 2 for RED.
                 # Keep its complete output private; journal only allowlisted metadata.
                 with tempfile.TemporaryFile(dir=identity.state) as output:
                     result = run(command, cwd=root, env=env, check=False, stdout=output,
                                  stderr=subprocess.DEVNULL, timeout=600)
-                    if revalidate_paper_gate:
-                        commands_result = [read_release_revalidation(output, result.returncode)]
-                        preopen_failure = None
-                    elif result.returncode != 0:
+                    if result.returncode != 0:
                         receipt = read_preopen_red_receipt(output) if result.returncode == 2 else None
                         signature = ("PREOPEN_RED_CHECKS" if receipt is not None else
                                      "PREOPEN_CHILD_RECEIPT_UNVERIFIED" if result.returncode == 2 else
@@ -391,13 +423,11 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
                              stderr=subprocess.DEVNULL, timeout=600)
                 require(result.returncode == 0, "SCHEDULER_HOST_JOB_FAILED")
                 preopen_failure = None
-            if not revalidate_paper_gate:
-                commands_result = [{"executor": "HOST_SSH_UID", "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
+            commands_result = [{"executor": "HOST_SSH_UID",
+                                "result": "EXIT_ZERO" if preopen_failure is None else "PREOPEN_FAILED"}]
         observed_database = database_snapshot(root / DB_RELATIVE)
         if unit in IOL_JOBS:
             require(observed_database == current.get("database"), "IOL_RELEASE_DATABASE_IDENTITY_CHANGED")
-        if revalidate_paper_gate:
-            require(observed_database == current.get("database"), "PAPER_RELEASE_DATABASE_IDENTITY_CHANGED")
         if unit == PREOPEN and preopen_failure is not None:
             return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "BLOQUEADO",
                     "source_sha": current["source_sha"], "image_id": current["image_id"],
@@ -405,6 +435,7 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
         return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "EXECUTED",
                 "source_sha": current["source_sha"], "image_id": current["image_id"],
                 "real_orders_sent": 0, "commands": commands_result,
+                **({"paper_recovery": paper_recovery} if paper_recovery is not None else {}),
                 "exit_code": 2 if any(row.get("exit_code") == 2 for row in commands_result) else 0}
 
 

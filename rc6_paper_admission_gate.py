@@ -32,6 +32,10 @@ RUNTIME_V2_RECEIPT = OPERATOR_DIR_RUNTIME / "paper-preopen-v2.json"
 REVALIDATION_NAME = "paper-preopen-release-v2.json"
 REVALIDATION_PHASE = "POST_DEPLOY_REVALIDATION"
 REVALIDATION_SCHEMA = "RC6_PAPER_POST_DEPLOY_GATE_V1"
+RECOVERY_PHASE = "INTRADAY_T10_RECOVERY"
+TECHNICAL_T10_HOLD = "PREOPEN_OR_RELEASE_NOT_GREEN"
+IOL_PROVIDER = "IOL_REST"
+RECOVERY_PROBE_MAX_AGE_SECONDS = 120
 # An operational sampling preference is never an admission whitelist. Keep
 # diagnostics bounded independently of the configured sampling universe.
 CATALOG_DIAGNOSTIC_LIMIT = 64
@@ -162,7 +166,7 @@ def publish_preopen(result, *, now=None, state_path=None, receipt_path=None):
                "candidate_sha": candidate if valid_release else "", "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"), "phase": result.get("phase"),
                "reason": (pause_reason if pause_reason else
-                          "PREOPEN_GREEN_RELEASE_PAPER_ZERO" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN")}
+                          "PREOPEN_GREEN_RELEASE_PAPER_ZERO" if allowed else TECHNICAL_T10_HOLD)}
     if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
         receipt["market_provider"] = "IOL_REST"
         if result.get("checks", {}).get("observer_db", {}).get("market_provider") != "IOL_REST":
@@ -216,14 +220,24 @@ def _gate_time(receipt, now):
     return issued.astimezone(TZ)
 
 
-def _daily_gate_error(receipt, issued, now):
+def _technical_t10_hold(receipt, provider):
+    return (provider == IOL_PROVIDER and receipt.get("schema") == "RC6_PAPER_PREOPEN_GATE_V2"
+            and receipt.get("status") == "NO_GO_PAPER_SCALPING"
+            and receipt.get("reason") == TECHNICAL_T10_HOLD)
+
+
+def _daily_gate_error(receipt, issued, now, *, provider, recover_technical_hold=False):
     expected_schema = ("RC6_PAPER_PREOPEN_GATE_V2" if
                        now.date().isoformat() >= NO_GO_UNTIL_EXPLICIT_REARM_FROM_AR
                        else "RC6_PAPER_PREOPEN_GATE_V1")
-    if (receipt.get("schema") != expected_schema or receipt.get("status") != "GO_PAPER_SCALPING"
-            or receipt.get("phase") != "T_MINUS_10"):
+    recovery = recover_technical_hold and _technical_t10_hold(receipt, provider)
+    if (receipt.get("schema") != expected_schema or receipt.get("phase") != "T_MINUS_10"
+            or (receipt.get("status") != "GO_PAPER_SCALPING" and not recovery)):
         return "NO_GO_PAPER_SCALPING"
-    if receipt.get("market_provider", "PPI") != os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI"):
+    # Legacy technical RED receipts can predate the provider field. A fresh
+    # recovery binds IOL independently. An explicit mismatch still vetoes.
+    recorded_provider = receipt.get("market_provider", provider if recovery else "PPI")
+    if recorded_provider != provider:
         return "PAPER_PREOPEN_PROVIDER_MISMATCH"
     if receipt.get("trade_day_ar") != now.date().isoformat() or issued.date() != now.date():
         return "PAPER_PREOPEN_TRADE_DAY_MISMATCH"
@@ -240,8 +254,29 @@ def _intraday_revalidation_window(at):
     return 10 * 60 + 30 <= at.hour * 60 + at.minute < 17 * 60
 
 
+def _iol_recovery_proof(result, now):
+    """Certify the installed IOL owner from the fresh, non-dry preopen probes."""
+    observer = result.get("checks", {}).get("observer_db", {})
+    state = observer.get("observer_state", {})
+    try:
+        checked = _gate_time({"issued_at_ar": result["generated_at_ar"]}, now)
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (result.get("schema") == "POROTA_RC6_PREOPEN_V3"
+            and result.get("red_checks") == []
+            and result.get("dry_equivalent") is False
+            and 0 <= (now - checked).total_seconds() <= RECOVERY_PROBE_MAX_AGE_SECONDS
+            and observer.get("state") == "GREEN"
+            and observer.get("market_provider") == IOL_PROVIDER
+            and observer.get("iol_owner_authenticated") is True
+            and state.get("mode") == "PRODUCTION_PAPER"
+            and state.get("session_state") == "MARKET_OPEN"
+            and state.get("process_state") == "RUNNING"
+            and type(state.get("real_orders_sent")) is int and state["real_orders_sent"] == 0)
+
+
 def publish_release_revalidation(result, *, now, expected_source_sha):
-    """Recheck the installed release during the same authenticated PAPER day."""
+    """Bind current live preopen checks to the original T−10 and current PAPER release."""
     now = now.astimezone(TZ)
     reject = {"status": "NO_GO_PAPER_SCALPING"}
     if not _intraday_revalidation_window(now):
@@ -256,30 +291,39 @@ def publish_release_revalidation(result, *, now, expected_source_sha):
         return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_CANDIDATE_CHANGED"}
     from scripts.porota_operator_intent import private_read
 
+    provider = os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI")
     try:
         daily_raw = private_read(private / HOST_V2_RECEIPT.name)
         daily = json.loads(daily_raw)
         issued = _gate_time(daily, now)
-        reason = _daily_gate_error(daily, issued, now)
+        reason = _daily_gate_error(daily, issued, now, provider=provider, recover_technical_hold=True)
     except (OSError, TypeError, KeyError, ValueError):
         return {**reject, "reason": "PAPER_RELEASE_REVALIDATION_DAILY_GATE_UNAVAILABLE"}
     if reason:
         return {**reject, "reason": reason}
-    allowed = (result.get("status") == "GREEN" and result.get("phase") == REVALIDATION_PHASE)
-    if daily.get("market_provider") == "IOL_REST":
-        allowed = allowed and result.get("checks", {}).get("observer_db", {}).get("market_provider") == "IOL_REST"
-    if daily["candidate_sha"] == expected_source_sha:
+
+    recovery = _technical_t10_hold(daily, provider)
+    allowed = result.get("status") == "GREEN" and result.get("phase") == REVALIDATION_PHASE
+    if provider == IOL_PROVIDER:
+        allowed = allowed and result.get("checks", {}).get("observer_db", {}).get("market_provider") == IOL_PROVIDER
+    if recovery:
+        allowed = allowed and _iol_recovery_proof(result, now)
+    elif daily["candidate_sha"] == expected_source_sha:
         return {"status": "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
-                "reason": "PAPER_DAILY_GO_ALREADY_CURRENT" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN"}
-    receipt = {"schema": REVALIDATION_SCHEMA, "phase": REVALIDATION_PHASE,
+                "reason": "PAPER_DAILY_GO_ALREADY_CURRENT" if allowed else TECHNICAL_T10_HOLD}
+    receipt = {"schema": REVALIDATION_SCHEMA, "phase": RECOVERY_PHASE if recovery else REVALIDATION_PHASE,
                "status": "GO_PAPER_SCALPING" if allowed else "NO_GO_PAPER_SCALPING",
-               "reason": "PAPER_CURRENT_RELEASE_REVALIDATED" if allowed else "PREOPEN_OR_RELEASE_NOT_GREEN",
+               "reason": (("PAPER_INTRADAY_PREOPEN_RECOVERED" if recovery else "PAPER_CURRENT_RELEASE_REVALIDATED")
+                          if allowed else TECHNICAL_T10_HOLD),
                "candidate_sha": expected_source_sha, "trade_day_ar": now.date().isoformat(),
                "issued_at_ar": now.isoformat(timespec="seconds"),
                "daily_gate_sha256": hashlib.sha256(daily_raw).hexdigest(),
                "operator_run_id": intent["rearm_run_id"]}
-    if daily.get("market_provider") == "IOL_REST":
-        receipt["market_provider"] = "IOL_REST"
+    if provider == IOL_PROVIDER:
+        receipt["market_provider"] = provider
+    if recovery:
+        receipt["candidate_tree_sha"] = intent["candidate_tree_sha"]
+        receipt["image_id"] = intent["image_id"]
     return _write_gate(private / REVALIDATION_NAME, receipt, private=True)
 
 
@@ -307,6 +351,53 @@ def _read_gate(path, *, root_owned):
     return receipt, raw
 
 
+def _valid_revalidation(redone, daily_raw, *, now, issued, provider, candidate, intent, recovery):
+    revalidated_at = _gate_time(redone, now)
+    return (intent["candidate_sha"] == candidate
+            and redone.get("schema") == REVALIDATION_SCHEMA
+            and redone.get("phase") == (RECOVERY_PHASE if recovery else REVALIDATION_PHASE)
+            and redone.get("status") == "GO_PAPER_SCALPING"
+            and redone.get("market_provider", "PPI") == provider
+            and redone.get("candidate_sha") == candidate
+            and (not recovery or (redone.get("candidate_tree_sha"), redone.get("image_id")) ==
+                 (intent["candidate_tree_sha"], intent["image_id"]))
+            and redone.get("trade_day_ar") == now.date().isoformat()
+            and redone.get("daily_gate_sha256") == hashlib.sha256(daily_raw).hexdigest()
+            and redone.get("operator_run_id") == intent["rearm_run_id"]
+            and revalidated_at.date() == now.date()
+            and _intraday_revalidation_window(now) and _intraday_revalidation_window(revalidated_at)
+            and issued < revalidated_at <= now)
+
+
+def iol_recovery_due(operator_directory, *, now):
+    """The existing health tick only retries a recoverable same-session RED."""
+    from scripts.porota_operator_intent import private_read
+
+    now = now.astimezone(TZ)
+    if not _intraday_revalidation_window(now):
+        return False
+    authorized, _, intent = evaluate_rearm(now=now, context="host")
+    if not authorized:
+        return False
+    try:
+        raw = private_read(operator_directory / HOST_V2_RECEIPT.name)
+        daily = json.loads(raw)
+        issued = _gate_time(daily, now)
+        if (not _technical_t10_hold(daily, IOL_PROVIDER) or _daily_gate_error(
+                daily, issued, now, provider=IOL_PROVIDER, recover_technical_hold=True)):
+            return False
+    except (OSError, TypeError, KeyError, ValueError):
+        return False
+    try:
+        redone = json.loads(private_read(operator_directory / REVALIDATION_NAME))
+        if type(redone) is not dict:
+            return True
+        return not _valid_revalidation(redone, raw, now=now, issued=issued, provider=IOL_PROVIDER,
+                                       candidate=intent["candidate_sha"], intent=intent, recovery=True)
+    except (OSError, TypeError, KeyError, ValueError):
+        return True
+
+
 def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
     now = (now or datetime.now(TZ)).astimezone(TZ)
     pause_reason = operator_pause_reason(now)
@@ -320,35 +411,26 @@ def admission_status(*, now=None, candidate_sha=None, receipt_path=None):
         return False, "PAPER_PREOPEN_BUILD_IDENTITY_MISSING"
     try:
         root_owned = path == RUNTIME_V2_RECEIPT
+        provider = os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI")
         receipt, raw = _read_gate(path, root_owned=root_owned)
         issued = _gate_time(receipt, now)
-        reason = _daily_gate_error(receipt, issued, now)
+        recovery = root_owned and _technical_t10_hold(receipt, provider)
+        reason = _daily_gate_error(receipt, issued, now, provider=provider, recover_technical_hold=recovery)
         if reason:
             return False, reason
-        if receipt["candidate_sha"] == candidate_sha:
+        if not recovery and receipt["candidate_sha"] == candidate_sha:
             return True, ""
         if not root_owned:
             return False, "PAPER_PREOPEN_RELEASE_MISMATCH"
         try:
             redone, _ = _read_gate(path.with_name(REVALIDATION_NAME), root_owned=True)
         except FileNotFoundError:
-            return False, "PAPER_PREOPEN_RELEASE_MISMATCH"
-        revalidated_at = _gate_time(redone, now)
+            return False, "NO_GO_PAPER_SCALPING" if recovery else "PAPER_PREOPEN_RELEASE_MISMATCH"
         allowed, _, intent = evaluate_rearm(now=now)
-        if (allowed and intent["candidate_sha"] == candidate_sha
-                and redone.get("schema") == REVALIDATION_SCHEMA
-                and redone.get("phase") == REVALIDATION_PHASE
-                and redone.get("status") == "GO_PAPER_SCALPING"
-                and redone.get("market_provider", "PPI") == receipt.get("market_provider", "PPI")
-                and redone.get("candidate_sha") == candidate_sha
-                and redone.get("trade_day_ar") == now.date().isoformat()
-                and redone.get("daily_gate_sha256") == hashlib.sha256(raw).hexdigest()
-                and redone.get("operator_run_id") == intent["rearm_run_id"]
-                and revalidated_at.date() == now.date()
-                and _intraday_revalidation_window(now) and _intraday_revalidation_window(revalidated_at)
-                and issued < revalidated_at <= now):
+        if allowed and _valid_revalidation(redone, raw, now=now, issued=issued, provider=provider,
+                                          candidate=candidate_sha, intent=intent, recovery=recovery):
             return True, ""
-        return False, "PAPER_PREOPEN_RELEASE_REVALIDATION_INVALID"
+        return False, "NO_GO_PAPER_SCALPING" if recovery else "PAPER_PREOPEN_RELEASE_REVALIDATION_INVALID"
     except FileNotFoundError:
         return False, "PAPER_PREOPEN_RECEIPT_UNSAFE"
     except ValueError as error:

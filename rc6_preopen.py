@@ -302,23 +302,22 @@ def container(name, require_readonly=False, deploy_scheduler_candidate=None):
             'reason':reason}
 
 
-def _iol_owner_ready():
+def _iol_owner_status():
     from scripts.porota_rootless_jobs import verified_host
 
     identity = _rootless_identity()
     if identity is None:
-        return False
+        return {}
     manager, current, _ = verified_host(ROOT, identity)
     if current.get("market_provider") != "IOL_REST":
-        return False
+        return {}
     probe = (
         "import json; from scripts.porota_rootless_host import observe_iol_owner; "
         "print(json.dumps(observe_iol_owner('/app/data/paper_v17/observer_v17.db')))"
     )
     result = rootless.decode(manager.docker.call("container", "exec", current["roles"]["observer"],
                                                "python", "-B", "-c", probe, timeout=6))
-    return (isinstance(result, dict) and set(result.get("registered") or {}) == {"scanner", "exit_reader"}
-            and result.get("trade_stream_configured") is True)
+    return result if isinstance(result, dict) else {}
 
 
 def observer_db():
@@ -346,12 +345,15 @@ def observer_db():
                       type(state.get('real_orders_sent')) is int and state['real_orders_sent'] == 0 and
                       auth == 'NOT_ATTEMPTED' and state.get('process_state') in
                       {'WAITING_MARKET', 'READY_PREOPEN', 'RUNNING'})
-            gateway_ready = safety and _iol_owner_ready()
+            owner = _iol_owner_status() if safety else {}
+            gateway_ready = (set(owner.get("registered") or {}) == {"scanner", "exit_reader"}
+                             and owner.get("trade_stream_configured") is True)
             reason = ('IOL_EXECUTABLE_EVIDENCE_REQUIRED_AT_ADMISSION' if gateway_ready else
                       'IOL_GATEWAY_OR_PAPER_STATE_UNVERIFIED')
             return {'state':'GREEN' if gateway_ready else 'RED','bounded_readonly_probe':'GREEN',
                     'schema_version':schema_version, 'market_provider':'IOL_REST',
-                    'reason':reason, 'observer_state':state}
+                    'reason':reason, 'observer_state':state,
+                    'iol_owner_authenticated': owner.get('authenticated') is True}
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
