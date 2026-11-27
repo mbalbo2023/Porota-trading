@@ -4,7 +4,6 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
-import json
 import sqlite3
 
 import pytest
@@ -39,25 +38,30 @@ ACCOUNT = hashlib.sha256(b"offline account scope").hexdigest()
 
 @pytest.fixture
 def paper_fund(tmp_path, monkeypatch):
+    return make_paper_fund(tmp_path, monkeypatch, SYMBOL, "900001")
+
+
+def make_paper_fund(tmp_path, monkeypatch, symbol, class_id, *, admission_guard=None):
     key = Ed25519PrivateKey.generate()
     public = key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     store = PaperStore(str(tmp_path / "fund.db"))
     broker = PaperBroker(store, initial_cash="2000")
-    raw = json.loads('{"ticker":"FCI.FIXTURE.B","type":"FCI","market":"BYMA",'
-                     '"currency":"Pesos","settlement":"INMEDIATA"}')
+    raw = {"ticker": symbol, "type": "FCI", "market": "BYMA", "currency": "Pesos",
+           "settlement": "INMEDIATA"}
     identity = catalog.normalize_record(raw, None, OPEN, "SYNTHETIC_PRIMARY")
     assert not catalog.ppi_full_key_evidence_reason(identity)
-    terms = lifecycle.PaperFundTerms(SYMBOL, "FCI", "ARS", "BYMA", "INMEDIATA",
+    terms = lifecycle.PaperFundTerms(symbol, "FCI", "ARS", "BYMA", "INMEDIATA",
                                     "SYNTHETIC_TERMS", subscription_min="1000",
                                     subscription_step="0.01")
-    evidence = FundClassEvidence(terms, SYMBOL, "SYNTHETIC_REGULATION", DIGEST, KNOWN)
+    evidence = FundClassEvidence(terms, symbol, "SYNTHETIC_REGULATION", DIGEST, KNOWN)
     # Use the real CAFCI parser and allocation guard on local, explicitly
     # synthetic inputs. The class binding, cutoff and fees are fixture data.
-    reference, = parse(synthetic_xlsx(reference_row(name="Fondo de prueba - Clase B",
-        effective="20/11/26", nav_mil="10000", cafci_id="900001", cnv_id="9000")),
+    reference, = parse(synthetic_xlsx(reference_row(name="Fondo de prueba - Clase " + symbol.rsplit(".", 1)[-1],
+        effective="20/11/26", nav_mil="10000", cafci_id=class_id, cnv_id="9000")),
         captured_at=KNOWN, http_last_modified_at="Fri, 20 Nov 2026 23:20:00 GMT",
         source_filename="20261120_Planilla_Diaria_A.xlsx").classes
+    assert reference.cafci_class_id == int(class_id)
     assert reference.runtime_entry_authority is False and reference.currency_raw == terms.currency
     assert reference.minimum_subscription_reported == terms.subscription_min
     nav = FundNavMark(
@@ -78,7 +82,7 @@ def paper_fund(tmp_path, monkeypatch):
     result = simulate_fund_subscription(broker.family_paper, evidence=allocation_evidence,
         budget=budget, lifecycle_id="fund-1", event_id="e0", occurred_at=OPEN,
         cash_guard=lambda db: broker._cash(OPEN, "ARS", connection=db, for_execution=True),
-        admission_guard=lambda _db: "")
+        admission_guard=admission_guard if admission_guard is not None else lambda _db: "")
     assert result["state"] == "SUBSCRIBE_REQUESTED" and broker._cash(OPEN, "ARS") == Decimal("998.99")
     monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
     def trusted_operator_fixture(directory, *, receipt_name):
@@ -89,12 +93,11 @@ def paper_fund(tmp_path, monkeypatch):
     monkeypatch.setattr(operator, "_root_owned_receipt", trusted_operator_fixture)
     # The documented numeric movement fields alone do not authenticate fees,
     # the exact fund class or the NAV publication.
-    allocation, payment = json.loads(
-        '[{"ticker":"FCI.FIXTURE.B","price":10.0101,"quantity":100,"amount":1001.01},'
-        '{"ticker":"FCI.FIXTURE.B","price":10.30,"quantity":100,"amount":1029.00}]')
+    allocation = {"ticker": symbol, "price": 10.0101, "quantity": 100, "amount": 1001.01}
+    payment = {"ticker": symbol, "price": 10.30, "quantity": 100, "amount": 1029.00}
     nav_at = "2026-11-24T17:30:00-03:00"
     receipts = [
-        FundReceipt("e2", "NAV_APPLIED", SYMBOL, "ARS", "FUND_ADMINISTRATOR_NAV",
+        FundReceipt("e2", "NAV_APPLIED", symbol, "ARS", "FUND_ADMINISTRATOR_NAV",
                     "SYNTHETIC_ADMIN_NAV", DIGEST, "2026-11-24T18:00:00-03:00",
                     "2026-11-24T18:01:00-03:00", nav_effective_at=nav_at, nav_per_unit="10.0101"),
         FundReceipt("e3", "SETTLED", allocation["ticker"], "ARS", "BROKER_FUND_ALLOCATION",
@@ -116,7 +119,7 @@ def attestation(fund, receipts, transitions, at, **changes):
     time = datetime.fromisoformat(at)
     claims = {
         "schema": SETTLEMENT_SCHEMA, "account_scope_sha256": ACCOUNT,
-        "identity": [SYMBOL, "FCI", "BYMA", "ARS", "INMEDIATA"], "lifecycle_id": "fund-1",
+        "identity": [evidence.terms.symbol, "FCI", "BYMA", "ARS", "INMEDIATA"], "lifecycle_id": "fund-1",
         "transitions": transitions, "class_evidence_sha256": fund_evidence_digest(evidence),
         "receipt_hashes": {receipt.event_id: fund_evidence_digest(receipt) for receipt in receipts},
         "payout_ars": "1029.00" if transitions[-1][-1] == "REDEEMED" else "0",
@@ -148,7 +151,11 @@ PAYMENT = [["e5", "REDEEMED"]]
 
 
 def test_runtime_settlement_applies_signed_receipts_once_and_credits_exact_payment(paper_fund, monkeypatch):
-    store, broker, _, _, _, receipts = paper_fund
+    replay_attested_fund_settlement(paper_fund, monkeypatch)
+
+
+def replay_attested_fund_settlement(paper_fund, monkeypatch):
+    store, broker, evidence, _, _, receipts = paper_fund
     monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)
     proof = attestation(paper_fund, receipts[:2], ALLOCATION, SETTLEMENT)
     with ThreadPoolExecutor(max_workers=2) as workers:
@@ -173,6 +180,10 @@ def test_runtime_settlement_applies_signed_receipts_once_and_credits_exact_payme
     assert states(store) == ["SUBSCRIBE_REQUESTED", "PENDING", "NAV_APPLIED",
                              "SETTLED", "REDEEM_REQUESTED", "REDEEMED"]
     with store.connect() as db:
+        assert [row[0] for row in db.execute(
+            "SELECT DISTINCT lifecycle.instrument FROM paper_family_lifecycle_events events "
+            "JOIN paper_family_lifecycle lifecycle USING (lifecycle_id)"
+        )] == [evidence.terms.symbol]
         db.execute("UPDATE paper_family_lifecycle_events SET amount='1030' WHERE event_id='e5'")
     with pytest.raises(ValueError, match="FCI_RUNTIME_REDEMPTION_SOURCE_UNVERIFIED"):
         broker._cash(END, "ARS")

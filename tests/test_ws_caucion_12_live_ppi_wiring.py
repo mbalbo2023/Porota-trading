@@ -201,11 +201,21 @@ def test_caucion_sdk_public_shape_cannot_substitute_request_for_native_settlemen
 ])
 def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
         tmp_path, monkeypatch, policy, hold):
+    store, at, offers = reconcile_synthetic_caucion(tmp_path, monkeypatch, "PESOS1", 1, policy, hold)
+    if hold:
+        return
+    # The older contract cases supply GO as a fixture callback. The
+    # multi-instrument replay publishes and reads an isolated GO receipt.
+    monkeypatch.setattr(admission, "admission_status", lambda **_: (True, ""))
+    replay_caucion_sweep(store, offers, at)
+
+
+def reconcile_synthetic_caucion(tmp_path, monkeypatch, ticker, term_days, policy, hold):
     # The same exact PPI identity is observed this session. Its contract can
     # already exist from a prior catalogue read. These responses are synthetic.
     at = datetime(2026, 11, 24, 16, 40, tzinfo=TZ)
     seen = at - (timedelta(minutes=2) if policy == "CURRENT_STATIC" else timedelta(days=3))
-    store = _store(tmp_path, ticker="PESOS1", at=seen)
+    store = _store(tmp_path, ticker=ticker, at=seen)
     if policy != "MISSING_POLICY":
         records, skipped, identities = mass.planned_records(mass._catalog_rows(store))
         assert not skipped and identities == {"CAUCIONES": 1}
@@ -222,7 +232,7 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
 
     with store.connect() as connection:
         row = dict(connection.execute(
-            "SELECT metadata_json FROM financial_instrument_catalog WHERE ticker='PESOS1'"
+            "SELECT metadata_json FROM financial_instrument_catalog WHERE ticker=?", (ticker,)
         ).fetchone())
         raw = json.loads(row["metadata_json"])
         if policy == "REQUEST_ONLY":
@@ -234,7 +244,8 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
         }
 
     monkeypatch.setenv("POROTA_MARKET_DATA_ROOT", str(tmp_path))
-    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", "1")
+    monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
+    monkeypatch.setenv("PPI_CAUCION_DISCOVERY_DAYS", str(term_days))
     monkeypatch.setattr(observer, "now_iso", lambda: at.isoformat())
     complements = bridge.complements_from_store
     monkeypatch.setattr(bridge, "complements_from_store", lambda store: complements(store, now=at))
@@ -242,39 +253,39 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
     monkeypatch.setattr(catalog, "complementary_is_fresh", lambda raw, **kw: is_fresh(raw, now=at, **kw))
     expected_ready = hold is None
     assert observer._reconcile_complementary_catalog(store) == int(expected_ready)
-    record = catalog.lookup(store, "PESOS1", "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
+    record = catalog.lookup(store, ticker, "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
     assert bool(record.get("_admission_reason")) != expected_ready
     if expected_ready:
         # A repeated receipt of the identical version advances the clock and
         # must not invent a contradiction in the materialized terms.
         assert not mass.collect(store, run_id="same-policy-new-observation")["first_seen"]
         assert observer._reconcile_complementary_catalog(store) == 0
-        record = catalog.lookup(store, "PESOS1", "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
+        record = catalog.lookup(store, ticker, "CAUCIONES", "INMEDIATA", market="BYMA", currency="ARS")
         assert not record.get("_admission_reason")
         assert record["raw"]["paper_caucion_contract_v1"]["field_provenance"]["term_days"]["observed_at"] == at.isoformat()
 
     class Reader:
-        def book(self, ticker, family, settlement):
-            assert (ticker, family, settlement) == ("PESOS1", "CAUCIONES", "INMEDIATA")
+        def book(self, symbol, family, settlement):
+            assert (symbol, family, settlement) == (ticker, "CAUCIONES", "INMEDIATA")
             return {"date": at.isoformat(), "bids": [{"price": "19.1", "quantity": "6000000"}]}
 
-    assert live.refresh(Reader(), store, now=at, clock_fn=lambda: at)["states"] == {"PESOS1": "BOOK_READY"}
+    assert live.refresh(Reader(), store, now=at, clock_fn=lambda: at)["states"] == {ticker: "BOOK_READY"}
     offers, errors = offers_from_store(store, now=at)
     if hold:
-        assert offers == [] and errors == [f"PESOS1:{hold}"]
-        return
+        assert offers == [] and errors == [f"{ticker}:{hold}"]
+    else:
+        assert not errors and len(offers) == 1
+        assert offers[0].annual_rate_fraction == Decimal("0.191")
+        assert offers[0].maturity_at == (at + timedelta(days=term_days)).replace(hour=17, minute=0).isoformat()
+        assert offers_from_store(store, now=at + timedelta(seconds=91)) == (
+            [], [f"{ticker}:CAUCION_LIVE_BOOK_STALE"],
+        )
+    return store, at, offers
 
-    assert not errors and len(offers) == 1
-    assert offers[0].annual_rate_fraction == Decimal("0.191")
-    assert offers[0].maturity_at == "2026-11-25T17:00:00-03:00"
-    assert offers_from_store(store, now=at + timedelta(seconds=91)) == (
-        [], ["PESOS1:CAUCION_LIVE_BOOK_STALE"],
-    )
 
-    # Only a synthetic local test receives a GO receipt. Runtime allocation
-    # rechecks the catalog, exact candidate, book history, risk and cash.
-    monkeypatch.setenv("PAPER_V17_DB_PATH", store.path)
-    monkeypatch.setattr(admission, "admission_status", lambda **_: (True, ""))
+def replay_caucion_sweep(store, offers, at, *, liquidity_deadline_override=False):
+    # Runtime allocation rechecks the catalog, exact candidate, book history,
+    # risk and cash before creating the independent PAPER position.
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     broker = PaperBroker(store, initial_cash="2000000")
     schedule = paper_schedule(at)
@@ -282,12 +293,21 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
     request_id = "paper-caucion-cash-sweep:2026-11-24:ARS:v1"
     options = dict(obligation_snapshot=snapshot, currency="ARS", as_of=at,
                    request_id=request_id, **schedule)
+    due = datetime.fromisoformat(offers[0].maturity_at)
+    if liquidity_deadline_override:
+        # Daily cash remains reserved through the next eligible close. A
+        # longer contract requires a separate modeled liquidity horizon.
+        assert due > schedule["liquidity_deadline"]
+        rejected = run_paper_sweep(broker, offers, **options)
+        assert rejected["status"] == "HOLD" and rejected["allocation"] is None
+        options.update(liquidity_deadline=due, schedule_source="OFFHOST_PAPER_LIQUIDITY_FIXTURE",
+                       obligation_snapshot=obligation_snapshot_from_ledger(
+                           store, observed_at=at, liquidity_deadline=due))
     first = run_paper_sweep(broker, offers, **options)
     retry = run_paper_sweep(broker, offers, **options)
-    assert first["status"] == retry["status"] == "PLACED_SIMULATED"
+    assert first["status"] == retry["status"] == "PLACED_SIMULATED", first
     paper_id = first["allocation"]["paper_id"]
     assert paper_id == retry["allocation"]["paper_id"]
-    due = datetime.fromisoformat(offers[0].maturity_at)
     assert broker.settle_cauciones(due - timedelta(seconds=1)) == []
     assert broker.settle_cauciones(due) == [paper_id]
     assert broker.settle_cauciones(due) == []
@@ -295,8 +315,9 @@ def test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid(
         assert connection.execute("SELECT COUNT(*) FROM paper_cauciones").fetchone()[0] == 1
         assert connection.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
         row = connection.execute(
-            "SELECT status,gross_interest,total_fees,maturity_at FROM paper_cauciones WHERE paper_id=?",
+            "SELECT instrument_id,status,gross_interest,total_fees,maturity_at FROM paper_cauciones WHERE paper_id=?",
             (paper_id,)).fetchone()
+        assert row["instrument_id"] == offers[0].instrument_id
         assert row["status"] == "MATURED" and row["maturity_at"] == due.isoformat()
         net_interest = Decimal(row["gross_interest"]) - Decimal(row["total_fees"])
         assert broker._cash(due, "ARS") == Decimal("2000000") + net_interest

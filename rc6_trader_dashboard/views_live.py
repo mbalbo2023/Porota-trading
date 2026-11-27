@@ -36,16 +36,16 @@ def render(p, destination, tab):
                              filters=True, note="HOT indica prioridad de observación, no BUY. Si capacidad OPEN no está demostrada, una fila HOT conserva señal NOT_READY y SCANNER_CAPACITY. Tradeability no es señal direccional ni probabilidad.") + timeline(events.rows, verified_empty=events.state == "AVAILABLE"))
     if tab == "decisiones":
         return render_table(p, destination, tab, p.decisions(), "Decisiones factuales PAPER", DECISIONS, DECISION_DETAIL,
-                            note="Cada decisión conserva signal, economics y risk. HOLD sin gate de compra muestra NOT_EVALUATED para economics/risk; BUY sin gate sigue NO_VERIFICADO. Un HOLD requiere su motivo; score_is_probability=false.")
+                            note="Cada decisión conserva signal, economics y risk. HOLD sin gate de compra muestra NOT_EVALUATED para economics/risk. La verificación de BUY exige un recibo del gate; cada HOLD muestra su motivo publicado. El score no es una probabilidad.")
     if tab == "posiciones":
         return render_table(p, destination, tab, p.positions(), "Posiciones y seguridad de salida", POSITIONS, POSITION_DETAIL, filters=True,
-                            note="Ganancia/pérdida PAPER no realizada: bid fresco menos entrada sobre cantidad remanente, multiplicador y costo histórico del ledger. Un mark contable no acredita un fill ejecutable; evidencia vencida o inconsistente = NO_VERIFICADO. MFE/MAE sin trayectoria validada = NO_MEDIDO.")
+                            note="La ganancia o pérdida PAPER no realizada usa el bid fresco, la entrada, la cantidad remanente, el multiplicador y el costo histórico. Un fill ejecutable requiere evidencia vigente y coherente. MFE y MAE requieren una trayectoria validada.")
     if tab == "cierres":
         stats = p.close_win_rate_today()
         detail = (f"{stats['wins']}/{stats['sample']} cierres con PnL neto positivo · empates en la muestra"
                   if stats["state"] == "AVAILABLE" else
                   "Sin cierres medidos en el alcance y filtros actuales" if stats["state"] == "EMPTY" else
-                  "NO_VERIFICADO · revisar PnL neto o lectura del ledger")
+                  "Revisá el PnL neto o la lectura del ledger para medir los resultados.")
         summary = ("<div class='metric-grid'>" +
                    metric("Win rate de cierres hoy", stats["win_rate"], detail, kind="percent") +
                    metric("Muestra de cierres hoy", stats["sample"],
@@ -59,10 +59,16 @@ def render(p, destination, tab):
         return render_table(p, destination, tab, p.workers(), "Workers críticos de la rueda", WORKERS, WORKER_DETAIL)
     cohort=p.market_freshness_cohort()
     panel="<section class='panel'><h2>Relojes por identidad · muestra local</h2>"+notice(
-        'Hasta 10 identidades de los últimos 500 registros locales; posiciones abiertas primero. Un heartbeat global fresco no acredita book/trade fresco. Ausencia = NO_VERIFICADO; diagnóstico de 120s sin autoridad de entrada. '+cohort.reason)
+        'Hasta 10 identidades de los últimos 500 registros locales, con prioridad para posiciones abiertas. El diagnóstico compara los relojes de libro, negocio y recepción con una vigencia de 120 s. '+cohort.reason)
     for row in cohort.rows:
-        panel+="<details><summary>"+e(' / '.join(str(row.get(k) or 'NO_VERIFICADO') for k in ('symbol','family','market','currency','settlement')))+"</summary>"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"</details>"
+        identity = " / ".join(str(row[k]) if row.get(k) and row[k] != "NO_VERIFICADO" else label
+                              for k, label in (("symbol", "Sin ticker"), ("family", "Sin familia"),
+                                               ("market", "Sin mercado"), ("currency", "Sin moneda"),
+                                               ("settlement", "Sin plazo de liquidación")))
+        panel+="<details><summary>"+e(identity)+"</summary>"+definition_list(row,fields('book_freshness|Book|status;trade_freshness|Trade|status;receipt_freshness|Recepción|status;book_at|Book|time;trade_at|Trade|time;received_at|Recepción|time;source|Fuente'))+"</details>"
     panel+="</section>"
     return panel+render_table(p, destination, tab, p.sources(), "Fuentes relevantes a la rueda", SOURCES, SOURCE_DETAIL,
-                        note="PPI es autoridad primaria. IOL complementa; BYMA público observa. VERDE de PAPER_ECONOMIC_GATE_SHADOW es salud de un chequeo, no permiso de entrada ni rentabilidad validada. SOURCE_UNAVAILABLE siempre se limita a su scope.",
+                        note=("IOL REST es la fuente operativa. Se conserva la procedencia histórica de PPI. "
+                              if getattr(p, "market_provider", "PPI") == "IOL_REST" else "PPI es autoridad primaria. IOL complementa y BYMA público observa. ") +
+                            "PAPER_ECONOMIC_GATE_SHADOW muestra la salud del chequeo. La entrada PAPER exige su propio recibo de admisión.",
                         identity=False)

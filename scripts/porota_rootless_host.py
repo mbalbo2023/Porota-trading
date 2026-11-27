@@ -1400,6 +1400,7 @@ def main(argv=None):
         elif args.operation == "inventory":
             from scripts.porota_rootless_jobs import scheduler_lock, verified_host
             from scripts.rc6_iol_installed_inventory import run_host_inventory
+            from scripts.rc6_installed_runtime_metrics import observe_runtime_metrics
 
             with scheduler_lock(manager.identity):
                 manager, current, release = verified_host(manager.root, manager.identity)
@@ -1407,6 +1408,7 @@ def main(argv=None):
                          current.get("market_provider")) == (args.source_sha, args.source_tree, args.attempt, "IOL_REST"),
                         "INVENTORY_INSTALLED_RELEASE_MISMATCH")
                 result = run_host_inventory(manager, current)
+                result["runtime_metrics"] = observe_runtime_metrics(manager, current)
         else:
             require(all((args.release_dir, args.source_sha, args.source_tree, args.attempt)), "RELEASE_ARGUMENTS_REQUIRED")
             result = manager.deploy(args.release_dir, args.source_sha, args.source_tree, args.attempt)

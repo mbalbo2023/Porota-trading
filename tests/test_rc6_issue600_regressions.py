@@ -2,7 +2,9 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
+from pathlib import Path
 import sqlite3
+import stat
 from types import SimpleNamespace
 
 import pytest
@@ -213,15 +215,36 @@ def test_late_revision_appends_at_real_publication_time(source,tmp_path):
     assert json.loads(rows[0][1])['close']=='100' and json.loads(rows[1][1])['close']=='101'
 
 
-def test_local_disk_and_market_admission_do_not_write(source,tmp_path):
+def test_local_disk_and_market_admission_do_not_write(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+
     cold=tmp_path/'history.db'
-    assert consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE-1)['state']=='DEFERRED_DISK'
+    monkeypatch.setattr(local.shutil, 'disk_usage', lambda _: SimpleNamespace(free=RESERVE-1))
+    result = consolidate(source.path, cold, as_of=NOW)
+    assert (result['state'], result['reason']) == ('DEFERRED_DISK', 'HOST_RESERVE_REQUIRED')
     assert not cold.exists()
     assert consolidate(source.path,cold,as_of=NOW-timedelta(hours=1))['state']=='NOT_DUE'
     assert not cold.exists()
     with source.connect() as c: c.execute("UPDATE observer_state SET session_state='MARKET_OPEN'")
     assert consolidate(source.path,cold,as_of=NOW,free_bytes=RESERVE)['state']=='BLOCKED'
     assert not cold.exists()
+
+
+def test_local_disk_reserve_drop_rolls_back_receipt_and_cursor(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+
+    sample(source)
+    cold = tmp_path/'history.db'
+    with monkeypatch.context() as patch:
+        free = iter((RESERVE, local.DISK_RESERVE-1))
+        patch.setattr(local.shutil, 'disk_usage', lambda _: SimpleNamespace(free=next(free)))
+        result = consolidate(source.path, cold, as_of=NOW)
+    assert (result['state'], result['reason']) == ('DEFERRED_DISK', 'HOST_RESERVE_REQUIRED')
+    with sqlite3.connect(cold) as connection:
+        assert connection.execute('SELECT COUNT(*) FROM local_eod_cursor_v1').fetchone() == (0,)
+        assert connection.execute('SELECT COUNT(*) FROM local_eod_receipts_v1').fetchone() == (0,)
+        assert connection.execute('SELECT COUNT(*) FROM local_eod_provenance_v1').fetchone() == (0,)
+    assert consolidate(source.path, cold, as_of=NOW, free_bytes=RESERVE)['imported'] == 1
 
 
 def test_local_no_samples_is_not_a_zero_candle_and_corruption_is_atomic(source,tmp_path):
@@ -238,13 +261,54 @@ def test_local_no_samples_is_not_a_zero_candle_and_corruption_is_atomic(source,t
         assert c.execute('SELECT cursor FROM local_eod_cursor_v1').fetchone()[0]==0
 
 
-def test_local_rejects_future_revision_and_excess_cold_file(source,tmp_path):
+def test_local_rejects_future_revision(source,tmp_path):
     sample(source,known=NOW+timedelta(minutes=1))
     with pytest.raises(ValueError,match='FUTURE_VERSION'):
         consolidate(source.path,tmp_path/'history.db',as_of=NOW,free_bytes=RESERVE)
-    huge=tmp_path/'large-history.db'
-    with huge.open('wb') as f: f.truncate(2*1024**3+1)
-    assert consolidate(source.path,huge,as_of=NOW,free_bytes=RESERVE)['reason']=='COLD_ARCHIVE_PHYSICAL_BUDGET'
+
+
+def test_local_archives_above_old_cold_cap_without_rewriting_provenance(source,tmp_path,monkeypatch):
+    import rc6_local_eod_history as local
+
+    cold = tmp_path/'history.db'
+    sample(source)
+    assert consolidate(source.path, cold, as_of=NOW, free_bytes=RESERVE)['imported'] == 1
+    with sqlite3.connect(cold) as connection:
+        first_receipt = connection.execute('SELECT * FROM local_eod_receipts_v1').fetchone()
+        first_provenance = connection.execute('SELECT * FROM local_eod_provenance_v1').fetchone()
+        connection.execute('CREATE TABLE history_canonical_v2(record TEXT, source TEXT)')
+        connection.execute('INSERT INTO history_canonical_v2 VALUES(?,?)', ('retained', 'PPI_PRODUCTION_HISTORY_REPORTED'))
+
+    original_stat = Path.stat
+    def cold_stat(path, *args, **kwargs):
+        info = original_stat(path, *args, **kwargs)
+        if path != cold:
+            return info
+        values = list(info)
+        values[stat.ST_SIZE] = 2*1024**3+1
+        return type(info)(values)
+
+    statements = []
+    original_connect = local._ColdStore.connect
+    def traced_connect(store):
+        connection = original_connect(store)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(Path, 'stat', cold_stat)
+    monkeypatch.setattr(local._ColdStore, 'connect', traced_connect)
+    sample(source, price='101', known=NOW+timedelta(seconds=1))
+    result = consolidate(source.path, cold, as_of=NOW+timedelta(minutes=1), free_bytes=RESERVE)
+    assert (result['state'], result['imported'], result['cursor']) == ('LOCAL_EOD_READY', 1, 2)
+    assert result['provider_requests'] == result['real_orders_sent'] == 0
+    assert not any('max_page_count' in sql.lower() for sql in statements)
+    with sqlite3.connect(cold) as connection:
+        receipts = connection.execute('SELECT * FROM local_eod_receipts_v1 ORDER BY version_id').fetchall()
+        provenance = connection.execute('SELECT * FROM local_eod_provenance_v1 ORDER BY version_id').fetchall()
+        assert len(receipts) == len(provenance) == 2
+        assert receipts[0] == first_receipt and provenance[0] == first_provenance
+        assert connection.execute('SELECT * FROM history_canonical_v2').fetchall() == [
+            ('retained', 'PPI_PRODUCTION_HISTORY_REPORTED')]
 
 
 def test_repair_never_unions_currency_or_price_basis(tmp_path, monkeypatch):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -59,13 +60,23 @@ PAPER_CYCLES = {
 PROVIDER_HOLDS = {"FUTUROS": "IOL_A3_MARKET_UNVERIFIED",
                   "CAUCIONES": "IOL_REPO_BOOK_CLOCK_UNVERIFIED",
                   "FCI": "IOL_FUND_TERMS_AND_NAV_UNVERIFIED"}
+MULTI_REPLAY = (
+    "tests/test_rc6_multi_replay_spot.py",
+    "tests/test_rc6_multi_replay_fixed_income.py",
+    "tests/test_rc6_multi_replay_contracts.py",
+)
+REPLAY_CASE_ID = re.compile(r"\[(\w+)[-:]([A-Z0-9][A-Z0-9./_-]{0,39})\]\Z")
+IOL_SPOT = frozenset({"ACCIONES", "CEDEARS", "ETFS"})
+IOL_SPECIALIZED = frozenset({"BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
 DOMAINS = {
     "timers": ("tests/test_rc6_a145_timer_phases.py::test_verified_art_phases_and_com19024_snapshot_switch",
                "tests/test_rc6_a145_timer_phases.py::test_nontrading_holiday_closed_2027_never_launch_provider"),
     "workers": ("tests/test_porota_rootless_jobs.py", "tests/test_porota_runtime_controller.py"),
     "apis_current_book": (LAB, "tests/test_rc6_iol_rest_cutover.py", "tests/test_rc6_iol_oauth_health.py"),
     "history": (LAB + "::test_iol_daily_ingest_preserves_canonical_history", "test_hf6_history_data912_v2.py",
-                LAB + "::test_iol_local_eod_archive_does_not_certify_postclose_provider"),
+                LAB + "::test_iol_local_eod_archive_does_not_certify_postclose_provider",
+                "tests/test_rc6_issue600_regressions.py::test_local_archives_above_old_cold_cap_without_rewriting_provenance",
+                "tests/test_rc6_issue600_regressions.py::test_local_disk_reserve_drop_rolls_back_receipt_and_cursor"),
     "candles": (LAB + "::test_iol_family_contract", NATIVE_REPLAY,
                 LAB + "::test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts",
                 "tests/test_rc6_candle_inmarket_evidence.py"),
@@ -97,6 +108,7 @@ DOMAINS = {
                               "tests/test_rc6_future_contract_policy.py",
                               "tests/test_rc6_cauciones_official_contract.py"),
     "deployment_lock": (LAB + "::test_predeploy_packaging_and_promotion_reject_testing_tree",),
+    "multi_instrument_paper": MULTI_REPLAY,
 }
 
 
@@ -110,13 +122,50 @@ def _selected(name, pattern):
     return name.startswith(prefix + testcase)
 
 
+def _summarize_instrument_cases(tests, elapsed):
+    families = {family: {} for family in FAMILIES}
+    malformed = 0
+    for name, passed in tests.items():
+        if not any(_selected(name, module) for module in MULTI_REPLAY):
+            continue
+        match = REPLAY_CASE_ID.search(name)
+        if match is None or match[1] not in families or match[2] in families[match[1]]:
+            malformed += 1
+            continue
+        family, ticker = match.groups()
+        families[family][ticker] = {"status": "PASS" if passed else "FAIL",
+                                     "seconds": elapsed.get(name)}
+
+    rows = {}
+    for family, instruments in families.items():
+        path = "IOL_GATEWAY_PAPER" if family in IOL_SPOT else "NATIVE_CONTRACT_PAPER_REPLAY"
+        hold = ("IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED" if family in IOL_SPECIALIZED
+                else "IOL_MARKET_IDENTITY_UNSUPPORTED" if family in PROVIDER_HOLDS else None)
+        passed = len(instruments) >= 3 and all(case["status"] == "PASS" for case in instruments.values())
+        rows[family] = {"status": "PASS" if passed else "FAIL", "path": path,
+                        "iol_fixture_hold": hold, "instruments": instruments}
+    status = "PASS" if not malformed and all(row["status"] == "PASS" for row in rows.values()) else "FAIL"
+    return {"status": status, "instrument_count": sum(len(items) for items in families.values()),
+            "distinct_required_per_family": 3, "go_scope": "SYNTHETIC_FIXTURE",
+            "clock_and_book_or_nav": "SYNTHETIC", "market_admission_effect": "NONE",
+            "invalid_case_ids": malformed, "families": rows}
+
+
 def summarize_focus(junit, exit_code, *, gateway_ipc):
     tests = {}
+    elapsed = {}
     if junit.is_file():
         for case in ElementTree.parse(junit).iter("testcase"):
             name = _test_name(case)
             passed = not any(case.find(problem) is not None for problem in ("error", "skipped", "failure"))
             tests[name] = passed and name not in tests
+            try:
+                seconds = float(case.get("time", ""))
+                if math.isfinite(seconds) and seconds >= 0:
+                    elapsed[name] = round(seconds, 3)
+            except ValueError:
+                pass
+
     def passed_patterns(patterns):
         evidence = [[passed for name, passed in tests.items() if _selected(name, pattern)]
                     for pattern in patterns]
@@ -124,6 +173,8 @@ def summarize_focus(junit, exit_code, *, gateway_ipc):
 
     domains = {area: "PASS" if passed_patterns(patterns) else "FAIL"
                for area, patterns in DOMAINS.items()}
+    multi = _summarize_instrument_cases(tests, elapsed)
+    domains["multi_instrument_paper"] = multi["status"]
     families = {}
     for family in FAMILIES:
         passed = tests.get(LAB_CLASS + f"test_iol_family_contract[{family}]") is True
@@ -147,7 +198,7 @@ def summarize_focus(junit, exit_code, *, gateway_ipc):
             "native_gateway_transport": "AF_UNIX_PEERCRED" if gateway_ipc and passed else "IN_PROCESS",
             "iol_gateway_transport": ("AF_UNIX_PEERCRED" if gateway_ipc and
                                       domains["iol_gateway_scanner_exit"] == "PASS" else "IN_PROCESS"),
-            "domains": domains, "families": families}
+            "domains": domains, "families": families, "multi_instrument_replay": multi}
 
 
 def run_focus(output):

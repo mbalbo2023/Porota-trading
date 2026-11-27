@@ -12,6 +12,7 @@ CSS = """
    columns, including decisions/economics, not only catalog readiness. */
 .validation-table-wrap{overflow:auto}.validation-table-wrap table{width:100%;min-width:700px;border-collapse:collapse}.validation-table-wrap th,.validation-table-wrap td{padding:7px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}
 .terminal-table .badge[data-status="NO_VERIFICADO"]{white-space:nowrap;overflow-wrap:normal;font-size:.67rem;padding-inline:5px}
+.unverified-value{display:inline-block;max-width:100%;vertical-align:top;overflow-wrap:anywhere}.unverified-reason{display:block;color:var(--muted);font-size:.72rem;font-weight:400;line-height:1.32;margin-top:3px}.strip-item .unverified-reason{font-size:.66rem}.funnel li{min-width:0}
 @media(max-width:1280px){:root{--sidebar:182px}.status-strip{gap:8px}.content,.global-header,.subnav{padding-left:16px;padding-right:16px}}
 @media(max-width:1024px){:root{--sidebar:0px}.sidebar{display:none;width:210px;box-shadow:0 0 0 100vmax #0008}.sidebar.is-open{display:flex}.menu-button{display:inline-flex}.global-header{position:relative}.subnav{top:0}.terminal-table .secondary{display:none}.terminal-table th:last-child{width:36%}.split-panels{grid-template-columns:1fr}.filters{grid-template-columns:repeat(3,minmax(0,1fr))}.skip-link{left:10px}}
 @media(max-width:800px){.status-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.facts{grid-template-columns:1fr}}

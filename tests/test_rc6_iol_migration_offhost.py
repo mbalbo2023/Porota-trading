@@ -1,4 +1,5 @@
 """Run IOL through the real client, clock guards, PAPER broker and isolated SQLite."""
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -123,9 +124,9 @@ def reader(tmp_path, identity=GGAL):
                            clock=lambda: transport.now), transport
 
 
-@pytest.fixture
-def iol_gateway(tmp_path, tmp_path_factory):
-    market, transport = reader(tmp_path)
+@contextmanager
+def open_fixture_iol_gateway(tmp_path, tmp_path_factory, identity=GGAL):
+    market, transport = reader(tmp_path, identity)
     tick = {"monotonic": 0.0}
 
     def advance(seconds):
@@ -135,7 +136,7 @@ def iol_gateway(tmp_path, tmp_path_factory):
         CollectionPolicy(), clock=lambda: tick["monotonic"], sleep=advance, max_wait_seconds=1)
     directory = tmp_path_factory.mktemp("iol-socket")
     directory.chmod(0o700)
-    server = IOLMarketGateway(market.rest, allowed={"scanner": (GGAL,), "exit_reader": (GGAL,)},
+    server = IOLMarketGateway(market.rest, allowed={"scanner": (identity,), "exit_reader": (identity,)},
         socket_path=directory / "gateway.sock", supervisor_pid=os.getpid(), clock=lambda: transport.now)
 
     class InProcessClient(IOLGatewayClient):
@@ -160,6 +161,12 @@ def iol_gateway(tmp_path, tmp_path_factory):
             thread.join(timeout=5)
             assert not thread.is_alive()
         server.close()
+
+
+@pytest.fixture
+def iol_gateway(tmp_path, tmp_path_factory):
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory) as gateway:
+        yield gateway
 
 
 def register(client, role, pid=None):
@@ -438,6 +445,10 @@ def test_iol_local_eod_archive_does_not_certify_postclose_provider(tmp_path, mon
 
 
 def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
+    replay_iol_spot_paper(tmp_path, monkeypatch, iol_gateway, GGAL)
+
+
+def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_scale=1.0):
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
@@ -445,10 +456,12 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
     from rc6_paper_admission_gate import paper_admission_guard
     from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
 
-    _, client, transport, _ = iol_gateway
+    ticker, family, market, currency, term = identity
+    _, client, transport, _ = gateway
     register(client, "scanner")
     register(client, "exit_reader")
-    scanner = IOLGatewayMarketReader(client, consumer="scanner", trade_clock=lambda row: row["last_updated"],
+    scanner = IOLGatewayMarketReader(client, consumer="scanner",
+                                    trade_clock=lambda row: row["fixture_last_trade_at"],
                                     clock=lambda: transport.now)
     exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
     store = PaperStore(str(tmp_path / "paper.db"))
@@ -458,53 +471,75 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
     monkeypatch.setattr(catalog, "datetime", ReplayClock)
     monkeypatch.setattr(observer, "now_iso", lambda: transport.now.isoformat())
     _preopen(tmp_path, monkeypatch)
-    request = GGAL[0], GGAL[1], GGAL[4]
+    request = ticker, family, term
     assert request not in observer._runtime_readiness(store)[1]
     primary = catalog.normalize_record({
-        "ticker": GGAL[0], "type": GGAL[1], "market": GGAL[2], "currency": GGAL[3],
-        "settlement": GGAL[4], "_discovery_source": "PPI_PRIMARY",
+        "ticker": ticker, "type": family, "market": market, "currency": currency,
+        "settlement": term, "_discovery_source": "PPI_PRIMARY",
     }, None, AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
     with store.connect() as db:
         catalog.persist(db, primary)
         catalog.sync_candidate_universe(db, AT.isoformat())
-    contract = catalog.contract_for(catalog.lookup(store, *request, market=GGAL[2], currency=GGAL[3]))
+    contract = catalog.contract_for(catalog.lookup(store, *request, market=market, currency=currency))
     focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
     assert request in selected
-    assert observer._scanner_opening_capacity(request, focus=focus, feasibility=feasibility) == (True, "")
+    allowed, opening_reason = observer._scanner_opening_capacity(request, focus=focus, feasibility=feasibility)
+    assert (allowed, opening_reason) == (True, "")
     with pytest.raises(IOLRestError, match="IOL_EXACT_CONTRACT_MISMATCH"):
-        scanner.observe(GGAL, contract=replace(contract, settlement="INMEDIATA"))
+        scanner.observe(identity, contract=replace(contract, settlement="INMEDIATA"))
     assert transport.calls == []
     sector_map = tmp_path / "sector-map.csv"
     sector_map.write_text(
         "ticker,family,market,currency,settlement,sector,source,author,effective_at,reviewed\n"
-        "GGAL,ACCIONES,BYMA,ARS,A-24HS,FINANCIERO,TEST_REVIEWED_FIXTURE,RC6_TEST,2026-09-10,true\n")
+        + ",".join((*identity, "TEST_SECTOR", "TEST_REVIEWED_FIXTURE", "RC6_TEST", "2026-09-10", "true"))
+        + "\n")
     monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sector_map))
     monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+    if family == "ETFS":
+        from rc6_performance import costs
+        from tests.test_rc6_etf_cost_cycle import synthetic_terms
+
+        fee_policy = replace(synthetic_terms(), family=family)
+        registered_cost = costs.paper_cost_contract
+
+        def replay_cost(asset_class, cash_currency, decision_at, **fields):
+            key = (fields.get("symbol"), asset_class, fields.get("market"), cash_currency,
+                   fields.get("settlement"))
+            if key == identity:
+                return fee_policy
+            return registered_cost(asset_class, cash_currency, decision_at, **fields)
+
+        monkeypatch.setattr(costs, "paper_cost_contract", replay_cost)
     broker = PaperBroker(store, clock_fn=lambda: transport.now.isoformat(), ai_mode="OFF",
                          economics_mode="SHADOW", session_policy=PaperSessionPolicy(),
                          admission_guard=paper_admission_guard)
     for index, price in enumerate(range(95, 104)):
         transport.now = AT + timedelta(minutes=index)
         ReplayClock.value = transport.now
-        transport.price = float(price)
-        observed = observer._read_scanner_quote(scanner, store, *request, identity=GGAL, priority="HOT")
+        transport.price = round(price * price_scale, 2)
+        trade_at = (transport.now - timedelta(seconds=3)).isoformat()
+        transport.overrides["quote"] = {"fixture_last_trade_at": trade_at}
+        observed = observer._read_scanner_quote(scanner, store, *request, identity=identity, priority="HOT")
         assert observed.metadata_source == "IOL_REST" and not observed.opening_block_reason
+        assert observed.trade_at == trade_at
+        assert observed.book_at == (transport.now - timedelta(seconds=1)).isoformat()
+        assert paper_admission_guard(observed, store) == (True, "")
         store.add_quote(observed)
         assert not _scanner_trade_temporal_rejection(
             observed, broker, store, checked_at=transport.now.isoformat())
         if index == 0:
             action, _, _, fields = broker.decide(observed)
             assert (action, fields["reason_code"]) == ("HOLD", "SIGNAL_WARMUP")
-    broker.on_quote(observed)
-    assert store.open_positions()
-    position = store.open_positions()[0]
+    broker.on_quote(observed, allow_new_openings=allowed, opening_block_reason=opening_reason)
+    position, = store.open_positions()
+    assert tuple(position[field] for field in ("symbol", "asset_class", "market", "currency", "settlement")) == identity
     transport.price = float(Decimal(position["target_price"]) + Decimal("0.20"))
     transport.now += timedelta(minutes=5)
     assert collect_exit_books(exit_reader, store, PaperSessionPolicy(), transport.now.isoformat()) == 0
     closing = store.latest_quote(position)
     assert closing.metadata_source == "IOL_REST" and closing.trade_at is None
     assert closing.opening_block_reason == "IOL_EXIT_OBSERVATION_ONLY"
-    assert transport.calls == ["token"] + ["GGAL", "quote", "depth"] * 9 + ["GGAL", "depth"]
+    assert transport.calls == ["token"] + [ticker, "quote", "depth"] * 9 + [ticker, "depth"]
     key = tuple(position[name] for name in ("symbol", "asset_class", "settlement", "currency", "market"))
     verdict = PositionExitSupervisor(broker, clock_fn=lambda: transport.now.isoformat()).tick({key: closing})[0]
     assert (verdict.state, verdict.cause) == ("CLOSED", "TAKE_PROFIT_PAPER")
@@ -514,9 +549,15 @@ def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
         rows = db.execute("""SELECT DISTINCT json_extract(identity_json,'$.resolution') FROM candle_series
             WHERE json_extract(identity_json,'$.source')='IOL_REST_TRADE_SAMPLE'""").fetchall()
         assert {row[0] for row in rows} == {"1m", "5m"}
-        assert [row[0] for row in db.execute("SELECT side FROM paper_fills ORDER BY id")] == [
-            "BUY_SIMULATED", "SELL_SIMULATED"]
-        assert db.execute("SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()[0] == 0
+        decisions = db.execute("SELECT symbol,action FROM paper_decisions WHERE action='BUY'").fetchall()
+        assert [tuple(row) for row in decisions] == [(ticker, "BUY")]
+        gates = db.execute("SELECT symbol,final_result,paper_id FROM trade_gate_evaluations").fetchall()
+        assert [tuple(row) for row in gates] == [(ticker, "OPENED_SIMULATED", position["paper_id"])]
+        fills = db.execute("SELECT paper_id,side FROM paper_fills ORDER BY id").fetchall()
+        assert [tuple(row) for row in fills] == [(position["paper_id"], "BUY_SIMULATED"),
+                                                (position["paper_id"], "SELL_SIMULATED")]
+        assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
 
 
 def test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers(iol_gateway):

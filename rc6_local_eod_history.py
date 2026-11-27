@@ -22,7 +22,8 @@ from co_market_sessions_hf6 import TZ, byma_source_session_for
 from cv_history_store_adapter_hf6 import HistoricalStore
 
 HEADROOM = 64 * 1024**2
-RESERVE = 2 * 1024**3 + HEADROOM
+DISK_RESERVE = 2 * 1024**3
+RESERVE = DISK_RESERVE + HEADROOM
 MAX_ROWS = 500
 DDL = """
 CREATE TABLE IF NOT EXISTS local_eod_cursor_v1(
@@ -197,12 +198,11 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                     'cursor':ready_cursor,'daily_groups':0,'real_orders_sent':0,
                     'scope':'OBSERVED_BASKET_ONLY','idle_fast_path':True}
         target.parent.mkdir(parents=True, exist_ok=True)
-        available = shutil.disk_usage(target.parent).free if free_bytes is None else free_bytes
-        if available < RESERVE:
+        def available_bytes():
+            return shutil.disk_usage(target.parent).free if free_bytes is None else free_bytes
+
+        if available_bytes() < RESERVE:
             return base | {"state": "DEFERRED_DISK", "reason": "HOST_RESERVE_REQUIRED"}
-        if sum(Path(str(target)+suffix).stat().st_size for suffix in ('','-wal','-shm')
-               if Path(str(target)+suffix).exists()) > 2*1024**3-HEADROOM:
-            return base | {"state": "BLOCKED", "reason": "COLD_ARCHIVE_PHYSICAL_BUDGET"}
         with target.with_suffix(target.suffix+'.local-eod.lock').open('a+') as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             prepare_deadline=time.monotonic()+15
@@ -216,8 +216,6 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 write.executescript(DDL)
                 write.execute('PRAGMA busy_timeout=200')
                 write.execute('PRAGMA cache_size=-2048')
-                page_size=write.execute('PRAGMA page_size').fetchone()[0]
-                write.execute('PRAGMA max_page_count='+str(2*1024**3//page_size))
                 write.execute('BEGIN IMMEDIATE')
                 prior = write.execute('SELECT cursor FROM local_eod_cursor_v1 WHERE source_id=?',(source_id,)).fetchone()
                 cursor = prior[0] if prior else 0
@@ -337,6 +335,11 @@ def consolidate(source_path, history_path, *, as_of, batch_size=MAX_ROWS, free_b
                 if before_commit:
                     before_commit()
                 write_guard()
+                # The initial headroom covers a bounded batch. Roll it back
+                # if concurrent disk usage consumes the host reserve.
+                if available_bytes() < DISK_RESERVE:
+                    write.rollback()
+                    return base | {"state": "DEFERRED_DISK", "reason": "HOST_RESERVE_REQUIRED"}
                 return base | {'state':state,'imported':imported,'rejected':rejected,'cursor':cursor,
                     'daily_groups':len(dirty),'real_orders_sent':0,'scope':'OBSERVED_BASKET_ONLY'}
 

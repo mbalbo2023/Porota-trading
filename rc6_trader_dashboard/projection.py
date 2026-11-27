@@ -271,6 +271,23 @@ class Projection:
             return default
 
     @cached_property
+    def market_provider(self):
+        value = os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI")
+        return value if value in {"IOL_REST", "PPI"} else UNKNOWN
+
+    @cached_property
+    def iol_authentication(self):
+        if self.market_provider != "IOL_REST":
+            return {}
+        row = self.store.one("api_health", "component=?", ("IOL_REST_AUTH",))
+        fresh = freshness(row.get("checked_at"), self.now, 180)
+        if fresh != "FRESH" or row.get("state") not in {"VERDE", "ROJO", "AMARILLO"}:
+            return {"state": UNKNOWN, "reason": "El owner del Gateway IOL no publicó una comprobación de sesión vigente."}
+        if row["state"] == "AMARILLO":
+            return {"state": UNKNOWN, "reason": "La observación del Gateway IOL aún no acredita la vigencia de la sesión REST."}
+        return {"state": row["state"], "reason": row.get("detail")}
+
+    @cached_property
     def runtime(self):
         state = self.store.one("observer_state")
         # The PAPER scanner deliberately sleeps for its configured interval
@@ -796,8 +813,10 @@ class Projection:
         for component in paper_readiness_components:
             budgets[component] = readiness_budget
         cols = self.store.columns("api_health")
-        order = ("CASE component WHEN 'PPI_PRODUCTION_MARKETDATA' THEN 0 "
-                 "WHEN 'PPI_PRODUCTION_AUTH' THEN 1 ELSE 2 END,component") if "component" in cols else ""
+        iol_profile = self.market_provider == "IOL_REST"
+        components = ("IOL_REST_MARKETDATA", "IOL_REST_AUTH") if iol_profile else ("PPI_PRODUCTION_MARKETDATA", "PPI_PRODUCTION_AUTH")
+        order = (f"CASE component WHEN '{components[0]}' THEN 0 "
+                 f"WHEN '{components[1]}' THEN 1 ELSE 2 END,component") if "component" in cols else ""
         # Reserve the first row for IOL. Its collector writes mounted JSON,
         # not source_sync; read the same scoped projection as /api/dashboard/truth.
         page = self.store.page("api_health", order=order, offset=max(0, self.offset - 1),
@@ -806,7 +825,8 @@ class Projection:
         for row in page.rows:
             component = str(row.get("component") or "")
             observed = row.get("state") or UNKNOWN
-            primary = any(str(row.get(key, "")).upper().startswith("PPI") for key in ("source", "component"))
+            ppi_attribution = any(str(row.get(key, "")).upper().startswith("PPI") for key in ("source", "component"))
+            primary = component in components if iol_profile else ppi_attribution and self.market_provider == "PPI"
             checked = row.get("checked_at")
             budget = budgets.get(component, 180)
             state_age = age(checked, self.now)
@@ -819,7 +839,14 @@ class Projection:
             row.update(check_freshness=freshness(checked, self.now, budget),
                        data_freshness=UNKNOWN, data_quality="NO_VERIFICADO",
                        decision_effect="IDENTITY_OR_MARKET_INPUT" if primary else "OBSERVE_ONLY")
-            if component == "PPI_PRODUCTION_MARKETDATA":
+            if iol_profile and ppi_attribution:
+                row.update(role="HISTORICAL_CONTEXT", state="OPERATIONAL_ACCESS_DISABLED",
+                           freshness=freshness(checked, self.now, budget), decision_effect="HISTORICAL_PROVENANCE",
+                           data_quality="HISTORICAL_CHECK_ONLY", cadence="NO_OPERATIONAL_ACCESS",
+                           reason="La huella de PPI se conserva con su procedencia histórica. El perfil RC6 usa IOL REST.")
+                continue
+            if component in {"PPI_PRODUCTION_MARKETDATA", "IOL_REST_MARKETDATA"} and (
+                    not iol_profile or observed == "VERDE" and freshness(checked, self.now, budget) == "FRESH"):
                 row.update(provider_clock=self.runtime.get("last_market_data_at"),
                            data_freshness=self.runtime["market_freshness"],
                            data_quality="CURRENT_SAMPLES_ONLY")
@@ -833,6 +860,10 @@ class Projection:
                 row.update(cadence="OBSERVER_SESSION", freshness=runtime["heartbeat_freshness"],
                            state=("VERDE" if runtime.get("ppi_auth") == "OK" else
                                   "ROJO" if runtime.get("ppi_auth") == "ERROR" else UNKNOWN) if current else UNKNOWN)
+            elif iol_profile and component == "IOL_REST_AUTH":
+                auth = self.iol_authentication
+                row.update(cadence="GATEWAY_SESSION_OBSERVATION", freshness=freshness(checked, self.now, budget),
+                           state=auth["state"], reason=auth["reason"])
             elif component == "GEMINI_DECISION":
                 # The AI check is event-driven; an old GREEN is historical.
                 current = freshness(checked, self.now, 180) == "FRESH"
@@ -864,7 +895,8 @@ class Projection:
                                    order="last_attempt_at DESC", limit=1)
             observed = sync.rows[0] if sync.rows else {}
             breakdown = ", ".join(f"{key}={value}" for key, value in sorted(quote_states.items()))
-            page.rows.insert(0, {"component": "IOL · caché complementario", "role": "COMPLEMENT / OBSERVE_ONLY",
+            page.rows.insert(0, {"component": "IOL · caché de referencia" if iol_profile else "IOL · caché complementario",
+                                 "role": "REFERENCE / OBSERVE_ONLY" if iol_profile else "COMPLEMENT / OBSERVE_ONLY",
                                  "state": state, "observed_state": quotes.get("state") or UNKNOWN,
                                  "freshness": "FRESH" if current else "STALE" if quote_clock or family_clock else UNKNOWN,
                                  "data_freshness": freshness(quote_clock, self.now, 180),
@@ -874,6 +906,7 @@ class Projection:
                                  "cadence": "MOUNTED_IOL_CACHE; max 180s; sin llamada al proveedor",
                                  "lkg": families.get("last_known_good_at"), "scope": "IOL quotes + families (por sección)",
                                  "source": iol["source"], "decision_effect": "OBSERVE_ONLY",
+                                 "reason": "El Gateway IOL acredita la fuente operativa por separado." if iol_profile else None,
                                  "detail": f"Familias {families.get('state')}; reloj {family_clock}; secciones no disponibles: " +
                                            (", ".join(k for k, v in sections.items() if v.get("state") == "SOURCE_UNAVAILABLE") or "ninguna") +
                                            "; source_sync IOL: " + (observed.get("status") or "SIN_FILAS")})
@@ -881,7 +914,7 @@ class Projection:
             if self.offset == 0:
                 page.rows += [{"component": label, "role": role, "state": UNKNOWN, "scope": label,
                                "source": "api_health", "freshness": UNKNOWN} for label, role in (
-                    ("PPI", "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
+                    (("IOL REST" if iol_profile else "PPI"), "PRIMARY"), ("BYMA public", "OBSERVE_ONLY"), ("A3 / ROFEX", "OBSERVE_ONLY"))]
             page.total = None
             page.state = UNKNOWN
         else:

@@ -130,10 +130,10 @@ def setup(tmp_path, monkeypatch, *, ticker, family, settlement="A-24HS",
     return store, paper_id, key, decision, book, cache, clock
 
 
-def reviewed_market_entry(tmp_path, monkeypatch, family):
+def reviewed_market_entry(tmp_path, monkeypatch, family, *, symbol=None):
     from test_rc6_fixed_income_runtime import AT as ENTRY_AT, YESTERDAY, reviewed_bundle
 
-    opening, evidence, manifest = reviewed_bundle(tmp_path, family, settlement="INMEDIATA")
+    opening, evidence, manifest = reviewed_bundle(tmp_path, family, settlement="INMEDIATA", symbol=symbol)
     monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", manifest)
     sector_map = tmp_path / "reviewed-sectors.csv"
     sector_map.write_text(
@@ -150,15 +150,21 @@ def reviewed_market_entry(tmp_path, monkeypatch, family):
 
 @pytest.mark.parametrize("family", ["BONOS", "OBLIGACIONES"])
 def test_reviewed_market_lot_buys_then_sells_after_signer_ack(tmp_path, monkeypatch, family):
+    opening, key, book, clock = reviewed_market_entry(tmp_path, monkeypatch, family)
+    store = PaperStore(str(tmp_path / "roundtrip.sqlite"))
+    assert_reviewed_market_roundtrip(store, monkeypatch, opening, key, book, clock)
+
+
+def assert_reviewed_market_roundtrip(store, monkeypatch, opening, key, book, clock, *,
+                                    admission_guard=None):
     from bm_exit_supervisor import PositionExitSupervisor
     from dh_paper_dynamic_risk_gate_hf6 import open_stop_risk
     from rc6_fixed_income_sale_witness import ExitReaderSaleWitness, read_witness
 
-    opening, key, book, clock = reviewed_market_entry(tmp_path, monkeypatch, family)
     entry_at = datetime.fromisoformat(opening.observed_at)
-    store = PaperStore(str(tmp_path / "roundtrip.sqlite"))
     at = {"now": entry_at}
-    broker = PaperBroker(store, initial_cash="1000000", clock_fn=lambda: at["now"].isoformat())
+    broker = PaperBroker(store, initial_cash="1000000", clock_fn=lambda: at["now"].isoformat(),
+                         admission_guard=admission_guard)
     store.add_quote(opening)
     with monkeypatch.context() as missing_signer:
         missing_signer.setattr(causal, "PINNED_DECISION_SIGNER_KEY_SHA256", None)
@@ -167,6 +173,7 @@ def test_reviewed_market_lot_buys_then_sells_after_signer_ack(tmp_path, monkeypa
     broker.on_quote(opening)
     broker.on_quote(opening)
     position, = store.open_positions()
+    assert position["symbol"] == opening.symbol
     paper_id = position["paper_id"]
     features = json.loads(position["features_json"])
     assert Decimal(position["quantity"]) == Decimal(100)
@@ -186,7 +193,8 @@ def test_reviewed_market_lot_buys_then_sells_after_signer_ack(tmp_path, monkeypa
                          ppi_native_rest_book=first, **authority.native_book_fields(first, opening.contract.key))
     at["now"] = horizon
     store = PaperStore(store.path)
-    broker = PaperBroker(store, initial_cash="1000000", clock_fn=lambda: at["now"].isoformat())
+    broker = PaperBroker(store, initial_cash="1000000", clock_fn=lambda: at["now"].isoformat(),
+                         admission_guard=admission_guard)
     supervisor = PositionExitSupervisor(broker, max_hold_minutes=360,
                                         clock_fn=lambda: at["now"].isoformat())
     pending = supervisor.supervise(position, exit_quote, horizon.isoformat())
@@ -209,7 +217,8 @@ def test_reviewed_market_lot_buys_then_sells_after_signer_ack(tmp_path, monkeypa
         assert [row[0] for row in db.execute("SELECT side FROM paper_fills ORDER BY id")] == [
             "BUY_SIMULATED", "SELL_SIMULATED"]
         assert snapshot_at(db, paper_id, at["now"]).residual_nominal == 0
-        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+        assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
+            "PRODUCTION_PAPER", 0)
     assert read_witness(store, decision)["payload"]["book2"] == first_after_ack
 
 

@@ -992,3 +992,45 @@ def test_home_attention_keeps_shadow_and_primary_source_in_five_item_preview():
     assert "Autenticación PPI sin estado OK" in html
     assert "Heartbeat runtime sin verificación fresca" in html
     assert "T9" not in html  # Detailed position alerts are below the first five.
+
+
+def test_unverified_cells_and_modal_keep_reason_visible_and_strip_credentials():
+    row = {"symbol": "GGAL", "state": "NO_VERIFICADO", "state_reason": "Falta la publicación de entrada PAPER.",
+           "as_of": "2026-10-05 16:00:00", "score": "garbage", "score_reason": "api_token=private",
+           "workers": [{"worker": "Lector", "state": "NO_VERIFICADO"}]}
+    html = table(Page("fixture", [row], 1, "AVAILABLE"), "Estado",
+                 fields("state|Estado|status;as_of|Reloj del proveedor|time;score|Puntaje|number"),
+                 fields("workers|Salud de los lectores"), identity=False)
+    doc = BeautifulSoup(html, "html.parser")
+    reasons = [item.get_text(" ", strip=True) for item in doc.select(".unverified-reason")]
+    assert any("publicación de entrada PAPER" in reason for reason in reasons)
+    assert any("fecha con zona horaria" in reason for reason in reasons)
+    assert any("motivo sensible" in reason for reason in reasons)
+    assert any("lectores o supervisores" in reason for reason in reasons)
+    assert "api_token=private" not in html
+    assert all(item.select_one(".unverified-reason") for item in doc.select(".unverified-value"))
+
+
+def test_iol_profile_displays_live_authority_and_ppi_historical_provenance(database, monkeypatch):
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    with sqlite3.connect(database) as connection:
+        connection.executemany("INSERT OR REPLACE INTO api_health VALUES(?,?,?,?,?,?)", [
+            ("PPI_PRODUCTION_MARKETDATA", "VERDE", "captura previa", STAMP, STAMP, "PPI"),
+            ("IOL_REST_MARKETDATA", "AMARILLO", "falta reloj", STAMP, None, "IOL REST"),
+            ("IOL_REST_AUTH", "AMARILLO", "sesión no observada", STAMP, None, "IOL REST"),
+        ])
+    with Store(database, now=NOW) as store:
+        projection = Projection(store)
+        sources = {row["component"]: row for row in projection.sources().rows}
+        assert sources["IOL_REST_MARKETDATA"]["role"] == "PRIMARY"
+        assert sources["IOL_REST_MARKETDATA"]["provider_clock"] is None
+        assert sources["PPI_PRODUCTION_MARKETDATA"]["role"] == "HISTORICAL_CONTEXT"
+        assert sources["PPI_PRODUCTION_MARKETDATA"]["state"] == "OPERATIONAL_ACCESS_DISABLED"
+        assert projection.iol_authentication["state"] == "NO_VERIFICADO"
+    html, _ = build_page("/sistema/integraciones", {}, database)
+    doc = BeautifulSoup(html, "html.parser")
+    strip = doc.select_one("#operational-strip")
+    assert "Autenticación IOL REST" in strip.get_text(" ", strip=True)
+    assert "Autenticación PPI" not in strip.get_text(" ", strip=True)
+    assert any("observación IOL REST vigente" in reason.get_text(" ", strip=True)
+               for reason in strip.select(".unverified-reason"))
