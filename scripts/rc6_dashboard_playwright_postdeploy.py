@@ -53,7 +53,7 @@ UNKNOWN_AUDIT = r"""root => {
         const definition = element.closest('dd');
         const card = element.closest('.metric-card');
         const header = element.closest('.strip-item');
-        const label = normalize(cell?.dataset.label || definition?.previousElementSibling?.textContent ||
+        const label = normalize(definition?.previousElementSibling?.textContent || cell?.dataset.label ||
             card?.querySelector('h2')?.textContent || header?.querySelector('b')?.textContent);
         if (/reloj|heartbeat|hora|fecha|ejecucion|cadencia/.test(label)) return 'CLOCK';
         if (/proveedor|fuente|autoridad|procedencia/.test(label)) return 'SOURCE';
@@ -64,6 +64,16 @@ UNKNOWN_AUDIT = r"""root => {
         if (/ticker|nombre|mercado|familia|moneda|settlement|contrato|instrumento/.test(label)) return 'IDENTITY';
         if (element.closest('nav')) return 'NAVIGATION';
         return cell || definition ? 'OTHER_FIELD' : 'PAGE_TEXT';
+    }
+    function currentOpenCapacityReason(element) {
+        if (normalize(element.textContent) !== 'capacidad open vigente no verificada') return false;
+        const view = element.closest('#terminal-content')?.dataset.view;
+        if (view === 'en-vivo/resumen' && element.matches('.preview-list > li > small')) {
+            return normalize(element.closest('section')?.querySelector(':scope > h2')?.textContent) === 'capacidad & coverage';
+        }
+        return ['en-vivo/capacidad', 'universo/coverage'].includes(view) &&
+            element.matches('dialog.row-dialog dl.facts > div > dd') &&
+            normalize(element.previousElementSibling?.textContent) === 'motivo';
     }
     const tally = {total: 0, explained: 0, unexplained: 0, reason_types: {}, unexplained_fields: {}};
     const bump = (map, key, count) => { map[key] = (map[key] || 0) + count; };
@@ -80,6 +90,11 @@ UNKNOWN_AUDIT = r"""root => {
         if (hasVisibleText(explanation) && normalize(explanation.textContent).replace(textPattern, '').length > 10) {
             tally.explained += count;
             bump(tally.reason_types, 'VISIBLE_REASON', count);
+            continue;
+        }
+        if (currentOpenCapacityReason(el)) {
+            tally.explained += count;
+            bump(tally.reason_types, 'VISIBLE_OPEN_CAPACITY_REASON', count);
             continue;
         }
         const sameField = el.closest('dd,td,.strip-item,.metric-card,li,.notice,.source-line,p') || el;
@@ -350,6 +365,44 @@ def audit_route(page, base_url, path, view, row):
         row["unverified_labels"] = page.locator("body").evaluate(UNKNOWN_AUDIT)
 
 
+def audit_milestones(page, receipt):
+    from playwright.sync_api import Error, TimeoutError, expect
+
+    scope = page.locator("#terminal-content section[aria-label='Hitos de validación']")
+    receipt["milestone_details"] = []
+    findings = []
+    for code in ("M" + str(index) for index in range(12)):
+        phase = "SECTION"
+        try:
+            expect(scope).to_be_visible()
+            phase = "HEADING"
+            heading = scope.get_by_role("heading", level=3, name=re.compile(r"^" + code + r" · "))
+            expect(heading).to_be_visible()
+            panel = heading.locator("xpath=..")
+            dialog_id = "validation-" + code + "-dialog"
+            button = panel.locator("button[data-detail-dialog='" + dialog_id + "']")
+            dialog = panel.locator("dialog[id='" + dialog_id + "']")
+            phase = "BUTTON_SCROLL"
+            button.evaluate("element => element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+            phase = "BUTTON_CLICK"
+            button.click()
+            phase = "DIALOG_OPEN"
+            expect(dialog).to_be_visible()
+            require(dialog.evaluate("element => element.open && element.matches(':modal')"), "DASHBOARD_MILESTONE_NOT_MODAL")
+            phase = "VISIBLE_LABELS"
+            findings.append(dialog.evaluate(UNKNOWN_AUDIT))
+            phase = "DIALOG_CLOSE"
+            page.keyboard.press("Escape")
+            expect(dialog).to_be_hidden()
+            receipt["milestone_details"].append(code)
+        except (AssertionError, Error, ValueError) as error:
+            category = ("TIMEOUT" if isinstance(error, TimeoutError) else "ASSERTION" if
+                        isinstance(error, AssertionError) else "BROWSER_ERROR" if isinstance(error, Error) else "PROOF_FAILED")
+            receipt["milestone_failure"] = {"code": code, "phase": phase, "category": category}
+            raise ValueError("DASHBOARD_MILESTONE_UNVERIFIED") from None
+    receipt["milestone_unverified_labels"] = unknown_rollup(findings)
+
+
 def navigate(base_url, receipt):
     from playwright.sync_api import Error, expect, sync_playwright
 
@@ -405,19 +458,7 @@ def navigate(base_url, receipt):
             page.goto(base_url + "/sistema/evidencia", wait_until="domcontentloaded", timeout=10_000)
             page.locator("a[href='/sistema/validacion']").first.click()
             expect(page.locator("#terminal-content")).to_have_attribute("data-view", "sistema/validacion")
-            receipt["milestone_details"] = []
-            milestones = []
-            for code in ("M" + str(index) for index in range(12)):
-                heading = page.get_by_role("heading", name=re.compile(r"^" + code + r" · "))
-                expect(heading).to_be_visible()
-                panel = heading.locator("..")
-                panel.get_by_role("button", name=re.compile(r"^Detalle " + code + r" · ")).click()
-                expect(panel.locator("dialog")).to_be_visible()
-                milestones.append(panel.locator("dialog").evaluate(UNKNOWN_AUDIT))
-                page.keyboard.press("Escape")
-                expect(panel.locator("dialog")).to_be_hidden()
-                receipt["milestone_details"].append(code)
-            receipt["milestone_unverified_labels"] = unknown_rollup(milestones)
+            audit_milestones(page, receipt)
 
             page.set_viewport_size({"width": 800, "height": 1100})
             page.locator("#terminal-menu").click()
