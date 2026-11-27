@@ -1,9 +1,8 @@
 """Colector intradiario y scanner de scalping PAPER v17 HF3.
 
-Usa exclusivamente ``MarketData/Intraday`` mediante la fachada PPI de solo
-lectura. No expone métodos de órdenes ni convierte datos incompletos en fills.
-La señal se calcula con precios confirmados y un libro ejecutable. El volumen
-recibido se conserva como diagnóstico sin inferir su unidad ni acumulación.
+El perfil PPI calcula señales con su serie intradiaria y libro ejecutable.
+El perfil IOL observa las muestras de trades verificadas por el scanner.
+Las muestras rotativas carecen de un volumen de intervalo apto para scalping.
 """
 from __future__ import annotations
 
@@ -16,13 +15,14 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
-from bs_instrument_contracts import aware_datetime, family_name, utc_microseconds
+from bs_instrument_contracts import aware_datetime, decimal_value, family_name, utc_microseconds
 from rc6_operator_family_hold import paper_entry_hold_reason
 from rc6_signal_contracts import (
     CONFIRMED_INTRADAY_PRICE_STATES,
@@ -1319,21 +1319,83 @@ def _heartbeat(store, *, at, state, cursor, selected=0, successful=0, failed=0,
 
 
 
+def _iol_observed_samples(store, at, limit):
+    """Use the scanner's validated trades as observations, with no new reads."""
+    now = aware_datetime(at)
+    floor = now - timedelta(seconds=INTRADAY_SOURCE_MAX_AGE_SECONDS)
+    with closing(store.connect()) as connection:
+        rows = connection.execute("""SELECT row_key,body_hash,recorded_at,body_json
+          FROM historical_raw_archive
+          WHERE origin='IOL_REST_TRADE_SAMPLE' AND quality='SAMPLED'
+            AND recorded_at BETWEEN ? AND ?
+          ORDER BY id DESC LIMIT ?""", (_stamp(floor), _stamp(now), limit)).fetchall()
+    identities, accepted = set(), 0
+    for row_key, body_hash, received_at, body_json in rows:
+        try:
+            body = json.loads(body_json)
+            identity = tuple(body["identity"])
+            received = aware_datetime(received_at)
+            trade_at = aware_datetime(body["trade_at"])
+            if (len(identity) != 5 or identity[1] not in SCALPING_STRATEGY_FAMILIES
+                    or not all(isinstance(part, str) and part for part in identity)
+                    or not floor <= trade_at <= received <= now
+                    or (body["wire_sha256"] != row_key or not re.fullmatch(r"[0-9a-f]{64}", row_key))
+                    or hashlib.sha256(body_json.encode("utf-8")).hexdigest() != body_hash):
+                continue
+            decimal_value(body["price"], "IOL trade price", positive=True)
+        except (ValueError, TypeError, KeyError, ArithmeticError):
+            continue
+        accepted += 1
+        identities.add(identity)
+    return len(identities), accepted, len(rows) - accepted
+
+
+def _observe_iol_scalping(store, stop, *, clock_fn, interval, batch_limit):
+    # Observations from a rotating scanner do not establish interval volume.
+    # Keep them out of the legacy native signal policy and out of the ledger.
+    try:
+        while not stop.is_set():
+            at = aware_datetime(clock_fn())
+            if not _market_open(at):
+                _heartbeat(store, at=at, state="WAITING_MARKET", cursor=0,
+                           detail="IOL REST · espera rueda PAPER")
+                stop.wait(20)
+                continue
+            try:
+                keys, samples, rejected = _iol_observed_samples(store, at, batch_limit)
+                reason = "IOL_INTERVAL_VOLUME_UNVERIFIED" if samples else "IOL_FRESH_TRADE_SAMPLE_UNAVAILABLE"
+                _heartbeat(store, at=at, state="OBSERVING_IOL", cursor=0,
+                           selected=keys, successful=samples, failed=rejected,
+                           detail=f"source=IOL_REST_TRADE_SAMPLE; entry=HOLD; reason={reason}")
+            except sqlite3.OperationalError:
+                _heartbeat(store, at=at, state="DEGRADED", cursor=0, failed=1,
+                           detail="IOL_SCALPING_SAMPLE_READ_UNAVAILABLE")
+            stop.wait(interval)
+    finally:
+        _heartbeat(store, at=clock_fn(), state="STOPPED", cursor=0)
+
+
 def run_worker(store, stop, *, clock_fn):
     """Proceso independiente; un error de PPI nunca detiene reloj ni salidas."""
+    from rc6_iol_market_gateway import iol_primary_enabled
+
+    init_schema(store)
+    interval = max(60, int(os.getenv(
+        "PAPER_INTRADAY_SCAN_SECONDS", str(DEFAULT_INTRADAY_SCAN_SECONDS))))
+    batch_limit = max(8, min(40, int(os.getenv(
+        "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT)))))
+    if iol_primary_enabled():
+        return _observe_iol_scalping(store, stop, clock_fn=clock_fn,
+                                     interval=interval, batch_limit=batch_limit)
+
     from bd_ppi_readonly_guard import classify_read_error, instrument_not_found
     from rc6_ppi_gateway_reader_adapter import connect_paper_gateway_reader
-    init_schema(store)
     cursor = 0
     reader = None
     next_login = 0.0
     resume_reads_at = 0.0
     last_backpressure = None
     capability_cache = IntradayCapabilityCache()
-    interval = max(60, int(os.getenv(
-        "PAPER_INTRADAY_SCAN_SECONDS", str(DEFAULT_INTRADAY_SCAN_SECONDS))))
-    batch_limit = max(8, min(40, int(os.getenv(
-        "PAPER_INTRADAY_BATCH_LIMIT", str(DEFAULT_INTRADAY_BATCH_LIMIT)))))
     # Each rotating batch gets a second, fresh DB-selected pass on the next
     # cycle before the cursor advances. This makes PENDING_LIVE_CONFIRMATION a
     # bounded warm-up state instead of waiting for a full-universe rotation.

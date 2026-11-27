@@ -175,7 +175,7 @@ def register(client, role, pid=None):
     assert registration["registered_role"] == role
 
 
-def test_runtime_iol_profile_excludes_ppi_and_its_market_workers(tmp_path, monkeypatch):
+def test_runtime_iol_profile_starts_local_workers_without_ppi(tmp_path, monkeypatch):
     import bv_paper_runtime as runtime
 
     database = tmp_path / "paper.db"
@@ -196,14 +196,60 @@ def test_runtime_iol_profile_excludes_ppi_and_its_market_workers(tmp_path, monke
     monkeypatch.setattr(runtime, "run_clock", inspect_clock)
     assert runtime.main([]) == 0
     assert set(controller) == {"iol_gateway", "scanner", "exit_reader", "dynamic_shadow",
-                               "candles", "notifications"}
+                               "candles", "notifications", "intraday_scalping", "caucion_cash_sweep"}
     assert controller["iol_gateway"][-1] == "--iol-gateway-worker"
-    for worker in ("--ppi-gateway-worker", "--intraday-scalping-worker", "--caucion-cash-sweep-worker"):
-        with pytest.raises(ValueError, match="RC6_WORKER_MARKET_PROVIDER_MISMATCH"):
-            runtime.main([worker])
+    with pytest.raises(ValueError, match="RC6_WORKER_MARKET_PROVIDER_MISMATCH"):
+        runtime.main(["--ppi-gateway-worker"])
     with PaperStore(str(database)).connect() as connection:
         assert tuple(connection.execute("SELECT mode,real_orders_sent FROM observer_state").fetchone()) == (
             "PRODUCTION_PAPER", 0)
+
+
+def test_iol_workers_observe_samples_and_hold_unqualified_cauciones(tmp_path, monkeypatch):
+    import bv_paper_runtime as runtime
+    import cf_intraday_scalping as scalping
+    import di_caucion_cash_sweep_runtime_hf6 as cauciones
+    import rc6_ppi_gateway_reader_adapter as ppi
+
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("PAPER_SCALPING_MODE", "ACTIVE_PAPER")
+    monkeypatch.setenv("PAPER_CAUCION_SWEEP_MODE", "ACTIVE_PAPER")
+    monkeypatch.setattr(runtime, "broker_from_environment",
+                        lambda *a, **kw: pytest.fail("IOL observation constructed a broker"))
+    monkeypatch.setattr(ppi, "connect_paper_gateway_reader",
+                        lambda *a, **kw: pytest.fail("IOL observation opened PPI"))
+    store = PaperStore(str(tmp_path / "paper.db"))
+    market, transport = reader(tmp_path, GGAL)
+    assert record_iol_trade_sample(store, market.observe(GGAL), as_of=AT)
+    initial_calls = list(transport.calls)
+
+    class ObserveOneCycle(Event):
+        def __init__(self, table):
+            super().__init__()
+            self.table = table
+            self.row = None
+
+        def wait(self, timeout=None):
+            with store.connect() as conn:
+                self.row = dict(conn.execute(f"SELECT * FROM {self.table} WHERE id=1").fetchone())
+            self.set()
+            return True
+
+    scalp = ObserveOneCycle("intraday_scalping_worker_state")
+    scalping.run_worker(store, scalp, clock_fn=lambda: AT)
+    assert (scalp.row["state"], scalp.row["selected"], scalp.row["successful"],
+            scalp.row["candidates"]) == ("OBSERVING_IOL", 1, 1, 0)
+    assert "IOL_INTERVAL_VOLUME_UNVERIFIED" in scalp.row["detail"]
+
+    sweep = ObserveOneCycle("paper_caucion_cash_sweep_state")
+    cutoff = cauciones.paper_schedule(AT)["order_cutoff_at"]
+    cauciones.run_worker(store, sweep, clock_fn=lambda: cutoff - timedelta(minutes=1))
+    assert (sweep.row["state"], sweep.row["code"], sweep.row["real_orders_sent"]) == (
+        "HOLD", "IOL_REPO_BOOK_CLOCK_UNVERIFIED", 0)
+    assert transport.calls == initial_calls
+    with store.connect() as conn:
+        assert conn.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM paper_cauciones").fetchone()[0] == 0
 
 
 def test_runtime_parent_registers_iol_scanner_and_exit_on_owner_rotation(tmp_path, monkeypatch, iol_gateway):
@@ -502,7 +548,7 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
-    from bv_paper_runtime import collect_exit_books
+    from bv_paper_runtime import _collect_iol_exit_round
     from rc6_dynamic_universe.common import digest
     from rc6_dynamic_universe.orchestrator import EnginePolicy, UniverseOrchestrator
     from rc6_dynamic_universe.runtime import read_runtime
@@ -622,12 +668,19 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     reached = funnel["telemetry"][0]
     assert tuple(reached["identity"]) == identity and reached["state"] == "HOT"
     assert reached["signal_result"] == "SAMPLES_READY" and not reached["entry_authority"]
+    idle, detail, _ = _collect_iol_exit_round(
+        exit_reader, store, PaperSessionPolicy(), transport.now, Event(),
+        beat=lambda: None, deadline_seconds=5)
+    assert idle == "READY" and "budget_round=IDLE_NO_OPEN_POSITIONS" in detail
     broker.on_quote(observed, allow_new_openings=allowed, opening_block_reason=opening_reason)
     position, = store.open_positions()
     assert tuple(position[field] for field in ("symbol", "asset_class", "market", "currency", "settlement")) == identity
     transport.price = float(Decimal(position["target_price"]) + Decimal("0.20"))
     transport.now += timedelta(minutes=5)
-    assert collect_exit_books(exit_reader, store, PaperSessionPolicy(), transport.now.isoformat()) == 0
+    ready, detail, _ = _collect_iol_exit_round(
+        exit_reader, store, PaperSessionPolicy(), transport.now, Event(),
+        beat=lambda: None, deadline_seconds=5)
+    assert ready == "READY" and "verified_books=1; budget_round=COMPLETE" in detail
     closing = store.latest_quote(position)
     assert closing.metadata_source == "IOL_REST" and closing.trade_at is None
     assert closing.opening_block_reason == "IOL_EXIT_OBSERVATION_ONLY"

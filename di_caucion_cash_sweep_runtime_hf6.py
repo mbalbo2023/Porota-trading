@@ -533,6 +533,8 @@ def _existing_daily_allocation(store, request_id):
 def run_worker(store, stop, *, clock_fn):
     """Canonical PAPER child: local DB/evidence only, with no order route."""
     from bv_paper_runtime import broker_from_environment
+    from rc6_iol_market_gateway import iol_primary_enabled
+
     assert_cash_sweep_invariants()
     init_runtime_schema(store)
     interval = max(15, int(os.getenv("PAPER_CAUCION_SWEEP_INTERVAL_SECONDS", "30")))
@@ -540,7 +542,8 @@ def run_worker(store, stop, *, clock_fn):
         "PAPER_CAUCION_SWEEP_START_MINUTES_BEFORE_CLOSE", "30"))
     cutoff_minutes = int(os.getenv(
         "PAPER_CAUCION_SWEEP_CUTOFF_MINUTES_BEFORE_CLOSE", "5"))
-    broker = broker_from_environment(store, clock_fn=clock_fn)
+    iol = iol_primary_enabled()
+    broker = None if iol else broker_from_environment(store, clock_fn=clock_fn)
     try:
         while not stop.is_set():
             at = aware_datetime(clock_fn())
@@ -562,6 +565,10 @@ def run_worker(store, stop, *, clock_fn):
                     _persist_runtime(store, at=at, state="WAITING_WINDOW",
                                      code="SWEEP_WINDOW_CLOSED",
                                      detail="PAPER internal EOD cutoff passed; no new attempt")
+                elif iol:
+                    _persist_runtime(store, at=at, state="HOLD",
+                                     code="IOL_REPO_BOOK_CLOCK_UNVERIFIED",
+                                     detail="IOL REST · el libro de referencia carece de reloj del proveedor.")
                 else:
                     day = at.astimezone(TZ).date().isoformat()
                     request_id = f"paper-caucion-cash-sweep:{day}:ARS:v1"

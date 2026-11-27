@@ -91,7 +91,8 @@ DOMAINS = {
     "native_gateway_scanner": (NATIVE_REPLAY,),
     "iol_gateway_scanner_exit": (
         LAB + "::test_ggal_paper_ledger_and_exit",
-        LAB + "::test_runtime_iol_profile_excludes_ppi_and_its_market_workers",
+        LAB + "::test_runtime_iol_profile_starts_local_workers_without_ppi",
+        LAB + "::test_iol_workers_observe_samples_and_hold_unqualified_cauciones",
         LAB + "::test_runtime_parent_registers_iol_scanner_and_exit_on_owner_rotation",
         LAB + "::test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach",
         LAB + "::test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock",
