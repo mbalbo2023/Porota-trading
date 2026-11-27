@@ -298,6 +298,50 @@ def trace_live_ready(conn, now, market_open, gate_allowed, gate_reason):
         conn.set_progress_handler(None, 0)
 
 
+def check_ready_instruments(conn, now, market_open):
+    from types import SimpleNamespace
+    from bu_instrument_catalog import iol_spot_catalog
+    from rc6_paper_admission_gate import _iol_spot_admission_reason
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+
+    class ReadOnlyStore:
+        def connect(self):
+            state = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
+            state.row_factory = sqlite3.Row
+            state.execute("PRAGMA query_only=ON")
+            return state
+
+    results = []
+    for row in conn.execute("""
+        SELECT r.ticker,r.instrument_type,r.market,r.currency,r.settlement,r.checked_at,
+               f.status AS primary_status,f.capability,f.settlement_source,f.last_seen_at
+        FROM candidate_identity_v2 r
+        LEFT JOIN financial_instrument_catalog f USING(ticker,instrument_type,market,currency,settlement)
+        WHERE r.status='AVAILABLE' AND r.can_simulate=1
+        ORDER BY r.instrument_type,r.ticker,r.market,r.currency,r.settlement LIMIT 24
+    """):
+        identity = tuple(row[key] for key in ("ticker","instrument_type","market","currency","settlement"))
+        if not all(isinstance(v,str) and re.fullmatch(r"[A-Z0-9.^_()/-]{1,36}",v) for v in identity):
+            continue
+        admitted_to_scanner = identity in iol_spot_catalog(ReadOnlyStore(), now=now, identity=identity)
+        specialized_hold = None
+        if identity[1] not in EQUITY_FAMILIES:
+            quote = SimpleNamespace(asset_class=identity[1])
+            specialized_hold = _iol_spot_admission_reason(quote, ReadOnlyStore(), now)
+        observations = [dict(sample) for sample in conn.execute("""
+            SELECT metadata_source AS provider,count(*) AS records,max(observed_at) AS last_seen_at
+            FROM market_snapshots
+            WHERE symbol=? AND asset_class=? AND market=? AND currency=? AND settlement=?
+              AND julianday(observed_at) BETWEEN julianday(?) AND julianday(?)
+            GROUP BY metadata_source ORDER BY metadata_source
+        """, (*identity,market_open.isoformat(),now.isoformat())) if safe_code(sample["provider"])]
+        results.append({"identity":identity,"checked_at":row["checked_at"],"primary_status":safe_code(row["primary_status"]),
+            "capability":safe_code(row["capability"]),"settlement_source":safe_code(row["settlement_source"]),
+            "catalog_last_seen_at":row["last_seen_at"],"selected_by_iol_catalog":admitted_to_scanner,
+            "specialized_gate":safe_code(specialized_hold),"session_snapshots":observations})
+    return results
+
+
 def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
     window_start = max(market_open, now - timedelta(minutes=8)).isoformat()
     catalog = [dict(row) for row in conn.execute("""
@@ -413,7 +457,8 @@ def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
             failure_counts[pieces[1]][pieces[0]] += 1
 
     return {"status": "OBSERVED", "lookback_start": window_start, "as_of": now.isoformat(),
-        "catalog": catalog, "current_phase": byma_paper_spot_phase(now),
+        "catalog": catalog, "catalog_ready_details": check_ready_instruments(conn, now, market_open),
+        "current_phase": byma_paper_spot_phase(now),
         "market_and_decisions_by_family": dict(statistics), "instrument_rows": sample,
         "scanning_failures": dict(failure_counts), "operational_gate": {
             "allowed": gate_allowed, "reason": safe_code(gate_reason)},
