@@ -15,11 +15,11 @@ def render(p, destination, tab):
     if tab in {"posiciones", "liquidez", "exposicion"}:
         extra = fields("notional|Notional verificado|money;normalized_exposure|Exposición normalizada compatible|money;concentration|Concentración;exit_reader_reserve|Reserva exit reader;urgency|Urgencia EOD / expiry")
         return render_table(p, destination, tab, p.positions(), dict(destination.tabs)[tab], POSITIONS, (*POSITION_DETAIL, *extra), filters=True,
-                            note="No sumar unidades incompatibles. Sin book fresco ejecutable, la liquidez de salida permanece NO_VERIFICADO.")
+                            note="Las unidades incompatibles se muestran por separado. Verificar la liquidez de salida exige un libro fresco ejecutable.")
     if tab == "pnl":
         return render_table(p, destination, tab, p.performance(), "PnL / Drawdown por moneda · cierres", PERFORMANCE, PERFORMANCE_DETAIL,
                             note="Realizado de cierres, costos y neto se atribuyen por estrategia/familia/moneda. Drawdown exige una trayectoria válida.")
     return render_table(p, destination, tab, shadow_rows(p, "event-risk"), "Event Risk · autoridad explícita",
                         fields("symbol|Identidad;mode|SHADOW / BINDING|status;state|Evento|status;as_of|Reloj|time;reason|Motivo"),
                         fields("decision_effect|Efecto autorizado;source|Fuente;entry_authority|Autoridad de entrada"),
-                        note="Una noticia en SHADOW no concede permiso ni veto BINDING. Autoridad desconocida = NO_VERIFICADO.")
+                        note="La observación SHADOW registra noticias. Un permiso o veto BINDING exige una autoridad publicada.")

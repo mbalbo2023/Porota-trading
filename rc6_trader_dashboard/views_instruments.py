@@ -11,6 +11,7 @@ def family_fields(family):
 
 
 def render(p, destination, tab):
+    iol_profile = p.market_provider == "IOL_REST"
     if tab in {"buscador", "ficha"}:
         page = p.catalog()
         if tab == "ficha" and p.filters.get("identity") and len(page.rows) == 1:
@@ -20,7 +21,8 @@ def render(p, destination, tab):
                     + detail(row, (*CATALOG_DETAIL, *family_fields(row["family"])), "instrumento-ficha", 1)
                     + "</section>")
         return render_table(p, destination, tab, page, "Buscar identidad exacta", CATALOG, CATALOG_DETAIL,
-                            filters=True, catalog=True, note="Identidad: ticker + familia + mercado + moneda + settlement. RUNTIME_READY sólo describe can_simulate y AVAILABLE del catálogo; contrato, estrategia, riesgo, preopen y fills PAPER requieren evidencia aparte. Complementos no reemplazan la identidad PPI.")
+                            filters=True, catalog=True, note="La identidad reúne ticker, familia, mercado, moneda y settlement. RUNTIME_READY sólo describe can_simulate y AVAILABLE del catálogo. Contrato, estrategia, riesgo, preopen y fills PAPER requieren su propia evidencia. " +
+                            ("Las identidades históricas conservan su fuente original." if iol_profile else "Complementos no reemplazan la identidad PPI."))
     if tab == "mercado":
         return render_table(p, destination, tab, instrument_market(p), "Mercado & Liquidez · identidad exacta",
                             fields("symbol|Ticker;last|Último|money;freshness|Freshness|status;bid|Bid|money;ask|Ask|money"),
@@ -34,4 +36,6 @@ def render(p, destination, tab):
     if page.rows and page.reason != "SELECT_EXACT_IDENTITY_FOR_CONTRACT":
         detail_fields = (*family_fields(page.rows[0].get("family")), *detail_fields)
     return render_table(p, destination, tab, page, "Contrato" if tab == "contrato" else "Evidencia por fuente", columns, detail_fields,
-                        note="PPI primary / IOL complement / fuentes públicas: cada evidencia conserva fuente y reloj. Seleccione identidad exacta para consultar contrato; LKG no se promueve a LIVE.")
+                        note=("IOL REST es la fuente operativa. Los datos de PPI conservan su procedencia histórica. " if iol_profile else
+                              "PPI es la fuente primaria e IOL aporta referencia complementaria. ") +
+                            "Cada evidencia conserva su fuente y reloj. Seleccioná una identidad exacta para consultar el contrato.")

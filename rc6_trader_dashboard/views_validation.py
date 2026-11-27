@@ -30,7 +30,9 @@ def _milestone_cards(rows):
         row = rows.get(milestone.code, {})
         title = f"{milestone.code} · {milestone.name}"
         criteria = row.get("criteria_status")
-        shown_criteria = (" · ".join(f"{name}: {criteria.get(name, 'NO_VERIFICADO')}"
+        shown_criteria = (" · ".join(f"{name} · {criteria.get(name)}"
+                                     if criteria.get(name) not in (None, "", "NO_VERIFICADO") else
+                                     f"{name} · Falta un resultado publicado para este criterio"
                                      for name in milestone.exit_criteria)
                           if isinstance(criteria, dict) and criteria else None)
         facts = {**row, "objective": row.get("objective") or milestone.goal,
@@ -89,8 +91,8 @@ def render(p):
         title = notice(f"Proyección {snapshot.get('session_date') or 'sin rueda informada'} · "
                        f"{clock(snapshot.get('generated_at'))} · "
                        f"{'vigente al corte' if grade else 'evidencia histórica o no vinculada'} · "
-                       f"deploy {release.get('deployment_sha') or 'NO_VERIFICADO'} · "
-                       f"{snapshot.get('source') or 'fuente NO_VERIFICADO'}")
+                       f"deploy {release.get('deployment_sha') or 'sin SHA acreditado en este corte'} · "
+                       f"{snapshot.get('source') or 'sin fuente publicada en el recibo'}")
         title += ("<div class='metric-grid'>"
                   + metric("Hitos completos al corte", f"{summary['milestones_green']}/{len(MILESTONES)}")
                   + "</div>")

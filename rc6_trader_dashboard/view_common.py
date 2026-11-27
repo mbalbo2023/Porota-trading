@@ -34,7 +34,7 @@ def render_table(p, destination, tab, page, title, columns, detail=(), *, filter
 
 
 def committed_funnel(p):
-    from .components import funnel, e, clock
+    from .components import funnel, e, clock, unverified
     from urllib.parse import urlencode
     if not p.shadow_fresh:
         return notice("Embudo no disponible: " + (p.shadow.get("reason") or
@@ -46,7 +46,8 @@ def committed_funnel(p):
         return funnel({}, p.shadow["state"])
     selected = p.funnel_group
     if not selected:
-        return notice("NO_VERIFICADO · La cohorte currency/channel solicitada no existe en el corte comprometido.")
+        return ("<div class='notice' role='note'>" +
+                unverified("El corte comprometido no contiene la cohorte de moneda y canal solicitada.") + "</div>")
     names = {"READY": "CATALOG_READY", "ELIGIBLE": "STRATEGY_ELIGIBLE", "TRADEABLE": "TRADEABLE",
              "DISCOVERY": "DISCOVERY_TOUCHED", "WARM": "WARM", "HOT": "HOT", "SIGNAL": "SIGNAL_CANDIDATE",
              "ECONOMICS": "ECONOMICS_PASS", "RISK": "RISK_PASS", "PAPER": "PAPER_OPENED"}

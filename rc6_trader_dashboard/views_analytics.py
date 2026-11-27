@@ -3,7 +3,7 @@ import re
 from cg_paper_workspace import artifact_root
 from dg_dashboard_daily_result_ux_hf6 import public_report_row
 from rc6_action4_audit import published_audit_is_safe
-from .components import fields, funnel, metric, notice, e, clock, badge, sanitized
+from .components import Field, fields, funnel, metric, notice, e, clock, badge, sanitized, unverified, value_html
 from .datasets import shadow_rows, artifact
 from .view_common import render_table, PERFORMANCE, PERFORMANCE_DETAIL, CLOSES, CLOSE_DETAIL, committed_funnel
 
@@ -24,7 +24,7 @@ def _action4_card(p):
     window = payload.get("window") if isinstance(payload.get("window"), dict) else {}
     origin = payload.get("origin") if isinstance(payload.get("origin"), dict) else {}
     separation = payload.get("separation") if isinstance(payload.get("separation"), dict) else {}
-    rows = "".join(f"<dt>{e(label)}</dt><dd>{e(value if value is not None else 'NO_VERIFICADO')}</dd>"
+    rows = "".join(f"<dt>{e(label)}</dt><dd>{value_html({'v': value}, Field('v', label))}</dd>"
                    for label, value in (("Desde", window.get("from_local")),
                                         ("Hasta", window.get("to_local")),
                                         ("Generado UTC", payload.get("generated_at_utc")),
@@ -60,21 +60,24 @@ def _profile_decisions_panel(page):
     entries = []
     for row in page.rows:
         profiles = "".join(
-            "<li><b>" + label + ":</b> " + e(row.get(key) or "NO_VERIFICADO") + " · " +
-            badge(row[key + "_state"]) + " · " + e(_public_text(row.get(key + "_reason") or "Sin motivo publicado")) +
+            "<li><b>" + label + "</b> " + value_html(row, Field(key, "Acción del perfil " + label)) + " · " +
+            badge(row[key + "_state"], reason=_public_text(row.get(key + "_reason")) or
+                  "El recibo no acredita una decisión para este perfil.") + " · " +
+            e(_public_text(row.get(key + "_reason") or "Sin motivo publicado")) +
             "</li>" for key, label in names)
-        entries.append("<li><details><summary>" + e(str(row.get("symbol") or "NO_VERIFICADO")[:80]) +
-                       " · factual PAPER: " + e(str(row.get("factual_decision") or "NO_VERIFICADO")[:80]) +
-                       " · " + e(clock(row.get("as_of"))) + "</summary><ul>" + profiles +
+        entries.append("<li><details><summary>" + value_html(row, Field("symbol", "Ticker")) +
+                       " · Decisión factual PAPER · " + value_html(row, Field("factual_decision", "Decisión factual PAPER")) +
+                       " · " + value_html(row, Field("as_of", "Hora de la decisión", "time")) + "</summary><ul>" + profiles +
                        "</ul><p class='muted'>Evidence ID: " + e(str(row["decision_key"])[:100]) +
                        " · autoridad de entrada: No</p></details></li>")
     message = ("<ul>" + "".join(entries) + "</ul><p class='muted'>Primeras " + str(len(entries)) +
                " decisiones de hasta " + str(page.total) + " publicadas en este corte.</p>"
-               if entries else "<p>NO_VERIFICADO · " + e(page.reason or "Sin perfiles publicados") + "</p>")
+               if entries else "<p>" + unverified(page.reason or "La fuente no publicó perfiles para este alcance.") + "</p>")
     return ("<section class='panel'><h2>Perfiles por decisión · conservador / balanceado / agresivo</h2>"
             "<p class='muted'>SHADOW histórico. Una acción se muestra sólo con evidencia VERIFIED; "
             "ningún perfil envía órdenes ni modifica la decisión factual.</p>" + message +
-            "<p class='muted'>Fuente: " + e(page.source) + " · " + e(clock(page.as_of)) + "</p></section>")
+            "<p class='muted'>Fuente: " + e(page.source) + " · " +
+            value_html({"as_of": page.as_of}, Field("as_of", "Hora de publicación de perfiles", "time")) + "</p></section>")
 
 
 def render(p, destination, tab):
@@ -111,19 +114,23 @@ def render(p, destination, tab):
             note='WOULD_CONFIRM/WARN/REJECT exige publicación comparable y clocks válidos. Un reporte antiguo sigue visible como histórico; no acredita salud LIVE.')
     if tab == "performance":
         return render_table(p, destination, tab, p.performance(), "Performance por moneda / estrategia / familia", PERFORMANCE, PERFORMANCE_DETAIL,
-                            note="Win rate se acompaña de muestra, costos, neto, expectancy y profit factor cuando está definido. Edge y calibración OOS permanecen NO_VERIFICADO sin evidencia.")
+                            note="El win rate se presenta junto a la muestra, los costos, el neto, la expectativa y el profit factor cuando están definidos. La ventaja y la calibración fuera de muestra requieren evidencia propia.")
     if tab == "senales":
         return render_table(p, destination, tab, shadow_rows(p, "signals"), "Señales & cohorts · score_is_probability=false",
                             fields("family|Familia;strategy|Estrategia;state|OOS|status;sample_size|Muestra|number;score_bucket|Bucket de score"),
                             fields("hit_rate|Hit rate|percent;forward_returns|Forward returns;mfe|MFE validada;mae|MAE validada;auc|AUC dataset validado;calibration|Calibración OOS;registry_version|Registry / versión"),
-                            note="Cohorte agregada SHADOW, no instrumento individual. No hay score por ticker en esta fila; AUC/calibración requieren dataset correcto y siguen NO_VERIFICADO si falta evidencia. No se promueven evaluadores automáticamente.")
+                            note="La cohorte SHADOW agrega instrumentos. AUC y calibración requieren la publicación del conjunto de datos correspondiente.")
     if tab == "salidas":
         return render_table(p, destination, tab, p.positions(closed=True), "Salidas factuales PAPER", CLOSES,
                             (*CLOSE_DETAIL, *fields("shadow_alternative|Alternativa SHADOW;counterfactual|Same-entry counterfactual;trailing|Experimento trailing;break_even|Experimento break-even")),
                             note="TP / SL / EOD / MaxHold factuales se conservan. Alternativas SHADOW no modifican la política de salida.")
     if tab == "historico":
         local=p.local_history_summary()
-        local_panel=notice("Histórico local: " + local["state"] + " · " + local.get("reason", local.get("scope", "")) + "; no habilita READY ni se presenta como OHLCV completo.")
+        local_panel = ("<div class='notice' role='note'>Histórico local · " + unverified(
+            "No hay una publicación EOD local en el almacén histórico." if local.get("reason") == "LOCAL_EOD_NOT_PUBLISHED"
+            else "La publicación local no aporta filas EOD en el alcance leído.") + "</div>"
+            if local["state"] == "NO_VERIFICADO" else
+            notice("Histórico local · " + local["state"] + " · " + local.get("scope", "")))
         for row in local.get("rows", []):
             from .projection import json_object
             identity=json_object(row["identity_json"]); body=json_object(row["body_json"])

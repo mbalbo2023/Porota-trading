@@ -1,5 +1,5 @@
 """Shared shell; only eight primary links on every trader page."""
-from .components import badge, clock, e, number
+from .components import Field, badge, clock, e, unverified, value_html
 from .design_system import CSS, SCRIPT
 from .navigation import DESTINATIONS, view_path
 from .projection import UNKNOWN
@@ -17,7 +17,7 @@ def _real_order_receipt(state):
     if type(value) is not int or value < 0:
         # SQLite can expose malformed or unavailable facts. False and "0"
         # must not silently pass as a verified integer counter.
-        return ("real_orders_sent=NO_VERIFICADO · estado actual NO_VERIFICADO",
+        return ("real_orders_sent=NO_VERIFICADO · estado actual NO_VERIFICADO · falta un contador numérico válido en la base observada.",
                 "Alerta de integridad: contador de órdenes reales no verificable." if value is not None else "")
     if value > 0:
         return (f"real_orders_sent={value} · ALERTA: valor registrado en BD local",
@@ -45,18 +45,39 @@ def render(destination, tab, projection, content):
     retained = urlencode({k: v for k, v in projection.filters.items() if v and k != "offset"})
     tabs = "".join(f"<a href='{view_path(destination, key)}{e('?' + retained) if retained else ''}' {current(key == tab)}>{label}</a>" for key, label in destination.tabs)
     real_order_status, real_order_alert = _real_order_receipt(state)
+    iol_profile = projection.market_provider == "IOL_REST"
+    auth = projection.iol_authentication if iol_profile else {"state": state.get("ppi_auth"),
+            "reason": "El registro del observer no aporta estado de autenticación PPI."}
+    market_clock = state.get("last_market_data_at")
+    market_age = state.get("market_age")
+    market_freshness = state["market_freshness"]
+    if iol_profile:
+        from .projection import freshness
+        row = projection.store.one("api_health", "component=?", ("IOL_REST_MARKETDATA",))
+        if row.get("state") != "VERDE" or freshness(row.get("checked_at"), projection.now, 180) != "FRESH":
+            market_clock, market_age, market_freshness = None, None, UNKNOWN
+    def clock_value(label, timestamp, seconds, state, reason):
+        if clock(timestamp) == UNKNOWN or seconds is None:
+            return unverified(reason)
+        return (f"{e(clock(timestamp))} · {value_html({'age': seconds}, Field('age', label, 'number'))} s · " +
+                badge(state, reason=reason))
     values = (
-        ("Modo runtime", state.get("mode", UNKNOWN)), ("Sesión", state.get("session_state", UNKNOWN)),
-        ("Selector / capacidad", selector), ("Autenticación PPI", state.get("ppi_auth", UNKNOWN)),
-        ("Órdenes reales observadas", real_order_status),
-        ("Heartbeat", f"{clock(state.get('heartbeat_at'))} · age {number(state.get('heartbeat_age'), 1)} s · {state['heartbeat_freshness']}"),
-        ("Último dato de mercado", f"{clock(state.get('last_market_data_at'))} · age {number(state.get('market_age'), 1)} s · {state['market_freshness']}"),
-        ("Reloj operativo", clock(projection.now.isoformat())),
+        ("Modo runtime", value_html(state, Field("mode", "Modo runtime"))),
+        ("Sesión", value_html(state, Field("session_state", "Fase de rueda"))),
+        ("Selector / capacidad", badge(selector, reason="Falta un corte SHADOW vigente que acredite la capacidad.")),
+        ("Autenticación IOL REST" if iol_profile else "Autenticación PPI", badge(auth["state"], reason=auth.get("reason"))),
+        ("Órdenes reales observadas", e(real_order_status)),
+        ("Heartbeat", clock_value("Antigüedad del heartbeat", state.get("heartbeat_at"), state.get("heartbeat_age"),
+                                  state["heartbeat_freshness"], "El observer no aporta un heartbeat utilizable para este corte.")),
+        ("Último dato de mercado", clock_value("Antigüedad del dato de mercado", market_clock, market_age, market_freshness,
+                                               "Falta una observación IOL REST vigente con reloj de mercado." if iol_profile else
+                                               "El observer no publica un reloj de mercado utilizable para este corte.")),
+        ("Reloj operativo", e(clock(projection.now.isoformat()))),
     )
     strip_parts = []
     for label, value in values:
         aria = " role='status' aria-live='polite'" if label == "Órdenes reales observadas" else ""
-        strip_parts.append(f"<div class='strip-item'{aria}><b>{e(label)}</b><span>{e(value)}</span></div>")
+        strip_parts.append(f"<div class='strip-item'{aria}><b>{e(label)}</b><span>{value}</span></div>")
     strip = "".join(strip_parts)
     warning = (f"<div class='notice critical' role='alert'>{e(real_order_alert)}</div>"
                if real_order_alert else "")

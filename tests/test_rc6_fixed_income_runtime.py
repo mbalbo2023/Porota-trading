@@ -22,12 +22,12 @@ def dump(root, name, value):
     return {"file": name, "sha256": hashlib.sha256(raw).hexdigest()}
 
 
-def reviewed_bundle(tmp_path, family="OBLIGACIONES", *, settlement=None):
+def reviewed_bundle(tmp_path, family="OBLIGACIONES", *, settlement=None, symbol=None):
     root = tmp_path / "evidence"
     root.mkdir()
     symbols = {"BONOS": "SYNTHETIC_BOND", "LETRAS": "SYNTHETIC_LETRA",
                "OBLIGACIONES": "SYNTHETIC_ON"}
-    quote, _, terms, validation = fixture(family, symbol=symbols[family])
+    quote, _, terms, validation = fixture(family, symbol=symbol or symbols[family])
     quote = replace(quote, metadata_source="PPI_CATALOG:SYNTHETIC_TEST_ONLY",
                     last_kind="TRADE")
     if settlement is not None:
@@ -207,8 +207,8 @@ def test_engine_reports_precise_input_blocker_then_keeps_event_exit_unbound(tmp_
         assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
 
 
-def letter_broker(tmp_path, monkeypatch, *, settlement="INMEDIATA", **broker_config):
-    quote, root, pin = reviewed_bundle(tmp_path, "LETRAS", settlement=settlement)
+def letter_broker(tmp_path, monkeypatch, *, settlement="INMEDIATA", symbol=None, **broker_config):
+    quote, root, pin = reviewed_bundle(tmp_path, "LETRAS", settlement=settlement, symbol=symbol)
     monkeypatch.setenv("POROTA_FI_EVIDENCE_DIRECTORY", str(root))
     monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", pin)
     sector_map = tmp_path / "reviewed-sectors.csv"
@@ -224,18 +224,23 @@ def letter_broker(tmp_path, monkeypatch, *, settlement="INMEDIATA", **broker_con
 
 
 def test_reviewed_letter_opens_exact_vn_and_closes_only_after_the_matched_payment(tmp_path, monkeypatch):
+    quote, evidence, broker = letter_broker(tmp_path, monkeypatch, daily_soft_stop_pct="0.015")
+    assert_reviewed_letter_roundtrip(quote, evidence, broker)
+
+
+def assert_reviewed_letter_roundtrip(quote, evidence, broker):
     from bm_exit_supervisor import PositionExitSupervisor
     from dh_paper_dynamic_risk_gate_hf6 import open_stop_risk, portfolio_capacity
     from rc6_fixed_income_native_redemption import normalized_issuer_schedule_sha256
     from rc6_fixed_income_portfolio_bridge import position_at
     from tests.test_rc6_fixed_income_native_redemption import NativeRedemptionReviewTest
 
-    quote, evidence, broker = letter_broker(tmp_path, monkeypatch, daily_soft_stop_pct="0.015")
     quote = replace(quote, bid_size=Decimal(1))  # No sale lot is needed for a redemption.
     store = broker.store
     broker.on_quote(quote)
     broker.on_quote(quote)  # Same BUY can only be committed once.
     position, = store.open_positions()
+    assert position["symbol"] == quote.symbol
     paper_id = position["paper_id"]
     features = json.loads(position["features_json"])
     plan = features["fixed_income_exit_plan"]

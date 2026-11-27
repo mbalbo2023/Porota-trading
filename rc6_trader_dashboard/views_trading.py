@@ -37,11 +37,14 @@ def render(p, destination, tab):
         sweep = p.store.one("paper_caucion_cash_sweep_state")
         sweep_fresh = freshness(sweep.get("heartbeat_at"), p.now, 30)
         sweep_state = sweep.get("state") if sweep_fresh == "FRESH" else UNKNOWN
+        sweep_reason = ("El último heartbeat de cauciones venció." if sweep_fresh == "STALE" else
+                        "La observación no aporta un heartbeat y un estado vigentes de cauciones.")
+        previous = sweep.get("state")
+        last_state = f"Último estado registrado · {previous}" if previous and previous != UNKNOWN else "Falta un estado previo publicado."
         cards = "<div class='metric-grid'>" + "".join((
-            metric("Cash sweep cauciones", sweep_state,
-                   f"Último estado: {sweep.get('state') or UNKNOWN} · {sweep_fresh}", kind="status"),
+            metric("Cash sweep cauciones", sweep_state, last_state, kind="status", reason=sweep_reason),
             metric("Órdenes reales · sweep", sweep.get("real_orders_sent") if sweep_fresh == "FRESH" else None,
-                   "Contador factual con heartbeat fresco; desconocido no equivale a cero", kind="number"))) + "</div>"
+                   "Contador factual con heartbeat vigente", kind="number", reason=sweep_reason))) + "</div>"
         links = "".join(
             f"<a class='button' href='/trading/cauciones?caucion_view={key}' "
             f"{'aria-current=page' if selected == key else ''}>{label}</a>"
@@ -50,9 +53,11 @@ def render(p, destination, tab):
                 + cards + notice("Cauciones simuladas: caja liquidada, tasa/plazo, reserva y riesgo se evalúan antes de colocar. "
                        "Un registro PAPER no acredita una orden ni una tasa ejecutable actual.")
                 + f"<nav class='pager' aria-label='Vistas de cauciones'>{links}</nav>"
-                + "<p class='source-line'>Catálogo y contrato: <a href='/instrumentos/buscador?family=CAUCIONES'>CAUCIONES</a> "
-                  "· <a href='/instrumentos/buscador?family=CAUCION'>CAUCION</a>. PPI es identidad primaria; "
-                  "IOL es complementario. Sin cotización fresca verificada: NO_VERIFICADO.</p>")
+                + "<p class='source-line'>Catálogo y contrato · <a href='/instrumentos?family=CAUCIONES'>CAUCIONES</a> "
+                  "· <a href='/instrumentos?family=CAUCION'>CAUCION</a>. " +
+                  ("IOL REST es la fuente operativa. La decisión exige una tasa y un reloj de libro acreditados."
+                   if p.market_provider == "IOL_REST" else
+                   "PPI es identidad primaria. IOL aporta referencia complementaria.") + "</p>")
         if decisions:
             return lead + render_table(
                 p, destination, tab, p.cauciones(decisions=True), "Decisiones de asignación · incluso HOLD",

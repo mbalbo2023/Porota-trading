@@ -29,7 +29,7 @@ def sanitized(value, depth=0):
         return {str(k): "[REDACTED]" if re.search(r"(?i)(token|secret|password|passwd|cookie|authorization|api.?key|account.?id|account.?number|cbu|cuit)", str(k)) else sanitized(v, depth + 1) for k, v in list(value.items())[:128]}
     if isinstance(value, (list, tuple)):
         return [sanitized(v, depth + 1) for v in value[:100]]
-    if isinstance(value, str) and re.search(r"(?i)\b(authorization|bearer|token|api[_-]?key|secret|password|passwd|cookie|account[_-]?(?:id|number)|cbu|cuit)\b", value):
+    if isinstance(value, str) and re.search(r"(?i)(?:^|[\W_])(authorization|bearer|token|api[_-]?key|secret|password|passwd|cookie|account[_-]?(?:id|number)|cbu|cuit)(?=$|[\W_])", value):
         return "[REDACTED] sensitive detail"
     return value
 
@@ -59,8 +59,28 @@ def clock(value):
         return UNKNOWN
 
 
-def badge(value):
+def unverified(reason, *, value=UNKNOWN, status=False):
+    """Keep uncertainty and the reason visible together in the same field."""
+    label = (f"<span class='badge badge-unknown' data-status='{e(value)}'>"
+             f"<span aria-hidden='true'>·</span> {e(value)}</span>" if status else e(value))
+    message = str(sanitized(reason))[:240]
+    if message == "[REDACTED] sensitive detail":
+        message = "El recibo contiene un motivo sensible. Consultá la evidencia sanitizada."
+    return (f"<span class='unverified-value'>{label}"
+            f"<small class='unverified-reason'>{e(message)}</small></span>")
+
+
+def unknown_value(value):
+    return isinstance(value, str) and (value.strip().upper().replace(" ", "_") in {UNKNOWN, "NO_VERIFICADA"}
+                                       or value.startswith(UNKNOWN + "_"))
+
+
+def badge(value, *, reason=None):
     text = UNKNOWN if value is None or value == "" else str(value)
+    if unknown_value(text):
+        if reason is None and text == "NO_VERIFICADO_AWAITING_RECONCILIATION":
+            reason = "La generación SHADOW espera una reconciliación comprometida."
+        return unverified(reason or "El registro no aporta un estado verificable.", value=text, status=True)
     key = text.upper()
     if key == "HOT":
         tone, icon = "hot", "◆"
@@ -90,6 +110,12 @@ def fields(spec):
 
 RESULT_KEYS = {"net_pnl", "gross_pnl", "unrealized_pnl", "realized_pnl", "daily_pnl",
                "expectancy", "avg_win", "avg_loss"}
+PAGE_REASONS = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido. Revisá el worker y su hora de publicación.",
+                "COMMITTED_GENERATION_NOT_PUBLISHED": "El worker SHADOW aún no publicó una generación comprometida.",
+                "COMMITTED_GENERATION_REJECTED": "La lectura rechazó la generación SHADOW por integridad o publicación incompleta.",
+                "DATASET_NOT_PUBLISHED": "La fuente no publicó el conjunto de datos requerido.",
+                "DATASET_SCHEMA_OR_READ_ERROR": "El esquema o la lectura de la fuente impidieron verificar los registros."}
+EMBEDDED_UNKNOWN = re.compile(r"(?<!\w)NO[_\s-]+VERIFICAD[OA](?!\w)", re.IGNORECASE)
 
 
 def result_html(value, rendered):
@@ -107,27 +133,54 @@ def result_html(value, rendered):
             f"{rendered}</span>")
 
 
+def field_reason(row, field, value):
+    reason = lookup(row, field.key + "_reason")
+    if not reason and field.key in {"state", "status", "freshness", "reason", "readiness"}:
+        reason = row.get("reason") or row.get("blocked_reason")
+    if isinstance(reason, str) and reason.strip() and not unknown_value(reason):
+        return PAGE_REASONS.get(reason, reason)
+    if field.kind == "time":
+        return f"El registro no acredita una fecha con zona horaria para {field.label}."
+    if field.kind in {"money", "count", "number", "percent", "score"}:
+        return f"El registro no aporta un valor numérico utilizable para {field.label}."
+    if field.kind == "status" and value == "NO_VERIFICADO_AWAITING_RECONCILIATION":
+        return "La generación SHADOW espera una reconciliación comprometida."
+    return f"El registro no publica evidencia suficiente para {field.label}."
+
+
 def value_html(row, field):
     value = lookup(row, field.key)
     if field.kind == "status":
-        return badge(value)
-    if value is None or value == "":
-        return "<span class='muted'>NO_VERIFICADO</span>"
+        return badge(value, reason=field_reason(row, field, value))
+    if value is None or value == "" or unknown_value(value):
+        return unverified(field_reason(row, field, value))
     if field.kind == "time":
-        return e(clock(value))
-    if field.kind == "money":
-        rendered = e(number(value)) + " <span class='currency'>" + e(row.get("currency") or "MONEDA_NO_VERIFICADA") + "</span>"
-        return result_html(value, rendered) if field.key in RESULT_KEYS else rendered
-    if field.kind == "count":
-        return e(number(value, 0))
-    if field.kind in {"number", "percent"}:
-        return e(number(value)) + (" %" if field.kind == "percent" else "")
-    if field.kind == "score":
-        return e(number(value)) + " <small class='muted'>NO PROBABILIDAD</small>"
+        formatted = clock(value)
+        return unverified(field_reason(row, field, value)) if formatted == UNKNOWN else e(formatted)
+    if field.kind in {"money", "count", "number", "percent", "score"}:
+        formatted = number(value, 0 if field.kind == "count" else 2)
+        if formatted == UNKNOWN:
+            return unverified(field_reason(row, field, value))
+        rendered = e(formatted)
+        if field.kind == "money":
+            currency = row.get("currency")
+            rendered += (f" <span class='currency'>{e(currency)}</span>" if currency and not unknown_value(currency) else
+                         " " + unverified("El registro no acredita la moneda de este importe.", value="MONEDA_NO_VERIFICADA"))
+            return result_html(value, rendered) if field.key in RESULT_KEYS else rendered
+        if field.kind == "percent":
+            return rendered + " %"
+        if field.kind == "score":
+            return rendered + " <small class='muted'>NO PROBABILIDAD</small>"
+        return rendered
     if isinstance(value, bool):
         return "Sí" if value else "No"
     if isinstance(value, (list, dict)):
-        return e(json.dumps(sanitized(value), ensure_ascii=False, sort_keys=True, default=str)[:4096])
+        text = json.dumps(sanitized(value), ensure_ascii=False, sort_keys=True, default=str)[:4096]
+        if EMBEDDED_UNKNOWN.search(text):
+            reason = ("Los lectores o supervisores marcados no aportan un estado o reloj acreditado al corte."
+                      if field.key == "workers" else f"El registro no acredita los valores marcados de {field.label}.")
+            return unverified(reason, value=text)
+        return e(text)
     return e(str(sanitized(value))[:4096])
 
 
@@ -162,7 +215,8 @@ def pager(page, path, filters, table_id):
     def link(offset, text):
         return f"<a class='button' aria-controls='{table_id}' href='{e(path)}?{e(urlencode({**params, 'offset': offset}))}'>{text}</a>"
     visible = len(page.rows)
-    total = number(page.total, 0) if page.total is not None else UNKNOWN
+    total = value_html({"total": page.total, "total_reason": "La lectura no acredita el total de filas para este alcance."},
+                       Field("total", "Total de filas", "count"))
     range_text = f"{page.offset + 1}–{page.offset + visible}" if visible else "0"
     more = link(page.offset + 10, "Mostrar 10 más") if page.total is not None and page.offset + visible < page.total else ""
     less = link(max(0, page.offset - 10), "Mostrar menos") if page.offset else ""
@@ -201,20 +255,21 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             drawer_fields = tuple(f for f in drawer_fields if f.key not in inapplicable)
         body.append(f"<tr id='{row_id}' data-row='true'>{cells}<td data-label='Detalle'>{detail(row, drawer_fields, row_id, index + 1)}</td></tr>")
     if not body:
-        reasons = {"SHADOW_CUT_NOT_FRESH": "El corte SHADOW está vencido; revisar el worker y la hora de publicación.",
-                   "COMMITTED_GENERATION_NOT_PUBLISHED": "El worker SHADOW aún no publicó una generación comprometida.",
-                   "COMMITTED_GENERATION_REJECTED": "La lectura rechazó la generación SHADOW por integridad o publicación incompleta."}
         if page.reason in {"SELECT_EXACT_IDENTITY_FOR_MARKET", "SELECT_EXACT_IDENTITY_FOR_CONTRACT"}:
             message = "REQUIERE_IDENTIDAD · Seleccione ticker, familia, mercado, moneda y settlement en el buscador."
+        elif page.state == "AVAILABLE":
+            message = "Sin registros en este scope."
         else:
-            message = ("Sin registros en este scope." if page.state == "AVAILABLE" else
-                       "NO_VERIFICADO · " + reasons.get(page.reason, page.reason or "evidencia aún no publicada o lectura no disponible."))
-        body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{e(message)}</td></tr>")
+            message = unverified(PAGE_REASONS.get(page.reason, page.reason or "La fuente no aporta registros verificables para este alcance."))
+        body.append(f"<tr><td colspan='{len(columns) + 1}' class='empty'>{message}</td></tr>")
     heads = "".join(f"<th scope='col' class='{column_classes[i]}'>{e(f.label)}</th>" for i, f in enumerate(columns))
     selection_required = page.reason in {"SELECT_EXACT_IDENTITY_FOR_MARKET", "SELECT_EXACT_IDENTITY_FOR_CONTRACT"}
-    provenance = f"<div class='source-line'>Fuente: {e(page.source)} · {badge('REQUIERE_IDENTIDAD' if selection_required else page.state)}"
+    source_state = badge("REQUIERE_IDENTIDAD" if selection_required else page.state,
+                         reason=PAGE_REASONS.get(page.reason, page.reason or "La lectura no acredita el estado de la fuente."))
+    source_label = value_html({"source": page.source}, Field("source", "Fuente de la tabla"))
+    provenance = f"<div class='source-line'>Fuente: {source_label} · {source_state}"
     if page.as_of:
-        provenance += f" · {e(clock(page.as_of))}"
+        provenance += " · " + value_html({"as_of": page.as_of}, Field("as_of", "Hora del corte", "time"))
     provenance += "</div>"
     audit = detail({"reason": page.reason or "Consulta read-only; paginación en servidor."},
                    fields("reason|Estado de lectura"), f"{table_id}-reading", 1,
@@ -224,8 +279,8 @@ def table(page, title, columns, extra=(), *, path="", filters=None, table_id="ma
             + (pager(page, path, filters or {}, table_id) if path else "") + provenance + audit + "</section>")
 
 
-def metric(label, value, subtitle="", *, kind="text", currency=None, result=False):
-    shown = value_html({"v": value, "currency": currency}, Field("v", label, kind))
+def metric(label, value, subtitle="", *, kind="text", currency=None, result=False, reason=None):
+    shown = value_html({"v": value, "v_reason": reason, "currency": currency}, Field("v", label, kind))
     if result and kind == "money" and value is not None:
         shown = result_html(value, shown)
     return f"<article class='metric-card'><h2>{e(label)}</h2><div class='metric-value'>{shown}</div><p>{e(subtitle)}</p></article>"
@@ -253,15 +308,19 @@ def notice(text, critical=False):
     return f"<div class='notice {'critical' if critical else ''}' role='note'>{e(text)}</div>"
 
 
-def funnel(counts, scope="NO_VERIFICADO · committed cut unavailable"):
+def funnel(counts, scope="Falta un corte comprometido para este embudo"):
     stages = ("READY", "ELIGIBLE", "TRADEABLE", "DISCOVERY", "WARM", "HOT", "SIGNAL", "ECONOMICS", "RISK", "PAPER")
     return ("<section class='panel'><h2>Embudo operativo</h2><ol class='funnel'>" +
-            "".join(f"<li>{badge(stage)}<b>{e(number(counts.get(stage), 0))}</b></li>" for stage in stages) +
+            "".join(f"<li>{badge(stage)}<b>{value_html({'value': counts.get(stage)}, Field('value', stage, 'count'))}</b></li>" for stage in stages) +
             f"</ol><p class='muted'>{e(scope)} · Etapas independientes · HOT ≠ BUY · DISCOVERY/WARM = observación.</p></section>")
 
 
 def timeline(events, title="Promociones / demociones / descartes en vivo", *, verified_empty=False):
-    items = "".join(f"<li><time>{e(clock(row.get('as_of')))}</time><b>{e(row.get('symbol') or UNKNOWN)}</b>{badge(row.get('state'))}<p>{e(row.get('reason') or UNKNOWN)}</p></li>" for row in events[:5])
+    def event(row):
+        when, symbol, state, reason = (value_html(row, field) for field in
+            fields("as_of|Hora del evento|time;symbol|Ticker;state|Estado del evento|status;reason|Motivo del evento"))
+        return f"<li><time>{when}</time><b>{symbol}</b>{state}<p>{reason}</p></li>"
+    items = "".join(event(row) for row in events[:5])
     empty = ("<li class='muted'>Sin eventos en este scope (0).</li>" if verified_empty else
              "<li class='muted'>NO_VERIFICADO · Sin eventos comprometidos disponibles.</li>")
     return f"<section class='panel'><h2>{e(title)}</h2><ol class='timeline'>{items or empty}</ol></section>"

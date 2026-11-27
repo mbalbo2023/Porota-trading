@@ -70,10 +70,11 @@ class ReplayBudget(FakeBudget):
         return {"allowed": True, "lease": f"OFFHOST-LEASE-{len(self.calls)}"}
 
 
-def _record(ticker, family, market, settlement):
+def _record(ticker, family, market, settlement, *, option_underlying=OPTION_UNDERLYING[0],
+            option_strike="40500.00"):
     raw = {"ticker": ticker, "type": family, "market": market, "currency": "ARS"}
     if family == "OPCIONES":
-        raw["description"] = "Opción compra YPFD AR$ 40500.00 Vto. 18/12/2026"
+        raw["description"] = f"Opción compra {option_underlying} AR$ {option_strike} Vto. 18/12/2026"
     if family in FIXED_INCOME:
         spec = {"market": market, "currency": "ARS", "settlement": settlement,
                 "quantity_step": "1", "cash_multiplier": ".01",
@@ -134,6 +135,13 @@ def _preopen(tmp_path, monkeypatch):
 ])
 def test_one_instrument_per_family_through_gateway_and_engine(
         tmp_path, monkeypatch, gateway_socket, ticker, family, market, term, trade_age, book_age, test_fees):
+    replay_native_family(tmp_path, monkeypatch, gateway_socket, ticker, family, market, term,
+                         trade_age, book_age, test_fees)
+
+
+def replay_native_family(tmp_path, monkeypatch, gateway_socket, ticker, family, market, term,
+                         trade_age, book_age, test_fees, *, option_underlying=OPTION_UNDERLYING,
+                         option_strike="40500.00"):
     key = (ticker, family, market, "ARS", term)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
@@ -149,11 +157,15 @@ def test_one_instrument_per_family_through_gateway_and_engine(
     _preopen(tmp_path, monkeypatch)
     with store.connect() as con:
         if family == "OPCIONES":
+            (underlying_ticker, underlying_family, underlying_market,
+             underlying_currency, underlying_term) = option_underlying
             underlying = catalog.normalize_record(
-                {"ticker": "YPFD", "type": "ACCIONES", "market": "BYMA", "currency": "ARS",
-                 "settlement": "INMEDIATA"}, "INMEDIATA", AT.isoformat(), "OFFHOST_UNDERLYING")
+                {"ticker": underlying_ticker, "type": underlying_family, "market": underlying_market,
+                 "currency": underlying_currency, "settlement": underlying_term},
+                underlying_term, AT.isoformat(), "OFFHOST_UNDERLYING")
             catalog.persist(con, underlying)
-        record = _record(ticker, family, market, term)
+        record = _record(ticker, family, market, term, option_underlying=option_underlying[0],
+                         option_strike=option_strike)
         catalog.persist(con, record)
         con.commit()
         catalog.sync_candidate_universe(con, AT.isoformat(), bounded_batch=128)
@@ -170,14 +182,15 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         endpoint = urlsplit(request.url).path.rsplit("/", 1)[-1]
         query = {k.lower(): v for k, v in parse_qs(urlsplit(request.url).query).items()}
         assert endpoint in {"Current", "Book"} and request.method == "GET"
-        subyacente = family == "OPCIONES" and query.get("ticker") == [OPTION_UNDERLYING[0]]
-        trading_key = OPTION_UNDERLYING if subyacente else key
+        subyacente = family == "OPCIONES" and query.get("ticker") == [option_underlying[0]]
+        trading_key = option_underlying if subyacente else key
         assert budget.in_wire_scope and query == {
             "ticker": [trading_key[0]], "type": [trading_key[1]], "settlement": [trading_key[4]]}
         calls.append(endpoint)
         age = trade_age if endpoint == "Current" else book_age
         body = {"date": (ReplayClock.value - timedelta(seconds=age)).isoformat()}
-        last = 40510 + (ReplayClock.value - AT).total_seconds() if subyacente else price
+        last = (float(option_strike) + 10 + (ReplayClock.value - AT).total_seconds()
+                if subyacente else price)
         if endpoint == "Current":
             body.update(price=last, volume=1000, openingPrice=last, max=last, min=last)
         else:
@@ -321,7 +334,7 @@ def test_one_instrument_per_family_through_gateway_and_engine(
         for turn, price in enumerate(prices, start=1):
             ReplayClock.value = AT + timedelta(minutes=turn)
             if family == "OPCIONES":
-                underlying = OPTION_UNDERLYING
+                underlying = option_underlying
                 under_quote = observer._read_scanner_quote(
                     adapter, store, underlying[0], underlying[1], underlying[4], identity=underlying)
                 store.add_quote(under_quote)
@@ -389,6 +402,7 @@ def test_one_instrument_per_family_through_gateway_and_engine(
                 evaluate_runtime_funnel(store.path, as_of=as_of, planner_report={}, previous=checkpoint)
             with pytest.raises(ValueError, match="IMMUTABLE_DECISION_HASH_MISMATCH"):
                 evaluate_runtime_entry_signals(store.path, as_of=as_of, previous=entry_checkpoint)
+        return store
     finally:
         ReplayClock.value = AT
         _close_ppi_gateway_server(gateway, server_thread)
