@@ -185,6 +185,32 @@ class RootlessContracts(unittest.TestCase):
         with self.assertRaisesRegex(host.Hold, "IOL_RELEASE_PPI_ACCESS_DETECTED"):
             host.classify_runtime(dict(row, ppi_auth="OK"), now=now, started=now, provider="IOL_REST")
 
+    def test_iol_open_rate_hold_keeps_runtime_available_and_other_degradation_blocking(self):
+        now = datetime.now(timezone.utc)
+        row = {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "NOT_ATTEMPTED",
+               "process_state": "DEGRADED", "session_state": "MARKET_OPEN", "heartbeat_at": now.isoformat()}
+        cycle = " instrumentos actualizados de 540 elegibles; rotación activa; operaciones solo simuladas."
+        hold = ": observación sin nuevas aperturas PAPER. "
+        for reason in ("IOL_GATEWAY_RATE_HOLD", "IOL_HTTP_429"):
+            for counts in ("0/20", "4/20"):
+                with self.subTest(reason=reason, counts=counts):
+                    observed = dict(row, detail=reason + hold + counts + cycle)
+                    self.assertEqual(host.classify_runtime(observed, now=now, started=now, provider="IOL_REST"),
+                                     {"status": "READY", "source_alert": "AMBER_IOL_READ_LIMIT"})
+        for detail in (
+            "CAUCION_LEDGER_INVALID" + hold + "0/20" + cycle,
+            "IOL_HTTP_401" + hold + "0/20" + cycle,
+            "IOL_GATEWAY_RATE_HOLD" + hold + "0/0" + cycle,
+            "IOL_GATEWAY_RATE_HOLD" + hold + "21/20" + cycle,
+            "IOL_GATEWAY_RATE_HOLD",
+        ):
+            with self.subTest(detail=detail), self.assertRaisesRegex(host.Hold, "IOL_RUNTIME_UNCLASSIFIED_DEGRADED"):
+                host.classify_runtime(dict(row, detail=detail), now=now, started=now, provider="IOL_REST")
+        with self.assertRaisesRegex(host.Hold, "PAPER_RUNTIME_SAFETY"):
+            host.classify_runtime(dict(row, real_orders_sent=1,
+                                       detail="IOL_GATEWAY_RATE_HOLD" + hold + "0/20" + cycle),
+                                  now=now, started=now, provider="IOL_REST")
+
     def test_real_configuration_is_refused_before_any_command(self):
         for values in ({"ALLOW_REAL_ORDERS": "true"}, {"REAL_ORDER_CAPABILITY": "ENABLED"},
                        {"EXECUTION_MODE": "REAL"}):
