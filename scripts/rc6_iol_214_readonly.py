@@ -91,26 +91,6 @@ def journal(started, current):
     return {'state':'OBSERVED' if entries else 'NO_EXACT_RELEASE_HEALTH_ENTRY',
             'unit_entries_observed':observed,'health_runs':entries}
 
-def observe_trade_subscription(manager, current, auth_module):
-    from iol_rest_readonly_rc6 import IOLRestReadOnly
-    client = IOLRestReadOnly(manager.identity.state / 'iol-rest', allow_renew=False)
-    _, cached = auth_module['_inspect_health_cache'](client)
-    if cached is None:
-        return {'state':'NO_CURRENT_CACHED_BEARER','grants':0}
-
-    command = (
-        "/usr/bin/docker", "--host", "unix://" + str(manager.identity.socket),
-        "container", "exec", "-i", current["roles"]["observer"], "python", "-B", "-c", stream_probe,
-    )
-    try:
-        proc = subprocess.run(command, input=cached['access_token'], text=True, capture_output=True,
-                              env=manager.identity.environment(), cwd="/", timeout=23, check=False)
-        if proc.returncode != 0 or len(proc.stdout) > 2048:
-            return {'state':'NO_VERIFICADO','reason':'IOL_STREAM_EXEC_UNVERIFIED','grants':0}
-        return json.loads(proc.stdout)
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return {'state':'NO_VERIFICADO','reason':'IOL_STREAM_RECEIPT_UNVERIFIED','grants':0}
-
 def run_probe():
     assert 0 < os.getuid() == os.geteuid()
     source = Path.home() / '.local/state/porota-rc6/releases' / expected['source_sha'] / 'source'
@@ -144,8 +124,6 @@ def run_probe():
         namespace = {'__name__':'rc6_iol_214_reference_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
         exec(compile(auth_source,'rc6_iol_214_reference_auth','exec'),namespace)
         auth = namespace['observe_auth'](manager,current,probe_asset=False)
-        stream = (observe_trade_subscription(manager, current, namespace) if row[0] == 'MARKET_CLOSED'
-                  else {'state':'NOT_PROBED_DURING_SESSION','grants':0})
         market_pair = {'state':'PASSIVE_ONLY','wire_attempts':0,'endpoints':{}}
         os.environ['POROTA_RUNTIME_BACKEND'] = 'ROOTLESS'
         now = datetime.now(timezone.utc)
@@ -183,7 +161,7 @@ def run_probe():
         return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
-                'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,'iol_trade_stream':stream,
+                'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,
                 'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
 try:
@@ -195,14 +173,12 @@ except Exception as exc:
 '''
 
 
-STREAM_PROBE = '\nimport json, sys, time\nfrom websockets.sync.client import connect\n\ntoken = sys.stdin.read()\nreceipt = {"state": "NO_VERIFICADO", "phase": "TRANSPORT", "grants": 0, "stream_connections": 1}\n\ndef exchange(ws, expected, action, **fields):\n    ws.send(json.dumps({"action": action, **fields}, separators=(",", ":")))\n    deadline = time.monotonic() + 3\n    while time.monotonic() < deadline:\n        reply = json.loads(ws.recv(timeout=max(0, deadline - time.monotonic())))\n        if (reply.get("type"), reply.get("code"), reply.get("msg")) == ("Success", 200, expected):\n            return\n        if reply.get("type") == "Error":\n            code = reply.get("code")\n            receipt["provider_code"] = code if type(code) is int else None\n            raise ValueError("IOL_STREAM_REJECTED")\n    raise TimeoutError\n\ntry:\n    with connect("wss://stream-marketdata.invertironline.com", proxy=None, open_timeout=5,\n                 close_timeout=1, ping_interval=None, max_size=64 * 1024) as ws:\n        receipt["phase"] = "AUTH"\n        exchange(ws, "Connected", "auth_token", token=token)\n        receipt["phase"] = "SUBSCRIPTION"\n        exchange(ws, "Subscribed", "subscribe", quotes=[], order_book=[], trades=["GGAL|BCBA|T1"])\n        receipt["phase"] = "HEARTBEAT"\n        exchange(ws, "Pong", "ping")\n        receipt["phase"] = "UNSUBSCRIBE"\n        exchange(ws, "Unsubscribed", "unsubscribe", quotes=[], order_book=[], trades=["GGAL|BCBA|T1"])\n        ws.send(json.dumps({"action": "disconnect"}))\n        receipt.update(state="SUBSCRIPTION_VERIFIED", phase="COMPLETE", instrument="GGAL", market="BCBA", term="T1")\nexcept Exception as error:\n    receipt["reason"] = type(error).__name__\nprint(json.dumps(receipt, sort_keys=True))\n'
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     auth = (ROOT / "scripts/rc6_iol_auth_diagnostic.py").read_text(encoding="utf-8")
-    payload = (f"expected = {EXPECTED!r}\nauth_source = {auth!r}\nschema = {SCHEMA!r}\nstream_probe = {STREAM_PROBE!r}\n" + REMOTE).encode()
+    payload = (f"expected = {EXPECTED!r}\nauth_source = {auth!r}\nschema = {SCHEMA!r}\n" + REMOTE).encode()
     receipt = {"schema": SCHEMA, **EXPECTED, "state": "NO_VERIFICADO", "reason": "AUDIT_TRANSPORT_UNVERIFIED"}
     try:
         with connection(os.environ) as (ssh, _, _):
