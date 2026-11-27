@@ -567,14 +567,7 @@ def trace_scanner_and_paper(conn, now, market_open):
             "fresh_at_saved_decision":not quote.time_error(observed.isoformat(),require_trade=True)
                 and 0 < quote.bid <= quote.ask and min(quote.bid_size,quote.ask_size)>0,
             "final_result":final,"final_reason":gate,"scanner_scope":scope})
-    decisions_after_go = [dict(row) for row in conn.execute("""
-        SELECT strategy_version, action, count(*) AS count
-        FROM paper_decisions
-        WHERE julianday(decided_at) BETWEEN julianday(?) AND julianday(?)
-        GROUP BY strategy_version, action ORDER BY strategy_version, action
-    """, ("2026-11-27T16:00:51-03:00", now.isoformat()))]
-    return {"decisions_after_go":decisions_after_go,
-        "status":"OBSERVED", "session_start":market_open.isoformat(),
+    return {"status":"OBSERVED", "session_start":market_open.isoformat(),
         "scans_by_family":dict(plan_rollup),
         "watch_summary":{symbol:dict(Counter(row["basket"] for row in scopes))
                          for symbol,scopes in watch_plans.items()},
@@ -843,8 +836,30 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1
     except (TypeError, ValueError, ArithmeticError, sqlite3.Error) as exc:
         native_funnel = {"status":"NO_VERIFICADO", "error":type(exc).__name__}
 
+    audit = {}
+    since = now - timedelta(minutes=12)
+    def recent(sql):
+        return [dict(row) for row in conn.execute(sql,(since.isoformat(),now.isoformat()))]
+    audit["scanner"] = recent("""
+        SELECT asset_class family,symbol,market,currency,settlement,count(*) snapshots
+        FROM market_snapshots WHERE metadata_source='IOL_REST'
+          AND julianday(observed_at) BETWEEN julianday(?) AND julianday(?)
+        GROUP BY 1,2,3,4,5 ORDER BY 1,2,5 LIMIT 120
+    """)
+    audit["scalping_observations"] = recent("""
+        SELECT json_extract(body_json,'$.identity') identity,count(*) samples
+        FROM historical_raw_archive WHERE origin='IOL_REST_TRADE_SAMPLE' AND quality='SAMPLED'
+          AND recorded_at BETWEEN ? AND ? GROUP BY 1 ORDER BY 1 LIMIT 120
+    """)
+    audit["specialized_events"] = recent("""
+        SELECT e.family,l.instrument,e.to_state,count(*) events
+        FROM paper_family_lifecycle_events e JOIN paper_family_lifecycle l USING(lifecycle_id)
+        WHERE julianDay(e.occurred_at) BETWEEN julianDay(?) AND julianDay(?)
+        GROUP BY 1,2,3 ORDER BY 1,2,3 LIMIT 120
+    """)
+
 print(json.dumps({"observed_at": now.isoformat(), "market_phase": byma_paper_spot_phase(now),
-    "live_ready": live_ready, "native_funnel": native_funnel, "observer": state, "go": {"allowed": allowed, "reason": reason},
+    "motor_audit_12m": audit, "live_ready": live_ready, "native_funnel": native_funnel, "observer": state, "go": {"allowed": allowed, "reason": reason},
     "gateway": {name: gateway.get(name) for name in ("provider", "trade_stream_state", "authenticated",
                 "wire_attempts", "rate_limited_attempts")},
     "market_keys_by_family": dict(by_family), "scanner_cycle": cycle, "iol_wire_cycles": wire_cycles,
