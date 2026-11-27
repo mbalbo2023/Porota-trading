@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 
 import ak_byma_calendar as calendar
 from co_market_sessions_hf6 import byma_paper_spot_phase
+from rc6_iol_market_gateway import iol_primary_enabled
 from ch_empirical_learning import empirical_expectancy
 from ci_operational_context import breadth_observation, sector_observation
 from rc6_trader_dashboard.projection import decimal_amount
@@ -77,15 +78,29 @@ def should_warn_no_usd_operations(session_state: str | None, currencies: list[di
     )
 
 
-def open_market_findings(observer, *, now, decisions, rate_limited=False):
-    # The observer can stay in BOOT_CALENDAR while reattaching to PPI.
-    # Use the audited calendar to decide when market data is expected.
+def open_market_findings(observer, *, now, decisions, rate_limited=False, iol_health=None):
+    # Use the audited calendar even during BOOT_CALENDAR or gateway recovery.
     if byma_paper_spot_phase(now) != "OPEN":
         return [], []
-    if observer.get("ppi_auth") != "OK":
+    data_age = strict_age_seconds(now, observer.get("last_market_data_at"))
+    fresh = data_age is not None and data_age <= MARKET_DATA_FRESHNESS_SECONDS
+    if iol_health is not None:
+        auth = iol_health.get("IOL_REST_AUTH", {})
+        auth_age = strict_age_seconds(now, auth.get("checked_at"))
+        if auth_age is None or auth_age > MARKET_DATA_FRESHNESS_SECONDS:
+            return ["iol_auth_unverified_during_open_market"], []
+        if auth.get("state") == "ROJO":
+            return ["iol_auth_unavailable_during_open_market"], []
+        if auth.get("state") != "VERDE":
+            return ["iol_auth_unverified_during_open_market"], []
+        market = iol_health.get("IOL_REST_MARKETDATA", {})
+        market_age = strict_age_seconds(now, market.get("last_success_at"))
+        if not fresh or market_age is None or market_age > MARKET_DATA_FRESHNESS_SECONDS:
+            reason = "iol_current_book_rate_limited" if rate_limited else "iol_current_book_stale"
+            return [reason], []
+    elif observer.get("ppi_auth") != "OK":
         return ["ppi_auth_unavailable_during_open_market"], []
-    age = strict_age_seconds(now, observer.get("last_market_data_at"))
-    if age is None or age > MARKET_DATA_FRESHNESS_SECONDS:
+    elif not fresh:
         reason = "ppi_current_book_rate_limited" if rate_limited else "ppi_current_book_stale"
         return [reason], []
     return [], ["no_decisions_during_open_market"] if decisions == 0 else []
@@ -255,6 +270,7 @@ def atomic_text(path, content):
 def collect():
     now = datetime.now(TZ)
     market_open = byma_paper_spot_phase(now) == "OPEN"
+    iol = iol_primary_enabled()
     hour = (now-timedelta(hours=1)).isoformat()
     day = datetime.combine(now.date(), datetime.min.time(), TZ).isoformat()
     result = {"version": VERSION, "hotfix": HOTFIX_TAG,
@@ -267,8 +283,21 @@ def collect():
         result["observer"] = {k: observer.get(k) for k in (
             "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
             "last_market_data_at", "real_orders_sent", "http_allowed", "http_blocked")}
+        result["observer"]["market_provider"] = "IOL_REST" if iol else "PPI"
+        iol_health = {} if iol else None
         rate_limited = False
-        if market_open and table(c, "api_health"):
+        if iol and market_open:
+            if table(c, "api_health"):
+                iol_health = {row["component"]: row for row in rows(c, """
+                    SELECT component,state,checked_at,last_success_at FROM api_health
+                    WHERE component IN ('IOL_REST_AUTH','IOL_REST_MARKETDATA') AND source='IOL REST'
+                    """)}
+            recent = (now - timedelta(seconds=MARKET_DATA_FRESHNESS_SECONDS)).isoformat()
+            rate_limited = bool(one(c, """SELECT 1 FROM paper_events
+                WHERE event_type='DATA_ERROR' AND detail GLOB '*: IOL_HTTP_429'
+                  AND julianday(event_at) BETWEEN julianday(?) AND julianday(?) LIMIT 1
+                """, (recent, now.isoformat())))
+        elif market_open and table(c, "api_health"):
             probe = c.execute("""SELECT checked_at,detail FROM api_health
                 WHERE component='PPI_DIRECT_REST_RECOVERY'""").fetchone()
             if probe:
@@ -423,7 +452,7 @@ def collect():
                    position.get("currency"), position.get("settlement"))
             sector_positions.append(dict(position, sector=sector_by_identity.get(key)))
         result["sector_concentration"] = sector_observation(sector_positions)
-        result["ppi_errors_1h"] = rows(c, """SELECT event_type,detail,COUNT(*) count FROM paper_events
+        result["ppi_errors_1h"] = [] if iol else rows(c, """SELECT event_type,detail,COUNT(*) count FROM paper_events
           WHERE julianday(event_at)>=julianday(?) AND event_type IN ('DATA_ERROR','EXIT_BOOK_ERROR',
           'EXIT_READER_LOGIN_ERROR','EXIT_READER_SESSION_INVALID','PPI_SESSION_INVALID')
           GROUP BY event_type,detail ORDER BY count DESC LIMIT 20""", (hour,))
@@ -492,7 +521,7 @@ def collect():
     elif counter != 0:
         result["anomalies"].append("real_orders_sent_nonzero")
     anomalies, warnings = open_market_findings(result["observer"], now=now,
-        decisions=result["trading"]["decisions_1h"], rate_limited=rate_limited)
+        decisions=result["trading"]["decisions_1h"], rate_limited=rate_limited, iol_health=iol_health)
     result["anomalies"].extend(anomalies)
     result["warnings"].extend(warnings)
     if result["ppi_errors_1h"]:
@@ -548,6 +577,10 @@ def enqueue_critical(result, stamp):
         "ppi_auth_unavailable_during_open_market": "PPI perdió la sesión durante la rueda.",
         "ppi_current_book_rate_limited": "PPI devolvió HTTP 429 y falta un par Current/Book fresco.",
         "ppi_current_book_stale": "Falta un par Current/Book fresco de PPI durante la rueda.",
+        "iol_auth_unverified_during_open_market": "Falta evidencia reciente de la sesión IOL REST durante la rueda.",
+        "iol_auth_unavailable_during_open_market": "El Gateway de IOL REST informó un problema de sesión o conexión durante la rueda.",
+        "iol_current_book_rate_limited": "IOL REST devolvió HTTP 429 y falta un par Current/Book fresco.",
+        "iol_current_book_stale": "Falta un par Current/Book fresco de IOL REST durante la rueda.",
     }
     body = "🔴 POROTA — INTROSPECCIÓN CRÍTICA\n" + "\n".join(
         labels.get(code, code) for code in result["anomalies"][:8])

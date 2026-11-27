@@ -88,6 +88,36 @@ def test_introspection_checks_ppi_when_observer_is_booting_during_the_wheel():
         observer, now=now.replace(hour=17), decisions=0) == ([], [])
 
 
+def test_iol_introspection_uses_current_provider_evidence_and_labels_the_telegram_alert(monkeypatch):
+    from contextlib import closing
+
+    now = datetime.fromisoformat("2026-11-27T15:35:00-03:00")
+    observer = {"ppi_auth": "NOT_ATTEMPTED", "last_market_data_at": now.isoformat()}
+    auth = {"state": "VERDE", "checked_at": now.isoformat()}
+    market = {"last_success_at": now.isoformat()}
+    health = {"IOL_REST_AUTH": auth, "IOL_REST_MARKETDATA": market}
+    assert introspection.open_market_findings(observer, now=now, decisions=2, iol_health=health) == ([], [])
+    assert introspection.open_market_findings(observer, now=now, decisions=2, iol_health={}) == (
+        ["iol_auth_unverified_during_open_market"], [])
+    assert introspection.open_market_findings(observer, now=now, decisions=2,
+        iol_health={**health, "IOL_REST_AUTH": {**auth, "state": "ROJO"}}) == (
+        ["iol_auth_unavailable_during_open_market"], [])
+    assert introspection.open_market_findings(observer, now=now, decisions=2,
+        iol_health={**health, "IOL_REST_AUTH": {**auth, "state": "AMARILLO"}}) == (
+        ["iol_auth_unverified_during_open_market"], [])
+    anomalies, warnings = introspection.open_market_findings(observer, now=now, decisions=2,
+        iol_health={**health, "IOL_REST_MARKETDATA": {}}, rate_limited=True)
+    assert anomalies == ["iol_current_book_rate_limited"] and not warnings
+    with closing(sqlite3.connect(":memory:")) as c:
+        c.execute("""CREATE TABLE paper_notification_outbox(event_key TEXT UNIQUE, kind TEXT, body TEXT,
+                    priority INTEGER,created_at TEXT,next_attempt_at TEXT)""")
+        monkeypatch.setattr(introspection, "connect", lambda readonly=False: c)
+        assert introspection.enqueue_critical(
+            {"verdict": "CRITICAL", "anomalies": anomalies, "timestamp": now.isoformat()}, "test")
+        body, = c.execute("SELECT body FROM paper_notification_outbox").fetchone()
+        assert "IOL REST devolvió HTTP 429" in body and "PPI" not in body
+
+
 def test_future_or_stale_safety_heartbeat_never_downgrades_hold():
     now=datetime.fromisoformat('2026-10-20T23:00:00-03:00')
     c,observer=fixture(now)

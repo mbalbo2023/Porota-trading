@@ -204,7 +204,9 @@ def test_closed_idle_avoids_empty_sqlite_writer_but_keeps_due_heartbeat_and_new_
         raise AssertionError('EMPTY_CLOSED_WRITER')
     monkeypatch.setattr(store,'connect',forbidden_writer)
     idle=worker.tick('2026-08-28T18:00:02-03:00')
-    assert idle=={'cursor':0,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING'}
+    assert idle=={'cursor':0,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING',
+                  'next_poll_seconds':worker.CLOSED_IDLE_POLL_SECONDS}
+    assert worker.tick('2026-08-28T18:00:58-03:00')['next_poll_seconds']==2
     monkeypatch.setattr(store,'connect',original_connect)
     assert rows(store,'candle_worker_state')[0]==initial
 
@@ -216,6 +218,7 @@ def test_closed_idle_avoids_empty_sqlite_writer_but_keeps_due_heartbeat_and_new_
     consumed=worker.tick('2026-08-28T18:01:02-03:00')
     assert consumed['cursor']==1 and consumed['accepted']==1
     assert consumed['versions']==2
+    assert 'next_poll_seconds' not in consumed
     assert all(b['volume'] is None and b['trades'] is None
                for b in CandleArchive(store).read(sample_series(),
                    as_of='2026-08-28T18:01:02-03:00',qualities=('SAMPLED',)))
