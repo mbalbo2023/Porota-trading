@@ -101,6 +101,8 @@ def run_probe():
     from scripts.rc6_iol_installed_inventory import run_host_inventory
     from scripts.porota_rootless_host import DB_RELATIVE, Identity, database_snapshot, require
     from scripts.porota_rootless_jobs import scheduler_lock, verified_host
+    from scripts.porota_operator_intent import private_read
+    from scripts.rc6_operator_paper_rearm import evaluate_rearm
 
     identity = Identity.current()
     root = Path('/opt/porota-trading')
@@ -122,9 +124,19 @@ def run_probe():
         namespace = {'__name__':'rc6_iol_214_reference_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
         exec(compile(auth_source,'rc6_iol_214_reference_auth','exec'),namespace)
         auth = namespace['observe_auth'](manager,current,probe_asset=False)
-        market_pair = {'state':'NOT_PROBED_IN_MARKET','wire_attempts':0,'endpoints':{}}
-        if row[0] in ('MARKET_CLOSED','CLOSED','PREOPEN'):
-            market_pair = namespace['observe_gd30_market_pair'](identity.state)
+        market_pair = {'state':'PASSIVE_ONLY','wire_attempts':0,'endpoints':{}}
+        os.environ['POROTA_RUNTIME_BACKEND'] = 'ROOTLESS'
+        now = datetime.now(timezone.utc)
+        authorized, reason, intent = evaluate_rearm(now=now, context='host')
+        rearm = {'authorized':authorized,'reason':reason}
+        if authorized:
+            rearm.update({key:intent[key] for key in ('operator_comment_id','rearm_run_id','intent_since_ar')})
+        try:
+            gate = json.loads(private_read(identity.operator / 'paper-preopen-v2.json'))
+            gate = {key:gate.get(key) for key in ('candidate_sha','market_provider','status','reason',
+                                                 'trade_day_ar','issued_at_ar','phase')}
+        except (OSError, ValueError, TypeError):
+            gate = {'status':'NO_VERIFICADO'}
         common = ('Id','LoadState','ActiveState','SubState','UnitFileState')
         units = {}
         for unit,fields in ((TIMER,('Unit','Triggers','LastTriggerUSec','NextElapseUSecRealtime')),
@@ -149,7 +161,7 @@ def run_probe():
         return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
-                'units':units,'journal':history,'inventory':inventory,
+                'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,
                 'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
 try:
