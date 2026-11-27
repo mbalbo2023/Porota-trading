@@ -1,9 +1,10 @@
 # Porota Trading RC6 — instrucciones para agentes
 
-## Entrada para el reemplazo de PPI por IOL
+## Continuidad de la rueda PAPER del 27/11
 
-- Retomar desde el [handoff ejecutable del 26/11](docs/auditoria-rc6/HANDOFF_IOL_PRIMARIO_2026-11-26.md)
-  y el [checkpoint con RCA y lecciones](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
+- Retomar desde el [checkpoint y handoff vigente](docs/auditoria-rc6/HANDOFF_RUEDA_IOL_2026-11-27.md).
+  Consultar la [matriz](docs/auditoria-rc6/MATRIZ_MIGRACION_RUEDA.md) y el
+  [RCA y lecciones](docs/auditoria-rc6/MIGRACION_IOL_OFFHOST.md).
   Reconciliar HEAD, ownership, SHA de producto y recibos físicos. La revisión
   de release IOL REST está integrada en [#1291](https://github.com/mbalbo2023/Porota-trading/pull/1291).
   El [Promote V2 #214](https://github.com/mbalbo2023/Porota-trading/actions/runs/45921311817/artifacts/15165265389)
@@ -24,6 +25,11 @@
   entrada hasta contar con un puente al recibo de rueda propio del proveedor.
   Las pruebas sintéticas validan el motor con tres claves por familia y la
   base operativa conserva sus guardas.
+- Priorizar GO de IOL desde preopen hasta el broker, calentamiento COLD →
+  WARM → HOT con fuente efectiva y corrección de la discrepancia de tres bonos
+  en el reporte de candidatos. Exigir paridad por clave entre guard, ledger y
+  proyección. Conservar bloqueos por variante hasta acreditar la precondición
+  específica. Registrar la vigencia del reporte y la causa en la UI.
 - Para el archivado diario, medir espacio libre y reservar 2 GiB, con
   margen por lote. Confirmar en el recibo el cursor frío, el techo caliente,
   el último recibo durable y la procedencia histórica. Evitar límites fijos
@@ -130,8 +136,8 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 ## Datos y resultados
 
 - Acreditar la autoridad de identidad del perfil activo por clave exacta y
-  período de vigencia. El baseline del reemplazo usa identidad PPI. En el
-  corte IOL se exige equivalencia IOL o de fuente especializada acreditada.
+  período de vigencia. En el corte IOL se exige identidad de IOL o de fuente
+  especializada acreditada. Las identidades históricas PPI conservan su origen.
   Preservar las versiones de identidad ya publicadas y mantener HOLD en
   variantes ambiguas.
 - Readiness es por instrumento y fail-closed. `ALL_CONTRACT_FAMILIES` no significa

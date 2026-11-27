@@ -1,5 +1,20 @@
 # Porota RC6 · Matriz de migración a IOL para la rueda PAPER
 
+## Estado al 27/11 · Promote V2 #214
+
+El [checkpoint matinal](HANDOFF_RUEDA_IOL_2026-11-27.md) actualiza la evidencia por frente y por familia. La rama de producto y el Droplet conservan el árbol `5ac31c4b` y la imagen `sha256:274b143f…83d2` de #214. Los inventarios y comparadores de las secciones posteriores preservan su corte original.
+
+| Frente | Estado vigente | Próximo cierre |
+| --- | --- | --- |
+| Host, Docker rootless, systemd y Gateway | `VALIDADO_RUNTIME` en #214. Seis procesos, 76 unidades, 34 timers y 16 pares activos con último resultado exitoso. | Revalidar servicios, pulsos, cuota, vigencia y ausencia de tráfico operativo PPI en el turno OPEN. |
+| Replay de motores | `ARTEFACTO_VALIDADO` en el Droplet. 404/404, 30 claves, SQLite aislada, cero órdenes reales. | Reusar las tres suites y cubrir el delta de admisión/embudo en la próxima imagen. |
+| Embudo y apertura PAPER | `BLOQUEADO` por `IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED`. Warm-up dinámico de #214 cuenta fuentes PPI. | Tender el puente GO a la admisión IOL, acreditar Current/Book y pasar COLD, WARM, HOT, READY y ciclo PAPER por variante. |
+| Proyección de candidatos | `BLOQUEADO` para AL30, AL35 y AO29 BYMA/ARS/A-24HS, publicados `NO_READY` mientras el candidato conserva permiso. | Alinear escritor, autoridad y evidencia por perfil. Probar regresión de denegación y caso válido con procedencia IOL. |
+| Archivo EOD y publicaciones | Archivo `LOCAL_EOD_READY`, cursor `144438` alcanzado. | Acreditar fuente y recibo diario IOL para snapshot, revisión y reporte postcierre. |
+| Dashboard | `VALIDADO_RUNTIME` con Chromium real en #214, 53/53 rutas y motivos visibles. | Repetir navegación, detalles, M0–M11 y scheduler con el corte de esta rueda. |
+
+[Recibo #214](https://github.com/mbalbo2023/Porota-trading/actions/runs/45921311817/artifacts/15165265389) · [Bundle del 27/11](https://github.com/mbalbo2023/Porota-trading/blob/ced8edde0e0f072c650d778190e553bcdec9883e/runtime/evidence/latest.json) · [Chromium final](https://github.com/mbalbo2023/Porota-trading/actions/runs/45924531767/artifacts/15165503373)
+
 ## Replay ampliado a 30 claves · PR #1292
 
 Cada escenario usa GO efectivo de prueba, reloj y libro o NAV y condiciones del contrato en SQLite aislada. El resultado prueba decisión, apertura, liquidación o salida PAPER y `real_orders_sent=0`. El fixture por IOL para instrumentos especializados verifica el rechazo requerido antes de ejercer el motor nativo. Los símbolos de FCI son clases sintéticas. Los 404 casos pasaron en el Droplet con el SHA `eba76703be86e6a6b1406db36e5cb4cb87b21330` y la imagen `sha256:274b143fd323ab0b79aff90890f54a7f5ce0ed84c3323fedd385ce85f28e83d2`. [Recibo físico y casos por clave](https://github.com/mbalbo2023/Porota-trading/actions/runs/45921311817/artifacts/15165265389)

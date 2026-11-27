@@ -1,5 +1,19 @@
 # Migración de Porota RC6 a la API de IOL
 
+## RCA y lecciones de la rueda del 27/11
+
+El [checkpoint matinal](HANDOFF_RUEDA_IOL_2026-11-27.md) fija SHA, digest y procedimientos. Los tres controles pendientes se pueden reproducir con el código de #214 y una DB aislada.
+
+| Falla o condición observada | Causa acreditada y condición de cierre |
+| --- | --- |
+| El scanner tiene Gateway IOL y bloquea la apertura PAPER. | `iol_admission_hold` retorna `False` en la construcción del broker. Conectar el recibo de GO IOL al guard transaccional por sesión y clave. Probar rechazos y un recorrido válido de admisión, fill y salida. [Código instalado](https://github.com/mbalbo2023/Porota-trading/blob/eba76703be86e6a6b1406db36e5cb4cb87b21330/bf_production_paper_observer.py#L3600-L3608) |
+| El calentamiento del planificador dinámico cuenta Book y muestras nativas PPI. | Las condiciones de origen en el planificador siguen ligadas a PPI. Calificar evidencia IOL por generación/reloj y demostrar COLD, WARM, HOT y retrocesos. Preservar la prioridad de salida y las versiones anteriores. [Código instalado](https://github.com/mbalbo2023/Porota-trading/blob/eba76703be86e6a6b1406db36e5cb4cb87b21330/rc6_dynamic_universe/orchestrator.py#L137-L155) |
+| El bundle reportó `CANDIDATE_LEDGER_CONTRADICTION` para tres permisos heredados en Bonos. | `candidate_can_simulate=1` contradice `NO_READY` con testigo de liquidación PPI inválido y fuente vencida. El productor combina el ledger exacto con el contrato de evidencia anterior. Trazar el escritor, añadir regresión de precedencia IOL y publicar el estado acordado entre productor y motor. [Bundle](https://github.com/mbalbo2023/Porota-trading/blob/ced8edde0e0f072c650d778190e553bcdec9883e/runtime/evidence/latest.json) |
+
+- Verificar OAuth, último negocio, Book, GO y fill como hechos distintos con sus recibos. Cuando el proveedor sólo certifica el reloj de publicación, completar la autoridad del trade antes de usarlo en la estrategia.
+- Ligar la evidencia a la clave exacta y a la generación. El catálogo, la vista heredada y el ledger exacto tienen denominadores distintos. Un agregado que omite una familia exige probar su camino individual.
+- Combinar la medición de salud de Docker y systemd con progreso útil de los workers, cola, vela y generación publicada. En el dashboard, mostrar el motivo específico junto al dato y comprobarlo en el navegador real.
+
 ## RCA del release IOL REST
 
 | Falla observada | Corrección y control permanente |

@@ -1,5 +1,7 @@
 # Checkpoint · IOL primario y retiro operativo de PPI en RC6
 
+**Continuidad del 27/11.** Consultar el [checkpoint matinal y la ejecución de la rueda](HANDOFF_RUEDA_IOL_2026-11-27.md).
+
 **26/11/2026 ART.** La instrucción de ejecución queda en el [handoff paso a paso](HANDOFF_IOL_PRIMARIO_2026-11-26.md). Este checkpoint registra lo que se puede reutilizar y las puertas de aceptación que siguen pendientes. El estado de los HEAD debe resolverse nuevamente al retomar.
 
 ## Promote V2 #214 · Release instalado y verificación del Droplet

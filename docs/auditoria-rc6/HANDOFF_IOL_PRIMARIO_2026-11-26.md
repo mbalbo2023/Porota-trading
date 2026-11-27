@@ -1,5 +1,7 @@
 # Handoff operativo · IOL como proveedor primario de Porota RC6
 
+La retoma del release #214 y las acciones de rueda del 27/11 están en el [handoff vigente](HANDOFF_RUEDA_IOL_2026-11-27.md).
+
 Mandato del 26/11/2026 ART. Implementar el reemplazo en forma autónoma, con frentes independientes y Fix-Forward. El objetivo es un solo corte integrado con IOL REST como API de mercado primaria de RC6, el camino PPI retirado de la operación de Porota y un backtesting integral del sistema instalado en el Droplet. Trabajar en `PRODUCTION_PAPER / SIMULATION`, con guardas de órdenes reales y `real_orders_sent=0` medido.
 
 El [checkpoint](CHECKPOINT_IOL_PRIMARIO_2026-11-26.md) fija la evidencia, los límites y el RCA. La [matriz de rueda](MATRIZ_MIGRACION_RUEDA.md) identifica artefactos y pruebas por familia, procesos, unidades y rutas. El [plan y replay aislados](MIGRACION_IOL_OFFHOST.md) explican qué piezas ya existen.
