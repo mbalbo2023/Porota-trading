@@ -1112,3 +1112,86 @@ def test_iol_dynamic_capacity_uses_completed_live_cycle_evidence():
     changed = [*cycles[-3:-1], {**cycles[-1], "rate_limited_attempts": 1}]
     assert safe_iol_capacity(changed, as_of=at)["reason_codes"] == ["IOL_CAPACITY_RATE_LIMITED"]
     assert safe_iol_capacity(cycles[-3:], as_of=at + timedelta(minutes=3))["safe_limit"] == 0
+
+
+@pytest.mark.parametrize("failure", [None, "owner", "429", "unsealed", "stale", "wrong_capacity"])
+def test_iol_paper_scanner_consumes_current_shadow_hot_scope(tmp_path, monkeypatch, failure):
+    import bf_production_paper_observer as scanner
+    from rc6_dynamic_universe.iol_capacity import cycle_evidence, safe_iol_capacity
+    from rc6_trader_dashboard import generation
+
+    store = PaperStore(tmp_path / "dynamic-scanner.sqlite")
+    keys = [(f"TEST{i}", *GGAL[1:]) for i in range(32)]
+    opened, hot, warm, other = (keys[i] for i in (0, -1, -2, -3))
+
+    def request(key):
+        return key[0], key[1], key[4]
+
+    monkeypatch.setattr(store, "open_positions", lambda: [
+        {"symbol": opened[0], "asset_class": opened[1], "settlement": opened[4]}])
+    monkeypatch.setattr(scanner.financial_catalog, "iol_spot_catalog", lambda *_, **__: keys)
+    monkeypatch.setattr(scanner, "INTERVAL", 60)
+    monkeypatch.setattr(scanner, "ACTIVE_SYMBOL_LIMIT", 6)
+    monkeypatch.setattr(scanner, "now_iso", lambda: AT.isoformat())
+    budget = {"calls_per_minute": 40, "scanner_batch_limit": 6, "scanner_calls_per_instrument": 3,
+              "batches_per_minute": 1, "planned_exit_calls": 2}
+    metrics = {"provider": "IOL_REST", "authenticated": True, "trade_stream_state": "SUBSCRIBED",
+               "session_generation": "a" * 64, "rate_limited_attempts": 0}
+    cycles = []
+    with store.connect() as db:
+        db.execute("""CREATE TABLE universe_cycle_metrics(
+            id INTEGER PRIMARY KEY, cursor_after, detail, started_at, finished_at)""")
+        for offset in range(3):
+            start = AT - timedelta(seconds=140 - offset * 60)
+            finish = start + timedelta(seconds=10)
+            tick = (start + timedelta(seconds=5)).isoformat()
+            metrics["wire_attempts"] = 18 * (offset + 1)
+            pairs = [[key, tick, tick, tick, metrics["session_generation"]]
+                     for key in (opened, hot, warm, other)]
+            cycle = cycle_evidence(metrics, pairs, budget, complete=True)
+            db.execute("""INSERT INTO universe_cycle_metrics(cursor_after,detail,started_at,finished_at)
+                VALUES(?,?,?,?)""", (0, json.dumps({"iol_capacity_cycle": cycle}),
+                                      start.isoformat(), finish.isoformat()))
+            cycles.append({**cycle, "started_at": start.isoformat(), "finished_at": finish.isoformat()})
+    cap = safe_iol_capacity(cycles, as_of=AT)
+    assert cap["safe_limit"] == 3
+    pipeline = {"STRATEGY_ELIGIBLE": True, "TRADEABLE": True, "SIGNAL_READY": True}
+    report = {"mode": "SHADOW", "status": "SHADOW_OBSERVING", "phase": "OPEN",
+              "real_orders_sent": 0, "real_routes": "NOT_CALLED", "as_of": AT.isoformat(),
+              "engines": {"EQUITY_SPOT": {"capacity": cap.copy(), "preopen_digest": "b" * 64,
+                  "selected": [warm, hot], "telemetry": [
+                      {"identity": warm, "state": "WARM", "pipeline": pipeline},
+                      {"identity": hot, "state": "HOT", "pipeline": pipeline, "signal_result": "SAMPLES_READY",
+                       "strategy_source_at": AT.isoformat(), "book_at": AT.isoformat()}]}}}
+    if failure == "owner":
+        metrics["session_generation"] = "c" * 64
+    elif failure == "429":
+        metrics["rate_limited_attempts"] = 1
+    elif failure == "unsealed":
+        report = {}
+    elif failure == "stale":
+        report["as_of"] = (AT - timedelta(minutes=6)).isoformat()
+    elif failure == "wrong_capacity":
+        report["engines"]["EQUITY_SPOT"]["capacity"]["evidence_digest"] = "d" * 64
+    monkeypatch.setattr(generation, "read_shadow", lambda _: {"report": report})
+
+    baseline, _, _, _, old_plan = scanner._cycle_plan(store, iol=True)
+    selected, total, _, _, plan = scanner._cycle_plan(store, iol=True, iol_metrics=metrics)
+    assert total == len(keys)
+    assert len(selected) <= plan["iol_rest_budget"]["scanner_batch_limit"] == 6
+    assert selected[0] == request(opened)
+    assert set(old_plan["cold"]) <= set(selected)
+    if failure:
+        assert selected == baseline
+        assert plan["iol_dynamic_selection"]["status"] == "BASELINE"
+        assert plan["iol_dynamic_selection"]["reason_codes"]
+        assert not plan.get("dynamic_selection")
+    else:
+        assert plan["iol_dynamic_selection"]["status"] == "APPLIED"
+        assert selected[:3] == (request(opened), request(hot), request(warm))
+        assert request(hot) not in baseline and request(hot) in plan["opening_identities"]
+        assert request(warm) not in plan["opening_identities"]
+        assert [row["priority"] for row in plan["read_scopes"][:3]] == [
+            "OPENED_CRITICAL", "STRATEGY_HOT", "WARM"]
+        with store.connect() as db:
+            assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0

@@ -1,4 +1,4 @@
-"""SHADOW capacity from the production scanner's completed IOL cycles."""
+"""IOL capacity and scanner priority from completed cycles and SHADOW evidence."""
 from datetime import timedelta
 import json
 import math
@@ -145,3 +145,92 @@ def safe_iol_capacity(cycles, *, as_of):
         result["reason_codes"] = [code if fullmatch(r"IOL_CAPACITY_[A-Z_]+", code)
                                   else "IOL_CAPACITY_EVIDENCE_INVALID"]
     return result
+
+
+def paper_capacity(cycles, metrics, budget, *, as_of):
+    """Check that the measured slice still belongs to the live local owner."""
+    capacity = safe_iol_capacity(cycles, as_of=as_of)
+    if capacity["status"] != "SHADOW_RECOMMENDATION":
+        return capacity
+    latest = cycles[-1]
+    if (not isinstance(metrics, dict) or metrics.get("provider") != "IOL_REST"
+            or metrics.get("authenticated") is not True
+            or metrics.get("trade_stream_state") != "SUBSCRIBED"
+            or metrics.get("session_generation") != latest["generation"]
+            or type(metrics.get("wire_attempts")) is not int
+            or metrics["wire_attempts"] < latest["wire_attempts"]
+            or type(metrics.get("rate_limited_attempts")) is not int
+            or metrics["rate_limited_attempts"] != latest["rate_limited_attempts"]
+            or latest["budget"] != budget):
+        return {"status": "NO_VERIFICADO", "reason_codes": ["IOL_CAPACITY_OWNER_OR_BUDGET_CHANGED"]}
+    return capacity
+
+
+def prioritize_paper_equities(symbols, plan, identities, opened, capacity, report, *, as_of):
+    """Use a committed, same-capacity SHADOW plan to prioritize PAPER reads.
+
+    Existing open-position reads and baseline discovery remain scheduled.
+    Only HOT identities with a fresh, complete signal window get new evaluation
+    slots. The normal PAPER strategy and admission gates still run on each quote.
+    """
+    at = stamp(as_of)
+    plan["iol_dynamic_selection"] = {"status": "BASELINE", "reason_codes": capacity["reason_codes"]}
+    if capacity["status"] != "SHADOW_RECOMMENDATION":
+        return symbols, plan
+    try:
+        engine = report["engines"]["EQUITY_SPOT"]
+        evidence = engine["capacity"]
+        if (report.get("mode") != "SHADOW" or report.get("status") != "SHADOW_OBSERVING"
+                or report.get("phase") != "OPEN" or type(report.get("real_orders_sent")) is not int
+                or report["real_orders_sent"] != 0 or report.get("real_routes") != "NOT_CALLED"
+                or not 0 <= (at - stamp(report["as_of"])).total_seconds() <= CADENCE_SECONDS
+                or not fullmatch(r"[0-9a-f]{64}", engine.get("preopen_digest") or "")
+                or any(evidence.get(name) != capacity[name] for name in
+                       ("evidence_digest", "configuration_fingerprint", "safe_limit", "expires_at"))):
+            raise ValueError("IOL_PAPER_SHADOW_CAPACITY_MISMATCH")
+        telemetry = {tuple(row["identity"]): row for row in engine["telemetry"]}
+        exact = {key: request for request, key in identities.items()}
+        measured = set(map(tuple, capacity["measured_identities"]))
+        cold_candidates = set(map(tuple, plan["cold"]))
+        cold = tuple(request for request in symbols if request in cold_candidates)
+        pinned = tuple(request for request in symbols if request in opened)
+        reserved = set(pinned) | set(cold)
+        limit = plan["iol_rest_budget"]["scanner_batch_limit"]
+        free = min(capacity["safe_limit"] - len(pinned), limit - len(pinned) - len(cold))
+        eligible = []
+        for key in dict.fromkeys(map(tuple, engine["selected"])):
+            if key not in exact or key not in measured or exact[key] in reserved:
+                continue
+            row = telemetry[key]
+            pipeline = row["pipeline"]
+            if pipeline.get("STRATEGY_ELIGIBLE") is not True or pipeline.get("TRADEABLE") is not True:
+                continue
+            state = row["state"]
+            if state == "WARM":
+                eligible.append((exact[key], "WARM"))
+            elif (state == "HOT" and row.get("signal_result") == "SAMPLES_READY"
+                    and pipeline.get("SIGNAL_READY") is True
+                    and all(0 <= (at - stamp(row[clock])).total_seconds() <= FRESH_SECONDS
+                            for clock in ("strategy_source_at", "book_at"))):
+                eligible.append((exact[key], "STRATEGY_HOT"))
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        plan["iol_dynamic_selection"]["reason_codes"] = ["IOL_PAPER_SHADOW_SELECTION_UNVERIFIED"]
+        return symbols, plan
+
+    priorities = dict(sorted(eligible, key=lambda item: item[1] != "STRATEGY_HOT")[:max(free, 0)])
+    if not priorities:
+        plan["iol_dynamic_selection"]["reason_codes"] = ["IOL_PAPER_NO_VERIFIED_DYNAMIC_SLOT"]
+        return symbols, plan
+    requests = tuple(dict.fromkeys((*pinned, *priorities, *cold, *symbols)))[:limit]
+    hot = {request for request, priority in priorities.items() if priority == "STRATEGY_HOT"}
+    opening = (set(map(tuple, plan["opening_identities"])) - priorities.keys()) | hot
+    plan.update(dynamic_selection=True,
+        feasible=bool(hot) or plan["feasible"], focus_feasible=bool(hot) or plan["focus_feasible"],
+        opening_identities=[request for request in requests if request in opening],
+        read_scopes=[{"request": request, "identity": identities[request],
+                      "priority": "OPENED_CRITICAL" if request in pinned else priorities.get(request, "DISCOVERY")}
+                     for request in requests if request in identities],
+        iol_dynamic_selection={"status": "APPLIED", "reason_codes": [],
+                               "evidence_digest": capacity["evidence_digest"],
+                               "promoted_slots": len(priorities), "hot_slots": len(hot)})
+    return requests, plan

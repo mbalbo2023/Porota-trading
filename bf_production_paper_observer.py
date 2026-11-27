@@ -2295,7 +2295,7 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, iol=False):
+def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, iol=False, iol_metrics=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     catalog_error = None
@@ -2316,8 +2316,16 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     positions = store.open_positions()
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in positions))
+    cycles = []
     with store.connect() as c:
         row = c.execute("SELECT cursor_after,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
+        if iol and iol_metrics is not None and exact and not catalog_error:
+            from rc6_dynamic_universe.iol_capacity import read_cycles
+            try:
+                cycles = read_cycles(c)
+            except sqlite3.Error:
+                # Capacity evidence is optional to the existing baseline plan.
+                pass
     previous = None
     if row:
         try:
@@ -2382,6 +2390,17 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
             "batches_per_minute": batches_per_minute,
             "planned_exit_calls": exit_calls,
         }
+        if iol_metrics is not None and exact and not catalog_error:
+            from cg_paper_workspace import artifact_root
+            from rc6_dynamic_universe.iol_capacity import paper_capacity, prioritize_paper_equities
+            from rc6_trader_dashboard.generation import read_shadow
+
+            capacity = paper_capacity(cycles, iol_metrics, plan["iol_rest_budget"], as_of=checked_at)
+            report = {}
+            if capacity["status"] == "SHADOW_RECOMMENDATION":
+                report = read_shadow(artifact_root(store.path) / "dynamic-shadow")["report"]
+            symbols, plan = prioritize_paper_equities(
+                symbols, plan, exact, opened, capacity, report, as_of=checked_at)
     if not plan.get("dynamic_selection"):
         plan["read_scopes"] = [
             {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
@@ -2510,7 +2529,7 @@ def _publish_economic_shadow_health(store):
     return summary
 
 
-def _runtime_readiness(store, *, record_event=False):
+def _runtime_readiness(store, *, record_event=False, iol_metrics=None):
     """Distingue cobertura histórica, presupuesto de señales y PIT exacto."""
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
@@ -2525,7 +2544,7 @@ def _runtime_readiness(store, *, record_event=False):
          *pit_ready)))
     open_count = len(store.open_positions())
     symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
-        store, focus_candidates=priority, iol=iol,
+        store, focus_candidates=priority, iol=iol, iol_metrics=iol_metrics,
     )
     catalog_read_error = active_plan["catalog_status"] == "CATALOG_READ_ERROR"
     if iol:
@@ -3733,8 +3752,15 @@ def run():
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
+            iol_metrics = None
+            if iol:
+                try:
+                    iol_metrics = reader.metrics
+                except Exception as exc:
+                    if not iol_gateway_reader_needs_reattach(exc):
+                        raise
             (focus, symbols, eligible_total, cursor_before, cursor_after,
-             feasibility) = _runtime_readiness(store, record_event=True)
+             feasibility) = _runtime_readiness(store, record_event=True, iol_metrics=iol_metrics)
             active_plan = feasibility["active_plan"]
             catalog_read_error = active_plan.get("catalog_status") == "CATALOG_READ_ERROR"
             observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
