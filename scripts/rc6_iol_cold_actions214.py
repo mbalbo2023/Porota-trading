@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 
 from scripts.porota_actions_host import connection, decode_receipt, require, ssh_run
 
@@ -89,11 +90,16 @@ def main():
             response = ssh_run(ssh, ["/usr/bin/python3", "-I", "-B", "-"],
                                data=run_source.encode(), timeout=760)
         observed = decode_receipt(response.stdout)
-        require(response.returncode == 0 and observed.get("schema") == SCHEMA
-                and observed.get("operation") == args.operation
-                and all(observed.get(key) == value for key, value in PRODUCT.items())
-                and observed.get("recovery_source_sha256") == hashlib.sha256(body.encode()).hexdigest(),
-                "COLD_ACTIONS_RECEIPT_UNVERIFIED")
+        expected = {**PRODUCT, "schema": SCHEMA, "operation": args.operation,
+                    "recovery_source_sha256": hashlib.sha256(body.encode()).hexdigest()}
+        mismatches = [key for key, value in expected.items() if observed.get(key) != value]
+        if response.returncode != 0 or mismatches:
+            code = observed.get("failure_signature", "")
+            report.update({"failure_signature": "COLD_ACTIONS_RECEIPT_UNVERIFIED",
+                           "transport_exit_code": response.returncode, "receipt_mismatches": mismatches,
+                           "remote_failure_signature": code if isinstance(code, str)
+                           and re.fullmatch(r"[A-Za-z0-9_]{1,96}", code) else None})
+            return 1
         report = observed
         if report.get("state") == expected_state:
             require(type(report.get("real_orders_sent")) is int and report["real_orders_sent"] == 0
