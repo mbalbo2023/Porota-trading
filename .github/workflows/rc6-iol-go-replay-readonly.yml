@@ -1,0 +1,58 @@
+name: RC6 IOL GO isolated replay
+
+on:
+  push:
+    branches: [diagnostic/rc6-iol-go-replay-20261127]
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    env:
+      CANDIDATE_SHA: fb6975629d18a79d25defe6f4a440e17f5bd3e90
+      CANDIDATE_TREE: 8e7cda1dd97cd9423c06bf8dd03464109c2526c5
+    steps:
+      - name: Checkout the exact candidate without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - name: Build the candidate using the repository Dockerfile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$CANDIDATE_TREE"
+          docker build --build-arg "POROTA_BUILD_SHA=$CANDIDATE_SHA" \
+            --build-arg "POROTA_CANDIDATE_TREE_SHA=$CANDIDATE_TREE" -t "rc6-iol-replay:$GITHUB_RUN_ID" .
+      - name: Reuse the #214 replay with isolated SQLite and AF_UNIX
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/rc6-iol-go-replay"
+          mkdir -p "$report"
+          image="$(docker image inspect -f '{{.Id}}' "rc6-iol-replay:$GITHUB_RUN_ID")"
+          jq -n --arg sha "$CANDIDATE_SHA" --arg tree "$CANDIDATE_TREE" --arg image "$image" \
+            '{source_sha:$sha,source_tree:$tree,image_id:$image,network:"none",operational_mounts:0}' > "$report/identity.json"
+          common=(--rm --pull never --network none --cap-drop ALL --security-opt no-new-privileges:true
+                  --pids-limit 128 --memory 1g --no-healthcheck -e POROTA_IOL_OFFHOST_IPC=1 --entrypoint python)
+          timeout 390 docker run "${common[@]}" "$image" -B -m scripts.rc6_iol_installed_replay > "$report/replay.json"
+          jq -e '.status == "PASS" and .failed_or_skipped == 0 and .iol_gateway_transport == "AF_UNIX_PEERCRED" and
+                 (.families | length) == 10 and (.multi_instrument_replay.families | length) == 10' "$report/replay.json" >/dev/null
+          timeout 120 docker run "${common[@]}" "$image" -B -m pytest -o addopts= -q --tb=short \
+            tests/test_rc6_dynamic_orchestrator.py::test_iol_equity_shadow_requires_its_own_trades_and_book \
+            tests/test_rc6_capacity_promotion.py::test_iol_profile_cannot_use_the_ppi_capacity_policy \
+            tests/test_rc6_shadow_runtime_wiring.py::test_iol_worker_keeps_native_samples_without_using_ppi_capacity \
+            | tee "$report/guards.txt"
+      - name: Save synthetic replay and candidate identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-go-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-iol-go-replay
+          if-no-files-found: warn
+          retention-days: 30
