@@ -567,7 +567,14 @@ def trace_scanner_and_paper(conn, now, market_open):
             "fresh_at_saved_decision":not quote.time_error(observed.isoformat(),require_trade=True)
                 and 0 < quote.bid <= quote.ask and min(quote.bid_size,quote.ask_size)>0,
             "final_result":final,"final_reason":gate,"scanner_scope":scope})
-    return {"status":"OBSERVED", "session_start":market_open.isoformat(),
+    decisions_after_go = [dict(row) for row in conn.execute("""
+        SELECT strategy_version, action, count(*) AS count
+        FROM paper_decisions
+        WHERE julianday(decided_at) BETWEEN julianday(?) AND julianday(?)
+        GROUP BY strategy_version, action ORDER BY strategy_version, action
+    """, ("2026-11-27T16:00:51-03:00", now.isoformat()))]
+    return {"decisions_after_go":decisions_after_go,
+        "status":"OBSERVED", "session_start":market_open.isoformat(),
         "scans_by_family":dict(plan_rollup),
         "watch_summary":{symbol:dict(Counter(row["basket"] for row in scopes))
                          for symbol,scopes in watch_plans.items()},
