@@ -19,6 +19,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import time
@@ -142,6 +143,18 @@ def shadow_metrics(worker_started_at):
             if isinstance(timing, dict) and name == 'status':
                 receipt['compute_seconds'] = {key: timing[key] for key in ('poll_seconds', 'tick_seconds', 'tick_cpu_seconds')
                                               if type(timing.get(key)) in (int, float) and math.isfinite(timing[key]) and timing[key] >= 0}
+            if receipt['state'] == 'FAIL_CLOSED':
+                failure = {}
+                for key in ('error_class', 'error_module', 'evidence_file', 'runtime_read_stage', 'sqlite_errorname'):
+                    value = row.get(key)
+                    if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', value):
+                        failure[key] = value
+                for key in ('error_line', 'sqlite_errorcode', 'evidence_measured_bytes', 'evidence_limit_bytes'):
+                    if type(row.get(key)) is int:
+                        failure[key] = row[key]
+                if type(row.get('runtime_deadline_expired')) is bool:
+                    failure['runtime_deadline_expired'] = row['runtime_deadline_expired']
+                receipt['failure'] = failure
             result[name] = receipt
         else:
             result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_SAFETY_CONTRACT_UNVERIFIED'}
