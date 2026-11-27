@@ -657,8 +657,16 @@ def run_clock(store, children, stop, *, clock_fn=now_iso, interval=5):
             children.close()
 
 
+def _exit_portfolio(store):
+    positions, invalid = store.exit_positions()
+    futures = getattr(store, "active_future_positions", lambda: [])()
+    return [*positions, *({**future, "asset_class": "FUTUROS", "paper_id": future["lifecycle_id"]}
+                         for future in futures)], invalid
+
+
 def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
-                       pause=lambda: None, beat=lambda: None, sale_witness=None):
+                       pause=lambda: None, beat=lambda: None, sale_witness=None,
+                       portfolio=None, verified=None):
     """Un book por abierta; jamás depende de último negocio o de Gemini."""
     from bf_production_paper_observer import normalize_quote
     from dataclasses import replace
@@ -670,10 +678,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from rc6_iol_market_gateway import IOLGatewayMarketReader, iol_gateway_reader_needs_reattach
     from rc6_ppi_gateway_reader_adapter import gateway_reader_needs_reattach
     import bu_instrument_catalog as catalog
-    positions, invalid = store.exit_positions()
     from rc6_paper_family_lifecycle import future_position_contract
-    for future in getattr(store, 'active_future_positions', lambda: [])():
-        positions.append({**future, "asset_class": "FUTUROS", "paper_id": future["lifecycle_id"]})
+    positions, invalid = _exit_portfolio(store) if portfolio is None else portfolio
     failures = len(invalid)
     for p in positions:
         if should_stop():
@@ -740,11 +746,19 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
                     q = replace(q, contract=original_contract, currency=p["currency"],
                                 market=p["market"], opening_block_reason="FUTURES_EXIT_ONLY_DURABLE_CONTRACT")
             stage = "PERSIST_QUOTE"
+            if verified is not None:
+                # The IOL round only credits a book after exact identity,
+                # venue time and the durable snapshot have all been checked.
+                error = q.time_error(q.observed_at)
+                if error or q.monetary_identity() != (p["currency"], p["market"]):
+                    raise ValueError(error or "IOL_EXIT_BOOK_IDENTITY_MISMATCH")
             store.add_quote(q)
             stage = "VALIDATE_QUOTE"
             if q.time_error(q.observed_at):
                 failures += 1
             q.monetary_identity()
+            if verified is not None:
+                verified.add(p["paper_id"])
         except Exception as exc:
             if session_invalid(exc) or (stage == "BROKER_BOOK" and (
                     gateway_reader_needs_reattach(exc) or isinstance(reader, IOLGatewayMarketReader)
@@ -759,6 +773,35 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
                 p["paper_id"])
         pause()
     return failures
+
+
+def _collect_iol_exit_round(reader, store, policy, at, stop, *, beat, deadline_seconds):
+    """Bind an observed IOL traversal to a stable portfolio and Gateway owner."""
+    portfolio = _exit_portfolio(store)
+    positions, invalid = portfolio
+    start = time.monotonic()
+    before = reader.metrics
+    verified = set()
+    failures = collect_exit_books(reader, store, policy, at, should_stop=stop.is_set,
+                                  beat=beat, portfolio=portfolio, verified=verified)
+    after = reader.metrics
+    remaining, now_invalid = _exit_portfolio(store)
+    elapsed = time.monotonic() - start
+    scoped = {p["paper_id"]: p for p in positions}
+    current = {p["paper_id"]: p for p in remaining}
+    generation = after.get("session_generation")
+    registration = (after.get("registered_clients") or {}).get("exit_reader") or {}
+    ready = (not stop.is_set() and not failures and not invalid and not now_invalid
+             and scoped == current and set(scoped) == verified and elapsed <= deadline_seconds
+             and isinstance(generation, str) and re.fullmatch(r"[0-9a-f]{64}", generation)
+             and before.get("session_generation") == generation and after.get("provider") == "IOL_REST"
+             and registration.get("pid") == os.getpid()
+             and after.get("authenticated") is True and after.get("wire_budget_attached") is True)
+    outcome = ("COMPLETE" if scoped else "IDLE_NO_OPEN_POSITIONS") if ready else "NO_VERIFICADO"
+    detail = (f"{failures} errores de lectura de abiertas; round_seconds={elapsed:.6f}; "
+              f"critical_cadence_seconds={deadline_seconds}; provider=IOL_REST; "
+              f"open_positions={len(positions)}; verified_books={len(verified)}; budget_round={outcome}")
+    return ("READY" if ready else "DEGRADED"), detail, elapsed
 
 
 def exit_reader_cadence(store, at):
@@ -826,9 +869,18 @@ def run_reader(store, stop):
                     status("ERROR",type(exc).__name__)
                     continue
             try:
+                if iol:
+                    cadence = DEFAULT_POLICY["budget"]["critical_book_seconds"]
+                    state, detail, elapsed = _collect_iol_exit_round(
+                        reader, store, policy, now_iso(), stop,
+                        beat=lambda: status("VERIFYING", "Recorriendo posiciones abiertas"),
+                        deadline_seconds=cadence)
+                    status(state, detail)
+                    stop.wait(max(0.0, cadence-elapsed))
+                    continue
                 round_started=time.monotonic()
                 cadence=exit_reader_cadence(store,now_iso())
-                budget_round="NO_VERIFICADO" if iol else "NOT_OBSERVED"
+                budget_round="NOT_OBSERVED"
                 try:
                     failures = collect_exit_books(
                         reader, store, policy, now_iso(), should_stop=stop.is_set,
@@ -842,7 +894,7 @@ def run_reader(store, stop):
                     # native leases, failures and deadline before COMPLETE.
                     # A stop can make collect_exit_books return zero after a
                     # partial traversal; it must never certify that round.
-                    if not iol and not stop.is_set():
+                    if not stop.is_set():
                         try:
                             observed=reader.observe_exit_round(
                                 elapsed_seconds=elapsed,
@@ -866,16 +918,15 @@ def run_reader(store, stop):
                     # scope reset performs no PPI GET or sidecar mutation.
                     # If reset itself fails, stop this reader; reusing its
                     # unproven scope could authorize a false COMPLETE later.
-                    if not iol:
-                        try:
-                            reader.discard_exit_round_scope()
-                        except Exception as exc:
-                            if gateway_reader_needs_reattach(exc):
-                                # Verify reset on the next pin before any read.
-                                pending_scope_reset = True
-                                raise
-                            # A reset failure cannot be recovered as Book contention.
-                            raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc
+                    try:
+                        reader.discard_exit_round_scope()
+                    except Exception as exc:
+                        if gateway_reader_needs_reattach(exc):
+                            # Verify reset on the next pin before any read.
+                            pending_scope_reset = True
+                            raise
+                        # A reset failure cannot be recovered as Book contention.
+                        raise RuntimeError("EXIT_READER_SCOPE_RESET_UNVERIFIED") from exc
             except sqlite3.OperationalError as exc:
                 if not _sqlite_contention(exc):
                     raise
@@ -920,8 +971,7 @@ def main(argv=None):
                     ['--intraday-scalping-worker'], ['--caucion-cash-sweep-worker']):
         raise ValueError("Argumentos desconocidos del runtime paper")
     iol = iol_primary_enabled()
-    if (iol and argv in (['--ppi-gateway-worker'], ['--intraday-scalping-worker'],
-                         ['--caucion-cash-sweep-worker']) or
+    if (iol and argv == ['--ppi-gateway-worker'] or
             not iol and argv == ['--iol-gateway-worker']):
         raise ValueError("RC6_WORKER_MARKET_PROVIDER_MISMATCH")
     stop = threading.Event()
@@ -988,9 +1038,9 @@ def main(argv=None):
             "notifications": [sys.executable, str(Path(__file__).resolve()), "--notification-worker"],
             "candles": [sys.executable, str(Path(__file__).resolve()), "--candle-worker"],
             **({"intraday_scalping": [sys.executable, str(Path(__file__).resolve()), "--intraday-scalping-worker"]}
-              if not iol and os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
+              if iol or os.getenv("PAPER_SCALPING_MODE", "OFF").upper() in {"ACTIVE_PAPER", "ACTIVE_OBSERVE"} else {}),
             **({"caucion_cash_sweep": [sys.executable, str(Path(__file__).resolve()), "--caucion-cash-sweep-worker"]}
-              if not iol and os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
+              if iol or os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER" else {}),
         })
         run_clock(store,children,stop)
     return 0

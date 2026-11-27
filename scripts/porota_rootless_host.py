@@ -56,7 +56,8 @@ PRESERVED_RELEASE_SOURCES = (
 # operator-disabled and must never return as an expected/accepted child.
 CONTROLLER_CHILDREN = ("ppi_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
                        "candles", "intraday_scalping", "caucion_cash_sweep")
-IOL_CONTROLLER_CHILDREN = ("iol_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications", "candles")
+IOL_CONTROLLER_CHILDREN = ("iol_gateway", "scanner", "dynamic_shadow", "exit_reader", "notifications",
+                           "candles", "intraday_scalping", "caucion_cash_sweep")
 IOL_CREDENTIAL_MOUNT = "/run/secrets/rc6_iol_rest.env"
 IOL_CREDENTIALS_FILE = "iol-rest.env"
 MARKET_PROVIDER_ENV = "POROTA_RC6_MARKET_PROVIDER"
