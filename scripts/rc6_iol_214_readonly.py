@@ -1,4 +1,4 @@
-"""Observe installed release #214 and verify one IOL reference with its cached bearer."""
+"""Inventory installed release #214 and observe its existing IOL session."""
 
 import argparse
 import hashlib
@@ -14,7 +14,7 @@ EXPECTED = {"source_sha": "eba76703be86e6a6b1406db36e5cb4cb87b21330",
             "image_id": "sha256:274b143fd323ab0b79aff90890f54a7f5ce0ed84c3323fedd385ce85f28e83d2",
             "attempt": "45921311817-1"}
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA = "porota.iol.installed-214-reference-auth.v1"
+SCHEMA = "porota.iol.installed-214-preopen-inventory.v1"
 
 REMOTE = '''
 from contextlib import closing
@@ -98,6 +98,7 @@ def run_probe():
     assert source.is_dir() and source.stat().st_uid == os.getuid()
     sys.path.insert(0,str(source))
     from rc6_scheduler_snapshot import instant, systemd_clock
+    from scripts.rc6_iol_installed_inventory import run_host_inventory
     from scripts.porota_rootless_host import DB_RELATIVE, Identity, database_snapshot, require
     from scripts.porota_rootless_jobs import scheduler_lock, verified_host
 
@@ -113,13 +114,14 @@ def run_probe():
         require(original == current.get('database'),'AUDIT_DATABASE_IDENTITY_UNVERIFIED')
         with closing(sqlite3.connect((root / DB_RELATIVE).as_uri()+'?mode=ro',uri=True,timeout=.3)) as db:
             db.execute('PRAGMA query_only=ON')
-            row = db.execute('SELECT session_state,heartbeat_at FROM observer_state WHERE id=1').fetchone()
+            row = db.execute('SELECT session_state,heartbeat_at,mode,real_orders_sent '
+                             'FROM observer_state WHERE id=1').fetchone()
         stamp = instant(row[1]) if row else None
-        require(stamp is not None and row[0] in ('MARKET_CLOSED','CLOSED') and
-                0 <= (datetime.now(timezone.utc)-stamp).total_seconds() <= 120,'AUDIT_CLOSED_MARKET_REQUIRED')
+        require(stamp is not None and row[2:] == ('PRODUCTION_PAPER',0) and
+                0 <= (datetime.now(timezone.utc)-stamp).total_seconds() <= 120,'AUDIT_PAPER_HEARTBEAT_REQUIRED')
         namespace = {'__name__':'rc6_iol_214_reference_auth','__file__':str(source / 'scripts/rc6_iol_auth_diagnostic.py')}
         exec(compile(auth_source,'rc6_iol_214_reference_auth','exec'),namespace)
-        auth = namespace['observe_auth'](manager,current,probe_asset=True)
+        auth = namespace['observe_auth'](manager,current,probe_asset=row[0] in ('MARKET_CLOSED','CLOSED','PREOPEN'))
         common = ('Id','LoadState','ActiveState','SubState','UnitFileState')
         units = {}
         for unit,fields in ((TIMER,('Unit','Triggers','LastTriggerUSec','NextElapseUSecRealtime')),
@@ -132,13 +134,20 @@ def run_probe():
             history = journal(installed,current)
         except (OSError,ValueError,subprocess.SubprocessError):
             history = {'state':'NO_VERIFICADO','health_runs':[]}
-        requests = auth.get('market_requests_generated')
+        inventory = run_host_inventory(manager,current)
+        for role in ('observer','dashboard'):
+            inspected = manager.check_role(current,role)
+            require(inspected['State'].get('Running') is True and type(inspected.get('RestartCount')) is int,
+                    'AUDIT_CONTAINER_STATE_UNVERIFIED')
+            inventory[role+'_restarts'] = inspected['RestartCount']
+        requests = auth.get('market_requests_generated',0)
         require(type(requests) is int and requests in (0,1) and auth.get('oauth_grants_sent') == 0 and
                 database_snapshot(root / DB_RELATIVE) == original,'AUDIT_REFERENCE_BOUNDARY_UNVERIFIED')
-        return {'schema':schema, **expected,'read_only':True,'real_orders_sent':0,'grants_generated':0,'market_session':row[0],
+        return {'schema':schema, **expected,'read_only':True,'real_orders_sent':row[3],'grants_generated':0,'market_session':row[0],
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,
-                'units':units,'journal':history,'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
+                'units':units,'journal':history,'inventory':inventory,
+                'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
 try:
     print(json.dumps(run_probe(),sort_keys=True))
@@ -158,7 +167,7 @@ def main():
     receipt = {"schema": SCHEMA, **EXPECTED, "state": "NO_VERIFICADO", "reason": "AUDIT_TRANSPORT_UNVERIFIED"}
     try:
         with connection(os.environ) as (ssh, _, _):
-            proc = ssh_run(ssh, ["/usr/bin/python3", "-I", "-B", "-"], data=payload, timeout=60)
+            proc = ssh_run(ssh, ["/usr/bin/python3", "-I", "-B", "-"], data=payload, timeout=90)
         observed = decode_receipt(proc.stdout)
         require(observed.get("schema") == SCHEMA and all(observed.get(k) == v for k, v in EXPECTED.items()),
                 "AUDIT_RELEASE_MISMATCH")
