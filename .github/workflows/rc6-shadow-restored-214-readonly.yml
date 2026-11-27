@@ -1,0 +1,37 @@
+name: RC6 SHADOW evidence after COLD recovery on release 214
+
+on:
+  push:
+    branches: [diagnostic/rc6-shadow-restored-214]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc6-shadow-restored-214-readonly
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Read the exact restored SHADOW generation and its COLD receipt
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: python3 -B -m scripts.rc6_iol_214_shadow_readonly --output "$RUNNER_TEMP/rc6-shadow-restored-214.json"
+      - name: Publish sanitized evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rc6-shadow-restored-214-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-shadow-restored-214.json
+          if-no-files-found: error
+          retention-days: 30
