@@ -4,9 +4,11 @@
 
 - Retomar desde el [handoff ejecutable del 26/11](docs/auditoria-rc6/HANDOFF_IOL_PRIMARIO_2026-11-26.md)
   y el [checkpoint con RCA y lecciones](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
-  Acreditar el HEAD, ownership, estado instalado y pruebas ya hechas antes de
-  implementar. Converger en un candidato y una única promoción bajo el control
-  de operador vigente.
+  Reconciliar HEAD, ownership, SHA de producto y recibos físicos. La revisión
+  de release IOL REST está integrada en [#1291](https://github.com/mbalbo2023/Porota-trading/pull/1291).
+  El [Promote V2 #213](https://github.com/mbalbo2023/Porota-trading/actions/runs/45913851493)
+  quedó VALIDADO_RUNTIME en PAPER/SIMULATION. Consultar la auditoría exacta y
+  los bloqueos de rueda y archivado en el checkpoint antes de tocar runtime.
 - El objetivo del reemplazo es IOL REST primario y cero accesos operativos de
   RC6 a la API de PPI. Retirar PPI también como alternativa. Preservar bases,
   versiones y procedencia históricas, autoridades especializadas acreditadas y
@@ -16,12 +18,15 @@
   todas las familias PAPER, los workers, timers y servicios efectivos.
   Comprobar infraestructura y dashboard real con Playwright. Cerrar con los
   recibos de runtime y `real_orders_sent=0`.
+- La evidencia de rueda exige identidad exacta, reloj IOL del último trade,
+  libro vigente y GO efectivo. La auditoría #213 dejó el guard de admisión en
+  HOLD. Preservar el histórico original al resolver el límite del archivador.
 
 ## Aislamiento obligatorio del comparador #1287
 
 - Conservar [#1287](https://github.com/mbalbo2023/Porota-trading/pull/1287) y sus recibos como comparador.
-  Continuar el cableado desde la rama `fix/rc6-iol-primary-wiring-20261126` y el
-  SHA consignado en el [checkpoint](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
+  La rama `fix/rc6-iol-primary-wiring-20261126` preserva el cableado de prueba
+  acreditado en el [checkpoint](docs/auditoria-rc6/CHECKPOINT_IOL_PRIMARIO_2026-11-26.md).
   El perfil de pruebas `POROTA_RC6_MARKET_PROVIDER=IOL_REST` se ejerce en Actions
   hospedado, con red deshabilitada, fixtures y SQLite temporal.
 - El marcador `ops/policy/rc6-iol-testing-only.json` veta Predeploy V2, el

@@ -1,5 +1,19 @@
 # Migración de Porota RC6 a la API de IOL
 
+## RCA del release IOL REST
+
+| Falla observada | Corrección y control permanente |
+| --- | --- |
+| El supervisor de QA elegía IOL, mientras Compose seguía montando credenciales PPI y el verificador esperaba ocho procesos PPI. | El release liga el montaje privado de IOL y el perfil de los contenedores. El postflight valida el Gateway por `SO_PEERCRED`, PID y registro de scanner y EXIT. El perfil IOL bloquea login, refresh y consultas del cliente PPI. La inspección del predecesor exige el perfil de su propio recibo. |
+| La prueba del paquete detectó que `docs/evidence/rc6-fi-paper-sale-sources.json` quedaba fuera de la imagen del replay de Bonos/ON. | Docker incluye la evidencia histórica exacta y la revisión de paridad la ata al checkout. Predeploy repite el replay sobre la imagen sin montar documentación. |
+| El snapshot auditado de SQLite rechazó un scratch en RAM. | Reusar el requisito de custodia con datos en el almacenamiento efímero sobre disco del contenedor. Los ensayos no tienen red ni montajes operativos. |
+| Postflight contó tres de 76 unidades por interpretar separadores de `systemctl` y descartó el estado de salida del probe Python. | La Action diagnóstica consulta por unidad exacta y toma metadata para la plantilla A3. Verifica el hash del probe dentro de la imagen instalada y publica razones acotadas. Se acreditaron 76 unidades y los vínculos de los 16 timers activos. [Inventario](https://github.com/mbalbo2023/Porota-trading/actions/runs/45915398028/artifacts/15162265736) |
+| La salud IOL devolvió HTTP 401 a las 21:00 ART sin identificar fase OAuth o ficha. | El timer de salud renovó su sesión a las 21:04 y la lectura posterior verificó GD30. El owner del Gateway estaba sin pedidos de mercado al cierre. Si se repite, publicar fase y código del intento con el mismo control de sesión y sin material de autenticación. [Sonda de autenticación](https://github.com/mbalbo2023/Porota-trading/actions/runs/45914887576/artifacts/15162220581) |
+| Local EOD devolvió `exit 1` del dispatcher. El histórico frío de 2.914.836.480 B supera el máximo de 2.080.374.784 B. El cursor comprobado quedó en `144365` frente a `144438`. | El guard de capacidad explica el bloqueo medido. El journal conserva sólo `DOCKER_COMMAND_FAILED` del despachador. La corrección debe preservar el archivo y su procedencia, permitir un destino de archivo con capacidad acreditada y demostrar cursor al día y recibo durable. [Recibo de capacidad y cursor](https://github.com/mbalbo2023/Porota-trading/actions/runs/45915398028/artifacts/15162265736) |
+| REST informa `last_updated` sin contrato de reloj del último negocio. El catálogo elegible heredado tampoco acredita una identidad IOL de rueda. | El scanner y la admisión conservan HOLD. El cierre requiere unir el trade `D` de IOL con la clave exacta, el Book y su generación, validar frescura y aportar un GO efectivo. Las familias especializadas conservan sus propios requisitos de entrada y salida. |
+
+**Lecciones aplicadas.** Probar el replay con la misma disposición de disco, red y archivos que tendrá en el Droplet. Los fixtures documentados quedan ligados al hash del release. Las pruebas de motor usan sus escenarios y recibos de su propio origen. El recibo del despliegue acredita procesos y controles físicos, y el recibo de rueda acredita GO y READY. [Predeploy #1346](https://github.com/mbalbo2023/Porota-trading/actions/runs/45912443928) · [Contrato REST](https://developers.iolinversiones.com/api/llms) · [Contrato WebSocket](https://developers.iolinversiones.com/docs/websocket)
+
 **Migración PROPUESTA · Integración aislada EN PRUEBAS · 26/11/2026 ART**
 
 Para ejecutar el reemplazo, seguir el [handoff paso a paso](HANDOFF_IOL_PRIMARIO_2026-11-26.md)

@@ -1,5 +1,24 @@
 # Porota RC6 · Matriz de migración a IOL para la rueda PAPER
 
+## Replay ejecutado en el Droplet · Promote V2 #213
+
+Los 372 casos pasaron sobre la imagen `sha256:252c9705181005b03a4055bf61f5d01485832f46691a16c41ede440f4035bedf`, con el SHA `36617d9c1a1bd0f80a55bd519c3f052b33830944`, AF_UNIX, SQLite temporal, red deshabilitada y `real_orders_sent=0`. El único ciclo completo acreditado con Gateway IOL en el replay es GGAL. En las demás familias se verificaron adaptadores y recorridos de motor con los escenarios propios de cada fuente. El GO, la vigencia de mercado y el READY de entrada de la rueda siguen sin acreditar en las diez familias. [Recibo #213](https://github.com/mbalbo2023/Porota-trading/actions/runs/45913851493/artifacts/15160639638)
+
+| Familia | Fuente en el replay IOL | Resultado PAPER de los fixtures | Evidencia de rueda pendiente |
+| --- | --- | --- | --- |
+| Acciones | Cotización y profundidad sintéticas | Ciclo GGAL por Gateway IOL, entrada y salida | Reloj del último trade, Book vigente y GO de la clave real |
+| CEDEARs | Cotización y profundidad sintéticas | Compra y venta por su motor | Identidad local exacta, trade, Book y GO |
+| ETF | Cotización y profundidad sintéticas | Compra y venta con costos de prueba y rechazo del costo sin acreditar | Costos revisados, trade, Book y GO de la variante |
+| Bonos | Cotización y profundidad sintéticas | Compra y venta con segundo libro firmado | Identidad y política económica, firma y Book posterior al ACK |
+| Letras | Cotización y profundidad sintéticas | Compra y cierre por pago acreditado en el escenario | Contrato, plazo y recibo de pago de la serie exacta |
+| ON | Cotización y profundidad sintéticas | Compra y venta con segundo libro firmado | Identidad y política económica, firma y Book posterior al ACK |
+| Opciones | Cotización y profundidad sintéticas | Compra y venta por su motor | Contrato de opción y subyacente, relojes, liquidez y GO |
+| Futuros | HOLD de fuente | Apertura, margen y cierre DLR por su motor | Contrato, tick, libro y derechos A3 |
+| Cauciones | HOLD de fuente | Colocación y vencimiento en el ledger | Libro colocador y reloj acreditado para moneda y plazo |
+| FCI | HOLD de fuente | Suscripción y rescate de prueba, hold de calendario | Clase registrada, NAV, corte y calendario con recibo de origen |
+
+## Línea base de los comparadores
+
 Corte del 26/11/2026 ART. Rama aislada del [PR #1287](https://github.com/mbalbo2023/Porota-trading/pull/1287), base de código productiva `a6cc6e3ddcb18cde1e4aeb87752212c5bf925d36`. Actions #7 acreditó 9.268 regresiones, 367 focales, 16 disparos de verificación de timers y `real_orders_sent=0` en la imagen aislada de `d50229019ae772ba4d68fd4e402f6d5b25ad8f34`. El corte físico heredado es el release #212, fuente `414771d203cf1d0bff4e00c803ef722309dca064`. La sonda #541 observó ese runtime PPI a las 18:59:41 ART. El gate de rueda IOL del comparador sigue bloqueado. [Artefacto #7](https://github.com/mbalbo2023/Porota-trading/actions/runs/45897374372/artifacts/15154597735) · [Censo #541](https://github.com/mbalbo2023/Porota-trading/actions/runs/45901799077/artifacts/15156147750) · [Handoff](HANDOFF_IOL_PRIMARIO_2026-11-26.md)
 
 **Verde** significa que se puede conservar el componente y que su función indicada tiene prueba aplicable. **Amarillo** indica integración parcial o una comprobación pendiente con el proveedor, el runtime o la tarea completa. **Rojo** identifica una precondición para rueda incumplida o un bloqueo efectivo. El ámbito con cobertura física pendiente queda **NO_VERIFICADO**. La calificación integral de rueda permanece **INVIABLE**.
