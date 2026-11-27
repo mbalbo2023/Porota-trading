@@ -36,6 +36,12 @@ jobs:
           set -Eeuo pipefail
           directory="$RUNNER_TEMP/porota-visual-214"
           mkdir -p "$directory/download"
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45923312569 | jq -e '
+            .status == "completed" and .conclusion == "success" and
+            .head_sha == "184166ffbd03cc3d268ffcff79280e450a173b9e"' >/dev/null
+          gh api repos/mbalbo2023/Porota-trading/actions/artifacts/15164823626 | jq -e '
+            .workflow_run.id == 45923312569 and .expired == false and
+            .digest == "sha256:08c49b8ca76691e229901346e5c31d3fcde258f2dd569aaa95f8a7316acd6b71"' >/dev/null
           gh api repos/mbalbo2023/Porota-trading/actions/runs/45921311817 | jq -e '
             .id == 45921311817 and .run_attempt == 1 and .event == "workflow_dispatch" and
             .status == "completed" and .head_branch == "deploy/rc6-pr69-isolated-20260915" and
