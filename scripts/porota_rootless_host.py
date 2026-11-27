@@ -697,10 +697,18 @@ def classify_runtime(row, *, now, started, provider="PPI"):
                                   ("RUNNING", "MARKET_OPEN")}):
             stale = phase == "MARKET_OPEN" and not fresh(row.get("last_market_data_at"), 300)
             return {"status": "READY", "source_alert": "AMBER_IOL_MARKET_DATA_STALE" if stale else "NONE"}
-        if (process == "DEGRADED" and phase == "MARKET_OPEN" and re.fullmatch(
-                r"0/\d+ instrumentos actualizados de \d+ elegibles; rotación activa; operaciones solo simuladas\.",
-                str(row.get("detail", "")))):
-            return {"status": "READY", "source_alert": "AMBER_IOL_NO_QUALIFIED_MARKET_DATA"}
+        if process == "DEGRADED" and phase == "MARKET_OPEN":
+            detail = str(row.get("detail", ""))
+            cycle = r" instrumentos actualizados de \d+ elegibles; rotación activa; operaciones solo simuladas\."
+            if re.fullmatch(r"0/\d+" + cycle, detail):
+                return {"status": "READY", "source_alert": "AMBER_IOL_NO_QUALIFIED_MARKET_DATA"}
+            # The scanner deliberately stops entry evaluation when its read budget
+            # is exhausted. Postflight still verifies the live Gateway and roles.
+            deferred = re.fullmatch(
+                r"(?:IOL_GATEWAY_RATE_HOLD|IOL_HTTP_429): observación sin nuevas aperturas PAPER\. "
+                r"(\d+)/(\d+)" + cycle, detail)
+            if deferred and int(deferred[1]) < int(deferred[2]):
+                return {"status": "READY", "source_alert": "AMBER_IOL_READ_LIMIT"}
         if process == "STARTING" or (process == "DEGRADED" and phase in {
                 "BOOT_COMMAND", "BOOT_CALENDAR", "BOOT_IOL_GATEWAY", "BOOT_IOL_GATEWAY_IDENTITY"}):
             return {"status": "PENDING", "source_alert": "NO_VERIFICADO"}
