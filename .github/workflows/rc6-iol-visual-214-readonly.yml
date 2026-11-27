@@ -1,0 +1,80 @@
+name: RC6 IOL #214 visual audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [diagnostic/rc6-iol-visual-214]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rc6-unified-paper-deploy
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.ref == 'refs/heads/diagnostic/rc6-iol-visual-214' &&
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout the diagnostic revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify and sanitize the exact runtime receipt from Promote #214
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          directory="$RUNNER_TEMP/porota-visual-214"
+          mkdir -p "$directory/download"
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45921311817 | jq -e '
+            .id == 45921311817 and .run_attempt == 1 and .event == "workflow_dispatch" and
+            .status == "completed" and .head_branch == "deploy/rc6-pr69-isolated-20260915" and
+            .head_sha == "3236a969faf286032dc56502423471198e6d8dd1" and
+            (.path | split("@")[0]) == ".github/workflows/porota-deploy-v2-promote.yml"' >/dev/null
+          gh run download 45921311817 --repo mbalbo2023/Porota-trading \
+            --name porota-runtime-45921311817-1 --dir "$directory/download"
+          python3 -B -m scripts.rc6_visual_214_receipt \
+            --downloaded-receipt "$directory/download/runtime.json" --output "$directory/runtime.json"
+
+      - name: Prepare Chromium on the Actions runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m venv "$RUNNER_TEMP/porota-visual-214/playwright-venv"
+          "$RUNNER_TEMP/porota-visual-214/playwright-venv/bin/pip" install --disable-pip-version-check playwright==1.55.0
+          command -v google-chrome >/dev/null
+
+      - name: Verify the authenticated dashboard on the installed image
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          directory="$RUNNER_TEMP/porota-visual-214"
+          "$directory/playwright-venv/bin/python" -B -m scripts.rc6_dashboard_playwright_postdeploy \
+            --runtime-receipt "$directory/runtime.json" --receipt "$directory/dashboard-playwright.json" \
+            --require-explained
+
+      - name: Preserve only the sanitized runtime and visual receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-visual-214-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/porota-visual-214/runtime.json
+            ${{ runner.temp }}/porota-visual-214/dashboard-playwright.json
+          if-no-files-found: warn
+          retention-days: 30

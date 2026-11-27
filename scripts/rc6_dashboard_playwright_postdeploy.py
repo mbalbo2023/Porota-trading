@@ -18,7 +18,7 @@ from socketserver import UnixStreamServer
 import subprocess
 import sys
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
 
@@ -304,16 +304,32 @@ def audit_route(page, base_url, path, view, row):
     selector = "#porota-canonical-nav" if path in PRIMARY_ROUTES else ".subnav"
     link = page.locator(selector).get_by_role("link", name=NAVIGATION_LABELS[path], exact=True)
     response = None
+    expected_url = target
+    row["menu_click_verified"] = False
     matches = link.count()
-    if matches == 1 and link.is_visible() and urlsplit(link.get_attribute("href") or "").path == path:
-        try:
-            page.evaluate("window.scrollTo(0, 0)")
-            with page.expect_navigation(url=target, wait_until="domcontentloaded", timeout=7_000) as event:
-                link.click(timeout=2_000)
-            response = event.value
-            row["navigation"] = "PRIMARY_MENU" if path in PRIMARY_ROUTES else "SUBMENU"
-        except Error:
-            row["menu_navigation_failure"] = "MENU_CLICK_OR_RESPONSE_UNVERIFIED"
+    if matches == 1 and link.is_visible():
+        href = link.get_attribute("href")
+        clicked_url = urljoin(page.url, href) if href else ""
+        clicked = urlsplit(clicked_url)
+        if clicked._replace(query="") == urlsplit(target):
+            row["retained_filter_count"] = len(parse_qs(clicked.query, keep_blank_values=True))
+            try:
+                page.evaluate("window.scrollTo(0, 0)")
+                # Follow the browser's full same-origin href. Subviews retain
+                # the current filters, including Universo's default channel.
+                with page.expect_navigation(url=lambda url: url == clicked_url,
+                                            wait_until="domcontentloaded", timeout=7_000) as event:
+                    link.click(timeout=2_000)
+                response = event.value
+                if response is not None:
+                    expected_url = clicked_url
+                    row["navigation"] = "PRIMARY_MENU" if path in PRIMARY_ROUTES else "SUBMENU"
+            except Error:
+                row["menu_navigation_failure"] = "MENU_CLICK_OR_RESPONSE_UNVERIFIED"
+            if response is None:
+                row.setdefault("menu_navigation_failure", "MENU_CLICK_OR_RESPONSE_UNVERIFIED")
+        else:
+            row["menu_navigation_failure"] = "MENU_LINK_TARGET_OR_VISIBILITY_UNVERIFIED"
     else:
         row["menu_navigation_failure"] = ("MENU_LINK_MISSING" if matches == 0 else
             "MENU_LINK_AMBIGUOUS" if matches > 1 else "MENU_LINK_TARGET_OR_VISIBILITY_UNVERIFIED")
@@ -322,10 +338,12 @@ def audit_route(page, base_url, path, view, row):
         response = page.goto(target, wait_until="domcontentloaded", timeout=8_000)
     row["http_status"] = response.status if response is not None else None
     content = page.locator("#terminal-content")
-    row["verified"] = bool(response and response.status == 200 and page.url == target and
+    row["verified"] = bool(response and response.status == 200 and response.url == expected_url and
+                           page.url == expected_url and
                            response.headers.get("x-porota-projection") == PROJECTION_SCHEMA and content.is_visible() and
                            content.get_attribute("data-view") == "/".join(view) and
                            page.locator("#porota-paper-mode").get_attribute("aria-label") == "MODO SIMULACIÓN PRODUCTIVA")
+    row["menu_click_verified"] = row["verified"] and row["navigation"] in {"PRIMARY_MENU", "SUBMENU"}
     if row["verified"]:
         row["menus"] = audit_menus(page, view)
         row["horizontal_overflow_px"] = page.evaluate("() => Math.max(0, document.documentElement.scrollWidth - innerWidth)")
@@ -374,7 +392,7 @@ def navigate(base_url, receipt):
                                                          "fields_match", "focus_restored")}
             checks = [row["unverified_labels"] for row in receipt["routes"] if "unverified_labels" in row]
             receipt["unverified_labels"] = unknown_rollup(checks + [row["unverified_labels"] for row in details])
-            receipt["menu_navigation_count"] = sum(row["navigation"] in {"PRIMARY_MENU", "SUBMENU"} for row in receipt["routes"])
+            receipt["menu_navigation_count"] = sum(row.get("menu_click_verified", False) for row in receipt["routes"])
             receipt["javascript_error_count"] = len(errors)
             require(all(row["verified"] for row in receipt["routes"]), "DASHBOARD_ROUTES_FAILED")
             secondary_results = {}
