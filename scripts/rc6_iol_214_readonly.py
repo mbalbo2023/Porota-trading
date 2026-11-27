@@ -9,10 +9,7 @@ from pathlib import Path
 from scripts.porota_actions_host import connection, decode_receipt, require, ssh_run
 
 
-EXPECTED = {"source_sha": "1a04c5bae138bf2da59e98a69c77c408106d4b4d",
-            "source_tree": "d59db6a55f4eed90bfc8428535f38545c4cce84c",
-            "image_id": "sha256:62227a2add3624835f9d39a1726c721f393cc10f8b6209259dfe06111e12cf2d",
-            "attempt": "46052331831-1"}
+EXPECTED = {'source_sha': '28516e41b5c1aae0c183c1d55c41c13bca0fae15', 'source_tree': 'fdd24f70e9cbbbf241731a26b68c7b517e86a354', 'image_id': 'sha256:95918b793f999eb495334354b4392b8be9251daeeb02b863faf86c4ff98145b5', 'attempt': '46060603986-1'}
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "porota.iol.intraday-preopen-postflight.v1"
 
@@ -275,7 +272,8 @@ def run_probe():
                                                  'trade_day_ar','issued_at_ar','phase')}
         except (OSError, ValueError, TypeError):
             gate = {'status':'NO_VERIFICADO'}
-        code = ('container','exec',current['roles']['observer'],'python','-B','-c',installed_probe)
+        code = ('container','exec',current['roles']['observer'],'python','-B','-c',
+                'deployment_at = ' + repr(installed.isoformat()) + '\\n' + installed_probe)
         try:
             status = json.loads(manager.docker.call(*code, timeout=15))
             require(type(status.get('observer', {}).get('real_orders_sent')) is int and
@@ -851,6 +849,43 @@ with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1
         FROM historical_raw_archive WHERE origin='IOL_REST_TRADE_SAMPLE' AND quality='SAMPLED'
           AND recorded_at BETWEEN ? AND ? GROUP BY 1 ORDER BY 1 LIMIT 120
     """)
+    from rc6_dynamic_universe.iol_capacity import read_cycles, safe_iol_capacity
+    from rc6_iol_intraday import inputs, read_windows
+    from rc6_signal_contracts import event_window_contract
+
+    started = datetime.fromisoformat(deployment_at)
+    latest_cycles = [cycle for cycle in read_cycles(conn) if cycle.get("started_at") and
+                     datetime.fromisoformat(cycle["started_at"]) >= started]
+    capacity = safe_iol_capacity(latest_cycles, as_of=now)
+    audit["iol_dynamic_capacity"] = {key: capacity.get(key) for key in
+        ("status","reason_codes","safe_limit","measured_identities","completed_cycles",
+         "max_cycle_gap_seconds","generated_at","expires_at")}
+    audit["iol_dynamic_capacity"]["completed_cycles_seen"] = len(latest_cycles)
+    if latest_cycles:
+        audit["iol_dynamic_capacity"]["latest_accepted_pair_keys"] = [
+            row[0] for row in latest_cycles[-1].get("pairs", [])]
+    windows = read_windows(conn, now)
+    audit["iol_scalping_windows"] = [{"identity": key, "intervals": len(window["points"]),
+        "last_source_at": window["fresh_trade_at"].isoformat(),
+        "temporal": event_window_contract(inputs(window)[0], now)["reason_code"]}
+        for key, window in sorted(windows.items())][:40]
+    if "scalping_candidates" in tables:
+        decisions = []
+        seen = set()
+        for row in conn.execute("""
+            SELECT evaluated_at,symbol,asset_class,market,currency,settlement,action,points,reason,economics_json
+            FROM scalping_candidates WHERE evaluated_at >= ? ORDER BY id DESC LIMIT 200
+        """, (started.isoformat(),)):
+            key = tuple(row[name] for name in ("symbol","asset_class","market","currency","settlement"))
+            if key in seen:
+                continue
+            seen.add(key)
+            economics = json.loads(row["economics_json"] or "{}")
+            reason = row["reason"] if re.fullmatch("[A-Z][A-Z_0-9]{1,96}", row["reason"]) else "OTHER"
+            decisions.append({"identity": key, "evaluated_at": row["evaluated_at"], "action": row["action"],
+                              "points": row["points"], "reason": reason,
+                              "volume_unit": (economics.get("volume_contract") or {}).get("unit")})
+        audit["iol_native_evaluations_since_install"] = decisions
     audit["specialized_events"] = recent("""
         SELECT e.family,l.instrument,e.to_state,count(*) events
         FROM paper_family_lifecycle_events e JOIN paper_family_lifecycle l USING(lifecycle_id)

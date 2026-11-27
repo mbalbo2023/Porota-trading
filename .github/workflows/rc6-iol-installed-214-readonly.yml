@@ -1,4 +1,4 @@
-name: RC6 IOL Current and Book on installed release 214
+name: RC6 motors and funnel on the installed IOL release
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Read GD30 Current and Book with the existing cached bearer
+      - name: Read live IOL, EXIT, scalping, and funnel evidence
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
