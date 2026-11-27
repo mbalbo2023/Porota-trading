@@ -8,12 +8,13 @@
     "missing_offer_requirements": [],
     "missing_policy_requirements": [],
     "observed_contracts": 10,
-    "offer_checked_at": "2026-11-27T15:35:08.334363-03:00",
+    "offer_checked_at": "2026-11-27T16:35:04.702627-03:00",
     "placed_today": 0,
     "queries": 0,
     "state": "NO_CURRENT_VALID_OFFER"
   },
   "changes": [
+    "trading.open: 0 -> 1",
     "ingestion.rows: 15624 -> 242636"
   ],
   "coherence": {
@@ -26,14 +27,14 @@
   "currency_funnel": [
     {
       "currency": "ARS",
-      "last_observed_at": "2026-11-27T18:34:34.132589+00:00",
-      "observed_symbols": 58
+      "last_observed_at": "2026-11-27T19:35:02.005226+00:00",
+      "observed_symbols": 60
     }
   ],
   "economics": {
-    "blocked_1h": 7,
-    "evaluated_1h": 7,
-    "opened_1h": 0
+    "blocked_1h": 0,
+    "evaluated_1h": 1,
+    "opened_1h": 1
   },
   "family_readiness": [
     {
@@ -334,17 +335,17 @@
     "branch": "runtime-observability",
     "day": "2026-11-27",
     "detail": null,
-    "recorded_at": "2026-11-27T17:42:36.829033+00:00",
+    "recorded_at": "2026-11-27T18:42:36.606238+00:00",
     "retention_days": 90,
     "status": "PUBLISHED"
   },
   "ingestion": {
-    "candle_versions": 147324,
+    "candle_versions": 147824,
     "instruments": 1151,
     "last_download": "2026-09-25T20:02:13.939573+00:00",
     "last_market_date": "2026-09-25",
-    "latest_candle_known_at": "2026-11-27T18:35:00.814480+00:00",
-    "raw": 901,
+    "latest_candle_known_at": "2026-11-27T19:35:01.492492+00:00",
+    "raw": 1066,
     "rows": 242636
   },
   "learning_expectancy": [
@@ -383,29 +384,45 @@
   ],
   "market_regime_observation": {
     "binding": false,
-    "falling": 25,
+    "falling": 26,
     "method": "FIRST_LAST_TRADE_SAMPLE_BREADTH_NOT_AN_INDEX",
     "minimum_symbols": 4,
     "policy": "ALERT_ONLY",
-    "rising": 9,
+    "rising": 10,
     "state": "MIXED_OR_POSITIVE",
-    "symbols": 58,
+    "symbols": 60,
     "unchanged": 24
   },
   "observer": {
-    "heartbeat_at": "2026-11-27T18:34:44.342885+00:00",
+    "heartbeat_at": "2026-11-27T19:34:13.478597+00:00",
     "http_allowed": 66,
     "http_blocked": 0,
-    "last_market_data_at": "2026-11-27T18:34:34.132589+00:00",
+    "last_market_data_at": "2026-11-27T19:34:12.949653+00:00",
     "mode": "PRODUCTION_PAPER",
     "ppi_auth": "NOT_ATTEMPTED",
-    "process_state": "RUNNING",
+    "process_state": "DEGRADED",
     "real_orders_sent": 0,
     "session_state": "MARKET_OPEN"
   },
   "ppi_errors_1h": [
     {
-      "count": 10,
+      "count": 18,
+      "event_type": "EXIT_BOOK_ERROR"
+    },
+    {
+      "count": 8,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 8,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 8,
+      "event_type": "DATA_ERROR"
+    },
+    {
+      "count": 6,
       "event_type": "DATA_ERROR"
     },
     {
@@ -417,31 +434,15 @@
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 5,
+      "count": 4,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 5,
+      "count": 4,
       "event_type": "DATA_ERROR"
     },
     {
-      "count": 3,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 3,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 3,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 3,
-      "event_type": "DATA_ERROR"
-    },
-    {
-      "count": 3,
+      "count": 4,
       "event_type": "DATA_ERROR"
     },
     {
@@ -501,28 +502,28 @@
     "maximum_observed_concentration": 0,
     "policy": "OBSERVATION_ONLY",
     "state": "MAP_UNAVAILABLE",
-    "unmapped_positions": 0
+    "unmapped_positions": 1
   },
   "storage": {
-    "database_bytes": 2859597824,
-    "filesystem_free": 21368811520,
+    "database_bytes": 2865250304,
+    "filesystem_free": 21346885632,
     "filesystem_total": 61285326848,
-    "filesystem_used": 39899738112,
-    "filesystem_used_pct": 65.1,
-    "wal_bytes": 4210672
+    "filesystem_used": 39921664000,
+    "filesystem_used_pct": 65.14,
+    "wal_bytes": 4206552
   },
   "telegram": {
     "DEAD": 1,
-    "SENT": 805,
+    "SENT": 807,
     "SUPPRESSED_WEEKEND": 6
   },
-  "timestamp": "2026-11-27T15:35:08-03:00",
+  "timestamp": "2026-11-27T16:35:04-03:00",
   "trading": {
-    "buys_1h": 0,
+    "buys_1h": 1,
     "closed_today": 0,
-    "decisions_1h": 198,
+    "decisions_1h": 158,
     "net_pnl_today": 0.0,
-    "open": 0,
+    "open": 1,
     "sells_1h": 0
   },
   "verdict": "CRITICAL",
@@ -533,33 +534,33 @@
   ],
   "workers": {
     "candles": {
-      "heartbeat_age_seconds": 0.979225,
-      "heartbeat_at": "2026-11-27T18:35:07.355138+00:00",
+      "heartbeat_age_seconds": 3.210135,
+      "heartbeat_at": "2026-11-27T19:35:01.492492+00:00",
       "state": "RUNNING"
     },
     "caucion_cash_sweep": {
-      "heartbeat_age_seconds": 25.253989,
-      "heartbeat_at": "2026-11-27T18:34:43.080374+00:00",
-      "state": "WAITING_WINDOW"
+      "heartbeat_age_seconds": 3.081675,
+      "heartbeat_at": "2026-11-27T19:35:01.620952+00:00",
+      "state": "HOLD"
     },
     "exit_reader": {
-      "heartbeat_age_seconds": 0.411498,
-      "heartbeat_at": "2026-11-27T18:35:07.922865+00:00",
+      "heartbeat_age_seconds": 1.867584,
+      "heartbeat_at": "2026-11-27T19:35:02.835043+00:00",
       "state": "READY"
     },
     "scalping": {
-      "heartbeat_age_seconds": 151.170174,
-      "heartbeat_at": "2026-11-27T18:32:37.164189+00:00",
+      "heartbeat_age_seconds": 71.779735,
+      "heartbeat_at": "2026-11-27T19:33:52.922892+00:00",
       "state": "OBSERVING_IOL"
     },
     "supervisor": {
-      "heartbeat_age_seconds": 3.56296,
-      "heartbeat_at": "2026-11-27T18:35:04.771403+00:00",
+      "heartbeat_age_seconds": 3.265754,
+      "heartbeat_at": "2026-11-27T19:35:01.436873+00:00",
       "state": "RUNNING"
     },
     "telegram": {
-      "heartbeat_age_seconds": 0.797837,
-      "heartbeat_at": "2026-11-27T18:35:07.536526+00:00",
+      "heartbeat_age_seconds": 3.177902,
+      "heartbeat_at": "2026-11-27T19:35:01.524725+00:00",
       "state": "RUNNING"
     }
   }
