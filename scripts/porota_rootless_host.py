@@ -921,7 +921,9 @@ def observe_iol_owner(database):
             return None
         registered[role] = pid
     return {"owner_pid": owner["owner_pid"], "registered": registered,
-            "authenticated": owner.get("authenticated") is True, "wire_attempts": owner.get("wire_attempts")}
+            "authenticated": owner.get("authenticated") is True, "wire_attempts": owner.get("wire_attempts"),
+            "trade_stream_configured": owner.get("trade_stream_state") in {
+                "WAITING_FOR_SCANNER", "CONNECTING", "SUBSCRIBED", "WAITING_FOR_RECONNECT"}}
 
 
 RUNTIME_PROBE = '''import json,os,sqlite3

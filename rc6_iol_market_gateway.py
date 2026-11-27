@@ -12,6 +12,7 @@ from bs_instrument_contracts import aware_datetime
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SYMBOL
 from iol_shadow_collector_rc6 import CircuitOpenError, RateGovernor
 from rc6_iol_market_data import IOLMarketReader, MARKETS, SPOT, TERMS, read_iol_market_payload
+from rc6_iol_trade_stream import TRADE_EVIDENCE, matched_trade
 from rc6_ppi_shared_feed import (
     NATIVE_RPC_WAIT_SECONDS, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer,
     SharedFeedUnavailable, _canonical_bytes, _sha,
@@ -79,7 +80,7 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
 
     control_schema = CONTROL_SCHEMA
 
-    def __init__(self, rest, *, allowed, socket_path, supervisor_pid, clock=None):
+    def __init__(self, rest, *, allowed, socket_path, supervisor_pid, clock=None, trade_stream=None):
         if (not isinstance(rest, IOLRestReadOnly) or not isinstance(rest.governor, RateGovernor)
                 or rest.governor.max_wait_seconds is None
                 or rest.governor.max_wait_seconds >= NATIVE_RPC_WAIT_SECONDS):
@@ -89,6 +90,7 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
             raise ValueError("IOL_GATEWAY_ROLE_SCOPE_REQUIRED")
         self.allowed = {role: frozenset(_identity(key) for key in keys) for role, keys in allowed.items()}
         self._rest = rest
+        self.trade_stream = trade_stream
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._generation = token_hex(32)
         super().__init__(None, socket_path=socket_path, supervisor_pid=supervisor_pid,
@@ -98,6 +100,7 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         return {"state": "OPEN", "provider": "IOL_REST", "wire_budget_attached": True,
                 "owner_pid": os.getpid(), "session_generation": self._generation,
                 "authenticated": self._rest.session_current,
+                "trade_stream_state": self.trade_stream.state if self.trade_stream else "NOT_CONFIGURED",
                 "wire_attempts": self._rest.governor.calls_total,
                 "rate_limited_attempts": self._rest.governor.calls_429}
 
@@ -111,11 +114,24 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         governor = self._rest.governor
         before = governor.calls_total
         try:
+            trade_key = (identity[0], MARKETS[identity[2]], TERMS[identity[4]])
+            if endpoint == "quote" and self.trade_stream is not None:
+                self.trade_stream.want(trade_key)
             payload = read_iol_market_payload(self._rest, endpoint, identity)
-            received_at = aware_datetime(self._clock()).astimezone(timezone.utc).isoformat()
+            received = aware_datetime(self._clock()).astimezone(timezone.utc)
+            if not isinstance(payload, dict):
+                raise ValueError("IOL_GATEWAY_MARKET_PAYLOAD_INVALID")
+            if endpoint == "quote":
+                payload = dict(payload)
+                payload.pop(TRADE_EVIDENCE, None)
+                evidence = self.trade_stream.evidence(trade_key) if self.trade_stream else None
+                if matched_trade(evidence, payload, received):
+                    payload[TRADE_EVIDENCE] = {**evidence, "identity": list(identity),
+                                               "gateway_generation": self._generation,
+                                               "quote_received_at": received.isoformat()}
             body = {"endpoint": endpoint, "identity": list(identity),
-                    "received_at": received_at, "payload": payload}
-            if not isinstance(payload, dict) or len(_canonical_bytes(body)) > 120_000:
+                    "received_at": received.isoformat(), "payload": payload}
+            if len(_canonical_bytes(body)) > 120_000:
                 raise ValueError("IOL_GATEWAY_MARKET_PAYLOAD_INVALID")
             proof = {"provider": "IOL_REST", "session_generation": self._generation, **body}
             return self._response("OK", wire_calls=governor.calls_total-before,
@@ -218,7 +234,8 @@ class IOLGatewayMarketReader:
             raise IOLRestError("IOL_GATEWAY_ROLE_SCOPE_DENIED")
         capture = partial(self.client.market_read, consumer=self.consumer, priority=priority)
         return IOLMarketReader(None, capture=capture, trade_clock=self.trade_clock,
-                               clock=self.clock).observe(identity, contract=contract, exit_only=exit_only)
+                               clock=self.clock, gateway_evidence=True).observe(
+                                   identity, contract=contract, exit_only=exit_only)
 
     @property
     def metrics(self):

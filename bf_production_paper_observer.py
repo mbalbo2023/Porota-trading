@@ -425,10 +425,18 @@ def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catal
     if (not identity or len(identity) != 5
             or (identity[0], identity[1], identity[4]) != request):
         raise IOLRestError("IOL_GATEWAY_EXACT_IDENTITY_REQUIRED")
+    checked = aware_datetime(now_iso())
+    # Test comparators and specialized observations can retain their legacy
+    # catalog path. The installed IOL spot profile uses its exact venue terms.
+    from rc6_iol_market_gateway import iol_primary_enabled
+    live_spot = iol_primary_enabled() and identity[1] in EQUITY_FAMILIES
     metadata = None
     if not catalog_read_error:
-        metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
-    terms = financial_catalog.quote_terms(metadata, now=aware_datetime(now_iso()))
+        if live_spot:
+            metadata = financial_catalog.iol_spot_catalog(store, now=checked, identity=identity).get(tuple(identity))
+        else:
+            metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
+    terms = financial_catalog.quote_terms(metadata, now=checked, iol_live_settlement=live_spot)
     observation = reader.observe(identity, contract=terms.get("contract"), priority=priority)
     reason = ("CATALOG_READ_ERROR" if catalog_read_error else terms["opening_block_reason"])
     if identity[1] not in EQUITY_FAMILIES:
@@ -2287,12 +2295,18 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False):
+def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, iol=False):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     catalog_error = None
+    checked_at = now_iso()
     try:
-        identities = _eligible_scanner_identities(store)
+        if iol:
+            from bs_instrument_contracts import aware_datetime
+            iol_keys = financial_catalog.iol_spot_catalog(store, now=aware_datetime(checked_at))
+            identities = {(key[0], key[1], key[4]): key for key in iol_keys}
+        else:
+            identities = _eligible_scanner_identities(store)
     except sqlite3.Error as exc:
         identities = {}
         catalog_error = getattr(exc, "sqlite_errorname", type(exc).__name__)
@@ -2311,20 +2325,27 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False):
             previous = json.loads(text[text.index("{"):]).get("active_plan")
         except (ValueError, TypeError):
             pass
-    cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * 2 * PPI_CALL_BUDGET_SECONDS
-    at = now_iso()
+    seconds_per_key = 2 * PPI_CALL_BUDGET_SECONDS
+    if iol:
+        from iol_shadow_collector_rc6 import CollectionPolicy
+        policy = CollectionPolicy()
+        seconds_per_key = 3 * max(policy.min_interval_seconds, 60 / policy.max_calls_per_minute)
+    cycle_seconds = INTERVAL + max(ACTIVE_SYMBOL_LIMIT, len(opened)) * seconds_per_key
+    # Preserve historical focus ordering when starting a new IOL sampling plan.
+    if iol:
+        focus_candidates = tuple(dict.fromkeys((*FOCUS_SYMBOLS, *identities)))
     symbols, before, after, plan = sampling_plan(
         universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
         limit=ACTIVE_SYMBOL_LIMIT, cycle_seconds=cycle_seconds,
         required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
-        now=at, cursor=row[0] if row else 0, previous=previous)
-    if not catalog_error and not legacy_catalog:
+        now=checked_at, cursor=row[0] if row else 0, previous=previous)
+    if not iol and not catalog_error and not legacy_catalog:
         from rc6_dynamic_universe.promotion import capacity_controller_from_environment
         controller = capacity_controller_from_environment(store.path)
-        if controller.state(at)["status"] == "APPROVED_DYNAMIC":
+        if controller.state(checked_at)["status"] == "APPROVED_DYNAMIC":
             full_opened = [(p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
                            for p in positions if p["asset_class"] in PAPER_SPOT_FAMILIES]
-            selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=at)
+            selected = controller.selection("EQUITY_SPOT", symbols, opened=full_opened, as_of=checked_at)
             if selected["dynamic"]:
                 try:
                     symbols, plan = _approved_equity_selection(store, selected, plan, exact)
@@ -2472,7 +2493,9 @@ def _runtime_readiness(store, *, record_event=False):
     """Distingue cobertura histórica, presupuesto de señales y PIT exacto."""
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
-    pit_ready = _exact_pit_ready_spot_requests(store)
+    from rc6_iol_market_gateway import iol_primary_enabled
+    iol = iol_primary_enabled()
+    pit_ready = () if iol else _exact_pit_ready_spot_requests(store)
     ready_set = set(pit_ready)
     # El foco antiguo sólo influye el orden de lectura cuando también prueba
     # PIT/capacidad. No exige 4/8 ni vetará otro ticker exacto READY_PAPER.
@@ -2481,10 +2504,18 @@ def _runtime_readiness(store, *, record_event=False):
          *pit_ready)))
     open_count = len(store.open_positions())
     symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
-        store, focus_candidates=priority
+        store, focus_candidates=priority, iol=iol,
     )
     catalog_read_error = active_plan["catalog_status"] == "CATALOG_READ_ERROR"
-    if active_plan.get("dynamic_selection"):
+    if iol:
+        # Static candidates may accumulate signals. Their exact market proof
+        # and session GO still belong to the final broker admission.
+        candidates = [tuple(key) for key in active_plan["opening_identities"]]
+        focus = dict(focus, source="IOL_EXACT_CATALOG_AWAITING_LIVE_EVIDENCE",
+                     matched=candidates, matched_count=len(candidates),
+                     configured_count=len(symbols), allow_new_openings=False, state="AMARILLO",
+                     missing=[])
+    elif active_plan.get("dynamic_selection"):
         native_ready = list(active_plan["opening_identities"])
         focus = dict(focus, source="POINT_IN_TIME_TRADEABILITY_APPROVED_CAPACITY",
             matched=native_ready, matched_count=len(native_ready),
@@ -2509,10 +2540,10 @@ def _runtime_readiness(store, *, record_event=False):
     # La métrica existe tanto en fallback como en capacidad PIT dinámica;
     # nunca muestra NO_DATA permanente por usar el modo aprobado.
     _health(store, "PAPER_SPOT_PIT_READINESS", focus["state"],
-            f"Identidades Spot PIT/READY en lote: {focus['matched_count']}/{focus['configured_count']}; "
+            f"Identidades Spot candidatas en lote: {focus['matched_count']}/{focus['configured_count']}; "
             f"fuente {focus['source']}; cobertura histórica 4/8 sin veto; "
             "sesión, fuente, contrato y riesgo siguen por instrumento.",
-            "Catálogo y candidate_identity_v2", success=bool(focus["matched"]))
+            "Catálogo y candidate_identity_v2", success=not iol and bool(focus["matched"]))
     matched_set = set(focus["matched"])
     selected_focus = sum(symbol in matched_set for symbol in symbols)
     feasibility = _sampling_feasibility(
@@ -3600,12 +3631,9 @@ def run():
                 # The inherited PPI receipt cannot authorize opens in the IOL
                 # profile. A live IOL receipt and exact authority still have to
                 # be qualified before this testing profile can admit entries.
-                def iol_admission_hold(_quote, _store):
-                    return False, "IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED"
-
                 broker = broker_from_environment(store, ai_gate=None, require_ai=False,
                                                  ai_mode="OFF", context_fn=None,
-                                                 admission_guard=iol_admission_hold if iol else paper_admission_guard)
+                                                 admission_guard=paper_admission_guard)
                 # Validate before the first strategy tick, including startup
                 # during OPEN with an already invalid historical ledger.
                 caucion_ledger_blocked, next_caucion_ledger_recheck = (

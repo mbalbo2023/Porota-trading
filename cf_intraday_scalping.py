@@ -367,7 +367,7 @@ def _intraday_read_error_code(reader, error, classify_read_error):
 
 def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
                          observations=(), events=(), opened=(), previous=None,
-                         phase="OPEN", policy=None):
+                         phase="OPEN", policy=None, market_provider="PPI"):
     """Separate dense SHADOW scheduler; no change to the productive 40 policy.
 
     Uses the existing exact equity-family contract. Caller supplies empirical
@@ -383,7 +383,7 @@ def shadow_sampling_plan(catalog, *, at, session_open, frozen, capacity,
     return UniverseOrchestrator(catalog, policy=selected_policy).plan(
         at=at, session_open=session_open, frozen=frozen, capacity=capacity,
         observations=observations, events=events, opened=opened,
-        previous=previous, phase=phase)
+        previous=previous, phase=phase, market_provider=market_provider)
 
 
 def _stamp(value):

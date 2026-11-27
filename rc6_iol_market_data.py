@@ -15,6 +15,7 @@ from be_paper_engine import Quote
 from bs_instrument_contracts import aware_datetime, decimal_value
 from iol_rest_readonly_rc6 import IOLRestError
 from rc6_multisource_discovery import canonical_family
+from rc6_iol_trade_stream import TRADE_EVIDENCE, matched_trade
 
 
 MARKETS = {"BYMA": "BCBA", "NYSE": "NYSE", "NASDAQ": "NASDAQ"}
@@ -89,11 +90,12 @@ def _capture(data, *, received, venue_key, currency, source_time):
 class IOLMarketReader:
     """GET-only market observations for verified five-part instrument mappings."""
 
-    def __init__(self, rest, *, trade_clock=None, clock=None, capture=None):
+    def __init__(self, rest, *, trade_clock=None, clock=None, capture=None, gateway_evidence=False):
         self.rest = rest
         self.trade_clock = trade_clock
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.capture = capture
+        self.gateway_evidence = gateway_evidence
 
     def _read(self, endpoint, identity):
         if self.capture is not None:
@@ -122,11 +124,16 @@ class IOLMarketReader:
             raise IOLRestError("IOL_ASSET_FAMILY_UNVERIFIED")
 
         current = None
+        evidence = None
         if not exit_only:
             raw, received = self._read("quote", identity)
             if not isinstance(raw, dict) or raw.get("currency") != currency:
                 raise IOLRestError("IOL_QUOTE_CURRENCY_UNVERIFIED")
-            source_time = self.trade_clock(raw) if self.trade_clock is not None else None
+            evidence = raw.get(TRADE_EVIDENCE) if self.gateway_evidence else None
+            source_time = matched_trade(evidence, raw, received)
+            if source_time is None and self.trade_clock is not None:
+                source_time = self.trade_clock(raw)
+                evidence = None
             if source_time is None:
                 raise IOLRestError("IOL_LAST_TRADE_CLOCK_UNVERIFIED")
             current = _capture(raw, received=received, venue_key=venue_key,
@@ -148,7 +155,8 @@ class IOLMarketReader:
                       metadata_source="IOL_REST", book_at=book.provider_at,
                       trade_at=current.provider_at if current else None,
                       last_kind="TRADE" if current else "REFERENCE",
-                      opening_block_reason="IOL_EXIT_OBSERVATION_ONLY" if exit_only else "")
+                      opening_block_reason="IOL_EXIT_OBSERVATION_ONLY" if exit_only else "",
+                      iol_trade_evidence=evidence)
         quote.monetary_identity()
         error = quote.time_error(_instant(self.clock()).isoformat(), require_trade=not exit_only,
                                  max_age_seconds=max_age_seconds)

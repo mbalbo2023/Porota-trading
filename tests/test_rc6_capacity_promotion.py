@@ -69,6 +69,16 @@ def test_shipped_policy_off_has_stable_fingerprint_and_no_activation(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+def test_iol_profile_cannot_use_the_ppi_capacity_policy(wire):
+    policy, recommendation, report, approval, at = approved(wire)
+    ctl = RuntimeCapacityController(environ={"POROTA_RC6_MARKET_PROVIDER": "IOL_REST"},
+                                   policy=policy, recommendation=recommendation, report=report, approval=approval)
+    state = ctl.state(at)
+    assert state["status"] == "BASELINE_FAIL_CLOSED"
+    assert state["reason_codes"] == ["IOL_DYNAMIC_CAPACITY_UNVERIFIED"]
+    assert not state["production_limits_modified"]
+
+
 def test_synthetic_self_consistent_review_cannot_grant_external_ppi_capacity(monkeypatch):
     """A valid local hash chain is not independent OPEN/provider-owner proof."""
     policy = deepcopy(DEFAULT_POLICY)

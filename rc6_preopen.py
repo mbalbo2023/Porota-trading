@@ -302,6 +302,25 @@ def container(name, require_readonly=False, deploy_scheduler_candidate=None):
             'reason':reason}
 
 
+def _iol_owner_ready():
+    from scripts.porota_rootless_jobs import verified_host
+
+    identity = _rootless_identity()
+    if identity is None:
+        return False
+    manager, current, _ = verified_host(ROOT, identity)
+    if current.get("market_provider") != "IOL_REST":
+        return False
+    probe = (
+        "import json; from scripts.porota_rootless_host import observe_iol_owner; "
+        "print(json.dumps(observe_iol_owner('/app/data/paper_v17/observer_v17.db')))"
+    )
+    result = rootless.decode(manager.docker.call("container", "exec", current["roles"]["observer"],
+                                               "python", "-B", "-c", probe, timeout=6))
+    return (isinstance(result, dict) and set(result.get("registered") or {}) == {"scanner", "exit_reader"}
+            and result.get("trade_stream_configured") is True)
+
+
 def observer_db():
     try:
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
@@ -317,10 +336,22 @@ def observer_db():
         auth = str(state.get('ppi_auth') or '').upper()
         phase = str(state.get('session_state') or '').upper()
         if os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST':
-            # Closed-market fixture success cannot authorize entry or inherit a PPI GO.
             c.close()
-            return {'state':'RED','bounded_readonly_probe':'GREEN','schema_version':schema_version,
-                    'reason':'IOL_EXECUTABLE_LIVE_COVERAGE_UNVERIFIED', 'observer_state':state}
+            try:
+                pulse = datetime.fromisoformat(state.get('heartbeat_at') or '')
+                fresh = pulse.tzinfo is not None and 0 <= (datetime.now(TZ) - pulse).total_seconds() <= 120
+            except (ValueError, TypeError):
+                fresh = False
+            safety = (fresh and state.get('mode') == 'PRODUCTION_PAPER' and
+                      type(state.get('real_orders_sent')) is int and state['real_orders_sent'] == 0 and
+                      auth == 'NOT_ATTEMPTED' and state.get('process_state') in
+                      {'WAITING_MARKET', 'READY_PREOPEN', 'RUNNING'})
+            gateway_ready = safety and _iol_owner_ready()
+            reason = ('IOL_EXECUTABLE_EVIDENCE_REQUIRED_AT_ADMISSION' if gateway_ready else
+                      'IOL_GATEWAY_OR_PAPER_STATE_UNVERIFIED')
+            return {'state':'GREEN' if gateway_ready else 'RED','bounded_readonly_probe':'GREEN',
+                    'schema_version':schema_version, 'market_provider':'IOL_REST',
+                    'reason':reason, 'observer_state':state}
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()

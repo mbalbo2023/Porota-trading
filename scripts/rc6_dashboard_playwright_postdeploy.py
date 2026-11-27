@@ -18,7 +18,7 @@ from socketserver import UnixStreamServer
 import subprocess
 import sys
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from uuid import uuid4
 
 
@@ -53,7 +53,7 @@ UNKNOWN_AUDIT = r"""root => {
         const definition = element.closest('dd');
         const card = element.closest('.metric-card');
         const header = element.closest('.strip-item');
-        const label = normalize(cell?.dataset.label || definition?.previousElementSibling?.textContent ||
+        const label = normalize(definition?.previousElementSibling?.textContent || cell?.dataset.label ||
             card?.querySelector('h2')?.textContent || header?.querySelector('b')?.textContent);
         if (/reloj|heartbeat|hora|fecha|ejecucion|cadencia/.test(label)) return 'CLOCK';
         if (/proveedor|fuente|autoridad|procedencia/.test(label)) return 'SOURCE';
@@ -64,6 +64,16 @@ UNKNOWN_AUDIT = r"""root => {
         if (/ticker|nombre|mercado|familia|moneda|settlement|contrato|instrumento/.test(label)) return 'IDENTITY';
         if (element.closest('nav')) return 'NAVIGATION';
         return cell || definition ? 'OTHER_FIELD' : 'PAGE_TEXT';
+    }
+    function currentOpenCapacityReason(element) {
+        if (normalize(element.textContent) !== 'capacidad open vigente no verificada') return false;
+        const view = element.closest('#terminal-content')?.dataset.view;
+        if (view === 'en-vivo/resumen' && element.matches('.preview-list > li > small')) {
+            return normalize(element.closest('section')?.querySelector(':scope > h2')?.textContent) === 'capacidad & coverage';
+        }
+        return ['en-vivo/capacidad', 'universo/coverage'].includes(view) &&
+            element.matches('dialog.row-dialog dl.facts > div > dd') &&
+            normalize(element.previousElementSibling?.textContent) === 'motivo';
     }
     const tally = {total: 0, explained: 0, unexplained: 0, reason_types: {}, unexplained_fields: {}};
     const bump = (map, key, count) => { map[key] = (map[key] || 0) + count; };
@@ -80,6 +90,11 @@ UNKNOWN_AUDIT = r"""root => {
         if (hasVisibleText(explanation) && normalize(explanation.textContent).replace(textPattern, '').length > 10) {
             tally.explained += count;
             bump(tally.reason_types, 'VISIBLE_REASON', count);
+            continue;
+        }
+        if (currentOpenCapacityReason(el)) {
+            tally.explained += count;
+            bump(tally.reason_types, 'VISIBLE_OPEN_CAPACITY_REASON', count);
             continue;
         }
         const sameField = el.closest('dd,td,.strip-item,.metric-card,li,.notice,.source-line,p') || el;
@@ -304,16 +319,32 @@ def audit_route(page, base_url, path, view, row):
     selector = "#porota-canonical-nav" if path in PRIMARY_ROUTES else ".subnav"
     link = page.locator(selector).get_by_role("link", name=NAVIGATION_LABELS[path], exact=True)
     response = None
+    expected_url = target
+    row["menu_click_verified"] = False
     matches = link.count()
-    if matches == 1 and link.is_visible() and urlsplit(link.get_attribute("href") or "").path == path:
-        try:
-            page.evaluate("window.scrollTo(0, 0)")
-            with page.expect_navigation(url=target, wait_until="domcontentloaded", timeout=7_000) as event:
-                link.click(timeout=2_000)
-            response = event.value
-            row["navigation"] = "PRIMARY_MENU" if path in PRIMARY_ROUTES else "SUBMENU"
-        except Error:
-            row["menu_navigation_failure"] = "MENU_CLICK_OR_RESPONSE_UNVERIFIED"
+    if matches == 1 and link.is_visible():
+        href = link.get_attribute("href")
+        clicked_url = urljoin(page.url, href) if href else ""
+        clicked = urlsplit(clicked_url)
+        if clicked._replace(query="") == urlsplit(target):
+            row["retained_filter_count"] = len(parse_qs(clicked.query, keep_blank_values=True))
+            try:
+                page.evaluate("window.scrollTo(0, 0)")
+                # Follow the browser's full same-origin href. Subviews retain
+                # the current filters, including Universo's default channel.
+                with page.expect_navigation(url=lambda url: url == clicked_url,
+                                            wait_until="domcontentloaded", timeout=7_000) as event:
+                    link.click(timeout=2_000)
+                response = event.value
+                if response is not None:
+                    expected_url = clicked_url
+                    row["navigation"] = "PRIMARY_MENU" if path in PRIMARY_ROUTES else "SUBMENU"
+            except Error:
+                row["menu_navigation_failure"] = "MENU_CLICK_OR_RESPONSE_UNVERIFIED"
+            if response is None:
+                row.setdefault("menu_navigation_failure", "MENU_CLICK_OR_RESPONSE_UNVERIFIED")
+        else:
+            row["menu_navigation_failure"] = "MENU_LINK_TARGET_OR_VISIBILITY_UNVERIFIED"
     else:
         row["menu_navigation_failure"] = ("MENU_LINK_MISSING" if matches == 0 else
             "MENU_LINK_AMBIGUOUS" if matches > 1 else "MENU_LINK_TARGET_OR_VISIBILITY_UNVERIFIED")
@@ -322,14 +353,54 @@ def audit_route(page, base_url, path, view, row):
         response = page.goto(target, wait_until="domcontentloaded", timeout=8_000)
     row["http_status"] = response.status if response is not None else None
     content = page.locator("#terminal-content")
-    row["verified"] = bool(response and response.status == 200 and page.url == target and
+    row["verified"] = bool(response and response.status == 200 and response.url == expected_url and
+                           page.url == expected_url and
                            response.headers.get("x-porota-projection") == PROJECTION_SCHEMA and content.is_visible() and
                            content.get_attribute("data-view") == "/".join(view) and
                            page.locator("#porota-paper-mode").get_attribute("aria-label") == "MODO SIMULACIÓN PRODUCTIVA")
+    row["menu_click_verified"] = row["verified"] and row["navigation"] in {"PRIMARY_MENU", "SUBMENU"}
     if row["verified"]:
         row["menus"] = audit_menus(page, view)
         row["horizontal_overflow_px"] = page.evaluate("() => Math.max(0, document.documentElement.scrollWidth - innerWidth)")
         row["unverified_labels"] = page.locator("body").evaluate(UNKNOWN_AUDIT)
+
+
+def audit_milestones(page, receipt):
+    from playwright.sync_api import Error, TimeoutError, expect
+
+    scope = page.locator("#terminal-content section[aria-label='Hitos de validación']")
+    receipt["milestone_details"] = []
+    findings = []
+    for code in ("M" + str(index) for index in range(12)):
+        phase = "SECTION"
+        try:
+            expect(scope).to_be_visible()
+            phase = "HEADING"
+            heading = scope.get_by_role("heading", level=3, name=re.compile(r"^" + code + r" · "))
+            expect(heading).to_be_visible()
+            panel = heading.locator("xpath=..")
+            dialog_id = "validation-" + code + "-dialog"
+            button = panel.locator("button[data-detail-dialog='" + dialog_id + "']")
+            dialog = panel.locator("dialog[id='" + dialog_id + "']")
+            phase = "BUTTON_SCROLL"
+            button.evaluate("element => element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+            phase = "BUTTON_CLICK"
+            button.click()
+            phase = "DIALOG_OPEN"
+            expect(dialog).to_be_visible()
+            require(dialog.evaluate("element => element.open && element.matches(':modal')"), "DASHBOARD_MILESTONE_NOT_MODAL")
+            phase = "VISIBLE_LABELS"
+            findings.append(dialog.evaluate(UNKNOWN_AUDIT))
+            phase = "DIALOG_CLOSE"
+            page.keyboard.press("Escape")
+            expect(dialog).to_be_hidden()
+            receipt["milestone_details"].append(code)
+        except (AssertionError, Error, ValueError) as error:
+            category = ("TIMEOUT" if isinstance(error, TimeoutError) else "ASSERTION" if
+                        isinstance(error, AssertionError) else "BROWSER_ERROR" if isinstance(error, Error) else "PROOF_FAILED")
+            receipt["milestone_failure"] = {"code": code, "phase": phase, "category": category}
+            raise ValueError("DASHBOARD_MILESTONE_UNVERIFIED") from None
+    receipt["milestone_unverified_labels"] = unknown_rollup(findings)
 
 
 def navigate(base_url, receipt):
@@ -374,7 +445,7 @@ def navigate(base_url, receipt):
                                                          "fields_match", "focus_restored")}
             checks = [row["unverified_labels"] for row in receipt["routes"] if "unverified_labels" in row]
             receipt["unverified_labels"] = unknown_rollup(checks + [row["unverified_labels"] for row in details])
-            receipt["menu_navigation_count"] = sum(row["navigation"] in {"PRIMARY_MENU", "SUBMENU"} for row in receipt["routes"])
+            receipt["menu_navigation_count"] = sum(row.get("menu_click_verified", False) for row in receipt["routes"])
             receipt["javascript_error_count"] = len(errors)
             require(all(row["verified"] for row in receipt["routes"]), "DASHBOARD_ROUTES_FAILED")
             secondary_results = {}
@@ -387,19 +458,7 @@ def navigate(base_url, receipt):
             page.goto(base_url + "/sistema/evidencia", wait_until="domcontentloaded", timeout=10_000)
             page.locator("a[href='/sistema/validacion']").first.click()
             expect(page.locator("#terminal-content")).to_have_attribute("data-view", "sistema/validacion")
-            receipt["milestone_details"] = []
-            milestones = []
-            for code in ("M" + str(index) for index in range(12)):
-                heading = page.get_by_role("heading", name=re.compile(r"^" + code + r" · "))
-                expect(heading).to_be_visible()
-                panel = heading.locator("..")
-                panel.get_by_role("button", name=re.compile(r"^Detalle " + code + r" · ")).click()
-                expect(panel.locator("dialog")).to_be_visible()
-                milestones.append(panel.locator("dialog").evaluate(UNKNOWN_AUDIT))
-                page.keyboard.press("Escape")
-                expect(panel.locator("dialog")).to_be_hidden()
-                receipt["milestone_details"].append(code)
-            receipt["milestone_unverified_labels"] = unknown_rollup(milestones)
+            audit_milestones(page, receipt)
 
             page.set_viewport_size({"width": 800, "height": 1100})
             page.locator("#terminal-menu").click()

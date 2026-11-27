@@ -214,6 +214,8 @@ class RuntimeCapacityController:
         return state
 
     def state(self, as_of=None, *, deadline=None):
+        if self.environ.get("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
+            return self._fail_closed("IOL_DYNAMIC_CAPACITY_UNVERIFIED")
         try:
             policy = self.inputs["policy"]
             if policy is None:
@@ -248,10 +250,13 @@ class RuntimeCapacityController:
                             production_limits_modified=False, reason_codes=exit_contract["reason_codes"])
             return self._fingerprinted(resolved)
         except (OSError, ValueError, KeyError, TypeError):
-            return self._fingerprinted({"status": "BASELINE_FAIL_CLOSED", "mode": "OFF", "configuration_fingerprint": None,
-                "reason_codes": ["CAPACITY_INPUT_UNAVAILABLE_OR_INVALID"], "engine_profiles": {},
-                "baseline_limits": deepcopy(DEFAULT_POLICY["baseline_limits"]),
-                "production_limits_modified": False, "real_orders_sent": 0, "real_routes": "NOT_CALLED"})
+            return self._fail_closed("CAPACITY_INPUT_UNAVAILABLE_OR_INVALID")
+
+    def _fail_closed(self, reason):
+        return self._fingerprinted({"status": "BASELINE_FAIL_CLOSED", "mode": "OFF", "configuration_fingerprint": None,
+            "reason_codes": [reason], "engine_profiles": {},
+            "baseline_limits": deepcopy(DEFAULT_POLICY["baseline_limits"]),
+            "production_limits_modified": False, "real_orders_sent": 0, "real_routes": "NOT_CALLED"})
 
     def shadow_report(self):
         if self.shadow is not None:

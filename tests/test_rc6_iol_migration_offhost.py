@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
@@ -91,7 +91,7 @@ class ReplayHTTP:
                 assert parse_qs(url.query) == {"market": ["BCBA"], "term": [self.term]}
                 row = {**base, "last_updated": (self.now - timedelta(seconds=1)).isoformat()}
                 if path == "quote":
-                    row.update(currency=self.currency, prices={"current": self.price})
+                    row.update(currency=self.currency, prices={"current": self.price}, volume={"shares": 100})
                 else:
                     row.update(bids=[{"price": self.price - .1, "size": 10000}],
                                asks=[{"price": self.price + .1, "size": 10000}])
@@ -272,8 +272,10 @@ def test_iol_profile_rejects_legacy_provider_commands_before_gateway_attach(tmp_
 
 def test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock(tmp_path, monkeypatch, iol_gateway):
     import bf_production_paper_observer as observer
+    import bu_instrument_catalog as catalog
     import rc6_iol_market_gateway as gateway
     import rc6_ppi_gateway_reader_adapter as ppi
+    from tests.test_rc6_ppi_gateway_family_ready import ReplayClock
 
     server, client, transport, _advance = iol_gateway
     register(client, "scanner")
@@ -299,6 +301,16 @@ def test_iol_scanner_phases_use_only_iol_and_hold_unqualified_trade_clock(tmp_pa
     phases = ["CLOSED", "PREOPEN", "OPEN"]
     monkeypatch.setattr(observer, "_market_phase", lambda: phases[0])
     request = (GGAL[0], GGAL[1], GGAL[4])
+    monkeypatch.setattr(catalog, "datetime", ReplayClock)
+    monkeypatch.setattr(observer, "now_iso", lambda: transport.now.isoformat())
+    store = observer.runtime_store(observer.DB_PATH)
+    observer._support_schema(store)
+    with store.connect() as db:
+        primary = catalog.normalize_record(
+            {"ticker": GGAL[0], "type": GGAL[1], "market": GGAL[2], "currency": GGAL[3],
+             "_discovery_source": "PPI_PRIMARY"}, GGAL[4], AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+        catalog.persist(db, primary)
+        catalog.sync_candidate_universe(db, AT.isoformat())
 
     def finish_phase(_seconds):
         phases.pop(0)
@@ -453,34 +465,53 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
     from bv_paper_runtime import collect_exit_books
+    from rc6_dynamic_universe.common import digest
+    from rc6_dynamic_universe.orchestrator import EnginePolicy, UniverseOrchestrator
+    from rc6_dynamic_universe.runtime import read_runtime
+    from rc6_iol_trade_stream import last_trade
+    import rc6_paper_admission_gate as admission
     from rc6_paper_admission_gate import paper_admission_guard
     from tests.test_rc6_ppi_gateway_family_ready import ReplayClock, _preopen
 
     ticker, family, market, currency, term = identity
-    _, client, transport, _ = gateway
+    server, client, transport, _ = gateway
     register(client, "scanner")
     register(client, "exit_reader")
-    scanner = IOLGatewayMarketReader(client, consumer="scanner",
-                                    trade_clock=lambda row: row["fixture_last_trade_at"],
-                                    clock=lambda: transport.now)
+
+    def trade_evidence(key):
+        event = {"type": "T", "code": 200, "msg": {"S": ticker, "M": "BCBA", "T": transport.term,
+                 "P": transport.price, "X": 100, "D": (transport.now - timedelta(seconds=3)).isoformat()}}
+        wire, evidence = last_trade(event, transport.now - timedelta(seconds=2))
+        assert key == wire
+        return evidence
+
+    server.trade_stream = SimpleNamespace(want=lambda key: None, evidence=trade_evidence, state="SUBSCRIBED")
+    scanner = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
     exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
     store = PaperStore(str(tmp_path / "paper.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
     observer._support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
     monkeypatch.setattr(ReplayClock, "value", AT)
     monkeypatch.setattr(catalog, "datetime", ReplayClock)
+    monkeypatch.setattr(admission, "datetime", ReplayClock)
     monkeypatch.setattr(observer, "now_iso", lambda: transport.now.isoformat())
-    _preopen(tmp_path, monkeypatch)
+    _preopen(tmp_path, monkeypatch, iol=True)
     request = ticker, family, term
     assert request not in observer._runtime_readiness(store)[1]
+    opening = AT.replace(hour=13, minute=30)
+    checked_at = (opening - timedelta(minutes=15)).isoformat()
     primary = catalog.normalize_record({
         "ticker": ticker, "type": family, "market": market, "currency": currency,
-        "settlement": term, "_discovery_source": "PPI_PRIMARY",
-    }, None, AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+        "_discovery_source": "PPI_PRIMARY",
+    }, term, checked_at, "OFFHOST_PPI_IDENTITY_FIXTURE")
     with store.connect() as db:
         catalog.persist(db, primary)
-        catalog.sync_candidate_universe(db, AT.isoformat())
-    contract = catalog.contract_for(catalog.lookup(store, *request, market=market, currency=currency))
+        catalog.sync_candidate_universe(db, checked_at)
+    static = catalog.lookup(store, *request, market=market, currency=currency)
+    assert static["_admission_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
+    assert identity in catalog.iol_spot_catalog(store, now=AT)
+    contract = catalog.contract_for(static)
     focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
     assert request in selected
     allowed, opening_reason = observer._scanner_opening_capacity(request, focus=focus, feasibility=feasibility)
@@ -513,23 +544,46 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     broker = PaperBroker(store, clock_fn=lambda: transport.now.isoformat(), ai_mode="OFF",
                          economics_mode="SHADOW", session_policy=PaperSessionPolicy(),
                          admission_guard=paper_admission_guard)
+    freeze = {"cutoff": (opening - timedelta(days=1)).isoformat(),
+              "frozen_at": (opening - timedelta(minutes=10)).isoformat(), "session_open": opening.isoformat(),
+              "rows": [{"identity": identity, "rank": 1, "tradeable": True, "tradeability_score": 1}]}
+    profile = dict(session_open=opening, frozen={"payload": freeze, "digest": digest(freeze)},
+                   market_provider="IOL_REST")
+    capacity = {"status": "SHADOW_RECOMMENDATION", "safe_limit": 8, "slots_by_endpoint": {"current": 8, "book": 8},
+                "generated_at": opening.isoformat(), "expires_at": (AT + timedelta(hours=1)).isoformat()}
+    eligibility = read_runtime(store.path, as_of=opening)["catalog"]
+    planner = UniverseOrchestrator(eligibility, policy=EnginePolicy(engine="EQUITY_SPOT", warmup_samples=3))
+    funnel = planner.plan(at=opening, capacity={}, **profile)
+    assert funnel["telemetry"][0]["state"] == "DISCOVERY"
+    funnel = planner.plan(at=opening, capacity=capacity, previous=funnel, **profile)
+    assert funnel["telemetry"][0]["state"] == "WARM"
     for index, price in enumerate(range(95, 104)):
         transport.now = AT + timedelta(minutes=index)
         ReplayClock.value = transport.now
         transport.price = round(price * price_scale, 2)
         trade_at = (transport.now - timedelta(seconds=3)).isoformat()
-        transport.overrides["quote"] = {"fixture_last_trade_at": trade_at}
         observed = observer._read_scanner_quote(scanner, store, *request, identity=identity, priority="HOT")
         assert observed.metadata_source == "IOL_REST" and not observed.opening_block_reason
         assert observed.trade_at == trade_at
+        assert observed.iol_trade_evidence["identity"] == list(identity)
         assert observed.book_at == (transport.now - timedelta(seconds=1)).isoformat()
         assert paper_admission_guard(observed, store) == (True, "")
         store.add_quote(observed)
+        snapshots = read_runtime(store.path, as_of=transport.now)["observations"]
+        funnel = planner.plan(at=transport.now, capacity=capacity, observations=snapshots, previous=funnel, **profile)
         assert not _scanner_trade_temporal_rejection(
             observed, broker, store, checked_at=transport.now.isoformat())
         if index == 0:
+            assert paper_admission_guard(replace(observed, iol_trade_evidence=None), store) == (
+                False, "IOL_LAST_TRADE_EVIDENCE_MISSING")
+            bad = {**observed.iol_trade_evidence, "price": "1.23"}
+            assert paper_admission_guard(replace(observed, iol_trade_evidence=bad), store) == (
+                False, "IOL_LAST_TRADE_EVIDENCE_MISMATCH")
             action, _, _, fields = broker.decide(observed)
             assert (action, fields["reason_code"]) == ("HOLD", "SIGNAL_WARMUP")
+    reached = funnel["telemetry"][0]
+    assert tuple(reached["identity"]) == identity and reached["state"] == "HOT"
+    assert reached["signal_result"] == "SAMPLES_READY" and not reached["entry_authority"]
     broker.on_quote(observed, allow_new_openings=allowed, opening_block_reason=opening_reason)
     position, = store.open_positions()
     assert tuple(position[field] for field in ("symbol", "asset_class", "market", "currency", "settlement")) == identity
@@ -559,6 +613,41 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
         assert tuple(db.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone()) == (
             "PRODUCTION_PAPER", 0)
 
+
+
+def test_iol_trade_stream_authenticates_and_keeps_only_the_subscribed_trade():
+    from rc6_iol_trade_stream import IOLTradeStream, matched_trade
+
+    key = ("GGAL", "BCBA", "T1")
+    stop = Event()
+    subscribed = {"type": "Success", "code": 200, "msg": "Subscribed"}
+    connected = {"type": "Success", "code": 200, "msg": "Connected"}
+    fields = {"S": key[0], "M": key[1], "T": key[2], "P": 100, "X": 15, "D": AT.isoformat()}
+    messages = iter((connected, subscribed, {"type": "T", "code": 200, "msg": fields},
+                     {"type": "Q", "code": 200, "msg": {**fields, "P": 200}},
+                     {"type": "T", "code": 200, "msg": {**fields, "T": "T0"}}))
+    outgoing = []
+
+    def receive(*, timeout):
+        assert timeout > 0
+        message = next(messages, None)
+        if message is None:
+            stop.set()
+            raise TimeoutError
+        return json.dumps(message)
+
+    socket = SimpleNamespace(send=lambda value: outgoing.append(json.loads(value)), recv=receive)
+    now = AT + timedelta(seconds=1)
+    stream = IOLTradeStream(lambda: "fixture-bearer", clock=lambda: now)
+    stream.want(key)
+    stream._session(socket, "fixture-bearer", stop)
+    assert [message["action"] for message in outgoing] == ["auth_token", "subscribe", "disconnect"]
+    assert outgoing[1]["trades"] == ["GGAL|BCBA|T1"]
+    evidence = stream.evidence(key)
+    assert stream.evidence(("GGAL", "BCBA", "T0")) is None
+    quote = {"prices": {"current": 100}, "volume": {"shares": 15}}
+    assert matched_trade(evidence, quote, now) == AT.isoformat()
+    assert matched_trade(evidence, {**quote, "volume": {"shares": 14}}, now) is None
 
 def test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers(iol_gateway):
     _, client, transport, advance = iol_gateway

@@ -90,6 +90,13 @@ class IOLRestReadOnly:
         return (not self.auth_blocked and cached is not None
                 and self._current(cached, self.clock()))
 
+    def stream_bearer(self):
+        """Give the in-process market stream the current owner's bearer without a grant."""
+        cached = self.active
+        if not self.auth_blocked and cached is not None and self._current(cached, self.clock()):
+            return cached["access_token"]
+        return None
+
     def _request(self, path, *, query=None, auth=None, token=None):
         headers = {"Accept": "application/json", "User-Agent": "Porota-Trading-RC6 (IOL REST market data)"}
         if auth is not None:

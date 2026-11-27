@@ -77,6 +77,27 @@ def test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source
     assert not list((tmp_path / "shadow").glob("*.tmp"))
 
 
+def test_iol_worker_keeps_native_samples_without_using_ppi_capacity(tmp_path, monkeypatch):
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    store, assets = make_store(tmp_path, count=1)
+    old_report = tmp_path / "rc6_ppi_capacity_latest.json"
+    old_report.write_text('{"status":"OLD_PPI_OBSERVATION"}', encoding="utf-8")
+    worker = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[tmp_path])
+    worker.tick(PRE)
+    at = OPEN + timedelta(minutes=1)
+    store.add_quote(replace(quote(assets[0], at), metadata_source="IOL_REST"))
+
+    report = worker.tick(at)
+
+    assert report["observation_execution"] == "LOCAL_REUSE_ONLY; IOL REST"
+    assert report["capacity_policy"]["reason_codes"] == ["IOL_DYNAMIC_CAPACITY_UNVERIFIED"]
+    equity = report["engines"]["EQUITY_SPOT"]
+    assert equity["capacity"]["status"] == "NO_VERIFICADO"
+    row, = equity["telemetry"]
+    assert row["warmup_progress"]["distinct_samples"] == 1 and row["state"] == "DISCOVERY"
+    assert not row["entry_authority"] and report["real_orders_sent"] == 0
+
+
 def test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens(tmp_path, monkeypatch):
     from rc6_dynamic_universe import live
     store, assets = make_store(tmp_path)

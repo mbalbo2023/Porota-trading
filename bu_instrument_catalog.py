@@ -1029,7 +1029,75 @@ def lookup(store, symbol, kind, settlement, *, market=None, currency=None):
     return record
 
 
-def quote_terms(record, *, now=None):
+def _iol_spot_primary(record):
+    raw = record["raw"]
+    if not isinstance(raw, dict) or raw.get("_discovery_source") != "PPI_PRIMARY":
+        return False
+    source = record["settlement_source"]
+    if source == "PPI_FIELD":
+        return not ppi_full_key_evidence_reason(record)
+    if source != "REQUEST_CANDIDATE" or raw.get("settlement") not in (None, ""):
+        return False
+    try:
+        return (str(raw.get("ticker") or raw.get("symbol") or "").strip().upper(),
+                canonical_family(raw.get("type") or raw.get("instrumentType")),
+                canonical_market(raw.get("market")), cash_currency(raw.get("currency"))) == tuple(
+                    record[key] for key in ("ticker", "instrument_type", "market", "currency"))
+    except (ValueError, TypeError):
+        return False
+
+
+def iol_spot_catalog(store, *, now, identity=None):
+    """Read exact PPI identity; IOL will attest the requested term on the wire."""
+    from contextlib import closing
+
+    scope = ""
+    parameters = ()
+    instrument = None
+    if identity is not None:
+        scope = "AND (f.ticker,f.instrument_type,f.market,f.currency,f.settlement)=(?,?,?,?,?)"
+        parameters = tuple(identity)
+        instrument = parameters[:2]
+    with closing(store.connect()) as c:
+        rows = c.execute(f"""SELECT f.*, p.can_simulate AS ledger_allowed, p.status AS ledger_status,
+            p.detail AS ledger_detail FROM financial_instrument_catalog f
+            JOIN candidate_identity_v2 p USING(ticker,instrument_type,market,currency,settlement)
+            WHERE f.instrument_type IN ('ACCIONES','CEDEARS','ETFS') AND f.status='AVAILABLE'
+              AND f.capability='READY_PAPER_SPOT' AND f.market='BYMA'
+              AND f.currency IN ('ARS','USD') AND f.settlement IN ('INMEDIATA','A-24HS')
+              AND NOT EXISTS (SELECT 1 FROM financial_instrument_catalog other
+                WHERE other.ticker=f.ticker AND other.instrument_type=f.instrument_type
+                  AND other.status IN ('AVAILABLE','STALE')
+                  AND other.market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                  AND other.currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                  AND (other.market!=f.market OR other.currency!=f.currency))
+              {scope} ORDER BY f.instrument_type,f.ticker,f.settlement""", parameters).fetchall()
+        ambiguities = _candidate_retry_ambiguities(c, instrument)
+    result = {}
+    replaceable = {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID"}
+    for row in rows:
+        record = dict(row)
+        key = tuple(record[field] for field in ("ticker", "instrument_type", "market", "currency", "settlement"))
+        if key in ambiguities or not _candidate_timestamp_is_fresh(
+                record["last_seen_at"], now.isoformat(), PAPER_PPI_IDENTITY_LKG_SECONDS):
+            continue
+        try:
+            record["raw"] = json.loads(record.pop("metadata_json"))
+        except (ValueError, TypeError):
+            continue
+        if not _iol_spot_primary(record):
+            continue
+        ledger_proved = record["ledger_status"] == "AVAILABLE" and record["ledger_allowed"] == 1
+        reasons = set(str(record["ledger_detail"] or "").split(";"))
+        awaiting_iol = (record["settlement_source"] == "REQUEST_CANDIDATE" and
+                        record["ledger_status"] == "AVAILABLE" and record["ledger_allowed"] == 0 and
+                        bool(reasons) and reasons <= replaceable)
+        if ledger_proved or awaiting_iol:
+            result[key] = record
+    return result
+
+
+def quote_terms(record, *, now=None, iol_live_settlement=False):
     if record is None:
         return {"currency": None, "market": None, "metadata_source": None,
                 "opening_block_reason": "Falta catálogo confirmado o la identidad es ambigua"}
@@ -1047,7 +1115,8 @@ def quote_terms(record, *, now=None):
         reason = record["_admission_reason"]
     if not _candidate_has_ppi_primary(record.get("settlement_source"), json.dumps(record.get("raw") or {})):
         reason = "PPI_PRIMARY_IDENTITY_NOT_VERIFIED"
-    full_key_reason = ppi_full_key_evidence_reason(record)
+    full_key_reason = ("" if iol_live_settlement and _iol_spot_primary(record)
+                       else ppi_full_key_evidence_reason(record))
     if full_key_reason:
         reason = full_key_reason
     checked = now or datetime.now(ZoneInfo("UTC"))

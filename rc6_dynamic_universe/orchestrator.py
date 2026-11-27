@@ -53,10 +53,13 @@ class UniverseOrchestrator:
             raise ValueError("DUPLICATE_EXACT_IDENTITY")
 
     def plan(self, *, at, session_open, frozen, capacity, observations=(), events=(),
-             opened=(), previous=None, phase="OPEN"):
+             opened=(), previous=None, phase="OPEN", market_provider="PPI"):
         at, opening = stamp(at), stamp(session_open)
         if phase not in {"OPEN", "PREOPEN", "CLOSED"}:
             raise ValueError("INVALID_MARKET_PHASE")
+        if market_provider not in {"PPI", "IOL_REST"}:
+            raise ValueError("RC6_MARKET_PROVIDER_INVALID")
+        iol = market_provider == "IOL_REST"
         # The verified freeze is read-only. Telemetry may reference its
         # rank components; no planner operation mutates these inputs.
         payload = frozen.get("payload", {})
@@ -85,9 +88,12 @@ class UniverseOrchestrator:
         opened = [k for k in opened if k[1] in EQUITY_FAMILIES]
         capacity_contract = {k: capacity.get(k) for k in ("configuration_fingerprint", "evidence_digest",
                             "safe_limit", "slots_by_endpoint", "status")}
-        config = digest({"policy": asdict(self.policy), "capacity": capacity_contract,
+        configuration = {"policy": asdict(self.policy), "capacity": capacity_contract,
                          "catalog": sorted(ready), "preopen": frozen["digest"],
-                         "opening": opening.isoformat()})
+                         "opening": opening.isoformat()}
+        if iol:
+            configuration["market_provider"] = market_provider
+        config = digest(configuration)
         old = deepcopy(previous or {})
         reused = old.get("configuration_fingerprint") == config
         if reused and stamp(old["planned_at"]) > at:
@@ -136,8 +142,10 @@ class UniverseOrchestrator:
                             s["source_failures"].append(failure)
             else:
                 s["source_failures"] = [f for f in s["source_failures"] if f[1] != obs.get("source")]
-            if (obs.get("book_at") and obs.get("book_useful") is True
-                    and obs.get("source") in NATIVE_PPI_BOOK_SOURCES):
+            iol_trade = (obs.get("source") == "IOL_REST" and obs.get("endpoint") == "current"
+                         and obs.get("is_trade") is True and obs.get("useful") is True)
+            native_book = iol_trade if iol else obs.get("source") in NATIVE_PPI_BOOK_SOURCES
+            if obs.get("book_at") and obs.get("book_useful") is True and native_book:
                 book_at = stamp(obs["book_at"])
                 if book_at > received:
                     raise ValueError("FUTURE_BOOK_OBSERVATION")
@@ -150,15 +158,21 @@ class UniverseOrchestrator:
             if (obs.get("useful") and obs.get("source") and
                     0 <= (at-source).total_seconds() <= self.policy.max_age_seconds):
                 value = source.isoformat()
-                strategy_sample = (obs.get("endpoint") == "intraday" and
-                                   obs.get("source") == "PPI_MARKETDATA_INTRADAY" and
-                                   obs.get("intraday_confirmed") is True) if self.policy.engine == "SCALPING" else (
-                                   obs.get("endpoint") == "current" and obs.get("source") == "PPI_MARKETDATA_CURRENT")
+                if iol:
+                    strategy_sample = iol_trade and self.policy.engine == "EQUITY_SPOT"
+                elif self.policy.engine == "SCALPING":
+                    strategy_sample = (obs.get("endpoint") == "intraday" and
+                                       obs.get("source") == "PPI_MARKETDATA_INTRADAY" and
+                                       obs.get("intraday_confirmed") is True)
+                else:
+                    strategy_sample = (obs.get("endpoint") == "current" and
+                                       obs.get("source") == "PPI_MARKETDATA_CURRENT")
                 if strategy_sample and value not in s["samples"]:
                     s["samples"].append(value)
-                if obs.get("endpoint") == "intraday":
+                if not iol and obs.get("endpoint") == "intraday":
                     s["intraday_confirmed"] = obs.get("intraday_confirmed") is True
-                s["last_useful_observation_at"] = value
+                if not iol or iol_trade:
+                    s["last_useful_observation_at"] = value
         for event in events:
             k = tuple(event["identity"])
             s = current.get(digest(k))
