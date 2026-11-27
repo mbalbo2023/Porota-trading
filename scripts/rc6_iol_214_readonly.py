@@ -257,7 +257,308 @@ except Exception as exc:
 '''
 
 
-INSTALLED_PROBE = "from collections import Counter, defaultdict\nfrom contextlib import closing\nfrom datetime import datetime, timedelta, timezone\nimport json\nimport re\nimport sqlite3\nfrom pathlib import Path\n\nfrom co_market_sessions_hf6 import byma_paper_spot_phase\nfrom rc6_iol_market_gateway import IOLGatewayClient, iol_gateway_socket_path\nfrom rc6_paper_admission_gate import admission_status\n\ndatabase = Path(\"/app/data/paper_v17/observer_v17.db\")\nnow = datetime.now(timezone.utc)\nfresh = now - timedelta(seconds=120)\nmarket_open = now.replace(hour=13, minute=30, second=0, microsecond=0)\nallowed, reason = admission_status()\ngateway = IOLGatewayClient(socket_path=iol_gateway_socket_path(database), timeout_seconds=2).owner_status()\nwith closing(sqlite3.connect(database.as_uri() + \"?mode=ro\", uri=True, timeout=1)) as conn:\n    conn.row_factory = sqlite3.Row\n    conn.execute(\"PRAGMA query_only=ON\")\n    state = dict(conn.execute(\"\"\"\n        SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at\n        FROM observer_state WHERE id=1\n    \"\"\").fetchone())\n    if state[\"mode\"] != \"PRODUCTION_PAPER\" or type(state[\"real_orders_sent\"]) is not int or state[\"real_orders_sent\"] != 0:\n        raise ValueError(\"PAPER_ZERO_UNVERIFIED\")\n    rows = conn.execute(\"\"\"\n        SELECT symbol,asset_class,market,currency,settlement,trade_at,book_at,\n               bid,ask,bid_size,ask_size,opening_block_reason,last_kind\n        FROM market_snapshots WHERE julianday(observed_at) BETWEEN julianday(?) AND julianday(?)\n                  AND metadata_source='IOL_REST' ORDER BY id DESC LIMIT 128\n    \"\"\", (fresh.isoformat(), now.isoformat())).fetchall()\n    by_family = defaultdict(Counter)\n    last = set()\n    for row in rows:\n        key = tuple(row[name] for name in (\"symbol\", \"asset_class\", \"market\", \"currency\", \"settlement\"))\n        if key in last:\n            continue\n        last.add(key)\n        counts = by_family[row[\"asset_class\"]]\n        counts[\"observed_keys\"] += 1\n        def recent(stamp):\n            value = datetime.fromisoformat(stamp) if stamp else None\n            return value is not None and value.utcoffset() is not None and max(fresh, market_open) <= value <= now\n        valid_trade = row[\"last_kind\"] == \"TRADE\" and recent(row[\"trade_at\"])\n        valid_book = recent(row[\"book_at\"]) and 0 < float(row[\"bid\"]) <= float(row[\"ask\"]) and min(\n            float(row[\"bid_size\"]), float(row[\"ask_size\"])) > 0\n        counts[\"fresh_trade_keys\"] += bool(valid_trade)\n        counts[\"fresh_two_sided_book_keys\"] += bool(valid_book)\n        counts[\"fresh_trade_and_book_keys\"] += bool(valid_trade and valid_book and not row[\"opening_block_reason\"])\n    wire_cycles = []\n    for row in conn.execute(\"\"\"\n        SELECT started_at, selected_count, successful_count, failed_count, detail\n        FROM universe_cycle_metrics ORDER BY id DESC LIMIT 8\n    \"\"\"):\n        content = str(row[\"detail\"] or \"\")\n        marker = \"factibilidad=\"\n        try:\n            metrics = json.loads(content.split(marker, 1)[1])\n            budget = metrics[\"active_plan\"][\"iol_rest_budget\"]\n        except (IndexError, ValueError, KeyError, TypeError):\n            continue\n        fields = (\"calls_per_minute\", \"scanner_batch_limit\", \"scanner_calls_per_instrument\",\n                  \"batches_per_minute\", \"planned_exit_calls\")\n        if all(type(budget.get(name)) is int and 0 <= budget[name] <= 10000 for name in fields):\n            hold = metrics.get(\"opening_hold_reason\", \"\")\n            hold = hold if isinstance(hold,str) and re.fullmatch(\"[A-Z][A-Z0-9_]{2,96}\",hold) else None\n            wire_cycles.append({**{name:budget[name] for name in fields},\n                                **{name:row[name] for name in (\"started_at\",\"selected_count\",\"successful_count\",\n                                                              \"failed_count\")},\"opening_hold_reason\":hold})\n    tables = {row[0] for row in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")}\n    worker_states = {}\n    for table in (\"paper_exit_reader_state\", \"paper_supervisor_state\",\n                  \"intraday_scalping_worker_state\", \"paper_caucion_cash_sweep_state\"):\n        if table not in tables:\n            worker_states[table] = {\"state\":\"TABLE_NOT_FOUND\"}\n            continue\n        record = conn.execute(f\"SELECT state,heartbeat_at FROM {table} WHERE id=1\").fetchone()\n        if record is not None and isinstance(record[\"state\"],str) and re.fullmatch(\"[A-Z][A-Z0-9_]{2,96}\",record[\"state\"]):\n            worker_states[table] = {\"state\":record[\"state\"],\"heartbeat_at\":record[\"heartbeat_at\"]}\n            if table == \"paper_exit_reader_state\":\n                detail = conn.execute(\"SELECT detail FROM paper_exit_reader_state WHERE id=1\").fetchone()[0]\n                failures = re.match(r\"^(\\d+) errores de lectura de abiertas;\",str(detail or \"\"))\n                budget = re.search(r\"; budget_round=(COMPLETE|IDLE_NO_OPEN_POSITIONS|DEGRADED|BASELINE_NOT_MEASURED|NO_VERIFICADO)$\",str(detail or \"\"))\n                worker_states[table][\"read_failures\"] = int(failures.group(1)) if failures else None\n                worker_states[table][\"budget_round\"] = budget.group(1) if budget else None\n            if table == \"intraday_scalping_worker_state\":\n                scalp = conn.execute(\n                    \"SELECT selected,successful,failed,candidates,detail FROM intraday_scalping_worker_state WHERE id=1\"\n                ).fetchone()\n                worker_states[table].update({key:scalp[key] for key in (\"selected\",\"successful\",\"failed\",\"candidates\")})\n                for hold_reason in (\"IOL_INTERVAL_VOLUME_UNVERIFIED\",\"IOL_FRESH_TRADE_SAMPLE_UNAVAILABLE\",\n                               \"IOL_SCALPING_SAMPLE_READ_UNAVAILABLE\"):\n                    if hold_reason in str(scalp[\"detail\"] or \"\"):\n                        worker_states[table][\"hold_reason\"] = hold_reason\n            elif table == \"paper_caucion_cash_sweep_state\":\n                code = conn.execute(\"SELECT code FROM paper_caucion_cash_sweep_state WHERE id=1\").fetchone()[0]\n                if isinstance(code,str) and re.fullmatch(\"[A-Z][A-Z0-9_]{2,96}\",code):\n                    worker_states[table][\"code\"] = code\n    extra_ledgers = {}\n    for table, column in ((\"paper_cauciones\",\"status\"),(\"paper_family_lifecycle\",\"state\"),\n                          (\"paper_future_positions\",\"status\")):\n        if table not in tables:\n            extra_ledgers[table] = None\n            continue\n        rows = conn.execute(f\"SELECT {column},count(*) FROM {table} GROUP BY {column}\").fetchall()\n        extra_ledgers[table] = dict((state,count) for state,count in rows\n                                    if isinstance(state,str) and re.fullmatch(\"[A-Z][A-Z0-9_]{2,96}\",state))\n    latest_cycle = conn.execute(\"\"\"\n        SELECT started_at,finished_at,eligible_total,selected_count,successful_count,failed_count\n        FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1\n    \"\"\").fetchone()\n    cycle = dict(latest_cycle) if latest_cycle and datetime.fromisoformat(latest_cycle[\"started_at\"]) >= market_open else None\n    open_positions = dict(conn.execute(\"\"\"\n        SELECT asset_class, count(*) FROM paper_positions WHERE status='OPEN' GROUP BY asset_class\n    \"\"\").fetchall())\n    observed_fills = [dict(row) for row in conn.execute(\"\"\"\n        SELECT p.asset_class, f.side, count(*) AS fills\n        FROM (SELECT paper_id,side,filled_at FROM paper_fills ORDER BY id DESC LIMIT 4096) f\n        JOIN paper_positions p ON p.paper_id=f.paper_id\n        WHERE julianday(f.filled_at) BETWEEN julianday(?) AND julianday(?)\n        GROUP BY p.asset_class,f.side\n    \"\"\", (market_open.isoformat(), now.isoformat())).fetchall()]\n    sources = (\"DATA_ERROR\", \"DATA_REJECTED\", \"DATA_TEMPORAL_HOLD\", \"IOL_GATEWAY_REATTACH_REQUIRED\")\n    events = Counter()\n    for row in conn.execute(\"\"\"\n        SELECT event_type,detail FROM paper_events\n        WHERE event_type IN (?,?,?,?) AND julianday(event_at) BETWEEN julianday(?) AND julianday(?)\n        ORDER BY id DESC LIMIT 256\n    \"\"\", (*sources, max(market_open, fresh).isoformat(), now.isoformat())):\n        code = str(row[\"detail\"]).rsplit(\": \", 1)[-1]\n        if re.fullmatch(r\"[A-Z][A-Z0-9_]{2,119}\", code):\n            events[code] += 1\n        else:\n            events[row[\"event_type\"]] += 1\n\nprint(json.dumps({\"observed_at\": now.isoformat(), \"market_phase\": byma_paper_spot_phase(now),\n    \"observer\": state, \"go\": {\"allowed\": allowed, \"reason\": reason},\n    \"gateway\": {name: gateway.get(name) for name in (\"provider\", \"trade_stream_state\", \"authenticated\",\n                \"wire_attempts\", \"rate_limited_attempts\")},\n    \"market_keys_by_family\": dict(by_family), \"scanner_cycle\": cycle, \"iol_wire_cycles\": wire_cycles,\n    \"exit_and_engine_workers\": worker_states, \"specialized_paper_ledgers\": extra_ledgers, \"open_spot_positions_by_family\": open_positions,\n    \"session_spot_fills_by_family\": observed_fills, \"recent_market_rejections\": dict(events)}, sort_keys=True))\n"
+INSTALLED_PROBE = r'''from collections import Counter, defaultdict
+from contextlib import closing
+from datetime import datetime, timedelta, timezone
+import json
+import re
+import sqlite3
+from pathlib import Path
+
+from co_market_sessions_hf6 import byma_paper_spot_phase
+from rc6_iol_market_gateway import IOLGatewayClient, iol_gateway_socket_path
+from rc6_paper_admission_gate import admission_status
+
+from bisect import bisect_left
+from decimal import Decimal
+from time import monotonic
+
+from be_paper_engine import PaperStore
+from bf_production_paper_observer import _scanner_opening_capacity
+
+
+def safe_code(value):
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,119}", value) else None
+
+
+def safe_read_identity(row):
+    values = tuple(row[name] for name in ("symbol", "asset_class", "market", "currency", "settlement"))
+    if all(isinstance(value, str) and re.fullmatch(r"[A-Z0-9.^_()/-]{1,36}", value) for value in values):
+        return values
+    return None
+
+
+def trace_live_ready(conn, now, market_open, gate_allowed, gate_reason):
+    # Keep the entire diagnostic bounded. This connection is mode=ro/query_only.
+    stop = monotonic() + 3
+    conn.set_progress_handler(lambda: monotonic() >= stop, 5000)
+    try:
+        return read_live_ready(conn, now, market_open, gate_allowed, gate_reason)
+    finally:
+        conn.set_progress_handler(None, 0)
+
+
+def read_live_ready(conn, now, market_open, gate_allowed, gate_reason):
+    window_start = max(market_open, now - timedelta(minutes=8)).isoformat()
+    catalog = [dict(row) for row in conn.execute("""
+        SELECT instrument_type AS family, count(*) AS total,
+          sum(CASE WHEN status='AVAILABLE' AND can_simulate=1 THEN 1 ELSE 0 END) AS runtime_ready,
+          max(checked_at) AS checked_at
+        FROM candidate_identity_v2 GROUP BY instrument_type ORDER BY instrument_type
+    """) if safe_code(row["family"])]
+    cycle_ends, cycles = [], []
+    for row in conn.execute("""
+        SELECT started_at,finished_at,detail FROM
+          (SELECT id,started_at,finished_at,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 12)
+        WHERE finished_at IS NOT NULL ORDER BY finished_at
+    """):
+        try:
+            recorded = json.loads(str(row["detail"]).split("factibilidad=", 1)[1])
+            plan = recorded["active_plan"]
+            identities = [tuple(value) for value in plan["opening_identities"]]
+            scopes = {tuple(scope["identity"]): scope["priority"] for scope in plan["read_scopes"]
+                      if isinstance(scope.get("identity"), (list, tuple))}
+            if scopes:
+                cycles.append((datetime.fromisoformat(row["started_at"]), recorded, identities, scopes))
+                cycle_ends.append(datetime.fromisoformat(row["finished_at"]))
+        except (IndexError, KeyError, TypeError, ValueError):
+            continue
+
+    snapshots = conn.execute("""
+        SELECT * FROM market_snapshots
+        WHERE julianday(observed_at) BETWEEN julianday(?) AND julianday(?)
+        ORDER BY id DESC LIMIT 192
+    """, (window_start, now.isoformat())).fetchall()
+    decisions = defaultdict(list)
+    for row in conn.execute("""
+        SELECT decision_key,decided_at,symbol,action,reason,features_json FROM
+          (SELECT * FROM paper_decisions ORDER BY id DESC LIMIT 1536)
+        WHERE julianday(decided_at) BETWEEN julianday(?) AND julianday(?)
+    """, (window_start, now.isoformat())):
+        decisions[(row["symbol"], row["decided_at"])].append(row)
+
+    statistics = defaultdict(Counter)
+    sample, latest, failure_counts = [], set(), defaultdict(Counter)
+    for row in snapshots:
+        key = safe_read_identity(row)
+        if key is None or key in latest:
+            continue
+        latest.add(key)
+        if row["metadata_source"] != "IOL_REST":
+            continue
+        symbol, family, market, currency, term = key
+        received = datetime.fromisoformat(row["observed_at"])
+        stats = statistics[family]
+        stats["with_recent_snapshot"] += 1
+        candidate = conn.execute("""
+            SELECT status,can_simulate,checked_at FROM candidate_identity_v2
+            WHERE ticker=? AND instrument_type=? AND market=? AND currency=? AND settlement=?
+        """, key).fetchone()
+        ready = bool(candidate is not None and candidate["status"] == "AVAILABLE" and candidate["can_simulate"] == 1)
+        stats["catalog_ready"] += ready
+        quote = PaperStore.quote_from_snapshot(row)
+        quote.monetary_identity()
+        two_sided = (Decimal(0) < quote.bid <= quote.ask and min(quote.bid_size, quote.ask_size) > 0)
+        entry_error = quote.time_error(now.isoformat(), require_trade=True)
+        book_error = quote.time_error(now.isoformat())
+        clock_during_session = (quote.book_at and datetime.fromisoformat(quote.book_at) >= market_open
+                                and quote.trade_at and datetime.fromisoformat(quote.trade_at) >= market_open)
+        quote_ready = bool(two_sided and clock_during_session and not entry_error and not quote.opening_block_reason)
+        book_ready = bool(two_sided and not book_error and quote.book_at
+                          and datetime.fromisoformat(quote.book_at) >= market_open)
+        stats["book_fresh_two_sided"] += book_ready
+        stats["trade_and_book_fresh"] += quote_ready
+        stats["catalog_ready_and_trade_book_fresh"] += ready and quote_ready
+        stage = None
+        index = bisect_left(cycle_ends, received)
+        if index < len(cycles):
+            cycle_start, feasibility, opening, scopes = cycles[index]
+            if cycle_start <= received and key in scopes:
+                permit, reason = _scanner_opening_capacity((symbol, family, term),
+                    focus={"matched": opening}, feasibility=feasibility)
+                stage = {"priority": safe_code(scopes[key]), "signal_budget_eligible": permit,
+                         "hold": safe_code(reason), "cycle_started_at": cycle_start.isoformat()}
+                stats["scanner_eligible_and_fresh"] += permit and ready and quote_ready
+
+        prefix = ":" + ":".join((symbol, family, term, currency, market, row["observed_at"][:16])) + ":"
+        actual = []
+        for decision in decisions.get((symbol, row["observed_at"]), []):
+            if prefix not in decision["decision_key"]:
+                continue
+            features = json.loads(decision["features_json"])
+            gate = conn.execute("""
+                SELECT final_result,reason FROM trade_gate_evaluations WHERE decision_key=?
+            """, (decision["decision_key"],)).fetchone()
+            actual.append({"action": safe_code(decision["action"]),
+                "pre_signal_rejection": features.get("pre_signal_rejection") is True,
+                "reason": safe_code(features.get("reason_code")) or safe_code(decision["reason"]),
+                "final": safe_code(gate["final_result"]) if gate else None,
+                "final_reason": safe_code(gate["reason"]) if gate else None})
+        stats["observed_decision_on_exact_snapshot"] += bool(actual)
+        sample.append({"identity": key, "observed_at": row["observed_at"],
+            "trade_at": quote.trade_at, "book_at": quote.book_at, "catalog_ready": ready,
+            "catalog_checked_at": candidate["checked_at"] if candidate else None,
+            "entry_data_ready": quote_ready, "fresh_book_for_exit_guard": book_ready,
+            "entry_clock_hold": safe_code(entry_error), "book_clock_hold": safe_code(book_error),
+            "snapshot_hold": safe_code(quote.opening_block_reason), "scanner": stage, "decisions": actual})
+
+    for row in conn.execute("""
+        SELECT event_type,detail FROM paper_events
+        WHERE julianday(event_at) BETWEEN julianday(?) AND julianday(?)
+          AND event_type IN ('DATA_REJECTED','DATA_ERROR','DATA_TEMPORAL_HOLD')
+        ORDER BY id DESC LIMIT 350
+    """, (window_start, now.isoformat())):
+        pieces = str(row["detail"]).rsplit(": ", 1)
+        if len(pieces) == 2 and re.fullmatch(r"[A-Z0-9.^_()/-]{1,36}", pieces[0]) and safe_code(pieces[1]):
+            failure_counts[pieces[1]][pieces[0]] += 1
+
+    return {"status": "OBSERVED", "lookback_start": window_start, "as_of": now.isoformat(),
+        "catalog": catalog, "current_phase": byma_paper_spot_phase(now),
+        "market_and_decisions_by_family": dict(statistics), "instrument_rows": sample,
+        "scanning_failures": dict(failure_counts), "operational_gate": {
+            "allowed": gate_allowed, "reason": safe_code(gate_reason)},
+        "validation": "PERSISTED_EXACT_IDENTITY_AND_INSTALLED_READONLY_CLOCK_AND_SCANNER_CHECKS"}
+
+
+database = Path("/app/data/paper_v17/observer_v17.db")
+now = datetime.now(timezone.utc)
+fresh = now - timedelta(seconds=120)
+market_open = now.replace(hour=13, minute=30, second=0, microsecond=0)
+allowed, reason = admission_status()
+gateway = IOLGatewayClient(socket_path=iol_gateway_socket_path(database), timeout_seconds=2).owner_status()
+with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)) as conn:
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    conn.execute("BEGIN")
+    state = dict(conn.execute("""
+        SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,heartbeat_at,last_market_data_at
+        FROM observer_state WHERE id=1
+    """).fetchone())
+    if state["mode"] != "PRODUCTION_PAPER" or type(state["real_orders_sent"]) is not int or state["real_orders_sent"] != 0:
+        raise ValueError("PAPER_ZERO_UNVERIFIED")
+    rows = conn.execute("""
+        SELECT symbol,asset_class,market,currency,settlement,trade_at,book_at,
+               bid,ask,bid_size,ask_size,opening_block_reason,last_kind
+        FROM market_snapshots WHERE julianday(observed_at) BETWEEN julianday(?) AND julianday(?)
+                  AND metadata_source='IOL_REST' ORDER BY id DESC LIMIT 128
+    """, (fresh.isoformat(), now.isoformat())).fetchall()
+    by_family = defaultdict(Counter)
+    last = set()
+    for row in rows:
+        key = tuple(row[name] for name in ("symbol", "asset_class", "market", "currency", "settlement"))
+        if key in last:
+            continue
+        last.add(key)
+        counts = by_family[row["asset_class"]]
+        counts["observed_keys"] += 1
+        def recent(stamp):
+            value = datetime.fromisoformat(stamp) if stamp else None
+            return value is not None and value.utcoffset() is not None and max(fresh, market_open) <= value <= now
+        valid_trade = row["last_kind"] == "TRADE" and recent(row["trade_at"])
+        valid_book = recent(row["book_at"]) and 0 < float(row["bid"]) <= float(row["ask"]) and min(
+            float(row["bid_size"]), float(row["ask_size"])) > 0
+        counts["fresh_trade_keys"] += bool(valid_trade)
+        counts["fresh_two_sided_book_keys"] += bool(valid_book)
+        counts["fresh_trade_and_book_keys"] += bool(valid_trade and valid_book and not row["opening_block_reason"])
+    wire_cycles = []
+    for row in conn.execute("""
+        SELECT started_at, selected_count, successful_count, failed_count, detail
+        FROM universe_cycle_metrics ORDER BY id DESC LIMIT 8
+    """):
+        content = str(row["detail"] or "")
+        marker = "factibilidad="
+        try:
+            metrics = json.loads(content.split(marker, 1)[1])
+            budget = metrics["active_plan"]["iol_rest_budget"]
+        except (IndexError, ValueError, KeyError, TypeError):
+            continue
+        fields = ("calls_per_minute", "scanner_batch_limit", "scanner_calls_per_instrument",
+                  "batches_per_minute", "planned_exit_calls")
+        if all(type(budget.get(name)) is int and 0 <= budget[name] <= 10000 for name in fields):
+            hold = metrics.get("opening_hold_reason", "")
+            hold = hold if isinstance(hold,str) and re.fullmatch("[A-Z][A-Z0-9_]{2,96}",hold) else None
+            wire_cycles.append({**{name:budget[name] for name in fields},
+                                **{name:row[name] for name in ("started_at","selected_count","successful_count",
+                                                              "failed_count")},"opening_hold_reason":hold})
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    worker_states = {}
+    for table in ("paper_exit_reader_state", "paper_supervisor_state",
+                  "intraday_scalping_worker_state", "paper_caucion_cash_sweep_state"):
+        if table not in tables:
+            worker_states[table] = {"state":"TABLE_NOT_FOUND"}
+            continue
+        record = conn.execute(f"SELECT state,heartbeat_at FROM {table} WHERE id=1").fetchone()
+        if record is not None and isinstance(record["state"],str) and re.fullmatch("[A-Z][A-Z0-9_]{2,96}",record["state"]):
+            worker_states[table] = {"state":record["state"],"heartbeat_at":record["heartbeat_at"]}
+            if table == "paper_exit_reader_state":
+                detail = conn.execute("SELECT detail FROM paper_exit_reader_state WHERE id=1").fetchone()[0]
+                failures = re.match(r"^(\d+) errores de lectura de abiertas;",str(detail or ""))
+                budget = re.search(r"; budget_round=(COMPLETE|IDLE_NO_OPEN_POSITIONS|DEGRADED|BASELINE_NOT_MEASURED|NO_VERIFICADO)$",str(detail or ""))
+                worker_states[table]["read_failures"] = int(failures.group(1)) if failures else None
+                worker_states[table]["budget_round"] = budget.group(1) if budget else None
+            if table == "intraday_scalping_worker_state":
+                scalp = conn.execute(
+                    "SELECT selected,successful,failed,candidates,detail FROM intraday_scalping_worker_state WHERE id=1"
+                ).fetchone()
+                worker_states[table].update({key:scalp[key] for key in ("selected","successful","failed","candidates")})
+                for hold_reason in ("IOL_INTERVAL_VOLUME_UNVERIFIED","IOL_FRESH_TRADE_SAMPLE_UNAVAILABLE",
+                               "IOL_SCALPING_SAMPLE_READ_UNAVAILABLE"):
+                    if hold_reason in str(scalp["detail"] or ""):
+                        worker_states[table]["hold_reason"] = hold_reason
+            elif table == "paper_caucion_cash_sweep_state":
+                code = conn.execute("SELECT code FROM paper_caucion_cash_sweep_state WHERE id=1").fetchone()[0]
+                if isinstance(code,str) and re.fullmatch("[A-Z][A-Z0-9_]{2,96}",code):
+                    worker_states[table]["code"] = code
+    extra_ledgers = {}
+    for table, column in (("paper_cauciones","status"),("paper_family_lifecycle","state"),
+                          ("paper_future_positions","status")):
+        if table not in tables:
+            extra_ledgers[table] = None
+            continue
+        rows = conn.execute(f"SELECT {column},count(*) FROM {table} GROUP BY {column}").fetchall()
+        extra_ledgers[table] = dict((state,count) for state,count in rows
+                                    if isinstance(state,str) and re.fullmatch("[A-Z][A-Z0-9_]{2,96}",state))
+    latest_cycle = conn.execute("""
+        SELECT started_at,finished_at,eligible_total,selected_count,successful_count,failed_count
+        FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1
+    """).fetchone()
+    cycle = dict(latest_cycle) if latest_cycle and datetime.fromisoformat(latest_cycle["started_at"]) >= market_open else None
+    open_positions = dict(conn.execute("""
+        SELECT asset_class, count(*) FROM paper_positions WHERE status='OPEN' GROUP BY asset_class
+    """).fetchall())
+    observed_fills = [dict(row) for row in conn.execute("""
+        SELECT p.asset_class, f.side, count(*) AS fills
+        FROM (SELECT paper_id,side,filled_at FROM paper_fills ORDER BY id DESC LIMIT 4096) f
+        JOIN paper_positions p ON p.paper_id=f.paper_id
+        WHERE julianday(f.filled_at) BETWEEN julianday(?) AND julianday(?)
+        GROUP BY p.asset_class,f.side
+    """, (market_open.isoformat(), now.isoformat())).fetchall()]
+    sources = ("DATA_ERROR", "DATA_REJECTED", "DATA_TEMPORAL_HOLD", "IOL_GATEWAY_REATTACH_REQUIRED")
+    events = Counter()
+    for row in conn.execute("""
+        SELECT event_type,detail FROM paper_events
+        WHERE event_type IN (?,?,?,?) AND julianday(event_at) BETWEEN julianday(?) AND julianday(?)
+        ORDER BY id DESC LIMIT 256
+    """, (*sources, max(market_open, fresh).isoformat(), now.isoformat())):
+        code = str(row["detail"]).rsplit(": ", 1)[-1]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{2,119}", code):
+            events[code] += 1
+        else:
+            events[row["event_type"]] += 1
+
+    try:
+        live_ready = trace_live_ready(conn, now, market_open, allowed, reason)
+    except (TypeError, ValueError, ArithmeticError, sqlite3.Error) as exc:
+        live_ready = {"status": "NO_VERIFICADO", "error": type(exc).__name__}
+
+print(json.dumps({"observed_at": now.isoformat(), "market_phase": byma_paper_spot_phase(now),
+    "live_ready": live_ready, "observer": state, "go": {"allowed": allowed, "reason": reason},
+    "gateway": {name: gateway.get(name) for name in ("provider", "trade_stream_state", "authenticated",
+                "wire_attempts", "rate_limited_attempts")},
+    "market_keys_by_family": dict(by_family), "scanner_cycle": cycle, "iol_wire_cycles": wire_cycles,
+    "exit_and_engine_workers": worker_states, "specialized_paper_ledgers": extra_ledgers, "open_spot_positions_by_family": open_positions,
+    "session_spot_fills_by_family": observed_fills, "recent_market_rejections": dict(events)}, sort_keys=True))
+'''
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
