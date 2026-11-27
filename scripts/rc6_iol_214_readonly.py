@@ -19,7 +19,7 @@ SCHEMA = "porota.iol.installed-216-paper-go.v1"
 REMOTE = '''
 from contextlib import closing
 from datetime import datetime, timezone
-import hashlib, json, os, sqlite3, subprocess, sys
+import hashlib, json, os, re, sqlite3, subprocess, sys
 from pathlib import Path
 
 SERVICE = 'porota-iol-oauth-health-rc6.service'
@@ -91,6 +91,76 @@ def journal(started, current):
     return {'state':'OBSERVED' if entries else 'NO_EXACT_RELEASE_HEALTH_ENTRY',
             'unit_entries_observed':observed,'health_runs':entries}
 
+def preopen_history(gate):
+    from scripts.porota_rootless_jobs import PREOPEN_BYMA_RED_REASONS, PREOPEN_RED_KEYS
+
+    unit = 'porota-preopen-rc6.service'
+    old = 'eba76703be86e6a6b1406db36e5cb4cb87b21330'
+    raw = run_command(['/usr/bin/journalctl','--unit',unit,
+                       '--since=2026-11-27 13:17:00 UTC','--until=2026-11-27 13:31:00 UTC',
+                       '--lines=40','--no-pager','--output=json','--output-fields=MESSAGE,_SYSTEMD_UNIT'],
+                      128*1024)
+    if raw is None or gate.get('candidate_sha') != old:
+        return {'state':'NO_VERIFICADO'}
+    entries = []
+    for line in raw.splitlines():
+        try:
+            record = json.loads(line)
+            if record.get('_SYSTEMD_UNIT') != unit:
+                continue
+            receipt = json.loads(record['MESSAGE'])
+            stamp = datetime.fromtimestamp(int(record['__REALTIME_TIMESTAMP']) / 10**6, timezone.utc)
+            if (not isinstance(receipt,dict) or receipt.get('schema') != 'porota.rootless.job.v1'
+                    or receipt.get('unit') != unit or receipt.get('source_sha') != old
+                    or receipt.get('state') != 'BLOQUEADO' or receipt.get('child_exit_code') != 2
+                    or receipt.get('failure_signature') != 'PREOPEN_RED_CHECKS'
+                    or type(receipt.get('real_orders_sent')) is not int or receipt['real_orders_sent'] != 0):
+                continue
+            names = receipt.get('preopen_red_checks')
+            if not isinstance(names,list) or not names or any(not isinstance(name,str)
+                    or name not in PREOPEN_RED_KEYS for name in names):
+                continue
+            reasons = receipt.get('preopen_red_reasons') or {}
+            byma = reasons.get('byma_morning_watch') if isinstance(reasons,dict) else None
+            entry = {'recorded_at':stamp.isoformat(),'candidate_sha':old,'red_checks':names}
+            if byma in PREOPEN_BYMA_RED_REASONS:
+                entry['byma_reason'] = byma
+            entries.append(entry)
+        except (ValueError, TypeError, KeyError, AttributeError, OSError, OverflowError):
+            continue
+    return {'state':'OBSERVED' if entries else 'NO_EXACT_ENTRY','records':entries}
+
+def installed_preopen(source, root, identity):
+    from scripts.porota_rootless_jobs import PREOPEN_RED_KEYS
+
+    env = {**identity.environment(), 'POROTA_RUNTIME_BACKEND':'ROOTLESS',
+           'POROTA_RC6_MARKET_PROVIDER':'IOL_REST','PYTHONDONTWRITEBYTECODE':'1',
+           'PYTHONPATH':str(source),'PAPER_V17_DB_PATH':str(root / 'data/paper_v17/observer_v17.db'),
+           'DOCKER_HOST':f'unix://{identity.socket}'}
+    # No publish or revalidate flags. Keep production source checks, including same-day BYMA.
+    result = subprocess.run(['/usr/bin/python3','-B',str(source / 'rc6_preopen.py')],
+                            cwd=root, env=env, capture_output=True, check=False, timeout=35)
+    if result.returncode not in (0,2) or not 0 < len(result.stdout) <= 1024*1024:
+        return {'state':'NO_VERIFICADO'}
+    receipt = json.loads(result.stdout)
+    if (receipt.get('schema') != 'POROTA_RC6_PREOPEN_V3' or receipt.get('read_only') is not True
+            or receipt.get('network_order_test_performed') is not False
+            or receipt.get('direct_telegram_send') is not False or 'paper_admission_receipt' in receipt):
+        return {'state':'NO_VERIFICADO'}
+    checks = {}
+    for name, check in receipt.get('checks',{}).items():
+        if name not in PREOPEN_RED_KEYS or not isinstance(check,dict):
+            continue
+        state, reason = check.get('state'), check.get('reason')
+        if state not in {'GREEN','AMBER','RED'}:
+            continue
+        checks[name] = {'state':state}
+        if isinstance(reason,str) and re.fullmatch('[A-Z][A-Z0-9_]{2,96}',reason):
+            checks[name]['reason'] = reason
+    state = receipt.get('status')
+    return {'state':state if state in {'GREEN','RED','PAUSED_NO_GO'} else 'NO_VERIFICADO',
+            'exit_code':result.returncode,'checks':checks}
+
 def run_probe():
     assert 0 < os.getuid() == os.geteuid()
     source = Path.home() / '.local/state/porota-rc6/releases' / expected['source_sha'] / 'source'
@@ -156,6 +226,12 @@ def run_probe():
             history = journal(installed,current)
         except (OSError,ValueError,subprocess.SubprocessError):
             history = {'state':'NO_VERIFICADO','health_runs':[]}
+        preopen_rca = {'state':'NO_VERIFICADO'}
+        try:
+            preopen_rca = preopen_history(gate)
+            preopen_current = installed_preopen(source,root,identity)
+        except (OSError,ValueError,TypeError,subprocess.SubprocessError):
+            preopen_current = {'state':'NO_VERIFICADO'}
         inventory = run_host_inventory(manager,current)
         for role in ('observer','dashboard'):
             inspected = manager.check_role(current,role)
@@ -169,6 +245,7 @@ def run_probe():
                 'market_requests_generated':requests,'ppi_watch_queried':False,'installed_at':installed.isoformat(),
                 'observed_at':datetime.now(timezone.utc).isoformat(),'authentication':auth,'market_pair':market_pair,
                 'units':units,'journal':history,'inventory':inventory,'operator_rearm':rearm,'preopen':gate,'runtime_paper_go':status,
+                'preopen_rca':preopen_rca,'preopen_current_readonly':preopen_current,
                 'auth_probe_sha256':hashlib.sha256(auth_source.encode()).hexdigest()}
 
 try:
