@@ -58,8 +58,7 @@ RUNTIME_OUTPUT_LIMIT = 32 * 1024
 UNIT_OUTPUT_LIMIT = 8 * 1024
 UNIT_PROBE_WORKERS = 6
 SYSTEMCTL_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TZ": "UTC", "SYSTEMD_COLORS": "0"}
-CANONICAL_SOURCE_QUERY_SECONDS = 2.5
-CANONICAL_SOURCE_GROUP_LIMIT = 128
+HISTORY_SOURCE_GROUP_LIMIT = 128
 RUNTIME_BOOTSTRAP = """import hashlib, json, sys
 source, expected = sys.argv[1:]
 actual = hashlib.sha256(source.encode('utf-8')).hexdigest()
@@ -268,15 +267,14 @@ def _sources(connection, deadline, table, expression, group_by=()):
     return [{"source": row[-2], "rows": row[-1], **({"resolution": row[0]} if group_by else {})} for row in rows]
 
 
-def _canonical_sources(connection, deadline):
-    # The canonical projection stores its own source next to the version ID.
-    # Group the stored source once and only emit allowed labels (or OTHER).
-    rows, reason = _bounded_query(connection, deadline, """SELECT source, COUNT(*)
-        FROM history_canonical_v2 GROUP BY source LIMIT ?""",
-        (CANONICAL_SOURCE_GROUP_LIMIT + 1,), seconds=CANONICAL_SOURCE_QUERY_SECONDS)
+def _history_sources(connection, deadline, table, *, seconds):
+    # Group the stored source directly so SQLite can use a covering index.
+    rows, reason = _bounded_query(connection, deadline,
+        f"SELECT source, COUNT(*) FROM {table} GROUP BY source LIMIT ?",
+        (HISTORY_SOURCE_GROUP_LIMIT + 1,), seconds=seconds)
     if rows is None:
         return None, reason
-    if len(rows) > CANONICAL_SOURCE_GROUP_LIMIT:
+    if len(rows) > HISTORY_SOURCE_GROUP_LIMIT:
         return None, "INVENTORY_HISTORY_SOURCE_GROUP_LIMIT"
     counts = {}
     for source, count in rows:
@@ -312,16 +310,19 @@ def _observe_database(path, expected, deadline, *, observer=False):
                 # CandleArchive stores UTC bar endings, including when old bars are revised later.
                 result["latest_candle_at"] = _iso(_scalar(connection, deadline,
                     "SELECT MAX(bar_end) FROM candle_versions"))
+                if result["latest_candle_at"] is None:
+                    result["last_ingested_candle_at"] = _iso(_scalar(connection, deadline,
+                        "SELECT bar_end FROM candle_versions ORDER BY id DESC LIMIT 1"))
                 source = "CASE WHEN json_valid(identity_json) THEN json_extract(identity_json, '$.source') END"
                 resolution = ("CASE WHEN json_valid(identity_json) THEN CASE json_extract(identity_json, '$.resolution') "
                               "WHEN '1m' THEN '1m' WHEN '5m' THEN '5m' WHEN '1d' THEN '1d' ELSE 'OTHER' END ELSE 'OTHER' END")
                 result["candle_series_by_source"] = _sources(connection, deadline, "candle_series", source, (resolution,))
             else:
-                canonical, canonical_failure = _canonical_sources(connection, deadline)
-                result["canonical_by_source"] = canonical
-                if canonical_failure is not None:
-                    result["canonical_by_source_failure"] = canonical_failure
-                result["versions_by_source"] = _sources(connection, deadline, "history_versions_v2", "source")
+                for key, table, seconds in (("versions_by_source", "history_versions_v2", 1.5),
+                                            ("canonical_by_source", "history_canonical_v2", 4)):
+                    result[key], failure = _history_sources(connection, deadline, table, seconds=seconds)
+                    if failure is not None:
+                        result[key + "_failure"] = failure
             return result
     except (OSError, sqlite3.Error, Hold):
         return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_READ_UNAVAILABLE"}

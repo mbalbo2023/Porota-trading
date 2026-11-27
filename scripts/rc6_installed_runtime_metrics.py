@@ -36,7 +36,7 @@ STATES = {
     'DEGRADED', 'STOPPED', 'RESTART_WAIT', 'EXITED', 'FAILED', 'BACKOFF', 'COOLDOWN', 'IDLE',
     'MARKET_CLOSED', 'MARKET_OPEN', 'CLOSED', 'OPEN', 'PREOPEN', 'CHECKING', 'STOPPING',
     'SHADOW_OBSERVING', 'SHADOW_IDLE_MARKET_CLOSED', 'FAIL_CLOSED', 'LOCAL_EOD_READY', 'BACKLOG',
-    'COMMITTED', 'NOT_ATTEMPTED', 'OK', 'ERROR',
+    'COMPLETE', 'COMMITTED', 'NOT_ATTEMPTED', 'OK', 'ERROR',
 }
 SOURCES = {'IOL_REST', 'IOL_REST_TRADE_SAMPLE', 'PPI_GUARDED_CURRENT', 'PPI_MARKETDATA_CURRENT',
            'PRODUCTION_PAPER_SNAPSHOTS', 'PRODUCTION_PAPER', 'IOL_MCP', 'A3_CEM_CLOSING',
@@ -79,10 +79,12 @@ def cgroup():
     fields = ('memory.current', 'memory.max', 'pids.current', 'pids.max')
     usage = {name.replace('.', '_'): integer(read_small(CG / name)) for name in fields}
     return {**usage, 'state': 'OBSERVED' if len(cpu) == 2 else 'NO_VERIFICADO',
+            'reason': None if len(cpu) == 2 else 'CGROUP_V2_CPU_LIMIT_UNAVAILABLE',
             'cpu_quota_us': integer(cpu[0]) if len(cpu) == 2 else None,
             'cpu_period_us': integer(cpu[1]) if len(cpu) == 2 else None,
             'cpu_unlimited': cpu[0] == 'max' if len(cpu) == 2 else None,
             'cpu_stat': counters('cpu.stat', {'usage_usec', 'user_usec', 'system_usec', 'nr_periods', 'nr_throttled', 'throttled_usec'}),
+            'memory_stat': counters('memory.stat', {'anon', 'file', 'kernel', 'inactive_file', 'active_file'}),
             'memory_events': counters('memory.events', {'low', 'high', 'max', 'oom', 'oom_kill', 'oom_group_kill'})}
 
 def observation_lag(observations, clock_column):
@@ -92,7 +94,7 @@ def observation_lag(observations, clock_column):
         if event and received and event <= received:
             latencies.append(round((received - event).total_seconds(), 3))
     if not latencies:
-        return {'samples': 0, 'min_s': None, 'median_s': None, 'max_s': None}
+        return {'samples': 0, 'reason': 'NO_VALID_IOL_EVENT_CLOCKS_IN_SAMPLE'}
     latencies.sort()
     middle = len(latencies) // 2
     median = latencies[middle] if len(latencies) % 2 else (latencies[middle-1] + latencies[middle]) / 2
@@ -105,7 +107,7 @@ def controller_metrics(sha, tree):
     path = artifact_root(HOT) / 'runtime-health.json'
     report = read_controller_health(path, provider='IOL_REST')
     if not report or report.get('source_sha') != sha or report.get('candidate_tree_sha') != tree or report.get('market_provider') != 'IOL_REST':
-        return {'state': 'NO_VERIFICADO'}
+        return {'state': 'NO_VERIFICADO', 'reason': 'CONTROLLER_RECEIPT_MISSING_OR_RELEASE_MISMATCH'}
     children = report['children']
     workers = {}
     for role in IOL_CONTROLLER_CHILDREN:
@@ -122,13 +124,23 @@ def shadow_metrics():
     result = {}
     for name in ('idle', 'status'):
         try:
-            row = json.loads(read_regular(root / (name + '.json'), 16384))
+            row = json.loads(read_regular(root / (name + '.json')))
         except (OSError, ValueError, Hold):
+            result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_READ_UNAVAILABLE'}
             continue
         if isinstance(row, dict) and row.get('real_routes') == 'NOT_CALLED' and type(row.get('real_orders_sent')) is int and row['real_orders_sent'] == 0:
             clock = row.get('heartbeat_at') if name == 'idle' else row.get('as_of')
             result[name] = {'state': state(row.get('state') or row.get('status')), 'at': timestamp(clock), 'age_s': age(clock)}
+        else:
+            result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_SAFETY_CONTRACT_UNVERIFIED'}
     return result
+
+def quote_provenance(value):
+    if value in SOURCES:
+        return value
+    if isinstance(value, str) and value.startswith('PPI_CATALOG:'):
+        return 'PPI_CATALOG_PROVENANCE'
+    return 'OTHER' if value else 'UNATTRIBUTED'
 
 def rows(db, sql, params=()):
     until = min(START + 6, time.monotonic() + .33)
@@ -183,7 +195,7 @@ def hot_metrics():
                 pulses[role] = worker_pulse(*row) if row else None
             clocks = rows(db, 'SELECT metadata_source,observed_at,trade_at,book_at FROM market_snapshots ORDER BY id DESC LIMIT 128')
             if clocks is not None:
-                counts = Counter(row[0] if row[0] in SOURCES else 'OTHER' for row in clocks)
+                counts = Counter(quote_provenance(row[0]) for row in clocks)
                 newest = max((stamp for row in clocks if (stamp := timestamp(row[1]))), default=None)
                 iol = [row for row in clocks if row[0] == 'IOL_REST']
                 result['snapshot_tail'] = {'sample_limit': 128, 'rows_by_source': dict(counts), 'latest_observed_at': newest,
@@ -201,7 +213,7 @@ def hot_metrics():
                                  'dirty_bars': count(counts[0]) if counts else None}
             return result
     except (OSError, sqlite3.Error):
-        return {'state': 'NO_VERIFICADO'}
+        return {'state': 'NO_VERIFICADO', 'reason': 'HOT_DATABASE_READ_UNAVAILABLE'}
 
 def cold_metrics():
     try:
@@ -222,7 +234,7 @@ def cold_metrics():
                                                     'known_at': timestamp(latest[1])}
             return result
     except (OSError, sqlite3.Error):
-        return {'state': 'NO_VERIFICADO'}
+        return {'state': 'NO_VERIFICADO', 'reason': 'COLD_DATABASE_READ_UNAVAILABLE'}
 
 role, = sys.argv[1:]
 assert role in ('observer', 'dashboard') and os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST'
@@ -232,6 +244,7 @@ if role == 'observer':
     started = time.perf_counter()
     owner = observe_iol_owner(HOT)
     result['gateway_control'] = {'state': 'OBSERVED' if owner else 'NO_VERIFICADO',
+                                 'reason': None if owner else 'GATEWAY_CONTROL_RECEIPT_UNAVAILABLE',
                                  'elapsed_ms': round((time.perf_counter() - started) * 1000, 3),
                                  'authenticated': owner.get('authenticated') is True if owner else None,
                                  'wire_attempts': count(owner.get('wire_attempts')) if owner else None, 'provider_probed': False}
@@ -278,7 +291,7 @@ def _container_metrics(manager, current, role):
                 all(result.get(key) == current[key] for key in ("source_sha", "source_tree")),
                 "METRICS_CONTAINER_RELEASE_MISMATCH")
     except (RuntimeError, OSError, ValueError, TypeError):
-        return {"state": "NO_VERIFICADO"}
+        return {"state": "NO_VERIFICADO", "reason": "INSTALLED_CONTAINER_METRICS_UNAVAILABLE"}
     return {"state": "OBSERVED", "container_exec_ms": round((time.perf_counter() - started) * 1000, 3), **result}
 
 
@@ -298,6 +311,7 @@ def observe_runtime_metrics(manager, current):
     hot = observer.get("hot", {})
     require(hot.get("real_orders_sent") in (None, 0), "METRICS_REAL_ORDER_OBSERVED")
     return {"schema": SCHEMA, "state": "OBSERVED" if observer["state"] == "OBSERVED" else "NO_VERIFICADO",
+            "reason": observer.get("reason"),
             **{key: current[key] for key in ("source_sha", "source_tree", "image_id", "attempt")},
             "observed_at": datetime.now(timezone.utc).isoformat(), "provider_traffic_generated": 0,
             "read_only": True, "real_orders_sent": after["real_orders_sent"], "host_capacity": capacity,
