@@ -1,11 +1,12 @@
-name: RC6 IOL COLD successor 214 read-only preflight
+name: RC6 IOL COLD successor 214 recovery
 
 on:
   push:
-    branches: [diagnostic/rc6-iol-cold-recovery-214]
+    branches: [recovery/rc6-iol-cold-recovery-214]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: rc6-unified-paper-deploy
@@ -15,14 +16,27 @@ jobs:
   cold:
     if: >-
       github.repository == 'mbalbo2023/Porota-trading' &&
-      github.actor == 'mbalbo2023' && github.run_attempt == '1'
+      github.actor == 'mbalbo2023' && github.triggering_actor == 'mbalbo2023' &&
+      github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 16
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Inspect the pinned COLD snapshot on the installed IOL release
+      - name: Require the exact successful read-only preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api repos/mbalbo2023/Porota-trading/actions/runs/45923062827 | jq -e '
+            .id == 45923062827 and .status == "completed" and .conclusion == "success" and
+            .head_sha == "0648269e794330d029ecac86fe119ceaeb3ef00d"' >/dev/null
+          gh api repos/mbalbo2023/Porota-trading/actions/artifacts/15165321586 | jq -e '
+            .workflow_run.id == 45923062827 and .expired == false and
+            .digest == "sha256:f9e44be18cfd10af79edce39851c1125b50782baf64d39df1f632d5200af9c1f"' >/dev/null
+      - name: Preserve the failed COLD package and restore the same runtime
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -31,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -B -m scripts.rc6_iol_cold_actions214 cold_inspect --output "$RUNNER_TEMP/rc6-iol-cold-214.json"
+          python3 -B -m scripts.rc6_iol_cold_actions214 cold_recover --output "$RUNNER_TEMP/rc6-iol-cold-214.json"
       - name: Publish sanitized evidence of the operation
         if: always()
         uses: actions/upload-artifact@v4
