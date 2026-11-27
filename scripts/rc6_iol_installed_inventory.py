@@ -57,6 +57,9 @@ PROBE_SOURCE_LIMIT = 64 * 1024
 RUNTIME_OUTPUT_LIMIT = 32 * 1024
 UNIT_OUTPUT_LIMIT = 8 * 1024
 UNIT_PROBE_WORKERS = 6
+SYSTEMCTL_ENV = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TZ": "UTC", "SYSTEMD_COLORS": "0"}
+CANONICAL_SOURCE_QUERY_SECONDS = 2.5
+CANONICAL_SOURCE_GROUP_LIMIT = 128
 RUNTIME_BOOTSTRAP = """import hashlib, json, sys
 source, expected = sys.argv[1:]
 actual = hashlib.sha256(source.encode('utf-8')).hexdigest()
@@ -99,12 +102,14 @@ def _controlled_units():
 
 def _show_unit(unit):
     """Pin each response to one requested unit without relying on separators."""
+    if unit.endswith("@.service"):
+        return _show_template(unit)
     try:
         process = subprocess.run(
             ["/usr/bin/systemctl", "show", "--all", "--no-pager",
              "--property=" + ",".join(PROPERTIES), "--", unit],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False, timeout=2.5,
-            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "TZ": "UTC", "SYSTEMD_COLORS": "0"},
+            env=SYSTEMCTL_ENV,
         )
     except subprocess.TimeoutExpired:
         return {}, "INVENTORY_UNIT_SHOW_TIMEOUT"
@@ -127,6 +132,26 @@ def _show_unit(unit):
     if properties.get("LoadState") not in KNOWN_STATES:
         return {}, "INVENTORY_UNIT_LOAD_STATE_UNVERIFIED"
     return properties, None
+
+
+def _show_template(unit):
+    """A template has unit-file metadata. Its instances own execution state."""
+    try:
+        process = subprocess.run(
+            ["/usr/bin/systemctl", "list-unit-files", "--type=service", "--no-legend", "--no-pager",
+             "--plain", "--", unit], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, check=False, timeout=2.5, env=SYSTEMCTL_ENV,
+        )
+    except subprocess.TimeoutExpired:
+        return {}, "INVENTORY_TEMPLATE_METADATA_TIMEOUT"
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return {}, "INVENTORY_TEMPLATE_METADATA_UNAVAILABLE"
+    if process.returncode != 0 or not isinstance(process.stdout, str) or len(process.stdout) > UNIT_OUTPUT_LIMIT:
+        return {}, "INVENTORY_TEMPLATE_METADATA_UNVERIFIED"
+    rows = [line.split() for line in process.stdout.splitlines() if line.strip()]
+    if len(rows) != 1 or len(rows[0]) not in {2, 3} or rows[0][0] != unit or rows[0][1] not in KNOWN_STATES:
+        return {}, "INVENTORY_TEMPLATE_METADATA_UNVERIFIED"
+    return {"Id": unit, "UnitFileState": rows[0][1], "TemplateMetadataObserved": True}, None
 
 
 def _show(units):
@@ -154,7 +179,7 @@ def _service(properties, role, trigger=None):
     execution = execution_state(properties, trigger)
     completed = execution in {"COMPLETED", "SKIPPED_BY_CONDITION"}
     status = properties.get("ExecMainStatus", "")
-    return {
+    result = {
         "role": role, "load": _state(properties.get("LoadState")),
         "active": _state(properties.get("ActiveState")), "sub": _state(properties.get("SubState")),
         "enabled": _state(properties.get("UnitFileState")), "execution": execution,
@@ -163,6 +188,9 @@ def _service(properties, role, trigger=None):
         "started_at": _iso(properties.get("ExecMainStartTimestamp")),
         "finished_at": _iso(properties.get("ExecMainExitTimestamp")),
     }
+    if properties.get("TemplateMetadataObserved") is True:
+        result.update(evidence_kind="TEMPLATE_UNIT_FILE", execution="NOT_APPLICABLE_TEMPLATE")
+    return result
 
 
 def _scheduler_inventory():
@@ -207,15 +235,23 @@ def _scheduler_inventory():
             "timers": observed_timers, "services": services, "operational_ppi_units": ppi_units}
 
 
-def _read_query(connection, deadline, query, parameters=()):
-    until = min(deadline, time.monotonic() + 0.7)
+def _bounded_query(connection, deadline, query, parameters=(), *, seconds=0.7):
+    until = min(deadline, time.monotonic() + seconds)
+    if time.monotonic() >= until:
+        return None, "INVENTORY_DB_QUERY_BUDGET"
     connection.set_progress_handler(lambda: int(time.monotonic() >= until), 1000)
     try:
-        if time.monotonic() < until:
-            return connection.execute(query, parameters).fetchall()
-    except sqlite3.Error:
-        pass
-    return None
+        return connection.execute(query, parameters).fetchall(), None
+    except sqlite3.Error as exc:
+        if getattr(exc, "sqlite_errorcode", None) == sqlite3.SQLITE_INTERRUPT or time.monotonic() >= until:
+            return None, "INVENTORY_DB_QUERY_BUDGET"
+        return None, "INVENTORY_DB_QUERY_UNAVAILABLE"
+    finally:
+        connection.set_progress_handler(None, 0)
+
+
+def _read_query(connection, deadline, query, parameters=()):
+    return _bounded_query(connection, deadline, query, parameters)[0]
 
 
 def _scalar(connection, deadline, query, parameters=()):
@@ -230,6 +266,23 @@ def _sources(connection, deadline, table, expression, group_by=()):
     if rows is None:
         return None
     return [{"source": row[-2], "rows": row[-1], **({"resolution": row[0]} if group_by else {})} for row in rows]
+
+
+def _canonical_sources(connection, deadline):
+    # The canonical projection stores its own source next to the version ID.
+    # Group the stored source once and only emit allowed labels (or OTHER).
+    rows, reason = _bounded_query(connection, deadline, """SELECT source, COUNT(*)
+        FROM history_canonical_v2 GROUP BY source LIMIT ?""",
+        (CANONICAL_SOURCE_GROUP_LIMIT + 1,), seconds=CANONICAL_SOURCE_QUERY_SECONDS)
+    if rows is None:
+        return None, reason
+    if len(rows) > CANONICAL_SOURCE_GROUP_LIMIT:
+        return None, "INVENTORY_HISTORY_SOURCE_GROUP_LIMIT"
+    counts = {}
+    for source, count in rows:
+        label = source if source in SOURCES else "OTHER"
+        counts[label] = counts.get(label, 0) + count
+    return [{"source": source, "rows": count} for source, count in sorted(counts.items())], None
 
 
 def _observe_database(path, expected, deadline, *, observer=False):
@@ -256,14 +309,18 @@ def _observe_database(path, expected, deadline, *, observer=False):
                     result["heartbeat_at"] = _iso(heartbeat)
                 check = _scalar(connection, deadline, "PRAGMA quick_check('observer_state')")
                 result["observer_state_quick_check"] = None if check is None else check == "ok"
+                # CandleArchive stores UTC bar endings, including when old bars are revised later.
                 result["latest_candle_at"] = _iso(_scalar(connection, deadline,
-                    "SELECT bar_end FROM candle_versions ORDER BY id DESC LIMIT 1"))
+                    "SELECT MAX(bar_end) FROM candle_versions"))
                 source = "CASE WHEN json_valid(identity_json) THEN json_extract(identity_json, '$.source') END"
                 resolution = ("CASE WHEN json_valid(identity_json) THEN CASE json_extract(identity_json, '$.resolution') "
                               "WHEN '1m' THEN '1m' WHEN '5m' THEN '5m' WHEN '1d' THEN '1d' ELSE 'OTHER' END ELSE 'OTHER' END")
                 result["candle_series_by_source"] = _sources(connection, deadline, "candle_series", source, (resolution,))
             else:
-                result["canonical_by_source"] = _sources(connection, deadline, "history_canonical_v2", "source")
+                canonical, canonical_failure = _canonical_sources(connection, deadline)
+                result["canonical_by_source"] = canonical
+                if canonical_failure is not None:
+                    result["canonical_by_source_failure"] = canonical_failure
                 result["versions_by_source"] = _sources(connection, deadline, "history_versions_v2", "source")
             return result
     except (OSError, sqlite3.Error, Hold):
@@ -276,7 +333,7 @@ def _runtime_inventory():
         "source_sha": os.getenv("POROTA_BUILD_SHA"), "source_tree": os.getenv("POROTA_CANDIDATE_TREE_SHA"),
         "python": ".".join(str(part) for part in sys.version_info[:3]), "sqlite": sqlite3.sqlite_version,
         "observer": _observe_database(OBSERVER, OBSERVER_TABLES, started + 3.5, observer=True),
-        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 7),
+        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 9),
     }
 
 

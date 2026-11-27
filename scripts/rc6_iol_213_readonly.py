@@ -46,9 +46,10 @@ def run_probe():
         inventory = probes['installed_inventory']['run_host_inventory'](
             manager, current, runtime_probe_source=checked_sources['installed_inventory'])
         authentication = probes['auth_diagnostic']['observe_auth'](manager, current)
+        archive = probes['213_eod_diagnostic']['observe_eod'](manager, current)
         require(database_snapshot(root / DB_RELATIVE) == original, 'AUDIT_DATABASE_IDENTITY_CHANGED')
         return {'schema': schema, **expected, 'read_only': True, 'real_orders_sent': 0,
-                'inventory': inventory, 'authentication': authentication,
+                'inventory': inventory, 'authentication': authentication, 'local_eod_history': archive,
                 'probe_sha256': {name: hashlib.sha256(body.encode()).hexdigest()
                                  for name,body in checked_sources.items()}}
 
@@ -68,7 +69,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sources = {name: (ROOT / "scripts" / ("rc6_iol_" + name + ".py")).read_text(encoding="utf-8")
-               for name in ("installed_inventory", "auth_diagnostic")}
+               for name in ("installed_inventory", "auth_diagnostic", "213_eod_diagnostic")}
     data = (f"expected = {EXPECTED!r}\nchecked_sources = {sources!r}\nschema = {SCHEMA!r}\n" + REMOTE).encode()
     receipt = {"schema": SCHEMA, **EXPECTED, "status": "NO_VERIFICADO", "reason": "AUDIT_TRANSPORT_UNVERIFIED"}
     try:
