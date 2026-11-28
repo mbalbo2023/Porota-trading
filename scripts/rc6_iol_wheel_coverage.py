@@ -63,20 +63,43 @@ def public_code(value):
     return "OTHER_RECORDED_REASON"
 
 
+def diagnostic_read(read, *args):
+    try:
+        return read(*args)
+    except (sqlite3.Error, AttributeError, KeyError, ValueError, TypeError, ArithmeticError) as exc:
+        details = {"state": "NO_VERIFICADO", "error_type": type(exc).__name__}
+        trace = exc.__traceback__
+        while trace is not None:
+            code = trace.tb_frame.f_code
+            if code.co_filename == "<string>" or code.co_filename.endswith("rc6_iol_wheel_coverage.py"):
+                details[code.co_name] = trace.tb_lineno
+            trace = trace.tb_next
+        if isinstance(exc, sqlite3.Error):
+            details["sqlite_error_name"] = public_code(getattr(exc, "sqlite_errorname", None))
+            schema_name = re.fullmatch(r"no such (table|column): ([a-z0-9_.]+)", str(exc))
+            if schema_name:
+                details["schema_error"] = list(schema_name.groups())
+        elif type(exc) is ValueError:
+            details["reason"] = public_code(str(exc))
+        return details
+
+
 def diagnose_freshness(conn, cycles, snapshots, close_eligible, quote_from_snapshot):
     turn_rows = read_rows(conn, """SELECT cycle_started_at,symbol FROM symbol_cycle_metrics
         WHERE julianday(cycle_started_at)>=julianday(?) AND julianday(cycle_started_at)<julianday(?)
-          AND instr(detail,'IOL REST')>0 ORDER BY id LIMIT ?""", 6000)
+          AND instr(detail,'IOL REST')>0 ORDER BY id LIMIT ?""", 10000)
     events = read_rows(conn, """SELECT event_type,event_at,detail FROM paper_events
         WHERE event_type IN ('DATA_ERROR','DATA_REJECTED')
           AND julianday(event_at)>=julianday(?) AND julianday(event_at)<julianday(?)
-        ORDER BY event_at,id LIMIT ?""", 6000)
+        ORDER BY event_at,id LIMIT ?""", 24000)
     turns = defaultdict(list)
     for row in turn_rows:
         turns[row["cycle_started_at"]].append(row["symbol"])
     planned, attempted, fresh = set(), set(), set()
     slices = []
     holds, coverage, rejects_by_slot = Counter(), Counter(), Counter()
+    coverage["symbol_turn_rows_for_window"] = len(turn_rows)
+    coverage["reject_rows_for_window"] = len(events)
     errors_by_identity = defaultdict(set)
     for cycle in cycles:
         started = cycle["started_at"]
@@ -374,8 +397,8 @@ def audit(conn, quote_from_snapshot, signal_sample_count, required_samples, clos
             "spot_paper_fills": [dict(r) for r in fills],
             "fresh_frames_unmatched_to_decisions": dict(unmatched),
             "required_signal_samples": required_samples, "fresh_unmatched_signal_windows": remaining,
-            "freshness_rca": diagnose_freshness(conn, cycles, snapshots, close_eligible, quote_from_snapshot),
-            "family_runtime": family_runtime(conn),
+            "freshness_rca": diagnostic_read(diagnose_freshness, conn, cycles, snapshots, close_eligible, quote_from_snapshot),
+            "family_runtime": diagnostic_read(family_runtime, conn),
             "missed_buy_without_reference": "NOT_IDENTIFIABLE_FROM_UNOBSERVED_PRICES_OR_BOOKS",
             "quote_evaluation_coverage_method": "EXACT_FIVE_PART_IDENTITY_AND_PERSISTED_OBSERVATION_CLOCK"}
 
