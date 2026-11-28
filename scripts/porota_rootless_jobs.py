@@ -25,6 +25,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 from rc6_paper_admission_gate import iol_recovery_due
 from rc6_validation_runtime import PROOF_SOURCE
+from co_market_sessions_hf6 import byma_paper_spot_phase
 from scripts.porota_rootless_host import (
     Hold, Host, Identity, DB_RELATIVE, database_snapshot, no_alias,
     read_regular, read_release_state, require, user_lock,
@@ -77,6 +78,12 @@ PREOPEN_BYMA_RED_REASONS = frozenset((
     "BYMA_WATCH_DEGRADED", "BYMA_WATCH_STATE_UNKNOWN", "BYMA_WATCH_UNAVAILABLE",
 ))
 PREOPEN_CAPTURE_LIMIT = 1024 * 1024
+
+
+def _closed_report_receipt(unit, current, phase):
+    return {"schema": "porota.rootless.job.v1", "unit": unit, "state": "SKIPPED",
+            "source_sha": current["source_sha"], "image_id": current["image_id"],
+            "reason": "REPORT_OUTSIDE_PAPER_WHEEL", "phase": phase, "exit_code": 0}
 
 # A stable bootstrap-installed launcher selects source by the validated private
 # release SHA. It never evaluates a path supplied by a caller or JSON field.
@@ -147,6 +154,9 @@ def publish_runtime_evidence(identity, *, root=Path("/opt/porota-trading"), run=
     """Run the existing read-only publisher from the verified release source."""
     with scheduler_lock(identity):
         current, _ = read_release_state(identity)
+        phase = byma_paper_spot_phase(datetime.now(timezone.utc))
+        if phase != "OPEN":
+            return _closed_report_receipt("porota-runtime-evidence-rc6.service", current, phase)
         source = source_directory(identity, current)
         script = source / "scripts/porota_publish_runtime_evidence_github_rc6.sh"
         environment = identity.environment()
@@ -360,6 +370,11 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
     require(unit in ADAPTED_SERVICES | IOL_JOBS and (not verify_rest or unit == IOL_HEALTH)
             and (not revalidate_paper_gate or unit == PREOPEN), "SCHEDULER_UNIT_SCOPE")
     with scheduler_lock(identity):
+        if unit in {INTROSPECTION, PUBLISH}:
+            phase = byma_paper_spot_phase(datetime.now(timezone.utc))
+            if phase != "OPEN":
+                current, _ = read_release_state(identity)
+                return _closed_report_receipt(unit, current, phase)
         manager, current, _ = verified_host(root, identity)
         preopen_failure = None
         paper_recovery = None
@@ -453,7 +468,9 @@ def main(argv=None):
             require(args.unit is None and not args.verify_iol_rest and not args.revalidate_paper_gate
                     and args.docker_bridge is None,
                     "SCHEDULER_UNIT_SCOPE")
-            publish_runtime_evidence(identity)
+            receipt = publish_runtime_evidence(identity)
+            if receipt is not None:
+                print(json.dumps(receipt, sort_keys=True))
             return 0
         if args.docker_bridge is not None:
             require(not args.revalidate_paper_gate, "SCHEDULER_UNIT_SCOPE")

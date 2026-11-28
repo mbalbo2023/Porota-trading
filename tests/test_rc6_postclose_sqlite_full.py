@@ -98,20 +98,22 @@ def test_report_full_is_red_and_bounded_without_faking_summary(postclose, monkey
     assert status(store, "REPORTS")[0] == "VERDE"
 
 
-def test_2026_november_extended_close_rebuilds_preclose_report_once(postclose, monkeypatch):
+@pytest.mark.parametrize("provider,close_hour", [("PPI", 18), ("IOL_REST", 17)])
+def test_november_close_rebuilds_preclose_report_once(postclose, monkeypatch, provider, close_hour):
     store = postclose
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", provider)
 
     class NovemberClose(datetime):
         @classmethod
         def now(cls, tz=None):
-            at = datetime(2026, 11, 2, 18, 30, tzinfo=services.TZ)
+            at = datetime(2026, 11, 2, close_hour, 30, tzinfo=services.TZ)
             return at if tz is None else at.astimezone(tz)
 
     monkeypatch.setattr(services, "datetime", NovemberClose)
     services._job(store, "REPORTS", "VERDE", "prior report", success=True)
     with store.connect() as conn:
         conn.execute("UPDATE operational_jobs SET last_run_at=? WHERE job_key='REPORTS'",
-                     (datetime(2026, 11, 2, 17, 30, tzinfo=services.TZ).isoformat(),))
+                     (datetime(2026, 11, 2, close_hour - 1, 30, tzinfo=services.TZ).isoformat(),))
     calls = {"reports": 0, "summary": 0}
 
     def report(_store, include_today=False):
