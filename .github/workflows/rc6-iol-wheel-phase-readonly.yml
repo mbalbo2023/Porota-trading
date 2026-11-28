@@ -1,0 +1,57 @@
+name: RC6 wheel gaps by exact PAPER identity for 27 November
+
+on:
+  pull_request:
+    branches: [audit/rc6-wheel-phase-gaps-base-20261127]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: rc6-iol-wheel-coverage-readonly
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    if: >-
+      github.repository == 'mbalbo2023/Porota-trading' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'audit/rc6-wheel-phase-gaps-20261127' &&
+      github.actor == 'mbalbo2023' && github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 877128fb0f3f2df34d7af402430d687bd3a6b146
+          persist-credentials: false
+      - name: Verify the recorded wheel receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/reference.zip"
+          gh api repos/mbalbo2023/Porota-trading/actions/artifacts/15262631406/zip > "$archive"
+          printf '%s  %s\n' b624dbab3f429f94d3651e0e36e289866620967b411bd0ae18f4f93a9bfaee5e "$archive" | sha256sum --check --status
+          unzip -p "$archive" rc6-iol-installed-214-auth.json > "$RUNNER_TEMP/reference.json"
+      - name: Read outstanding family evidence from the verified PAPER database
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+          DO_KNOWN_HOSTS: ${{ secrets.DO_KNOWN_HOSTS }}
+        run: |
+          python3 -B -m scripts.rc6_iol_wheel_phase_readonly \
+            --reference "$RUNNER_TEMP/reference.json" \
+            --output "$RUNNER_TEMP/rc6-iol-wheel-phase-readonly.json"
+      - name: Publish aggregated family evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc6-iol-wheel-phases-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/rc6-iol-wheel-phase-readonly.json
+          if-no-files-found: error
+          retention-days: 30
