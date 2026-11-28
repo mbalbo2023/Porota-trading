@@ -44,9 +44,10 @@ El [contrato vigente](../../tests/test_a3_primary_readonly_hf6.py) sigue en la
 colección automática. La [exclusión anterior](https://github.com/mbalbo2023/Porota-trading/blob/373c1e985590cd5bd0b4fbc80f389eaa2e7d5a5e/ops/policy/test-policy.yaml#L40)
 documenta el motivo y el sucesor.
 
-## Aplicadores de código retirados del árbol activo
+## Código retirado del árbol activo
 
-Se archivaron 17 transformaciones puntuales de fuentes anteriores. Se revisaron
+Se archivaron 17 transformaciones puntuales y una vista que sólo invocaba uno
+de esos aplicadores. Se revisaron
 los nombres y rutas en los árboles productivo y de control, incluidos imports,
 invocaciones de comandos, systemd, workflows, manifiestos y pruebas. Las referencias
 entre los aplicadores SHADOW se retiraron juntas. La ruta histórica de
@@ -72,6 +73,7 @@ fixtures que crean su propio archivo temporal.
 | `scripts/rc6_wire_validation_dashboard.py` | Inserción puntual de la extensión del dashboard de validación. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_validation_dashboard.py) |
 | `tools/rc6_wave18_strip_auto_rollback.py` | Edición puntual del trap de despliegue de Wave 18. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/tools/rc6_wave18_strip_auto_rollback.py) |
 | `tools/rc6_wave4_definitive_patch.py` | Aplicador puntual de históricos y arranque de Wave 4. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/tools/rc6_wave4_definitive_patch.py) |
+| `ev_shadow_validation_view_rc6.py` | Vista que sólo referenciaba el aplicador retirado `rc6_wire_shadow_validation_view.py`. El aprendizaje vigente usa `et_shadow_learning_rc6` desde el dashboard y el auditor de datos. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/373c1e985590cd5bd0b4fbc80f389eaa2e7d5a5e/ev_shadow_validation_view_rc6.py) |
 
 ## Registros y planes de raíz (103)
 
