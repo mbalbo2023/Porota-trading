@@ -10,7 +10,7 @@ def test_wheel_phase_joins_exact_keys_and_exports_only_aggregates(tmp_path):
     database = tmp_path / "paper.db"
     at = "2026-11-27T13:31:00+00:00"
     closed = "2026-11-27T13:33:00+00:00"
-    ready = ("A", "ACCIONES", "BYMA", "ARS", "A-24HS")
+    ready = ("PAMP", "ACCIONES", "BYMA", "ARS", "A-24HS")
     clock_hold = ("C", "ACCIONES", "BYMA", "ARS", "A-24HS")
     wrong_variant = ("C", "ACCIONES", "BYMA", "USD", "INMEDIATA")
     excluded = ("D", "ACCIONES", "BYMA", "ARS", "A-24HS")
@@ -25,12 +25,15 @@ def test_wheel_phase_joins_exact_keys_and_exports_only_aggregates(tmp_path):
             CREATE TABLE universe_cycle_metrics(id, started_at, finished_at, selected_count, detail);
             CREATE TABLE symbol_cycle_metrics(cycle_started_at, detail);
             CREATE TABLE paper_events(id, event_type, event_at, detail);
-            CREATE TABLE paper_decisions(decision_key, decided_at, symbol, action);
-            CREATE TABLE trade_gate_evaluations(decision_key, final_result, reason, paper_id);
-            CREATE TABLE decision_evidence_snapshots(decision_key, payload_json);
+            CREATE TABLE paper_decisions(decision_key TEXT PRIMARY KEY, decided_at, symbol, action);
+            CREATE TABLE trade_gate_evaluations(decision_key TEXT PRIMARY KEY, evaluated_at, symbol,
+                final_result, reason, paper_id);
+            CREATE TABLE decision_evidence_snapshots(decision_key TEXT PRIMARY KEY, captured_at, payload_json);
+            CREATE INDEX idx_decision_evidence_captured ON decision_evidence_snapshots(captured_at,decision_key);
             CREATE TABLE paper_positions(symbol, asset_class, market, currency,
-                settlement, paper_id, opened_at, closed_at);
+                settlement, paper_id TEXT PRIMARY KEY, opened_at, closed_at, status, features_json);
             CREATE TABLE paper_fills(paper_id, side, filled_at);
+            CREATE INDEX idx_spot_fills_position_side ON paper_fills(paper_id,side);
             CREATE TABLE paper_equity(api_key, cash);
             INSERT INTO paper_equity VALUES('never publish this token', '123456789');
         """)
@@ -46,11 +49,17 @@ def test_wheel_phase_joins_exact_keys_and_exports_only_aggregates(tmp_path):
                                               (blocked, "BLOCKED", "NO_GO_PAPER_SCALPING", None)):
             native = f"STRATEGY:{key[0]}:{key[1]}:{key[4]}:{key[3]}:{key[2]}:{at[:16]}:BUY"
             conn.execute("INSERT INTO paper_decisions VALUES(?,?,?,'BUY')", (native, at, key[0]))
-            conn.execute("INSERT INTO trade_gate_evaluations VALUES(?,?,?,?)", (native, result, reason, paper_id))
+            conn.execute("INSERT INTO trade_gate_evaluations VALUES(?,?,?,?,?,?)",
+                         (native, at, key[0], result, reason, paper_id))
             fields = ("symbol", "asset_class", "market", "currency", "settlement")
-            evidence = {"quote_used": {**dict(zip(fields, key)), "observed_at": at, "metadata_source": "IOL_REST"}}
-            conn.execute("INSERT INTO decision_evidence_snapshots VALUES(?,?)", (native, json.dumps(evidence)))
-        conn.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?,'id-1',?,?)", (*ready, at, closed))
+            evidence = {"quote_used": {**dict(zip(fields, key)), "observed_at": at, "metadata_source": "IOL_REST",
+                                       "last_kind": "TRADE", "book_at": at, "trade_at": at,
+                                       "bid": "10", "ask": "11", "bid_size": "20", "ask_size": "20"},
+                        "decision": {"final_result": result, "paper_id": paper_id}}
+            conn.execute("INSERT INTO decision_evidence_snapshots VALUES(?,?,?)", (native, at, json.dumps(evidence)))
+        native_entry = f"STRATEGY:PAMP:ACCIONES:A-24HS:ARS:BYMA:{at[:16]}:BUY"
+        conn.execute("INSERT INTO paper_positions VALUES(?,?,?,?,?,'id-1',?,?,'CLOSED',?)",
+                     (*ready, at, closed, json.dumps({"native_decision_key": native_entry})))
         conn.execute("INSERT INTO paper_fills VALUES('id-1','BUY_SIMULATED',?)", (at,))
         conn.execute("INSERT INTO paper_fills VALUES('id-1','SELL_SIMULATED',?)", (closed,))
     before = hashlib.sha256(database.read_bytes()).hexdigest()
@@ -64,6 +73,21 @@ def test_wheel_phase_joins_exact_keys_and_exports_only_aggregates(tmp_path):
                          "ETFS": {"close_catalog_eligible": 0, "close_catalog_eligible_with_fresh_pair": 0}}}
         report = phase.audit(conn, reference, lambda *args, **kwargs: [ready, blocked, excluded, clock_hold])
         drifted = phase.audit(conn, reference, lambda *args, **kwargs: [ready, blocked])
+        query_plan = [row[3] for row in conn.execute("EXPLAIN QUERY PLAN " + phase.BUY_GATE_SQL,
+                                                   (*phase.CAPTURE_INDEX_WINDOW, 100))]
+        assert any("SEARCH e USING INDEX idx_decision_evidence_captured" in row for row in query_plan)
+        assert all("SCAN d" not in row and "SCAN g" not in row for row in query_plan)
+        gate_reference = {**reference, "buys_por_familia": {"ACCIONES": 1, "CEDEARS": 1},
+                          "resultados_buy": {"OPENED_SIMULATED": 1, "BLOCKED": 1},
+                          "vetos_buy": {"NO_GO_PAPER_SCALPING": 1}}
+        prior = {name: {"posiciones_con_fill_buy": int(name == "ACCIONES"),
+                        "posiciones_con_salida_completa": int(name == "ACCIONES")} for name in phase.FAMILIES}
+        allowed_tables = {"decision_evidence_snapshots", "paper_decisions", "trade_gate_evaluations",
+                          "paper_positions", "paper_fills"}
+        conn.set_authorizer(lambda action, table, *_: sqlite3.SQLITE_DENY
+                            if action == sqlite3.SQLITE_READ and table not in allowed_tables else sqlite3.SQLITE_OK)
+        supplement = phase.gate_addendum(conn, gate_reference, prior)
+        mismatch = phase.gate_addendum(conn, {**gate_reference, "resultados_buy": {"OPENED_SIMULATED": 2}}, prior)
 
     assert hashlib.sha256(database.read_bytes()).hexdigest() == before
     actions = report["familias"]["ACCIONES"]
@@ -79,7 +103,11 @@ def test_wheel_phase_joins_exact_keys_and_exports_only_aggregates(tmp_path):
     assert report["familias"]["CEDEARS"]["vetos_buy"] == {"NO_GO_PAPER_SCALPING": 1}
     assert report["familias"]["OPCIONES"]["primera_fase"] == {"PLAZO": {"PLAZO_NO_CERTIFICADO_EN_PROYECCION_PREVIA": 1}}
     assert report["familias"]["ETFS"]["claves"] == 0
-    published = json.dumps(report)
+    assert supplement["estado_lecturas"] == {"ordenes_gate": "READ", "fills_por_paper_id": "READ"}
+    assert supplement["reconciliado_buy_1301"] and supplement["reconciliado_fills_1303"]
+    assert supplement["objetivo"]["estado"] == "PAMP_BUY_GATE_FILL_Y_SALIDA_VINCULADOS"
+    assert mismatch["objetivo"]["estado"] == "NO_VERIFICADO"
+    published = json.dumps((report, supplement))
     assert not any(private in published for private in ("id-1", "PRIVATE", "123456789", "never publish", "STRATEGY:"))
 
 
