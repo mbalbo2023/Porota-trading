@@ -36,6 +36,14 @@ SECURITY y las referencias técnicas de evidencia contractual/runtime permanecen
 La política YAML deja de contener un baseline de despliegue fechado; su versión
 anterior está [preservada en Git](https://github.com/mbalbo2023/Porota-trading/blob/0e7577fc6112406794ffbc392c902904481f8ca0/ops/policy/porota-policy.yaml).
 
+## Prueba histórica de A3 read-only
+
+El [módulo que estaba en la raíz](retired-tests/test_a3_primary_readonly_hf6.py.txt)
+ya se excluía de pytest por colisión de nombre. Se conserva íntegro como texto.
+El [contrato vigente](../../tests/test_a3_primary_readonly_hf6.py) sigue en la
+colección automática. La [exclusión anterior](https://github.com/mbalbo2023/Porota-trading/blob/373c1e985590cd5bd0b4fbc80f389eaa2e7d5a5e/ops/policy/test-policy.yaml#L40)
+documenta el motivo y el sucesor.
+
 ## Registros y planes de raíz (103)
 
 | Archivo original | Versión preservada |

@@ -49,3 +49,14 @@ porota_production_paper_v1635.sh
 *.pre-hf6*
 **/*.bak
 **/*.pre-hf6*
+
+# Marcadores de releases anteriores e inventarios históricos de RC4.
+.release/DEPLOY_RC5_PAPER_2026-09-05.txt
+.release/RC6_DEPLOY3_FINAL_TRIGGER_20260906.txt
+.release/RC6_FINAL_GATE_TRIGGER_20260906.txt
+.release/RC6_FINAL_GATE_TRIGGER_V2_20260906.txt
+RC4_CONTROL_MANIFEST.json
+RC4_MODULE_INVENTORY_STATUS.txt
+RC4_PACKAGE_MANIFEST.json
+RC4_SCRIPT_INVENTORY_STATUS.txt
+RC4_TEST_FILE_MATRIX.tsv

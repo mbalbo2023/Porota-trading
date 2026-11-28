@@ -37,12 +37,4 @@ productive_scope:
   retired_contracts: ops/policy/retired-release-tests.json
   report:
     evidence_json: /tmp/code-tests.json
-  exclusions:
-    - path: test_a3_primary_readonly_hf6.py
-      classification: SUPERSEDED_DUPLICATE_MODULE
-      reason: >-
-        The repository-root module has the same import name as the current
-        tests/test_a3_primary_readonly_hf6.py contract and prevents pytest
-        collection with an import-file-mismatch error.
-      successor: tests/test_a3_primary_readonly_hf6.py
-      owner: WS-INFRA-05
+  exclusions: []
