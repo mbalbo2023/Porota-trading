@@ -1,8 +1,9 @@
 name: RC6 IOL freshness and family coverage for 27 November
 
 on:
-  push:
-    branches: [audit/rc6-iol-coverage-rca-20261128]
+  pull_request:
+    branches: [audit/rc6-iol-coverage-rca-base-20261128]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -13,12 +14,13 @@ concurrency:
 
 jobs:
   evidence:
-    if: github.repository == 'mbalbo2023/Porota-trading' && github.actor == 'mbalbo2023' && github.run_attempt == '1'
+    if: github.repository == 'mbalbo2023/Porota-trading' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'audit/rc6-iol-coverage-rca-20261128' && github.actor == 'mbalbo2023' && github.run_attempt == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: fee87dfcfdd646afdb591bcb6c1a8ff31f3b7f28
           persist-credentials: false
       - name: Reconcile saved IOL selections, quotes and decisions
         env:
