@@ -354,6 +354,33 @@ def fund_subscription_detail(terms: PaperFundTerms, amount: Decimal):
             "fund_terms": json.loads(_canonical_json(asdict(terms)))}
 
 
+def _verified_prior_fund_receipt(event, *, identity, class_evidence_sha256):
+    from rc6_fund_paper_reconciler import FundReceipt, fund_evidence_digest
+    from rc6_fund_source_quarantine import verify_settlement_attestation
+
+    detail = event["detail"]
+    if "fci_receipt_v1" not in detail:
+        raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_REQUIRED")
+    try:
+        receipt = FundReceipt(**detail["fci_receipt_v1"])
+        proof = detail.get("fci_receipt_attestation", detail.get("fci_cash_attestation"))
+        proof_digest = hashlib.sha256(_canonical_json(proof).encode("utf-8")).hexdigest()
+        if proof_digest != detail["fci_attestation_sha256"]:
+            raise ValueError("FCI_SETTLEMENT_PRIOR_ATTESTATION_MISMATCH")
+        claims = verify_settlement_attestation(proof, at=event["occurred_at"])
+        event_id = event["event_id"]
+        receipt_hash = fund_evidence_digest(receipt)
+        if (claims["lifecycle_id"] != event["lifecycle_id"] or claims["identity"] != identity
+                or claims["class_evidence_sha256"] != class_evidence_sha256
+                or [event_id, event["to_state"]] not in claims["transitions"]
+                or receipt_hash != claims["receipt_hashes"][event_id]
+                or receipt_hash != detail["fci_receipt_sha256"]):
+            raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_MISMATCH")
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_UNVERIFIED") from exc
+    return receipt
+
+
 class FamilyPaperExecutor:
     """Motor durable de FCI/futuros, exclusivamente simulado y sin broker."""
 
@@ -432,18 +459,25 @@ class FamilyPaperExecutor:
                 _subscription_authority=_FCI_LOCKED_SUBSCRIPTION)
 
     def record_fund_settlement(self, evidence, *, lifecycle_id, receipts, proof):
-        """Advance an existing runtime PAPER commitment under signed source evidence."""
+        """Advance an existing runtime PAPER commitment under signed source evidence.
+
+        Later batches can omit receipts whose signed documents are already in
+        the ledger. Older events with only hashes still need their receipts.
+        """
         from rc6_fund_paper_reconciler import (
-            FundReceipt, fund_evidence_digest, read_locked_fund_events,
+            FundReceipt, fund_evidence_digest, fund_evidence_json, read_locked_fund_events,
             reconcile_fund_events, validate_fund_event_ledger,
         )
         from rc6_fund_source_quarantine import verify_settlement_attestation
         from rc6_paper_runtime_safety import runtime_admission_context
 
         if (not isinstance(receipts, (list, tuple)) or len(receipts) > 3
-                or any(not isinstance(receipt, FundReceipt) for receipt in receipts)):
+                or any(not isinstance(receipt, FundReceipt) or not isinstance(receipt.event_id, str)
+                       for receipt in receipts)):
             raise ValueError("FCI_SETTLEMENT_RECEIPTS_INVALID")
-        receipts = tuple(receipts)
+        receipt_by_event = {receipt.event_id: receipt for receipt in receipts}
+        if len(receipt_by_event) != len(receipts):
+            raise ValueError("FCI_RECEIPT_DUPLICATE_OR_INVALID")
         raw_proof = _canonical_json(proof).encode("utf-8")
         if len(raw_proof) > 10_000:
             raise ValueError("FCI_SETTLEMENT_ATTESTATION_CAPACITY")
@@ -476,21 +510,27 @@ class FamilyPaperExecutor:
             stamp = prior_events[-1]["occurred_at"] if already_recorded else _now()
             claims = verify_settlement_attestation(proof, at=stamp)
             known_at = aware_datetime(claims["known_at"])
-            if any(aware_datetime(receipt.recorded_at) > known_at for receipt in receipts):
-                raise ValueError("FCI_SETTLEMENT_ATTESTED_BEFORE_RECEIPT")
             terms = evidence.terms
-            payments = {receipt.event_id: receipt for receipt in receipts}
+            identity = [terms.symbol, "FCI", terms.market, terms.currency, terms.settlement]
+            class_digest = fund_evidence_digest(evidence)
             receipt_hashes = {event_id: fund_evidence_digest(receipt)
-                              for event_id, receipt in payments.items()}
-            if (claims["identity"] != [terms.symbol, "FCI", terms.market, terms.currency, terms.settlement]
+                              for event_id, receipt in receipt_by_event.items()}
+            if (claims["identity"] != identity
                     or claims["lifecycle_id"] != lifecycle_id
-                    or claims["class_evidence_sha256"] != fund_evidence_digest(evidence)
+                    or claims["class_evidence_sha256"] != class_digest
                     or claims["receipt_hashes"] != receipt_hashes):
                 raise ValueError("FCI_SETTLEMENT_EVIDENCE_MISMATCH")
             for event in prior_events:
                 event_id = event["event_id"]
-                if event_id in receipt_hashes and event["detail"].get("fci_receipt_sha256") != receipt_hashes[event_id]:
-                    raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_MISMATCH")
+                if event_id in receipt_hashes:
+                    if event["detail"].get("fci_receipt_sha256") != receipt_hashes[event_id]:
+                        raise ValueError("FCI_SETTLEMENT_PRIOR_RECEIPT_MISMATCH")
+                elif event["to_state"] in {"NAV_APPLIED", "SETTLED", "REDEEMED"}:
+                    receipt_by_event[event_id] = _verified_prior_fund_receipt(
+                        event, identity=identity, class_evidence_sha256=class_digest)
+            receipts = tuple(receipt_by_event.values())
+            if any(aware_datetime(receipt.recorded_at) > known_at for receipt in receipts):
+                raise ValueError("FCI_SETTLEMENT_ATTESTED_BEFORE_RECEIPT")
             if already_recorded:
                 return reconcile_fund_events(lifecycle_id, prior_events, receipts, evidence, as_of=stamp)
 
@@ -503,13 +543,16 @@ class FamilyPaperExecutor:
                 detail = {"fci_attestation_sha256": digest}
                 if event_id in receipt_hashes:
                     detail["fci_receipt_sha256"] = receipt_hashes[event_id]
+                    detail["fci_receipt_v1"] = json.loads(fund_evidence_json(receipt_by_event[event_id]))
+                    if state != "REDEEMED":
+                        detail["fci_receipt_attestation"] = proof
                 if state == "REDEEM_REQUESTED":
                     allocation = next((receipt for receipt in receipts if receipt.kind == "SETTLED"), None)
                     if allocation is None:
                         raise ValueError("FCI_SETTLEMENT_PRIOR_ALLOCATION_REQUIRED")
                     detail["units"] = allocation.units
                 if state == "REDEEMED":
-                    payment = payments.get(event_id)
+                    payment = receipt_by_event.get(event_id)
                     if payment is None:
                         raise ValueError("FCI_SETTLEMENT_PAYMENT_REQUIRED")
                     amount = decimal_value(payment.cash_amount, "FCI_SETTLEMENT_PAYOUT", positive=True)

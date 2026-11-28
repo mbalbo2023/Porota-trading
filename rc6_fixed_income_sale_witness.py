@@ -15,6 +15,8 @@ REPLAN = frozenset({
     "PPI_PIT_BOOK1_NOT_RETAINED",
     "PPI_PIT_BOOK2_SESSION_CHANGED",
     "PPI_NATIVE_RECEIPT_STALE",
+    "IOL_FI_BOOK1_NOT_RETAINED",
+    "IOL_FI_BOOK2_SESSION_CHANGED",
     "FI_MARKET_SALE_NATIVE_DEPTH_INVALID",
     "FI_MARKET_SALE_BOOK2_NOT_STRICTLY_AFTER_ACK",
 })
@@ -84,7 +86,8 @@ class ExitReaderKeyChannel:
 
     def status(self):
         return {"state": "ACTIVE_PAPER" if self.key_sha256 else "SIGNER_PENDING",
-                "model": "NORMALIZED_HISTORICAL_PPI_VN", "variants": len(self.model["rows"]),
+                "model": self.model.get("quantity_model", "NORMALIZED_HISTORICAL_PPI_VN"),
+                "variants": len(self.model["rows"]) if "rows" in self.model else None,
                 "release_sha256": self.model["release"], "policy_sha256": self.model["policy"],
                 "signer_key_sha256": self.key_sha256, "signer_pid": self.signer_pid}
 
@@ -210,7 +213,7 @@ class ExitReaderSaleWitness:
             if reason in REPLAN:
                 replan(self.store, decision_key, reason)
                 return
-            if reason == "NO_AUTHENTIC_NATIVE_RECEIPT":
+            if reason in {"NO_AUTHENTIC_NATIVE_RECEIPT", "IOL_FI_BOOK2_NOT_YET_CAPTURED"}:
                 return
             raise
         with self.store.connect() as db:
@@ -222,9 +225,9 @@ class ExitReaderSaleWitness:
 
 def exit_reader_witness_from_environment(store):
     """Only construct the observer with pre-existing independent release trust."""
-    from rc6_fixed_income_sale_authority import POLICY_PIN, deployed_sale_model
+    from rc6_fixed_income_sale_authority import POLICY_PIN, deployed_exit_signing_model
 
-    model = deployed_sale_model()
+    model = deployed_exit_signing_model()
     if model is not None:
         fd = os.environ.pop(EXIT_READER_FD, "")
         if not fd.isdecimal() or int(fd) <= 2:

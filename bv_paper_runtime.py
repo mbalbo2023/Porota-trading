@@ -181,15 +181,18 @@ def run_ppi_gateway_worker(store, stop):
 
 
 def _make_iol_gateway_owner(store, socket_path):
+    from datetime import datetime, timezone
     from iol_rest_readonly_rc6 import IOLRestReadOnly
     from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
     from rc6_iol_market_gateway import IOLMarketGateway, iol_gateway_identities
     from rc6_iol_trade_stream import IOLTradeStream
+    from rc6_performance.costs import local_etf_reference_keys
 
     with store.connect() as connection:
         rows = connection.execute("""SELECT ticker,instrument_type,market,currency,settlement
             FROM financial_instrument_catalog WHERE status IN ('AVAILABLE','STALE')""").fetchall()
     scan_keys = iol_gateway_identities(tuple(row) for row in rows)
+    scan_keys |= frozenset(local_etf_reference_keys(datetime.now(timezone.utc)))
     opened, _ = store.exit_positions()
     exit_keys = iol_gateway_identities(
         (position['symbol'], position['asset_class'], position['market'],
@@ -434,10 +437,10 @@ class ChildProcesses:
         if len(gateway_roles) > 1:
             raise ValueError("RC6_MULTIPLE_MARKET_GATEWAYS")
         self.gateway_role = next(iter(gateway_roles), None)
-        from rc6_fixed_income_sale_authority import deployed_sale_model
+        from rc6_fixed_income_sale_authority import deployed_exit_signing_model
         from rc6_fixed_income_sale_witness import ExitReaderKeyChannel
 
-        model = deployed_sale_model() if "exit_reader" in commands else None
+        model = deployed_exit_signing_model() if "exit_reader" in commands else None
         self.exit_sale = ExitReaderKeyChannel(model) if model else None
         self.health = {name: {"state": "STARTUP_WAIT", "pid": None,
             "restarts": 0, "spawn_failures": 0, "started_at": None,
@@ -672,6 +675,8 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     from dataclasses import replace
     from bs_instrument_contracts import contract_from_metadata
     from rc6_fixed_income_sale_authority import SALE_FAMILIES, native_book_fields, native_market_sale_enabled
+    from rc6_fixed_income_iol_evidence import iol_contract_reason
+    from fe_fixed_income_nominal_contract_rc6 import FAMILIES as FIXED_INCOME_FAMILIES
     from bd_ppi_readonly_guard import retry_read, session_invalid
     from iol_rest_readonly_rc6 import IOLRestError
     from rc6_dynamic_universe.routing import EQUITY_FAMILIES
@@ -695,11 +700,29 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
             scope = getattr(reader, "read_scope", None)
             identity = (p["symbol"], p["asset_class"], p["market"], p["currency"], p["settlement"])
             if isinstance(reader, IOLGatewayMarketReader):
-                if p["asset_class"] not in EQUITY_FAMILIES:
+                if p["asset_class"] not in EQUITY_FAMILIES | FIXED_INCOME_FAMILIES | {"OPCIONES"}:
                     raise IOLRestError("IOL_SPECIALIZED_EXIT_EVIDENCE_REQUIRED")
                 terms = json.loads(p.get("features_json") or "{}").get("financial_contract")
                 held_contract = contract_from_metadata(p["symbol"], p["asset_class"], terms) if terms else None
+                if p["asset_class"] == "OPCIONES" and (
+                        held_contract is None or held_contract.settlement != "INMEDIATA"):
+                    raise IOLRestError("IOL_OPTION_HELD_CONTRACT_UNVERIFIED")
+                if p["asset_class"] in FIXED_INCOME_FAMILIES:
+                    reason = iol_contract_reason(identity, held_contract)
+                    if reason:
+                        raise ValueError(reason)
+                decision = None
+                if p["asset_class"] in SALE_FAMILIES and sale_witness:
+                    try:
+                        decision = sale_witness.acknowledge(p["paper_id"])
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_ACK_UNAVAILABLE:%s", type(exc).__name__)
                 q = reader.observe(identity, contract=held_contract, priority="EXIT_CRITICAL", exit_only=True).quote
+                if decision:
+                    try:
+                        sale_witness.witness_first_later_book(decision)
+                    except (OSError, ValueError, sqlite3.Error) as exc:
+                        LOG.warning("FI_EXIT_BOOK2_UNAVAILABLE:%s", type(exc).__name__)
             else:
                 native_book_reader = getattr(reader, "book_with_native_receipt", None)
                 native_book = None
@@ -775,7 +798,7 @@ def collect_exit_books(reader, store, policy, at, *, should_stop=lambda: False,
     return failures
 
 
-def _collect_iol_exit_round(reader, store, policy, at, stop, *, beat, deadline_seconds):
+def _collect_iol_exit_round(reader, store, policy, at, stop, *, beat, deadline_seconds, sale_witness=None):
     """Bind an observed IOL traversal to a stable portfolio and Gateway owner."""
     portfolio = _exit_portfolio(store)
     positions, invalid = portfolio
@@ -783,7 +806,8 @@ def _collect_iol_exit_round(reader, store, policy, at, stop, *, beat, deadline_s
     before = reader.metrics
     verified = set()
     failures = collect_exit_books(reader, store, policy, at, should_stop=stop.is_set,
-                                  beat=beat, portfolio=portfolio, verified=verified)
+                                  beat=beat, portfolio=portfolio, verified=verified,
+                                  sale_witness=sale_witness)
     after = reader.metrics
     remaining, now_invalid = _exit_portfolio(store)
     elapsed = time.monotonic() - start
@@ -874,7 +898,7 @@ def run_reader(store, stop):
                     state, detail, elapsed = _collect_iol_exit_round(
                         reader, store, policy, now_iso(), stop,
                         beat=lambda: status("VERIFYING", "Recorriendo posiciones abiertas"),
-                        deadline_seconds=cadence)
+                        deadline_seconds=cadence, sale_witness=sale_witness)
                     status(state, detail)
                     stop.wait(max(0.0, cadence-elapsed))
                     continue

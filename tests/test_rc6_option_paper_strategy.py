@@ -83,6 +83,23 @@ def test_long_put_uses_bearish_underlying_rather_than_call_momentum():
     assert _decide(call, kwargs).reason == "OPTION_UNDERLYING_DIRECTIONAL_SIGNAL_NOT_READY"
 
 
+def test_iol_option_requires_native_trade_and_same_provider_underlying():
+    q, kwargs = _inputs()
+    trade_at = (AT - timedelta(seconds=20)).isoformat()
+    evidence = {
+        "identity": list(q.contract.key), "gateway_generation": "a" * 64,
+        "trade_at": trade_at, "received_at": (AT - timedelta(seconds=19)).isoformat(),
+        "quote_received_at": (AT - timedelta(seconds=15)).isoformat(), "price": str(q.last),
+    }
+    q = replace(q, metadata_source="IOL_REST", trade_at=trade_at, last_kind="TRADE",
+                iol_trade_evidence=evidence)
+    assert _decide(q, kwargs).reason == "OPTION_UNDERLYING_IOL_EVIDENCE_MISSING"
+    kwargs["underlying_evidence"] = replace(kwargs["underlying_evidence"], metadata_source="IOL_REST")
+    assert _decide(q, kwargs).action == "BUY"
+    changed = replace(q, iol_trade_evidence={**evidence, "identity": [*evidence["identity"][:-1], "A-24HS"]})
+    assert _decide(changed, kwargs).reason == "IOL_LAST_TRADE_EVIDENCE_MISSING"
+
+
 def test_complementary_iv_missing_is_warning_not_paper_deploy_blocker():
     q, kwargs = _inputs()
     no_iv = _decide(q, kwargs)

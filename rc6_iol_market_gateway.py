@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter, deque
+from dataclasses import replace
 from datetime import datetime, timezone
 from functools import partial
 from math import ceil
@@ -14,6 +15,8 @@ import time
 from bs_instrument_contracts import aware_datetime
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SYMBOL
 from iol_shadow_collector_rc6 import CircuitOpenError, RateGovernor
+from fe_fixed_income_nominal_contract_rc6 import FAMILIES as FIXED_INCOME_FAMILIES
+from rc6_fixed_income_iol_evidence import create_iol_book, iol_quote_book_fields
 from rc6_iol_market_data import IOLMarketReader, MARKETS, SPOT, TERMS, read_iol_market_payload
 from rc6_iol_trade_stream import MAX_TRADES, TRADE_EVIDENCE, TRADE_STATUS, matched_trade
 from rc6_ppi_shared_feed import (
@@ -32,6 +35,9 @@ ROLE_ENDPOINTS = {"scanner": frozenset({"asset", "quote", "depth"}),
                   "exit_reader": frozenset({"asset", "depth"})}
 REQUEST_FIELDS = {"op", "consumer", "endpoint", "identity", "priority", "session_generation"}
 SUBSCRIPTION_FIELDS = {"op", "consumer", "identities", "session_generation"}
+SALE_BOOK2_FIELDS = {"op", "consumer", "identity", "session_generation", "book1_receipt_sha256",
+                     "cutoff_at", "cutoff_monotonic_ns"}
+SALE_BOOK_RETENTION = 256
 PREPARE_TRADES_LIMIT = MAX_TRADES // 2  # A full batch must fit the 4 KiB IPC request.
 _REASON = re.compile(r"IOL_[A-Z0-9_]{1,100}\Z")
 PROFILE_ENV = "POROTA_RC6_MARKET_PROVIDER"
@@ -102,6 +108,9 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         self._wire = deque(maxlen=rest.governor.policy.max_calls_per_minute * 2)
         self._wire_lock = Lock()
         self._wire_consumer = None
+        self._fi_assets = {}
+        self._fi_exit_books = deque(maxlen=SALE_BOOK_RETENTION)
+        self._fi_exit_books_lock = Lock()
         rest.wire_observer = self._record_wire
         self.trade_stream = trade_stream
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -149,11 +158,15 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         before = governor.calls_total
         self._wire_consumer = consumer
         try:
+            fixed_income = identity[1] in FIXED_INCOME_FAMILIES
+            if fixed_income and endpoint == "asset":
+                self._fi_assets.pop(consumer, None)
             trade_key = _stream_key(identity)
             if endpoint == "quote" and self.trade_stream is not None:
                 self.trade_stream.want(trade_key)
             payload = read_iol_market_payload(self._rest, endpoint, identity)
             received = aware_datetime(self._clock()).astimezone(timezone.utc)
+            received_ns = time.monotonic_ns()
             if not isinstance(payload, dict):
                 raise ValueError("IOL_GATEWAY_MARKET_PAYLOAD_INVALID")
             if endpoint == "quote":
@@ -173,8 +186,28 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
             if len(_canonical_bytes(body)) > 120_000:
                 raise ValueError("IOL_GATEWAY_MARKET_PAYLOAD_INVALID")
             proof = {"provider": "IOL_REST", "session_generation": self._generation, **body}
+            fields = {}
+            if fixed_income and endpoint == "asset":
+                self._fi_assets[consumer] = (identity, payload, received.isoformat())
+            if fixed_income and endpoint == "depth":
+                asset_entry = self._fi_assets.pop(consumer, None)
+                if asset_entry is None or asset_entry[0] != identity:
+                    raise IOLRestError("IOL_FI_BOOK_ASSET_CAPTURE_MISSING")
+                try:
+                    receipt = create_iol_book(
+                        identity, asset=asset_entry[1], asset_at=asset_entry[2], depth=payload,
+                        depth_at=received.isoformat(), depth_monotonic_ns=received_ns,
+                        generation=self._generation, consumer=consumer, depth_sha256=_sha(payload))
+                except (KeyError, ValueError, TypeError, IOLRestError) as exc:
+                    raise IOLRestError("IOL_FI_BOOK_RECEIPT_UNVERIFIED") from exc
+                fields["native_book"] = receipt
+                if len(_canonical_bytes({**body, **fields})) > 126_000:
+                    raise IOLRestError("IOL_FI_BOOK_RECEIPT_OVERSIZE")
+                if consumer == "exit_reader":
+                    with self._fi_exit_books_lock:
+                        self._fi_exit_books.append(receipt)
             return self._response("OK", wire_calls=governor.calls_total-before,
-                                  receipt_sha256=_sha(proof), **body)
+                                  receipt_sha256=_sha(proof), **body, **fields)
         except CircuitOpenError:
             return self._response("IOL_GATEWAY_RATE_HOLD", wire_calls=governor.calls_total-before)
         except IOLRestError as exc:
@@ -189,6 +222,42 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
                                   wire_calls=governor.calls_total-before)
         finally:
             self._wire_consumer = None
+
+    def _first_sale_book2(self, request, peer_pid):
+        """Read the first later retained EXIT book from the pinned owner."""
+        from rc6_fixed_income_sale_authority import SALE_FAMILIES
+
+        if set(request) != SALE_BOOK2_FIELDS or request["consumer"] != "exit_reader":
+            return self._response("IOL_GATEWAY_ROLE_SCOPE_DENIED")
+        if peer_pid is None or not self._role_permitted("exit_reader", peer_pid):
+            return self._response("IOL_GATEWAY_UNREGISTERED_CLIENT")
+        if request["session_generation"] != self._generation:
+            return self._response("IOL_FI_BOOK2_SESSION_CHANGED")
+        try:
+            identity = _identity(request["identity"])
+            cutoff_at = aware_datetime(request["cutoff_at"])
+            cutoff_ns, book1_sha = request["cutoff_monotonic_ns"], request["book1_receipt_sha256"]
+            if (identity[1] not in SALE_FAMILIES or identity not in self.allowed["exit_reader"]
+                    or type(cutoff_ns) is not int or not 0 < cutoff_ns <= time.monotonic_ns()
+                    or cutoff_at > aware_datetime(self._clock())
+                    or not isinstance(book1_sha, str) or not re.fullmatch(r"[a-f0-9]{64}", book1_sha)):
+                raise ValueError("IOL_FI_BOOK2_SCOPE_UNVERIFIED")
+        except (TypeError, ValueError, OverflowError):
+            return self._response("IOL_FI_BOOK2_SCOPE_UNVERIFIED")
+        found_book1 = False
+        with self._fi_exit_books_lock:
+            for book in self._fi_exit_books:
+                if book["identity"] != list(identity):
+                    continue
+                if not found_book1:
+                    found_book1 = book["receipt_sha256"] == book1_sha
+                    continue
+                if (book["receive_monotonic_ns"] > cutoff_ns
+                        and aware_datetime(book["received_at_utc"]) > cutoff_at
+                        and aware_datetime(book["depth"]["last_updated"]) > cutoff_at):
+                    return self._response("OK", receipt=book)
+        return self._response("IOL_FI_BOOK2_NOT_YET_CAPTURED" if found_book1
+                              else "IOL_FI_BOOK1_NOT_RETAINED")
 
     def _prepare_trades(self, request, peer_pid):
         if set(request) != SUBSCRIPTION_FIELDS or request["consumer"] != "scanner":
@@ -218,6 +287,8 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         operation = request.get("op")
         if operation == "iol_prepare_trades":
             return self._prepare_trades(request, peer_pid)
+        if operation == "iol_native_sale_book2":
+            return self._first_sale_book2(request, peer_pid)
         if operation in ("register_client", "owner_status"):
             if operation == "register_client" and request.get("consumer") not in ("scanner", "exit_reader"):
                 return self._response("IOL_GATEWAY_ROLE_SCOPE_DENIED")
@@ -283,7 +354,7 @@ class IOLGatewayClient(ReadOnlyUnixFeedClient):
             raise IOLRestError("IOL_GATEWAY_RECEIPT_UNVERIFIED")
         return count
 
-    def market_read(self, endpoint, identity, *, consumer, priority):
+    def market_read(self, endpoint, identity, *, consumer, priority, native_books=None):
         if self._pinned_owner is None:
             raise IOLRestError("IOL_GATEWAY_OWNER_NOT_PINNED")
         identity = _identity(identity)
@@ -310,7 +381,32 @@ class IOLGatewayClient(ReadOnlyUnixFeedClient):
                 or type(response.get("wire_calls")) is not int or response["wire_calls"] < 1
                 or response.get("receipt_sha256") != _sha(proof)):
             raise IOLRestError("IOL_GATEWAY_RECEIPT_UNVERIFIED")
+        if native_books is not None and endpoint == "depth":
+            book = response.get("native_book")
+            if (not isinstance(book, dict) or book.get("session_fingerprint") != generation
+                    or book.get("raw_depth_sha256") != _sha(proof["payload"])):
+                raise IOLRestError("IOL_FI_BOOK_RECEIPT_UNVERIFIED")
+            native_books.append(book)
         return proof["payload"], aware_datetime(proof["received_at"])
+
+    def first_sale_book2(self, book1, *, cutoff_at, cutoff_ns):
+        if self._pinned_owner is None:
+            raise IOLRestError("IOL_GATEWAY_OWNER_NOT_PINNED")
+        owner_pid, generation = self._pinned_owner
+        if generation != book1["session_fingerprint"]:
+            raise ValueError("IOL_FI_BOOK2_SESSION_CHANGED")
+        response = self._request({"op": "iol_native_sale_book2", "consumer": "exit_reader",
+            "identity": book1["identity"], "session_generation": generation,
+            "book1_receipt_sha256": book1["receipt_sha256"], "cutoff_at": cutoff_at.isoformat(),
+            "cutoff_monotonic_ns": cutoff_ns}, require_owner_identity=True)
+        if ((response.get("owner_pid"), response.get("session_generation")) != (owner_pid, generation)):
+            raise SharedFeedUnavailable("IOL_GATEWAY_OWNER_CHANGED")
+        if (response.get("schema") != DATA_SCHEMA or response.get("provider") != "IOL_REST"
+                or response.get("paper_ready") is not False or response.get("order_route") != "NOT_PRESENT"
+                or type(response.get("wire_calls")) is not int or response["wire_calls"] != 0):
+            raise ValueError("IOL_FI_BOOK2_GATEWAY_RECEIPT_UNVERIFIED")
+        return {"state": response.get("state"), "receipt": response.get("receipt"),
+                "provider_calls_by_rpc": response["wire_calls"]}
 
 
 class IOLGatewayMarketReader:
@@ -331,9 +427,19 @@ class IOLGatewayMarketReader:
         if exit_only != (self.consumer == "exit_reader"):
             raise IOLRestError("IOL_GATEWAY_ROLE_SCOPE_DENIED")
         capture = partial(self.client.market_read, consumer=self.consumer, priority=priority)
-        return IOLMarketReader(None, capture=capture, trade_clock=self.trade_clock,
-                               clock=self.clock, gateway_evidence=True).observe(
-                                   identity, contract=contract, exit_only=exit_only)
+        native_books = [] if identity[1] in FIXED_INCOME_FAMILIES else None
+        if native_books is not None:
+            capture = partial(capture, native_books=native_books)
+        observed = IOLMarketReader(None, capture=capture, trade_clock=self.trade_clock,
+                                   clock=self.clock, gateway_evidence=True).observe(
+                                       identity, contract=contract, exit_only=exit_only)
+        if native_books is None:
+            return observed
+        if len(native_books) != 1:
+            raise IOLRestError("IOL_FI_BOOK_RECEIPT_UNVERIFIED")
+        quote = replace(observed.quote, iol_native_rest_book=native_books[0])
+        iol_quote_book_fields(quote, identity, consumer=self.consumer)
+        return replace(observed, quote=quote)
 
     @property
     def metrics(self):

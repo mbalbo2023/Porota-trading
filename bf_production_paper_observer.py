@@ -421,6 +421,7 @@ def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catal
     from bs_instrument_contracts import aware_datetime
     from iol_rest_readonly_rc6 import IOLRestError
     from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_fixed_income_paper_strategy import FAMILIES as FIXED_INCOME_FAMILIES
 
     if (not identity or len(identity) != 5
             or (identity[0], identity[1], identity[4]) != request):
@@ -429,25 +430,32 @@ def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catal
     # Test comparators and specialized observations can retain their legacy
     # catalog path. The installed IOL spot profile uses its exact venue terms.
     from rc6_iol_market_gateway import iol_primary_enabled
-    live_spot = iol_primary_enabled() and identity[1] in EQUITY_FAMILIES
+    live_spot = iol_primary_enabled() and identity[1] in EQUITY_FAMILIES | FIXED_INCOME_FAMILIES | {"OPCIONES"}
     metadata = None
     if not catalog_read_error:
         if live_spot:
-            metadata = financial_catalog.iol_spot_catalog(store, now=checked, identity=identity).get(tuple(identity))
+            metadata = financial_catalog.iol_spot_catalog(
+                store, now=checked, identity=identity, include_contracts=True).get(tuple(identity))
         else:
             metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
     terms = financial_catalog.quote_terms(metadata, now=checked, iol_live_settlement=live_spot)
     observation = reader.observe(identity, contract=terms.get("contract"), priority=priority)
     reason = ("CATALOG_READ_ERROR" if catalog_read_error else terms["opening_block_reason"])
-    if identity[1] not in EQUITY_FAMILIES:
+    if metadata and metadata.get("raw", {}).get("iol_local_etf_reference") is True:
+        try:
+            financial_catalog.persist_iol_etf_observation(store, metadata, observation)
+        except (sqlite3.Error, OSError, ValueError, TypeError) as exc:
+            store.event("IOL_ETF_CATALOG_WRITE_HOLD", type(exc).__name__)
+    if identity[1] not in EQUITY_FAMILIES and not (live_spot and metadata is not None):
         reason = reason or "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
     if reason:
         return replace(observation.quote, opening_block_reason=reason)
-    try:
-        record_iol_trade_sample(store, observation, as_of=now_iso())
-    except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
-        with suppress(OSError, sqlite3.Error):
-            store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
+    if identity[1] in EQUITY_FAMILIES:
+        try:
+            record_iol_trade_sample(store, observation, as_of=now_iso())
+        except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
+            with suppress(OSError, sqlite3.Error):
+                store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
     return observation.quote
 
 
@@ -2303,7 +2311,8 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     try:
         if iol:
             from bs_instrument_contracts import aware_datetime
-            iol_keys = financial_catalog.iol_spot_catalog(store, now=aware_datetime(checked_at))
+            iol_keys = financial_catalog.iol_spot_catalog(
+                store, now=aware_datetime(checked_at), include_contracts=True)
             identities = {(key[0], key[1], key[4]): key for key in iol_keys}
         else:
             identities = _eligible_scanner_identities(store)
@@ -3855,7 +3864,7 @@ def run():
                             q, broker, store, checked_at=now_iso(), observe_only=bool(observation_hold)):
                         cycle_temporal_rejections += 1
                         continue
-                    if iol and (pair := paired_sample(q, scope_identity)):
+                    if iol and asset_class in PAPER_SPOT_FAMILIES and (pair := paired_sample(q, scope_identity)):
                         iol_pairs.append(pair)
                     # The independent EXIT supervisor can use the exact
                     # persisted Book without granting a new entry or cash.

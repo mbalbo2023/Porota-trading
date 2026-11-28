@@ -472,6 +472,44 @@ def test_iol_family_contract(identity, tmp_path):
                for row in rows)
 
 
+def test_local_etf_reference_bootstraps_read_scope_and_holds_until_cost_is_attributed(
+        tmp_path, tmp_path_factory, monkeypatch):
+    import bf_production_paper_observer as observer
+    import bu_instrument_catalog as catalog
+    from bv_paper_runtime import _make_iol_gateway_owner
+
+    identity = ("MERV", "ETFS", "BYMA", "ARS", "A-24HS")
+    request = identity[0], identity[1], identity[-1]
+    store = PaperStore(str(tmp_path / "etf-paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(observer, "now_iso", lambda: AT.isoformat())
+    assert not catalog.iol_spot_catalog(store, now=AT)
+    assert identity in catalog.iol_spot_catalog(store, now=AT, include_contracts=True)
+    owner = _make_iol_gateway_owner(store, tmp_path / "native" / "market.sock")
+    assert identity in owner.allowed["scanner"]
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, identity) as (server, client, transport, _):
+        register(client, "scanner")
+        evidence = {"trade_at": (transport.now - timedelta(seconds=3)).isoformat(),
+                    "received_at": (transport.now - timedelta(seconds=2)).isoformat(),
+                    "price": str(transport.price), "shares": "100"}
+        server.trade_stream = SimpleNamespace(
+            want=lambda key: None, observation=lambda key: (evidence, ""), state="SUBSCRIBED")
+        scanner = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+        market = observer._read_iol_scanner_quote(
+            scanner, store, request=request, identity=identity, priority="DISCOVERY",
+            catalog_read_error=False)
+    assert market.monetary_identity() == ("ARS", "BYMA")
+    assert market.opening_block_reason == "IOL_ETF_EXECUTION_TARIFF_UNVERIFIED"
+    assert transport.calls == ["token", "MERV", "quote", "depth"]
+    with store.connect() as connection:
+        observed = connection.execute("""SELECT status,capability,metadata_json
+            FROM financial_instrument_catalog WHERE ticker='MERV'""").fetchone()
+        assert tuple(observed[:2]) == ("OBSERVED_SHADOW", "IOL_ETF_EXECUTION_TARIFF_UNVERIFIED")
+        assert json.loads(observed[2])["iol_book_sha256"]
+        assert connection.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+
+
 def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, monkeypatch):
     path = tmp_path / "sample.db"
     store = PaperStore(str(path))
@@ -617,6 +655,9 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     assert identity in catalog.iol_spot_catalog(store, now=AT)
     if reference_age_days:
         assert catalog.quote_terms(static, now=AT)["opening_block_reason"] == "PPI_FRESHNESS_STALE"
+        with store.connect() as db:
+            catalog.sync_candidate_universe(db, AT.isoformat())
+        assert identity in catalog.iol_spot_catalog(store, now=AT)
     contract = catalog.contract_for(static)
     focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
     assert request in selected

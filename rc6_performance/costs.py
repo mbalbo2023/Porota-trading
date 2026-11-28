@@ -13,6 +13,8 @@ from bs_instrument_contracts import aware_datetime, cash_currency, family_name, 
 from .common import number, identity
 
 ZERO = Decimal(0)
+MERV_LISTED_TERMS = ("INMEDIATA", "A-24HS")
+MERV_LISTING_KNOWN_AT = "2026-11-04T00:00:00-03:00"
 SPOT_LEDGER_FAMILIES = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
 _COST_COMPONENTS = ("commission", "rights", "clearing", "premium_rights", "vat",
                     "commission_vat", "rights_vat", "clearing_vat", "premium_rights_vat",
@@ -298,7 +300,14 @@ def is_local_merv_listing(family, currency, *, symbol, market, settlement):
     return (family in {"ACCIONES", "ETFS"} and currency == "ARS"
             and str(symbol or "").strip().upper() == "MERV"
             and str(market or "").strip().upper() == "BYMA"
-            and str(settlement or "").strip().upper() in {"INMEDIATA", "A-24HS"})
+            and str(settlement or "").strip().upper() in MERV_LISTED_TERMS)
+
+
+def local_etf_reference_keys(at):
+    """BYMA launch notice and the Fima secondary-market factsheet for MERV."""
+    if aware_datetime(at) < aware_datetime(MERV_LISTING_KNOWN_AT):
+        return ()
+    return tuple(("MERV", "ETFS", "BYMA", "ARS", term) for term in MERV_LISTED_TERMS)
 
 
 def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=None, settlement=None):
@@ -335,7 +344,7 @@ def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=No
     if local_ars_etf:
         version = "POROTA_PAPER_LOCAL_ETF_TERMS_V1"
         # The notice provides a publication date, without an intraday timestamp.
-        effective_at = known_at = "2026-11-04T00:00:00-03:00"
+        effective_at = known_at = MERV_LISTING_KNOWN_AT
         source = "PAPER:BYMA_FIMA_MERV_ARS:ETF_LOCAL_TARIFF_UNVERIFIED:ACCOUNT_UNVERIFIED"
     elif unbound_etf_terms:
         version = "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"

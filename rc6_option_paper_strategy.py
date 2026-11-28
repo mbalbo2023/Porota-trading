@@ -107,11 +107,16 @@ def evaluate_option_entry(
         if not isinstance(q, Quote) or not isinstance(q.contract, InstrumentContract):
             return hold("OPTION_EXACT_CONTRACT_REQUIRED")
         contract = q.contract
+        iol = q.metadata_source == "IOL_REST"
+        if iol:
+            from rc6_paper_admission_gate import iol_market_quote_reason
+            if reason := iol_market_quote_reason(q, aware_datetime(at)):
+                return hold(reason)
         if (family_name(q.asset_class) != "OPCIONES" or contract.family != "OPCIONES"
                 or contract.key != (q.symbol, "OPCIONES", q.market, q.currency, q.settlement)
                 or contract.market != "BYMA" or contract.currency != "ARS"
                 or contract.settlement != "INMEDIATA"
-                or not str(q.metadata_source or "").startswith("PPI_CATALOG:")
+                or not (iol or str(q.metadata_source or "").startswith("PPI_CATALOG:"))
                 # The normalizer authenticates exact contract field provenance
                 # before emitting this bound marker; it need not contain the
                 # literal provider name. The runtime catalog guard still has
@@ -119,15 +124,18 @@ def evaluate_option_entry(
                 or not (str(contract.metadata_source) == "CONTRACT_EVIDENCE_V2_BOUND"
                         or str(contract.metadata_source).startswith("PPI_SEARCH_INSTRUMENT"))
                 or contract.option_right not in {"CALL", "PUT"}):
-            return hold("OPTION_PPI_PRIMARY_EXACT_IDENTITY_REQUIRED")
+            return hold("OPTION_EXACT_IDENTITY_REQUIRED" if iol else "OPTION_PPI_PRIMARY_EXACT_IDENTITY_REQUIRED")
         if not isinstance(underlying_evidence, UnderlyingEvidence):
             return hold("OPTION_UNDERLYING_EVIDENCE_MISSING")
         u = underlying_evidence
         if (u.symbol != contract.underlying
                 or family_name(u.family) not in {"ACCIONES", "CEDEARS"}
                 or u.market != "BYMA" or u.currency != "ARS"
-                or u.settlement not in {"INMEDIATA", "A-24HS"}
-                or not u.metadata_source.startswith("PPI_CATALOG:")):
+                or u.settlement not in {"INMEDIATA", "A-24HS"}):
+            return hold("OPTION_UNDERLYING_IDENTITY_MISMATCH" if iol else "OPTION_UNDERLYING_PPI_IDENTITY_MISMATCH")
+        if iol and u.metadata_source != "IOL_REST":
+            return hold("OPTION_UNDERLYING_IOL_EVIDENCE_MISSING")
+        if not iol and not u.metadata_source.startswith("PPI_CATALOG:"):
             return hold("OPTION_UNDERLYING_PPI_IDENTITY_MISMATCH")
         if not _fresh(u.book_at, u.received_at, at):
             return hold("OPTION_UNDERLYING_BOOK_STALE_OR_FUTURE")

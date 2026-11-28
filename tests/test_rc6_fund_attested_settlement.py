@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
+import json
 import sqlite3
 
 import pytest
@@ -152,6 +153,75 @@ PAYMENT = [["e5", "REDEEMED"]]
 
 def test_runtime_settlement_applies_signed_receipts_once_and_credits_exact_payment(paper_fund, monkeypatch):
     replay_attested_fund_settlement(paper_fund, monkeypatch)
+
+
+def test_runtime_settlement_accepts_each_new_receipt_after_ledger_reopen(paper_fund, monkeypatch):
+    store, _, evidence, key, public, receipts = paper_fund
+    nav_time = "2026-11-24T18:02:00-03:00"
+    monkeypatch.setattr(lifecycle, "_now", lambda: nav_time)
+    nav_proof = attestation(paper_fund, receipts[:1], ALLOCATION[:2], nav_time)
+    assert apply(paper_fund, receipts[:1], nav_proof).state == "NAV_APPLIED"
+
+    reopened = PaperStore(store.path)
+    broker = PaperBroker(reopened, initial_cash="2000")
+    paper_fund = (reopened, broker, evidence, key, public, receipts)
+    monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)
+    allocation = attestation(paper_fund, receipts[1:2], ALLOCATION[2:], SETTLEMENT)
+    assert apply(paper_fund, receipts[1:2], allocation).units == Decimal("100")
+    monkeypatch.setattr(lifecycle, "_now", lambda: REDEMPTION)
+    redemption = attestation(paper_fund, [], REQUEST, REDEMPTION)
+    assert apply(paper_fund, [], redemption).state == "REDEEM_REQUESTED"
+    monkeypatch.setattr(lifecycle, "_now", lambda: END)
+    payment = attestation(paper_fund, receipts[2:], PAYMENT, END)
+    paid = apply(paper_fund, receipts[2:], payment)
+
+    monkeypatch.setattr(lifecycle, "_now", lambda: "2026-11-27T15:00:00-03:00")
+    assert apply(paper_fund, receipts[2:], payment) == paid
+    assert paid.state == "REDEEMED" and paid.redemption_cash_ars == Decimal("1029.00")
+    assert broker._cash(END, "ARS") == Decimal("2027.99")
+    assert states(reopened) == ["SUBSCRIBE_REQUESTED", "PENDING", "NAV_APPLIED",
+                                "SETTLED", "REDEEM_REQUESTED", "REDEEMED"]
+
+
+def test_incremental_fund_settlement_rejects_rehashed_prior_nav(paper_fund, monkeypatch):
+    store, _, _, _, _, receipts = paper_fund
+    monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)
+    assert apply(paper_fund, receipts[:2], attestation(
+        paper_fund, receipts[:2], ALLOCATION, SETTLEMENT)).state == "SETTLED"
+    with store.connect() as db:
+        event = db.execute("SELECT detail_json FROM paper_family_lifecycle_events WHERE event_id='e2'").fetchone()
+        detail = json.loads(event["detail_json"])
+        detail["fci_receipt_v1"]["nav_per_unit"] = "11"
+        detail["fci_receipt_sha256"] = fund_evidence_digest(FundReceipt(**detail["fci_receipt_v1"]))
+        db.execute("UPDATE paper_family_lifecycle_events SET detail_json=? WHERE event_id='e2'",
+                   (json.dumps(detail),))
+
+    monkeypatch.setattr(lifecycle, "_now", lambda: REDEMPTION)
+    with pytest.raises(ValueError, match="FCI_SETTLEMENT_PRIOR_RECEIPT_UNVERIFIED"):
+        apply(paper_fund, [], attestation(paper_fund, [], REQUEST, REDEMPTION))
+    assert states(store) == ["SUBSCRIBE_REQUESTED", "PENDING", "NAV_APPLIED", "SETTLED"]
+
+
+def test_runtime_fund_settlement_keeps_hash_only_ledger_compatible(paper_fund, monkeypatch):
+    store, _, _, _, _, receipts = paper_fund
+    monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)
+    assert apply(paper_fund, receipts[:2], attestation(
+        paper_fund, receipts[:2], ALLOCATION, SETTLEMENT)).state == "SETTLED"
+    with store.connect() as db:
+        rows = db.execute("SELECT event_id, detail_json FROM paper_family_lifecycle_events "
+                          "WHERE to_state IN ('NAV_APPLIED','SETTLED')").fetchall()
+        for row in rows:
+            detail = json.loads(row["detail_json"])
+            del detail["fci_receipt_v1"], detail["fci_receipt_attestation"]
+            db.execute("UPDATE paper_family_lifecycle_events SET detail_json=? WHERE event_id=?",
+                       (json.dumps(detail), row["event_id"]))
+
+    monkeypatch.setattr(lifecycle, "_now", lambda: REDEMPTION)
+    with pytest.raises(ValueError, match="FCI_SETTLEMENT_PRIOR_RECEIPT_REQUIRED"):
+        apply(paper_fund, [], attestation(paper_fund, [], REQUEST, REDEMPTION))
+    assert states(store) == ["SUBSCRIBE_REQUESTED", "PENDING", "NAV_APPLIED", "SETTLED"]
+    assert apply(paper_fund, receipts[:2], attestation(
+        paper_fund, receipts[:2], REQUEST, REDEMPTION)).state == "REDEEM_REQUESTED"
 
 
 def replay_attested_fund_settlement(paper_fund, monkeypatch):

@@ -1,9 +1,13 @@
 import json
+from dataclasses import replace
 from decimal import Decimal
+
+import pytest
 
 from be_paper_engine import PaperBroker, PaperStore, Quote
 from bs_instrument_contracts import InstrumentContract
-from rc6_paper_family_lifecycle import future_positions
+from rc6_paper_family_lifecycle import future_cash_effect, future_positions
+from rc6_ppi_future_contract_policy import standard_dlr_terms
 
 
 D = Decimal
@@ -42,6 +46,73 @@ def broker(tmp_path, clock):
         quote_max_age_seconds=120, trade_max_age_seconds=900,
         daily_loss_pct="5", daily_soft_stop_pct="4",
     )
+
+
+def _november_cutover_broker(tmp_path, monkeypatch):
+    import rc6_paper_admission_gate as gate
+
+    monkeypatch.setenv("PAPER_V17_DB_PATH", str(tmp_path / "paper.sqlite"))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "PPI")
+    monkeypatch.setattr(gate, "admission_status", lambda: (True, ""))
+    clock = ["2026-11-27T13:00:00-03:00"]
+    paper = broker(tmp_path, clock)
+    paper.admission_guard = lambda _quote, _store: (True, "")
+    symbol = "DLR/NOV26"
+    spec = replace(contract(), symbol=symbol, expires_at=standard_dlr_terms(symbol)["expires_at"])
+    market_quote = replace(quote(clock[0], spec=spec), symbol=symbol)
+    return paper, clock, market_quote
+
+
+def test_iol_future_holds_legacy_entry_and_signal(tmp_path, monkeypatch):
+    paper, _, market_quote = _november_cutover_broker(tmp_path, monkeypatch)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+
+    assert paper.admit_paper_candidate(market_quote, D("0.8"), {"samples": 8}) == (
+        False, "IOL_A3_MARKET_UNVERIFIED", None)
+    paper.on_quote(market_quote)
+    with paper.store.connect() as db:
+        assert tuple(db.execute("SELECT action,reason FROM paper_decisions").fetchone()) == (
+            "HOLD", "IOL_A3_MARKET_UNVERIFIED")
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("route", ["clock", "on_quote", "direct_close"])
+def test_iol_cutover_blocks_legacy_future_book_and_keeps_margin(tmp_path, monkeypatch, route):
+    paper, clock, market_quote = _november_cutover_broker(tmp_path, monkeypatch)
+    opened, reason, lifecycle_id = paper.admit_paper_candidate(market_quote, D("0.8"), {"samples": 8})
+    assert opened, reason
+    cash_before = future_cash_effect(paper.store, "ARS", clock[0])
+    assert cash_before < 0
+
+    cached_at = "2026-11-27T14:49:45-03:00"
+    cached = replace(market_quote, observed_at=cached_at, trade_at=cached_at, book_at=cached_at,
+                     last=D("1499.5"), bid=D("1499.5"))
+    paper.store.add_quote(cached)
+    clock[0] = "2026-11-27T14:50:00-03:00"
+    assert not cached.time_error(clock[0])
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+
+    if route == "clock":
+        paper.supervise_futures(clock[0])
+    elif route == "on_quote":
+        paper.on_quote(cached, allow_new_openings=False)
+    else:
+        position, = paper.store.active_future_positions()
+        assert not paper._close_future(cached, position, "EOD_PAPER")
+
+    position, = paper.store.active_future_positions()
+    assert position["last_book_at"] == market_quote.book_at
+    assert future_cash_effect(paper.store, "ARS", clock[0]) == cash_before
+    with paper.store.connect() as db:
+        assert [row[0] for row in db.execute("""SELECT to_state FROM paper_family_lifecycle_events
+            WHERE lifecycle_id=? ORDER BY rowid""", (lifecycle_id,))] == ["OPEN", "MARGIN_RESERVED"]
+        assert db.execute("SELECT COUNT(*) FROM paper_future_marks").fetchone()[0] == 0
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+        if route != "direct_close":
+            intent = db.execute("""SELECT state,cause,blocked_reason,attempts
+                FROM paper_future_exit_intents WHERE lifecycle_id=?""", (lifecycle_id,)).fetchone()
+            assert tuple(intent) == ("EXIT_PENDING_MARKET_SOURCE_UNVERIFIED", "EOD_PAPER",
+                                     "IOL_A3_MARKET_UNVERIFIED", 0)
 
 
 def test_future_open_mark_eod_close_uses_specialized_ledger_and_no_real_routes(tmp_path):

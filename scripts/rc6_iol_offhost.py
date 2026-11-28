@@ -33,6 +33,8 @@ COLD_TO_HOT = ("tests/test_rc6_shadow_runtime_wiring.py"
                "::test_outside_preopen_native_discovery_promotes_warm_then_hot_never_opens")
 CAUCION_SWEEP = ("tests/test_ws_caucion_12_live_ppi_wiring.py"
                  "::test_caucion_reconcile_and_sweep_keep_static_terms_separate_from_live_bid")
+IOL_CAUCION_SWEEP = ("tests/test_rc6_iol_caucion_book_runtime.py"
+                     "::test_book_arrival_after_hold_places_once_and_settles_cash_once")
 FCI_CALENDAR = ("tests/test_rc6_a232_fund_caucion_market_entry.py"
                 "::test_fci_weekday_go_and_ready_catalog_still_need_authenticated_class_calendar")
 FCI_SETTLEMENT = ("tests/test_rc6_fund_attested_settlement.py"
@@ -105,7 +107,9 @@ DOMAINS = {
         LAB + "::test_iol_book_selects_best_prices_and_rejects_ambiguous_best_size",
     ),
     "family_lifecycles": (FI_RUNTIME, FI_EXIT, FI_ROUNDTRIP, FI_LOCKED_EXIT_GUARD,
-                          CAUCION_SWEEP, FCI_CALENDAR, FCI_SETTLEMENT),
+                          CAUCION_SWEEP, IOL_CAUCION_SWEEP, FCI_CALENDAR, FCI_SETTLEMENT,
+                          "tests/test_rc6_fund_attested_settlement.py",
+                          "tests/test_rc6_option_paper_strategy.py"),
     "complementary_sources": ("tests/test_rc6_a234_cafci_fci_reference.py",
                               "tests/test_rc6_ppi_public_fci_reference.py",
                               "tests/test_rc6_future_contract_policy.py",

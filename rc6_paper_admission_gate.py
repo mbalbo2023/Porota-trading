@@ -503,14 +503,11 @@ def _current_option_dependency_contract(connection, record, now):
     return contract_from_metadata(record["ticker"], record["instrument_type"], normalized["financial_contract_v17"])
 
 
-def _iol_spot_admission_reason(quote, store, now):
+def iol_market_quote_reason(quote, now):
+    """Require native IOL proof for the exact trade and executable book."""
     from bs_instrument_contracts import aware_datetime, decimal_value
-    from bu_instrument_catalog import iol_spot_catalog, quote_terms
     from co_market_sessions_hf6 import byma_paper_spot_phase
-    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
 
-    if quote.asset_class not in EQUITY_FAMILIES:
-        return "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
     if quote.metadata_source != "IOL_REST" or quote.opening_block_reason:
         return quote.opening_block_reason or "IOL_EXECUTABLE_SOURCE_UNVERIFIED"
     temporal = quote.time_error(now, require_trade=True)
@@ -531,17 +528,62 @@ def _iol_spot_admission_reason(quote, store, now):
             aware_datetime(evidence.get("quote_received_at")) <= aware_datetime(quote.observed_at) or
             decimal_value(evidence.get("price"), "IOL last trade", positive=True) != quote.last):
         return "IOL_LAST_TRADE_EVIDENCE_MISMATCH"
-    if any(at.astimezone(TZ).date() != now.date() or byma_paper_spot_phase(at) != "OPEN"
+    if any(at.astimezone(TZ).date() != now.astimezone(TZ).date() or byma_paper_spot_phase(at) != "OPEN"
            for at in (trade_at, book_at, now)):
         return "IOL_MARKET_EVIDENCE_WRONG_SESSION"
     if not (0 < quote.bid <= quote.ask and quote.bid_size > 0 and quote.ask_size > 0):
         return "IOL_BOOK_TWO_SIDED_UNVERIFIED"
-    record = iol_spot_catalog(store, now=now, identity=key).get(key)
+    return ""
+
+
+def _option_admission_reason(store, record, contract, now):
+    from rc6_ppi_option_contract_policy import (
+        PPI_OPTION_UNDERLYING_SETTLEMENT, current_option_contract_reason)
+
+    with store.connect() as connection:
+        underlying_rows = [dict(row) for row in connection.execute("""
+            SELECT * FROM financial_instrument_catalog
+            WHERE ticker=? AND instrument_type IN ('ACCIONES','CEDEARS')
+        """, (contract.underlying,)).fetchall()]
+        reason = current_option_contract_reason(
+            record, underlying_rows, contract, checked_at=now.isoformat())
+        if reason:
+            return reason
+        current_spec = _current_option_dependency_contract(connection, record, now)
+        for underlying in underlying_rows:
+            if (underlying.get("status") == "AVAILABLE"
+                    and underlying.get("market") == "BYMA"
+                    and underlying.get("currency") == "ARS"
+                    and underlying.get("settlement") == PPI_OPTION_UNDERLYING_SETTLEMENT
+                    and str(json.loads(underlying.get("metadata_json") or "{}").get(
+                        "_discovery_source") or "").upper() == "PPI_PRIMARY"):
+                _current_option_dependency_contract(connection, underlying, now)
+        return current_option_contract_reason(
+            record, underlying_rows, current_spec, checked_at=now.isoformat())
+
+
+def _iol_spot_admission_reason(quote, store, now):
+    from bu_instrument_catalog import iol_spot_catalog, quote_terms
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_fixed_income_paper_strategy import FAMILIES as FIXED_INCOME_FAMILIES
+
+    if quote.asset_class not in EQUITY_FAMILIES | FIXED_INCOME_FAMILIES | {"OPCIONES"}:
+        return "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
+    if reason := iol_market_quote_reason(quote, now):
+        return reason
+    currency, market = quote.monetary_identity()
+    key = (quote.symbol, quote.asset_class, market, currency, quote.settlement)
+    record = iol_spot_catalog(store, now=now, identity=key, include_contracts=True).get(key)
     terms = quote_terms(record, now=now, iol_live_settlement=True)
     if terms.get("opening_block_reason"):
         return terms["opening_block_reason"]
     if quote.contract is None or quote.contract != terms.get("contract"):
         return "PAPER_EXACT_CONTRACT_MISMATCH"
+    if quote.asset_class == "OPCIONES":
+        return _option_admission_reason(store, record, quote.contract, now)
+    if quote.asset_class in FIXED_INCOME_FAMILIES:
+        from rc6_fixed_income_iol_evidence import iol_contract_reason
+        return iol_contract_reason(key, quote.contract)
     return ""
 
 
@@ -569,31 +611,9 @@ def paper_admission_guard(quote, store):
                                       and quote.contract is None)):
             return False, "PAPER_EXACT_CONTRACT_MISMATCH"
         if quote.asset_class == "OPCIONES":
-            from rc6_ppi_option_contract_policy import (
-                PPI_OPTION_UNDERLYING_SETTLEMENT, current_option_contract_reason)
-            now = datetime.now(TZ)
-            with store.connect() as connection:
-                underlying_rows = [dict(row) for row in connection.execute("""
-                    SELECT * FROM financial_instrument_catalog
-                    WHERE ticker=? AND instrument_type IN ('ACCIONES','CEDEARS')
-                """, (spec.underlying,)).fetchall()]
-                reason = current_option_contract_reason(
-                    record, underlying_rows, quote.contract, checked_at=now.isoformat())
-                if reason:
-                    return False, reason
-                current_spec = _current_option_dependency_contract(connection, record, now)
-                for underlying in underlying_rows:
-                    if (underlying.get("status") == "AVAILABLE"
-                            and underlying.get("market") == "BYMA"
-                            and underlying.get("currency") == "ARS"
-                            and underlying.get("settlement") == PPI_OPTION_UNDERLYING_SETTLEMENT
-                            and str(json.loads(underlying.get("metadata_json") or "{}").get(
-                                "_discovery_source") or "").upper() == "PPI_PRIMARY"):
-                        _current_option_dependency_contract(connection, underlying, now)
-                reason = current_option_contract_reason(
-                    record, underlying_rows, current_spec, checked_at=now.isoformat())
-                if reason:
-                    return False, reason
+            reason = _option_admission_reason(store, record, quote.contract, datetime.now(TZ))
+            if reason:
+                return False, reason
     except (OSError, ValueError, TypeError, AttributeError, sqlite3.Error):
         return False, "PAPER_EXACT_CONTRACT_UNAVAILABLE"
     return True, ""

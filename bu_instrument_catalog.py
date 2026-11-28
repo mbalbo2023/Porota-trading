@@ -1047,23 +1047,77 @@ def _iol_spot_primary(record):
         return False
 
 
-def iol_spot_catalog(store, *, now, identity=None):
+def _iol_local_etf_reference(key):
+    from rc6_performance.costs import MERV_LISTING_KNOWN_AT
+
+    ticker, family, market, currency, settlement = key
+    return {
+        "ticker": ticker, "instrument_type": family, "market": market,
+        "currency": currency, "settlement": settlement, "status": "OBSERVED_SHADOW",
+        "settlement_source": "BYMA_PUBLIC_COMPLEMENTARY",
+        "capability": "IOL_ETF_EXECUTION_TARIFF_UNVERIFIED",
+        "description": "gForce MSCI Merval FCIA ETF",
+        "last_seen_at": MERV_LISTING_KNOWN_AT, "run_id": "BYMA_FIMA_MERV_REFERENCE",
+        "raw": {"_discovery_source": "BYMA_PUBLIC_COMPLEMENTARY", "iol_local_etf_reference": True},
+    }
+
+
+def persist_iol_etf_observation(store, record, observation):
+    """Preserve direct market proof beside venue metadata, with no admission effect."""
+    from contextlib import closing
+    from rc6_performance.costs import local_etf_reference_keys
+
+    key = observation.quote.contract.key
+    if (key not in local_etf_reference_keys(observation.quote.observed_at)
+            or observation.current is None or not observation.quote.iol_trade_evidence
+            or record != _iol_local_etf_reference(key)):
+        raise ValueError("IOL_ETF_REFERENCE_IDENTITY_MISMATCH")
+    observed = dict(record, last_seen_at=observation.quote.observed_at)
+    observed["raw"] = dict(record["raw"], iol_current_sha256=observation.current.data_sha256,
+                           iol_book_sha256=observation.book.data_sha256)
+    with closing(store.connect()) as connection, connection:
+        connection.execute("BEGIN IMMEDIATE")
+        previous = connection.execute("""SELECT settlement_source,metadata_json
+            FROM financial_instrument_catalog
+            WHERE (ticker,instrument_type,market,currency,settlement)=(?,?,?,?,?)""", key).fetchone()
+        if previous is None or (previous[0] == record["settlement_source"] and
+                                json.loads(previous[1]).get("iol_local_etf_reference") is True):
+            persist(connection, observed)
+
+
+def iol_spot_catalog(store, *, now, identity=None, include_contracts=False):
     """Select exact stored keys for requalification against IOL market data."""
     from contextlib import closing
+    from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_performance.costs import local_etf_reference_keys
 
+    families = set(EQUITY_FAMILIES)
+    references = ()
+    if include_contracts:
+        from rc6_fixed_income_paper_strategy import FAMILIES
+        families.update(FAMILIES)
+        families.add("OPCIONES")
+        references = tuple(key for key in local_etf_reference_keys(now)
+                           if identity is None or tuple(identity) == key)
+    slots = ",".join("?" for _ in families)
     scope = ""
-    parameters = ()
+    parameters = tuple(sorted(families))
     instrument = None
     if identity is not None:
         scope = "AND (f.ticker,f.instrument_type,f.market,f.currency,f.settlement)=(?,?,?,?,?)"
-        parameters = tuple(identity)
-        instrument = parameters[:2]
+        parameters += tuple(identity)
+        instrument = tuple(identity[:2])
     with closing(store.connect()) as c:
+        has_ledger = c.execute("""SELECT 1 FROM sqlite_master
+            WHERE type='table' AND name='candidate_identity_v2'""").fetchone() is not None
         rows = c.execute(f"""SELECT f.*, p.can_simulate AS ledger_allowed, p.status AS ledger_status,
             p.detail AS ledger_detail FROM financial_instrument_catalog f
             JOIN candidate_identity_v2 p USING(ticker,instrument_type,market,currency,settlement)
-            WHERE f.instrument_type IN ('ACCIONES','CEDEARS','ETFS') AND f.status='AVAILABLE'
-              AND f.capability='READY_PAPER_SPOT' AND f.market='BYMA'
+            WHERE f.instrument_type IN ({slots}) AND f.status='AVAILABLE'
+              AND (f.capability='READY_PAPER_SPOT' OR
+                  (f.instrument_type='OPCIONES' AND f.capability='READY_PAPER_OPTION_LONG'
+                   AND f.settlement='INMEDIATA'))
+              AND f.market='BYMA'
               AND f.currency IN ('ARS','USD') AND f.settlement IN ('INMEDIATA','A-24HS')
               AND NOT EXISTS (SELECT 1 FROM financial_instrument_catalog other
                 WHERE other.ticker=f.ticker AND other.instrument_type=f.instrument_type
@@ -1071,10 +1125,18 @@ def iol_spot_catalog(store, *, now, identity=None):
                   AND other.market NOT IN ('','UNKNOWN','NO_VERIFICADO')
                   AND other.currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
                   AND (other.market!=f.market OR other.currency!=f.currency))
-              {scope} ORDER BY f.instrument_type,f.ticker,f.settlement""", parameters).fetchall()
+              {scope} ORDER BY f.instrument_type,f.ticker,f.settlement""", parameters).fetchall() if has_ledger else ()
         ambiguities = _candidate_retry_ambiguities(c, instrument)
+        if references and c.execute("""SELECT 1 FROM financial_instrument_catalog
+                    WHERE ticker=? AND status IN ('AVAILABLE','STALE')
+                      AND market NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND currency NOT IN ('','UNKNOWN','NO_VERIFICADO')
+                      AND (market<>? OR currency<>?) LIMIT 1""",
+                                           (references[0][0], *references[0][2:4])).fetchone():
+            references = ()
     result = {}
-    replaceable = {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID"}
+    replaceable = {"PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED", "PPI_NATIVE_SETTLEMENT_RECEIPT_INVALID",
+                   "PPI_FRESHNESS_STALE"}
     for row in rows:
         record = dict(row)
         key = tuple(record[field] for field in ("ticker", "instrument_type", "market", "currency", "settlement"))
@@ -1091,11 +1153,15 @@ def iol_spot_catalog(store, *, now, identity=None):
             continue
         ledger_proved = record["ledger_status"] == "AVAILABLE" and record["ledger_allowed"] == 1
         reasons = set(str(record["ledger_detail"] or "").split(";"))
-        awaiting_iol = (record["settlement_source"] == "REQUEST_CANDIDATE" and
+        awaiting_iol = (key[1] in EQUITY_FAMILIES and
+                        record["settlement_source"] in {"PPI_FIELD", "REQUEST_CANDIDATE"} and
                         record["ledger_status"] == "AVAILABLE" and record["ledger_allowed"] == 0 and
                         bool(reasons) and reasons <= replaceable)
         if ledger_proved or awaiting_iol:
             result[key] = record
+    for key in references:
+        if key not in ambiguities:
+            result.setdefault(key, _iol_local_etf_reference(key))
     return result
 
 
@@ -1103,6 +1169,12 @@ def quote_terms(record, *, now=None, iol_live_settlement=False):
     if record is None:
         return {"currency": None, "market": None, "metadata_source": None,
                 "opening_block_reason": "Falta catálogo confirmado o la identidad es ambigua"}
+    if iol_live_settlement and record.get("raw", {}).get("iol_local_etf_reference") is True:
+        contract = InstrumentContract(record["ticker"], "ETFS", record["currency"], record["market"],
+                                      record["settlement"], Decimal(1), Decimal(1),
+                                      "BYMA_FIMA_MERV_REFERENCE", minimum_quantity=Decimal(1))
+        return {"currency": contract.currency, "market": contract.market, "contract": contract,
+                "metadata_source": contract.metadata_source, "opening_block_reason": record["capability"]}
     spec = None
     try:
         spec = contract_for(record)

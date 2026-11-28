@@ -24,6 +24,7 @@ REAL_SALE_AUTHORITY = False
 _AUTHORITY_ERROR = "FI_NATIVE_MARKET_EXIT_NOT_ADMITTED: INDEPENDENT_AUTHORITY_UNBOUND"
 SCHEMA = "rc6.fi-native-paper-market-sale.v1"
 BOOK_SCHEMA = "rc6.fi-ppi-normalized-book.v1"
+IOL_BOOK_SCHEMA = "rc6.fi-iol-normalized-book.v1"
 FEE_SCHEMA = "rc6.fi-paper-sale-fee-quote.v1"
 REASON = "FI_PAPER_MARKET_SALE_MODELED_SETTLEMENT"
 MAX_EVIDENCE_BYTES = 16 * 1024
@@ -32,6 +33,12 @@ _SOURCE_FIELDS = frozenset({"schema","provider","route","paper_only","identity",
     "metadata_source"})
 _FEE_FIELDS = frozenset({"schema","paper_only","identity","paper_id","nominal",
     "exit_price","exit_fee","currency","slippage","policy"})
+_BOOK_SOURCES = {
+    BOOK_SCHEMA: ("PPI_PRIMARY_READ_ONLY", "MarketData/Book", "PPI_PRIMARY_LIVE_BOOK:REST",
+                  "PPI_LIVE_BOOK", "PPI_REST_READ_ONLY:MarketData/Book"),
+    IOL_BOOK_SCHEMA: ("IOL_REST", "market_depth", "IOL_REST",
+                      "IOL_LIVE_BOOK", "IOL_REST_READ_ONLY:market_depth"),
+}
 
 
 def init_schema(store):
@@ -92,14 +99,13 @@ def _parsed(raw, pin, schema, fields):
 
 def _quote_matches(source, q, seed):
     try:
+        provider, route, metadata, _, _ = _BOOK_SOURCES[source["schema"]]
         identity = [seed.symbol, seed.family, seed.market,
                     seed.trading_currency, seed.settlement]
         return (source["identity"] == identity and
-                source["provider"] == "PPI_PRIMARY_READ_ONLY" and
-                source["route"] == "MarketData/Book" and
+                source["provider"] == provider and source["route"] == route and
                 source["quantity_unit"] == "VN" and
-                source["metadata_source"] == q.metadata_source and
-                str(q.metadata_source or "").startswith("PPI_PRIMARY_LIVE_BOOK") and
+                source["metadata_source"] == q.metadata_source == metadata and
                 aware_datetime(source["book_at"]) == aware_datetime(q.book_at) and
                 aware_datetime(source["observed_at"]) == aware_datetime(q.observed_at) and
                 all(decimal_value(source[k], k, nonnegative=True) ==
@@ -176,6 +182,10 @@ def sale_rows_checked(db, paper_id):
                 depth["book_at"] != stamp(row["book_at"])):
             raise ValueError("FI_NATIVE_SALE_JOURNAL_OR_DEPTH_CONFLICT")
         event_value = EconomicEvent(**json.loads(event["event_json"]))
+        source_details = _BOOK_SOURCES.get(source.get("schema"))
+        if source_details is None:
+            raise ValueError("FI_NATIVE_SALE_ECONOMIC_RECONCILIATION_FAILED")
+        provider, route, metadata, source_kind, source_reference = source_details
         qty = decimal_value(row["nominal"], "sold VN", positive=True)
         price = decimal_value(row["price"], "exit price", positive=True)
         cost = decimal_value(row["exit_fee"], "sale fee", nonnegative=True)
@@ -188,12 +198,10 @@ def sale_rows_checked(db, paper_id):
         proceeds = price * qty * multiplier - cost
         if (event_value.kind != "MARKET_SALE" or event_value.paper_id != paper_id or
                 event_value.source_sha256 != row["source_sha256"] or
-                source.get("schema") != BOOK_SCHEMA or fee.get("schema") != FEE_SCHEMA or
-                source.get("provider") != "PPI_PRIMARY_READ_ONLY" or
-                source.get("route") != "MarketData/Book" or
+                fee.get("schema") != FEE_SCHEMA or
+                source.get("provider") != provider or source.get("route") != route or
                 source.get("quantity_unit") != "VN" or
-                not str(source.get("metadata_source") or "").startswith(
-                    "PPI_PRIMARY_LIVE_BOOK") or
+                source.get("metadata_source") != metadata or
                 aware_datetime(source["book_at"]) != aware_datetime(row["book_at"]) or
                 fee.get("paper_only") is not True or
                 fee.get("policy") != "PAPER_COST_MODEL_NOT_PPI_ACCOUNT_FEE" or
@@ -207,8 +215,7 @@ def sale_rows_checked(db, paper_id):
                     root["currency"],root["settlement"]] or
                 event_value.event_id != "FI_PAPER_SALE:"+row["request_id"] or
                 event_value.obligation_id != event_value.event_id or
-                event_value.source_kind != "PPI_LIVE_BOOK" or
-                event_value.source_reference != "PPI_REST_READ_ONLY:MarketData/Book" or
+                event_value.source_kind != source_kind or event_value.source_reference != source_reference or
                 aware_datetime(event_value.recorded_at) != aware_datetime(row["applied_at"]) or
                 aware_datetime(event_value.effective_at) != aware_datetime(row["book_at"]) or
                 aware_datetime(event_value.source_at) != aware_datetime(row["book_at"]) or
@@ -356,7 +363,9 @@ def apply_paper_market_sale(store, broker, *, paper_id, request_id=None, nominal
     identity = tuple(intent["identity"])
     symbol, family, market, currency, settlement = identity
     contract = contract_from_metadata(symbol, family, json.loads(row["features_json"])["financial_contract"])
-    policy, costs, policy_pin = market_sale_policy(store, identity, contract, applied_at)
+    is_iol = proof["book2"]["source"] == "IOL_REST"
+    provider = "IOL_REST" if is_iol else "PPI"
+    policy, costs, policy_pin = market_sale_policy(store, identity, contract, applied_at, provider=provider)
     if policy_pin != intent["policy_sha256"] or policy["minimum_post_ack_ms"] != intent["minimum_post_ack_ms"]:
         raise ValueError("FI_NATIVE_SALE_SIGNED_POLICY_MISMATCH")
     max_qty = contract.quantity(intent["maximum_vn"])
@@ -367,15 +376,17 @@ def apply_paper_market_sale(store, broker, *, paper_id, request_id=None, nominal
     qty = contract.quantity(nominal if nominal is not None else min(max_qty, by_book))
     if qty > max_qty:
         raise ValueError("FI_NATIVE_SALE_SIGNED_VN_EXCEEDED")
+    book_schema = IOL_BOOK_SCHEMA if is_iol else BOOK_SCHEMA
+    source_provider, route, metadata, _, _ = _BOOK_SOURCES[book_schema]
     observed = Quote(symbol, row["asset_class"], settlement, Decimal(0), contract=contract,
-        currency=currency, market=market, metadata_source="PPI_PRIMARY_LIVE_BOOK:REST",
+        currency=currency, market=market, metadata_source=metadata,
         last_kind="UNAVAILABLE", **fields)
     if quote is not None and (quote.contract != contract or any(
             getattr(quote, name) != value for name, value in fields.items())):
         raise ValueError("FI_NATIVE_SALE_CALLER_QUOTE_MISMATCH")
     price = broker._spot_fill_price(observed.bid, side="SELL", contract=contract, at=applied_at)
     fee = costs.leg_cost(price * contract.cash_multiplier * qty, decision_at=applied_at)
-    source = {"schema": BOOK_SCHEMA, "provider": "PPI_PRIMARY_READ_ONLY", "route": "MarketData/Book",
+    source = {"schema": book_schema, "provider": source_provider, "route": route,
               "paper_only": True, "identity": list(identity), "quantity_unit": "VN",
               "metadata_source": observed.metadata_source,
               **{key: str(value) for key, value in fields.items()}}
@@ -412,7 +423,10 @@ def _commit_reviewed_sale(store, broker, *, paper_id, request_id, nominal,
             request_id != request_id.strip() or not isinstance(quote, Quote)):
         raise ValueError("FI_NATIVE_SALE_REQUEST_INVALID")
     qty = decimal_value(nominal, "FI nominal", positive=True)
-    source, source_sha = _parsed(book_bytes, approved_book_sha256, BOOK_SCHEMA, _SOURCE_FIELDS)
+    is_iol = quote.metadata_source == "IOL_REST"
+    book_schema = IOL_BOOK_SCHEMA if is_iol else BOOK_SCHEMA
+    _, _, _, event_source, event_reference = _BOOK_SOURCES[book_schema]
+    source, source_sha = _parsed(book_bytes, approved_book_sha256, book_schema, _SOURCE_FIELDS)
     fee, fee_sha = _parsed(fee_bytes, approved_fee_sha256, FEE_SCHEMA, _FEE_FIELDS)
     at = aware_datetime(applied_at)
     at_iso = at.astimezone(timezone.utc).isoformat()
@@ -468,7 +482,8 @@ def _commit_reviewed_sale(store, broker, *, paper_id, request_id, nominal,
             raise ValueError("FI_NATIVE_SALE_BOOKING_CLOCK_ROLLBACK")
         if (not _quote_matches(source, quote, seed) or
                 quote.time_error(at,max_age_seconds=broker.quote_max_age_seconds)):
-            raise ValueError("FI_NATIVE_SALE_EXACT_PPI_BOOK_PIT_REQUIRED")
+            raise ValueError("FI_NATIVE_SALE_EXACT_IOL_BOOK_PIT_REQUIRED" if is_iol
+                             else "FI_NATIVE_SALE_EXACT_PPI_BOOK_PIT_REQUIRED")
         if (quote.monetary_identity() != (seed.trading_currency,seed.market) or
                 not quote.contract or quote.contract.key != (
                     seed.symbol,seed.family,seed.market,seed.trading_currency,seed.settlement) or
@@ -492,7 +507,8 @@ def _commit_reviewed_sale(store, broker, *, paper_id, request_id, nominal,
             raise ValueError("FI_NATIVE_SALE_EXECUTION_PRICE_INVALID")
         multiplier = decimal_value(quote.contract.cash_multiplier, "FI multiplier", positive=True)
         from rc6_fixed_income_sale_authority import market_sale_policy
-        _, versioned_cost, policy_pin = market_sale_policy(store, quote.contract.key, quote.contract, at)
+        _, versioned_cost, policy_pin = market_sale_policy(
+            store, quote.contract.key, quote.contract, at, provider="IOL_REST" if is_iol else "PPI")
         if (policy_pin != causal_sale["policy_sha256"] or versioned_cost.diagnostic()["policy_sha256"]
                 != causal_sale["fee_policy_sha256"]):
             raise ValueError("FI_NATIVE_SALE_LOCKED_POLICY_CHANGED")
@@ -524,8 +540,8 @@ def _commit_reviewed_sale(store, broker, *, paper_id, request_id, nominal,
         event = EconomicEvent(
             event_id="FI_PAPER_SALE:"+request_id, obligation_id="FI_PAPER_SALE:"+request_id,
             paper_id=paper_id, kind="MARKET_SALE", effective_at=stamp(quote.book_at),
-            recorded_at=at_iso, source_kind="PPI_LIVE_BOOK",
-            source_reference="PPI_REST_READ_ONLY:MarketData/Book", source_sha256=source_sha,
+            recorded_at=at_iso, source_kind=event_source,
+            source_reference=event_reference, source_sha256=source_sha,
             source_at=stamp(quote.book_at), nominal_base=str(view.residual_nominal),
             nominal_redeemed=str(qty))
         evidence_sha = _hash(_canonical({"book_sha256": source_sha, "fee_sha256": fee_sha,

@@ -111,7 +111,10 @@ def _window(row, at):
 
 def quote_sha256(quote):
     """Exact native quote/contract binding; never reconstruct a fresh clock."""
-    return hashlib.sha256(json.dumps(asdict(quote), sort_keys=True,
+    fields = asdict(quote)
+    if fields.get("iol_native_rest_book") is None:
+        fields.pop("iol_native_rest_book", None)
+    return hashlib.sha256(json.dumps(fields, sort_keys=True,
                                     separators=(",", ":"), default=str,
                                     allow_nan=False).encode()).hexdigest()
 
@@ -129,11 +132,8 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
     Keyword parameters are explicit offline-test/tool injection. Production
     PaperStore supplies neither: its directory/hash come from release-owned
     configuration. Source documents stay private next to the PAPER database.
-    Missing pin or document raises a typed blocker; never fall back to an old
-    receipt, another ticker/currency, a hypothetical OOS result or live IOL.
-    The pin covers static reviewed economics, NOT a live quote. Each decision
-    uses the native PPI quote supplied by the existing collector and hashes
-    that exact quote for the decision receipt. It needs no per-tick release.
+    A missing pin or document raises a typed blocker. Each decision hashes the
+    native market quote and uses the separately reviewed issuer and OOS bytes.
     """
     from rc6_fixed_income_strategy_shadow import (
         ContractProof, ProjectedFlow, RiskLimits, evaluate_shadow,
@@ -155,7 +155,18 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             _fail("FI_EVIDENCE_EXACT_CONTRACT_REQUIRED")
         if key[1] not in {"BONOS", "LETRAS", "OBLIGACIONES"}:
             _fail("FI_EVIDENCE_FAMILY_UNSUPPORTED")
-        if not str(quote.metadata_source or "").startswith("PPI_CATALOG:"):
+        from rc6_fixed_income_iol_evidence import (
+            PROVIDER as IOL_PROVIDER, iol_entry_market_evidence, iol_reviewed_policy,
+        )
+
+        market_policy_pin = None
+        if quote.metadata_source == IOL_PROVIDER:
+            iol_entry_market_evidence(quote, key, at)
+            _, _, market_policy_pin = iol_reviewed_policy(store, key, quote.contract, at)
+            source_kind = IOL_PROVIDER
+        elif str(quote.metadata_source or "").startswith("PPI_CATALOG:"):
+            source_kind = "PPI_PRIMARY"
+        else:
             _fail("FI_EVIDENCE_NATIVE_PPI_PROVENANCE_REQUIRED")
         if quote.time_error(at, require_trade=True, max_age_seconds=120,
                             max_trade_age_seconds=900):
@@ -257,14 +268,17 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
             quote, proof, flows, RiskLimits(**receipt["risk_limits"]),
             quantity_vn=receipt["quantity_vn"], decision_at=decision_at,
             planned_exit_at=exit_at.isoformat(), exit_mode=exit_mode,
-            book_reference="native-ppi-quote:" + live_quote_sha,
-            book_sha256=live_quote_sha, book_source_kind="PPI_PRIMARY")
+            book_reference=("native-iol-quote:" if source_kind == IOL_PROVIDER
+                            else "native-ppi-quote:") + live_quote_sha,
+            book_sha256=live_quote_sha, book_source_kind=source_kind)
         return {"scenario": scenario, "terms": terms, "validation": validation,
                 "upstream_authenticated": True, "receipt_attested_by_release": True,
-                "source_kind": "PPI_PRIMARY",
+                "source_kind": source_kind,
                 "runtime_evidence": {"manifest_sha256": pin,
                                      "receipt_sha256": entry["proof"]["sha256"],
                                      "quote_sha256": live_quote_sha,
+                                     **({"market_policy_sha256": market_policy_pin}
+                                        if market_policy_pin else {}),
                                      "identity": list(key),
                                      "native_event_cash_lifecycle": (
                                          "PAYMENT_REVIEW_PENDING" if exit_mode == "MATURITY_REDEMPTION"
@@ -272,4 +286,6 @@ def fixed_income_strategy_inputs(store, quote, decision_at, *, directory=None,
     except FixedIncomeEvidenceError:
         raise
     except (KeyError, TypeError, ValueError, OSError, OverflowError) as exc:
+        if isinstance(exc, ValueError) and re.fullmatch(r"FI_(IOL|MARKET_SALE)_[A-Z0-9_]+", str(exc)):
+            raise FixedIncomeEvidenceError(str(exc)) from exc
         raise FixedIncomeEvidenceError("FI_EVIDENCE_INPUT_INVALID") from exc
