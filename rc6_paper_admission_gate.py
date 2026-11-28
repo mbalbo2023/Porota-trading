@@ -518,6 +518,11 @@ def iol_market_quote_reason(quote, now):
     key = (quote.symbol, quote.asset_class, market, currency, quote.settlement)
     if not isinstance(evidence, dict) or evidence.get("identity") != list(key):
         return "IOL_LAST_TRADE_EVIDENCE_MISSING"
+    if quote.asset_class == "OPCIONES":
+        from rc6_iol_market_data import iol_option_trade_binding
+
+        if not iol_option_trade_binding(key, evidence):
+            return "IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED"
     generation = evidence.get("gateway_generation")
     if not isinstance(generation, str) or not re.fullmatch(r"[0-9a-f]{64}", generation):
         return "IOL_LAST_TRADE_EVIDENCE_UNVERIFIED"

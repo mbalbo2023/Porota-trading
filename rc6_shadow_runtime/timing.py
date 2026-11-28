@@ -3,6 +3,10 @@ import math
 
 POLL_SECONDS = 30
 SOURCE_MAX_AGE_SECONDS = 120  # Existing runtime useful-observation ceiling.
+PUBLICATION_HISTORY_FILE = 'publication-history.json'
+PUBLICATION_HISTORY_SCHEMA = 'rc6.publication-history.v1'
+PUBLICATION_HISTORY_LIMIT = 16
+PUBLICATION_COORDINATES = ('generation_id', 'sequence', 'manifest_sha256')
 
 
 def generation_budget(status):

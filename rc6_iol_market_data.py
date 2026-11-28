@@ -21,6 +21,8 @@ from rc6_iol_trade_stream import TRADE_EVIDENCE, TRADE_HOLDS, TRADE_STATUS, matc
 MARKETS = {"BYMA": "BCBA", "NYSE": "NYSE", "NASDAQ": "NASDAQ"}
 TERMS = {"INMEDIATA": "T0", "A-24HS": "T1"}
 SPOT = frozenset({"ACCIONES", "CEDEARS", "ETFS", "BONOS", "LETRAS", "OBLIGACIONES", "OPCIONES"})
+OPTION_STREAM_TERM = "T1"
+OPTION_PREMIUM_IDENTITY = ("OPCIONES", "BYMA", "ARS", "INMEDIATA")
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,30 @@ def read_iol_market_payload(rest, endpoint, identity):
     if endpoint == "asset":
         return rest.call("get_asset_info", {"symbol": symbol, "market": venue})
     return rest.read_market_data(endpoint, symbol, venue, TERMS[term])
+
+
+def iol_trade_stream_key(identity):
+    """Return the IOL subscription key for the exact economic identity.
+
+    IOL documents options under T1 in its WebSocket API. BYMA settles the
+    premium immediately and the exercise in T+1. The subscription term does
+    not alter either economic leg or authorize a REST term substitution.
+    """
+    symbol, family, market, _, term = identity
+    if family == "OPCIONES":
+        if tuple(identity[1:]) != OPTION_PREMIUM_IDENTITY:
+            raise IOLRestError("IOL_MARKET_IDENTITY_UNSUPPORTED")
+        return symbol, MARKETS[market], OPTION_STREAM_TERM
+    return symbol, MARKETS[market], TERMS[term]
+
+
+def iol_option_trade_binding(identity, evidence):
+    return (
+        tuple(identity[1:]) == OPTION_PREMIUM_IDENTITY
+        and isinstance(evidence, dict)
+        and evidence.get("identity") == list(identity)
+        and evidence.get("transport_key") == list(iol_trade_stream_key(identity))
+    )
 
 
 def _instant(stamp):
@@ -109,6 +135,8 @@ class IOLMarketReader:
         symbol, family, market, currency, term = identity
         if family not in SPOT or market not in MARKETS or term not in TERMS:
             raise IOLRestError("IOL_MARKET_IDENTITY_UNSUPPORTED")
+        if family == "OPCIONES" and tuple(identity[1:]) != OPTION_PREMIUM_IDENTITY:
+            raise IOLRestError("IOL_MARKET_IDENTITY_UNSUPPORTED")
         if contract is not None and contract.key != tuple(identity):
             raise IOLRestError("IOL_EXACT_CONTRACT_MISMATCH")
         venue_key = symbol, MARKETS[market], TERMS[term]
@@ -131,7 +159,9 @@ class IOLMarketReader:
                 raise IOLRestError("IOL_QUOTE_CURRENCY_UNVERIFIED")
             evidence = raw.get(TRADE_EVIDENCE) if self.gateway_evidence else None
             source_time = matched_trade(evidence, raw, received)
-            if source_time is None and self.trade_clock is not None:
+            if family == "OPCIONES" and evidence is not None and not iol_option_trade_binding(identity, evidence):
+                raise IOLRestError("IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED")
+            if source_time is None and self.trade_clock is not None and family != "OPCIONES":
                 source_time = self.trade_clock(raw)
                 evidence = None
             if source_time is None:

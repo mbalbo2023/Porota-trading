@@ -2,7 +2,8 @@
 import importlib
 import importlib.util
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import tempfile
 import unittest
@@ -131,6 +132,21 @@ class RequiredEvidenceBranchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('DOCUMENTATION_ONLY', result.stdout)
         self.assertNotIn('RELEASE_VALIDATED=', result.stdout)
+
+    def test_code_checkout_can_verify_historical_metadata_excluded_from_the_image(self):
+        root = Path(__file__).resolve().parents[1]
+        historical = [PurePosixPath(line) for line in (root / '.dockerignore').read_text().splitlines()
+                      if line.startswith(('.release/', 'RC4_'))]
+        self.assertTrue(historical)
+        command = next(step['run'] for step in self.workflow['jobs']['artifact-gate']['steps']
+                       if step.get('name') == 'Test code and actual PAPER HTTP behavior on the same image')
+        code_mounts = command.split('code="$(docker create', 1)[1].split('OWNED_CIDS', 1)[0]
+        mounted = {PurePosixPath(source) for source, target in
+                   re.findall(r'src=\$PWD/([^,]+),dst=/app/([^,]+),readonly', code_mounts) if source == target}
+        for path in historical:
+            with self.subTest(path=path):
+                self.assertTrue((root / path).is_file())
+                self.assertTrue(any(mount == path or mount in path.parents for mount in mounted))
 
     def test_unproven_documentation_or_unknown_classification_cannot_pass(self):
         for change in ({'DOCUMENTATION_VALIDATED': 'false'}, {'ARTIFACT_ID': '123'},

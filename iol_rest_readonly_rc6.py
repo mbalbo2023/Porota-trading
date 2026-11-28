@@ -62,7 +62,7 @@ def _token_text(value):
 
 
 class IOLRestReadOnly:
-    """Shares a private REST token between the existing collector and health timer."""
+    """Read-only wire and OAuth session for the IOL gateway owner."""
 
     source = SOURCE
 
@@ -79,6 +79,8 @@ class IOLRestReadOnly:
         self.active = None
         self.auth_blocked = False
         self.wire_observer = None
+        self.wire_reserve = 0
+        self.oauth_wire_reserve = 0
 
     @property
     def uses_wire_budget(self):
@@ -111,7 +113,11 @@ class IOLRestReadOnly:
         request = Request(API + path + ("?" + urlencode(query) if query else ""),
                           data=json.dumps(auth).encode() if auth is not None else None, headers=headers)
         if self.governor is not None:
-            self.governor.acquire()
+            reserve = self.oauth_wire_reserve if auth is not None else self.wire_reserve
+            if reserve:
+                self.governor.acquire(reserve=reserve)
+            else:
+                self.governor.acquire()
         started = time.monotonic()
         status = "TRANSPORT_ERROR"
         body_bytes = None
@@ -288,7 +294,7 @@ class IOLRestReadOnly:
             raise IOLRestError("IOL_REST_HISTORICAL_RESPONSE_UNVERIFIED")
         return result
 
-    def _quote(self, symbol, market, term):
+    def _quote(self, symbol, market, term, *, include_depth=True):
         data = _object(self.read_market_data("quote", symbol, market, term))
         if (data.get("symbol"), str(data.get("market", "")).upper(),
                 str(data.get("settlement_term", "")).upper()) != (symbol, market, term):
@@ -299,16 +305,22 @@ class IOLRestReadOnly:
                   "cash_volume": _object(data.get("volume")).get("amount"),
                   "provider_observed_at": quote_at,
                   "currency": data.get("currency") if data.get("currency") in CURRENCIES else None}
+        if not include_depth:
+            return result
         try:
-            depth = _object(self.read_market_data("depth", symbol, market, term))
+            result.update(self._quote_depth(symbol, market, term, result["currency"]))
         except IOLRestError as error:
             if error.status_code in (401, 403, 429):
                 raise
-            return result
+        return result
+
+    def _quote_depth(self, symbol, market, term, currency):
+        depth = _object(self.read_market_data("depth", symbol, market, term))
+        result = {}
         book_at = _aware_time(depth.get("last_updated"))
         if (depth.get("symbol"), str(depth.get("market", "")).upper(),
                 str(depth.get("settlement_term", "")).upper()) == (symbol, market, term):
-            if depth.get("currency") and depth["currency"] != result["currency"]:
+            if depth.get("currency") and depth["currency"] != currency:
                 return result
             result["provider_book_at"] = book_at
             for side, key in (("bid", "bids"), ("ask", "asks")):
@@ -357,30 +369,39 @@ class IOLRestReadOnly:
                          "ask_price": _object(book.get("ask")).get("price")})
         return {"underlying": symbol, "options": rows}
 
-    def _repos(self, currency):
+    def _repo_terms(self, currency):
         terms = self._get("/broker/market-data/repos/terms", {"currency": currency})
         if not isinstance(terms, list):
             raise IOLRestError("IOL_REST_REPO_TERMS_UNVERIFIED")
-        result = []
+        result = {}
         for days in (1, 2, 3):
             rows = [_object(row) for row in terms]
             matches = [row for row in rows if row.get("term_days") == days
                        and type(row.get("term_id")) is int and row["term_id"] > 0]
-            if len(matches) != 1:
-                continue
-            term = matches[0]
-            book = self._get("/broker/market-data/repos/quotes", {"currency": currency, "term_id": term["term_id"]})
-            if not isinstance(book, list) or not book:
-                continue
-            bid = _object(_object(book[0]).get("bid"))
-            if not _positive(bid.get("rate")) or not _positive(bid.get("amount")):
-                continue
-            result.append({"term_days": days, "side": "COLOCADORA", "currency": currency,
-                           "due_date": term.get("due_date"), "minimum_amount": term.get("min_amount"),
-                           "tna": bid["rate"], "available_amount": bid["amount"],
-                           # The published envelope has no per-book provider timestamp.
-                           "reference_only": True, "transport": SOURCE})
-        return {"rates": result}
+            if len(matches) == 1:
+                result[days] = matches[0]
+        return result
+
+    def _repo_quote(self, currency, days, term):
+        book = self._get("/broker/market-data/repos/quotes", {"currency": currency, "term_id": term["term_id"]})
+        if not isinstance(book, list) or not book:
+            return None
+        bid = _object(_object(book[0]).get("bid"))
+        if not _positive(bid.get("rate")) or not _positive(bid.get("amount")):
+            return None
+        return {"term_days": days, "side": "COLOCADORA", "currency": currency,
+                "due_date": term.get("due_date"), "minimum_amount": term.get("min_amount"),
+                "tna": bid["rate"], "available_amount": bid["amount"],
+                # The published envelope has no per-book provider timestamp.
+                "reference_only": True, "transport": SOURCE}
+
+    def _repos(self, currency):
+        rates = []
+        for days, term in self._repo_terms(currency).items():
+            quote = self._repo_quote(currency, days, term)
+            if quote is not None:
+                rates.append(quote)
+        return {"rates": rates}
 
     def call(self, name, arguments):
         if name not in {"get_asset_quote", "get_asset_info", "get_options_chain", "get_caucion_rates"}:

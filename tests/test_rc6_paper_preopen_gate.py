@@ -500,6 +500,8 @@ def test_runtime_spot_book_requires_guard_and_matching_fixture_receipt(tmp_path,
 
     state(release)
     gate.publish_preopen(result(), now=DAY, state_path=release, receipt_path=receipt)
+    assert guarded._open(candidate, D("0.8"), {})[:2] == (False, "SPOT_BOOK_CHANGED_BEFORE_FILL")
+    store.add_quote(candidate)
     assert guarded._open(candidate, D("0.8"), {})[0] is True
     with store.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM paper_positions").fetchone()[0] == 1

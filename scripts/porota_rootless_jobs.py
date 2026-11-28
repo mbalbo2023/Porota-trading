@@ -25,10 +25,11 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 from rc6_paper_admission_gate import iol_recovery_due
 from rc6_validation_runtime import PROOF_SOURCE
-from co_market_sessions_hf6 import byma_paper_spot_phase
+from co_market_sessions_hf6 import TZ, byma_paper_spot_phase
+from rc6_scheduler_snapshot import instant
 from scripts.porota_rootless_host import (
     Hold, Host, Identity, DB_RELATIVE, database_snapshot, no_alias,
-    read_regular, read_release_state, require, user_lock,
+    read_regular, read_release_state, require, user_lock, write_json,
 )
 
 POSTCLOSE = "porota-snapshot-postclose-rc6.service"
@@ -63,7 +64,7 @@ PRESERVED_COMPANIONS = frozenset({
     "porota-critical-approval-rc6.service", "porota-critical-github-proxy-rc6.service",
 })
 
-# Relay only fixed check names and BYMA reason codes. The child receipt may
+# Relay only fixed check names and reason codes. The child receipt may
 # contain runtime or provider details that must stay out of journald.
 PREOPEN_RED_KEYS = frozenset((
     "release_identity", "observer_container", "dashboard_container",
@@ -78,6 +79,9 @@ PREOPEN_BYMA_RED_REASONS = frozenset((
     "BYMA_WATCH_DEGRADED", "BYMA_WATCH_STATE_UNKNOWN", "BYMA_WATCH_UNAVAILABLE",
 ))
 PREOPEN_CAPTURE_LIMIT = 1024 * 1024
+PREOPEN_T10_FILE = "preopen-last-t10.json"
+PREOPEN_T10_SCHEMA = "porota.rc6.scheduled-t10.v1"
+PREOPEN_T10_COORDINATES = ("source_sha", "source_tree", "image_id", "attempt")
 
 
 def _closed_report_receipt(unit, current, phase):
@@ -234,9 +238,10 @@ def _read_preopen_child(output):
         return None
 
 
-def read_preopen_red_receipt(output):
-    """Read the allowlisted portion of a bounded RED child receipt."""
-    receipt = _read_preopen_child(output)
+def _preopen_red_summary(receipt):
+    """Project the allowlisted portion of a bounded RED child receipt."""
+    from rc6_preopen import IOL_PREOPEN_RED_REASONS
+
     if receipt is None or receipt.get("status") != "RED":
         return None
     try:
@@ -247,14 +252,51 @@ def read_preopen_red_receipt(output):
             return None
         summary = {"preopen_red_checks": names}
         checks = receipt.get("checks")
-        byma = checks.get("byma_morning_watch") if type(checks) is dict else None
-        if "byma_morning_watch" in names and type(byma) is dict and byma.get("state") == "RED":
-            reason = byma.get("reason")
-            if type(reason) is str and reason in PREOPEN_BYMA_RED_REASONS:
-                summary["preopen_red_reasons"] = {"byma_morning_watch": reason}
+        for name, allowlist in (("byma_morning_watch", PREOPEN_BYMA_RED_REASONS),
+                                ("observer_db", IOL_PREOPEN_RED_REASONS)):
+            check = checks.get(name) if type(checks) is dict else None
+            if name in names and type(check) is dict and check.get("state") == "RED":
+                reason = check.get("reason")
+                if type(reason) is str and reason in allowlist:
+                    summary.setdefault("preopen_red_reasons", {})[name] = reason
         return summary
     except (OSError, ValueError, TypeError, UnicodeDecodeError):
         return None
+
+
+def persist_scheduled_t10(identity, current, started, child, exit_code):
+    """Record the actual scheduled invocation separately from revalidation."""
+    from ak_byma_calendar import es_dia_habil_operativo
+    from rc6_preopen import preopen_phase
+
+    local = started.astimezone(TZ)
+    if (current.get("market_provider") != "IOL_REST" or preopen_phase(local) != "T_MINUS_10"
+            or not es_dia_habil_operativo(local.date())):
+        return
+    receipt = {"schema": PREOPEN_T10_SCHEMA, "phase": "T_MINUS_10", "state": "NO_VERIFICADO",
+               "session_date_ar": local.date().isoformat(), "started_at": started.isoformat(),
+               "exit_code": exit_code if type(exit_code) is int and -255 <= exit_code <= 255 else None,
+               "reason": "PREOPEN_CHILD_RECEIPT_UNVERIFIED",
+               **{key: current[key] for key in PREOPEN_T10_COORDINATES}}
+    generated = instant(child.get("generated_at_ar")) if child else None
+    if (generated is not None and preopen_phase(generated) == "T_MINUS_10"
+            and generated.astimezone(TZ).date() == local.date()
+            and -1 <= (generated - started).total_seconds() <= 60
+            and child.get("dry_equivalent") is False and child.get("read_only") is False
+            and child.get("network_order_test_performed") is False and child.get("phase") == "T_MINUS_10"):
+        status = child.get("status")
+        red = _preopen_red_summary(child)
+        if (status in ("GREEN", "PAUSED_NO_GO") and exit_code == 0) or (red is not None and exit_code == 2):
+            gate = child.get("paper_admission_receipt")
+            result = gate.get("status") if isinstance(gate, dict) else None
+            go = (result == "GO_PAPER_SCALPING" and status == "GREEN"
+                  and gate.get("candidate_sha") == current["source_sha"]
+                  and gate.get("trade_day_ar") == local.date().isoformat())
+            if result == "NO_GO_PAPER_SCALPING" or go:
+                receipt["admission_result"] = result
+            receipt.update(red or {}, state=status, generated_at=generated.isoformat())
+            receipt.pop("reason")
+    write_json(identity.state / PREOPEN_T10_FILE, receipt)
 
 
 def read_release_revalidation(output, code):
@@ -303,9 +345,21 @@ def publish_validation(manager, current, root, identity):
     return entry
 
 
-def run_iol_job(unit, root, identity, current, *, verify_rest=False, run=subprocess.run):
-    from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SOURCE
-    from scripts.rc6_source_cycle_dispatch import phase_status, run_cycle
+def _observer_iol_job(manager, current, arguments, *, timeout):
+    require(manager.check_role(current, "observer")["State"].get("Running") is True,
+            "SCHEDULER_RUNTIME_STOPPED")
+    return manager.docker.command_result("container", "exec",
+        "--env", "POROTA_IOL_SHADOW_MODE=OBSERVE_ONLY",
+        "--env", "POROTA_IOL_SHADOW_SCOPE=AUDIT_ALL",
+        "--env", "POROTA_IOL_SHADOW_ROOT=/app/data/market",
+        "--env", "POROTA_IOL_OPERATIONAL_DB=/app/data/paper_v17/observer_v17.db",
+        current["roles"]["observer"], "python", "-B", "-m", "scripts.rc6_iol_shadow_collect",
+        *arguments, timeout=timeout)
+
+
+def run_iol_job(unit, root, identity, current, *, manager, verify_rest=False, run=subprocess.run):
+    from iol_rest_readonly_rc6 import SOURCE
+    from scripts.rc6_source_cycle_dispatch import run_cycle
 
     db = root / DB_RELATIVE
     sealed_db = current.get("database")
@@ -315,21 +369,26 @@ def run_iol_job(unit, root, identity, current, *, verify_rest=False, run=subproc
                "POROTA_IOL_SHADOW_SCOPE": "AUDIT_ALL", "PYTHONDONTWRITEBYTECODE": "1",
                "PYTHONPATH": str(source_directory(identity, current))}
         cycle = run_cycle(db=db, market_root=root / "data/market", lock=identity.state / "iol-source-cycle.lock",
-                          release_database=sealed_db, environment=env, runner=run)
+                          release_database=sealed_db, environment=env, runner=run,
+                          iol_runner=lambda *, timeout: _observer_iol_job(manager, current, (), timeout=timeout))
         code = 0 if cycle["status"] in {"NOT_DUE", "COMPLETE"} else 2
         return {"source": SOURCE, "source_cycle": cycle, "exit_code": code}
 
-    late, _ = phase_status(datetime.now(timezone.utc), "late_source")
-    client = IOLRestReadOnly(identity.state / "iol-rest", config=root / ".env", allow_renew=not late)
+    args = ("--oauth-health", "--verify-rest") if verify_rest else ("--oauth-health",)
+    child = _observer_iol_job(manager, current, args, timeout=15)
     try:
-        client.authenticate()
-        if verify_rest:
-            asset = client.call("get_asset_info", {"symbol": "GD30", "market": "BCBA"})
-            require(asset["type"] == "BONOS" and asset["currency"] == "ARS" and asset["term"] == "T1",
-                    "IOL_REST_REFERENCE_IDENTITY_UNVERIFIED")
-    except IOLRestError as exc:
-        return {"source": SOURCE, "result": str(exc), "http_status": exc.status_code, "exit_code": 2}
-    return {"source": SOURCE, "result": "REFERENCE_GD30_VERIFIED" if verify_rest else "AUTHENTICATED", "exit_code": 0}
+        payload = json.loads(child.stdout)
+    except (ValueError, TypeError):
+        payload = None
+    expected = "REFERENCE_GD30_VERIFIED" if verify_rest else "AUTHENTICATED"
+    if isinstance(payload, dict) and child.returncode == 0 and payload == {"result": expected}:
+        return {"source": SOURCE, "result": expected, "exit_code": 0}
+    reason = payload.get("result") if isinstance(payload, dict) else None
+    status = payload.get("http_status") if isinstance(payload, dict) else None
+    if child.returncode == 2 and isinstance(reason, str) and re.fullmatch(r"IOL_[A-Z0-9_]{1,100}", reason):
+        return {"source": SOURCE, "result": reason,
+                "http_status": status if type(status) is int and 100 <= status <= 599 else None, "exit_code": 2}
+    return {"source": SOURCE, "result": "IOL_GATEWAY_HEALTH_RECEIPT_UNVERIFIED", "exit_code": 2}
 
 
 def host_job_environment(root, identity, current, source):
@@ -388,7 +447,7 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
             if unit == POSTCLOSE:
                 commands_result.append(publish_validation(manager, current, root, identity))
         elif unit in IOL_JOBS:
-            result = run_iol_job(unit, root, identity, current, verify_rest=verify_rest, run=run)
+            result = run_iol_job(unit, root, identity, current, manager=manager, verify_rest=verify_rest, run=run)
             commands_result = [result]
             if (unit == IOL_HEALTH and not verify_rest and current.get("market_provider") == "IOL_REST"
                     and result["exit_code"] == 0 and iol_recovery_due(identity.operator, now=datetime.now(timezone.utc))):
@@ -414,10 +473,23 @@ def run_job(unit, *, root=Path("/opt/porota-trading"), identity=None, verify_res
                 # The child already emits a typed JSON receipt and exit 2 for RED.
                 # Keep its complete output private; journal only allowlisted metadata.
                 with tempfile.TemporaryFile(dir=identity.state) as output:
-                    result = run(command, cwd=root, env=env, check=False, stdout=output,
-                                 stderr=subprocess.DEVNULL, timeout=600)
+                    started = datetime.now(timezone.utc)
+                    try:
+                        result = run(command, cwd=root, env=env, check=False, stdout=output,
+                                     stderr=subprocess.DEVNULL, timeout=600)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            persist_scheduled_t10(identity, current, started, None, 124)
+                        except (OSError, Hold):
+                            pass  # The diagnostic cannot change the admission result.
+                        raise
+                    child = _read_preopen_child(output)
+                    try:
+                        persist_scheduled_t10(identity, current, started, child, result.returncode)
+                    except (OSError, Hold):
+                        pass
                     if result.returncode != 0:
-                        receipt = read_preopen_red_receipt(output) if result.returncode == 2 else None
+                        receipt = _preopen_red_summary(child) if result.returncode == 2 else None
                         signature = ("PREOPEN_RED_CHECKS" if receipt is not None else
                                      "PREOPEN_CHILD_RECEIPT_UNVERIFIED" if result.returncode == 2 else
                                      "PREOPEN_CHILD_EXIT_" + str(result.returncode)

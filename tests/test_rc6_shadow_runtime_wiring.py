@@ -13,6 +13,7 @@ from bf_production_paper_observer import _support_schema
 from cf_intraday_scalping import init_schema
 from rc6_dynamic_universe.common import digest, identity
 from rc6_shadow_runtime.persistence import EvidenceFiles
+from rc6_shadow_runtime.timing import PUBLICATION_HISTORY_FILE
 from rc6_shadow_runtime.worker import (ShadowRuntime, session_context, run_worker,
     durable_report_view, durable_checkpoint_view)
 
@@ -74,6 +75,12 @@ def test_worker_real_runtime_calls_framework_freezes_and_restarts_without_source
     restarted = ShadowRuntime(store.path, evidence_root=tmp_path / "shadow", source_roots=[])
     again = restarted.tick(PRE + timedelta(seconds=30))
     assert again["checkpoint_reused"] and snapshot(restarted)[1] == frozen
+    with restarted.files as files:
+        samples = files.read(PUBLICATION_HISTORY_FILE)['observations']
+        assert len(samples) == 1
+        assert samples[0]['generation_id'] == files.read('CURRENT.json')['generation_id']
+        assert samples[0]['source_as_of'] == (PRE + timedelta(seconds=30)).isoformat()
+        assert 'events_recorded' in samples[0]['funnel']['counts']
     assert not list((tmp_path / "shadow").glob("*.tmp"))
 
 

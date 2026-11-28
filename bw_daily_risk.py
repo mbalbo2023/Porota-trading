@@ -144,16 +144,18 @@ class DailyRisk:
                 opened_rows,closed_rows = self.broker._positions_at(at,c)
                 rows = [p for p in opened_rows+closed_rows if p['currency']==currency]
                 cauciones = self.broker.cauciones.positions(currency=currency,connection=c)
-                from rc6_paper_family_lifecycle import future_risk_snapshot
+                from rc6_paper_family_lifecycle import fund_risk_snapshot, future_risk_snapshot
                 future_before = future_risk_snapshot(
                     self.store, currency, start, connection=c,
                     max_mark_age_seconds=self.broker.quote_max_age_seconds, exclusive=True)
                 future_now = future_risk_snapshot(
                     self.store, currency, at, connection=c,
                     max_mark_age_seconds=self.broker.quote_max_age_seconds)
+                fund_before = fund_risk_snapshot(self.store, currency, start, connection=c, exclusive=True)
+                fund_now = fund_risk_snapshot(self.store, currency, at, connection=c)
                 before = realized = today_realized = unrealized = ZERO
-                carry = bool(future_before["carry"] or future_before["stale"])
-                stale = bool(future_now["stale"] or future_now["carry"])
+                carry = future_before["carry"] or future_before["stale"] or fund_before["unpriced"]
+                stale = future_now["stale"] or future_now["carry"] or fund_now["stale"]
                 for p in rows:
                     opened = aware_datetime(p['opened_at'])
                     closed = aware_datetime(p['closed_at']) if p['closed_at'] else None
@@ -226,6 +228,10 @@ class DailyRisk:
                 realized += future_now["realized"]
                 today_realized += future_now["realized"] - future_before["realized"]
                 unrealized += future_now["unrealized"]
+                before += fund_before["realized"] + fund_before["unrealized"]
+                realized += fund_now["realized"]
+                today_realized += fund_now["realized"] - fund_before["realized"]
+                unrealized += fund_now["unrealized"]
                 candidate = capital + before + sum((caucion_pnl(p,start,exclusive=True) for p in cauciones),ZERO)
                 baseline = ((Decimal(previous['baseline_equity']) if previous['baseline_equity'] is not None else None)
                             if previous else candidate if not carry else None)
@@ -237,7 +243,7 @@ class DailyRisk:
                 if capital != saved_capital or (previous and Decimal(previous['limit_pct']) != self.limit_pct):
                     state, detail = 'CONFIG_CHANGED', 'Capital cambiado o límite cambiado durante el día; requiere conciliación'
                 elif baseline is None:
-                    state, detail = 'BASELINE_UNAVAILABLE', 'Carry spot/futuro sin conciliación de inicio de día; no se inventa base'
+                    state, detail = 'BASELINE_UNAVAILABLE', 'Posiciones al inicio del día sin base conciliada'
                 elif baseline <= 0 or capital <= 0:
                     state, detail = 'NO_CAPITAL', 'Sin base positiva en esta moneda'
                 else:
@@ -255,7 +261,9 @@ class DailyRisk:
                             due_at=COALESCE(paper_exit_intents.due_at,excluded.due_at),
                             supervised_at=excluded.supervised_at''', (latched,latched,currency))
                     if stale:
-                        state, detail = 'STALE_MARKS', 'Faltan libros vigentes; PnL diario actual desconocido'
+                        state, detail = 'STALE_MARKS', 'Faltan libros o valores cuota vigentes; PnL diario actual desconocido'
+                    if future_now["margin_deficit"]:
+                        state, detail = 'MARGIN_DEFICIT', 'La garantía reservada es inferior al requisito PAPER'
             except (ValueError,TypeError,ArithmeticError) as exc:
                 state, detail = 'INVALID_LEDGER', type(exc).__name__
             if latched:

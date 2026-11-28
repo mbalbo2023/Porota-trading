@@ -1072,23 +1072,20 @@ def evaluate_candidate(store, record, *, at, iol_windows=None):
             long = sum(prices[-15:]) / 15
             momentum = short / long - 1
             observed_range = max(prices[-15:]) / min(prices[-15:]) - 1
-            from rc6_performance.costs import paper_cost_contract
-            costs = paper_cost_contract(executable_quote.asset_class, executable_quote.currency, at,
-                symbol=executable_quote.symbol, market=executable_quote.market,
-                settlement=executable_quote.settlement)
+            from rc6_performance.costs import ledger_leg_rate, paper_quote_cost_contract
+            costs = paper_quote_cost_contract(executable_quote, at)
             exact_etf = costs.family == "ETFS"
             net_margin = Decimal(os.getenv("PAPER_SCALPING_MIN_NET_MARGIN", "0.005"))
             modeled_roundtrip = spread + Decimal("0.0004")
-            if exact_etf:
+            if exact_etf or iol:
                 economics["cost_contract"] = costs.diagnostic()
                 if cost_error := costs.binding_error(at):
                     raise ValueError(cost_error)
+            if exact_etf:
                 economics.update(quantity_pending=True, minimum_net_margin_fraction=str(net_margin))
             else:
-                import au_fee_schedule
-                one_leg = Decimal(str(au_fee_schedule.costo_por_tramo(
-                    family_name(record["instrument_type"]), currency=record["currency"])))
-                # Preserve the legacy per-leg fee model for the existing spot screen.
+                one_leg = (costs.linear_leg_rate(decision_at=at) if iol else
+                           ledger_leg_rate(family_name(record["instrument_type"]), currency=record["currency"]))
                 modeled_roundtrip = one_leg * 2 + spread + Decimal("0.0004")
                 economics["modeled_roundtrip_fraction"] = str(modeled_roundtrip)
             required_move = modeled_roundtrip + net_margin
@@ -1290,6 +1287,16 @@ def promote_paper_candidate(store, record, *, at):
                 [[points[-1]["interval_start"], points[-1]["start_receipt"], points[-1]["end_receipt"]]]):
             return "IOL_SCALPING_WINDOW_CHANGED"
     economics = json.loads(candidate["economics_json"] or "{}")
+    if iol:
+        from rc6_performance.costs import paper_quote_cost_contract
+
+        try:
+            frozen_costs = native["inputs_used"]["economics"]["cost_contract"]
+            if (frozen_costs != economics.get("cost_contract")
+                    or frozen_costs != paper_quote_cost_contract(q, at).diagnostic()):
+                return "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION"
+        except (ValueError, TypeError, KeyError, ArithmeticError, AttributeError):
+            return "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION"
     # Range screening is retrospective; the shared broker recomputes actual
     # net reward/risk for its Stop/TP and complete PAPER cost contract.
     economics.update(binding=True, execution_enabled=False, model="SCALPING_EVENT_RANGE_SCREEN_V1")

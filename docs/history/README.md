@@ -30,11 +30,50 @@ no constituyen dependencias del runtime. Las URLs de procedencia fijadas a otro
 SHA siguen resolviendo sus originales. No se modifican esos manifiestos ni datos.
 
 El checkpoint `POROTA_TRADING_CHECKPOINT_CANONICO_RC6_2026-09-05.md` permanece
-en su ruta por compatibilidad con cuatro scripts históricos que lo leen o editan;
-su banner lo identifica como histórico. No debe volver a usarse como bootstrap.
+en su ruta por compatibilidad con `scripts/rc6_shadow_selftest.py`.
+Su banner lo identifica como histórico.
 SECURITY y las referencias técnicas de evidencia contractual/runtime permanecen.
 La política YAML deja de contener un baseline de despliegue fechado; su versión
 anterior está [preservada en Git](https://github.com/mbalbo2023/Porota-trading/blob/0e7577fc6112406794ffbc392c902904481f8ca0/ops/policy/porota-policy.yaml).
+
+## Prueba histórica de A3 read-only
+
+El [módulo que estaba en la raíz](retired-tests/test_a3_primary_readonly_hf6.py.txt)
+ya se excluía de pytest por colisión de nombre. Se conserva íntegro como texto.
+El [contrato vigente](../../tests/test_a3_primary_readonly_hf6.py) sigue en la
+colección automática. La [exclusión anterior](https://github.com/mbalbo2023/Porota-trading/blob/373c1e985590cd5bd0b4fbc80f389eaa2e7d5a5e/ops/policy/test-policy.yaml#L40)
+documenta el motivo y el sucesor.
+
+## Código retirado del árbol activo
+
+Se archivaron 17 transformaciones puntuales y una vista que sólo invocaba uno
+de esos aplicadores. Se revisaron
+los nombres y rutas en los árboles productivo y de control, incluidos imports,
+invocaciones de comandos, systemd, workflows, manifiestos y pruebas. Las referencias
+entre los aplicadores SHADOW se retiraron juntas. La ruta histórica de
+`.github/workflows/rc6_apply_patch.py` se conserva como nombre sintético en
+fixtures que crean su propio archivo temporal.
+
+| Archivo original | Función histórica | Versión preservada |
+|---|---|---|
+| `.github/workflows/rc6_apply_patch.py` | Parche puntual de fuentes del dashboard y fixtures de ledger. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/.github/workflows/rc6_apply_patch.py) |
+| `scripts/rc6_apply_audit_p0_small_fixes.py` | Aplicador de ajustes de la auditoría RC5–RC6. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_audit_p0_small_fixes.py) |
+| `scripts/rc6_apply_runtime_safety_fixes.py` | Transformación puntual de guardas del runtime RC6. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_runtime_safety_fixes.py) |
+| `scripts/rc6_apply_scalping_intraday_policy.py` | Aplicador de la política de minuto mutable y sesión de scalping. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_scalping_intraday_policy.py) |
+| `scripts/rc6_apply_shadow_policy_and_checkpoint.py` | Primera edición puntual de política SHADOW y checkpoint. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_shadow_policy_and_checkpoint.py) |
+| `scripts/rc6_apply_shadow_policy_v2.py` | Segunda edición puntual de semántica y documentación SHADOW. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_shadow_policy_v2.py) |
+| `scripts/rc6_apply_shadow_policy_v3.py` | Tercera edición puntual de política SHADOW y checkpoint. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_apply_shadow_policy_v3.py) |
+| `scripts/rc6_checkpoint_add_p0_dashboard_truth.py` | Inserción puntual del apartado de veracidad del dashboard. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_checkpoint_add_p0_dashboard_truth.py) |
+| `scripts/rc6_patch_history_partial_semantics.py` | Aplicador de semántica histórica para lotes parciales. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_patch_history_partial_semantics.py) |
+| `scripts/rc6_remove_active_rc4_policy_dependency.py` | Edición puntual de referencias de la política de aprendizaje RC4. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_remove_active_rc4_policy_dependency.py) |
+| `scripts/rc6_wire_dashboard_table_layout.py` | Inserción puntual de la extensión de layout del dashboard. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_dashboard_table_layout.py) |
+| `scripts/rc6_wire_dashboard_truth.py` | Inserción puntual de la extensión de veracidad del dashboard. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_dashboard_truth.py) |
+| `scripts/rc6_wire_shadow_validation_view.py` | Inserción puntual de la vista de validación SHADOW. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_shadow_validation_view.py) |
+| `scripts/rc6_wire_telegram_policy.py` | Inserción puntual de la política de entrega de Telegram. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_telegram_policy.py) |
+| `scripts/rc6_wire_validation_dashboard.py` | Inserción puntual de la extensión del dashboard de validación. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/scripts/rc6_wire_validation_dashboard.py) |
+| `tools/rc6_wave18_strip_auto_rollback.py` | Edición puntual del trap de despliegue de Wave 18. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/tools/rc6_wave18_strip_auto_rollback.py) |
+| `tools/rc6_wave4_definitive_patch.py` | Aplicador puntual de históricos y arranque de Wave 4. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/d79ddac513a900496265750d47d367c34a5e64de/tools/rc6_wave4_definitive_patch.py) |
+| `ev_shadow_validation_view_rc6.py` | Vista que sólo referenciaba el aplicador retirado `rc6_wire_shadow_validation_view.py`. El aprendizaje vigente usa `et_shadow_learning_rc6` desde el dashboard y el auditor de datos. | [Git](https://github.com/mbalbo2023/Porota-trading/blob/373c1e985590cd5bd0b4fbc80f389eaa2e7d5a5e/ev_shadow_validation_view_rc6.py) |
 
 ## Registros y planes de raíz (103)
 

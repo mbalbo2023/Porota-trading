@@ -205,7 +205,9 @@ class FamilyIntegration(unittest.TestCase):
 
     def test_canonical_book_rejects_option_without_atomic_recorded_buy(self):
         self.seed_underlying()
-        action, score, _, features = self.broker.decide(option_quote())
+        quote = option_quote()
+        self.store.add_quote(quote)
+        action, score, _, features = self.broker.decide(quote)
         self.assertEqual(action, "BUY")
         broker = PaperBroker(
             self.store, initial_cash="1000000", risk_pct="0.01",
@@ -215,14 +217,14 @@ class FamilyIntegration(unittest.TestCase):
             admission_guard=lambda _quote, _store: (True, ""))
         with (patch("cg_paper_workspace.database_path", return_value=Path(self.store.path)),
               patch("rc6_paper_admission_gate.admission_status", return_value=(True, ""))):
-            opened, reason, _ = broker._open(option_quote(), score, features)
+            opened, reason, _ = broker._open(quote, score, features)
             self.assertFalse(opened)
             self.assertEqual(reason, "PAPER_SPECIALIZED_DECISION_KEY_MISMATCH")
             self.assertEqual(self.store.open_positions(), [])
             # The native on_quote path records its strategy-identified BUY
             # before entering the locked ledger, unlike the direct bypass.
             self.seed_underlying(settlement="INMEDIATA")
-            broker.on_quote(option_quote())
+            broker.on_quote(quote)
             rows = broker.store.open_positions()
             self.assertEqual(len(rows), 1)
             self.assertEqual(D(rows[0]["quantity"]), D("1"))

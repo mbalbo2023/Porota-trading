@@ -282,7 +282,8 @@ def _child_environment(market_root: Path, db: Path, environment=None) -> dict[st
 
 def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
               market_root: Path = DEFAULT_MARKET_ROOT, lock: Path = DEFAULT_LOCK,
-              runner=subprocess.run, release_database: dict | None = None, environment=None) -> dict:
+              runner=subprocess.run, iol_runner=None, release_database: dict | None = None,
+              environment=None) -> dict:
     now = now or datetime.now(timezone.utc)
     regular, reason = phase_status(now, "open")
     late, _ = phase_status(now, "late_source")
@@ -319,9 +320,12 @@ def run_cycle(*, now: datetime | None = None, db: Path = DEFAULT_DB,
             output_path = market_root / output
             before_publication = _published_file_identity(output_path)
             try:
-                result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
-                                env=child_env, capture_output=True, text=True,
-                                timeout=timeout, check=False)
+                if name == "iol" and iol_runner is not None:
+                    result = iol_runner(timeout=timeout)
+                else:
+                    result = runner([sys.executable, str(ROOT / relative)], cwd=str(ROOT),
+                                    env=child_env, capture_output=True, text=True,
+                                    timeout=timeout, check=False)
             except (OSError, subprocess.TimeoutExpired):
                 results[name] = "EXECUTION_UNVERIFIED"
                 continue

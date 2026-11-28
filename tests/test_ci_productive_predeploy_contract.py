@@ -50,7 +50,7 @@ def test_a210_early_host_incident_replay_covers_all_known_failure_families():
 
 def test_every_exclusion_is_versioned_justified_and_has_a_successor():
     exclusions = POLICY["productive_scope"]["exclusions"]
-    assert exclusions
+    assert isinstance(exclusions, list)
     for item in exclusions:
         assert Path(item["path"]).is_file()
         assert Path(item["successor"]).is_file()

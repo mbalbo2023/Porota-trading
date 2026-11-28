@@ -933,10 +933,13 @@ def observe_iol_owner(database):
                 ReadOnlyUnixFeedServer.process_starttime(pid) != tick):
             return None
         registered[role] = pid
+    configured = owner.get("trade_stream_configured")
+    if "trade_stream_configured" not in owner:
+        configured = owner.get("trade_stream_state") in {
+            "WAITING_FOR_SCANNER", "CONNECTING", "SUBSCRIBED", "WAITING_FOR_RECONNECT"}
     return {"owner_pid": owner["owner_pid"], "registered": registered,
             "authenticated": owner.get("authenticated") is True, "wire_attempts": owner.get("wire_attempts"),
-            "trade_stream_configured": owner.get("trade_stream_state") in {
-                "WAITING_FOR_SCANNER", "CONNECTING", "SUBSCRIBED", "WAITING_FOR_RECONNECT"}}
+            "trade_stream_configured": configured is True}
 
 
 RUNTIME_PROBE = '''import json,os,sqlite3
@@ -1223,6 +1226,11 @@ class Host:
         self.receipt.update({key: release[key] for key in ("source_sha", "source_tree", "image_id")})
         self.receipt.update(download)
         self.receipt["attempt"] = attempt
+        phases = self.receipt["deployment_phases"] = {
+            "physical_installation": {"state": "NO_VERIFICADO"},
+            "initial_health": {"state": "NO_VERIFICADO"},
+            "integral_audit": {"state": "NO_VERIFICADO", "reason": "ACTIONS_POSTFLIGHT_PENDING"},
+        }
         private_dir(self.identity.state)
         wait_seconds = DEPLOY_LOCK_WAIT_SECONDS if transition is None else 0
         with user_lock(self.identity.state / "deploy.lock", wait_seconds=wait_seconds):
@@ -1323,11 +1331,14 @@ class Host:
                         guard()
                     self.check_role(self.receipt, role)
                     self.docker.call("container", "start", self.receipt["roles"][role])
+                phases["physical_installation"]["containers_started_at"] = datetime.now(timezone.utc).isoformat()
                 self.receipt["phase"] = "POSTFLIGHT"
+                write_json(journal, self.receipt)
                 self.receipt["health"] = self.postflight(self.receipt, started, guard=guard)
                 if guard:
                     guard()
                 require(database_snapshot(self.root / DB_RELATIVE) == before, "DATABASE_CHANGED_IDENTITY")
+                phases["initial_health"].update(state="VALIDADO_RUNTIME", observed_at=datetime.now(timezone.utc).isoformat())
                 if host_sources:
                     self.receipt["phase"] = "PRESERVED_HOST_SOURCES"
                     self.receipt["preserved_host_sources"] = install_preserved_sources(host_sources)
@@ -1340,6 +1351,7 @@ class Host:
                         self.receipt["cleanup_pending"]["market_provider"] = current["market_provider"]
                 publish_release_marker(self.root, release, validated=True, manifest=manifest, download=download,
                                        provider=provider)
+                phases["physical_installation"].update(state="DESPLEGADO", observed_at=datetime.now(timezone.utc).isoformat())
                 write_json(current_path, self.receipt)
                 committed = True
                 self.receipt["phase"] = "CLEANUP"
@@ -1358,6 +1370,13 @@ class Host:
             except Exception as exc:
                 self.receipt.update({"state": "VALIDADO_RUNTIME" if committed else "NO_VERIFICADO", **failure_evidence(exc),
                                      "transition_started": transitioned, "action": "FIX_FORWARD_ONLY"})
+                ended = datetime.now(timezone.utc).isoformat()
+                if not committed:
+                    phases["physical_installation"].update(state="BLOQUEADO", observed_at=ended,
+                                                          reason=self.receipt["failure_signature"])
+                if self.receipt["phase"] == "POSTFLIGHT" and phases["initial_health"]["state"] != "VALIDADO_RUNTIME":
+                    phases["initial_health"].update(state="BLOQUEADO", observed_at=ended,
+                                                    reason=self.receipt["failure_signature"])
                 self.receipt["cleanup"] = {"state": "INCOMPLETE", "reclaimed_bytes": 0}
                 if committed:
                     # Housekeeping failure cannot tear down the validated replacement.

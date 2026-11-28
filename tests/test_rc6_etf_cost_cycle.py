@@ -149,6 +149,42 @@ def test_etf_policy_cannot_change_between_sizing_and_the_fill_transaction(book, 
     assert store.open_position("MERV") is None
 
 
+def test_iol_spot_fills_preserve_paper_cost_after_configuration_changes(book, monkeypatch):
+    store, clock = book
+    active = broker(store, clock, intraday_fee_rebate=False)
+    entry = replace(quote(), symbol="GGAL", metadata_source="IOL_REST")
+    store.add_quote(entry)
+    features = {}
+    assert active.admit_paper_candidate(entry, D(".9"), features)[0]
+    position = store.open_position(entry.symbol)
+    original = costs.VersionedPaperCostContract.from_diagnostic(features["economics"]["cost_contract"])
+    assert original.diagnostic()["tariff_provenance"]["iol_tariff_evidence"] == "NO_VERIFICADO"
+
+    monkeypatch.setenv("FEE_ACCIONES_COMISION", "0.2")
+    restarted = broker(engine.PaperStore(store.path), clock, intraday_fee_rebate=True)
+    prospective = restarted._economic_diagnostics(entry)
+    assert not prospective["passed"]
+    assert D(prospective["net_reward_per_unit"]) < D(features["economics"]["net_reward_per_unit"])
+    assert prospective["cost_contract"]["tariff_provenance"]["assumption_basis"] == "PAPER_COMPONENT_OVERRIDES"
+    assert prospective["cost_contract"]["tariff_provenance"]["tariff_provider"] == "NO_VERIFICADO"
+
+    exit_cases = [("110", "200"), ("98", "1000")]
+    for price, size in exit_cases:
+        clock[0] += timedelta(minutes=1)
+        exit_q = replace(quote(clock[0], bid=price, ask=str(D(price) + D("0.1")), size=size),
+                         symbol=entry.symbol, metadata_source="IOL_REST")
+        assert restarted._close(restarted.store.open_position(entry.symbol), exit_q, "SYNTHETIC_EXIT")
+    with store.connect() as db:
+        fills = [dict(row) for row in db.execute("SELECT * FROM paper_fills ORDER BY id")]
+        closed = dict(db.execute("SELECT * FROM paper_positions WHERE paper_id=?", (position["paper_id"],)).fetchone())
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+    assert [row["side"] for row in fills] == ["BUY_SIMULATED", "SELL_SIMULATED", "SELL_SIMULATED"]
+    for fill in fills:
+        notional = D(fill["price"]) * D(fill["quantity"])
+        assert D(fill["costs"]) == original.leg_cost(notional, decision_at=fill["filled_at"])
+    assert costs.realized_round_trip_cost(closed, fills)["costs"] == sum(D(row["costs"]) for row in fills)
+
+
 @pytest.mark.parametrize("commission,expected", [(".001", "OPENED_SIMULATED"),
     (".05", "BLOCKED:ECONOMICS_BINDING_RANGE_BELOW_COST")])
 def test_scalping_etf_range_waits_for_exact_sized_cost(book, monkeypatch, commission, expected):

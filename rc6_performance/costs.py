@@ -20,6 +20,14 @@ _COST_COMPONENTS = ("commission", "rights", "clearing", "premium_rights", "vat",
                     "commission_vat", "rights_vat", "clearing_vat", "premium_rights_vat",
                     "minimum_commission", "rebate_policy", "fee_currency", "fx_rate", "fx_source",
                     "fee_quantum", "rounding")
+_IOL_DATA_CHANNEL = "IOL_REST"
+_IOL_PAPER_FEE_BASES = frozenset({"HISTORICAL_PPI_PUBLIC_ASSUMPTIONS", "PAPER_COMPONENT_OVERRIDES",
+                                "LOCAL_ETF_TARIFF_UNVERIFIED"})
+
+
+def _policy_digest(payload):
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     allow_nan=False).encode()).hexdigest()
 
 
 def ledger_leg_rate(family, *, currency=None, rebated=False):
@@ -123,6 +131,8 @@ class VersionedPaperCostContract:
     rounding: str | None
     scope: str = "EXPLICIT_PAPER_ASSUMPTIONS"
     account_terms: str = "NO_VERIFICADO"
+    market_data_identity: tuple[str, str, str, str, str] | None = None
+    fee_assumption_basis: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "family", family_name(self.family))
@@ -150,6 +160,16 @@ class VersionedPaperCostContract:
             raise ValueError("COST_REBATE_POLICY_INVALID")
         if self.rounding not in {None, "ROUND_HALF_EVEN"}:
             raise ValueError("COST_ROUNDING_POLICY_INVALID")
+        if self.market_data_identity is not None or self.fee_assumption_basis is not None:
+            key = self.market_data_identity
+            if (type(key) is not tuple or len(key) != 5
+                    or any(not isinstance(value, str) or not value for value in key)
+                    or key[1] not in SPOT_LEDGER_FAMILIES or key[3] != self.currency
+                    or (key[1] != self.family and not is_local_merv_listing(
+                        key[1], key[3], symbol=key[0], market=key[2], settlement=key[4]))
+                    or self.fee_assumption_basis not in _IOL_PAPER_FEE_BASES
+                    or self.account_terms != "NO_VERIFICADO"):
+                raise ValueError("COST_PROVENANCE_CONTEXT_INVALID")
 
     def binding_error(self, decision_at):
         if self.scope != "EXPLICIT_PAPER_ASSUMPTIONS" or not self.policy_version or not self.source:
@@ -194,6 +214,13 @@ class VersionedPaperCostContract:
     def leg_cost(self, notional, *, decision_at, rebated=False):
         components = self.leg_components(notional, decision_at=decision_at, rebated=rebated)
         return sum(components.values(), ZERO).quantize(self.fee_quantum, rounding=ROUND_HALF_EVEN)
+
+    def linear_leg_rate(self, *, decision_at, rebated=False):
+        """Eight-place sensitivity of a proportional PAPER schedule."""
+        if self.minimum_commission != ZERO or self.tiers:
+            raise ValueError("COST_PROPORTIONAL_SENSITIVITY_UNAVAILABLE")
+        components = self.leg_components(Decimal(1), decision_at=decision_at, rebated=rebated)
+        return sum(components.values(), ZERO).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_EVEN)
 
     def sale_cost(self, *, buy_notional, sell_notional, buy_quantity, sell_quantity,
                   sold_quantity=ZERO, bought_at, decision_at, intraday_eligible=False):
@@ -275,8 +302,18 @@ class VersionedPaperCostContract:
                     "fee_currency": "SAME_AS_SIMULATED_LEDGER",
                     "account_tariff_margin_statement": "EXTERNAL_NO_VERIFICADO"},
                 "personal_taxes": "OUT_OF_SCOPE"}
-        result["policy_sha256"] = hashlib.sha256(json.dumps(
-            result, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        if self.market_data_identity is not None:
+            base_digest = _policy_digest(result)
+            public = self.fee_assumption_basis == "HISTORICAL_PPI_PUBLIC_ASSUMPTIONS"
+            result.update(schema_version=2, schedule_sha256=base_digest,
+                market_data={"provider": "IOL", "channel": _IOL_DATA_CHANNEL,
+                             "identity": list(self.market_data_identity)},
+                tariff_provenance={"assumption_basis": self.fee_assumption_basis,
+                    "tariff_provider": "PPI" if public else "NO_VERIFICADO",
+                    "tariff_channel": "PUBLIC_TARIFF" if public else "NO_VERIFICADO",
+                    "simulation_channel": "PAPER", "iol_tariff_evidence": "NO_VERIFICADO",
+                    "account_segment": "NO_VERIFICADO", "account_channel": "NO_VERIFICADO"})
+        result["policy_sha256"] = _policy_digest(result)
         return result
 
     @classmethod
@@ -288,6 +325,9 @@ class VersionedPaperCostContract:
                 "scope", "account_terms")}
             terms.update({name: payload["components"][name] for name in _COST_COMPONENTS})
             tiers = payload["tiers"]
+            if payload["schema_version"] == 2:
+                terms["market_data_identity"] = tuple(payload["market_data"]["identity"])
+                terms["fee_assumption_basis"] = payload["tariff_provenance"]["assumption_basis"]
             contract = cls(**terms, tiers=None if tiers is None else tuple(FeeTier(**tier) for tier in tiers))
             if contract.diagnostic() != payload:
                 raise ValueError("noncanonical cost snapshot")
@@ -310,7 +350,8 @@ def local_etf_reference_keys(at):
     return tuple(("MERV", "ETFS", "BYMA", "ARS", term) for term in MERV_LISTED_TERMS)
 
 
-def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=None, settlement=None):
+def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=None, settlement=None,
+                        market_data_channel=None):
     """Current versioned PAPER schedule; not an authenticated account tariff."""
     import au_fee_schedule as schedule
     family = family_name(family)
@@ -318,6 +359,7 @@ def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=No
         raise ValueError("FAMILY_ECONOMICS_NOT_VALIDATED")
     at = aware_datetime(decision_at)
     currency = cash_currency(currency)
+    observed_identity = (symbol, family, market, currency, settlement) if market_data_channel == _IOL_DATA_CHANNEL else None
     # BYMA's 03/11/2026 launch and the Fima gForce MSCI Merval FCIA ETF
     # fact sheet identify the ARS secondary listing MERV at T+0 and T+1.
     # Select its economic class separately from PPI's instrument/search key.
@@ -354,6 +396,15 @@ def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=No
         version = "POROTA_PAPER_PUBLIC_TARIFF_COMPONENTS_V2"
         known_at = "2026-10-26T19:12:00Z"
         source = "PAPER:PPI_PUBLIC_2026-07-01:OBSERVED_2026-10-26:BYMA_RIGHTS_UNVERIFIED:ACCOUNT_UNVERIFIED"
+    assumption_basis = None
+    if observed_identity is not None:
+        if local_ars_etf:
+            assumption_basis = "LOCAL_ETF_TARIFF_UNVERIFIED"
+        else:
+            baseline = schedule.LETRAS_DOLARES if unbound_dollar_rights else schedule.ARANCELES[family]
+            assumption_basis = ("HISTORICAL_PPI_PUBLIC_ASSUMPTIONS"
+                if fee == baseline and number(schedule.IVA_PCT) == Decimal("0.21")
+                else "PAPER_COMPONENT_OVERRIDES")
     contract = VersionedPaperCostContract(
         family=family, currency=currency,
         policy_version=version, effective_at=effective_at, known_at=known_at, source=source,
@@ -371,12 +422,19 @@ def paper_cost_contract(family, currency, decision_at, *, symbol=None, market=No
         rebate_policy=(None if local_ars_etf else rebate_policy),
         fee_currency=cash_currency(currency), fx_rate=Decimal("1"),
         fx_source="IDENTITY_SAME_SIMULATED_LEDGER_CURRENCY",
-        fee_quantum=Decimal("0.01"), rounding="ROUND_HALF_EVEN")
+        fee_quantum=Decimal("0.01"), rounding="ROUND_HALF_EVEN",
+        market_data_identity=observed_identity, fee_assumption_basis=assumption_basis)
     # Callers persist this result and enforce it in their canonical admission.
     # Constructing diagnostics on an early cut is permitted; it never bypasses
     # binding_error's exact known/effective clocks.
     contract.binding_error(at)
     return contract
+
+
+def paper_quote_cost_contract(quote, decision_at):
+    return paper_cost_contract(quote.asset_class, quote.currency, decision_at,
+                               symbol=quote.symbol, market=quote.market, settlement=quote.settlement,
+                               market_data_channel=quote.metadata_source)
 
 
 def paper_fee_model(family):

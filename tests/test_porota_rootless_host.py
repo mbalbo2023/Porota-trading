@@ -61,6 +61,26 @@ class RootlessContracts(unittest.TestCase):
         self.assertEqual(len(host.CONTROLLER_CHILDREN), 8)
         self.assertIn("ppi_gateway", host.CONTROLLER_CHILDREN)
 
+    def test_iol_preopen_observes_configured_pool_before_trading_and_preserves_registry(self):
+        from rc6_iol_market_gateway import IOLGatewayClient
+        from rc6_ppi_shared_feed import ReadOnlyUnixFeedServer
+
+        current = {"owner_pid": 120, "authenticated": False, "wire_attempts": 0,
+                   "registered_clients": {"scanner": {"pid": 121, "proc_starttime": "1000"},
+                                          "exit_reader": {"pid": 122, "proc_starttime": "1000"}}}
+        for stream_state, flag, expected in (
+                ("WAITING_FOR_SESSION", {"trade_stream_configured": True}, True),
+                ("SUBSCRIBED", {"trade_stream_configured": False}, False),
+                ("WAITING_FOR_SCANNER", {}, True)):
+            with self.subTest(stream_state=stream_state), \
+                 patch.object(IOLGatewayClient, "owner_status",
+                              return_value={**current, **flag, "trade_stream_state": stream_state}), \
+                 patch.object(ReadOnlyUnixFeedServer, "process_starttime", return_value="1000"):
+                result = host.observe_iol_owner(self.base / "paper.db")
+                self.assertIs(result["trade_stream_configured"], expected)
+                self.assertEqual(result["registered"], {"scanner": 121, "exit_reader": 122})
+                self.assertIs(result["authenticated"], False)
+
     def test_cli_custody_failure_returns_one_and_its_existing_reason(self):
         stream = io.StringIO()
         with patch.object(host, "Host", side_effect=host.Hold("NONROOT_SSH_IDENTITY_REQUIRED")), \
@@ -1166,6 +1186,9 @@ class DeploymentFailureTests(unittest.TestCase):
         self.assertEqual(marker["validation_status"], "NO_VERIFICADO")
         started = [x[-1] for x in manager.docker.calls if x[:2] == ("container", "start")]
         self.assertNotIn("3" * 64, started)
+        phases = manager.receipt["deployment_phases"]
+        self.assertEqual(phases["physical_installation"]["state"], "BLOQUEADO")
+        self.assertEqual(phases["initial_health"]["state"], "BLOQUEADO")
 
     def test_cleanup_failure_preserves_validated_replacement_and_evidence(self):
         manager = self.manager(failure="cleanup", previous=True)
@@ -1176,6 +1199,13 @@ class DeploymentFailureTests(unittest.TestCase):
         self.assertEqual(current["cleanup"]["state"], "INCOMPLETE")
         self.assertTrue(all(manager.docker.containers[cid]["State"]["Running"] for cid in current["roles"].values()))
         self.assertEqual(current["cleanup_pending"]["attempt"], "old")
+        self.assertEqual(current["source_sha"], SHA)
+        phases = current["deployment_phases"]
+        self.assertEqual(phases["physical_installation"]["state"], "DESPLEGADO")
+        self.assertEqual(phases["initial_health"]["state"], "VALIDADO_RUNTIME")
+        self.assertEqual(phases["integral_audit"]["state"], "NO_VERIFICADO")
+        self.assertLessEqual(phases["physical_installation"]["containers_started_at"],
+                             phases["initial_health"]["observed_at"])
 
 
 if __name__ == "__main__":

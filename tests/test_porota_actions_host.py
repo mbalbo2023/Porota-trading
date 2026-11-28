@@ -91,10 +91,70 @@ class HostTransportTests(unittest.TestCase):
                 observed = host.execute('deploy', repo, release_dir, env=env)
                 opening = observed.pop('paper_opening')
                 self.assertEqual(opening['result'], 'GO_PAPER_SCALPING')
+                phases = observed.pop('deployment_phases')
+                self.assertEqual(phases['physical_installation']['state'], 'DESPLEGADO')
+                self.assertEqual(phases['initial_health']['state'], 'VALIDADO_RUNTIME')
                 self.assertEqual(observed, {**runtime, 'transfer_cleanup': 'COMPLETE'})
                 runtime.pop('download_receipt_sha256')
                 with self.assertRaisesRegex(host.HostFailure, 'RUNTIME_DEPLOYMENT_PROVENANCE_MISMATCH'):
                     host.execute('deploy', repo, release_dir, env=env)
+
+    def promotion_evidence(self):
+        coordinates = {**self.release, 'attempt': '99-1'}
+        runtime = {**self.receipt, **coordinates, 'market_provider': 'IOL_REST',
+                   'paper_opening': {'state': 'OBSERVED', 'reason': 'BYMA_NON_OPERATIONAL_DAY'},
+                   'installed_inventory': {**coordinates, 'scheduler': {'state': 'OBSERVED', 'requested_units': 5,
+                       'observed_units': 5, 'operational_ppi_units': {}, 'scheduled_t10': {'state': 'NOT_DUE'},
+                       'critical_bindings': {'state': 'VALIDADO_RUNTIME'}},
+                       'runtime_metrics': {**coordinates, 'state': 'OBSERVED', 'real_orders_sent': 0}},
+                   'synthetic_replay': {**coordinates, 'status': 'PASS', 'multi_instrument_replay': {'status': 'PASS'},
+                       'network': 'NONE', 'operational_mounts': 0, 'real_orders_sent': 0}}
+        dashboard = {**coordinates, 'state': 'VERIFICADO', 'schema': 'porota.dashboard.playwright.v1',
+                     'dashboard_cid': runtime['roles']['dashboard'], 'read_only': True, 'real_orders_sent': 0}
+        host.deployment_phases(runtime, host_verified=True)
+        return runtime, dashboard
+
+    def test_closed_market_keeps_technical_audit_valid_with_complete_evidence(self):
+        runtime, dashboard = self.promotion_evidence()
+        self.assertTrue(host.audit_promotion(runtime, dashboard, operation='deploy', host_succeeded=True,
+                                            dashboard_succeeded=True))
+        phases = runtime['deployment_phases']
+        self.assertEqual(phases['integral_audit']['state'], 'VALIDADO_RUNTIME')
+        self.assertTrue(all(phases['integral_audit']['checks'].values()))
+        self.assertEqual(runtime['installed_inventory']['scheduler']['scheduled_t10']['state'], 'NOT_DUE')
+
+    def test_late_failures_retain_physical_receipt_and_block_the_integral_audit(self):
+        runtime, dashboard = self.promotion_evidence()
+        physical = copy.deepcopy(runtime['deployment_phases']['physical_installation'])
+        self.assertFalse(host.audit_promotion(runtime, dashboard, operation='deploy', host_succeeded=True,
+                                             dashboard_succeeded=False))
+        phases = runtime['deployment_phases']
+        self.assertEqual(runtime['source_sha'], self.release['source_sha'])
+        self.assertEqual(runtime['state'], 'VALIDADO_RUNTIME')
+        self.assertEqual(phases['physical_installation'], physical)
+        self.assertEqual(phases['integral_audit']['state'], 'BLOQUEADO')
+        self.assertFalse(phases['integral_audit']['checks']['dashboard_playwright'])
+        runtime['installed_inventory']['scheduler']['critical_bindings']['state'] = 'BLOQUEADO'
+        self.assertFalse(host.audit_promotion(runtime, dashboard, operation='deploy', host_succeeded=True,
+                                             dashboard_succeeded=True))
+        self.assertTrue(phases['integral_audit']['checks']['dashboard_playwright'])
+        self.assertFalse(phases['integral_audit']['checks']['critical_scheduler_bindings'])
+
+    def test_audit_command_persists_verdict_before_returning_failure(self):
+        runtime, _ = self.promotion_evidence()
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt = Path(temporary) / 'runtime.json'
+            receipt.write_text(json.dumps(runtime))
+            argv = ['actions_host', 'audit-promotion', '--receipt', str(receipt),
+                    '--dashboard-receipt', str(Path(temporary) / 'dashboard.json'),
+                    '--promotion-operation', 'deploy', '--host-outcome', 'success', '--dashboard-outcome', 'failure']
+            with patch('sys.argv', argv), self.assertRaises(SystemExit) as exc:
+                host.main()
+            self.assertEqual(exc.exception.code, 1)
+            output = json.loads(receipt.read_text())
+        self.assertEqual(output['deployment_phases']['integral_audit']['state'], 'BLOQUEADO')
+        self.assertEqual(output['deployment_phases']['physical_installation']['state'], 'DESPLEGADO')
+        self.assertEqual(output['source_sha'], self.release['source_sha'])
 
     def test_missing_iol_probe_is_advisory_but_explicit_wrong_runtime_blocks(self):
         with patch.object(host, 'ssh_run', return_value=subprocess.CompletedProcess([], 1, b'', b'private')):

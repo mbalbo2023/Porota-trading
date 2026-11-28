@@ -19,6 +19,7 @@ import json
 import shutil
 import sqlite3
 import subprocess
+from contextlib import closing
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -51,6 +52,12 @@ REQUIRED_TIMERS = (
     'porota-candle-integrity-rc6.timer',
     'porota-byma-morning-watch-rc6.timer',
 )
+IOL_PREOPEN_RED_REASONS = frozenset({
+    'IOL_OBSERVER_DB_READ_FAILED', 'IOL_OBSERVER_STATE_MISSING', 'IOL_PAPER_MODE_UNVERIFIED',
+    'IOL_PAPER_ORDER_COUNT_UNVERIFIED', 'IOL_REAL_ORDER_OBSERVED', 'IOL_LEGACY_AUTH_STATE_UNSAFE',
+    'IOL_OBSERVER_PROCESS_NOT_READY', 'IOL_OBSERVER_HEARTBEAT_INVALID', 'IOL_OBSERVER_HEARTBEAT_STALE',
+    'IOL_OWNER_STATUS_UNAVAILABLE', 'IOL_OWNER_REGISTRATION_INCOMPLETE', 'IOL_TRADE_STREAM_UNVERIFIED',
+})
 
 # A186: an upstream session/freshness failure must not veto a frozen Deploy V2
 # artifact. This is deliberately narrower than the normal PAPER preopen gate:
@@ -321,6 +328,8 @@ def _iol_owner_status():
 
 
 def observer_db():
+    if os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST':
+        return _iol_observer_db()
     try:
         c = sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=20)
         c.row_factory = sqlite3.Row
@@ -334,26 +343,6 @@ def observer_db():
         state = dict(row) if row else {}
         auth = str(state.get('ppi_auth') or '').upper()
         phase = str(state.get('session_state') or '').upper()
-        if os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST':
-            c.close()
-            try:
-                pulse = datetime.fromisoformat(state.get('heartbeat_at') or '')
-                fresh = pulse.tzinfo is not None and 0 <= (datetime.now(TZ) - pulse).total_seconds() <= 120
-            except (ValueError, TypeError):
-                fresh = False
-            safety = (fresh and state.get('mode') == 'PRODUCTION_PAPER' and
-                      type(state.get('real_orders_sent')) is int and state['real_orders_sent'] == 0 and
-                      auth == 'NOT_ATTEMPTED' and state.get('process_state') in
-                      {'WAITING_MARKET', 'READY_PREOPEN', 'RUNNING'})
-            owner = _iol_owner_status() if safety else {}
-            gateway_ready = (set(owner.get("registered") or {}) == {"scanner", "exit_reader"}
-                             and owner.get("trade_stream_configured") is True)
-            reason = ('IOL_EXECUTABLE_EVIDENCE_REQUIRED_AT_ADMISSION' if gateway_ready else
-                      'IOL_GATEWAY_OR_PAPER_STATE_UNVERIFIED')
-            return {'state':'GREEN' if gateway_ready else 'RED','bounded_readonly_probe':'GREEN',
-                    'schema_version':schema_version, 'market_provider':'IOL_REST',
-                    'reason':reason, 'observer_state':state,
-                    'iol_owner_authenticated': owner.get('authenticated') is True}
         auth_ok = auth in {'OK','AUTHENTICATED'} or (phase == 'MARKET_CLOSED' and auth == 'NOT_ATTEMPTED')
         runtime = runtime_contracts(c, datetime.now(TZ))
         c.close()
@@ -387,6 +376,63 @@ def observer_db():
         return result
     except Exception as exc:
         return {'state':'RED','detail':f'{type(exc).__name__}:{exc}'}
+
+
+def _iol_paper_state_reason(state):
+    if not state:
+        return 'IOL_OBSERVER_STATE_MISSING'
+    if state.get('mode') != 'PRODUCTION_PAPER':
+        return 'IOL_PAPER_MODE_UNVERIFIED'
+    orders = state.get('real_orders_sent')
+    if type(orders) is not int or orders < 0:
+        return 'IOL_PAPER_ORDER_COUNT_UNVERIFIED'
+    if orders:
+        return 'IOL_REAL_ORDER_OBSERVED'
+    if str(state.get('ppi_auth') or '').upper() != 'NOT_ATTEMPTED':
+        return 'IOL_LEGACY_AUTH_STATE_UNSAFE'
+    if state.get('process_state') not in {'WAITING_MARKET', 'READY_PREOPEN', 'RUNNING'}:
+        return 'IOL_OBSERVER_PROCESS_NOT_READY'
+    try:
+        pulse = datetime.fromisoformat(state.get('heartbeat_at') or '')
+        if pulse.utcoffset() is None:
+            return 'IOL_OBSERVER_HEARTBEAT_INVALID'
+        if not 0 <= (datetime.now(TZ) - pulse).total_seconds() <= 120:
+            return 'IOL_OBSERVER_HEARTBEAT_STALE'
+    except (ValueError, TypeError):
+        return 'IOL_OBSERVER_HEARTBEAT_INVALID'
+    return None
+
+
+def _iol_observer_db():
+    result = {'state': 'RED', 'bounded_readonly_probe': 'RED', 'market_provider': 'IOL_REST'}
+    try:
+        with closing(sqlite3.connect(DB.as_uri() + '?mode=ro', uri=True, timeout=1)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute('PRAGMA query_only=ON')
+            connection.execute('BEGIN')
+            schema = int(connection.execute('PRAGMA schema_version').fetchone()[0])
+            row = connection.execute('SELECT mode,process_state,session_state,ppi_auth,real_orders_sent,'
+                                     'heartbeat_at FROM observer_state WHERE id=1').fetchone()
+    except (OSError, sqlite3.Error, ValueError, TypeError):
+        return {**result, 'reason': 'IOL_OBSERVER_DB_READ_FAILED'}
+    state = dict(row) if row else {}
+    result.update(bounded_readonly_probe='GREEN', schema_version=schema, observer_state=state)
+    reason = _iol_paper_state_reason(state)
+    if reason:
+        return {**result, 'reason': reason}
+    try:
+        owner = _iol_owner_status()
+    except (OSError, RuntimeError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        owner = {}
+    registrations = owner.get('registered') if isinstance(owner, dict) else None
+    if not owner:
+        return {**result, 'reason': 'IOL_OWNER_STATUS_UNAVAILABLE'}
+    if not isinstance(registrations, dict) or set(registrations) != {'scanner', 'exit_reader'}:
+        return {**result, 'reason': 'IOL_OWNER_REGISTRATION_INCOMPLETE'}
+    if owner.get('trade_stream_configured') is not True:
+        return {**result, 'reason': 'IOL_TRADE_STREAM_UNVERIFIED'}
+    return {**result, 'state': 'GREEN', 'reason': 'IOL_EXECUTABLE_EVIDENCE_REQUIRED_AT_ADMISSION',
+            'iol_owner_authenticated': owner.get('authenticated') is True}
 
 
 def runtime_contracts(connection, now):

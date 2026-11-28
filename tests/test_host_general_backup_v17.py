@@ -1,6 +1,8 @@
 import json
 import sqlite3
 import tarfile
+import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,35 @@ def test_backup_general_es_externo_a_docker_y_valida_sqlite(tmp_path):
         assert "porota-trading/.env" not in names
         manifest = json.load(bundle.extractfile("porota-trading/BACKUP_MANIFEST.json"))
     assert manifest["secrets_included"] is False
+
+
+def test_restore_recovers_committed_wal_from_isolated_fixture(tmp_path, record_property):
+    source = tmp_path / 'fixture'
+    path = source / 'data' / 'paper.db'
+    path.parent.mkdir(parents=True)
+    with closing(sqlite3.connect(path)) as writer:
+        writer.execute('PRAGMA journal_mode=WAL')
+        writer.execute('PRAGMA wal_autocheckpoint=0')
+        writer.execute('CREATE TABLE paper_events(id INTEGER PRIMARY KEY, state TEXT)')
+        writer.commit()
+        writer.execute("INSERT INTO paper_events VALUES (1, 'PAPER_COMMITTED')")
+        writer.commit()
+        assert path.with_name('paper.db-wal').stat().st_size > 0
+        writer.execute("INSERT INTO paper_events VALUES (2, 'PAPER_UNCOMMITTED')")
+        result = create_backup(source, tmp_path / 'external')
+        writer.rollback()
+    restore_started = time.perf_counter()
+    restored = tmp_path / 'restored.db'
+    with tarfile.open(result['archive'], 'r:gz') as archive:
+        member = archive.extractfile('porota-trading/data/paper.db')
+        assert member is not None
+        restored.write_bytes(member.read())
+        assert not any(name.endswith(('-wal', '-shm')) for name in archive.getnames())
+    with closing(sqlite3.connect(restored.as_uri() + '?mode=ro', uri=True)) as db:
+        assert db.execute('PRAGMA quick_check').fetchone() == ('ok',)
+        assert db.execute('SELECT id, state FROM paper_events').fetchall() == [(1, 'PAPER_COMMITTED')]
+    record_property('fixture_restore_seconds', round(time.perf_counter() - restore_started, 6))
+    record_property('fixture_committed_rows_missing', 0)
 
 
 def test_backup_rechaza_destino_dentro_del_origen(tmp_path):

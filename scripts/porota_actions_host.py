@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import sys
 import tempfile
 
 REPO = Path(__file__).resolve().parent.parent
+RELEASE_COORDINATES = ('source_sha', 'source_tree', 'image_id', 'attempt')
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
@@ -84,6 +86,72 @@ def validate_runtime_receipt(receipt, release, returncode, *, download=None):
     require(health.get('dashboard') == 'healthy' and health.get('observer') == 'running'
             and health.get('orders_guard') == 'BLOCKED', 'RUNTIME_HEALTH_UNVERIFIED')
     require(receipt.get('cleanup', {}).get('state') == 'COMPLETE', 'RUNTIME_CLEANUP_INCOMPLETE')
+
+
+def deployment_phases(receipt, *, host_verified=False):
+    phases = _evidence_row(receipt.get('deployment_phases'))
+    receipt['deployment_phases'] = phases
+    for name, confirmed in (('physical_installation', 'DESPLEGADO'), ('initial_health', 'VALIDADO_RUNTIME')):
+        if host_verified:
+            phases.setdefault(name, {'state': confirmed, 'receipt_observed_at': datetime.now(timezone.utc).isoformat()})
+        else:
+            phases.setdefault(name, {'state': 'NO_VERIFICADO'})
+    return phases
+
+
+def _matches_installed(proof, receipt):
+    return all(key in receipt and proof.get(key) == receipt[key] for key in RELEASE_COORDINATES)
+
+
+def _evidence_row(value):
+    return value if type(value) is dict else {}
+
+
+def audit_promotion(receipt, dashboard, *, operation, host_succeeded, dashboard_succeeded):
+    """Record Actions' integral verdict without rewriting the physical result."""
+    phases = deployment_phases(receipt)
+    checks = {}
+    if not host_succeeded:
+        state, reason = 'BLOQUEADO', 'HOST_PROCEDURE_INCOMPLETE'
+    elif operation == 'migrate' or receipt.get('market_provider') != 'IOL_REST':
+        state, reason = 'NO_VERIFICADO', 'INTEGRAL_IOL_AUDIT_NOT_APPLIED'
+    else:
+        inventory = _evidence_row(receipt.get('installed_inventory'))
+        scheduler = _evidence_row(inventory.get('scheduler'))
+        metrics = _evidence_row(inventory.get('runtime_metrics'))
+        replay = _evidence_row(receipt.get('synthetic_replay'))
+        retired_units = scheduler.get('operational_ppi_units')
+        requested = scheduler.get('requested_units')
+        checks = {
+            'physical_and_initial_health': (receipt.get('state') == 'VALIDADO_RUNTIME'
+                and _evidence_row(phases['physical_installation']).get('state') == 'DESPLEGADO'
+                and _evidence_row(phases['initial_health']).get('state') == 'VALIDADO_RUNTIME'),
+            'installed_inventory': (_matches_installed(inventory, receipt) and _matches_installed(metrics, receipt)
+                and scheduler.get('state') == 'OBSERVED' and type(requested) is int and requested > 0
+                and requested == scheduler.get('observed_units')
+                and isinstance(retired_units, dict)
+                and all(value == 'INACTIVE_OR_ABSENT' for value in retired_units.values())
+                and metrics.get('state') == 'OBSERVED'
+                and type(metrics.get('real_orders_sent')) is int and metrics['real_orders_sent'] == 0),
+            'critical_scheduler_bindings': _evidence_row(scheduler.get('critical_bindings')).get('state') == 'VALIDADO_RUNTIME',
+            'isolated_replay': (_matches_installed(replay, receipt) and replay.get('status') == 'PASS'
+                and _evidence_row(replay.get('multi_instrument_replay')).get('status') == 'PASS'
+                and replay.get('network') == 'NONE'
+                and type(replay.get('operational_mounts')) is int and replay['operational_mounts'] == 0
+                and type(replay.get('real_orders_sent')) is int and replay['real_orders_sent'] == 0),
+            'dashboard_playwright': (dashboard_succeeded and _matches_installed(dashboard, receipt)
+                and dashboard.get('state') == 'VERIFICADO' and dashboard.get('schema') == 'porota.dashboard.playwright.v1'
+                and dashboard.get('dashboard_cid') == _evidence_row(receipt.get('roles')).get('dashboard')
+                and dashboard.get('read_only') is True
+                and type(dashboard.get('real_orders_sent')) is int and dashboard['real_orders_sent'] == 0),
+        }
+        if all(checks.values()):
+            state, reason = 'VALIDADO_RUNTIME', None
+        else:
+            state, reason = 'BLOQUEADO', 'INTEGRAL_POSTFLIGHT_INCOMPLETE'
+    phases['integral_audit'] = {'state': state, 'reason': reason, 'scope': 'DEPLOY_V2_POSTFLIGHT',
+                                'observed_at': datetime.now(timezone.utc).isoformat(), 'checks': checks}
+    return state != 'BLOQUEADO'
 
 
 @contextmanager
@@ -321,6 +389,7 @@ def execute(operation, repository, release_dir=None, *, env=None):
                         validate_runtime_receipt(result, release, proc.returncode, download=download)
                     except ValueError as exc:
                         raise HostFailure(str(exc), result) from exc
+                    deployment_phases(result, host_verified=True)
                     if operation == 'deploy' and result.get('market_provider') == 'IOL_REST':
                         result['installed_inventory'] = installed_iol_postflight(ssh, stage, release, attempt,
                                                                                 'inventory', timeout=75)
@@ -361,13 +430,38 @@ def execute(operation, repository, release_dir=None, *, env=None):
                             'transfer_cleanup': cleanup_state})
 
 
+def read_local_receipt(path):
+    try:
+        return decode_receipt(path.read_bytes())
+    except (OSError, ValueError):
+        return {}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('inspect', 'prepare', 'deploy', 'migrate'))
+    parser.add_argument('operation', choices=('inspect', 'prepare', 'deploy', 'migrate', 'audit-promotion'))
     parser.add_argument('--repository', type=Path, default=Path.cwd())
     parser.add_argument('--release-dir', type=Path)
     parser.add_argument('--receipt', type=Path, required=True)
+    parser.add_argument('--dashboard-receipt', type=Path)
+    parser.add_argument('--promotion-operation', choices=('deploy', 'migrate'))
+    parser.add_argument('--host-outcome')
+    parser.add_argument('--dashboard-outcome')
     args = parser.parse_args()
+    if args.operation == 'audit-promotion':
+        if args.dashboard_receipt is None or args.promotion_operation is None:
+            parser.error('audit-promotion requires --dashboard-receipt and --promotion-operation')
+        result = read_local_receipt(args.receipt) or {'state': 'NO_VERIFICADO', 'real_orders_sent': None}
+        dashboard = read_local_receipt(args.dashboard_receipt)
+        ok = audit_promotion(result, dashboard, operation=args.promotion_operation,
+            host_succeeded=args.host_outcome == 'success' and result.get('state') == 'VALIDADO_RUNTIME',
+            dashboard_succeeded=args.dashboard_outcome == 'success')
+        args.receipt.parent.mkdir(parents=True, exist_ok=True)
+        pending = args.receipt.with_suffix('.audit.tmp')
+        pending.write_text(json.dumps(result, sort_keys=True) + '\n')
+        pending.replace(args.receipt)
+        print(json.dumps(result['deployment_phases'], sort_keys=True))
+        raise SystemExit(0 if ok else 1)
     try:
         result = execute(args.operation, args.repository, args.release_dir)
         code = 0
@@ -376,6 +470,8 @@ def main():
         reason = str(exc) if isinstance(exc, ValueError) and re.fullmatch(r'[A-Z_]+', str(exc)) else type(exc).__name__
         result = exc.receipt if isinstance(exc, HostFailure) else {}
         result.update(state='BLOQUEADO', transport_failure=reason)
+        if args.operation in {'deploy', 'migrate'}:
+            deployment_phases(result)
         result.setdefault('real_orders_sent', None)
         code = 1
     args.receipt.parent.mkdir(parents=True, exist_ok=True)

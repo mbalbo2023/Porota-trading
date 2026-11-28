@@ -6,6 +6,7 @@ by arbitrary rows accumulated in cache across older cycles.
 """
 from __future__ import annotations
 
+import argparse
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -14,14 +15,15 @@ from pathlib import Path
 import sqlite3
 from typing import Any
 
-from iol_rest_readonly_rc6 import IOLRestReadOnly, SOURCE as REST_SOURCE
-from iol_shadow_collector_rc6 import (CollectionPolicy, RateGovernor, _atomic_json,
+from iol_rest_readonly_rc6 import IOLRestError, SOURCE as REST_SOURCE
+from iol_shadow_collector_rc6 import (CollectionPolicy, _atomic_json,
                                       is_late_observation_window,
                                       is_operational_market_window,
                                       is_verified_late_contract_window, run_batch)
 import rc6_iol_family_reference as family_reference
+from rc6_iol_market_gateway import IOLGatewayReferenceClient
+from rc6_ppi_shared_feed import SharedFeedUnavailable
 from rc6_source_consolidation import consolidate
-from scripts.porota_rootless_host import Identity
 
 DEFAULT_UNIVERSE = ("GGAL", "YPFD", "PAMP", "BMA", "BBAR", "SUPV", "CEPU", "AAPL")
 DEFAULT_ROOT = Path(os.getenv("POROTA_IOL_SHADOW_ROOT", "/opt/porota-trading/data/market"))
@@ -489,14 +491,15 @@ def main(now: datetime | None = None) -> int:
     fingerprint = _fingerprint(universe)
     batch, rotation_start, prior_cycle = _rotation(universe, fingerprint)
     primary, primary_contract = _primary_snapshot()
-    # Book, quote, metadata, auth and family enrichment share the same wire
-    # budget even when one logical observation requires several REST calls.
-    policy = CollectionPolicy(batch_size=BATCH_SIZE, min_interval_seconds=1.0, max_calls_per_minute=40)
-    governor = RateGovernor(policy)
-    client = IOLRestReadOnly(Identity.current().state / "iol-rest", allow_renew=not late, governor=governor)
-
+    policy = CollectionPolicy(batch_size=BATCH_SIZE, retry_attempts=0)
+    client = IOLGatewayReferenceClient(DEFAULT_DB, consumer="collector", allow_renew=not late)
+    try:
+        client.owner_status()
+    except SharedFeedUnavailable:
+        print("IOL_SHADOW_COLLECTION=GATEWAY_UNAVAILABLE")
+        return 2
     run_batch(batch, client, root=DEFAULT_ROOT, primary_last_by_symbol=primary,
-              policy=policy, governor=governor)
+              policy=policy)
     family_reference_state = "NOT_DUE_LATE_T1_SCOPE" if late else "UPDATED"
     if not late:
         try:
@@ -545,9 +548,26 @@ def main(now: datetime | None = None) -> int:
     consolidated = consolidate(ppi_rows, iol_rows, official_rows)
     _atomic_json(DEFAULT_ROOT / "rc6_consolidated_ppi_iol_latest.json", consolidated)
     progress = payload.get("progress", {})
-    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source} FAMILY_REFERENCE={family_reference_state} LATE_T1_ONLY={str(late).lower()} CALLS={governor.calls_total}")
+    print(f"IOL_SHADOW_COLLECTION=COMPLETE READY={progress.get('ready', 0)} OBSERVED={progress.get('completed', 0)} UNIVERSE={len(universe)} SOURCE={universe_source} FAMILY_REFERENCE={family_reference_state} LATE_T1_ONLY={str(late).lower()} CALLS={client.calls_total}")
+    return 0
+
+
+def oauth_health(*, verify_rest=False):
+    client = IOLGatewayReferenceClient(DEFAULT_DB, consumer="health")
+    try:
+        result = client.call("verify_rest" if verify_rest else "authenticate", {})
+    except IOLRestError as exc:
+        print(json.dumps({"result": str(exc), "http_status": exc.status_code}))
+        return 2
+    print(json.dumps(result))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--oauth-health", action="store_true")
+    parser.add_argument("--verify-rest", action="store_true")
+    options = parser.parse_args()
+    if options.verify_rest and not options.oauth_health:
+        parser.error("--verify-rest requires --oauth-health")
+    raise SystemExit(oauth_health(verify_rest=options.verify_rest) if options.oauth_health else main())

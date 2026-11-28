@@ -5,7 +5,10 @@ from decimal import Decimal as D
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rc6_performance.costs import FeeModel, expected_round_trip_cost, realized_round_trip_cost, paper_fee_model
+from rc6_performance.costs import (
+    FeeModel, VersionedPaperCostContract, expected_round_trip_cost, paper_cost_contract,
+    paper_fee_model, realized_round_trip_cost,
+)
 from rc6_performance.scanner import ScanBudget, plan_active_universe
 from rc6_performance.metrics import audit_master, historical_sessions
 
@@ -78,6 +81,47 @@ def test_invalid_rates_do_not_become_zero(value):
 
 def test_no_generic_equity_fee_for_other_families():
     with pytest.raises(ValueError, match="FAMILY"): paper_fee_model("FUTUROS")
+
+
+@pytest.mark.parametrize(("symbol", "family", "settlement"), [
+    ("GGAL", "ACCIONES", "A-24HS"), ("AAPL", "CEDEARS", "A-24HS"),
+    ("GD30", "BONOS", "A-24HS"), ("GFGC5000D", "OPCIONES", "INMEDIATA"),
+])
+def test_iol_paper_cost_binds_feed_and_exact_economic_identity(symbol, family, settlement):
+    at = "2026-11-24T14:30:00Z"
+    identity = {"symbol": symbol, "market": "BYMA", "settlement": settlement}
+    historical = paper_cost_contract(family, "ARS", at, **identity)
+    modeled = paper_cost_contract(family, "ARS", at, **identity, market_data_channel="IOL_REST")
+    legacy = historical.diagnostic()
+    receipt = modeled.diagnostic()
+    assert legacy["schema_version"] == 1
+    assert receipt["schema_version"] == 2
+    assert receipt["schedule_sha256"] == legacy["policy_sha256"] != receipt["policy_sha256"]
+    assert receipt["market_data"] == {"provider": "IOL", "channel": "IOL_REST",
+                                      "identity": [symbol, family, "BYMA", "ARS", settlement]}
+    assert receipt["tariff_provenance"] == {
+        "assumption_basis": "HISTORICAL_PPI_PUBLIC_ASSUMPTIONS", "tariff_provider": "PPI",
+        "tariff_channel": "PUBLIC_TARIFF", "simulation_channel": "PAPER", "iol_tariff_evidence": "NO_VERIFICADO",
+        "account_segment": "NO_VERIFICADO", "account_channel": "NO_VERIFICADO",
+    }
+    assert historical.leg_cost(10000, decision_at=at) == modeled.leg_cost(10000, decision_at=at)
+    assert VersionedPaperCostContract.from_diagnostic(legacy) == historical
+    assert VersionedPaperCostContract.from_diagnostic(receipt) == modeled
+    receipt["tariff_provenance"]["account_segment"] = "GOLD"
+    with pytest.raises(ValueError, match="PAPER_COST_POLICY_SNAPSHOT_INVALID"):
+        VersionedPaperCostContract.from_diagnostic(receipt)
+
+
+def test_iol_unpriced_merv_keeps_missing_charge_distinct_from_zero():
+    at = "2026-11-24T14:30:00Z"
+    modeled = paper_cost_contract("ACCIONES", "ARS", at, symbol="MERV", market="BYMA",
+                                  settlement="A-24HS", market_data_channel="IOL_REST")
+    receipt = modeled.diagnostic()
+    assert receipt["family"] == "ETFS"
+    assert receipt["market_data"]["identity"] == ["MERV", "ACCIONES", "BYMA", "ARS", "A-24HS"]
+    assert receipt["tariff_provenance"]["tariff_provider"] == "NO_VERIFICADO"
+    assert receipt["tariff_provenance"]["assumption_basis"] == "LOCAL_ETF_TARIFF_UNVERIFIED"
+    assert modeled.binding_error(at) == "COST_COMPONENT_UNKNOWN:commission"
 
 
 def test_scanner_historical_rotation_is_infeasible_and_catalog_is_preserved():

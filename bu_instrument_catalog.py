@@ -1114,9 +1114,9 @@ def iol_spot_catalog(store, *, now, identity=None, include_contracts=False):
             p.detail AS ledger_detail FROM financial_instrument_catalog f
             JOIN candidate_identity_v2 p USING(ticker,instrument_type,market,currency,settlement)
             WHERE f.instrument_type IN ({slots}) AND f.status='AVAILABLE'
-              AND (f.capability='READY_PAPER_SPOT' OR
+              AND ((f.instrument_type<>'OPCIONES' AND f.capability='READY_PAPER_SPOT') OR
                   (f.instrument_type='OPCIONES' AND f.capability='READY_PAPER_OPTION_LONG'
-                   AND f.settlement='INMEDIATA'))
+                   AND f.currency='ARS' AND f.settlement='INMEDIATA'))
               AND f.market='BYMA'
               AND f.currency IN ('ARS','USD') AND f.settlement IN ('INMEDIATA','A-24HS')
               AND NOT EXISTS (SELECT 1 FROM financial_instrument_catalog other
