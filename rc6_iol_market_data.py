@@ -15,7 +15,7 @@ from be_paper_engine import Quote
 from bs_instrument_contracts import aware_datetime, decimal_value
 from iol_rest_readonly_rc6 import IOLRestError
 from rc6_multisource_discovery import canonical_family
-from rc6_iol_trade_stream import TRADE_EVIDENCE, matched_trade
+from rc6_iol_trade_stream import TRADE_EVIDENCE, TRADE_HOLDS, TRADE_STATUS, matched_trade
 
 
 MARKETS = {"BYMA": "BCBA", "NYSE": "NYSE", "NASDAQ": "NASDAQ"}
@@ -135,7 +135,9 @@ class IOLMarketReader:
                 source_time = self.trade_clock(raw)
                 evidence = None
             if source_time is None:
-                raise IOLRestError("IOL_LAST_TRADE_CLOCK_UNVERIFIED")
+                hold = raw.get(TRADE_STATUS) if self.gateway_evidence else None
+                raise IOLRestError(hold if isinstance(hold, str) and hold in TRADE_HOLDS
+                                   else "IOL_LAST_TRADE_CLOCK_UNVERIFIED")
             current = _capture(raw, received=received, venue_key=venue_key,
                                currency=currency, source_time=source_time)
             if (received - _instant(current.provider_at)).total_seconds() > max_age_seconds:

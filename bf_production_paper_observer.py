@@ -220,7 +220,7 @@ def _scanner_iol_error(error):
     from rc6_iol_market_gateway import iol_gateway_reader_needs_reattach
 
     if isinstance(error, IOLRestError):
-        if error.status_code in (401, 403, 429):
+        if str(error) == "IOL_REST_HTTP_ERROR" and error.status_code in (401, 403, 429):
             return f"IOL_HTTP_{error.status_code}"
         if re.fullmatch(r"IOL_[A-Z0-9_]{1,100}", str(error)):
             return str(error)
@@ -421,6 +421,7 @@ def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catal
     from bs_instrument_contracts import aware_datetime
     from iol_rest_readonly_rc6 import IOLRestError
     from rc6_dynamic_universe.routing import EQUITY_FAMILIES
+    from rc6_fixed_income_paper_strategy import FAMILIES as FIXED_INCOME_FAMILIES
 
     if (not identity or len(identity) != 5
             or (identity[0], identity[1], identity[4]) != request):
@@ -429,25 +430,32 @@ def _read_iol_scanner_quote(reader, store, *, request, identity, priority, catal
     # Test comparators and specialized observations can retain their legacy
     # catalog path. The installed IOL spot profile uses its exact venue terms.
     from rc6_iol_market_gateway import iol_primary_enabled
-    live_spot = iol_primary_enabled() and identity[1] in EQUITY_FAMILIES
+    live_spot = iol_primary_enabled() and identity[1] in EQUITY_FAMILIES | FIXED_INCOME_FAMILIES | {"OPCIONES"}
     metadata = None
     if not catalog_read_error:
         if live_spot:
-            metadata = financial_catalog.iol_spot_catalog(store, now=checked, identity=identity).get(tuple(identity))
+            metadata = financial_catalog.iol_spot_catalog(
+                store, now=checked, identity=identity, include_contracts=True).get(tuple(identity))
         else:
             metadata = financial_catalog.lookup(store, *request, market=identity[2], currency=identity[3])
     terms = financial_catalog.quote_terms(metadata, now=checked, iol_live_settlement=live_spot)
     observation = reader.observe(identity, contract=terms.get("contract"), priority=priority)
     reason = ("CATALOG_READ_ERROR" if catalog_read_error else terms["opening_block_reason"])
-    if identity[1] not in EQUITY_FAMILIES:
+    if metadata and metadata.get("raw", {}).get("iol_local_etf_reference") is True:
+        try:
+            financial_catalog.persist_iol_etf_observation(store, metadata, observation)
+        except (sqlite3.Error, OSError, ValueError, TypeError) as exc:
+            store.event("IOL_ETF_CATALOG_WRITE_HOLD", type(exc).__name__)
+    if identity[1] not in EQUITY_FAMILIES and not (live_spot and metadata is not None):
         reason = reason or "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
     if reason:
         return replace(observation.quote, opening_block_reason=reason)
-    try:
-        record_iol_trade_sample(store, observation, as_of=now_iso())
-    except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
-        with suppress(OSError, sqlite3.Error):
-            store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
+    if identity[1] in EQUITY_FAMILIES:
+        try:
+            record_iol_trade_sample(store, observation, as_of=now_iso())
+        except (OSError, sqlite3.Error, ValueError, TypeError, ArithmeticError) as exc:
+            with suppress(OSError, sqlite3.Error):
+                store.event("IOL_CANDLE_TRADE_SAMPLE_HOLD", type(exc).__name__)
     return observation.quote
 
 
@@ -2295,7 +2303,7 @@ def _publish_focus_health(store, coverage):
             "Catálogo PPI normalizado", success=coverage["state"] == "VERDE")
 
 
-def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, iol=False):
+def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, iol=False, iol_metrics=None):
     """Existing catalog/quote authority, with a durable feasible active basket."""
     from rc6_performance.scanner import sampling_plan
     catalog_error = None
@@ -2303,7 +2311,8 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     try:
         if iol:
             from bs_instrument_contracts import aware_datetime
-            iol_keys = financial_catalog.iol_spot_catalog(store, now=aware_datetime(checked_at))
+            iol_keys = financial_catalog.iol_spot_catalog(
+                store, now=aware_datetime(checked_at), include_contracts=True)
             identities = {(key[0], key[1], key[4]): key for key in iol_keys}
         else:
             identities = _eligible_scanner_identities(store)
@@ -2313,11 +2322,25 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     exact = {request: key for request, key in identities.items() if key is not None}
     legacy_catalog = bool(identities) and not exact
     universe = list(identities if include_legacy_summary and legacy_catalog else exact)
+    if iol:
+        by_family = {}
+        for request in universe:
+            by_family.setdefault(request[1], []).append(request)
+        universe = [request for batch in zip_longest(*by_family.values())
+                    for request in batch if request is not None]
     positions = store.open_positions()
     opened = list(dict.fromkeys((p["symbol"], p["asset_class"], p["settlement"])
                                 for p in positions))
+    cycles = []
     with store.connect() as c:
         row = c.execute("SELECT cursor_after,detail FROM universe_cycle_metrics ORDER BY id DESC LIMIT 1").fetchone()
+        if iol and iol_metrics is not None and exact and not catalog_error:
+            from rc6_dynamic_universe.iol_capacity import read_cycles
+            try:
+                cycles = read_cycles(c)
+            except sqlite3.Error:
+                # Capacity evidence is optional to the existing baseline plan.
+                pass
     previous = None
     if row:
         try:
@@ -2347,10 +2370,11 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     # Preserve historical focus ordering when starting a new IOL sampling plan.
     if iol:
         focus_candidates = tuple(dict.fromkeys((*FOCUS_SYMBOLS, *identities)))
+    focus = FOCUS_SYMBOLS if focus_candidates is None else focus_candidates
+    budget = dict(limit=limit, cycle_seconds=cycle_seconds, required_samples=SIGNAL_MIN_SAMPLES,
+                  window_seconds=SIGNAL_WINDOW_MINUTES * 60)
     symbols, before, after, plan = sampling_plan(
-        universe, opened, FOCUS_SYMBOLS if focus_candidates is None else focus_candidates,
-        limit=limit, cycle_seconds=cycle_seconds,
-        required_samples=SIGNAL_MIN_SAMPLES, window_seconds=SIGNAL_WINDOW_MINUTES * 60,
+        universe, opened, focus, **budget,
         now=checked_at, cursor=row[0] if row else 0, previous=previous)
     if not iol and not catalog_error and not legacy_catalog:
         from rc6_dynamic_universe.promotion import capacity_controller_from_environment
@@ -2382,6 +2406,21 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
             "batches_per_minute": batches_per_minute,
             "planned_exit_calls": exit_calls,
         }
+        if iol_metrics is not None and exact and not catalog_error:
+            from cg_paper_workspace import artifact_root
+            from rc6_dynamic_universe.iol_capacity import paper_capacity, prioritize_paper_equities
+            from rc6_trader_dashboard.generation import read_shadow
+
+            capacity = paper_capacity(cycles, iol_metrics, plan["iol_rest_budget"], as_of=checked_at)
+            report = {}
+            if capacity["status"] == "SHADOW_RECOMMENDATION":
+                report = read_shadow(artifact_root(store.path) / "dynamic-shadow")["report"]
+            symbols, plan = prioritize_paper_equities(
+                symbols, plan, exact, opened, capacity, report, as_of=checked_at)
+        if exact and not catalog_error:
+            next_symbols, _, _, _ = sampling_plan(
+                universe, opened, focus, **budget, now=checked_at, cursor=after, previous=plan)
+            plan["next_iol_subscriptions"] = [exact[request] for request in next_symbols if request in exact]
     if not plan.get("dynamic_selection"):
         plan["read_scopes"] = [
             {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
@@ -2510,7 +2549,7 @@ def _publish_economic_shadow_health(store):
     return summary
 
 
-def _runtime_readiness(store, *, record_event=False):
+def _runtime_readiness(store, *, record_event=False, iol_metrics=None):
     """Distingue cobertura histórica, presupuesto de señales y PIT exacto."""
     focus = _focus_coverage(store)
     _publish_focus_health(store, focus)
@@ -2525,7 +2564,7 @@ def _runtime_readiness(store, *, record_event=False):
          *pit_ready)))
     open_count = len(store.open_positions())
     symbols, eligible_total, cursor_before, cursor_after, active_plan = _cycle_plan(
-        store, focus_candidates=priority, iol=iol,
+        store, focus_candidates=priority, iol=iol, iol_metrics=iol_metrics,
     )
     catalog_read_error = active_plan["catalog_status"] == "CATALOG_READ_ERROR"
     if iol:
@@ -3733,8 +3772,15 @@ def run():
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
+            iol_metrics = None
+            if iol:
+                try:
+                    iol_metrics = reader.metrics
+                except Exception as exc:
+                    if not iol_gateway_reader_needs_reattach(exc):
+                        raise
             (focus, symbols, eligible_total, cursor_before, cursor_after,
-             feasibility) = _runtime_readiness(store, record_event=True)
+             feasibility) = _runtime_readiness(store, record_event=True, iol_metrics=iol_metrics)
             active_plan = feasibility["active_plan"]
             catalog_read_error = active_plan.get("catalog_status") == "CATALOG_READ_ERROR"
             observation_hold = ("CAUCION_LEDGER_INVALID" if caucion_ledger_blocked else
@@ -3759,6 +3805,19 @@ def run():
             if iol:
                 from rc6_dynamic_universe.iol_capacity import cycle_evidence, paired_sample
             scopes = {tuple(s["request"]): s for s in active_plan.get("read_scopes", [])}
+            if iol and scopes:
+                from iol_rest_readonly_rc6 import IOLRestError
+                from rc6_iol_market_gateway import PREPARE_TRADES_LIMIT
+                from rc6_ppi_shared_feed import SharedFeedUnavailable
+
+                subscriptions = list(dict.fromkeys((
+                    *(tuple(scope["identity"]) for scope in scopes.values()),
+                    *(tuple(key) for key in active_plan.get("next_iol_subscriptions", [])),
+                )))[:PREPARE_TRADES_LIMIT]
+                try:
+                    feasibility["iol_stream_subscriptions"] = reader.prepare_trades(subscriptions)
+                except (IOLRestError, SharedFeedUnavailable) as exc:
+                    store.event("IOL_TRADE_PREPARE_HOLD", _scanner_iol_error(exc))
             opened_identities = {}
             if iol or getattr(reader, "budget_enabled", False):
                 for p in store.open_positions():
@@ -3805,7 +3864,7 @@ def run():
                             q, broker, store, checked_at=now_iso(), observe_only=bool(observation_hold)):
                         cycle_temporal_rejections += 1
                         continue
-                    if iol and (pair := paired_sample(q, scope_identity)):
+                    if iol and asset_class in PAPER_SPOT_FAMILIES and (pair := paired_sample(q, scope_identity)):
                         iol_pairs.append(pair)
                     # The independent EXIT supervisor can use the exact
                     # persisted Book without granting a new entry or cash.
@@ -3839,8 +3898,9 @@ def run():
                         store.event("IOL_GATEWAY_REATTACH_REQUIRED" if iol else "PPI_GATEWAY_REATTACH_REQUIRED",
                                     "Gateway cambió/no responde o auth inválida; reconexión local")
                         break
-                    if read_error in NATIVE_PROVIDER_BACKPRESSURE or iol and read_error in {
-                            "IOL_HTTP_401", "IOL_HTTP_429", "IOL_GATEWAY_RATE_HOLD"}:
+                    if read_error in NATIVE_PROVIDER_BACKPRESSURE or iol and (
+                            getattr(exc, "status_code", None) in (401, 429)
+                            or read_error == "IOL_GATEWAY_RATE_HOLD"):
                         observation_hold = read_error
                         break
                 finally:
@@ -3928,6 +3988,8 @@ def run():
                 feasibility["iol_capacity_cycle"] = cycle_evidence(
                     metrics, iol_pairs, active_plan.get("iol_rest_budget", {}),
                     complete=not (cycle_session_invalid or observation_hold or STOP))
+                if metrics and isinstance(metrics.get("wire_usage"), dict):
+                    feasibility["iol_wire_usage"] = metrics["wire_usage"]
             _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, cycle_finished, eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,

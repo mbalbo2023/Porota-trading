@@ -582,6 +582,10 @@ def runtime_environments(config, dashboard, sha, tree, *, provider="PPI"):
                      "POROTA_CONTRACT_EVIDENCE_MODE": config.get("POROTA_CONTRACT_EVIDENCE_MODE", "ENABLED")})
     if provider == "IOL_REST":
         observer.update({MARKET_PROVIDER_ENV: provider, "POROTA_IOL_REST_CONFIG": IOL_CREDENTIAL_MOUNT})
+        for name in ("POROTA_FI_EVIDENCE_MANIFEST_SHA256", "POROTA_FI_IOL_MARKET_POLICY_SHA256"):
+            pin = config.get(name, "")
+            if isinstance(pin, str) and re.fullmatch(r"[0-9a-f]{64}", pin):
+                observer[name] = pin
         common[MARKET_PROVIDER_ENV] = provider
     else:
         observer.update(ppi_budget_observer_selectors(config))

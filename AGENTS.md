@@ -2,9 +2,9 @@
 
 ## Migración a IOL REST
 
-- IOL REST es el proveedor del release PAPER. El observer recibe únicamente
-  las credenciales de IOL por un archivo privado de solo lectura. PPI Watch
-  opera de forma independiente y los históricos conservan su procedencia.
+- IOL REST y su stream de negocios son la fuente operativa de mercado del
+  release PAPER. El observer recibe las credenciales de mercado de IOL por un
+  archivo privado de solo lectura.
 - El comparador #1290 sigue limitado a testing por su marcador. La revisión
   de release usa Predeploy V2 y Promote V2. El replay posdeploy usa el digest
   instalado en un contenedor sin red ni datos de la rueda.
@@ -88,8 +88,10 @@ el código, Actions y los recibos prueban lo que realmente existe o se ejecutó.
 
 ## Datos y resultados
 
-- PPI es autoridad primaria de identidad; IOL/BYMA/A3/ROFEX complementan con
-  evidencia. No sobrescribir identidad PPI ni escoger identidades ambiguas.
+- Conservar la identidad y procedencia del catálogo y del histórico. El scanner
+  IOL recertifica en rueda ficha, moneda, plazo, negocio y libro por clave
+  exacta. Los contratos especializados requieren fuentes y recibos acreditados
+  por familia. Una clave ambigua queda en HOLD.
 - Readiness es por instrumento y fail-closed. `ALL_CONTRACT_FAMILIES` no significa
   todos READY; CI verde, más operaciones o un replay rentable no prueban edge.
 - Cambios de estrategia conservan baseline, causalidad temporal y costos;

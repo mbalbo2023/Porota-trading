@@ -4,16 +4,33 @@ import json
 from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from be_paper_engine import PaperBroker, PaperStore
+from bm_exit_supervisor import PositionExitSupervisor
+from bq_exit_policy import PaperSessionPolicy
+from bv_paper_runtime import _collect_iol_exit_round
+from rc6_fixed_income_event_ledger import snapshot_at
+from rc6_fixed_income_iol_evidence import (
+    ECONOMICS_AUTHORITY, ECONOMICS_SCHEMA, POLICY_PIN, POLICY_SCHEMA,
+    iol_entry_market_evidence, iol_reviewed_policy,
+)
 from rc6_fixed_income_runtime import (
     FixedIncomeEvidenceError, MANIFEST_SCHEMA, RECEIPT_SCHEMA,
     contract_economics, fixed_income_strategy_inputs, quote_sha256,
 )
+from rc6_fixed_income_sale_authority import attest_market_sale_book2, sale_release_anchor
+from rc6_fixed_income_sale_witness import ExitReaderSaleWitness, read_witness
+from rc6_iol_market_gateway import IOLGatewayMarketReader
+import rc6_iol_market_gateway as gateway
+import rc6_paper_causal_decision_receipt as causal
 from test_rc6_fixed_income_paper_strategy import fixture, AT, YESTERDAY
+from test_rc6_iol_migration_offhost import open_fixture_iol_gateway, register
 
 
 def dump(root, name, value):
@@ -228,7 +245,7 @@ def test_reviewed_letter_opens_exact_vn_and_closes_only_after_the_matched_paymen
     assert_reviewed_letter_roundtrip(quote, evidence, broker)
 
 
-def assert_reviewed_letter_roundtrip(quote, evidence, broker):
+def assert_reviewed_letter_roundtrip(quote, evidence, broker, *, fresh_quote_at=None):
     from bm_exit_supervisor import PositionExitSupervisor
     from dh_paper_dynamic_risk_gate_hf6 import open_stop_risk, portfolio_capacity
     from rc6_fixed_income_native_redemption import normalized_issuer_schedule_sha256
@@ -257,9 +274,11 @@ def assert_reviewed_letter_roundtrip(quote, evidence, broker):
         assert db.execute("SELECT count(*) FROM paper_fi_cash_entries").fetchone()[0] == 0
 
     restarted = PaperBroker(PaperStore(store.path), daily_soft_stop_pct="0.015")
-    next_quote_at = (AT + timedelta(minutes=5)).isoformat()
-    next_quote = replace(quote, observed_at=next_quote_at, book_at=next_quote_at, trade_at=next_quote_at)
-    capacity = portfolio_capacity(restarted, "ARS", next_quote_at, candidate_risk=outlay,
+    next_at = AT + timedelta(minutes=5)
+    next_stamp = next_at.isoformat()
+    next_quote = (fresh_quote_at(next_at) if fresh_quote_at else replace(
+        quote, observed_at=next_stamp, book_at=next_stamp, trade_at=next_stamp))
+    capacity = portfolio_capacity(restarted, "ARS", next_at, candidate_risk=outlay,
                                   quotes={quote.symbol: next_quote})
     assert capacity.open_stop_risk == outlay
     assert capacity.soft_stop_budget >= outlay > capacity.remaining_before_candidate
@@ -403,3 +422,153 @@ def test_duplicate_json_keys_are_rejected_even_with_matching_digest(tmp_path):
     pin = dump(root, "manifest.json", raw)["sha256"]
     with pytest.raises(FixedIncomeEvidenceError, match="FI_EVIDENCE_DUPLICATE_JSON_KEY"):
         load(quote, root, pin)
+
+
+def reviewed_market_units(monkeypatch, root, contract, *, units="VN"):
+    build, tree = "a" * 40, "b" * 40
+    release = sale_release_anchor(build, tree)
+    monkeypatch.setenv("POROTA_BUILD_SHA", build)
+    monkeypatch.setenv("POROTA_CANDIDATE_TREE_SHA", tree)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_DIRECTORY", str(root))
+    provider_proof = b"Synthetic IOL documentation of depth and price units"
+    source = {"schema": ECONOMICS_SCHEMA, "identity": list(contract.key),
+              "provider": "IOL_REST", "price_basis": "CONTRACT_QUOTE_PRICE",
+              "depth_size_unit": units, "order_quantity_unit": "VN",
+              "provider_evidence_sha256": causal._sha(provider_proof),
+              "known_at": YESTERDAY.isoformat(), "valid_until": (AT + timedelta(days=2)).isoformat()}
+    source.update({field: str(getattr(contract, field)) for field in
+                   ("cash_multiplier", "minimum_quantity", "quantity_step")})
+    proof = dump(root, "units.json", source)
+    (root / proof["file"]).rename(root / f"iol-economics-{proof['sha256']}.json")
+    dump(root, f"iol-source-{causal._sha(provider_proof)}.bin", provider_proof)
+    doc = {"schema": POLICY_SCHEMA, "source_authority": ECONOMICS_AUTHORITY,
+           "paper_only": True, "real_routes_used": [], "release_sha256": release,
+           "known_at": YESTERDAY.isoformat(), "valid_until": (AT + timedelta(days=2)).isoformat(),
+           "instruments": [{"identity": list(contract.key), "economics_sha256": proof["sha256"]}]}
+    monkeypatch.setenv(POLICY_PIN, dump(root, "iol-market-policy.json", doc)["sha256"])
+    return release
+
+
+def scanner_quote(server, client, transport, contract, *, at=AT):
+    transport.now = at
+    register(client, "scanner")
+    trade = {"trade_at": (at - timedelta(seconds=2)).isoformat(),
+             "received_at": (at - timedelta(seconds=1)).isoformat(),
+             "price": "100", "shares": "100"}
+    server.trade_stream = SimpleNamespace(state="SUBSCRIBED", want=lambda key: None,
+                                         observation=lambda key: (trade, ""))
+    reader = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+    return reader.observe(contract.key, contract=contract, priority="HOT").quote
+
+
+@pytest.mark.parametrize(("family", "symbol"), [("BONOS", "AL30"), ("OBLIGACIONES", "YMCJO")])
+def test_iol_buy_and_first_signed_post_ack_sell(tmp_path, tmp_path_factory, monkeypatch, family, symbol):
+    fixture, root, manifest_pin = reviewed_bundle(tmp_path, family, settlement="INMEDIATA", symbol=symbol)
+    contract = fixture.contract
+    release = reviewed_market_units(monkeypatch, root, contract)
+    sectors = tmp_path / "sectors.csv"
+    sectors.write_text(
+        "ticker,family,market,currency,settlement,sector,source,author,effective_at,reviewed\n"
+        + ",".join((*contract.key, "SYNTHETIC", "fixture:sector", "SYNTHETIC",
+                    YESTERDAY.isoformat(), "true")) + "\n")
+    monkeypatch.setenv("POROTA_SECTOR_MAP_PATH", str(sectors))
+    monkeypatch.setenv("PAPER_SECTOR_CONCENTRATION_POLICY", "BINDING")
+    monkeypatch.setenv("POROTA_FI_EVIDENCE_MANIFEST_SHA256", manifest_pin)
+    signer = Ed25519PrivateKey.generate()
+    public = signer.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    monkeypatch.setattr(causal, "PINNED_RELEASE_SHA256", release)
+    monkeypatch.setattr(causal, "PINNED_DECISION_SIGNER_KEY_SHA256", causal._sha(public))
+
+    store = PaperStore(str(tmp_path / "paper.sqlite"))
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, contract.key) as (server, client, transport, _):
+        opening = scanner_quote(server, client, transport, contract)
+        assert iol_entry_market_evidence(opening, contract.key, transport.now) == (
+            opening.iol_native_rest_book["receipt_sha256"])
+        broker = PaperBroker(store, initial_cash="1000000", clock_fn=lambda: transport.now.isoformat())
+        store.add_quote(opening)
+        broker.on_quote(opening)
+        position, = store.open_positions()
+        paper_id = position["paper_id"]
+        assert len(transport.calls) == 4
+
+        register(client, "exit_reader")
+        exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
+        monkeypatch.setattr(gateway, "IOLGatewayClient", type(client))
+        monkeypatch.setattr(gateway, "iol_gateway_socket_path", lambda _: server.socket_path)
+        witness = ExitReaderSaleWitness(store, exit_signer=signer)
+        supervisor = PositionExitSupervisor(broker, clock_fn=lambda: transport.now.isoformat())
+        transport.now = AT + timedelta(hours=2)
+
+        def round_status():
+            return _collect_iol_exit_round(
+                exit_reader, store, PaperSessionPolicy(), transport.now.isoformat(), Event(),
+                beat=lambda: None, deadline_seconds=120, sale_witness=witness)[0]
+
+        monkeypatch.setattr(causal, "_now", lambda: transport.now.isoformat())
+        assert round_status() == "READY"
+        book1_quote = store.latest_quote(position)
+        assert book1_quote.iol_native_rest_book["consumer"] == "exit_reader"
+        assert book1_quote.trade_at is None
+        pending = supervisor.supervise(position, book1_quote, transport.now.isoformat())
+        assert pending.reason == "FI_NATIVE_SIGNED_BOOK2_PENDING"
+        transport.now += timedelta(milliseconds=10)
+        ack_at = transport.now
+        key = witness.acknowledge(paper_id)
+
+        wire = len(transport.calls)
+        with pytest.raises(ValueError, match="IOL_FI_BOOK2_NOT_YET_CAPTURED"):
+            attest_market_sale_book2(store.path, decision_key=key, release=release, exit_signer=signer)
+        assert len(transport.calls) == wire
+
+        transport.now = ack_at + timedelta(milliseconds=500)
+        early = exit_reader.observe(contract.key, contract=contract, priority="EXIT_CRITICAL", exit_only=True)
+        assert early.quote.book_at < ack_at.isoformat()
+        transport.now = ack_at + timedelta(seconds=2)
+        transport.price = 101.0
+        first = exit_reader.observe(contract.key, contract=contract, priority="EXIT_CRITICAL", exit_only=True)
+        transport.now = ack_at + timedelta(seconds=3)
+        transport.price = 110.0
+        assert round_status() == "READY"
+        proof = read_witness(store, key)
+        assert proof["payload"]["book2"] == first.quote.iol_native_rest_book
+        assert proof["payload"]["book2"]["receipt_sha256"] != early.quote.iol_native_rest_book["receipt_sha256"]
+        detached = {**book1_quote.iol_native_rest_book, "receipt_sha256": "f" * 64}
+        assert client.first_sale_book2(detached, cutoff_at=ack_at, cutoff_ns=1)["state"] == (
+            "IOL_FI_BOOK1_NOT_RETAINED")
+        assert transport.calls[4:] == ["token", *([symbol, "depth"] * 4)]
+
+        final = supervisor.supervise(position, store.latest_quote(position), transport.now.isoformat())
+        assert final.state == "CLOSED"
+        assert not store.open_positions()
+        with store.connect() as db:
+            assert snapshot_at(db, paper_id, transport.now).residual_nominal == 0
+            assert [row[0] for row in db.execute("SELECT side FROM paper_fills ORDER BY id")] == [
+                "BUY_SIMULATED", "SELL_SIMULATED"]
+            assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+            assert db.execute("SELECT event_json FROM paper_fi_economic_events").fetchone()[0].count(
+                "IOL_LIVE_BOOK") == 1
+
+
+def test_iol_letter_keeps_reviewed_maturity_and_refuses_unproven_units(tmp_path, tmp_path_factory, monkeypatch):
+    opening, root, broker = letter_broker(tmp_path, monkeypatch, symbol="S30N6", daily_soft_stop_pct="0.015")
+    contract = opening.contract
+    reviewed_market_units(monkeypatch, root, contract, units="LOTS")
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, contract.key) as (server, client, transport, _):
+        transport.overrides["depth"] = {"bids": [{"price": 99.9, "size": 1}]}
+        quote = scanner_quote(server, client, transport, contract)
+        error = broker._decide_fixed_income(quote, AT.isoformat())
+        assert error[0] == "HOLD"
+        assert error[3]["reason_code"] == "FI_IOL_PRICE_OR_DEPTH_UNITS_UNVERIFIED"
+        assert not broker.store.open_positions()
+
+        reviewed_market_units(monkeypatch, root, contract)
+        assert iol_reviewed_policy(broker.store, contract.key, contract, AT)[0]["economic_policy_authority"] == (
+            ECONOMICS_AUTHORITY)
+        changed = {**quote.iol_trade_evidence, "gateway_generation": "c" * 64}
+        mismatch = broker._decide_fixed_income(replace(quote, iol_trade_evidence=changed), AT.isoformat())
+        assert mismatch[0] == "HOLD" and mismatch[3]["reason_code"] == "FI_IOL_ENTRY_TRADE_GENERATION_UNVERIFIED"
+        stale = broker._decide_fixed_income(quote, (AT + timedelta(days=1)).isoformat())
+        assert stale[0] == "HOLD" and stale[3]["reason_code"] == "FI_IOL_ENTRY_BOOK_OR_TRADE_STALE"
+        assert_reviewed_letter_roundtrip(
+            quote, root, broker, fresh_quote_at=lambda at: scanner_quote(server, client, transport, contract, at=at))

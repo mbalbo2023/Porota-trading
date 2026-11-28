@@ -1582,7 +1582,14 @@ def test_fases_de_mercado_impiden_operar_fuera_de_rueda(monkeypatch):
     assert observer._market_phase(after) == "CLOSED"
 
 
-def test_universo_ampliado_descubre_familias_sin_watchlist_manual(monkeypatch, tmp_path):
+def test_universo_ampliado_descubre_familias_sin_watchlist_manual(
+        monkeypatch, tmp_path, daily_sync_trading_clock):
+    class DiscoveryClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return daily_sync_trading_clock.astimezone(tz)
+
+    monkeypatch.setattr(observer, "datetime", DiscoveryClock)
     watchlist = tmp_path / "watchlist.json"
     watchlist.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(observer, "WATCHLIST_PATH", watchlist)

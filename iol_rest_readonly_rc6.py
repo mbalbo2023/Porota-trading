@@ -78,6 +78,7 @@ class IOLRestReadOnly:
         self.opener = opener if opener is not None else build_opener(_NoRedirect)
         self.active = None
         self.auth_blocked = False
+        self.wire_observer = None
 
     @property
     def uses_wire_budget(self):
@@ -111,11 +112,18 @@ class IOLRestReadOnly:
                           data=json.dumps(auth).encode() if auth is not None else None, headers=headers)
         if self.governor is not None:
             self.governor.acquire()
+        started = time.monotonic()
+        status = "TRANSPORT_ERROR"
+        body_bytes = None
         try:
             with self.opener.open(request, timeout=8) as response:
+                code = getattr(response, "status", None)
+                status = str(code) if type(code) is int else "HTTP_STATUS_UNAVAILABLE"
                 raw = response.read(RESPONSE_LIMIT + 1)
+                body_bytes = len(raw)
         except HTTPError as exc:
             with exc:
+                status = str(exc.code)
                 retry = exc.headers.get("Retry-After", "")
                 retry_after = int(retry) if re.fullmatch(r"[0-9]{1,6}", retry) else None
                 if exc.code == 429 and self.governor is not None:
@@ -124,6 +132,11 @@ class IOLRestReadOnly:
                                    retry_after=retry_after) from None
         except (URLError, TimeoutError, OSError):
             raise IOLRestError("IOL_REST_TRANSPORT_UNAVAILABLE", failure_class="TRANSPORT") from None
+        finally:
+            if self.wire_observer is not None:
+                endpoint = "oauth" if auth is not None else (
+                    "asset" if path.startswith("/broker/assets/") else path.rsplit("/", 1)[-1])
+                self.wire_observer(endpoint, started, time.monotonic(), status, body_bytes)
         try:
             if len(raw) > RESPONSE_LIMIT:
                 raise ValueError

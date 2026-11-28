@@ -147,8 +147,27 @@ class DispatcherTests(unittest.TestCase):
                     pass
             return subprocess.CompletedProcess(command, 0)
 
-        with patch.object(jobs, "read_release_state", return_value=(self.current, {})):
+        with patch.object(jobs, "read_release_state", return_value=(self.current, {})), \
+             patch.object(jobs, "byma_paper_spot_phase", return_value="OPEN"):
             jobs.publish_runtime_evidence(self.identity, root=self.root, run=run)
+
+    def test_periodic_reports_skip_outside_the_wheel_without_docker_or_publishing(self):
+        with patch.object(jobs, "read_release_state", return_value=(self.current, {})), \
+             patch.object(jobs, "byma_paper_spot_phase", return_value="CLOSED"), \
+             patch.object(jobs, "verified_host", side_effect=AssertionError("unexpected Docker read")):
+            def run(*args, **kwargs):
+                self.fail("scheduled report started outside the wheel")
+
+            for unit in (jobs.INTROSPECTION, jobs.PUBLISH):
+                receipt = jobs.run_job(unit, root=self.root, identity=self.identity, run=run)
+                self.assertEqual(receipt["state"], "SKIPPED")
+                self.assertEqual(receipt["exit_code"], 0)
+                self.assertEqual(receipt["reason"], "REPORT_OUTSIDE_PAPER_WHEEL")
+            receipt = jobs.publish_runtime_evidence(self.identity, root=self.root, run=run)
+            self.assertEqual(receipt["unit"], "porota-runtime-evidence-rc6.service")
+            self.assertEqual(receipt["state"], "SKIPPED")
+            self.assertEqual(receipt["source_sha"], self.current["source_sha"])
+            self.assertEqual(receipt["exit_code"], 0)
 
     def test_preopen_red_child_reports_only_allowlisted_checks_and_preserves_exit_two(self):
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"
@@ -289,7 +308,8 @@ class DispatcherTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 2, "private report content", "")
         self.manager.docker = host.Docker(self.identity, run=run)
         with patch.object(jobs, "verified_host", return_value=(self.manager, self.current, {})), \
-             patch.object(jobs, "database_snapshot", return_value={}):
+             patch.object(jobs, "database_snapshot", return_value={}), \
+             patch.object(jobs, "byma_paper_spot_phase", return_value="OPEN"):
             result = jobs.run_job(jobs.INTROSPECTION, root=self.root, identity=self.identity)
             self.assertEqual(result["exit_code"], 2)
             self.assertNotIn("private report", json.dumps(result))

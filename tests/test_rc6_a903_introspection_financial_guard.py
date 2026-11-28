@@ -104,6 +104,26 @@ def test_exact_integer_zero_does_not_raise_counter_anomaly(tmp_path, monkeypatch
     assert not any(item.startswith("real_orders_sent_") for item in result["anomalies"])
 
 
+def test_collect_and_publish_use_iol_health_from_the_active_profile(tmp_path, monkeypatch):
+    from ops_publish_introspection_rc6 import sanitize
+
+    path = _fixture(tmp_path, monkeypatch)
+    now = datetime.now(introspection.TZ).isoformat()
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(introspection, "byma_paper_spot_phase", lambda at: "OPEN")
+    with sqlite3.connect(path) as db:
+        db.execute("""CREATE TABLE api_health (
+            component TEXT, state TEXT, detail TEXT, checked_at TEXT, last_success_at TEXT, source TEXT)""")
+        db.execute("INSERT INTO api_health VALUES ('IOL_REST_AUTH','VERDE','',?,?,'IOL REST')", (now, now))
+        db.execute("INSERT INTO paper_events VALUES (?,'DATA_ERROR',NULL,'GGAL: IOL_HTTP_429')", (now,))
+
+    report = sanitize(introspection.collect())
+    assert report["observer"]["market_provider"] == "IOL_REST"
+    assert report["ppi_errors_1h"] == []
+    assert "iol_current_book_rate_limited" in report["anomalies"]
+    assert "ppi_auth_unavailable_during_open_market" not in report["anomalies"]
+
+
 @pytest.mark.parametrize("bad_value", ["oops", None, "NaN", "Infinity", "1e9999999"])
 def test_bad_closed_pnl_never_turns_into_zero_or_partial_sum(
     tmp_path, monkeypatch, bad_value

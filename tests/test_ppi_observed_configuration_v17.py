@@ -1,4 +1,5 @@
 """Regresión a partir de evidencia del operador; no abre PPI ni órdenes reales."""
+from contextlib import closing
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import json
@@ -165,14 +166,22 @@ def test_payload_invalido_no_es_cero_coincidencias(observed_store, bad):
 
 def test_dashboard_muestra_cobertura_sin_leer_api_ni_escribir(observed_store, monkeypatch):
     monkeypatch.setattr(dashboard, 'DB_PATH', observed_store.path)
-    before = Path(observed_store.path).read_bytes()
-    page = dashboard.history_page()
+    database = Path(observed_store.path)
+    wal = database.with_name(database.name + '-wal')
+    # Normalize fixture writes before comparing the protected files. Retain
+    # this connection so closing the dashboard reader cannot induce a
+    # last-connection checkpoint of the fixture itself.
+    with closing(observed_store.connect()) as anchor:
+        assert tuple(anchor.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()) == (0, 0, 0)
+        before = (database.read_bytes(), wal.read_bytes() if wal.exists() else None)
+        page = dashboard.history_page()
+        after = (database.read_bytes(), wal.read_bytes() if wal.exists() else None)
     assert 'Cobertura por familia' in page
     assert all(kind in page for kind in DECLARED_FAMILIES)
     assert 'Filtros sin coincidencias' in page
     assert 'Declarada; sin consulta' in page
     assert 'No acredita permisos ni habilita operaciones' in page
-    assert Path(observed_store.path).read_bytes() == before
+    assert after == before
 
 
 def test_familia_nueva_y_retirada_no_desaparecen_del_inventario(observed_store, monkeypatch):

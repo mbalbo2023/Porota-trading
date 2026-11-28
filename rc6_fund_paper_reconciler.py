@@ -78,7 +78,8 @@ class FundSnapshot:
     real_routes_used: tuple = ()
 
 
-def fund_evidence_digest(evidence: FundClassEvidence | FundReceipt) -> str:
+def fund_evidence_json(evidence: FundClassEvidence | FundReceipt) -> str:
+    """Canonical document used for both receipt storage and signed digests."""
     values = asdict(evidence)
     if isinstance(evidence, FundReceipt):
         for field in ("nav_per_unit", "units", "explicit_fee", "cash_amount"):
@@ -90,7 +91,11 @@ def fund_evidence_digest(evidence: FundClassEvidence | FundReceipt) -> str:
     for field in fields:
         if values[field] is not None:
             values[field] = aware_datetime(values[field])
-    return hashlib.sha256(_canonical_json(values).encode("utf-8")).hexdigest()
+    return _canonical_json(values)
+
+
+def fund_evidence_digest(evidence: FundClassEvidence | FundReceipt) -> str:
+    return hashlib.sha256(fund_evidence_json(evidence).encode("utf-8")).hexdigest()
 
 
 def read_locked_fund_events(connection, lifecycle_id, evidence):

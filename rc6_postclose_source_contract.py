@@ -1,4 +1,4 @@
-"""Read-only, fail-closed PPI EOD receipt for the current BYMA session.
+"""Read-only, fail-closed EOD receipt for the current BYMA session.
 
 The observer alone publishes ``source_sync``; a requested session or a fresh
 clock cannot replace its exact-key RAW publication attestation.  No network,
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -96,13 +97,16 @@ def verified_ppi_eod_detail(detail: object, session: str) -> dict | None:
 
 
 def postclose_eod_receipt(at: datetime, *, db_path: Path | str | None = None) -> dict:
-    """Prove current PPI EOD RAW full-key publication or remain provisional."""
+    """Require certified daily publication from the effective release provider."""
+    iol = os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST"
     result = {"schema": "rc6.postclose-eod-source.v2", "source": SOURCE,
               "state": PENDING, "session": None,
               "reason": "NO_VERIFIED_SOURCE_RECEIPT", "verified_exact_keys": 0,
               "required_exact_keys": 0, "source_success_at": None,
               "scope": "BOUNDED_PPI_FULL_KEY_HISTORY_BATCH_ONLY",
               "all_families_approved": False, "paper_entry_authority": False}
+    if iol:
+        result.update(source="IOL_REST", scope="IOL_CERTIFIED_DAILY_PUBLICATION")
     if at.tzinfo is None or at.utcoffset() is None:
         result["reason"] = "CLOCK_MISSING_TIMEZONE"
         return result
@@ -117,6 +121,9 @@ def postclose_eod_receipt(at: datetime, *, db_path: Path | str | None = None) ->
         return result
     if now < byma_eod_publication_floor(now):
         result["reason"] = "BYMA_EOD_PUBLICATION_FLOOR_NOT_REACHED"
+        return result
+    if iol:
+        result["reason"] = "IOL_EOD_SOURCE_NOT_ATTESTED"
         return result
     try:
         database = database_path()
@@ -196,6 +203,8 @@ def postclose_eod_receipt(at: datetime, *, db_path: Path | str | None = None) ->
 
 def verified_current_source(receipt: object, at: datetime) -> bool:
     """Reject stale or forged source tokens even if their state says verified."""
+    if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST":
+        return False  # The installed release has local samples and no certified daily source receipt.
     if not isinstance(receipt, dict) or at.tzinfo is None or at.utcoffset() is None:
         return False
     try:

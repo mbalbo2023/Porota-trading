@@ -177,6 +177,17 @@ class RootlessContracts(unittest.TestCase):
         with self.assertRaisesRegex(host.Hold, "RUNTIME_PROVIDER_CREDENTIALS_BOUNDARY"):
             validate()
 
+    def test_iol_nominal_market_policy_pins_reach_only_the_observer(self):
+        values = {"POROTA_FI_EVIDENCE_MANIFEST_SHA256": "a" * 64,
+                  "POROTA_FI_IOL_MARKET_POLICY_SHA256": "b" * 64,
+                  "POROTA_FI_EVIDENCE_DIRECTORY": "/unsupported/mount"}
+        observer, dashboard = host.runtime_environments(
+            values, {"DASHBOARD_ACCESS_TOKEN": "auth"}, SHA, TREE, provider="IOL_REST")
+        self.assertEqual(observer["POROTA_FI_EVIDENCE_MANIFEST_SHA256"], "a" * 64)
+        self.assertEqual(observer["POROTA_FI_IOL_MARKET_POLICY_SHA256"], "b" * 64)
+        self.assertNotIn("POROTA_FI_EVIDENCE_DIRECTORY", observer)
+        self.assertTrue(values.keys().isdisjoint(dashboard))
+
     def test_iol_closed_market_health_does_not_accept_ppi_session(self):
         now = datetime.now(timezone.utc)
         row = {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0, "ppi_auth": "NOT_ATTEMPTED",

@@ -228,7 +228,8 @@ def reduce_events(position: PositionSeed, events: Iterable[EconomicEvent], *, as
                            event.source_kind, source_reference, source_sha, code,
                            fixing_value, unit)
         elif kind == "MARKET_SALE":
-            if (family not in {"BONOS", "OBLIGACIONES"} or event.source_kind != "PPI_LIVE_BOOK"
+            if (family not in {"BONOS", "OBLIGACIONES"}
+                    or event.source_kind not in {"PPI_LIVE_BOOK", "IOL_LIVE_BOOK"}
                     or effective_us < opened_us):
                 raise ValueError("FIXED_INCOME_PAPER_SALE_SOURCE_REQUIRED")
             _absent(event, "payment_currency", "cash_amount", "fixing_code", "fixing_value", "fixing_unit")

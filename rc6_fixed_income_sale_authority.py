@@ -16,6 +16,10 @@ import re
 
 from bs_instrument_contracts import aware_datetime, decimal_value, family_name
 from rc6_fixed_income_runtime import _digest, _json, _read
+from rc6_fixed_income_iol_evidence import (
+    POLICY_PIN as IOL_POLICY_PIN, PROVIDER as IOL_PROVIDER,
+    iol_native_book_fields, iol_quote_book_fields, iol_reviewed_policy,
+)
 import rc6_paper_causal_decision_receipt as causal
 from rc6_ppi_shared_feed import NATIVE_READ_SCHEMA, ReadOnlyUnixFeedClient, _sha as native_sha
 
@@ -88,7 +92,24 @@ def deployed_sale_model():
     rows, known_at, source_sha = packaged_historical_model()
     pin = causal._sha(causal._json([release, source_sha]))
     return {"release": release, "policy": pin, "source": source_sha,
-            "known_at": known_at, "rows": rows}
+            "known_at": known_at, "rows": rows, "quantity_model": "NORMALIZED_HISTORICAL_PPI_VN"}
+
+
+def deployed_exit_signing_model():
+    """Pin the independent EXIT child for the configured read-only provider."""
+    if os.getenv("POROTA_RC6_MARKET_PROVIDER") != IOL_PROVIDER:
+        return deployed_sale_model()
+    pin = os.getenv(IOL_POLICY_PIN, "")
+    if not pin:
+        return None
+    if (os.getenv("DASHBOARD_OPERATION_MODE") != "PRODUCTION_PAPER"
+            or os.getenv("EXECUTION_MODE") != "SIMULATION"
+            or os.getenv("REAL_ORDER_CAPABILITY") != "BLOCKED"
+            or os.getenv("ALLOW_REAL_ORDERS", "").lower() not in {"", "false", "0"}):
+        raise ValueError("FI_IOL_EXIT_SIGNER_MODE_BLOCKED")
+    return {"release": sale_release_anchor(os.getenv("POROTA_BUILD_SHA"),
+                                          os.getenv("POROTA_CANDIDATE_TREE_SHA")),
+            "policy": _digest(pin), "quantity_model": "RELEASE_REVIEWED_IOL_REST_VN"}
 
 
 def native_market_sale_enabled(identity):
@@ -163,8 +184,20 @@ def build_market_sale_policy(sources, *, release_sha256, at, valid_until):
         "instruments": sorted(rows, key=lambda row: row["identity"])}).encode()
 
 
-def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
-    """Require a release-pinned economic policy for the exact PPI identity."""
+def market_sale_policy(store, identity, contract, at, *, policy_bytes=None, provider="PPI"):
+    """Require reviewed executable book units for this provider and exact identity."""
+    if provider != os.getenv("POROTA_RC6_MARKET_PROVIDER", "PPI"):
+        raise ValueError("FI_MARKET_SALE_ACTIVE_PROVIDER_MISMATCH")
+    if provider == IOL_PROVIDER:
+        if identity[1] not in SALE_FAMILIES:
+            raise ValueError("FI_MARKET_SALE_POLICY_IDENTITY_UNBOUND")
+        row, costs, pin = iol_reviewed_policy(store, identity, contract, at)
+        if (causal.PINNED_RELEASE_SHA256 != row["release_sha256"]
+                or causal._digest_or_none(causal.PINNED_DECISION_SIGNER_KEY_SHA256) is None):
+            raise ValueError("FI_PAPER_EXIT_SIGNER_PENDING")
+        return row, costs, pin
+    if provider != "PPI":
+        raise ValueError("FI_MARKET_SALE_ACTIVE_PROVIDER_MISMATCH")
     model = deployed_sale_model()
     if model is not None:
         return _historical_market_sale_policy(model, identity, contract, at)
@@ -203,6 +236,10 @@ def market_sale_policy(store, identity, contract, at, *, policy_bytes=None):
 
 def native_book_fields(receipt, identity):
     """Parse the retained REST book without granting it execution authority."""
+    if isinstance(receipt, dict) and receipt.get("source") == IOL_PROVIDER:
+        if receipt.get("consumer") != "exit_reader":
+            raise ValueError("FI_IOL_BOOK_NOT_EXIT_READER")
+        return iol_native_book_fields(receipt, identity)
     from bf_production_paper_observer import _level, _levels
 
     if (not isinstance(receipt, dict) or receipt.get("schema") != NATIVE_READ_SCHEMA
@@ -241,9 +278,16 @@ def prepare_market_sale(store, position, quote, cause, at):
     identity = (identity[0], family_name(identity[1]), *identity[2:])
     if not isinstance(cause, str) or not cause.strip() or len(cause) > 80 or quote.contract is None:
         raise ValueError("FI_MARKET_SALE_INTENT_NOT_VALID")
-    policy, _, pin = market_sale_policy(store, identity, quote.contract, at)
-    book = quote.ppi_native_rest_book
-    fields = native_book_fields(book, identity)
+    if quote.metadata_source == IOL_PROVIDER:
+        policy, _, pin = market_sale_policy(store, identity, quote.contract, at, provider=IOL_PROVIDER)
+        book = quote.iol_native_rest_book
+        fields = iol_quote_book_fields(quote, identity, consumer="exit_reader")
+    else:
+        policy, _, pin = market_sale_policy(store, identity, quote.contract, at)
+        book = quote.ppi_native_rest_book
+        if isinstance(book, dict) and book.get("source") == IOL_PROVIDER:
+            raise ValueError("FI_MARKET_SALE_PROVIDER_BOOK_MISMATCH")
+        fields = native_book_fields(book, identity)
     if (quote.time_error(at) or any(getattr(quote, name) != fields[name]
                                   for name in ("bid", "ask", "bid_size", "ask_size"))
             or aware_datetime(quote.book_at) != aware_datetime(fields["book_at"])
@@ -288,11 +332,19 @@ def _book2_cutoff(proof):
     book1 = intent["book1"]
     native_book_fields(book1, intent["identity"])
     if (aware_datetime(book1["received_at_utc"]) >= at or book1["receive_monotonic_ns"] >= ns):
-        raise ValueError("PPI_PIT_BOOK1_NOT_PRE_COMMIT")
+        raise ValueError("IOL_FI_BOOK1_NOT_PRE_COMMIT" if book1["source"] == IOL_PROVIDER
+                         else "PPI_PIT_BOOK1_NOT_PRE_COMMIT")
     return at + timedelta(milliseconds=latency), ns + latency * 1_000_000
 
 
 def _read_first_book2(db_path, intent, cut_at, cut_ns):
+    book1 = intent["book1"]
+    if book1["source"] == IOL_PROVIDER:
+        from rc6_iol_market_gateway import IOLGatewayClient, iol_gateway_socket_path
+
+        client = IOLGatewayClient(socket_path=iol_gateway_socket_path(db_path), timeout_seconds=2)
+        client.owner_status()
+        return client.first_sale_book2(book1, cutoff_at=cut_at, cutoff_ns=cut_ns)
     from rc6_ppi_gateway_reader_adapter import gateway_socket_path
 
     client = ReadOnlyUnixFeedClient(socket_path=gateway_socket_path(db_path), timeout_seconds=2)
@@ -308,8 +360,11 @@ def _check_book2(proof, book2):
     intent = proof["fixed_income_market_sale"]
     fields = native_book_fields(book2, intent["identity"])
     cut_at, cut_ns = _book2_cutoff(proof)
+    if book2["source"] != intent["book1"]["source"]:
+        raise ValueError("FI_MARKET_SALE_BOOK2_PROVIDER_MISMATCH")
     if book2["session_fingerprint"] != intent["book1"]["session_fingerprint"]:
-        raise ValueError("PPI_PIT_BOOK2_SESSION_CHANGED")
+        raise ValueError("IOL_FI_BOOK2_SESSION_CHANGED" if book2["source"] == IOL_PROVIDER
+                         else "PPI_PIT_BOOK2_SESSION_CHANGED")
     if (aware_datetime(fields["book_at"]) <= cut_at or aware_datetime(fields["observed_at"]) <= cut_at
             or book2["receive_monotonic_ns"] <= cut_ns
             or book2["receipt_sha256"] == intent["book1"]["receipt_sha256"]):

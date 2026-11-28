@@ -4,6 +4,7 @@ Una lectura de Current no informa todos los negocios ni su volumen individual.
 Las barras muestreadas nunca se rotulan OHLCV completo, ni generan VWAP/dollar
 bars. Correcciones se anexan con su disponibilidad real; no reescriben el pasado.
 """
+from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -233,6 +234,7 @@ class CandleArchive:
 class SampleMaterializer:
     """Checkpoint y agregados en una transacción acotada; nunca consulta PPI."""
     CLOSED_HEARTBEAT_SECONDS = 60
+    CLOSED_IDLE_POLL_SECONDS = 15
     def __init__(self,store,resolutions=('1m','5m')):
         if not resolutions or len(set(resolutions))!=len(resolutions) or any(r not in RESOLUTIONS for r in resolutions):
             raise ValueError('Resoluciones inválidas')
@@ -248,8 +250,9 @@ class SampleMaterializer:
         """Skip an empty write only when the closed-market proof is complete.
 
         A new snapshot or overdue dirty bar goes through the original writer
-        on this tick. A racing insertion is consumed on the next two-second
-        tick. Unknown calendar, SQL errors, or missing state use the old path.
+        on this tick. After an empty read, the next poll may wait up to
+        CLOSED_IDLE_POLL_SECONDS. Unknown calendar, SQL errors, or missing
+        state use the normal writer and its short interval.
         """
         try:
             if byma_paper_spot_phase(aware_datetime(at)) != 'CLOSED':
@@ -257,8 +260,8 @@ class SampleMaterializer:
         except (OSError, TypeError, ValueError):
             return None
         try:
-            with sqlite3.connect(Path(self.store.path).as_uri()+'?mode=ro',
-                                 uri=True,timeout=.05) as c:
+            with closing(sqlite3.connect(Path(self.store.path).as_uri()+'?mode=ro',
+                                         uri=True,timeout=.05)) as c:
                 c.row_factory=sqlite3.Row
                 c.execute('PRAGMA query_only=ON')
                 c.execute('PRAGMA busy_timeout=50')
@@ -275,7 +278,8 @@ class SampleMaterializer:
                     return None
                 if c.execute('SELECT 1 FROM candle_dirty WHERE bar_end<=? LIMIT 1',(now,)).fetchone():
                     return None
-                return {'cursor':cursor,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING'}
+                return {'cursor':cursor,'accepted':0,'rejected':0,'versions':0,'state':'RUNNING',
+                        'next_poll_seconds': min(self.CLOSED_IDLE_POLL_SECONDS, self.CLOSED_HEARTBEAT_SECONDS-age)}
         except (sqlite3.Error, TypeError, ValueError):
             return None
 
@@ -491,10 +495,12 @@ def run_worker(store,stop,*,clock_fn):
     worker=SampleMaterializer(store)
     try:
         while not stop.is_set():
+            wait_seconds = 2
             try:
-                worker.tick(clock_fn())
+                result = worker.tick(clock_fn())
+                wait_seconds = result.get('next_poll_seconds', wait_seconds)
             except Exception as exc:
                 worker.status(clock_fn(),'ERROR',type(exc).__name__)
-            stop.wait(2)
+            stop.wait(wait_seconds)
     finally:
         worker.status(clock_fn(),'STOPPED')

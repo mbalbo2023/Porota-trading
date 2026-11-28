@@ -113,7 +113,9 @@ class ReplayHTTP:
                 pytest.fail(f"unexpected fixture route {url.path}")
         if path in self.overrides:
             row.update(self.overrides[path])
-        return BytesIO(json.dumps({"data": row, "error": None}).encode())
+        response = BytesIO(json.dumps({"data": row, "error": None}).encode())
+        response.status = 200
+        return response
 
 
 def reader(tmp_path, identity=GGAL):
@@ -250,7 +252,13 @@ def test_iol_workers_observe_samples_and_hold_unqualified_cauciones(tmp_path, mo
     assert (sweep.row["state"], sweep.row["code"], sweep.row["real_orders_sent"]) == (
         "HOLD", "IOL_REPO_BOOK_CLOCK_UNVERIFIED", 0)
     assert transport.calls == initial_calls
+    cauciones.run_worker(store, ObserveOneCycle("paper_caucion_cash_sweep_state"),
+                         clock_fn=lambda: cutoff - timedelta(seconds=30))
+    cauciones.run_worker(store, ObserveOneCycle("paper_caucion_cash_sweep_state"),
+                         clock_fn=lambda: cutoff)
     with store.connect() as conn:
+        attempts = conn.execute("""SELECT status,code FROM paper_caucion_cash_sweep_attempts""").fetchall()
+        assert [tuple(row) for row in attempts] == [("HOLD", "IOL_REPO_BOOK_CLOCK_UNVERIFIED")]
         assert conn.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
         assert conn.execute("SELECT count(*) FROM paper_cauciones").fetchone()[0] == 0
 
@@ -464,6 +472,44 @@ def test_iol_family_contract(identity, tmp_path):
                for row in rows)
 
 
+def test_local_etf_reference_bootstraps_read_scope_and_holds_until_cost_is_attributed(
+        tmp_path, tmp_path_factory, monkeypatch):
+    import bf_production_paper_observer as observer
+    import bu_instrument_catalog as catalog
+    from bv_paper_runtime import _make_iol_gateway_owner
+
+    identity = ("MERV", "ETFS", "BYMA", "ARS", "A-24HS")
+    request = identity[0], identity[1], identity[-1]
+    store = PaperStore(str(tmp_path / "etf-paper.db"))
+    observer._support_schema(store)
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
+    monkeypatch.setattr(observer, "now_iso", lambda: AT.isoformat())
+    assert not catalog.iol_spot_catalog(store, now=AT)
+    assert identity in catalog.iol_spot_catalog(store, now=AT, include_contracts=True)
+    owner = _make_iol_gateway_owner(store, tmp_path / "native" / "market.sock")
+    assert identity in owner.allowed["scanner"]
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, identity) as (server, client, transport, _):
+        register(client, "scanner")
+        evidence = {"trade_at": (transport.now - timedelta(seconds=3)).isoformat(),
+                    "received_at": (transport.now - timedelta(seconds=2)).isoformat(),
+                    "price": str(transport.price), "shares": "100"}
+        server.trade_stream = SimpleNamespace(
+            want=lambda key: None, observation=lambda key: (evidence, ""), state="SUBSCRIBED")
+        scanner = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+        market = observer._read_iol_scanner_quote(
+            scanner, store, request=request, identity=identity, priority="DISCOVERY",
+            catalog_read_error=False)
+    assert market.monetary_identity() == ("ARS", "BYMA")
+    assert market.opening_block_reason == "IOL_ETF_EXECUTION_TARIFF_UNVERIFIED"
+    assert transport.calls == ["token", "MERV", "quote", "depth"]
+    with store.connect() as connection:
+        observed = connection.execute("""SELECT status,capability,metadata_json
+            FROM financial_instrument_catalog WHERE ticker='MERV'""").fetchone()
+        assert tuple(observed[:2]) == ("OBSERVED_SHADOW", "IOL_ETF_EXECUTION_TARIFF_UNVERIFIED")
+        assert json.loads(observed[2])["iol_book_sha256"]
+        assert connection.execute("SELECT count(*) FROM paper_fills").fetchone()[0] == 0
+
+
 def test_iol_inmarket_candle_evidence_binds_both_frames_to_receipts(tmp_path, monkeypatch):
     path = tmp_path / "sample.db"
     store = PaperStore(str(path))
@@ -518,6 +564,7 @@ def test_iol_local_eod_archive_does_not_certify_postclose_provider(tmp_path, mon
     database = tmp_path / "paper.db"
     history = tmp_path / "local-eod.db"
     monkeypatch.setenv("PAPER_V17_DB_PATH", str(database))
+    monkeypatch.setenv("POROTA_RC6_MARKET_PROVIDER", "IOL_REST")
     scratch = artifact_root(database) / "sqlite-read-scratch"
     scratch.mkdir(mode=0o700, parents=True)
     store = PaperStore(str(database))
@@ -535,7 +582,7 @@ def test_iol_local_eod_archive_does_not_certify_postclose_provider(tmp_path, mon
     archive = consolidate(database, history, as_of=postclose, free_bytes=RESERVE)
     assert (archive["state"], archive["imported"], archive["provider_requests"]) == ("LOCAL_EOD_READY", 2, 0)
     receipt = postclose_eod_receipt(postclose, db_path=database)
-    assert receipt["reason"] == "PPI_EOD_SOURCE_NOT_GREEN"
+    assert (receipt["source"], receipt["reason"]) == ("IOL_REST", "IOL_EOD_SOURCE_NOT_ATTESTED")
     snapshot = build_snapshot("postclose", postclose, {"state": state}, eod_source=receipt)
     assert snapshot["status"] == PENDING and snapshot["paper_safety_status"] == "VERIFIED"
     assert build_review(snapshot, postclose)["status"] == PENDING
@@ -548,11 +595,13 @@ def test_iol_local_eod_archive_does_not_certify_postclose_provider(tmp_path, mon
     assert database.read_bytes() == source
 
 
-def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway):
-    replay_iol_spot_paper(tmp_path, monkeypatch, iol_gateway, GGAL)
+@pytest.mark.parametrize("reference_age_days", (0, 15))
+def test_ggal_paper_ledger_and_exit(tmp_path, monkeypatch, iol_gateway, reference_age_days):
+    replay_iol_spot_paper(tmp_path, monkeypatch, iol_gateway, GGAL,
+                          reference_age_days=reference_age_days)
 
 
-def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_scale=1.0):
+def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_scale=1.0, reference_age_days=0):
     import bf_production_paper_observer as observer
     import bu_instrument_catalog as catalog
     from bq_exit_policy import PaperSessionPolicy
@@ -577,7 +626,8 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
         assert key == wire
         return evidence
 
-    server.trade_stream = SimpleNamespace(want=lambda key: None, evidence=trade_evidence, state="SUBSCRIBED")
+    server.trade_stream = SimpleNamespace(want=lambda key: None,
+                                          observation=lambda key: (trade_evidence(key), ""), state="SUBSCRIBED")
     scanner = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
     exit_reader = IOLGatewayMarketReader(client, consumer="exit_reader", clock=lambda: transport.now)
     store = PaperStore(str(tmp_path / "paper.db"))
@@ -592,7 +642,7 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     request = ticker, family, term
     assert request not in observer._runtime_readiness(store)[1]
     opening = AT.replace(hour=13, minute=30)
-    checked_at = (opening - timedelta(minutes=15)).isoformat()
+    checked_at = (opening - timedelta(days=reference_age_days, minutes=15)).isoformat()
     primary = catalog.normalize_record({
         "ticker": ticker, "type": family, "market": market, "currency": currency,
         "_discovery_source": "PPI_PRIMARY",
@@ -603,6 +653,11 @@ def replay_iol_spot_paper(tmp_path, monkeypatch, gateway, identity, *, price_sca
     static = catalog.lookup(store, *request, market=market, currency=currency)
     assert static["_admission_reason"] == "PPI_SETTLEMENT_NOT_PROVIDER_ATTESTED"
     assert identity in catalog.iol_spot_catalog(store, now=AT)
+    if reference_age_days:
+        assert catalog.quote_terms(static, now=AT)["opening_block_reason"] == "PPI_FRESHNESS_STALE"
+        with store.connect() as db:
+            catalog.sync_candidate_universe(db, AT.isoformat())
+        assert identity in catalog.iol_spot_catalog(store, now=AT)
     contract = catalog.contract_for(static)
     focus, selected, _, _, _, feasibility = observer._runtime_readiness(store)
     assert request in selected
@@ -748,6 +803,42 @@ def test_iol_trade_stream_authenticates_and_keeps_only_the_subscribed_trade():
     quote = {"prices": {"current": 100}, "volume": {"shares": 15}}
     assert matched_trade(evidence, quote, now) == AT.isoformat()
     assert matched_trade(evidence, {**quote, "volume": {"shares": 14}}, now) is None
+    stream.want(("GGAL", "BCBA", "T0"))
+    assert stream.observation(("GGAL", "BCBA", "T0")) == (None, "IOL_TRADE_SUBSCRIPTION_PENDING")
+    stream._set_state("WAITING_FOR_RECONNECT")
+    assert stream.observation(key) == (None, "IOL_TRADE_STREAM_NOT_READY")
+
+
+def test_iol_gateway_prepares_only_registered_scanner_keys_and_counts_physical_http(iol_gateway):
+    from rc6_iol_trade_stream import IOLTradeStream, TRADE_STATUS
+
+    server, client, transport, _ = iol_gateway
+    stream = IOLTradeStream(server._rest.stream_bearer)
+    server.trade_stream = stream
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_UNREGISTERED_CLIENT"):
+        client.prepare_trades([GGAL])
+    register(client, "scanner")
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_IDENTITY_SCOPE_DENIED"):
+        client.prepare_trades([GGAL, FAMILIES[1]])
+    assert stream._keys() == set()
+    assert client.prepare_trades([GGAL]) == 1
+    assert stream._keys() == {("GGAL", "BCBA", "T1")}
+    assert transport.calls == []
+    assert client.owner_status()["wire_usage"]["attempts_last_minute"] == 0
+
+    scanner = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
+    transport.overrides["quote"] = {TRADE_STATUS: "IOL_TRADE_SAMPLE_ABSENT"}
+    with pytest.raises(IOLRestError, match="IOL_TRADE_STREAM_NOT_READY"):
+        scanner.observe(GGAL)
+    assert transport.calls == ["token", "GGAL", "quote"]
+    usage = client.owner_status()["wire_usage"]
+    assert usage["attempts_last_minute"] == 3
+    assert usage["http_results"] == {"scanner/oauth/200": 1, "scanner/asset/200": 1, "scanner/quote/200": 1}
+    assert usage["response_body_bytes_read"] > 0
+
+    stream._set_state("SUBSCRIBED", stream._bearer(), stream._keys())
+    with pytest.raises(IOLRestError, match="IOL_TRADE_SAMPLE_ABSENT"):
+        scanner.observe(GGAL)
 
 def test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers(iol_gateway):
     _, client, transport, advance = iol_gateway
@@ -952,7 +1043,8 @@ def test_iol_archive_distinguishes_day_nominals_from_trade_matching_field(tmp_pa
         event["msg"]["TS"] = counter
     wire, evidence = last_trade(event, transport.now - timedelta(seconds=1))
     server.trade_stream = SimpleNamespace(want=lambda key: None,
-                                          evidence=lambda key: evidence if key == wire else None, state="SUBSCRIBED")
+        observation=lambda key: (evidence, "") if key == wire else (None, "IOL_TRADE_SAMPLE_ABSENT"),
+        state="SUBSCRIBED")
     market = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
     store = PaperStore(str(tmp_path / "volume.db"))
     store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
@@ -1008,7 +1100,8 @@ def test_iol_scalping_native_consumes_interval_receipts_and_revokes_counter_rese
         assert wire == key
         return {**evidence, "stream_session": stream_session}
 
-    server.trade_stream = SimpleNamespace(want=lambda key: None, evidence=trade_evidence, state="SUBSCRIBED")
+    server.trade_stream = SimpleNamespace(want=lambda key: None,
+                                          observation=lambda key: (trade_evidence(key), ""), state="SUBSCRIBED")
     market = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
 
     def sample(minute):
@@ -1112,3 +1205,86 @@ def test_iol_dynamic_capacity_uses_completed_live_cycle_evidence():
     changed = [*cycles[-3:-1], {**cycles[-1], "rate_limited_attempts": 1}]
     assert safe_iol_capacity(changed, as_of=at)["reason_codes"] == ["IOL_CAPACITY_RATE_LIMITED"]
     assert safe_iol_capacity(cycles[-3:], as_of=at + timedelta(minutes=3))["safe_limit"] == 0
+
+
+@pytest.mark.parametrize("failure", [None, "owner", "429", "unsealed", "stale", "wrong_capacity"])
+def test_iol_paper_scanner_consumes_current_shadow_hot_scope(tmp_path, monkeypatch, failure):
+    import bf_production_paper_observer as scanner
+    from rc6_dynamic_universe.iol_capacity import cycle_evidence, safe_iol_capacity
+    from rc6_trader_dashboard import generation
+
+    store = PaperStore(tmp_path / "dynamic-scanner.sqlite")
+    keys = [(f"TEST{i}", *GGAL[1:]) for i in range(32)]
+    opened, hot, warm, other = (keys[i] for i in (0, -1, -2, -3))
+
+    def request(key):
+        return key[0], key[1], key[4]
+
+    monkeypatch.setattr(store, "open_positions", lambda: [
+        {"symbol": opened[0], "asset_class": opened[1], "settlement": opened[4]}])
+    monkeypatch.setattr(scanner.financial_catalog, "iol_spot_catalog", lambda *_, **__: keys)
+    monkeypatch.setattr(scanner, "INTERVAL", 60)
+    monkeypatch.setattr(scanner, "ACTIVE_SYMBOL_LIMIT", 6)
+    monkeypatch.setattr(scanner, "now_iso", lambda: AT.isoformat())
+    budget = {"calls_per_minute": 40, "scanner_batch_limit": 6, "scanner_calls_per_instrument": 3,
+              "batches_per_minute": 1, "planned_exit_calls": 2}
+    metrics = {"provider": "IOL_REST", "authenticated": True, "trade_stream_state": "SUBSCRIBED",
+               "session_generation": "a" * 64, "rate_limited_attempts": 0}
+    cycles = []
+    with store.connect() as db:
+        db.execute("""CREATE TABLE universe_cycle_metrics(
+            id INTEGER PRIMARY KEY, cursor_after, detail, started_at, finished_at)""")
+        for offset in range(3):
+            start = AT - timedelta(seconds=140 - offset * 60)
+            finish = start + timedelta(seconds=10)
+            tick = (start + timedelta(seconds=5)).isoformat()
+            metrics["wire_attempts"] = 18 * (offset + 1)
+            pairs = [[key, tick, tick, tick, metrics["session_generation"]]
+                     for key in (opened, hot, warm, other)]
+            cycle = cycle_evidence(metrics, pairs, budget, complete=True)
+            db.execute("""INSERT INTO universe_cycle_metrics(cursor_after,detail,started_at,finished_at)
+                VALUES(?,?,?,?)""", (0, json.dumps({"iol_capacity_cycle": cycle}),
+                                      start.isoformat(), finish.isoformat()))
+            cycles.append({**cycle, "started_at": start.isoformat(), "finished_at": finish.isoformat()})
+    cap = safe_iol_capacity(cycles, as_of=AT)
+    assert cap["safe_limit"] == 3
+    pipeline = {"STRATEGY_ELIGIBLE": True, "TRADEABLE": True, "SIGNAL_READY": True}
+    report = {"mode": "SHADOW", "status": "SHADOW_OBSERVING", "phase": "OPEN",
+              "real_orders_sent": 0, "real_routes": "NOT_CALLED", "as_of": AT.isoformat(),
+              "engines": {"EQUITY_SPOT": {"capacity": cap.copy(), "preopen_digest": "b" * 64,
+                  "selected": [warm, hot], "telemetry": [
+                      {"identity": warm, "state": "WARM", "pipeline": pipeline},
+                      {"identity": hot, "state": "HOT", "pipeline": pipeline, "signal_result": "SAMPLES_READY",
+                       "strategy_source_at": AT.isoformat(), "book_at": AT.isoformat()}]}}}
+    if failure == "owner":
+        metrics["session_generation"] = "c" * 64
+    elif failure == "429":
+        metrics["rate_limited_attempts"] = 1
+    elif failure == "unsealed":
+        report = {}
+    elif failure == "stale":
+        report["as_of"] = (AT - timedelta(minutes=6)).isoformat()
+    elif failure == "wrong_capacity":
+        report["engines"]["EQUITY_SPOT"]["capacity"]["evidence_digest"] = "d" * 64
+    monkeypatch.setattr(generation, "read_shadow", lambda _: {"report": report})
+
+    baseline, _, _, _, old_plan = scanner._cycle_plan(store, iol=True)
+    selected, total, _, _, plan = scanner._cycle_plan(store, iol=True, iol_metrics=metrics)
+    assert total == len(keys)
+    assert len(selected) <= plan["iol_rest_budget"]["scanner_batch_limit"] == 6
+    assert selected[0] == request(opened)
+    assert set(old_plan["cold"]) <= set(selected)
+    if failure:
+        assert selected == baseline
+        assert plan["iol_dynamic_selection"]["status"] == "BASELINE"
+        assert plan["iol_dynamic_selection"]["reason_codes"]
+        assert not plan.get("dynamic_selection")
+    else:
+        assert plan["iol_dynamic_selection"]["status"] == "APPLIED"
+        assert selected[:3] == (request(opened), request(hot), request(warm))
+        assert request(hot) not in baseline and request(hot) in plan["opening_identities"]
+        assert request(warm) not in plan["opening_identities"]
+        assert [row["priority"] for row in plan["read_scopes"][:3]] == [
+            "OPENED_CRITICAL", "STRATEGY_HOT", "WARM"]
+        with store.connect() as db:
+            assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0

@@ -61,7 +61,10 @@ def sanitize(report):
     observer = _pick(report.get("observer"), (
         "mode", "process_state", "session_state", "ppi_auth", "heartbeat_at",
         "last_market_data_at", "real_orders_sent", "http_allowed", "http_blocked",
+        "market_provider",
     ))
+    if observer["market_provider"] not in {"IOL_REST", "PPI"}:
+        observer.pop("market_provider")
     workers = {}
     for name, value in (report.get("workers") or {}).items():
         if EVENT_NAME.fullmatch(str(name).upper()):

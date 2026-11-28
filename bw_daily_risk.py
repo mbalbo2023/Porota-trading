@@ -179,7 +179,12 @@ class DailyRisk:
                                 (q.symbol,q.asset_class,q.settlement)==(p['symbol'],p['asset_class'],p['settlement']) and
                                 not q.time_error(at,max_age_seconds=self.broker.quote_max_age_seconds) and
                                 decimal_value(q.bid,'bid',positive=True) <= decimal_value(q.ask,'ask',positive=True))
-                        except (ValueError,TypeError,ArithmeticError):
+                            if (valid and q.metadata_source == "IOL_REST"
+                                    and p["asset_class"] in {"BONOS", "LETRAS", "OBLIGACIONES"}):
+                                from rc6_fixed_income_iol_evidence import iol_reviewed_position_book
+
+                                iol_reviewed_position_book(self.store, p, q, at)
+                        except (KeyError, OSError, ValueError, TypeError, ArithmeticError):
                             valid = False
                     if not valid:
                         stale = True

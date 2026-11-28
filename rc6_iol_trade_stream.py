@@ -11,6 +11,9 @@ from bs_instrument_contracts import aware_datetime, decimal_value
 
 URL = "wss://stream-marketdata.invertironline.com"
 TRADE_EVIDENCE = "_rc6_iol_trade"
+TRADE_STATUS = "_rc6_iol_trade_status"
+TRADE_HOLDS = frozenset({"IOL_TRADE_STREAM_NOT_READY", "IOL_TRADE_SUBSCRIPTION_PENDING",
+                         "IOL_TRADE_SAMPLE_ABSENT", "IOL_TRADE_QUOTE_MISMATCH"})
 MAX_TRADES = 50
 HEARTBEAT_SECONDS = 15
 
@@ -102,30 +105,42 @@ class IOLTradeStream:
         self._lock = Lock()
         self._wanted = OrderedDict()
         self._trades = {}
+        self._subscribed = set()
         self._state = "WAITING_FOR_SCANNER"
         self._stream_token = None
 
     def want(self, key):
+        self.want_many((key,))
+
+    def want_many(self, keys):
         with self._lock:
-            self._wanted[key] = None
-            self._wanted.move_to_end(key)
-            if len(self._wanted) > MAX_TRADES:
-                retired, _ = self._wanted.popitem(last=False)
-                self._trades.pop(retired, None)
+            for key in keys:
+                self._wanted[key] = None
+                self._wanted.move_to_end(key)
+                if len(self._wanted) > MAX_TRADES:
+                    retired, _ = self._wanted.popitem(last=False)
+                    self._trades.pop(retired, None)
 
     def evidence(self, key):
+        return self.observation(key)[0]
+
+    def observation(self, key):
         with self._lock:
             if self._state != "SUBSCRIBED" or self._stream_token != self._bearer():
-                return None
-            return self._trades.get(key)
+                return None, "IOL_TRADE_STREAM_NOT_READY"
+            if key not in self._subscribed:
+                return None, "IOL_TRADE_SUBSCRIPTION_PENDING"
+            sample = self._trades.get(key)
+            return (sample, "") if sample is not None else (None, "IOL_TRADE_SAMPLE_ABSENT")
 
     def _keys(self):
         with self._lock:
             return set(self._wanted)
 
-    def _set_state(self, state, token=None):
+    def _set_state(self, state, token=None, subscribed=()):
         with self._lock:
             self._state, self._stream_token = state, token
+            self._subscribed = set(subscribed)
             if token is None:
                 self._trades.clear()
 
@@ -196,7 +211,7 @@ class IOLTradeStream:
                               quotes=[], order_book=[])
                         _ack(socket, ack, record)
                 active = wanted
-                self._set_state("SUBSCRIBED", token)
+                self._set_state("SUBSCRIBED", token, active)
                 sync_at = time.monotonic() + 2
             try:
                 record(_receive(socket, 1))

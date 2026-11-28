@@ -259,6 +259,14 @@ class PositionExitSupervisor:
                 return verdict(prefix + "INVALID_BOOK", "Libro cruzado")
         except (ValueError, TypeError):
             return verdict(prefix + "NO_LIQUIDITY", "Puntas inválidas o sin precio")
+        if family in {"BONOS", "OBLIGACIONES"} and q.metadata_source == "IOL_REST":
+            from rc6_fixed_income_iol_evidence import iol_reviewed_position_book
+
+            try:
+                iol_reviewed_position_book(self.store, p, q, at)
+            except (KeyError, OSError, ValueError, TypeError) as exc:
+                reason = str(exc) if str(exc).startswith("FI_") else "FI_IOL_HELD_BOOK_UNVERIFIED"
+                return verdict(prefix + "FI_NATIVE_EVIDENCE", reason)
         # El stop puede dispararse con precio y cantidad cero: decide salir y
         # conserva la intención; la ejecución todavía exige profundidad.
         # Take Profit shadow: evalúa neto/costos/impuesto configurado sin
@@ -289,7 +297,9 @@ class PositionExitSupervisor:
             return verdict("EXIT_PENDING_NO_LIQUIDITY", "Sin profundidad de salida")
         # BONOS/ON settle through the signed native FI path.
         if family in {"BONOS", "OBLIGACIONES"}:
-            if q.ppi_native_rest_book is not None:
+            iol_book = getattr(q, "iol_native_rest_book", None)
+            iol_exit_book = isinstance(iol_book, dict) and iol_book.get("consumer") == "exit_reader"
+            if q.ppi_native_rest_book is not None or iol_exit_book:
                 from rc6_fixed_income_sale_authority import prepare_market_sale
                 from rc6_fixed_income_sale_witness import read_witness, replan
 
@@ -310,6 +320,7 @@ class PositionExitSupervisor:
                 except (OSError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
                     reason = str(exc)
                     if key and reason in {"FI_NATIVE_SALE_EXACT_PPI_BOOK_PIT_REQUIRED",
+                                          "FI_NATIVE_SALE_EXACT_IOL_BOOK_PIT_REQUIRED",
                                           "FI_NATIVE_SALE_STEP_OR_SHARED_BOOK_DEPTH_EXCEEDED",
                                           "FI_NATIVE_SALE_INSUFFICIENT_EXECUTABLE_DEPTH",
                                           "FI_MARKET_SALE_BOOK2_TRUST_UNBOUND"}:

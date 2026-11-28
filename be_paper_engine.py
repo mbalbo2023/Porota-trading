@@ -108,6 +108,7 @@ class Quote:
     ppi_book1_event_sha256: Optional[str] = None
     ppi_native_rest_book: Optional[dict] = None
     iol_trade_evidence: Optional[dict] = None
+    iol_native_rest_book: Optional[dict] = None
 
     def time_error(self, as_of, *, require_trade=False, max_age_seconds=120,
                    max_trade_age_seconds=None):
@@ -297,6 +298,12 @@ def _atomic_admission_snapshot(q, features, paper_id, at, recorded_at, score, *,
     from rc6_performance.common import decision_snapshot_phase
     decision_snapshot_phase(evidence)
     return evidence
+
+
+def _future_market_source_error():
+    # The IOL release still lacks an authenticated A3 futures feed. A saved
+    # PPI Book can be fresh by age across cutover without belonging to its source.
+    return "IOL_A3_MARKET_UNVERIFIED" if os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST" else ""
 
 
 def _commit_future_quote_proof(connection, *, q, lifecycle_id, event_id, phase, at):
@@ -496,6 +503,7 @@ class PaperStore:
                     "contract_json": "TEXT", "metadata_source": "TEXT",
                     "ppi_native_rest_book": "TEXT",
                     "iol_trade_evidence": "TEXT",
+                    "iol_native_rest_book": "TEXT",
                     "opening_block_reason": "TEXT NOT NULL DEFAULT ''"},
             }.items():
                 columns = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
@@ -582,15 +590,16 @@ class PaperStore:
             c.execute("""INSERT INTO market_snapshots
               (source,observed_at,symbol,asset_class,settlement,last,bid,ask,bid_size,ask_size,currency,market,
                book_at,trade_at,last_kind,contract_json,metadata_source,opening_block_reason,ppi_native_rest_book,
-               iol_trade_evidence)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               iol_trade_evidence,iol_native_rest_book)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (SOURCE, q.observed_at, q.symbol, q.asset_class, q.settlement,
                        str(q.last), str(q.bid), str(q.ask), str(q.bid_size), str(q.ask_size),
                        currency, market, q.book_at, q.trade_at, q.last_kind,
                        json.dumps(asdict(q.contract), default=str) if q.contract else None,
                        q.metadata_source, q.opening_block_reason,
                        json.dumps(q.ppi_native_rest_book, allow_nan=False) if q.ppi_native_rest_book else None,
-                       json.dumps(q.iol_trade_evidence, allow_nan=False) if q.iol_trade_evidence else None))
+                       json.dumps(q.iol_trade_evidence, allow_nan=False) if q.iol_trade_evidence else None,
+                       json.dumps(q.iol_native_rest_book, allow_nan=False) if q.iol_native_rest_book else None))
 
     @staticmethod
     def latest_quote_row(connection, position):
@@ -617,7 +626,9 @@ class PaperStore:
                      ppi_native_rest_book=json.loads(values["ppi_native_rest_book"])
                      if values.get("ppi_native_rest_book") else None,
                      iol_trade_evidence=json.loads(values["iol_trade_evidence"])
-                     if values.get("iol_trade_evidence") else None)
+                     if values.get("iol_trade_evidence") else None,
+                     iol_native_rest_book=json.loads(values["iol_native_rest_book"])
+                     if values.get("iol_native_rest_book") else None)
 
     def latest_quote(self, position):
         with self.connect() as c:
@@ -1376,7 +1387,7 @@ class PaperBroker:
         return result | {'temporal_ready':True,'reason_code':'SIGNAL_TEMPORAL_READY'}
 
     def _option_underlying_evidence(self, q, at):
-        """Read one exact PPI-backed underlying from the existing PAPER book.
+        """Read one exact underlying from the active provider's PAPER book.
 
         An option ticker/underlying name cannot choose a currency, market or
         settlement on its own. Only a *unique*, READY exact identity whose
@@ -1386,11 +1397,16 @@ class PaperBroker:
         if q.contract is None or not q.contract.underlying:
             return None
         from rc6_option_paper_strategy import UnderlyingEvidence, UnderlyingTrade
+        from rc6_paper_admission_gate import iol_market_quote_reason
         from rc6_paper_runtime_safety import runtime_admission_context
         from rc6_ppi_option_contract_policy import PPI_OPTION_UNDERLYING_SETTLEMENT
         runtime_book, safety_error = runtime_admission_context(self.store)
         if safety_error:
             return None
+        iol = os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST"
+        if iol and iol_market_quote_reason(q, aware_datetime(at)):
+            return None
+        iol_generation = q.iol_trade_evidence["gateway_generation"] if iol else None
         # Runtime admission verifies this settlement for the underlying.
         # An independent replay can still study other ARS settlements.
         settlement = PPI_OPTION_UNDERLYING_SETTLEMENT if runtime_book else None
@@ -1405,18 +1421,25 @@ class PaperBroker:
                       AND f.market='BYMA' AND f.currency='ARS'
                       AND (? IS NULL OR f.settlement=?)
                       AND f.status='AVAILABLE' AND f.capability='READY_PAPER_SPOT'
-                      AND ci.status='AVAILABLE' AND ci.can_simulate=1
-                    LIMIT 8""", (q.contract.underlying, settlement, settlement)).fetchall()
+                      AND ci.status='AVAILABLE' AND (ci.can_simulate=1 OR ?)
+                    LIMIT 8""", (q.contract.underlying, settlement, settlement, iol)).fetchall()
+            if iol and len(matches) != 1:
+                return None
             fresh = []
             for row in matches:
                 entry = dict(zip(("symbol", "asset_class", "market", "currency",
                                   "settlement"), row))
                 underlying = self.store.latest_quote(entry)
-                if (underlying is None or not str(underlying.metadata_source or "").startswith("PPI_CATALOG:")
-                        or underlying.opening_block_reason
+                if (underlying is None or underlying.opening_block_reason
                         or underlying.time_error(at, require_trade=True,
                             max_age_seconds=self.quote_max_age_seconds,
                             max_trade_age_seconds=self.quote_max_age_seconds)):
+                    continue
+                if iol:
+                    if (iol_market_quote_reason(underlying, aware_datetime(at)) or
+                            underlying.iol_trade_evidence.get("gateway_generation") != iol_generation):
+                        continue
+                elif not str(underlying.metadata_source or "").startswith("PPI_CATALOG:"):
                     continue
                 fresh.append(underlying)
             if len(fresh) != 1:
@@ -1441,7 +1464,7 @@ class PaperBroker:
                 register_exact_time(c)
                 proofs = c.execute(f"""SELECT id,source,symbol,asset_class,
                     market,currency,settlement,last,trade_at,observed_at,
-                    last_kind,metadata_source,opening_block_reason
+                    last_kind,metadata_source,opening_block_reason,iol_trade_evidence
                     FROM market_snapshots WHERE id IN ({slots})""", ids).fetchall()
                 # Unlike signal_prices(), include INVALID/UNAVAILABLE newer
                 # revisions when deciding which source row owns a trade time.
@@ -1474,11 +1497,20 @@ class PaperBroker:
                         newest_for_instant.get(utc_microseconds(event["source_at"])) != row[0] or
                         row[10] != "TRADE" or row[12] or
                         not isinstance(origin, str) or
-                        not origin.startswith("PPI_CATALOG:") or
-                        not origin[len("PPI_CATALOG:"):].strip() or
                         row[8] != event["source_at"] or
                         row[9] != event["received_at"] or
                         D(row[7]) != D(event["price"])):
+                    return None
+                if iol:
+                    sample = json.loads(row[13] or "{}")
+                    if (origin != "IOL_REST" or sample.get("identity") != list(identity)
+                            or sample.get("gateway_generation") != iol_generation
+                            or aware_datetime(sample.get("trade_at")) != aware_datetime(row[8])
+                            or not aware_datetime(row[8]) <= aware_datetime(sample.get("received_at")) <=
+                                aware_datetime(sample.get("quote_received_at")) <= aware_datetime(row[9])
+                            or D(sample.get("price")) != D(row[7])):
+                        return None
+                elif not origin.startswith("PPI_CATALOG:") or not origin[len("PPI_CATALOG:"):].strip():
                     return None
             trades = tuple(UnderlyingTrade(
                 price=record["price"], traded_at=record["source_at"],
@@ -1492,7 +1524,7 @@ class PaperBroker:
                 ask_size=underlying.ask_size, book_at=underlying.book_at,
                 received_at=underlying.observed_at,
                 metadata_source=underlying.metadata_source, trades=trades)
-        except (sqlite3.Error, OSError, ValueError, TypeError, KeyError):
+        except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
             return None
 
     def _decide_option(self, q, at):
@@ -1623,7 +1655,8 @@ class PaperBroker:
                          'paper_causal_decision_freezes', 'paper_causal_decision_receipts')""").fetchone()[0]
         if tables != 4:
             return False
-        policy, _, _ = market_sale_policy(self.store, q.contract.key, q.contract, at)
+        provider = "IOL_REST" if q.metadata_source == "IOL_REST" else "PPI"
+        policy, _, _ = market_sale_policy(self.store, q.contract.key, q.contract, at, provider=provider)
         return policy["fee_policy_sha256"] == plan["fee_policy_sha256"]
 
     @trace_spot_signal
@@ -1933,6 +1966,14 @@ class PaperBroker:
                         or evidence.get("identity") != income_plan.get("identity")):
                     return "FI_NATIVE_SIGNAL_CHANGED_BEFORE_ADMISSION"
                 _digest(evidence.get("receipt_sha256"))
+                if q.metadata_source == "IOL_REST":
+                    from rc6_fixed_income_iol_evidence import iol_entry_market_evidence, iol_reviewed_policy
+
+                    at = self.execution_time(q)
+                    iol_entry_market_evidence(q, q.contract.key, at)
+                    _, _, policy_pin = iol_reviewed_policy(self.store, q.contract.key, q.contract, at)
+                    if evidence.get("market_policy_sha256") != policy_pin:
+                        return "FI_IOL_MARKET_POLICY_CHANGED_BEFORE_ADMISSION"
                 if not self.fixed_income_native_exit_authorized(
                         q, income_plan, self.execution_time(q), connection=connection):
                     return ("FI_NATIVE_MATURITY_LIFECYCLE_MISSING" if family == "LETRAS"
@@ -2254,6 +2295,9 @@ class PaperBroker:
             phase=phase, at=at)
 
     def _open_future(self, q: Quote, score: Decimal, features: dict):
+        source_error = _future_market_source_error()
+        if source_error:
+            return False, source_error, None
         gate_error = self._preopen_admission_error(q)
         if gate_error:
             return False, gate_error, None
@@ -2444,6 +2488,8 @@ class PaperBroker:
         return True, "FUTURES_PAPER_OPENED_SIMULATED", lifecycle_id
 
     def _close_future(self, q, position, reason):
+        if _future_market_source_error():
+            return False
         from rc6_paper_family_lifecycle import (future_position_contract,
             _FUTURE_LOCKED_BROKER_COMMIT)
         try:
@@ -2580,6 +2626,11 @@ class PaperBroker:
             except (ValueError,TypeError,KeyError):
                 self._future_exit_state(position,at,"WATCH_INVALID_CLOCK","Futures supervision clock invalid")
                 return
+            source_error = _future_market_source_error()
+            if source_error:
+                self._future_exit_state(position, at, "WATCH_MARKET_SOURCE_UNVERIFIED",
+                                        source_error, cause=time_cause or None)
+                return
             error=q.time_error(at,max_age_seconds=self.quote_max_age_seconds)
             if error:
                 self._future_exit_state(position,at,"WATCH_STALE_QUOTE",error,cause=time_cause or None)
@@ -2703,6 +2754,9 @@ class PaperBroker:
         from rc6_paper_family_lifecycle import _validate_future_contract
         features = {"family": "FUTUROS", "strategy": "futures-dlr-paper-v1",
                     "execution": "SPECIALIZED_PAPER_LIFECYCLE", "score_is_probability": False}
+        source_error = _future_market_source_error()
+        if source_error:
+            return "HOLD", ZERO, source_error, features
         try:
             _validate_future_contract(q.contract)
             if not str(q.metadata_source or "").startswith("PPI_CATALOG:"):
@@ -2748,18 +2802,22 @@ class PaperBroker:
 
     def supervise_futures(self, at):
         """Existing runtime clock services all active futures independent of scanner."""
-        from rc6_paper_family_lifecycle import future_positions
+        from rc6_paper_family_lifecycle import future_position_contract, future_positions
+
+        source_error = _future_market_source_error()
+        state = "WATCH_MARKET_SOURCE_UNVERIFIED" if source_error else "WATCH_NO_QUOTE"
         for position in future_positions(self.store, active_only=True):
-            q = self.store.latest_quote({**position, "asset_class": "FUTUROS"})
+            q = None if source_error else self.store.latest_quote({**position, "asset_class": "FUTUROS"})
             if q is not None:
                 self._on_future_quote(q, allow_new_openings=False)
-            else:
-                try:
-                    from rc6_paper_family_lifecycle import future_position_contract
-                    cause=self._future_time_exit_cause(position,future_position_contract(position),at)
-                    self._future_exit_state(position,at,"WATCH_NO_QUOTE","No exact futures book",cause=cause or None)
-                except (ValueError,TypeError,KeyError):
-                    self._future_exit_state(position,at,"WATCH_INVALID_CONTRACT","Futures supervision requires durable contract")
+                continue
+            try:
+                cause = self._future_time_exit_cause(position, future_position_contract(position), at)
+                self._future_exit_state(position, at, state, source_error or "No exact futures book",
+                                        cause=cause or None)
+            except (ValueError, TypeError, KeyError):
+                self._future_exit_state(position, at, "WATCH_INVALID_CONTRACT",
+                                        "Futures supervision requires durable contract")
 
     def _open(self, q: Quote, score: Decimal, features: dict):
         gate_error = self._preopen_admission_error(q)
@@ -3451,7 +3509,12 @@ class PaperBroker:
                         q = stored
                     usable = (q is not None and q.monetary_identity() == (currency, p["market"]) and
                               (q.symbol, q.asset_class, q.settlement) == (p["symbol"], p["asset_class"], p["settlement"]) and D(q.bid) > 0 and not q.time_error(measured_at, max_age_seconds=self.quote_max_age_seconds))
-                except (ValueError, TypeError):
+                    if (usable and q.metadata_source == "IOL_REST"
+                            and p["asset_class"] in {"BONOS", "LETRAS", "OBLIGACIONES"}):
+                        from rc6_fixed_income_iol_evidence import iol_reviewed_position_book
+
+                        iol_reviewed_position_book(self.store, p, q, measured_at)
+                except (KeyError, OSError, ValueError, TypeError):
                     usable = False
                 if usable:
                     mark = q.bid

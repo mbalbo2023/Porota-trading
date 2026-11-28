@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections import defaultdict
+from contextlib import closing, nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -241,7 +241,7 @@ def paper_schedule(at, *, start_minutes=30, cutoff_minutes=5):
     }
 
 
-def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
+def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline, connection=None):
     """Reserve only lifecycle obligations not already debited from PAPER cash.
 
     Spot positions, unsettled sale proceeds and open cauciones are already
@@ -256,8 +256,10 @@ def obligation_snapshot_from_ledger(store, *, observed_at, liquidity_deadline):
     cash_fci_states = frozenset({"SUBSCRIBE_REQUESTED", "SUBSCRIBE", "REDEEMED"})
     obligations = []
     point = aware_datetime(observed_at)
-    with store.connect() as connection:
-        connection.execute("BEGIN")  # One WAL snapshot for totals and events.
+    with (nullcontext(connection) if connection is not None
+          else closing(store.connect())) as connection:
+        if not connection.in_transaction:
+            connection.execute("BEGIN")  # One WAL snapshot for totals and events.
         table = connection.execute("""SELECT 1 FROM sqlite_master
           WHERE type='table' AND name='paper_family_lifecycle'""").fetchone()
         columns = {row[1] for row in connection.execute(
@@ -497,8 +499,15 @@ def _persist_runtime(store, *, at, state, code, request_id=None, paper_id=None,
         observer = connection.execute(
             "SELECT real_orders_sent FROM observer_state WHERE id=1").fetchone()
         real_orders = int(observer[0]) if observer else -1
-        previous = connection.execute("""SELECT last_attempt_at,request_id,paper_id
+        previous = connection.execute("""SELECT last_attempt_at,request_id,paper_id,state,code
           FROM paper_caucion_cash_sweep_state WHERE id=1""").fetchone()
+        if (result is not None and result.get("idempotent") and previous is not None
+                and tuple(previous[1:3]) == (request_id, paper_id)
+                and (paper_id is not None or tuple(previous[3:]) == (state, code)
+                     or connection.execute("""SELECT 1 FROM paper_caucion_cash_sweep_attempts
+                         WHERE request_id=? AND status=? AND code=? LIMIT 1""",
+                         (request_id, state, code)).fetchone())):
+            result = None
         connection.execute("""INSERT OR REPLACE INTO paper_caucion_cash_sweep_state
           VALUES(1,?,?,?,?,?,?,?,?,?)""", (
             aware_datetime(at).isoformat(), state,
@@ -530,26 +539,40 @@ def _existing_daily_allocation(store, request_id):
             "allocation":allocation,"idempotent":True}
 
 
+def configured_paper_schedule(at):
+    return paper_schedule(
+        at, start_minutes=os.getenv("PAPER_CAUCION_SWEEP_START_MINUTES_BEFORE_CLOSE", "30"),
+        cutoff_minutes=os.getenv("PAPER_CAUCION_SWEEP_CUTOFF_MINUTES_BEFORE_CLOSE", "5"))
+
+
+def daily_sweep_request_id(at):
+    day = aware_datetime(at).astimezone(TZ).date().isoformat()
+    return f"paper-caucion-cash-sweep:{day}:ARS:v1"
+
+
+def paper_sweep_enabled():
+    return os.getenv("PAPER_CAUCION_SWEEP_MODE", "OFF").upper() == "ACTIVE_PAPER"
+
+
 def run_worker(store, stop, *, clock_fn):
     """Canonical PAPER child: local DB/evidence only, with no order route."""
     from bv_paper_runtime import broker_from_environment
+    from rc6_caucion_repo_book import (
+        AUTHORITY_MISSING, CLOCK_UNVERIFIED, RECEIPT_MISSING, iol_offers_from_store,
+    )
     from rc6_iol_market_gateway import iol_primary_enabled
+    from rc6_paper_admission_gate import admission_status
 
     assert_cash_sweep_invariants()
     init_runtime_schema(store)
     interval = max(15, int(os.getenv("PAPER_CAUCION_SWEEP_INTERVAL_SECONDS", "30")))
-    start_minutes = int(os.getenv(
-        "PAPER_CAUCION_SWEEP_START_MINUTES_BEFORE_CLOSE", "30"))
-    cutoff_minutes = int(os.getenv(
-        "PAPER_CAUCION_SWEEP_CUTOFF_MINUTES_BEFORE_CLOSE", "5"))
     iol = iol_primary_enabled()
     broker = None if iol else broker_from_environment(store, clock_fn=clock_fn)
     try:
         while not stop.is_set():
             at = aware_datetime(clock_fn())
             try:
-                schedule = paper_schedule(
-                    at, start_minutes=start_minutes, cutoff_minutes=cutoff_minutes)
+                schedule = configured_paper_schedule(at)
                 if schedule is None:
                     _persist_runtime(store, at=at, state="WAITING_CALENDAR",
                                      code="CALENDAR_UNAVAILABLE_OR_CLOSED",
@@ -565,36 +588,50 @@ def run_worker(store, stop, *, clock_fn):
                     _persist_runtime(store, at=at, state="WAITING_WINDOW",
                                      code="SWEEP_WINDOW_CLOSED",
                                      detail="PAPER internal EOD cutoff passed; no new attempt")
-                elif iol:
-                    _persist_runtime(store, at=at, state="HOLD",
-                                     code="IOL_REPO_BOOK_CLOCK_UNVERIFIED",
-                                     detail="IOL REST · el libro de referencia carece de reloj del proveedor.")
                 else:
-                    day = at.astimezone(TZ).date().isoformat()
-                    request_id = f"paper-caucion-cash-sweep:{day}:ARS:v1"
+                    request_id = daily_sweep_request_id(at)
                     result = _existing_daily_allocation(store, request_id)
+                    offers, errors = (), ()
                     if result is None:
-                        offers, errors = offers_from_store(store, now=at)
-                        snapshot = obligation_snapshot_from_ledger(
-                            store, observed_at=at,
-                            liquidity_deadline=schedule["liquidity_deadline"])
-                        from rc6_paper_admission_gate import admission_status
-                        admission_allowed, admission_reason = admission_status(now=at)
-                        if admission_allowed:
-                            result = run_paper_sweep(
-                                broker, offers, obligation_snapshot=snapshot,
-                                currency="ARS", as_of=at, request_id=request_id,
-                                participation=broker.participation,
-                                max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")), **schedule)
+                        offers, errors = (iol_offers_from_store(store, at=at) if iol
+                                          else offers_from_store(store, now=at))
+                        if iol and not offers:
+                            code = errors[0] if len(errors) == 1 else "CAUCION_NO_QUALIFIED_REPO_BOOK"
+                            if code in {AUTHORITY_MISSING, RECEIPT_MISSING}:
+                                code = CLOCK_UNVERIFIED
+                            result = {"status": "HOLD", "code": code, "source": "IOL_REST",
+                                      "offer_rejections": errors}
+                        elif iol and not paper_sweep_enabled():
+                            result = {"status": "HOLD", "code": "CAUCION_REPO_BOOK_SWEEP_DISABLED"}
+                        else:
+                            admission_allowed, admission_reason = admission_status(now=at)
+                            if not admission_allowed:
+                                result = {"status": "HOLD", "code": admission_reason or "NO_GO_PAPER_SCALPING",
+                                          "reason": "GLOBAL_PAPER_PREOPEN_INTERLOCK"}
+                        if result is None:
+                            if broker is None:
+                                broker = broker_from_environment(store, clock_fn=clock_fn)
+                            snapshot = obligation_snapshot_from_ledger(
+                                store, observed_at=at,
+                                liquidity_deadline=schedule["liquidity_deadline"])
+                            try:
+                                result = run_paper_sweep(
+                                    broker, offers, obligation_snapshot=snapshot,
+                                    currency="ARS", as_of=at, request_id=request_id,
+                                    participation=broker.participation,
+                                    max_quote_age_seconds=int(os.getenv("PAPER_CAUCION_QUOTE_MAX_AGE_SECONDS", "90")),
+                                    **schedule)
+                            except ValueError as exc:
+                                code = str(exc)
+                                if not iol or not re.fullmatch(
+                                        r"(?:CAUCION_REPO_BOOK|PAPER_RUNTIME|PAPER_PREOPEN|OPERATOR_NO_GO)_[A-Z0-9_]+"
+                                        r"|NO_GO_PAPER_SCALPING", code):
+                                    raise
+                                result = {"status": "HOLD", "code": code, "allocation": None}
                             if result["code"] == CAUCION_NO_OFFER:
                                 # Include stable dispositions in the idempotent attempt.
                                 # A changed discard set is new evidence even when HOLD repeats.
                                 result["offer_rejections"] = sorted(set(errors))
-                        else:
-                            result = {"status": "HOLD", "code": admission_reason or "NO_GO_PAPER_SCALPING",
-                                      "reason": "GLOBAL_PAPER_PREOPEN_INTERLOCK"}
-                    else:
-                        offers, errors = (), ()
                     allocation = result.get("allocation") or {}
                     paper_id = allocation.get("paper_id")
                     state = ("PLACED_SIMULATED" if result.get("status") == "PLACED_SIMULATED"

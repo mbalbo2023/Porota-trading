@@ -293,14 +293,47 @@ def _runtime_caucion_market_error(at):
     return ""
 
 
-def _runtime_caucion_book_error(store, connection, offer, at):
-    """Rebind live PPI BID, exact catalog/policy and original quote under lock.
+def _runtime_iol_caucion_book_error(store, connection, offer, at, *, request_id, reserve):
+    from di_caucion_cash_sweep_runtime_hf6 import (
+        configured_paper_schedule, daily_sweep_request_id, obligation_snapshot_from_ledger,
+        paper_sweep_enabled, required_reserve,
+    )
+    from rc6_caucion_repo_book import iol_offers_from_store
 
-    An offer's ``metadata_source`` string proves nothing by itself. The
-    canonical collector persists matching current+history book rows; its
-    pure, local adapter reconstructs the terms from that exact PPI source.
-    No network call, real order, or historical synthetic fixture is involved.
+    if not paper_sweep_enabled():
+        return "CAUCION_REPO_BOOK_SWEEP_DISABLED"
+    schedule = configured_paper_schedule(at)
+    if (schedule is None or not schedule["sweep_start_at"] <= at < schedule["order_cutoff_at"]
+            or request_id != daily_sweep_request_id(at)):
+        return "CAUCION_REPO_BOOK_OUTSIDE_SWEEP"
+    verified, _ = iol_offers_from_store(store, at=at, connection=connection)
+    if offer not in verified:
+        return "CAUCION_REPO_BOOK_OR_TERMS_UNVERIFIED"
+    deadline = schedule["liquidity_deadline"]
+    if aware_datetime(offer.maturity_at) > deadline:
+        return "CAUCION_REPO_BOOK_MATURITY_OUTSIDE_LIQUIDITY_WINDOW"
+    snapshot = obligation_snapshot_from_ledger(
+        store, observed_at=at, liquidity_deadline=deadline, connection=connection)
+    try:
+        if reserve < required_reserve(snapshot, currency=offer.currency, liquidity_deadline=deadline):
+            return "CAUCION_REPO_BOOK_CASH_RESERVE_CHANGED"
+    except ValueError:
+        return "CAUCION_REPO_BOOK_CASH_RESERVE_UNVERIFIED"
+    return ""
+
+
+def _runtime_caucion_book_error(store, connection, offer, at, *, request_id, reserve):
+    """Rebind the exact catalog, supply and original quote under lock.
+
+    The IOL profile checks the independent signed receipt. The PPI profile
+    reconstructs the terms from the collector's matching current/history rows.
     """
+    from rc6_iol_market_gateway import iol_primary_enabled
+
+    if iol_primary_enabled():
+        return _runtime_iol_caucion_book_error(
+            store, connection, offer, at, request_id=request_id, reserve=reserve)
+
     from rc6_caucion_fee_model import PAPER_FEE_AUTHORITY_V2
     from bu_instrument_catalog import (lookup, _candidate_has_ppi_primary,
                                        _candidate_timestamp_is_fresh)
@@ -734,7 +767,8 @@ class CaucionBook:
             market_error = _runtime_caucion_market_error(at)
             if market_error:
                 raise ValueError(market_error)
-            source_error = _runtime_caucion_book_error(self.store, c, offer, at)
+            source_error = _runtime_caucion_book_error(
+                self.store, c, offer, at, request_id=request_id, reserve=reserve)
             if source_error:
                 raise ValueError(source_error)
         age = (at - aware_datetime(offer.quoted_at)).total_seconds()
