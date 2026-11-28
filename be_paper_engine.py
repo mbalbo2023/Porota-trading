@@ -687,6 +687,8 @@ class PaperStore:
         conditions = """FROM market_snapshots INDEXED BY idx_snapshot_trade_window
             WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
               AND trade_at IS NOT NULL"""
+        if not iol:
+            conditions += " AND last_kind='TRADE'"
         with self.connect() as c:
             rows = c.execute(f"""SELECT *, rc6_instant_us(trade_at) AS source_us FROM (
                 SELECT * {conditions} AND julianday(trade_at) BETWEEN julianday(?) AND julianday(?)
@@ -706,8 +708,6 @@ class PaperStore:
             for row in rows:
                 if len(prices) >= limit:
                     break
-                if q.asset_class == "FUTUROS" and row["last_kind"] != "TRADE":
-                    continue
                 if row["source_us"] in seen:
                     continue
                 # Record the revision before validation so rejected or retracted
