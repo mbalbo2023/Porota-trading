@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 9eb17b3b93d200daba280ed06e069093516a6087
+          ref: d0fc5bec805267e47a1877f94997e1a29d95893c
           persist-credentials: false
       - name: Reconcile saved IOL selections, quotes and decisions
         env:
