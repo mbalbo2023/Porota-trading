@@ -168,6 +168,12 @@ jobs:
           code="$(docker create "${common[@]}" \
             --mount "type=bind,src=$PWD/.git,dst=/app/.git,readonly" \
             --mount "type=bind,src=$PWD/docs,dst=/app/docs,readonly" \
+              --mount "type=bind,src=$PWD/.release,dst=/app/.release,readonly" \
+              --mount "type=bind,src=$PWD/RC4_CONTROL_MANIFEST.json,dst=/app/RC4_CONTROL_MANIFEST.json,readonly" \
+              --mount "type=bind,src=$PWD/RC4_MODULE_INVENTORY_STATUS.txt,dst=/app/RC4_MODULE_INVENTORY_STATUS.txt,readonly" \
+              --mount "type=bind,src=$PWD/RC4_PACKAGE_MANIFEST.json,dst=/app/RC4_PACKAGE_MANIFEST.json,readonly" \
+              --mount "type=bind,src=$PWD/RC4_SCRIPT_INVENTORY_STATUS.txt,dst=/app/RC4_SCRIPT_INVENTORY_STATUS.txt,readonly" \
+              --mount "type=bind,src=$PWD/RC4_TEST_FILE_MATRIX.tsv,dst=/app/RC4_TEST_FILE_MATRIX.tsv,readonly" \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/app \
             --entrypoint python "$IMAGE_ID" -B scripts/porota_ci.py \
             --output /tmp/code-tests.json --source-sha "$CANDIDATE_SHA" \

@@ -55,7 +55,8 @@ class FakePytest:
             return subprocess.CompletedProcess(argv, 0,
                                                "?? untracked.py\n" if self.dirty_tree else "", "")
         if "--collect-only" in argv:
-            assert argv[-1].startswith("--ignore=")
+            root_arg, *optional_exclusions = argv[argv.index("-q") + 1:]
+            assert root_arg == "." and all(value.startswith("--ignore=") for value in optional_exclusions)
             root = Path(env["RC6_CI_MANIFEST_PATH"])
             if self.collection_rc == 0:
                 tree = "c" * 40 if self.mismatched_tree else TREE
