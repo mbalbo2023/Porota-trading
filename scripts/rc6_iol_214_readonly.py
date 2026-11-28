@@ -276,12 +276,19 @@ def run_probe():
                 'deployment_at = ' + repr(installed.isoformat()) + '\\n' + installed_probe)
         try:
             status = json.loads(manager.docker.call(*code, timeout=25))
-            require(type(status.get('observer', {}).get('real_orders_sent')) is int and
-                    status['observer']['real_orders_sent'] == 0, 'AUDIT_PAPER_ZERO_REQUIRED')
         except (OSError, ValueError, TypeError, RuntimeError) as exc:
             status = {'state':'NO_VERIFICADO','reason':str(exc) if type(exc).__name__ == 'Hold'
                       and re.fullmatch('[A-Z_]{1,100}', str(exc)) else type(exc).__name__,
                       **getattr(exc, 'public_details', {})}
+        if 'wheel_coverage' not in status:
+            audit_namespace = {'__name__': 'rc6_iol_wheel_readonly'}
+            exec(compile(installed_probe, 'rc6_iol_wheel_coverage.py', 'exec'), audit_namespace)
+            from_source = audit_namespace['diagnostic_read'](
+                audit_namespace['wheel_report'], root / DB_RELATIVE)
+            status = {**from_source, 'container_read': status, 'read_location': 'HOST_VERIFIED_DB'}
+        if 'wheel_coverage' in status:
+            require(type(status.get('observer', {}).get('real_orders_sent')) is int and
+                    status['observer']['real_orders_sent'] == 0, 'AUDIT_PAPER_ZERO_REQUIRED')
         try:
             shadow_generation = inspect_committed_shadow(root)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:

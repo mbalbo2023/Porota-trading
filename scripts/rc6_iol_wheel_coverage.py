@@ -66,12 +66,12 @@ def public_code(value):
 def diagnostic_read(read, *args):
     try:
         return read(*args)
-    except (sqlite3.Error, AttributeError, KeyError, ValueError, TypeError, ArithmeticError) as exc:
+    except Exception as exc:
         details = {"state": "NO_VERIFICADO", "error_type": type(exc).__name__}
         trace = exc.__traceback__
         while trace is not None:
             code = trace.tb_frame.f_code
-            if code.co_filename == "<string>" or code.co_filename.endswith("rc6_iol_wheel_coverage.py"):
+            if code.co_filename in ("<string>", "rc6_iol_wheel_coverage.py"):
                 details[code.co_name] = trace.tb_lineno
             trace = trace.tb_next
         if isinstance(exc, sqlite3.Error):
@@ -403,14 +403,14 @@ def audit(conn, quote_from_snapshot, signal_sample_count, required_samples, clos
             "quote_evaluation_coverage_method": "EXACT_FIVE_PART_IDENTITY_AND_PERSISTED_OBSERVATION_CLOCK"}
 
 
-if __name__ == "__main__":
+def wheel_report(database):
     from be_paper_engine import PaperStore
     from bf_production_paper_observer import SIGNAL_MIN_SAMPLES, SIGNAL_WINDOW_MINUTES
     from bu_instrument_catalog import iol_spot_catalog
 
-    read_catalog = SimpleNamespace(connect=lambda: readonly_connection(DB))
+    read_catalog = SimpleNamespace(connect=lambda: readonly_connection(database))
     close_eligible = set(iol_spot_catalog(read_catalog, now=datetime.fromisoformat(END)))
-    with closing(readonly_connection(DB)) as conn:
+    with closing(readonly_connection(database)) as conn:
         conn.execute("BEGIN")
         obs = dict(conn.execute("SELECT mode,real_orders_sent FROM observer_state WHERE id=1").fetchone())
         if obs != {"mode": "PRODUCTION_PAPER", "real_orders_sent": 0}:
@@ -423,4 +423,8 @@ if __name__ == "__main__":
                 limit=max(20, SIGNAL_MIN_SAMPLES), window_minutes=SIGNAL_WINDOW_MINUTES))
 
         report = audit(conn, PaperStore.quote_from_snapshot, samples_at, SIGNAL_MIN_SAMPLES, close_eligible)
-    print(json.dumps({"observer": obs, "wheel_coverage": report}, sort_keys=True))
+    return {"observer": obs, "wheel_coverage": report}
+
+
+if __name__ == "__main__":
+    print(json.dumps(diagnostic_read(wheel_report, DB), sort_keys=True))
