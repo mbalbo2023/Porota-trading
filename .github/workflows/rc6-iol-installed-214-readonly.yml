@@ -1,8 +1,8 @@
-name: RC6 IOL coverage for the 27 November wheel
+name: RC6 IOL freshness and family coverage for 27 November
 
 on:
   push:
-    branches: [audit/rc6-iol-coverage-20261127]
+    branches: [audit/rc6-iol-coverage-rca-20261128]
 
 permissions:
   contents: read

@@ -57,6 +57,164 @@ def book_and_trade_fresh(row, quote_from_snapshot):
         return False
 
 
+def public_code(value):
+    if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z_0-9]{2,95}", value):
+        return value
+    return "OTHER_RECORDED_REASON"
+
+
+def diagnose_freshness(conn, cycles, snapshots, close_eligible, quote_from_snapshot):
+    turn_rows = read_rows(conn, """SELECT cycle_started_at,symbol FROM symbol_cycle_metrics
+        WHERE julianday(cycle_started_at)>=julianday(?) AND julianday(cycle_started_at)<julianday(?)
+          AND instr(detail,'IOL REST')>0 ORDER BY id LIMIT ?""", 6000)
+    events = read_rows(conn, """SELECT event_type,event_at,detail FROM paper_events
+        WHERE event_type IN ('DATA_ERROR','DATA_REJECTED')
+          AND julianday(event_at)>=julianday(?) AND julianday(event_at)<julianday(?)
+        ORDER BY event_at,id LIMIT ?""", 6000)
+    turns = defaultdict(list)
+    for row in turn_rows:
+        turns[row["cycle_started_at"]].append(row["symbol"])
+    planned, attempted, fresh = set(), set(), set()
+    slices = []
+    holds, coverage, rejects_by_slot = Counter(), Counter(), Counter()
+    errors_by_identity = defaultdict(set)
+    for cycle in cycles:
+        started = cycle["started_at"]
+        try:
+            detail = json.loads(cycle["detail"].split("factibilidad=", 1)[1])
+            plan = detail["active_plan"]
+            if "iol_rest_budget" not in plan and started not in turns:
+                coverage["cycles_without_iol_marker"] += 1
+                continue
+            coverage["iol_plans"] += 1
+            if "iol_rest_budget" not in plan:
+                coverage["iol_plans_linked_via_symbol_metrics"] += 1
+            keys = [identity(item.get("identity")) for item in plan.get("read_scopes", ())]
+            keys = list(dict.fromkeys(k for k in keys if k is not None))
+            coverage["bound_plan_slots"] += len(keys)
+            if len(keys) != cycle["selected_count"]:
+                coverage["plans_without_all_exact_scopes"] += 1
+            if detail.get("opening_hold_reason"):
+                holds[public_code(detail["opening_hold_reason"])] += 1
+            begin, end = instant(started), instant(cycle["finished_at"])
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+            coverage["unparsed_cycle"] += 1
+            continue
+        lookup = defaultdict(list)
+        for key in keys:
+            planned.add(key)
+            lookup[key[0]].append(key)
+        for symbol in turns[started]:
+            candidates = lookup[symbol]
+            if len(candidates) == 1:
+                attempted.add(candidates[0])
+                coverage["exact_symbol_turns"] += 1
+            else:
+                coverage["unbound_symbol_turns"] += 1
+        slices.append((begin, end, lookup))
+    starts = [begin for begin, _, _ in slices]
+    for event in events:
+        if not isinstance(event["detail"], str):
+            continue
+        name, separator, reason = event["detail"].partition(": ")
+        if not separator:
+            continue
+        at = instant(event["event_at"])
+        index = bisect_right(starts, at) - 1
+        if index < 0 or at > slices[index][1]:
+            continue
+        candidates = slices[index][2].get(name, ())
+        reason = public_code(reason)
+        rejects_by_slot[reason] += 1
+        if len(candidates) != 1:
+            coverage["unbound_reject_events"] += 1
+            continue
+        key = candidates[0]
+        attempted.add(key)
+        errors_by_identity[key].add(reason)
+
+    seen, snapshot_reasons = set(), Counter()
+    for row in snapshots:
+        key = identity(tuple(row[k] for k in ("symbol", "asset_class", "market", "currency", "settlement")))
+        if key is None:
+            continue
+        seen.add(key)
+        if book_and_trade_fresh(row, quote_from_snapshot):
+            fresh.add(key)
+            continue
+        try:
+            quote = quote_from_snapshot(row)
+            reason = (quote.opening_block_reason
+                      or quote.time_error(quote.observed_at, require_trade=True)
+                      or "NON_EXECUTABLE_BOOK_DEPTH")
+        except (ValueError, TypeError, ArithmeticError):
+            reason = "INVALID_SNAPSHOT"
+        reason = public_code(reason)
+        snapshot_reasons[reason] += 1
+        errors_by_identity[key].add(reason)
+
+    family = defaultdict(Counter)
+    missing_reasons = defaultdict(Counter)
+    for key in sorted(close_eligible):
+        result = family[key[1]]
+        if key in fresh:
+            result["fresh_pair"] += 1
+        elif key in seen:
+            result["snapshot_without_fresh_pair"] += 1
+        elif key in attempted:
+            result["turn_without_snapshot"] += 1
+        elif key in planned:
+            result["planned_without_exact_turn_evidence"] += 1
+        else:
+            result["absent_from_saved_plans"] += 1
+        if key not in fresh:
+            reasons = errors_by_identity.get(key, ())
+            missing_reasons[key[1]].update(reasons)
+    return {"evidence": dict(coverage), "cycle_holds": dict(holds),
+            "scanner_rejections": dict(rejects_by_slot),
+            "unusable_snapshot_reasons": dict(snapshot_reasons),
+            "close_eligible_by_family": {k: dict(v) for k, v in sorted(family.items())},
+            "missing_identity_reasons_by_family": {k: dict(v) for k, v in sorted(missing_reasons.items())}}
+
+
+def family_runtime(conn):
+    catalog = [dict(row) for row in conn.execute("""SELECT f.instrument_type AS family,
+        count(*) AS known,
+        sum(CASE WHEN f.status='AVAILABLE' THEN 1 ELSE 0 END) AS available,
+        sum(CASE WHEN f.status='AVAILABLE' AND f.capability LIKE 'READY_PAPER%' THEN 1 ELSE 0 END) AS ready_classification,
+        sum(CASE WHEN f.status='AVAILABLE' AND c.status='AVAILABLE' AND c.can_simulate=1
+          THEN 1 ELSE 0 END) AS paper_ledger_eligible
+        FROM financial_instrument_catalog f LEFT JOIN candidate_identity_v2 c
+        USING(ticker,instrument_type,market,currency,settlement)
+        GROUP BY f.instrument_type ORDER BY f.instrument_type""")]
+    codes = defaultdict(Counter)
+    for row in conn.execute("""SELECT instrument_type,detail,count(*) AS n
+        FROM candidate_identity_v2 WHERE can_simulate=0 GROUP BY instrument_type,detail"""):
+        for token in set(str(row["detail"] or "").split(";")):
+            if token:
+                codes[row["instrument_type"]][public_code(token)] += row["n"]
+    lifecycle = read_rows(conn, """SELECT family,to_state,count(*) AS n FROM paper_family_lifecycle_events
+        WHERE julianday(occurred_at)>=julianday(?) AND julianday(occurred_at)<julianday(?)
+        GROUP BY 1,2 LIMIT ?""", 80)
+    caucion_attempts = read_rows(conn, """SELECT status,code,count(*) AS n FROM paper_caucion_cash_sweep_attempts
+        WHERE julianday(evaluated_at)>=julianday(?) AND julianday(evaluated_at)<julianday(?)
+        GROUP BY 1,2 LIMIT ?""", 80)
+    caucion_placements = read_rows(conn, """SELECT status,count(*) AS n FROM paper_cauciones
+        WHERE julianday(opened_at)>=julianday(?) AND julianday(opened_at)<julianday(?)
+        GROUP BY 1 LIMIT ?""", 20)
+    scalping = read_rows(conn, """SELECT asset_class AS family,action,count(*) AS n FROM scalping_candidates
+        WHERE julianday(evaluated_at)>=julianday(?) AND julianday(evaluated_at)<julianday(?)
+        GROUP BY 1,2 LIMIT ?""", 80)
+    worker = conn.execute("""SELECT heartbeat_at,state,code,last_attempt_at,real_orders_sent
+        FROM paper_caucion_cash_sweep_state WHERE id=1""").fetchone()
+    return {"catalog": catalog, "catalog_blockers": {k: dict(v.most_common(5)) for k, v in sorted(codes.items())},
+            "specialized_lifecycle_events": [dict(r) for r in lifecycle],
+            "caucion_placement_attempts": [dict(r) for r in caucion_attempts],
+            "caucion_placements": [dict(r) for r in caucion_placements],
+            "caucion_worker_checkpoint": dict(worker) if worker else None,
+            "scalping_decisions": [dict(r) for r in scalping]}
+
+
 def audit(conn, quote_from_snapshot, signal_sample_count, required_samples, close_eligible):
     cycles = read_rows(conn, """SELECT started_at, finished_at, eligible_total, selected_count,
         successful_count, failed_count, detail FROM universe_cycle_metrics
@@ -216,6 +374,8 @@ def audit(conn, quote_from_snapshot, signal_sample_count, required_samples, clos
             "spot_paper_fills": [dict(r) for r in fills],
             "fresh_frames_unmatched_to_decisions": dict(unmatched),
             "required_signal_samples": required_samples, "fresh_unmatched_signal_windows": remaining,
+            "freshness_rca": diagnose_freshness(conn, cycles, snapshots, close_eligible, quote_from_snapshot),
+            "family_runtime": family_runtime(conn),
             "missed_buy_without_reference": "NOT_IDENTIFIABLE_FROM_UNOBSERVED_PRICES_OR_BOOKS",
             "quote_evaluation_coverage_method": "EXACT_FIVE_PART_IDENTITY_AND_PERSISTED_OBSERVATION_CLOCK"}
 
