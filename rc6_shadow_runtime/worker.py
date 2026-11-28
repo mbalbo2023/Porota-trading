@@ -3,6 +3,7 @@
 No market-data client, trading writer, broker, fill, network transport or manual
 bundle. A missing preopen/OPEN capacity remains an explicit closed gate.
 """
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from contextlib import ExitStack, closing
 import gc
@@ -29,7 +30,8 @@ from .persistence import (EvidenceFiles, EvidencePayloadLimit, canonical_ascii_c
 from .audit_spool import AuditSpool
 from . import cold_audit
 from .checkpoint_parts import CheckpointParts
-from .timing import POLL_SECONDS
+from .timing import (POLL_SECONDS, PUBLICATION_COORDINATES, PUBLICATION_HISTORY_FILE,
+                     PUBLICATION_HISTORY_LIMIT, PUBLICATION_HISTORY_SCHEMA)
 
 LOG = logging.getLogger("dynamic_shadow")
 VERSION = "WS-CLOSE-PROGRAMMING-05-RUNTIME-v2"
@@ -339,6 +341,14 @@ def _runtime_sql_status(diagnostics):
                       and isinstance(values, list)}}
 
 
+def _generation_funnel(report):
+    counts = report.get('denominators', {})
+    return {'status': report.get('status'), 'read_truncated': report.get('source_read_truncated'),
+            'retained_sessions': report.get('sessions_retained', []),
+            'counts': {key: counts[key] for key in ('native_evaluations', 'distinct_frozen_native_inputs',
+                       'stage_identity_reaches', 'events_recorded') if type(counts.get(key)) is int}}
+
+
 def _durable_family_routing(report):
     if _fits_hot_report(report):
         return report
@@ -610,6 +620,7 @@ class ShadowRuntime:
         self.shutdown_requested = shutdown_requested
         self.defer_audit = defer_audit
         self.pointer_committed_monotonic = None
+        self.publication_history = deque(maxlen=PUBLICATION_HISTORY_LIMIT)
         if type(spool_audit) is not bool:
             raise ValueError('SHADOW_SPOOL_MODE_INVALID')
         self.spool_audit = spool_audit
@@ -1038,7 +1049,7 @@ class ShadowRuntime:
                 files.prune_computed_reports(keep=audit["file"])
             # Separate receipt avoids a circular hash: the immutable cut is
             # already committed. These clocks never replace the source as_of.
-            files.write("publication.json", {"schema":"rc6.publication-cost.v1",
+            publication = {"schema":"rc6.publication-cost.v1",
                 **committed, "source_as_of":at.isoformat(),
                 "publish_completed_at":datetime.now(timezone.utc).isoformat(),
                 "start_compute_monotonic":tick_started,
@@ -1047,7 +1058,22 @@ class ShadowRuntime:
                 "total_cpu_seconds":round(time.process_time()-tick_cpu_started,6),
                 "publish_seconds":round(publish_completed-publish_started,6),
                 "prune_seconds":round(time.monotonic()-publish_completed,6),
-                "poll_seconds":POLL_SECONDS})
+                "poll_seconds":POLL_SECONDS}
+            files.write("publication.json", publication)
+            observation = {key: publication[key] for key in (*PUBLICATION_COORDINATES, 'source_as_of',
+                           'publish_completed_at', 'total_seconds', 'total_cpu_seconds')}
+            observation.update(phase=status['phase'], tick_seconds=status['generation_timing']['tick_seconds'],
+                               funnel=_generation_funnel(report['operational_funnel']),
+                               cold_snapshot_id=audit.get('snapshot_id'))
+            if self.publication_history and self.publication_history[-1]['sequence'] == observation['sequence']:
+                self.publication_history.pop()
+            self.publication_history.append(observation)
+            try:
+                files.write(PUBLICATION_HISTORY_FILE, {'schema': PUBLICATION_HISTORY_SCHEMA,
+                    'worker_pid': os.getpid(), 'source_sha': os.getenv('POROTA_BUILD_SHA'),
+                    'source_tree': os.getenv('POROTA_CANDIDATE_TREE_SHA'), 'observations': list(self.publication_history)})
+            except (OSError, ValueError) as exc:
+                LOG.warning('DYNAMIC_SHADOW_PUBLICATION_HISTORY_UNAVAILABLE:%s', type(exc).__name__)
             return hot
 
 

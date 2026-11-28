@@ -192,6 +192,34 @@ def _service(properties, role, trigger=None):
     return result
 
 
+def _critical_timer_bindings(timers):
+    from rc6_preopen import REQUIRED_TIMERS
+
+    critical = {}
+    for name in REQUIRED_TIMERS:
+        timer = timers.get(name, {})
+        service = timer.get("service") or {}
+        reason = None
+        if timer.get("binding") == "MISMATCH":
+            reason = "CRITICAL_TIMER_TARGET_MISMATCH"
+        elif timer.get("binding") != "MATCH":
+            reason = "CRITICAL_TIMER_TARGET_UNVERIFIED"
+        elif timer.get("load") != "loaded" or service.get("load") != "loaded":
+            reason = "CRITICAL_UNIT_NOT_LOADED"
+        elif timer.get("active") == "failed":
+            reason = "CRITICAL_TIMER_FAILED"
+        elif name != "porota-preopen-rc6.timer":
+            if timer.get("active") != "active":
+                reason = "CRITICAL_TIMER_NOT_ACTIVE"
+            elif service.get("active") == "failed" or (service.get("execution") == "COMPLETED"
+                  and (service.get("last_result") not in (None, "success")
+                       or service.get("exit_status") not in (None, 0))):
+                reason = "CRITICAL_SERVICE_FAILED"
+        critical[name] = {"state": "BLOQUEADO" if reason else "VALIDADO_RUNTIME", "reason": reason}
+    passed = all(row["state"] == "VALIDADO_RUNTIME" for row in critical.values())
+    return {"state": "VALIDADO_RUNTIME" if passed else "BLOQUEADO", "units": critical}
+
+
 def _scheduler_inventory():
     units, timers = _controlled_units()
     rows, failures = _show(units)
@@ -230,8 +258,53 @@ def _scheduler_inventory():
         ppi_units[name] = state
     return {"scope": "RC6_POLICY_EXACT_UNITS", "requested_units": len(units), "observed_units": len(rows),
             "state": "OBSERVED" if not failures else "PARTIAL" if rows else "NO_VERIFICADO",
-            "unit_probe_failures": failures,
+            "unit_probe_failures": failures, "critical_bindings": _critical_timer_bindings(observed_timers),
             "timers": observed_timers, "services": services, "operational_ppi_units": ppi_units}
+
+
+def _scheduled_t10(identity, current, timer, now):
+    from ak_byma_calendar import es_dia_habil_operativo
+    from co_market_sessions_hf6 import TZ
+    from scripts.porota_operator_intent import private_read
+    from scripts.porota_rootless_jobs import PREOPEN_T10_COORDINATES, PREOPEN_T10_FILE, PREOPEN_T10_SCHEMA
+
+    local = now.astimezone(TZ)
+    day = local.date().isoformat()
+    evidence = {"state": "NO_VERIFICADO", "reason": "SCHEDULED_T10_RECEIPT_UNAVAILABLE",
+                "session_date_ar": day}
+    service = timer.get("service") or {}
+    try:
+        receipt = decode(private_read(no_alias(identity.state / PREOPEN_T10_FILE)))
+        require(isinstance(receipt, dict) and receipt.get("schema") == PREOPEN_T10_SCHEMA
+                and receipt.get("phase") == "T_MINUS_10" and receipt.get("state") in
+                ("NO_VERIFICADO", "GREEN", "RED", "PAUSED_NO_GO"), "SCHEDULED_T10_RECEIPT_INVALID")
+    except (Hold, OSError, ValueError, TypeError):
+        receipt = None
+    if receipt:
+        started = instant(receipt.get("started_at"))
+        systemd = instant(service.get("started_at"))
+        corroborated = (started is not None and systemd is not None
+                        and 0 <= (started - systemd).total_seconds() <= 60
+                        and service.get("execution") == "COMPLETED"
+                        and type(service.get("exit_status")) is int
+                        and service["exit_status"] == receipt.get("exit_code"))
+        same_release = all(receipt.get(key) == current[key] for key in PREOPEN_T10_COORDINATES)
+        same_session = receipt.get("session_date_ar") == day
+        evidence.update(last_receipt=receipt, matches_release=same_release, matches_session=same_session,
+                        systemd_corroborated=corroborated)
+        if not same_session:
+            evidence["reason"] = "SCHEDULED_T10_OTHER_SESSION"
+        elif not same_release:
+            evidence["reason"] = "SCHEDULED_T10_OTHER_RELEASE"
+        elif not corroborated:
+            evidence["reason"] = "SCHEDULED_T10_LAST_SYSTEMD_EXECUTION_UNVERIFIED"
+        else:
+            evidence.update(state=receipt["state"], reason=receipt.get("reason"))
+    if not es_dia_habil_operativo(local.date()):
+        evidence.update(state="NOT_DUE", reason="BYMA_NON_OPERATIONAL_DAY")
+    elif (local.hour, local.minute) < (10, 20):
+        evidence.update(state="NOT_DUE", reason="BEFORE_BYMA_T10")
+    return evidence
 
 
 def _bounded_query(connection, deadline, query, parameters=(), *, seconds=0.7):
@@ -288,7 +361,7 @@ def _canonical_sources(connection, deadline):
     # temporary sort of the full table and retain an exact OTHER count.
     counts = ", ".join("COUNT(CASE WHEN source = ? THEN 1 END)" for _ in SOURCES)
     rows, reason = _bounded_query(connection, deadline,
-        f"SELECT COUNT(*), {counts} FROM history_canonical_v2", SOURCES, seconds=11)
+        f"SELECT COUNT(*), {counts} FROM history_canonical_v2", SOURCES, seconds=2)
     if not rows:
         return None, reason
     total, *by_source = rows[0]
@@ -304,14 +377,38 @@ def _observe_database(path, expected, deadline, *, observer=False):
         with closing(sqlite3.connect(filename, uri=True, timeout=0.2)) as connection:
             connection.execute("PRAGMA query_only=ON")
             query_only = connection.execute("PRAGMA query_only").fetchone()[0] == 1
-            tables = _read_query(connection, deadline, "SELECT name FROM sqlite_master WHERE type='table'")
+            # The schema read fixes the WAL snapshot for every count below.
+            connection.execute("BEGIN")
+            snapshot_started = datetime.now(timezone.utc).isoformat()
+            placeholders = ",".join("?" for _ in expected)
+            tables = _read_query(connection, deadline,
+                f"SELECT name FROM sqlite_master WHERE type='table' AND name IN ({placeholders})", expected)
             if tables is None:
                 return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_SCHEMA_UNVERIFIED"}
-            present = {row[0] for row in tables} & set(expected)
-            counts = {table: _scalar(connection, deadline, f"SELECT COUNT(*) FROM {table}") for table in sorted(present)}
+            present = {row[0] for row in tables}
+            counts, failures = {}, {}
             result = {"state": "OBSERVED", "query_only": query_only,
+                      "snapshot_started_at": snapshot_started,
                       "schema_version": _scalar(connection, deadline, "PRAGMA schema_version"),
                       "tables_missing": sorted(set(expected) - present), "rows": counts}
+            if not observer:
+                for table, field, collect in (
+                    ("history_versions_v2", "versions_by_source",
+                     lambda: _history_sources(connection, deadline, "history_versions_v2", seconds=1.5)),
+                    ("history_canonical_v2", "canonical_by_source", lambda: _canonical_sources(connection, deadline)),
+                ):
+                    breakdown, reason = collect() if table in present else (None, "INVENTORY_DB_TABLE_MISSING")
+                    result[field] = breakdown
+                    if breakdown is not None:
+                        counts[table] = sum(row["rows"] for row in breakdown)
+                    else:
+                        result[field + "_failure"] = reason
+                        failures[field] = reason
+            for table in sorted(present - counts.keys()):
+                rows, reason = _bounded_query(connection, deadline, f"SELECT COUNT(*) FROM {table}")
+                counts[table] = rows[0][0] if rows else None
+                if reason:
+                    failures[table] = reason
             if observer:
                 state = _read_query(connection, deadline, "SELECT mode,real_orders_sent,ppi_auth,heartbeat_at FROM observer_state WHERE id=1")
                 if state and len(state) == 1:
@@ -320,8 +417,12 @@ def _observe_database(path, expected, deadline, *, observer=False):
                     result["real_orders_sent"] = orders if type(orders) is int and orders >= 0 else None
                     result["ppi_auth"] = ppi_auth if ppi_auth in {"NOT_ATTEMPTED", "OK", "ERROR", "COOLDOWN"} else None
                     result["heartbeat_at"] = _iso(heartbeat)
+                else:
+                    failures["observer_state"] = "INVENTORY_OBSERVER_STATE_UNAVAILABLE"
                 check = _scalar(connection, deadline, "PRAGMA quick_check('observer_state')")
                 result["observer_state_quick_check"] = None if check is None else check == "ok"
+                if check is None:
+                    failures["observer_state_quick_check"] = "INVENTORY_DB_QUERY_UNAVAILABLE"
                 # CandleArchive stores UTC bar endings, including when old bars are revised later.
                 result["latest_candle_at"] = _iso(_scalar(connection, deadline,
                     "SELECT MAX(bar_end) FROM candle_versions"))
@@ -332,14 +433,12 @@ def _observe_database(path, expected, deadline, *, observer=False):
                 resolution = ("CASE WHEN json_valid(identity_json) THEN CASE json_extract(identity_json, '$.resolution') "
                               "WHEN '1m' THEN '1m' WHEN '5m' THEN '5m' WHEN '1d' THEN '1d' ELSE 'OTHER' END ELSE 'OTHER' END")
                 result["candle_series_by_source"] = _sources(connection, deadline, "candle_series", source, (resolution,))
-            else:
-                versions, version_failure = _history_sources(connection, deadline, "history_versions_v2", seconds=1.5)
-                canonical, canonical_failure = _canonical_sources(connection, deadline)
-                result.update({"versions_by_source": versions, "canonical_by_source": canonical})
-                if version_failure:
-                    result["versions_by_source_failure"] = version_failure
-                if canonical_failure:
-                    result["canonical_by_source_failure"] = canonical_failure
+                if result["candle_series_by_source"] is None:
+                    failures["candle_series_by_source"] = "INVENTORY_DB_QUERY_UNAVAILABLE"
+            if failures or result["tables_missing"] or result["schema_version"] is None:
+                result["state"] = "PARTIAL"
+            result["query_failures"] = failures
+            result["snapshot_finished_at"] = datetime.now(timezone.utc).isoformat()
             return result
     except (OSError, sqlite3.Error, Hold):
         return {"state": "NO_VERIFICADO", "failure_signature": "INVENTORY_DB_READ_UNAVAILABLE"}
@@ -351,7 +450,7 @@ def _runtime_inventory():
         "source_sha": os.getenv("POROTA_BUILD_SHA"), "source_tree": os.getenv("POROTA_CANDIDATE_TREE_SHA"),
         "python": ".".join(str(part) for part in sys.version_info[:3]), "sqlite": sqlite3.sqlite_version,
         "observer": _observe_database(OBSERVER, OBSERVER_TABLES, started + 3.5, observer=True),
-        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 18),
+        "history": _observe_database(HISTORY, HISTORY_TABLES, started + 8),
     }
 
 
@@ -442,6 +541,8 @@ def run_host_inventory(manager, current, *, runtime_probe_source=None):
         scheduler = _scheduler_inventory()
     except (Hold, OSError, ValueError, TypeError, KeyError):
         scheduler = _unavailable("INVENTORY_SCHEDULER_SCOPE_UNVERIFIED")
+    scheduler["scheduled_t10"] = _scheduled_t10(manager.identity, current,
+        scheduler.get("timers", {}).get("porota-preopen-rc6.timer", {}), datetime.now(timezone.utc))
     dashboard = _dashboard(manager, current)
     observer = runtime.get("observer", {})
     return {"schema": SCHEMA, **coordinates, "attempt": current["attempt"],

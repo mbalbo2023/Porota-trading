@@ -58,6 +58,7 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" --run-id "$PREDEPLOY_RUN_ID"
 
       - name: Execute rootless procedure and verify physical receipt
+        id: runtime_host
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
@@ -92,6 +93,7 @@ jobs:
           command -v google-chrome >/dev/null
 
       - name: Verify the actual authenticated dashboard with Playwright
+        id: dashboard
         if: steps.iol.outputs.installed == 'true'
         env:
           DO_HOST: ${{ secrets.DO_HOST }}
@@ -104,6 +106,20 @@ jobs:
             --runtime-receipt "$RUNNER_TEMP/porota/runtime.json" \
             --receipt "$RUNNER_TEMP/porota/dashboard-playwright.json" \
             --require-explained
+
+      - name: Record the integral audit verdict
+        if: always()
+        env:
+          OPERATION: ${{ inputs.operation }}
+          HOST_OUTCOME: ${{ steps.runtime_host.outcome }}
+          DASHBOARD_OUTCOME: ${{ steps.dashboard.outcome }}
+        shell: bash
+        run: |
+          python3 -B -m scripts.porota_actions_host audit-promotion \
+            --receipt "$RUNNER_TEMP/porota/runtime.json" \
+            --dashboard-receipt "$RUNNER_TEMP/porota/dashboard-playwright.json" \
+            --promotion-operation "$OPERATION" --host-outcome "$HOST_OUTCOME" \
+            --dashboard-outcome "$DASHBOARD_OUTCOME"
 
       - name: Preserve physical evidence, including failures
         if: always()
@@ -129,19 +145,3 @@ jobs:
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
               out.write('## Porota runtime\n\n```json\n' + json.dumps(receipt, indent=2) + '\n```\n')
           PY
-
-      - name: Require installed runtime inventory and isolated replay results
-        if: always() && steps.iol.outputs.installed == 'true'
-        shell: bash
-        run: |
-          jq -e '(.installed_inventory.image_id == .image_id) and
-            (.installed_inventory.scheduler.state == "OBSERVED") and
-            (.installed_inventory.scheduler.requested_units == .installed_inventory.scheduler.observed_units) and
-            (.installed_inventory.scheduler.operational_ppi_units | all(.[]; . == "INACTIVE_OR_ABSENT")) and
-            (.installed_inventory.runtime_metrics.state == "OBSERVED") and
-            (.installed_inventory.runtime_metrics.real_orders_sent == 0) and
-            (.synthetic_replay.status == "PASS") and
-            (.synthetic_replay.multi_instrument_replay.status == "PASS") and
-            (.synthetic_replay.image_id == .image_id) and (.synthetic_replay.source_sha == .source_sha) and
-            (.synthetic_replay.network == "NONE") and (.synthetic_replay.operational_mounts == 0) and
-            (.synthetic_replay.real_orders_sent == 0)' "$RUNNER_TEMP/porota/runtime.json" >/dev/null

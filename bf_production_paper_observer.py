@@ -52,6 +52,7 @@ from cg_paper_workspace import database_path, runtime_store
 DB_PATH = str(database_path())
 SECRET_PATH = os.getenv("PPI_PRODUCTION_SECRET_FILE", "/run/secrets/ppi_production.json")
 INTERVAL = max(15, int(os.getenv("PAPER_OBSERVER_INTERVAL_SECONDS", "60")))
+IOL_CONTINUOUS_DISPATCH_SECONDS = 30
 COMMAND_POLL_SECONDS = max(3, int(os.getenv("PAPER_COMMAND_POLL_SECONDS", "5")))
 PUBLIC_CHECK_SECONDS = max(900, int(os.getenv("PUBLIC_SOURCE_CHECK_SECONDS", "21600")))
 PUBLIC_STRUCTURED_CAPTURE_SECONDS = max(900, int(os.getenv("PUBLIC_STRUCTURED_CAPTURE_SECONDS", "900")))
@@ -2349,24 +2350,39 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
         except (ValueError, TypeError):
             pass
     limit = ACTIVE_SYMBOL_LIMIT
+    cadence = INTERVAL
     seconds_per_key = 2 * PPI_CALL_BUDGET_SECONDS
     if iol:
         from iol_shadow_collector_rc6 import CollectionPolicy
         from rc6_iol_market_gateway import ROLE_ENDPOINTS
 
         policy = CollectionPolicy()
+        reported = iol_metrics.get("wire_budget") if isinstance(iol_metrics, dict) else None
+        reported = reported if isinstance(reported, dict) else {}
+        provider_budget = reported.get("capacity_per_minute")
+        calls_per_minute = (min(provider_budget, policy.max_calls_per_minute)
+                            if type(provider_budget) is int and provider_budget > 0 else policy.max_calls_per_minute)
         scanner_calls = len(ROLE_ENDPOINTS["scanner"])
         # Leave space for a full EXIT pass and an OAuth request in each rolling
         # window. A shorter polling interval can place several batches in it.
         exit_calls = len(ROLE_ENDPOINTS["exit_reader"]) * max(1, len(opened))
-        batches_per_minute = math.ceil(60 / INTERVAL)
-        available_calls = max(0, policy.max_calls_per_minute - exit_calls - 1)
+        exit_reserve = reported.get("reserved_exit")
+        if type(exit_reserve) is int and exit_reserve > exit_calls:
+            exit_calls = exit_reserve
+        auth_reserve = reported.get("reserved_auth")
+        auth_calls = auth_reserve if type(auth_reserve) is int and auth_reserve >= 1 else 1
+        stream_status = iol_metrics.get("trade_coverage") if isinstance(iol_metrics, dict) else None
+        subscribed = stream_status.get("continuous_subscribed") if isinstance(stream_status, dict) else None
+        if type(subscribed) is int and subscribed > 0:
+            cadence = min(cadence, IOL_CONTINUOUS_DISPATCH_SECONDS)
+        batches_per_minute = math.ceil(60 / cadence)
+        available_calls = max(0, calls_per_minute - exit_calls - auth_calls)
         limit = min(limit, available_calls // (scanner_calls * batches_per_minute))
-        seconds_per_key = scanner_calls * max(policy.min_interval_seconds, 60 / policy.max_calls_per_minute)
+        seconds_per_key = scanner_calls * max(policy.min_interval_seconds, 60 / calls_per_minute)
         # The independent EXIT reader supervises the whole portfolio even when
         # existing positions exhaust the scanner's observation budget.
         opened = opened[:limit]
-    cycle_seconds = INTERVAL + max(limit, len(opened)) * seconds_per_key
+    cycle_seconds = cadence + max(limit, len(opened)) * seconds_per_key
     # Preserve historical focus ordering when starting a new IOL sampling plan.
     if iol:
         focus_candidates = tuple(dict.fromkeys((*FOCUS_SYMBOLS, *identities)))
@@ -2399,13 +2415,16 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
     else:
         plan["catalog_status"] = "ELIGIBLE_INSTRUMENTS" if exact else "NO_ELIGIBLE_INSTRUMENTS"
     if iol:
+        plan["cadence_seconds"] = cadence
         plan["iol_rest_budget"] = {
-            "calls_per_minute": policy.max_calls_per_minute,
+            "calls_per_minute": calls_per_minute,
             "scanner_batch_limit": limit,
             "scanner_calls_per_instrument": scanner_calls,
             "batches_per_minute": batches_per_minute,
             "planned_exit_calls": exit_calls,
         }
+        if auth_calls != 1:
+            plan["iol_rest_budget"]["planned_auth_calls"] = auth_calls
         if iol_metrics is not None and exact and not catalog_error:
             from cg_paper_workspace import artifact_root
             from rc6_dynamic_universe.iol_capacity import paper_capacity, prioritize_paper_equities
@@ -2425,7 +2444,83 @@ def _cycle_plan(store, focus_candidates=None, *, include_legacy_summary=False, i
         plan["read_scopes"] = [
             {"request": request, "identity": exact[request], "priority": "DISCOVERY"}
             for request in symbols if request in exact and not catalog_error]
+    if iol and exact and not catalog_error:
+        from rc6_dynamic_universe.iol_coverage import coverage_feasibility, plan_stream_coverage
+        from rc6_iol_intraday import FRESH_SECONDS
+        from rc6_iol_trade_stream import MAX_TRADES
+
+        priority_keys = [scope["identity"] for scope in plan["read_scopes"]]
+        priority_keys.extend(plan.get("next_iol_subscriptions", []))
+        prior_coverage = previous.get("iol_stream_coverage") if isinstance(previous, dict) else None
+        coverage = plan_stream_coverage(
+            exact.values(), priority_keys, prior_coverage, slots=MAX_TRADES, rest_budget=plan["iol_rest_budget"])
+        coverage["dispatch"] = coverage_feasibility(coverage, cadence_seconds=cadence,
+            freshness_seconds=FRESH_SECONDS, window_minutes=SIGNAL_WINDOW_MINUTES,
+            required_samples=SIGNAL_MIN_SAMPLES)
+        if isinstance(stream_status, dict):
+            coverage["connection_status"] = stream_status
+        plan["iol_stream_coverage"] = coverage
     return symbols, len(universe), before, after, plan
+
+
+def _advance_iol_discovery(reader, coverage, *, active_plan=None):
+    """Read the preceding slice after its dwell, then queue the next slice."""
+    from iol_rest_readonly_rc6 import IOLRestError
+    from rc6_dynamic_universe.iol_coverage import current_trade_receipts, follow_fresh_discovery, stream_batches
+    from rc6_iol_market_gateway import PREPARE_TRADES_LIMIT
+    from rc6_ppi_shared_feed import SharedFeedUnavailable
+    from rc6_iol_intraday import FRESH_SECONDS
+
+    states = {}
+    previous = coverage.pop("previous_targets", ())
+    if previous:
+        # The predecessor remains subscribed until a new prepare() replaces
+        # its slots. Capture after the dwell without a provider request.
+        try:
+            rows = []
+            read = getattr(reader, "trade_coverage", None)
+            if callable(read):
+                for offset in range(0, len(previous), PREPARE_TRADES_LIMIT):
+                    rows.extend(read(previous[offset:offset + PREPARE_TRADES_LIMIT]))
+                states, coverage["observed_previous_slice"] = current_trade_receipts(
+                    rows, at=now_iso(), max_age_seconds=FRESH_SECONDS)
+            else:
+                coverage["observation_hold_reason"] = "IOL_GATEWAY_COVERAGE_UNAVAILABLE"
+        except (IOLRestError, SharedFeedUnavailable) as exc:
+            coverage["observation_hold_reason"] = _scanner_iol_error(exc)
+        except (TypeError, KeyError, ValueError):
+            coverage["observation_hold_reason"] = "IOL_GATEWAY_COVERAGE_UNVERIFIED"
+    recent = getattr(reader, "recent_trades", None)
+    recent_received_at = {}
+    if callable(recent):
+        try:
+            rows = recent(PREPARE_TRADES_LIMIT)
+            candidates, report = current_trade_receipts(rows, at=now_iso(), max_age_seconds=FRESH_SECONDS)
+            recent_received_at = {tuple(row["identity"]): row.get("received_at") for row in rows}
+            coverage["recent_stream_activity"] = {name: report[name] for name in ("observed_at", "by_family")}
+            states = {**candidates, **{key: state for key, state in states.items() if key not in candidates}}
+        except (IOLRestError, SharedFeedUnavailable) as exc:
+            coverage["recent_stream_hold_reason"] = _scanner_iol_error(exc)
+        except (TypeError, KeyError, ValueError):
+            coverage["recent_stream_hold_reason"] = "IOL_GATEWAY_COVERAGE_UNVERIFIED"
+    followed = follow_fresh_discovery(active_plan, coverage, states)
+    if followed and (received_at := recent_received_at.get(coverage["rest_followed_trade"])):
+        coverage["followed_trade_received_at"] = received_at
+    requested = stream_batches(coverage, PREPARE_TRADES_LIMIT)
+    scheduled = 0
+    for items in requested:
+        try:
+            scheduled += reader.prepare_trades(items)
+        except (IOLRestError, SharedFeedUnavailable) as exc:
+            coverage["preparation_hold_reason"] = _scanner_iol_error(exc)
+            # A lost connection is retried at the same cursor. A rejected
+            # local scope is an explicit outcome for this slice.
+            if str(exc) != "IOL_GATEWAY_IDENTITY_SCOPE_DENIED":
+                break
+    else:
+        coverage["prepared"] = bool(requested)
+    coverage["scheduled_subscriptions"] = scheduled
+    return states, followed
 
 
 def _approved_equity_selection(store, selected, baseline_plan, identities):
@@ -2616,6 +2711,11 @@ def _runtime_readiness(store, *, record_event=False, iol_metrics=None):
     feasibility["focus_feasible"] = active_plan["focus_feasible"]
     feasibility["rotation_feasible"] = (not catalog_read_error and
                                         active_plan["active_budget"]["status"] == "FEASIBLE")
+    if iol:
+        dispatch = active_plan.get("iol_stream_coverage", {}).get("dispatch", {})
+        feasibility["full_catalog_feasible"] = dispatch.get("rest_full_signal_window_possible", False)
+        feasibility["rotation_feasible"] = (feasibility["full_catalog_feasible"] and
+                                            dispatch.get("rotation_within_freshness", False))
     if not feasibility["feasible"]:
         reason = "CATALOG_READ_ERROR" if catalog_read_error else "SAMPLING_INFEASIBLE"
         if record_event:
@@ -3772,6 +3872,7 @@ def run():
             if phase != "OPEN":
                 time.sleep(COMMAND_POLL_SECONDS)
                 continue
+            dispatch_started = time.monotonic()
             iol_metrics = None
             if iol:
                 try:
@@ -3797,6 +3898,7 @@ def run():
             cycle_ok = 0
             cycle_failures = 0
             cycle_requested = 0
+            cycle_stream_wait = 0
             cycle_identity_rejections = 0
             cycle_temporal_rejections = 0
             cycle_session_invalid = False
@@ -3804,20 +3906,18 @@ def run():
             iol_pairs = []
             if iol:
                 from rc6_dynamic_universe.iol_capacity import cycle_evidence, paired_sample
+                from rc6_dynamic_universe.iol_coverage import book_followup
+            coverage = active_plan.get("iol_stream_coverage") if iol else None
+            stream_states = {}
+            if coverage:
+                stream_states, followed = _advance_iol_discovery(reader, coverage, active_plan=active_plan)
+                if followed:
+                    cold, probed = followed
+                    symbols = tuple(probed if request == cold else request for request in symbols)
+                feasibility["iol_stream_subscriptions"] = coverage["scheduled_subscriptions"]
+                if coverage.get("preparation_hold_reason"):
+                    store.event("IOL_TRADE_PREPARE_HOLD", coverage["preparation_hold_reason"])
             scopes = {tuple(s["request"]): s for s in active_plan.get("read_scopes", [])}
-            if iol and scopes:
-                from iol_rest_readonly_rc6 import IOLRestError
-                from rc6_iol_market_gateway import PREPARE_TRADES_LIMIT
-                from rc6_ppi_shared_feed import SharedFeedUnavailable
-
-                subscriptions = list(dict.fromkeys((
-                    *(tuple(scope["identity"]) for scope in scopes.values()),
-                    *(tuple(key) for key in active_plan.get("next_iol_subscriptions", [])),
-                )))[:PREPARE_TRADES_LIMIT]
-                try:
-                    feasibility["iol_stream_subscriptions"] = reader.prepare_trades(subscriptions)
-                except (IOLRestError, SharedFeedUnavailable) as exc:
-                    store.event("IOL_TRADE_PREPARE_HOLD", _scanner_iol_error(exc))
             opened_identities = {}
             if iol or getattr(reader, "budget_enabled", False):
                 for p in store.open_positions():
@@ -3843,10 +3943,20 @@ def run():
                         reason = "IOL_GATEWAY_EXACT_IDENTITY_REQUIRED" if iol else "PPI_GATEWAY_EXACT_IDENTITY_REQUIRED"
                         store.event("DATA_REJECTED", f"{symbol}: {reason}")
                         continue
+                    if (iol and priority == "DISCOVERY" and
+                            stream_states.get(tuple(scope_identity)) == "IOL_TRADE_SAMPLE_ABSENT"):
+                        # Opening with no provider trade would fail following
+                        # the REST quote anyway. Let discovery gather the
+                        # trade before spending an asset, quote or book call.
+                        cycle_stream_wait += 1
+                        continue
                     cycle_requested += 1
                     q = _read_scanner_quote(reader, store, symbol, asset_class, settlement,
                         priority=priority, identity=scope_identity, scanner_primary=scanner_primary,
                         catalog_read_error=catalog_read_error)
+                    if coverage and tuple(scope_identity) == coverage.get("rest_followed_trade"):
+                        coverage["followed_book"] = book_followup(
+                            coverage.get("followed_trade_received_at"), q.book_at, q.observed_at)
                     if observation_hold:
                         q = replace(q, opening_block_reason=observation_hold)
                     if scanner_primary is not None:
@@ -3957,6 +4067,8 @@ def run():
                 "identity_rejections": cycle_identity_rejections,
                 "temporal_rejections": cycle_temporal_rejections,
             }
+            if iol:
+                feasibility["observation_counts"]["waiting_for_discovery_trade"] = cycle_stream_wait
             if observation_hold:
                 feasibility["opening_hold_reason"] = observation_hold
             duration = round(time.perf_counter() - cycle_clock, 3)
@@ -3990,6 +4102,8 @@ def run():
                     complete=not (cycle_session_invalid or observation_hold or STOP))
                 if metrics and isinstance(metrics.get("wire_usage"), dict):
                     feasibility["iol_wire_usage"] = metrics["wire_usage"]
+                if metrics and isinstance(metrics.get("wire_budget"), dict):
+                    feasibility["iol_wire_budget"] = metrics["wire_budget"]
             _write_scanner_metrics(store, "UNIVERSE",
                   (cycle_started, cycle_finished, eligible_total, len(symbols), cycle_ok,
                    cycle_failures, duration, cursor_before, cursor_after, recommended,
@@ -4024,7 +4138,8 @@ def run():
                 reader.close()
                 reader = None
                 next_login_at = time.time() + 60
-            time.sleep(active_plan.get("cadence_seconds", INTERVAL))
+            cadence = active_plan.get("cadence_seconds", INTERVAL)
+            time.sleep(max(0, cadence - (time.monotonic() - dispatch_started)) if iol else cadence)
     finally:
         if reader:
             reader.close()

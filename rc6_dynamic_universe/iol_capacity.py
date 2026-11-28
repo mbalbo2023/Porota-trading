@@ -66,8 +66,9 @@ def _configuration(cycle):
     cost = _wire_count(budget["scanner_calls_per_instrument"])
     batch_count = _wire_count(budget["batches_per_minute"])
     exit_calls = _wire_count(budget["planned_exit_calls"])
-    if not (cost == 3 and batch_count > 0 and exit_calls > 0
-            and 0 < limit and limit * cost * batch_count + exit_calls + 1 <= calls):
+    auth_calls = _wire_count(budget.get("planned_auth_calls", 1))
+    if not (cost == 3 and batch_count > 0 and exit_calls > 0 and auth_calls > 0
+            and 0 < limit and limit * cost * batch_count + exit_calls + auth_calls <= calls):
         raise ValueError("IOL_CAPACITY_BUDGET_UNVERIFIED")
     return {"schema": SCHEMA, "generation": generation, "budget": budget}
 

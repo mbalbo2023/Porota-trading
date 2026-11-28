@@ -5,8 +5,9 @@ from decimal import Decimal
 import json
 from zoneinfo import ZoneInfo
 
-from be_paper_engine import Quote
+from be_paper_engine import PaperBroker, PaperStore, Quote
 from bs_instrument_contracts import InstrumentContract
+from rc6_performance.costs import VersionedPaperCostContract
 from rc6_option_paper_strategy import (
     ENTRY_AUTHORITY, PAPER_ONLY, REAL_ROUTES_USED, UnderlyingEvidence,
     UnderlyingTrade, evaluate_option_entry,
@@ -83,21 +84,80 @@ def test_long_put_uses_bearish_underlying_rather_than_call_momentum():
     assert _decide(call, kwargs).reason == "OPTION_UNDERLYING_DIRECTIONAL_SIGNAL_NOT_READY"
 
 
-def test_iol_option_requires_native_trade_and_same_provider_underlying():
-    q, kwargs = _inputs()
+def _iol_option_quote(q):
     trade_at = (AT - timedelta(seconds=20)).isoformat()
     evidence = {
         "identity": list(q.contract.key), "gateway_generation": "a" * 64,
+        "transport_key": [q.symbol, "BCBA", "T1"],
         "trade_at": trade_at, "received_at": (AT - timedelta(seconds=19)).isoformat(),
         "quote_received_at": (AT - timedelta(seconds=15)).isoformat(), "price": str(q.last),
     }
-    q = replace(q, metadata_source="IOL_REST", trade_at=trade_at, last_kind="TRADE",
-                iol_trade_evidence=evidence)
+    return replace(q, metadata_source="IOL_REST", trade_at=trade_at, last_kind="TRADE",
+                   iol_trade_evidence=evidence)
+
+
+def test_iol_option_requires_native_trade_and_same_provider_underlying():
+    q, kwargs = _inputs()
+    q = _iol_option_quote(q)
+    evidence = q.iol_trade_evidence
     assert _decide(q, kwargs).reason == "OPTION_UNDERLYING_IOL_EVIDENCE_MISSING"
     kwargs["underlying_evidence"] = replace(kwargs["underlying_evidence"], metadata_source="IOL_REST")
     assert _decide(q, kwargs).action == "BUY"
     changed = replace(q, iol_trade_evidence={**evidence, "identity": [*evidence["identity"][:-1], "A-24HS"]})
     assert _decide(changed, kwargs).reason == "IOL_LAST_TRADE_EVIDENCE_MISSING"
+    changed = replace(q, iol_trade_evidence={**evidence, "transport_key": [q.symbol, "BCBA", "T0"]})
+    assert _decide(changed, kwargs).reason == "IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED"
+    changed = replace(q, iol_trade_evidence={k: v for k, v in evidence.items() if k != "transport_key"})
+    assert _decide(changed, kwargs).reason == "IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED"
+
+
+def test_iol_option_replays_signal_and_immutable_fees_through_paper_fills(tmp_path, monkeypatch):
+    from bq_exit_policy import PaperSessionPolicy
+
+    q, kwargs = _inputs()
+    q = _iol_option_quote(q)
+    kwargs["underlying_evidence"] = replace(kwargs["underlying_evidence"], metadata_source="IOL_REST")
+    candidate = _decide(q, kwargs)
+    assert candidate.action == "BUY", candidate.reason
+    receipt = candidate.features["cost_contract"]
+    assert receipt["market_data"]["identity"] == list(q.contract.key)
+    assert receipt["tariff_provenance"]["iol_tariff_evidence"] == "NO_VERIFICADO"
+
+    store = PaperStore(str(tmp_path / "option-replay.db"))
+    store.state(mode="PRODUCTION_PAPER", real_orders_sent=0)
+    clock = [AT]
+    replay = PaperBroker(store, initial_cash="10000", risk_pct="0.05",
+                         max_position_pct="1", max_total_exposure_pct="1",
+                         daily_loss_pct="10", daily_soft_stop_pct="8",
+                         session_policy=PaperSessionPolicy(), clock_fn=lambda: clock[0].isoformat(),
+                         slippage_bps="0", economics_mode="SHADOW")
+    store.add_quote(q)
+    changed = {**candidate.features, "cost_policy_sha256": "0" * 64}
+    assert replay.admit_paper_candidate(q, candidate.score, changed) == (
+        False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None)
+    features = dict(candidate.features)
+    opened, reason, paper_id = replay.admit_paper_candidate(q, candidate.score, features)
+    assert opened, reason
+    assert features["economics"]["cost_contract"] == receipt
+    position = store.open_position(q.symbol)
+    assert Decimal(position["quantity"]) == 1
+    assert Decimal(position["entry_cost"]) == Decimal(candidate.features["entry_fee"])
+
+    monkeypatch.setenv("FEE_OPCIONES_COMISION", "0.2")
+    clock[0] += timedelta(minutes=1)
+    stamp = clock[0].isoformat()
+    exit_q = replace(q, last=Decimal("2.3"), bid=Decimal("2.3"), ask=Decimal("2.4"),
+                     observed_at=stamp, book_at=stamp, trade_at=None, last_kind="REFERENCE",
+                     iol_trade_evidence=None, opening_block_reason="IOL_EXIT_OBSERVATION_ONLY")
+    assert replay._close(position, exit_q, "SYNTHETIC_OPTION_REPLAY")
+    policy = VersionedPaperCostContract.from_diagnostic(receipt)
+    with store.connect() as db:
+        fills = db.execute("SELECT side,price,costs FROM paper_fills WHERE paper_id=? ORDER BY id",
+                           (paper_id,)).fetchall()
+        assert db.execute("SELECT real_orders_sent FROM observer_state").fetchone()[0] == 0
+    assert [fill[0] for fill in fills] == ["BUY_SIMULATED", "SELL_SIMULATED"]
+    sold_premium = Decimal(fills[1][1]) * q.contract.cash_multiplier
+    assert Decimal(fills[1][2]) == policy.leg_cost(sold_premium, decision_at=stamp)
 
 
 def test_complementary_iv_missing_is_warning_not_paper_deploy_blocker():

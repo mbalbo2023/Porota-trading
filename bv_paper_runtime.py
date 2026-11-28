@@ -180,32 +180,42 @@ def run_ppi_gateway_worker(store, stop):
         _run_ppi_gateway_owned_loop(store, stop)
 
 
-def _make_iol_gateway_owner(store, socket_path):
+def _iol_gateway_scopes(store, *, now=None):
     from datetime import datetime, timezone
-    from iol_rest_readonly_rc6 import IOLRestReadOnly
-    from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
-    from rc6_iol_market_gateway import IOLMarketGateway, iol_gateway_identities
-    from rc6_iol_trade_stream import IOLTradeStream
-    from rc6_performance.costs import local_etf_reference_keys
+    from bu_instrument_catalog import iol_spot_catalog
+    from rc6_iol_market_gateway import iol_gateway_identities
 
-    with store.connect() as connection:
+    now = now or datetime.now(timezone.utc)
+    scan_keys = iol_gateway_identities(iol_spot_catalog(store, now=now, include_contracts=True))
+    # Reference collection needs provider metadata for catalogue candidates before PAPER admission.
+    with closing(store.connect()) as connection:
         rows = connection.execute("""SELECT ticker,instrument_type,market,currency,settlement
             FROM financial_instrument_catalog WHERE status IN ('AVAILABLE','STALE')""").fetchall()
-    scan_keys = iol_gateway_identities(tuple(row) for row in rows)
-    scan_keys |= frozenset(local_etf_reference_keys(datetime.now(timezone.utc)))
+    reference_keys = scan_keys | iol_gateway_identities(tuple(row) for row in rows)
     opened, _ = store.exit_positions()
     exit_keys = iol_gateway_identities(
         (position['symbol'], position['asset_class'], position['market'],
          position['currency'], position['settlement']) for position in opened)
-    # Share the bounded collector policy across scanner and EXIT via this owner.
+    return {"scanner": scan_keys, "exit_reader": scan_keys}, exit_keys, reference_keys
+
+
+def _make_iol_gateway_owner(store, socket_path):
+    from co_market_sessions_hf6 import byma_paper_spot_open
+    from iol_rest_readonly_rc6 import IOLRestReadOnly
+    from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
+    from rc6_iol_market_gateway import IOLMarketGateway
+    from rc6_iol_trade_stream import IOLTradeStreamPool
+
+    allowed, opened, references = _iol_gateway_scopes(store)
     config = os.getenv("POROTA_IOL_REST_CONFIG")
     credentials = {"config": config} if config else {}
     rest = IOLRestReadOnly(socket_path.parent / "rest-session",
         governor=RateGovernor(CollectionPolicy(), max_wait_seconds=1.0), owner_managed_auth=True,
         **credentials)
-    return IOLMarketGateway(rest, allowed={"scanner": scan_keys, "exit_reader": scan_keys | exit_keys},
-                            socket_path=socket_path, supervisor_pid=os.getppid(),
-                            trade_stream=IOLTradeStream(rest.stream_bearer))
+    stream = IOLTradeStreamPool(rest.stream_bearer, active=byma_paper_spot_open)
+    return IOLMarketGateway(rest, allowed=allowed, opened=opened, socket_path=socket_path,
+                            supervisor_pid=os.getppid(), trade_stream=stream,
+                            scheduled_references=True, reference_allowed=references)
 
 
 def run_iol_gateway_worker(store, stop):
@@ -223,9 +233,19 @@ def run_iol_gateway_worker(store, stop):
                                   name="iol-owner-unix-server")
         server.start()
         try:
+            next_scope_refresh = time.monotonic() + 15
             while not stop.wait(1):
                 if not server.is_alive():
                     raise RuntimeError("IOL_GATEWAY_SERVER_THREAD_EXITED")
+                if time.monotonic() >= next_scope_refresh:
+                    try:
+                        allowed, opened, references = _iol_gateway_scopes(store)
+                        owner.refresh_scope(allowed, opened=opened, reference_allowed=references)
+                    except sqlite3.Error as exc:
+                        owner.note_scope_refresh_failed()
+                        LOG.warning("IOL_GATEWAY_CATALOG_REFRESH_FAILED: %s",
+                                    getattr(exc, "sqlite_errorname", type(exc).__name__))
+                    next_scope_refresh = time.monotonic() + 15
         finally:
             trade_stop.set()
             if server.is_alive():

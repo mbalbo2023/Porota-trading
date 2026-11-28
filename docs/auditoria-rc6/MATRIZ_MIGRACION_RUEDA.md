@@ -134,6 +134,16 @@ El replay anterior llamaba al cliente IOL directamente desde la prueba. El Gatew
 
 El lector de profundidad ahora selecciona mejores puntas por precio. Si varios niveles comparten el mejor precio, el tamaño queda indeterminado y produce HOLD. La regresión cubre listas desordenadas, 429 sin Book de apertura, pausa compartida, generación vencida, plazo distinto y un proceso con el mismo UID sin el rol autorizado.
 
+### Presupuesto y cobertura IOL
+
+El presupuesto REST local distribuye capacidad entre scanner, EXIT, colector y OAuth. El recibo conserva la capacidad, las reservas, el uso observado y las esperas. La cuota efectiva de la cuenta requiere evidencia del proveedor y de la rueda.
+
+El scanner destina los espacios restantes de su conexión de trades a un recorrido persistente de las identidades elegibles. Antes de sustituir un grupo, el Gateway devuelve qué claves de ese grupo tenían una operación fresca, estaban suscritas sin operación o seguían pendientes. El recibo conserva el denominador por familia, las claves programadas, los resultados por clave y las consultas profundas despachadas. Cuando hay un negocio fresco de descubrimiento, puede usar el turno REST frío existente para confirmar ficha, cotización y libro. Ese turno sigue siendo observacional. EXIT y las claves con evaluación profunda conservan prioridad.
+
+IOL documenta hasta 50 títulos por conexión para trades y puntas, con un título por conexión para profundidad. El Gateway distribuye hasta 550 claves exactas seleccionadas entre 11 conexiones estables. Conserva una conexión rotativa para claves adicionales o rechazadas por el proveedor. El planificador acorta el despacho de evaluaciones a 30 segundos cuando hay suscripciones estables confirmadas y conserva el mismo presupuesto por minuto. La profundidad de entrada o salida conserva su validación específica. Futuros, Cauciones y FCI conservan su contrato de fuente especializado. [WebSocket IOL](https://developers.iolinversiones.com/docs/websocket) · [Planificador](../../rc6_dynamic_universe/iol_coverage.py)
+
+Con 540 claves, 12 lecturas REST completas por minuto permiten como máximo dos evaluaciones de libro por clave en 90 minutos si se reparten uniformemente. La señal requiere seis muestras. El barrido rotativo de referencia de 20 ciclos de 60 segundos supera también los 120 segundos de frescura. Los recibos muestran por separado cobertura continua confirmada, actividad recibida y capacidad de evaluación profunda. El umbral de capacidad de la cuenta debe comprobarse en rueda.
+
 ## RCA de procedencia en velas y embudo
 
 - **Prueba de velas intradiarias.** El CLI original devolvía RED sobre dos velas IOL válidas. Estas muestras alimentan la cola de velas por fuera del cursor de snapshots. El otro camino de progreso sólo buscaba `PPI_GUARDED_CURRENT`. La opción explícita `--sample-source IOL_REST_TRADE_SAMPLE` publica una prueba propia para 1m y 5m de la misma identidad. Verifica hashes, tiempos, calidad y vínculo de cada muestra con su recibo archivado. La regresión rompe el vínculo de 5m y exige RED aun con el cursor avanzado. El CLI publica JSON y abre SQLite de sólo lectura. [Verificador](../../scripts/rc6_candle_inmarket_evidence.py) · [Regresión](../../tests/test_rc6_iol_migration_offhost.py)

@@ -254,6 +254,8 @@ def assert_reviewed_letter_roundtrip(quote, evidence, broker, *, fresh_quote_at=
 
     quote = replace(quote, bid_size=Decimal(1))  # No sale lot is needed for a redemption.
     store = broker.store
+    # The scanner persists the exact executable quote before broker admission.
+    store.add_quote(quote)
     broker.on_quote(quote)
     broker.on_quote(quote)  # Same BUY can only be committed once.
     position, = store.open_positions()
@@ -267,6 +269,12 @@ def assert_reviewed_letter_roundtrip(quote, evidence, broker, *, fresh_quote_at=
     assert Decimal(features["candidate_stop_risk"]) == outlay
     assert Decimal(features["economics"]["full_principal_risk"]) == outlay
     assert features["economics"]["modeled_tariff"] == "FULL_ENTRY_LEG_ONLY"
+    cost_receipt = features["economics"]["cost_contract"]
+    if quote.metadata_source == "IOL_REST":
+        assert cost_receipt["market_data"]["identity"] == list(quote.contract.key)
+        assert cost_receipt["schedule_sha256"] == plan["fee_policy_sha256"]
+    else:
+        assert cost_receipt["policy_sha256"] == plan["fee_policy_sha256"]
     assert not broker._close(position, quote, "SYNTHETIC_SELL_IS_BLOCKED")
     with store.connect() as db:
         assert position_at(db, paper_id, AT).residual_nominal == 100

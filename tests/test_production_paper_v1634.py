@@ -586,6 +586,7 @@ def test_migracion_moneda_preserva_fills_anteriores_sin_reinterpretar_dolares(tm
     with store.connect() as c:
         c.execute('DROP TRIGGER paper_events_notify_v17')  # Tampoco existía en 16.3.5.
         c.execute("DROP INDEX idx_snapshot_identity")
+        c.execute("DROP INDEX idx_snapshot_trade_window")
         for table, columns in {"paper_positions": ("currency", "market", "currency_source"),
                                "market_snapshots": ("currency", "market")}.items():
             for column in columns:

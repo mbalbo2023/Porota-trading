@@ -1,13 +1,14 @@
 """Synthetic market clocks and GO, with an isolated PAPER ledger per instrument."""
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
 import bf_production_paper_observer as observer
 from rc6_iol_market_gateway import IOLGatewayMarketReader
 from tests.test_rc6_iol_migration_offhost import (
-    open_fixture_iol_gateway, register, replay_iol_spot_paper,
+    open_fixture_iol_gateway, option_trade_evidence, register, replay_iol_spot_paper,
 )
 from tests.test_rc6_ppi_gateway_family_ready import (
     AT, gateway_socket, replay_native_family,
@@ -42,18 +43,21 @@ def test_option_iol_hold_and_native_paper_cycle(ticker, underlying, strike, tmp_
                                  option_underlying=(underlying, "ACCIONES", "BYMA", "ARS", "INMEDIATA"),
                                  option_strike=strike)
 
-    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, identity) as (_, client, transport, _):
+    with open_fixture_iol_gateway(tmp_path, tmp_path_factory, identity) as (server, client, transport, _):
         register(client, "scanner")
         trade_at = (AT - timedelta(seconds=3)).isoformat()
-        transport.overrides["quote"] = {"fixture_last_trade_at": trade_at}
-        reader = IOLGatewayMarketReader(client, consumer="scanner",
-                                       trade_clock=lambda row: row["fixture_last_trade_at"],
-                                       clock=lambda: transport.now)
+        evidence = option_trade_evidence(identity, transport)
+        server.trade_stream = SimpleNamespace(want=lambda key: None, state="SUBSCRIBED",
+            observation=lambda key: (evidence, "") if list(key) == evidence["transport_key"]
+            else (None, "IOL_TRADE_SAMPLE_ABSENT"))
+        reader = IOLGatewayMarketReader(client, consumer="scanner", clock=lambda: transport.now)
         monkeypatch.setattr(observer, "now_iso", lambda: transport.now.isoformat())
         quote = observer._read_scanner_quote(reader, store, ticker, "OPCIONES", "INMEDIATA",
                                              identity=identity, priority="HOT")
         assert quote.metadata_source == "IOL_REST"
         assert quote.trade_at == trade_at
+        assert quote.iol_trade_evidence["transport_key"] == [ticker, "BCBA", "T1"]
+        assert quote.settlement == "INMEDIATA"
         assert quote.book_at == (AT - timedelta(seconds=1)).isoformat()
         assert quote.opening_block_reason == "IOL_SPECIALIZED_ENTRY_EVIDENCE_REQUIRED"
         assert transport.calls == ["token", ticker, "quote", "depth"]

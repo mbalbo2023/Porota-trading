@@ -1,4 +1,5 @@
 """Run IOL through the real client, clock guards, PAPER broker and isolated SQLite."""
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 from threading import Event, Thread
+import time
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
@@ -25,8 +27,12 @@ from cv_history_store_adapter_hf6 import HistoricalStore
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
 from iol_shadow_collector_rc6 import CollectionPolicy, RateGovernor
 from rc6_iol_history_reference import ingest_daily_reference
-from rc6_iol_market_data import IOLMarketReader
-from rc6_iol_market_gateway import CONTROL_SCHEMA, IOLGatewayClient, IOLGatewayMarketReader, IOLMarketGateway
+from rc6_iol_market_data import IOLMarketReader, iol_trade_stream_key
+from rc6_iol_market_gateway import (
+    CONTROL_SCHEMA, IOLGatewayClient, IOLGatewayMarketReader, IOLGatewayReferenceClient,
+    IOLMarketGateway, iol_gateway_socket_path,
+)
+from rc6_iol_trade_stream import IOLTradeStream, TRADE_EVIDENCE, last_trade
 from rc6_ppi_shared_feed import ReadOnlyUnixFeedServer
 from scripts.rc6_candle_inmarket_evidence import IOL_SAMPLE_SOURCE, main as verify_inmarket_candles
 from scripts.rc6_history_import_source_reported import _source_store
@@ -449,6 +455,9 @@ def test_iol_family_contract(identity, tmp_path):
             assert asset["type"] == "FCI" and asset["currency"] == "ARS"
         return
 
+    if family == "OPCIONES":
+        market.gateway_evidence = True
+        transport.overrides["quote"] = {TRADE_EVIDENCE: option_trade_evidence(identity, transport)}
     sampled = market.observe(identity)
     quote = sampled.quote
     assert (quote.symbol, quote.asset_class, quote.market, quote.currency, quote.settlement) == identity
@@ -470,6 +479,51 @@ def test_iol_family_contract(identity, tmp_path):
     assert {json.loads(row[0])["resolution"] for row in rows} == {"1m", "5m"}
     assert all(json.loads(row[1])["quality"] == "SAMPLED" and json.loads(row[1])["volume"] is None
                for row in rows)
+
+
+def option_trade_evidence(identity, transport):
+    key = iol_trade_stream_key(identity)
+    assert key == (identity[0], "BCBA", "T1")
+    trade_at = transport.now - timedelta(seconds=3)
+    event = {"type": "T", "code": 200, "msg": {
+        "S": key[0], "M": key[1], "T": key[2], "P": transport.price, "X": 100, "D": trade_at.isoformat()}}
+    wire, sample = last_trade(event, trade_at + timedelta(seconds=1))
+    assert wire == key
+    return {**sample, "identity": list(identity), "gateway_generation": "a" * 64,
+            "quote_received_at": transport.now.isoformat()}
+
+
+@pytest.mark.parametrize(("failure", "reason"), [
+    ("no_sample", "IOL_LAST_TRADE_CLOCK_UNVERIFIED"),
+    ("transport_t0", "IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED"),
+    ("transport_other_series", "IOL_OPTION_STREAM_TRANSPORT_UNVERIFIED"),
+    ("rest_quote_t1", "IOL_MARKET_IDENTITY_MISMATCH"),
+    ("rest_depth_t1", "IOL_MARKET_IDENTITY_MISMATCH"),
+    ("economic_t1", "IOL_MARKET_IDENTITY_UNSUPPORTED"),
+    ("dollar_asset", "IOL_ASSET_CURRENCY_UNVERIFIED"),
+])
+def test_option_stream_cannot_relabel_another_contract_or_rest_term(tmp_path, failure, reason):
+    identity = next(case for case in FAMILIES if case[1] == "OPCIONES")
+    market, transport = reader(tmp_path, identity)
+    market.gateway_evidence = True
+    evidence = option_trade_evidence(identity, transport)
+    transport.overrides["quote"] = {TRADE_EVIDENCE: evidence}
+    if failure == "no_sample":
+        transport.overrides.clear()
+    elif failure == "transport_t0":
+        evidence["transport_key"][-1] = "T0"
+    elif failure == "transport_other_series":
+        evidence["transport_key"][0] = "GFGC6000D"
+    elif failure == "rest_quote_t1":
+        transport.overrides["quote"]["settlement_term"] = "T1"
+    elif failure == "rest_depth_t1":
+        transport.overrides["depth"] = {"settlement_term": "T1"}
+    elif failure == "economic_t1":
+        identity = (*identity[:-1], "A-24HS")
+    elif failure == "dollar_asset":
+        transport.overrides[identity[0]] = {"currency": "USD"}
+    with pytest.raises(IOLRestError, match=reason):
+        market.observe(identity)
 
 
 def test_local_etf_reference_bootstraps_read_scope_and_holds_until_cost_is_attributed(
@@ -819,10 +873,13 @@ def test_iol_gateway_prepares_only_registered_scanner_keys_and_counts_physical_h
         client.prepare_trades([GGAL])
     register(client, "scanner")
     with pytest.raises(IOLRestError, match="IOL_GATEWAY_IDENTITY_SCOPE_DENIED"):
-        client.prepare_trades([GGAL, FAMILIES[1]])
+        client.prepare_trades([FAMILIES[1]])
     assert stream._keys() == set()
-    assert client.prepare_trades([GGAL]) == 1
+    assert client.prepare_trades([GGAL, FAMILIES[1]]) == 1
     assert stream._keys() == {("GGAL", "BCBA", "T1")}
+    assert client.trade_coverage([GGAL, FAMILIES[1]]) == [
+        {"identity": list(GGAL), "state": "NOT_READY"},
+        {"identity": list(FAMILIES[1]), "state": "SCOPE_DENIED"}]
     assert transport.calls == []
     assert client.owner_status()["wire_usage"]["attempts_last_minute"] == 0
 
@@ -839,6 +896,312 @@ def test_iol_gateway_prepares_only_registered_scanner_keys_and_counts_physical_h
     stream._set_state("SUBSCRIBED", stream._bearer(), stream._keys())
     with pytest.raises(IOLRestError, match="IOL_TRADE_SAMPLE_ABSENT"):
         scanner.observe(GGAL)
+
+
+def _scheduled_reference_clients(server, client):
+    server._scheduled_references = True
+    server._rest.owner_managed_auth = True
+
+    class ReferenceClient(IOLGatewayReferenceClient):
+        def _request(self, packet, **kwargs):
+            return client._request(packet, **kwargs)
+
+    return ReferenceClient("fixture.db", consumer="collector"), ReferenceClient("fixture.db", consumer="health")
+
+
+def test_iol_gateway_budget_counts_concurrent_scanner_collector_health_and_reserved_exit(iol_gateway):
+    server, client, transport, _ = iol_gateway
+    collector, health = _scheduled_reference_clients(server, client)
+    register(client, "scanner")
+    register(client, "exit_reader")
+    assert health.call("authenticate", {}) == {"result": "AUTHENTICATED"}
+
+    def scanner_reads():
+        for _ in range(18):
+            client.market_read("asset", GGAL, consumer="scanner", priority="HOT")
+
+    args = {"symbol": "GGAL", "market": "BCBA"}
+
+    def collector_reads():
+        for _ in range(18):
+            collector.call("get_asset_info", args)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        scanner = pool.submit(scanner_reads)
+        reference = pool.submit(collector_reads)
+        scanner.result()
+        reference.result()
+    assert len(transport.calls) == 37
+    assert collector.calls_total == 18 and health.calls_total == 1
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        collector.call("get_asset_info", args)
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        client.market_read("asset", GGAL, consumer="scanner", priority="HOT")
+
+    for endpoint in ("asset", "depth"):
+        client.market_read(endpoint, GGAL, consumer="exit_reader", priority="EXIT_CRITICAL")
+    assert health.call("authenticate", {}) == {"result": "AUTHENTICATED"}
+    status = client.owner_status()
+    assert len(transport.calls) == status["wire_attempts"] == 39
+    assert transport.calls.count("token") == 1
+    assert status["wire_budget"] == {
+        "capacity_per_minute": 40, "used_last_minute": 39, "available_non_exit": 0,
+        "reserved_exit": 2, "reserved_auth": 1, "cooldown_seconds": 0}
+    assert status["wire_usage"]["http_results"] == {
+        "health/oauth/200": 1, "collector/asset/200": 18, "scanner/asset/200": 18,
+        "exit_reader/asset/200": 1, "exit_reader/depth/200": 1}
+    transport.now += timedelta(seconds=901)
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        client.market_read("asset", GGAL, consumer="exit_reader", priority="EXIT_CRITICAL")
+    assert len(transport.calls) == 40 and transport.calls[-1] == "token"
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        client.market_read("asset", GGAL, consumer="exit_reader", priority="EXIT_CRITICAL")
+    assert len(transport.calls) == 40
+
+
+def test_iol_gateway_exit_overtakes_queued_shadow_and_shadow_429_reaches_other_roles(iol_gateway, monkeypatch):
+    server, client, transport, advance = iol_gateway
+    collector, health = _scheduled_reference_clients(server, client)
+    register(client, "scanner")
+    register(client, "exit_reader")
+    assert health.call("authenticate", {}) == {"result": "AUTHENTICATED"}
+    first_wire, release_first_wire = Event(), Event()
+    replay_open = transport.open
+
+    def wire(request, timeout):
+        if urlsplit(request.full_url).path.endswith("/quote"):
+            first_wire.set()
+            assert release_first_wire.wait(2)
+        return replay_open(request, timeout)
+
+    monkeypatch.setattr(transport, "open", wire)
+
+    def await_queued(count):
+        deadline = time.monotonic() + 1
+        while server.native_router_status()["queued"] != count and time.monotonic() < deadline:
+            time.sleep(.001)
+        assert server.native_router_status()["queued"] == count
+
+    asset = {"symbol": "GGAL", "market": "BCBA"}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(client.market_read, "quote", GGAL, consumer="scanner", priority="HOT")
+        try:
+            assert first_wire.wait(1)
+            waiting = pool.submit(collector.call, "get_asset_info", asset)
+            await_queued(1)
+            critical = pool.submit(client.market_read, "depth", GGAL,
+                                   consumer="exit_reader", priority="EXIT_CRITICAL")
+            await_queued(2)
+        finally:
+            release_first_wire.set()
+        first.result()
+        critical.result()
+        waiting.result()
+    assert transport.calls == ["token", "quote", "depth", "GGAL"]
+
+    transport.reject = "GGAL"
+    with pytest.raises(IOLRestError, match="IOL_REST_HTTP_ERROR") as rejected:
+        collector.call("get_asset_info", asset)
+    assert rejected.value.status_code == 429
+    count = len(transport.calls)
+    for consumer, priority in (("scanner", "HOT"), ("exit_reader", "EXIT_CRITICAL")):
+        with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+            client.market_read("depth", GGAL, consumer=consumer, priority=priority)
+    monkeypatch.setattr(server._rest, "active", None)
+    monkeypatch.setattr(server._rest, "_cached", lambda: {})
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_RATE_HOLD"):
+        health.call("authenticate", {})
+    assert len(transport.calls) == count
+    assert client.owner_status()["wire_budget"]["cooldown_seconds"] == 7
+    advance(7)
+    assert health.call("authenticate", {}) == {"result": "AUTHENTICATED"}
+    assert transport.calls[-1] == "token"
+
+
+@pytest.mark.parametrize("revocation", ("stale_catalog", "revoked_ledger"))
+def test_iol_gateway_catalog_swap_retains_open_exit_and_revokes_only_retired_stream_keys(
+        iol_gateway, tmp_path, revocation):
+    from bf_production_paper_observer import _support_schema
+    import bu_instrument_catalog as catalog
+    from bv_paper_runtime import _iol_gateway_scopes
+
+    server, client, transport, _ = iol_gateway
+    collector, _ = _scheduled_reference_clients(server, client)
+    register(client, "scanner")
+    register(client, "exit_reader")
+    stream = server.trade_stream = IOLTradeStream(server._rest.stream_bearer)
+    store = PaperStore(str(tmp_path / "catalog.db"))
+    _support_schema(store)
+    pamp = ("PAMP", *GGAL[1:])
+
+    def persist(connection, identity):
+        ticker, family, market, currency, term = identity
+        record = catalog.normalize_record({
+            "ticker": ticker, "type": family, "market": market, "currency": currency,
+            "_discovery_source": "PPI_PRIMARY",
+        }, term, AT.isoformat(), "OFFHOST_PPI_IDENTITY_FIXTURE")
+        catalog.persist(connection, record)
+        catalog.sync_candidate_universe(connection, AT.isoformat())
+
+    with store.connect() as db:
+        persist(db, GGAL)
+    store.exit_positions = lambda: ([dict(zip(("symbol", "asset_class", "market", "currency",
+                                               "settlement"), GGAL))], [])
+    allowed, opened, references = _iol_gateway_scopes(store, now=AT)
+    server.refresh_scope(allowed, opened=opened, reference_allowed=references)
+    prior = client.owner_status()
+    assert client.prepare_trades([GGAL]) == 1
+
+    with store.connect() as db:
+        persist(db, pamp)
+        if revocation == "stale_catalog":
+            db.execute("UPDATE financial_instrument_catalog SET status='STALE' WHERE ticker='GGAL'")
+        else:
+            db.execute("UPDATE candidate_identity_v2 SET status='HOLD',can_simulate=0 WHERE ticker='GGAL'")
+    allowed, opened, references = _iol_gateway_scopes(store, now=AT)
+    assert GGAL in references and GGAL not in allowed["scanner"]
+    server.refresh_scope(allowed, opened=opened, reference_allowed=references)
+    current = client.owner_status()
+    assert prior["session_generation"] == current["session_generation"]
+    assert prior["catalog_scope_revision"] != current["catalog_scope_revision"]
+    assert client.prepare_trades([GGAL, pamp]) == 1
+    assert stream._keys() == {iol_trade_stream_key(pamp)}
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_IDENTITY_SCOPE_DENIED"):
+        client.market_read("asset", GGAL, consumer="scanner", priority="HOT")
+    assert client.market_read("depth", GGAL, consumer="exit_reader", priority="EXIT_CRITICAL")[0]["symbol"] == "GGAL"
+    assert collector.call("get_asset_info", {"symbol": "GGAL", "market": "BCBA"})["symbol"] == "GGAL"
+    transport.symbol = "PAMP"
+    assert client.market_read("asset", pamp, consumer="scanner", priority="HOT")[0]["symbol"] == "PAMP"
+    stream._set_state("SUBSCRIBED", stream._bearer(), stream._keys())
+    stream_key = iol_trade_stream_key(pamp)
+    event = dict(zip(("S", "M", "T"), stream_key), D=AT.isoformat(), P=100, X=100)
+    _, sample = last_trade({"type": "T", "code": 200, "msg": event}, AT)
+    stream._trades[stream_key] = sample
+    assert client.trade_coverage([GGAL, pamp]) == [
+        {"identity": list(GGAL), "state": "SCOPE_DENIED"},
+        {"identity": list(pamp), "state": "TRADE_OBSERVED", "trade_at": AT.isoformat()}]
+    assert transport.calls == ["token", "depth", "GGAL", "PAMP"]
+
+
+def test_iol_gateway_session_directory_is_outside_the_dashboard_mount():
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).parents[1] / "compose.rootless.yml").read_text())
+    dashboard = compose["services"]["dashboard"]
+    observer = compose["services"]["observer"]
+    assert any(mount.startswith("/tmp:") for mount in observer["tmpfs"])
+    database = Path("/app/data/paper_v17/observer_v17.db")
+    socket = iol_gateway_socket_path(database)
+    assert socket.is_relative_to("/tmp")
+    assert iol_gateway_socket_path(database.with_name("another.db")) != socket
+    for mount in dashboard["volumes"]:
+        assert not socket.is_relative_to(mount["target"])
+        assert mount["target"] != "/run/secrets/rc6_iol_rest.env"
+
+
+def test_iol_gateway_recent_trades_are_scanner_only_exact_fresh_and_prioritize_unread_book(iol_gateway):
+    server, client, transport, _ = iol_gateway
+    aapl = FAMILIES[1]
+    stale = FAMILIES[2]
+    rogue = FAMILIES[3]
+    wider_spread = FAMILIES[6]
+    identities = GGAL, aapl, wider_spread, stale
+    key = iol_trade_stream_key
+    synced = []
+    samples = []
+
+    def event(identity, *, age, **evidence):
+        sample = {"transport_key": list(key(identity)), "trade_at": (AT - timedelta(seconds=age)).isoformat(),
+                  "received_at": AT.isoformat(), **evidence}
+        samples.append((key(identity), sample))
+
+    event(GGAL, age=2, quote_at=AT.isoformat(), quote_received_at=AT.isoformat(),
+          spread_bps=19.5, stream_session="PRIVATE_FIXTURE_TOKEN")
+    event(aapl, age=1, quote_at=AT.isoformat(), quote_received_at=(AT + timedelta(seconds=1)).isoformat(),
+          spread_bps=2)
+    event(wider_spread, age=0, quote_at=AT.isoformat(), quote_received_at=AT.isoformat(), spread_bps=50.5)
+    event(stale, age=121)
+    event(rogue, age=0)
+
+    server.trade_stream = SimpleNamespace(state="SUBSCRIBED", sync_catalog=lambda keys: synced.append(set(keys)),
+        recent_trades=lambda: tuple(samples),
+        coverage_metrics=lambda *, include_keys: {
+            **({"continuous_ack_keys": [list(key(identity)) for identity in identities]} if include_keys else {}),
+            "continuous_subscribed": 4, "catalog_transport_keys": 4,
+            "pool_state": "SUBSCRIBED", "degradation_reason": ""})
+    server.refresh_scope({"scanner": identities, "exit_reader": identities})
+    server.refresh_scope({"scanner": identities, "exit_reader": identities})
+    assert synced == [{key(identity) for identity in identities}] * 2
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_UNREGISTERED_CLIENT"):
+        client.recent_trades()
+    register(client, "scanner")
+
+    latest = client.recent_trades()
+    assert [row["identity"] for row in latest] == [list(GGAL), list(wider_spread), list(aapl)]
+    assert {field: latest[0][field] for field in ("quote_at", "spread_bps")} == {
+        "quote_at": AT.isoformat(), "spread_bps": 19.5}
+    assert set(latest[-1]) == {"identity", "state", "trade_at", "received_at"}
+    assert "PRIVATE_FIXTURE_TOKEN" not in json.dumps(latest)
+    assert client.owner_status()["trade_coverage"] == {
+        "continuous_subscribed": 4, "catalog_transport_keys": 4, "pool_state": "SUBSCRIBED",
+        "degradation_reason": ""}
+    assert transport.calls == []
+    client.market_read("depth", GGAL, consumer="scanner", priority="HOT")
+    assert [row["identity"] for row in client.recent_trades(limit=1)] == [list(wider_spread)]
+    assert transport.calls == ["token", "depth"]
+
+
+def test_iol_focus_receipt_requires_pool_and_coverage_planner_results(tmp_path):
+    from xml.etree import ElementTree
+    from scripts.rc6_iol_offhost import DOMAINS, summarize_focus
+
+    domains = {"apis_current_book": "tests/test_rc6_iol_trade_stream_pool.py",
+               "funnels": "tests/test_rc6_iol_coverage.py"}
+    suite = ElementTree.Element("testsuite")
+    receipts = {}
+    for domain, required in domains.items():
+        assert required in DOMAINS[domain]
+        for pattern in DOMAINS[domain]:
+            path, _, case = pattern.partition("::")
+            receipt = ElementTree.SubElement(suite, "testcase",
+                classname=path.removesuffix(".py").replace("/", "."), name=case or "test_fixture")
+            if pattern == required:
+                receipts[domain] = receipt
+    junit = tmp_path / "focus.xml"
+    ElementTree.ElementTree(suite).write(junit)
+    results = summarize_focus(junit, 0, gateway_ipc=False)["domains"]
+    assert all(results[domain] == "PASS" for domain in domains)
+    ElementTree.SubElement(receipts["apis_current_book"], "failure")
+    suite.remove(receipts["funnels"])
+    ElementTree.ElementTree(suite).write(junit)
+    results = summarize_focus(junit, 2, gateway_ipc=False)["domains"]
+    assert all(results[domain] == "FAIL" for domain in domains)
+
+
+def test_iol_gateway_reference_supports_quotes_and_repo_terms_with_no_order_or_late_oauth(iol_gateway):
+    server, client, transport, _ = iol_gateway
+    collector, health = _scheduled_reference_clients(server, client)
+    asset = {"symbol": "GGAL", "market": "BCBA"}
+    args = {**asset, "term": "T1"}
+    transport.now = AT.replace(hour=20)
+    with pytest.raises(IOLRestError, match="IOL_REST_AUTH_ON_HOLD"):
+        health.call("authenticate", {})
+    assert transport.calls == []
+
+    transport.now = AT
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_REFERENCE_METHOD_DENIED"):
+        collector.call("submit_order", {})
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_IDENTITY_SCOPE_DENIED"):
+        collector.call("get_asset_info", {"symbol": "PAMP", "market": "BCBA"})
+    with pytest.raises(IOLRestError, match="IOL_GATEWAY_REPO_TERM_UNVERIFIED"):
+        collector.call("get_caucion_rate", {"currency": "ARS", "caucion_type": "colocadora", "term_days": "1"})
+    assert transport.calls == []
+    quote = collector.call("get_asset_quote", args)
+    assert quote["last"] == 100 and quote["bid"] == 99.9
+    rate, = collector.call("get_caucion_rates", {"currency": "ARS", "caucion_type": "colocadora"})["rates"]
+    assert (rate["term_days"], rate["tna"], rate["reference_only"]) == (1, 30, True)
+    assert transport.calls == ["token", "quote", "depth", "terms", "quotes"]
+
 
 def test_iol_gateway_429_blocks_opening_and_exit_until_the_shared_budget_recovers(iol_gateway):
     _, client, transport, advance = iol_gateway
@@ -1124,9 +1487,13 @@ def test_iol_scalping_native_consumes_interval_receipts_and_revokes_counter_rese
     assert GGAL in read_runtime(store.path, as_of=transport.now, market_provider="IOL_REST")["iol_windows"]
     with store.connect() as db:
         payload, = db.execute("SELECT payload_json FROM decision_evidence_snapshots").fetchone()
-        evidence = json.loads(payload)["inputs_used"]["entry_signal_inputs"]
+        inputs = json.loads(payload)["inputs_used"]
+        evidence = inputs["entry_signal_inputs"]
         assert evidence["volume_contract"]["unit"] == "NOMINAL"
         assert len(evidence["iol_interval_receipts"]) == 15
+        receipt = inputs["economics"]["cost_contract"]
+        assert receipt["market_data"]["identity"] == list(GGAL)
+        assert receipt["tariff_provenance"]["iol_tariff_evidence"] == "NO_VERIFICADO"
         quote = PaperStore.quote_from_snapshot(PaperStore.latest_quote_row(db,
             dict(zip(("symbol", "asset_class", "market", "currency", "settlement"), GGAL))))
         end = windows[GGAL]["points"][-1]["event_at"]
@@ -1142,6 +1509,10 @@ def test_iol_scalping_native_consumes_interval_receipts_and_revokes_counter_rese
         Event(), beat=lambda: None, deadline_seconds=5)
     assert state == "READY"
     runtime._reader_status_write(store, state, detail)
+    with monkeypatch.context() as new_fees:
+        new_fees.setenv("FEE_ACCIONES_COMISION", "0.2")
+        assert scalping.promote_paper_candidate(store, record, at=transport.now) == (
+            "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION")
     assert scalping.promote_paper_candidate(store, record, at=transport.now) == "OPENED_SIMULATED"
     position, = store.open_positions()
     assert position["symbol"] == GGAL[0]

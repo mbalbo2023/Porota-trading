@@ -72,6 +72,13 @@ class NativeSignalPrices(list):
         self.observations = observations
 
 
+def _iol_spot_signal(q):
+    return q.asset_class != "FUTUROS" and (
+        q.metadata_source == "IOL_REST"
+        or os.getenv("POROTA_RC6_MARKET_PROVIDER") == "IOL_REST"
+    )
+
+
 def D(value, default="0") -> Decimal:
     try:
         result = Decimal(str(value))
@@ -511,6 +518,12 @@ class PaperStore:
                     if column not in columns:
                         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             c.execute("CREATE INDEX IF NOT EXISTS idx_snapshot_identity ON market_snapshots(symbol,asset_class,settlement,currency,market,id)")
+            # The built-in UTC range stays usable for pre-existing rows and for
+            # SQLite clients that do not register the exact-time Python function.
+            c.execute("""CREATE INDEX IF NOT EXISTS idx_snapshot_trade_window
+                ON market_snapshots(symbol,asset_class,settlement,currency,market,
+                    julianday(trade_at),julianday(substr(trade_at,1,10)),id)
+                WHERE trade_at IS NOT NULL""")
         spot_ledger.init_schema(self)
         # Fills PAPER consumen profundidad por snapshot. Esta tabla debe existir
         # también en una base nueva creada por los tests/runtime, antes del primer fill.
@@ -635,38 +648,105 @@ class PaperStore:
             row = self.latest_quote_row(c, position)
         return self.quote_from_snapshot(row)
 
+    def entry_book_binding(self, connection, q, *, expected_snapshot_id=None):
+        """Bind a spot fill to the executable Book under its SQLite write lock."""
+        from bl_candle_engine import fingerprint
+
+        currency, market = q.monetary_identity()
+        row = self.latest_quote_row(connection, {**vars(q), "currency": currency, "market": market})
+        # The PPI event SHA is transient diagnostic data and has no snapshot column.
+        persisted = replace(q, currency=currency, market=market, ppi_book1_event_sha256=None)
+        if (row is None or (expected_snapshot_id is not None and row["id"] != expected_snapshot_id)
+                or self.quote_from_snapshot(row) != persisted):
+            return None
+        identity, book_at, book = spot_liquidity.book(persisted)
+        return {"snapshot_id": row["id"], "book_sha256": fingerprint((identity, book_at, book))}
+
     def signal_prices(self, q, as_of, limit=20, window_minutes=30):
         """Distinct source events known at cutoff, from the exact five-part key."""
-        from rc6_signal_contracts import register_exact_time
-        end = aware_datetime(as_of)
+        from rc6_signal_contracts import instant_us
+        from rc6_paper_admission_gate import iol_market_quote_reason
+
+        end = aware_datetime(as_of).astimezone(timezone.utc)
         currency, market = q.monetary_identity()
         start = end - timedelta(minutes=window_minutes)
+        iol = _iol_spot_signal(q)
+        generation = None
+        if iol:
+            try:
+                if iol_market_quote_reason(q, end):
+                    return NativeSignalPrices([], [])
+                generation = q.iol_trade_evidence["gateway_generation"]
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                return NativeSignalPrices([], [])
+        identity = (q.symbol, q.asset_class, q.settlement, currency, market)
+        # SQLite rounds fractional seconds in julianday. The padded index bounds
+        # are only a prefilter. For legacy ISO offsets SQLite cannot parse, the
+        # local date is within one day of UTC. Other ISO forms use the NULL range.
+        # The integer UTC cutoff decides inclusion in all three ranges.
+        conditions = """FROM market_snapshots INDEXED BY idx_snapshot_trade_window
+            WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
+              AND trade_at IS NOT NULL"""
         with self.connect() as c:
-            register_exact_time(c)
-            rows = c.execute("""SELECT id,source,trade_at,last,observed_at FROM market_snapshots
-              WHERE symbol=? AND asset_class=? AND settlement=? AND currency=? AND market=?
-                AND last_kind='TRADE' AND trade_at IS NOT NULL
-                AND rc6_instant_us(trade_at)>=rc6_instant_us(?)
-                AND rc6_instant_us(trade_at)<=rc6_instant_us(?)
-                AND rc6_instant_us(observed_at)<=rc6_instant_us(?)
-              ORDER BY rc6_instant_us(trade_at) DESC,id DESC""",
-              (q.symbol,q.asset_class,q.settlement,currency,market,start.isoformat(),end.isoformat(),end.isoformat())).fetchall()
-        unique = {}
-        for row in rows:
-            source_at = aware_datetime(row["trade_at"])
-            if source_at in unique:
-                continue
-            # Latest revision, including invalid evidence, revokes the older one.
-            unique[source_at] = None
-            if source_at <= aware_datetime(row["observed_at"]) and D(row["last"]) > 0:
-                unique[source_at] = (D(row["last"]), {
-                    "price": str(D(row["last"])), "source_at": row["trade_at"],
+            rows = c.execute(f"""SELECT *, rc6_instant_us(trade_at) AS source_us FROM (
+                SELECT * {conditions} AND julianday(trade_at) BETWEEN julianday(?) AND julianday(?)
+                UNION ALL
+                SELECT * {conditions} AND julianday(trade_at) IS NULL
+                    AND julianday(substr(trade_at,1,10)) BETWEEN julianday(?) AND julianday(?)
+                UNION ALL
+                SELECT * {conditions} AND julianday(trade_at) IS NULL AND julianday(substr(trade_at,1,10)) IS NULL
+              ) WHERE source_us BETWEEN ? AND ? AND rc6_instant_us(observed_at)<=?
+              ORDER BY source_us DESC,id DESC""",
+              (*identity, (start - timedelta(seconds=1)).isoformat(),
+               (end + timedelta(seconds=1)).isoformat(),
+               *identity, (start.date() - timedelta(days=1)).isoformat(),
+               (end.date() + timedelta(days=1)).isoformat(),
+               *identity, instant_us(start), instant_us(end), instant_us(end)))
+            seen, prices, observations = set(), [], []
+            for row in rows:
+                if len(prices) >= limit:
+                    break
+                if q.asset_class == "FUTUROS" and row["last_kind"] != "TRADE":
+                    continue
+                if row["source_us"] in seen:
+                    continue
+                # Record the revision before validation so rejected or retracted
+                # evidence cannot fall back to an older copy of the same event.
+                seen.add(row["source_us"])
+                value = D(row["last"])
+                if (row["last_kind"] != "TRADE" or value <= 0
+                        or row["source_us"] > instant_us(row["observed_at"])
+                        or (q.asset_class != "FUTUROS" and row["opening_block_reason"])):
+                    continue
+                if iol:
+                    if row["source"] != SOURCE or row["metadata_source"] != "IOL_REST":
+                        continue
+                    try:
+                        trade = self.quote_from_snapshot(row)
+                        if iol_market_quote_reason(trade, aware_datetime(trade.observed_at)):
+                            continue
+                        evidence = trade.iol_trade_evidence
+                        if evidence["gateway_generation"] != generation:
+                            continue
+                    except (ValueError, TypeError, KeyError, ArithmeticError):
+                        continue
+                elif q.asset_class != "FUTUROS" and row["metadata_source"] == "IOL_REST":
+                    continue
+                observation = {
+                    "price": str(value), "source_at": row["trade_at"],
                     "received_at": row["observed_at"], "known_at": row["observed_at"],
-                    "source": row["source"], "source_row_id": row["id"],
+                    "source": "IOL_REST" if iol else row["source"], "source_row_id": row["id"],
+                    "metadata_source": row["metadata_source"],
                     "symbol": q.symbol, "asset_class": q.asset_class,
-                    "settlement": q.settlement, "currency": currency, "market": market})
-        ordered = list(reversed([value for value in unique.values() if value is not None][:limit]))
-        return NativeSignalPrices([item[0] for item in ordered], [item[1] for item in ordered])
+                    "settlement": q.settlement, "currency": currency, "market": market,
+                }
+                if iol:
+                    observation["iol_trade_evidence"] = {field: evidence[field] for field in (
+                        "identity", "gateway_generation", "trade_at", "received_at", "quote_received_at", "price",
+                    )}
+                prices.append(value)
+                observations.append(observation)
+        return NativeSignalPrices(prices[::-1], observations[::-1])
 
     def prices(self, symbol: str, limit=30, *, asset_class=None, settlement=None, currency=None, market=None):
         filters, params = ["symbol=?"], [symbol]
@@ -1079,25 +1159,28 @@ class PaperBroker:
             raise ValueError("SPOT_POSITION_PRICE_GRID_IDENTITY_MISMATCH")
         return contract
 
-    def _position_etf_cost_terms(self, position, *, connection=None):
+    def _position_versioned_cost_terms(self, position, *, connection=None):
         from rc6_performance.common import identity
         from rc6_performance.costs import VersionedPaperCostContract, is_local_merv_listing
         family = family_name(position["asset_class"])
-        if family != "ETFS" and not is_local_merv_listing(family, position.get("currency"),
-                symbol=position.get("symbol"), market=position.get("market"), settlement=position.get("settlement")):
+        etf = family == "ETFS" or is_local_merv_listing(family, position.get("currency"),
+                symbol=position.get("symbol"), market=position.get("market"), settlement=position.get("settlement"))
+        iol_spot = (position.get("currency_source") == "IOL_REST"
+                    and family in {"ACCIONES", "CEDEARS", "OPCIONES"})
+        if not (etf or iol_spot):
             return None
         if connection is None:
             with self.store.connect() as c:
-                return self._position_etf_cost_terms(position, connection=c)
+                return self._position_versioned_cost_terms(position, connection=c)
         row = connection.execute("SELECT features_json FROM paper_learning_samples WHERE paper_id=?",
                                  (position["paper_id"],)).fetchone()
         try:
             position_economics = json.loads(position["features_json"] or "{}").get("economics") or {}
             sample = json.loads(row[0]) if row else {}
             sample_economics = sample.get("economics") or {}
-            if all((e.get("cost_contract") or {}).get("family") != "ETFS"
-                   for e in (position_economics, sample_economics)):
-                return None  # Historical spot position without a versioned ETF policy.
+            contracts = [(e.get("cost_contract") or {}) for e in (position_economics, sample_economics)]
+            if not any(cost.get("family") == "ETFS" or cost.get("schema_version") == 2 for cost in contracts):
+                return None  # Historical position priced with the original ledger schedule.
             frozen = self.store.financial_admission_snapshot(connection,
                 sample.get("financial_admission_snapshot_key"),
                 sample.get("financial_admission_snapshot_sha256"), paper_id=position["paper_id"])
@@ -1112,24 +1195,28 @@ class PaperBroker:
             buys = connection.execute("SELECT quantity,price,costs,filled_at,source FROM paper_fills "
                 "WHERE paper_id=? AND side='BUY_SIMULATED'", (position["paper_id"],)).fetchall()
             actual_buy = tuple(decimal_value(value, "fill de compra") for value in buys[0][:3]) if len(buys) == 1 else None
-            if (policy.family != "ETFS" or policy.currency != position["currency"]
+            instrument = position["symbol"], family, position["market"], position["currency"], position["settlement"]
+            if (policy.family != ("ETFS" if etf else family) or policy.currency != position["currency"]
+                    or (policy.market_data_identity is not None and (
+                        policy.market_data_identity != instrument or position["currency_source"] != "IOL_REST"))
+                    or (iol_spot and not etf and policy.market_data_identity is None)
                     or identity(frozen["quote_used"]) != identity(position)
                     or utc_microseconds(frozen["admission_at"]) != utc_microseconds(opened_at)
                     or economics != position_economics or economics != sample_economics
-                    or D(economics["sized_quantity"]) != quantity
-                    or D(economics["entry_notional"]) != entry_notional
                     or type(economics["intraday_rebate_eligible"]) is not bool
-                    or D(economics["entry_cost"]) != entry_cost
+                    or (etf and (D(economics["sized_quantity"]) != quantity
+                        or D(economics["entry_notional"]) != entry_notional
+                        or D(economics["entry_cost"]) != entry_cost))
                     or (remaining == quantity and decimal_value(position["entry_cost"], "costo original") != entry_cost)
                     or actual_buy != (quantity, entry, entry_cost)
                     or buys[0][4] != SOURCE or utc_microseconds(buys[0][3]) != utc_microseconds(opened_at)):
-                raise ValueError("ETF position fee evidence mismatch")
+                raise ValueError("PAPER position fee evidence mismatch")
             return policy, economics["intraday_rebate_eligible"]
         except (ValueError, AttributeError, KeyError, TypeError, ArithmeticError) as exc:
-            raise ValueError("PAPER_ETF_COST_RECEIPT_INVALID") from exc
+            raise ValueError("PAPER_ETF_COST_RECEIPT_INVALID" if etf else "PAPER_IOL_COST_RECEIPT_INVALID") from exc
 
     def _position_exit_fee_reserve(self, position, price, quantity, *, at, connection=None):
-        terms = self._position_etf_cost_terms(position, connection=connection)
+        terms = self._position_versioned_cost_terms(position, connection=connection)
         if terms is not None:
             return terms[0].leg_cost(price * quantity, decision_at=at)
         return self._cost(price, quantity, position["asset_class"], currency=position.get("currency"))
@@ -1304,7 +1391,9 @@ class PaperBroker:
                   "price_sample_status": "NATIVE_EXACT_VECTOR" if exact else "NO_VERIFICADO",
                   "samples": len(values), "signal_window_minutes": self.signal_window_minutes,
                   "available_at": aware_datetime(at).isoformat(),
-                  "source": "PPI_NATIVE_DISTINCT_TRADES; exact factual signal_prices query",
+                  "source": ("IOL_NATIVE_DISTINCT_TRADES; exact factual signal_prices query"
+                             if _iol_spot_signal(q)
+                             else "PPI_NATIVE_DISTINCT_TRADES; exact factual signal_prices query"),
                   "temporal_contract": {
                       "schema": "rc6.event-signal-contract.v1", "version": "main-events-safety-v2",
                       "sample_kind": "DISTINCT_SOURCE_EVENTS", "short_event_count": 3,
@@ -1450,10 +1539,8 @@ class PaperBroker:
             records = getattr(source_prices, "observations", ())
             if len(records) != len(source_prices):
                 return None
-            # signal_prices() guarantees causal timestamps but its public
-            # `source` value is PRODUCTION_PAPER, not PPI provider provenance.
-            # The catalog marker on the *latest* quote cannot launder one
-            # older or replaced trade with an unverified metadata source.
+            # Recheck the persisted provenance and concurrent revisions of
+            # every sample before issuing the specialized underlying receipt.
             ids = tuple(record.get("source_row_id") for record in records)
             if (not ids or len(ids) > 20 or len(set(ids)) != len(ids) or
                     any(type(value) is not int or value < 1 for value in ids)):
@@ -1466,10 +1553,8 @@ class PaperBroker:
                     market,currency,settlement,last,trade_at,observed_at,
                     last_kind,metadata_source,opening_block_reason,iol_trade_evidence
                     FROM market_snapshots WHERE id IN ({slots})""", ids).fetchall()
-                # Unlike signal_prices(), include INVALID/UNAVAILABLE newer
-                # revisions when deciding which source row owns a trade time.
-                # Otherwise an older valid row could be resurrected after a
-                # later provider tombstone for the same exact instant.
+                # Catch revisions written after signal_prices() released its
+                # snapshot, including a provider tombstone for the same instant.
                 revisions = c.execute("""SELECT id,trade_at FROM market_snapshots
                     WHERE symbol=? AND asset_class=? AND market=? AND currency=?
                       AND settlement=? AND trade_at IS NOT NULL
@@ -1989,18 +2074,18 @@ class PaperBroker:
             return (self._economic_diagnostics(q) if quantity is None else
                     self._economic_diagnostics(q, quantity=quantity))
         from rc6_fixed_income_paper_strategy import native_market_exit_quantity, native_maturity_quantity
-        from rc6_performance.costs import paper_cost_contract
+        from rc6_performance.costs import paper_quote_cost_contract
         at = self.execution_time(q)
         maturity = family_name(q.asset_class) == "LETRAS"
         quantity = (native_maturity_quantity(q, plan, at) if maturity
                     else native_market_exit_quantity(q, plan, at))
         entry = self._spot_fill_price(q.ask, side="BUY", contract=q.contract, at=at)
         entry_value = entry * q.contract.cash_multiplier * quantity
-        policy = paper_cost_contract(q.asset_class, q.currency, at,
-                                     symbol=q.symbol, market=q.market, settlement=q.settlement)
+        policy = paper_quote_cost_contract(q, at)
         diagnostic = policy.diagnostic()
         error = policy.binding_error(at)
-        if error or diagnostic["policy_sha256"] != plan["fee_policy_sha256"]:
+        reviewed_schedule_sha = diagnostic.get("schedule_sha256", diagnostic["policy_sha256"])
+        if error or reviewed_schedule_sha != plan["fee_policy_sha256"]:
             raise ValueError(error or "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION")
         at_risk = entry_value + policy.leg_cost(entry_value, decision_at=at)
         if at_risk <= 0:
@@ -2032,15 +2117,14 @@ class PaperBroker:
 
     def _economic_diagnostics(self, q, *, quantity=None):
         """Economía ex ante coherente con el cierre intradiario obligatorio."""
-        from rc6_performance.costs import paper_cost_contract, price_sensitivity_fees
+        from rc6_performance.costs import paper_quote_cost_contract, price_sensitivity_fees
         at = self.execution_time(q)
-        costs = paper_cost_contract(q.asset_class, q.currency, at,
-                                    symbol=q.symbol, market=q.market, settlement=q.settlement)
+        costs = paper_quote_cost_contract(q, at)
         cost_error = costs.binding_error(at)
         exact_etf = costs.family == "ETFS"
+        if cost_error and (exact_etf or costs.market_data_identity is not None):
+            return {"passed": False, "reason_code": cost_error, "cost_contract": costs.diagnostic()}
         if exact_etf:
-            if cost_error:
-                return {"passed": False, "reason_code": cost_error, "cost_contract": costs.diagnostic()}
             if quantity is None:
                 return {"passed": None, "quantity_pending": True, "cost_contract": costs.diagnostic()}
         grid = q.contract and q.contract.price_tick is not None and q.contract.family in SPOT_FAMILIES
@@ -2073,13 +2157,22 @@ class PaperBroker:
                                "entry_cost": str(entry_cost), "target_exit_cost": str(target_cost),
                                "stop_exit_cost": str(stop_cost), "intraday_rebate_eligible": rebate_eligible}
         else:
-            full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
-            low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
+            if costs.market_data_identity is None:
+                full = self._leg_rate(q.asset_class, currency=q.currency, rebated=False)
+                low = self._leg_rate(q.asset_class, currency=q.currency, rebated=True)
+                rebate_eligible = self.intraday_fee_rebate
+                rebate_model = "PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
+            else:
+                rebate_eligible = (self.intraday_fee_rebate and costs.market_data_identity[2] == "BYMA"
+                                   and costs.rebate_policy == "COMMISSION_ON_SMALLER_INTRADAY_LEG")
+                full = costs.linear_leg_rate(decision_at=at)
+                low = costs.linear_leg_rate(decision_at=at, rebated=True) if rebate_eligible else full
+                rebate_model = "PAPER_INTRADAY_REBATE_ON_SMALLER_LEG"
             net_reward = target_fill - entry - price_sensitivity_fees(entry, target_fill, full, low)
             net_loss = entry - stop_fill + price_sensitivity_fees(entry, stop_fill, full, low)
-            fee_diagnostics = {"modeled_tariff": ("PPI_INTRADAY_REBATE_ON_SMALLER_LEG"
-                               if self.intraday_fee_rebate else
+            fee_diagnostics = {"modeled_tariff": (rebate_model if rebate_eligible else
                                "FULL_PER_LEG_CONSERVATIVE_NO_INTRADAY_REBATE"),
+                               "intraday_rebate_eligible": rebate_eligible,
                                "full_leg_rate": str(full), "rebated_leg_rate": str(low)}
         ratio = net_reward / net_loss if net_loss > 0 else ZERO
         breakeven = net_loss / (net_loss + max(ZERO, net_reward)) if net_loss > 0 else D(1)
@@ -2527,6 +2620,7 @@ class PaperBroker:
                     detail={"source": "PPI_BOOK_PAPER_EOD_VARIATION",
                             "broker_settlement": "NO_VERIFICADO", "reason": reason},
                     _runtime_broker_authority=_FUTURE_LOCKED_BROKER_COMMIT,
+                    cash_guard=lambda c: self._cash(at, contract.currency, connection=c, for_execution=True),
                     commit_evidence=self._future_quote_callback(
                         q, position["lifecycle_id"], mark_id, "MARK", at))
                 try:
@@ -2851,13 +2945,16 @@ class PaperBroker:
         error = self._economic_admission(q, features)
         if error:
             return False, error, None
-        from rc6_performance.costs import paper_cost_contract
-        cost_policy = paper_cost_contract(family, currency, at,
-                                          symbol=q.symbol, market=market, settlement=q.settlement)
-        cost_policy_sha = cost_policy.diagnostic()["policy_sha256"]
+        from rc6_performance.costs import paper_quote_cost_contract
+        cost_policy = paper_quote_cost_contract(q, at)
+        cost_receipt = cost_policy.diagnostic()
+        cost_policy_sha = cost_receipt["policy_sha256"]
         if cost_policy.binding_error(at):
             return False, cost_policy.binding_error(at), None
         if cost_policy_sha != features["economics"]["cost_contract"]["policy_sha256"]:
+            return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
+        if (family == "OPCIONES" and features.get("strategy") == "OPTION_LONG_UNDERLYING_TREND_PAPER_V1"
+                and features.get("cost_policy_sha256") != cost_policy_sha):
             return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
         exact_etf = cost_policy.family == "ETFS"
         if family not in PAPER_POSITION_FAMILIES:
@@ -2971,20 +3068,25 @@ class PaperBroker:
             self.store.event("REJECTED_PAPER", f"{q.symbol}: riesgo concurrente agotado")
             return False, "CONCURRENT_RISK_BUDGET_EXHAUSTED", None
         cash_available = max(ZERO, self._cash(as_of=at, currency=currency))
+
+        def sizing_fee(price, qty):
+            if cost_policy.market_data_identity is not None:
+                return cost_policy.leg_cost(price * factor * qty, decision_at=at)
+            return self._cost(price * factor, qty, q.asset_class, currency=currency)
+
         if not exact_etf and full_principal_risk:
             # A long option or a held-to-maturity lot can lose its entire outlay.
             by_risk = self._quantity_in_budget(
                 entry * factor, concurrent_risk_budget,
-                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
+                lambda qty: sizing_fee(entry, qty))
         elif not exact_etf:
             by_risk = self._quantity_in_budget(
                 (entry - modeled_stop_fill) * factor, concurrent_risk_budget,
-                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency) +
-                            self._cost(modeled_stop_fill * factor, qty, q.asset_class, currency=currency))
+                lambda qty: sizing_fee(entry, qty) + sizing_fee(modeled_stop_fill, qty))
         if not exact_etf:
             by_cash = self._quantity_in_budget(
                 entry * factor, cash_available,
-                lambda qty: self._cost(entry * factor, qty, q.asset_class, currency=currency))
+                lambda qty: sizing_fee(entry, qty))
         try:
             with self.store.connect() as c:
                 by_book = spot_liquidity.available(c,q,'BUY_SIMULATED',self.participation)
@@ -3087,15 +3189,15 @@ class PaperBroker:
             binding = min(limits, key=lambda name: limits[name])
             return False, (f"Portón patrimonial/liquidez: {binding} dejó cantidad "
                            f"ejecutable en {limits[binding]}"), None
-        if exact_etf:
+        if exact_etf or (cost_policy.market_data_identity is not None and not full_principal_risk):
             entry_cost = cost_policy.leg_cost(entry * factor * qty, decision_at=at)
             stop_cost = cost_policy.leg_cost(modeled_stop_fill * factor * qty, decision_at=at)
             candidate_risk_value = full_trade_stop_risk(entry_price=entry, modeled_stop_fill=modeled_stop_fill,
                 quantity=qty, cash_multiplier=factor, entry_cost=entry_cost, modeled_exit_cost=stop_cost)
-        elif income_plan is not None:
+        elif income_plan is not None or cost_policy.market_data_identity is not None:
             notional = entry * factor * qty
             candidate_risk_value = notional + cost_policy.leg_cost(notional, decision_at=at)
-            if candidate_risk_value > per_trade_risk_budget:
+            if income_plan is not None and candidate_risk_value > per_trade_risk_budget:
                 return False, income_capacity_error, None
         else:
             candidate_risk_value = candidate_stop_risk(
@@ -3129,13 +3231,19 @@ class PaperBroker:
             error = self.admission_error(q, at, connection=c)
             if error:
                 return False, error, None
-            if features.get("execution_style") == "SCALPING_PAPER":
+            scalping = features.get("execution_style") == "SCALPING_PAPER"
+            if scalping:
                 from cf_intraday_scalping import scalping_book_spread, scalping_intraday_reason
+                if (q.metadata_source == "IOL_REST"
+                        and features.get("scalping_range_screen", {}).get("cost_contract") != cost_receipt):
+                    return False, "PAPER_COST_POLICY_CHANGED_BEFORE_ADMISSION", None
                 try:
-                    locked_quote = self.store.latest_quote_row(c, vars(q))
-                    if (locked_quote is None or locked_quote["id"] != features.get("scalping_book_snapshot_id")
-                            or self.store.quote_from_snapshot(locked_quote) != q):
+                    expected_id = features.get("scalping_book_snapshot_id")
+                    binding = (self.store.entry_book_binding(c, q, expected_snapshot_id=expected_id)
+                               if expected_id is not None else None)
+                    if binding is None:
                         return False, "SCALPING_BOOK_CHANGED_BEFORE_FILL", None
+                    features["entry_book_binding"] = binding
                     scalping_book_spread(q, at)
                     error = scalping_intraday_reason(c, (q.symbol, family, market, currency, q.settlement), at,
                         quote=q, iol_window_end=features.get("iol_scalping_window_end"))
@@ -3239,6 +3347,14 @@ class PaperBroker:
                 session_error = PaperSessionPolicy().admission_error(q, at)
                 if session_error:
                     return False, session_error, None
+            if not scalping and (runtime_book or q.metadata_source == "IOL_REST"):
+                try:
+                    binding = self.store.entry_book_binding(c, q)
+                except (sqlite3.Error, ValueError, TypeError, KeyError, ArithmeticError):
+                    return False, "SPOT_BOOK_SOURCE_UNAVAILABLE", None
+                if binding is None:
+                    return False, "SPOT_BOOK_CHANGED_BEFORE_FILL", None
+                features["entry_book_binding"] = binding
             mark_lineage(features, "intent", self)
             c.execute("""INSERT INTO paper_positions
               (paper_id,source,strategy_version,symbol,asset_class,settlement,status,
@@ -3386,9 +3502,9 @@ class PaperBroker:
             if exit_price <= 0:
                 return False
             try:
-                etf_terms = self._position_etf_cost_terms(root, connection=c)
-                if etf_terms is not None:
-                    policy, intraday_eligible = etf_terms
+                versioned_terms = self._position_versioned_cost_terms(root, connection=c)
+                if versioned_terms is not None:
+                    policy, intraday_eligible = versioned_terms
                     buy_quantity = D(root['quantity'])
                     buy_notional = D(root['entry_price']) * buy_quantity * factor
 
@@ -3404,19 +3520,19 @@ class PaperBroker:
                         sold = D(sale['quantity'])
                         previous_cost, _ = sale_cost(D(sale['exit_price']), sold, sold_quantity, sale['closed_at'])
                         if previous_cost != D(sale['exit_cost']):
-                            raise ValueError("PAPER_ETF_PREVIOUS_SALE_FEE_MISMATCH")
+                            raise ValueError("PAPER_PREVIOUS_SALE_FEE_MISMATCH")
                         sold_quantity += sold
                     exit_cost, rebate = sale_cost(exit_price, qty, sold_quantity, at)
             except (ValueError, TypeError, ArithmeticError) as exc:
                 c.execute('INSERT INTO paper_events VALUES(NULL,?,?,?,?,?)',
                     (at, SOURCE, 'EXIT_PENDING_COST_CONTRACT', p['paper_id'], str(exc)))
                 return False
-            if etf_terms is None:
+            if versioned_terms is None:
                 exit_cost = self._cost(exit_price*factor,qty,p['asset_class'], currency=p['currency'])
                 rebate = ZERO
             family = family_name(p['asset_class'])
             same_day = opened.astimezone(TZ).date() == observed.astimezone(TZ).date()
-            if (etf_terms is None and self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
+            if (versioned_terms is None and self.intraday_fee_rebate and same_day and p['market'] == 'BYMA'):
                 import au_fee_schedule
                 if family in au_fee_schedule.FAMILIAS_CON_BONIFICACION_INTRADIARIA:
                     full = self._leg_rate(family, currency=p['currency'], rebated=False)
@@ -3562,14 +3678,16 @@ class PaperBroker:
             caucion = self.cauciones.valuation(measured_at, currency, connection=c)
             unrealized += caucion["unrealized"]
             realized += caucion["realized"]
-            from rc6_paper_family_lifecycle import future_risk_snapshot
+            from rc6_paper_family_lifecycle import fund_risk_snapshot, future_risk_snapshot
             futures = future_risk_snapshot(
                 self.store, currency, measured_at, connection=c,
                 max_mark_age_seconds=self.quote_max_age_seconds)
+            funds = fund_risk_snapshot(self.store, currency, measured_at, connection=c)
             unrealized += futures["unrealized"]
-            realized += futures["realized"]
-            exposure += futures["collateral"]
-            if futures["stale"] or futures["carry"]:
+            unrealized += funds["unrealized"]
+            realized += futures["realized"] + funds["realized"]
+            exposure += futures["collateral"] + funds["committed"] + funds["exposure"] + funds["redeeming"]
+            if futures["stale"] or futures["carry"] or funds["stale"]:
                 stale += 1
             cash = self._cash(as_of=measured_at, currency=currency, connection=c)
             receivable = pending_proceeds(self.store, measured_at, currency, connection=c)

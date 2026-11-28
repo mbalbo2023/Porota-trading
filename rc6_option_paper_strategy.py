@@ -14,7 +14,7 @@ from be_paper_engine import Quote
 from bq_exit_policy import PaperSessionPolicy
 from bs_instrument_contracts import (InstrumentContract, aware_datetime,
                                      decimal_value, family_name, utc_microseconds)
-from rc6_performance.costs import paper_cost_contract
+from rc6_performance.costs import paper_quote_cost_contract
 
 
 PAPER_ONLY = True
@@ -228,7 +228,9 @@ def evaluate_option_entry(
         # with the live position count under a write transaction.
         qty = contract.quantity(ONE)
         premium_cash = ask * contract.cash_multiplier * qty
-        cost_policy = paper_cost_contract("OPCIONES", "ARS", at)
+        cost_policy = paper_quote_cost_contract(q, at)
+        cost_receipt = cost_policy.diagnostic()
+        features["cost_contract"] = cost_receipt
         if cost_policy.binding_error(at):
             return hold("OPTION_PAPER_COST_POLICY_UNVERIFIED")
         entry_fee = cost_policy.leg_cost(premium_cash, decision_at=at)
@@ -253,7 +255,7 @@ def evaluate_option_entry(
                     pass
         features.update(maximum_simulated_loss=str(max_loss), premium_cash=str(premium_cash),
                         entry_fee=str(entry_fee), quantity=str(qty),
-                        cost_policy_sha256=cost_policy.diagnostic()["policy_sha256"],
+                        cost_policy_sha256=cost_receipt["policy_sha256"],
                         reason_code="OPTION_LONG_PAPER_CANDIDATE")
         # No probability / fair-value inference from this trend score.
         score = min(ONE, abs(momentum) / (threshold * 5))

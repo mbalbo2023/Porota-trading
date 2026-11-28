@@ -202,6 +202,48 @@ def test_incremental_fund_settlement_rejects_rehashed_prior_nav(paper_fund, monk
     assert states(store) == ["SUBSCRIBE_REQUESTED", "PENDING", "NAV_APPLIED", "SETTLED"]
 
 
+def test_signed_fund_cash_assets_and_loss_reach_portfolio_and_daily_latch(paper_fund, monkeypatch):
+    store, broker, _, _, _, receipts = paper_fund
+    assert broker.mark_equity({}, OPEN)["ARS"]["equity"] == Decimal("2000")
+    opening = lifecycle.fund_risk_snapshot(store, "ARS", OPEN)
+    assert opening["committed"] == Decimal("1001.01")
+    assert opening["cash_effect"] == Decimal("-1001.01")
+
+    monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)
+    apply(paper_fund, receipts[:2], attestation(paper_fund, receipts[:2], ALLOCATION, SETTLEMENT))
+    historical = lifecycle.fund_risk_snapshot(store, "ARS", SETTLEMENT, exclusive=True)
+    assert historical["committed"] == Decimal("1001.01")
+    assert historical["exposure"] == 0
+    allocated = lifecycle.fund_risk_snapshot(store, "ARS", SETTLEMENT)
+    assert allocated["exposure"] == Decimal("1001.01")
+    assert allocated["stale"] is True  # Exact allocation NAV from the previous date.
+    assert broker.daily_risk.evaluate(SETTLEMENT)["ARS"]["state"] == "STALE_MARKS"
+
+    monkeypatch.setattr(lifecycle, "_now", lambda: REDEMPTION)
+    apply(paper_fund, [], attestation(paper_fund, [], REQUEST, REDEMPTION))
+    redeeming = lifecycle.fund_risk_snapshot(store, "ARS", REDEMPTION)
+    assert redeeming["redeeming"] == Decimal("1001.01")
+    assert redeeming["realized"] == redeeming["exposure"] == 0
+    assert broker._cash(REDEMPTION, "ARS") == Decimal("998.99")
+
+    loss_payment = replace(receipts[2], nav_per_unit="8.00", cash_amount="799.00")
+    monkeypatch.setattr(lifecycle, "_now", lambda: END)
+    proof = attestation(paper_fund, [loss_payment], PAYMENT, END, payout_ars="799.00")
+    apply(paper_fund, [loss_payment], proof)
+    assert lifecycle.fund_risk_snapshot(store, "ARS", END)["cash_effect"] == Decimal("-202.01")
+    as_of = broker.mark_equity({}, END)
+    assert as_of["ARS"]["cash"] == as_of["ARS"]["equity"] == Decimal("1797.99")
+    assert as_of["ARS"]["exposure"] == as_of["ARS"]["unrealized_pnl"] == 0
+    assert as_of["ARS"]["realized_pnl"] == Decimal("-202.01")
+    assert as_of["USD"]["realized_pnl"] == 0
+    risk = broker.daily_risk.evaluate(END)["ARS"]
+    assert risk["state"] == "LATCHED"
+    assert Decimal(risk["daily_pnl"]) == Decimal("-202.01")
+    assert broker.daily_risk.evaluate(END)["ARS"]["latched_at"] == risk["latched_at"]
+    with store.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM paper_events WHERE event_type='PAPER_DAILY_LOSS'").fetchone()[0] == 1
+
+
 def test_runtime_fund_settlement_keeps_hash_only_ledger_compatible(paper_fund, monkeypatch):
     store, _, _, _, _, receipts = paper_fund
     monkeypatch.setattr(lifecycle, "_now", lambda: SETTLEMENT)

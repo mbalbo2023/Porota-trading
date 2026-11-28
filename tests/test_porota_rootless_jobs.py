@@ -98,6 +98,40 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(result["commands"][0]["result"], "GO_PAPER_SCALPING")
         self.assertNotIn("PRIVATE_PAYLOAD", json.dumps(result))
 
+    def test_iol_jobs_use_the_verified_observer_namespace_and_preserve_typed_receipt(self):
+        self.current["database"] = {"real_orders_sent": 0}
+        source = self.identity.state / "releases" / self.current["source_sha"] / "source"
+        host.private_dir(source)
+
+        def exec_observer(*args, timeout):
+            self.calls.append(args)
+            self.assertEqual(args[-6:], ("1" * 64, "python", "-B", "-m",
+                                        "scripts.rc6_iol_shadow_collect", "--oauth-health"))
+            self.assertIn("POROTA_IOL_OPERATIONAL_DB=/app/data/paper_v17/observer_v17.db", args)
+            self.assertNotIn("2" * 64, args)
+            return subprocess.CompletedProcess(args, 0, stdout='{"result":"AUTHENTICATED"}')
+
+        def exec_collector(*args, timeout):
+            self.assertEqual(args[-5:], ("1" * 64, "python", "-B", "-m", "scripts.rc6_iol_shadow_collect"))
+            self.assertIn("POROTA_IOL_SHADOW_SCOPE=AUDIT_ALL", args)
+            return subprocess.CompletedProcess(args, 0, stdout="IOL_SHADOW_COLLECTION=COMPLETE READY=1")
+
+        def source_cycle(**kwargs):
+            self.assertEqual(kwargs["release_database"], self.current["database"])
+            self.assertTrue(kwargs["iol_runner"](timeout=110).stdout.startswith("IOL_SHADOW_COLLECTION=COMPLETE"))
+            return {"status": "COMPLETE", "stages": {"iol": "OK"}}
+
+        self.manager.docker.command_result = exec_observer
+        with patch.object(jobs, "database_snapshot", return_value=self.current["database"]):
+            health = jobs.run_iol_job(jobs.IOL_HEALTH, self.root, self.identity, self.current,
+                                      manager=self.manager)
+            self.assertEqual(health, {"source": "IOL_REST", "result": "AUTHENTICATED", "exit_code": 0})
+            self.manager.docker.command_result = exec_collector
+            with patch("scripts.rc6_source_cycle_dispatch.run_cycle", side_effect=source_cycle):
+                collector = jobs.run_iol_job(jobs.IOL_COLLECTOR, self.root, self.identity, self.current,
+                                             manager=self.manager)
+            self.assertEqual(collector["exit_code"], 0)
+
     def test_existing_iol_health_revalidates_only_when_technical_retry_is_due(self):
         self.current.update(market_provider="IOL_REST", database={"real_orders_sent": 0})
         source = self.identity.state / "releases" / self.current["source_sha"] / "source"

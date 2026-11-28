@@ -180,16 +180,31 @@ class RateGovernor:
         self.calls_total = 0
         self.calls_429 = 0
 
-    def acquire(self) -> None:
+    def snapshot(self, *, reserved_exit: int = 0, reserved_auth: int = 0) -> dict:
+        now = self.clock()
+        capacity = self.policy.max_calls_per_minute
+        used = sum(now - at < 60.0 for at in self.calls)
+        cooldown = max(0.0, self.open_until - now)
+        return {
+            "capacity_per_minute": capacity, "used_last_minute": used,
+            "reserved_exit": reserved_exit, "reserved_auth": reserved_auth,
+            "available_non_exit": 0 if cooldown else max(0, capacity - used - reserved_exit - reserved_auth),
+            "cooldown_seconds": cooldown,
+        }
+
+    def acquire(self, *, reserve: int = 0) -> None:
         now = self.clock()
         if now < self.open_until:
             raise CircuitOpenError("IOL_SHADOW_CIRCUIT_OPEN")
+        capacity = self.policy.max_calls_per_minute - reserve
+        if capacity <= 0:
+            raise CircuitOpenError("IOL_WIRE_BUDGET_HOLD")
         self.calls = [at for at in self.calls if now - at < 60.0]
         waits = []
         if self.last is not None:
             waits.append(self.policy.min_interval_seconds - (now - self.last))
-        if len(self.calls) >= self.policy.max_calls_per_minute:
-            waits.append(60.0 - (now - self.calls[0]))
+        if len(self.calls) >= capacity:
+            waits.append(60.0 - (now - self.calls[len(self.calls) - capacity]))
         delay = max([0.0, *waits])
         if self.max_wait_seconds is not None and delay > self.max_wait_seconds:
             raise CircuitOpenError("IOL_WIRE_BUDGET_HOLD")
@@ -197,6 +212,8 @@ class RateGovernor:
             self.sleep(delay)
         now = self.clock()
         self.calls = [at for at in self.calls if now - at < 60.0]
+        if len(self.calls) >= capacity:
+            raise CircuitOpenError("IOL_WIRE_BUDGET_HOLD")
         self.calls.append(now)
         self.last = now
         self.calls_total += 1
@@ -433,7 +450,8 @@ def run_batch(symbols: Iterable[str], client: ReadOnlyMarketData, *, root: Path 
         "telemetry": {"batch_symbols": len(universe), "attempted_in_batch": len(universe), "ready_in_batch": sum(
             1 for symbol in universe if completed.get(symbol, {}).get("state") == "READY"),
             "unavailable_in_batch": sum(1 for symbol in universe if completed.get(symbol, {}).get("state") != "READY"),
-            "calls_total": rate_governor.calls_total, "calls_429": rate_governor.calls_429,
+            "calls_total": getattr(client, "calls_total", rate_governor.calls_total),
+            "calls_429": getattr(client, "calls_429", rate_governor.calls_429),
             "errors_total": errors_total},
         "symbols": [prior_rows[symbol] for symbol in sorted(prior_rows)]}
     _atomic_json(cache_path(root), payload)

@@ -24,6 +24,50 @@ class Store:
         return connection
 
 
+@pytest.mark.parametrize("funded", [True, False])
+def test_settlement_separates_cash_and_margin_then_releases_actual_reserve(tmp_path, funded):
+    store = Store(tmp_path / "margin.sqlite")
+    executor = FamilyPaperExecutor(store)
+    contract = dlr()
+    opened_at = "2026-10-05T12:00:00-03:00"
+    first_at = "2026-10-05T12:01:00-03:00"
+    second_at = "2026-10-05T12:02:00-03:00"
+    close_at = "2026-10-05T12:03:00-03:00"
+    executor.open_future(contract, lifecycle_id="F", event_id="OPEN", entry_price="1500",
+                         quantity="1", entry_cost="100", occurred_at=opened_at)
+    first = dict(lifecycle_id="F", event_id="SETTLE-1", mark_price="1510",
+                 occurred_at=first_at, book_at=first_at, settlement=True)
+    executor.mark_future(contract, **first, cash_guard=lambda _db: "100" if funded else "-1")
+    replay = executor.mark_future(
+        contract, **first, cash_guard=lambda _db: pytest.fail("retry moved collateral again"))
+    assert replay["idempotent"]
+    snapshot = future_risk_snapshot(store, "ARS", first_at)
+    assert snapshot["collateral"] == Decimal("1510000" if funded else "1500000")
+    assert snapshot["margin_deficit"] == Decimal("0" if funded else "10000")
+    assert snapshot["cash_effect"] == Decimal("-1500100" if funded else "-1490100")
+    assert snapshot["cash_effect"] + snapshot["collateral"] == snapshot["realized"] == Decimal("9900")
+    assert future_risk_snapshot(store, "ARS", first_at, exclusive=True)["collateral"] == Decimal("1500000")
+
+    executor.mark_future(contract, lifecycle_id="F", event_id="SETTLE-2", mark_price="1490",
+                         occurred_at=second_at, book_at=second_at, settlement=True)
+    snapshot = future_risk_snapshot(store, "ARS", second_at)
+    assert snapshot["collateral"] == Decimal("1490000")
+    assert snapshot["margin_deficit"] == 0
+    assert snapshot["cash_effect"] + snapshot["collateral"] == snapshot["realized"] == Decimal("-10100")
+
+    close = dict(lifecycle_id="F", event_id="CLOSE", exit_price="1485", exit_cost="100",
+                 occurred_at=close_at, book_at=close_at)
+    executor.close_future(contract, **close)
+    assert executor.close_future(contract, **close)["idempotent"]
+    final = future_risk_snapshot(store, "ARS", close_at)
+    assert final["collateral"] == final["margin_deficit"] == 0
+    assert final["cash_effect"] == final["realized"] == Decimal("-15200")
+    with store.connect() as db:
+        terminal = db.execute("SELECT amount FROM paper_family_lifecycle_events WHERE event_id='CLOSE'").fetchone()
+        assert Decimal(terminal["amount"]) == Decimal("1484900")
+        assert db.execute("SELECT COUNT(*) FROM paper_family_lifecycle_events").fetchone()[0] == 7
+
+
 def dlr():
     return InstrumentContract(
         "DLR/OCT26", "FUTUROS", "ARS", "A3", "INMEDIATA",

@@ -672,7 +672,8 @@ def test_futures_spot_and_caucion_reconcile_without_counting_reserves_as_losses(
     open_one(b.family_paper)
     same_time = "2026-10-05T12:01:00-03:00"
     b.family_paper.mark_future(dlr(), lifecycle_id="FUT-1", event_id="CUT", mark_price="1510",
-                              book_at=same_time, occurred_at=same_time, settlement=True)
+                              book_at=same_time, occurred_at=same_time, settlement=True,
+                              cash_guard=lambda c: b._cash(same_time, "ARS", connection=c))
     equity_q = replace(equity_q, observed_at=same_time, book_at=same_time, trade_at=same_time)
     risk = b.daily_risk.evaluate(same_time, quotes={"GGAL": equity_q})["ARS"]
     spot_exit = (equity_q.bid * (1 - b.slippage)).quantize(D("0.0001"))
@@ -681,7 +682,7 @@ def test_futures_spot_and_caucion_reconcile_without_counting_reserves_as_losses(
     assert risk["state"] == "READY"
     assert D(risk["daily_pnl"]) == spot_net + D("9900") - D(caucion["total_fees"])
     spot_commitment = D(spot["entry_price"]) * D(spot["quantity"]) + D(spot["entry_cost"])
-    assert b._cash(as_of=same_time) == D("10000000") - spot_commitment - D("1000") - D("1490100")
+    assert b._cash(as_of=same_time) == D("10000000") - spot_commitment - D("1000") - D("1500100")
     close_one(b.family_paper)
     final_q = replace(equity_q, observed_at=CLOSE_AT, book_at=CLOSE_AT, trade_at=CLOSE_AT)
     final = b.daily_risk.evaluate(CLOSE_AT, quotes={"GGAL": final_q})["ARS"]

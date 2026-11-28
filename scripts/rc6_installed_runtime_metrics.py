@@ -20,13 +20,17 @@ import math
 import os
 from pathlib import Path
 import sqlite3
+import stat
 import sys
 import time
 
 from bl_candle_engine import fingerprint
 from cg_paper_workspace import artifact_root
+from co_market_sessions_hf6 import TZ
 from rc6_scheduler_snapshot import instant
 from rc6_shadow_runtime.persistence import EvidenceFiles
+from rc6_shadow_runtime.timing import (PUBLICATION_COORDINATES, PUBLICATION_HISTORY_FILE,
+    PUBLICATION_HISTORY_LIMIT, PUBLICATION_HISTORY_SCHEMA)
 from scripts.porota_rootless_host import IOL_CONTROLLER_CHILDREN, read_controller_health, observe_iol_owner
 
 HOT = Path('/app/data/paper_v17/observer_v17.db')
@@ -89,6 +93,46 @@ def cgroup():
             'memory_stat': counters('memory.stat', {'anon', 'file', 'kernel', 'inactive_file', 'active_file'}),
             'memory_events': counters('memory.events', {'low', 'high', 'max', 'oom', 'oom_kill', 'oom_group_kill'})}
 
+def cgroup_delta(first, last, seconds):
+    cpu_delta = {}
+    mem_events = {}
+    for name, deltas in (('cpu_stat', cpu_delta), ('memory_events', mem_events)):
+        for key, before in first[name].items():
+            after = last[name].get(key)
+            if after is not None and after >= before:
+                deltas[key] = after - before
+    period_count = cpu_delta.get('nr_periods')
+    throttled = cpu_delta.get('nr_throttled')
+    before, after = first['memory_current'], last['memory_current']
+    file_cache = last['memory_stat'].get('inactive_file')
+    return {'state': 'OBSERVED' if 'usage_usec' in cpu_delta and after is not None else 'NO_VERIFICADO',
+            'duration_s': round(seconds, 6), 'cpu_delta': cpu_delta, 'memory_event_delta': mem_events,
+            'cpu_cores_mean': round(cpu_delta['usage_usec'] / (seconds * 1e6), 4)
+                              if seconds > 0 and 'usage_usec' in cpu_delta else None,
+            'cpu_throttled_period_fraction': round(throttled / period_count, 5)
+                if period_count and throttled is not None and throttled <= period_count else None,
+            'memory_current_delta_bytes': after - before if before is not None and after is not None else None,
+            'memory_less_inactive_file_bytes': max(0, after - file_cache)
+                if after is not None and file_cache is not None else None}
+
+def wal_size(database):
+    try:
+        if not stat.S_ISREG(database.lstat().st_mode):
+            return None
+    except OSError:
+        return None
+    try:
+        info = database.with_name(database.name + '-wal').lstat()
+        return info.st_size if stat.S_ISREG(info.st_mode) else None
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        return None
+
+def wal_window(before, after):
+    return {'start_bytes': before, 'end_bytes': after,
+            'delta_bytes': after - before if before is not None and after is not None else None}
+
 def observation_lag(observations, clock_column):
     latencies = []
     for row in observations:
@@ -115,15 +159,64 @@ def controller_metrics(sha, tree):
     for role in IOL_CONTROLLER_CHILDREN:
         row = children.get(role, {})
         workers[role] = {'state': state(row.get('state')), 'pid_alive': row.get('alive') is True,
-                         'started_at': timestamp(row.get('started_at'))}
+                         'started_at': timestamp(row.get('started_at')), 'pid': count(row.get('pid'))}
     stamp = age(report.get('recorded_at'))
     return {'state': 'OBSERVED', 'roles_match': report.get('roles_match') is True,
             'controller_age_s': stamp, 'fresh_within_120s': stamp is not None and 0 <= stamp <= 120,
             'recorded_at': timestamp(report.get('recorded_at')), 'workers': workers}
 
-def shadow_metrics(worker_started_at):
+def publication_window(files, worker, status, sha, tree):
+    unavailable = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_GENERATION_EVIDENCE_UNAVAILABLE'}
+    try:
+        history = files.read(PUBLICATION_HISTORY_FILE)
+        pointer = files.read('CURRENT.json')
+    except (OSError, ValueError, AttributeError):
+        return unavailable
+    started, now = instant(worker.get('started_at')), datetime.now(timezone.utc)
+    if (not isinstance(history, dict) or not isinstance(pointer, dict) or not isinstance(status, dict)
+            or started is None or worker.get('pid_alive') is not True or not worker.get('pid')
+            or history.get('schema') != PUBLICATION_HISTORY_SCHEMA or history.get('worker_pid') != worker['pid']
+            or history.get('source_sha') != sha or history.get('source_tree') != tree):
+        return unavailable
+    samples = history.get('observations')
+    if not isinstance(samples, list) or not 1 <= len(samples) <= PUBLICATION_HISTORY_LIMIT:
+        return unavailable
+    latest = samples[-1]
+    if (not isinstance(latest, dict) or any(pointer.get(key) != latest.get(key) for key in PUBLICATION_COORDINATES)
+            or type(latest.get('sequence')) is not int or status.get('as_of') != latest.get('source_as_of')
+            or status.get('status') != 'SHADOW_OBSERVING' or type(status.get('real_orders_sent')) is not int
+            or status['real_orders_sent'] != 0 or status.get('real_routes') != 'NOT_CALLED'):
+        return unavailable
+    day = now.astimezone(TZ).date()
+    durations = []
+    previous_sequence = 0
+    for row in samples:
+        if not isinstance(row, dict):
+            return unavailable
+        observed, published = instant(row.get('source_as_of')), instant(row.get('publish_completed_at'))
+        sequence, seconds = row.get('sequence'), row.get('total_seconds')
+        if (observed is None or published is None or not started <= observed <= published <= now
+                or type(sequence) is not int or sequence <= previous_sequence
+                or type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0):
+            return unavailable
+        if observed.astimezone(TZ).date() == day and row.get('phase') == 'OPEN':
+            durations.append(seconds)
+        previous_sequence = sequence
+    durations.sort()
+    p95 = None
+    if len(durations) > 1:
+        rank = .95 * (len(durations) - 1)
+        index = int(rank)
+        p95 = round(durations[index] + (rank - index) * (durations[index + 1] - durations[index]), 6)
+    return {'state': 'OBSERVED', 'worker_started_at': worker['started_at'], 'worker_pid': worker['pid'],
+            'last_generation': latest, 'session_date_ar': day.isoformat(), 'open_cycle_samples': len(durations),
+            'open_cycle_p95_seconds': p95,
+            'open_cycle_p95_state': 'OBSERVED' if p95 is not None else 'NO_VERIFICADO'}
+
+def shadow_metrics(worker, sha, tree):
     files = EvidenceFiles(artifact_root(HOT) / 'dynamic-shadow', payload_limit=131072)
     result = {}
+    status = None
     for name in ('idle', 'status'):
         try:
             row = files.read(name + '.json')
@@ -135,17 +228,38 @@ def shadow_metrics(worker_started_at):
             continue
         if isinstance(row, dict) and row.get('real_routes') == 'NOT_CALLED' and type(row.get('real_orders_sent')) is int and row['real_orders_sent'] == 0:
             clock = row.get('heartbeat_at') if name == 'idle' else row.get('as_of')
-            observed, started = instant(clock), instant(worker_started_at)
-            receipt = {'state': state(row.get('state') or row.get('status')), 'at': timestamp(clock), 'age_s': age(clock),
-                       'after_worker_start': observed >= started if observed and started else None}
+            observed, started = instant(clock), instant(worker.get('started_at'))
+            current = bool(worker.get('pid_alive') and observed and started
+                           and started <= observed <= datetime.now(timezone.utc))
+            receipt = {'state': state(row.get('state') or row.get('status')) if current else 'NO_VERIFICADO',
+                       'at': timestamp(clock), 'age_s': age(clock), 'after_worker_start': current}
+            if not current:
+                receipt['reason'] = 'SHADOW_RECEIPT_NOT_FROM_CURRENT_WORKER'
             timing = row.get('generation_timing')
-            if isinstance(timing, dict) and name == 'status':
+            if current and name == 'status':
+                status = row
+            if current and isinstance(timing, dict) and name == 'status':
                 receipt['compute_seconds'] = {key: timing[key] for key in ('poll_seconds', 'tick_seconds', 'tick_cpu_seconds')
                                               if type(timing.get(key)) in (int, float) and math.isfinite(timing[key]) and timing[key] >= 0}
             result[name] = receipt
         else:
             result[name] = {'state': 'NO_VERIFICADO', 'reason': 'SHADOW_RECEIPT_SAFETY_CONTRACT_UNVERIFIED'}
+    result['publication_window'] = publication_window(files, worker, status, sha, tree)
+    result['cold_queue'] = cold_queue(files, result['publication_window'].get('last_generation', {}))
     return result
+
+def cold_queue(files, generation):
+    from rc6_shadow_runtime.cold_audit import Directory
+
+    try:
+        with Directory(files) as directory:
+            queue = directory.read('queue.json')
+    except (OSError, ValueError):
+        queue = None
+    if not isinstance(queue, dict) or queue.get('state') not in {'PENDING', 'COMPLETE', 'FAILED'}:
+        return {'state': 'NO_VERIFICADO'}
+    matches = generation.get('cold_snapshot_id') is not None and generation['cold_snapshot_id'] == queue.get('snapshot_id')
+    return {'state': 'OBSERVED', 'queue_state': queue['state'], 'matches_current_generation': matches}
 
 def quote_provenance(value):
     if value in SOURCES:
@@ -162,6 +276,8 @@ def rows(db, sql, params=()):
             return db.execute(sql, params).fetchall()
     except sqlite3.Error:
         pass
+    finally:
+        db.set_progress_handler(None, 0)
     return None
 
 def one(db, sql, params=()):
@@ -171,6 +287,7 @@ def one(db, sql, params=()):
 def open_ro(path):
     connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=.2)
     connection.execute('PRAGMA query_only=ON')
+    connection.execute('BEGIN')
     return connection
 
 def sqlite_metrics(db):
@@ -248,23 +365,38 @@ def cold_metrics():
     except (OSError, sqlite3.Error):
         return {'state': 'NO_VERIFICADO', 'reason': 'COLD_DATABASE_READ_UNAVAILABLE'}
 
-role, = sys.argv[1:]
-assert role in ('observer', 'dashboard') and os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST'
-sha, tree = os.getenv('POROTA_BUILD_SHA'), os.getenv('POROTA_CANDIDATE_TREE_SHA')
-result = {'source_sha': sha, 'source_tree': tree, 'role': role, 'cgroup': cgroup()}
-if role == 'observer':
-    started = time.perf_counter()
-    owner = observe_iol_owner(HOT)
-    result['gateway_control'] = {'state': 'OBSERVED' if owner else 'NO_VERIFICADO',
-                                 'reason': None if owner else 'GATEWAY_CONTROL_RECEIPT_UNAVAILABLE',
-                                 'elapsed_ms': round((time.perf_counter() - started) * 1000, 3),
-                                 'authenticated': owner.get('authenticated') is True if owner else None,
-                                 'wire_attempts': count(owner.get('wire_attempts')) if owner else None, 'provider_probed': False}
-    controller = controller_metrics(sha, tree)
-    shadow_started = controller.get('workers', {}).get('dynamic_shadow', {}).get('started_at')
-    result.update({'controller': controller, 'dynamic_shadow': shadow_metrics(shadow_started),
-                   'hot': hot_metrics(), 'cold': cold_metrics()})
-print(json.dumps(result, sort_keys=True, allow_nan=False))
+def main():
+    role, = sys.argv[1:]
+    assert role in ('observer', 'dashboard') and os.getenv('POROTA_RC6_MARKET_PROVIDER') == 'IOL_REST'
+    sha, tree = os.getenv('POROTA_BUILD_SHA'), os.getenv('POROTA_CANDIDATE_TREE_SHA')
+    started_at, sample_start = datetime.now(timezone.utc), time.monotonic()
+    first = cgroup()
+    result = {'source_sha': sha, 'source_tree': tree, 'role': role}
+    if role == 'observer':
+        wal_before = {'hot': wal_size(HOT), 'cold': wal_size(COLD)}
+        started = time.perf_counter()
+        owner = observe_iol_owner(HOT)
+        result['gateway_control'] = {'state': 'OBSERVED' if owner else 'NO_VERIFICADO',
+                                     'reason': None if owner else 'GATEWAY_CONTROL_RECEIPT_UNAVAILABLE',
+                                     'elapsed_ms': round((time.perf_counter() - started) * 1000, 3),
+                                     'authenticated': owner.get('authenticated') is True if owner else None,
+                                     'wire_attempts': count(owner.get('wire_attempts')) if owner else None, 'provider_probed': False}
+        controller = controller_metrics(sha, tree)
+        worker = controller.get('workers', {}).get('dynamic_shadow', {}) if controller.get('fresh_within_120s') else {}
+        result.update({'controller': controller, 'dynamic_shadow': shadow_metrics(worker, sha, tree),
+                       'hot': hot_metrics(), 'cold': cold_metrics()})
+    time.sleep(max(0.0, sample_start + 1 - time.monotonic()))
+    last = cgroup()
+    result['cgroup'] = last
+    result['sample_window'] = cgroup_delta(first, last, time.monotonic() - sample_start)
+    result['sample_window'].update(started_at=started_at.isoformat(), finished_at=datetime.now(timezone.utc).isoformat())
+    if role == 'observer':
+        result['sample_window']['wal'] = {name: wal_window(wal_before[name], wal_size(path))
+                                         for name, path in (('hot', HOT), ('cold', COLD))}
+    print(json.dumps(result, sort_keys=True, allow_nan=False))
+
+if __name__ == '__main__':
+    main()
 '''
 
 
@@ -306,11 +438,14 @@ def _container_metrics(manager, current, role):
                 "METRICS_CONTAINER_RELEASE_MISMATCH")
     except (RuntimeError, OSError, ValueError, TypeError):
         return {"state": "NO_VERIFICADO", "reason": "INSTALLED_CONTAINER_METRICS_UNAVAILABLE"}
-    return {"state": "OBSERVED", "container_exec_ms": round((time.perf_counter() - started) * 1000, 3), **result}
+    return {"state": "OBSERVED", "container_id": current["roles"][role],
+            "container_exec_ms": round((time.perf_counter() - started) * 1000, 3), **result}
 
 
 def observe_runtime_metrics(manager, current):
     """Use the caller's verified rootless manager and shared release lock."""
+    from rc6_backup_policy import backups_suspended
+
     require(current.get("state") == "VALIDADO_RUNTIME" and current.get("market_provider") == "IOL_REST",
             "INSTALLED_IOL_RELEASE_REQUIRED")
     before = database_snapshot(manager.root / DB_RELATIVE)
@@ -329,4 +464,6 @@ def observe_runtime_metrics(manager, current):
             **{key: current[key] for key in ("source_sha", "source_tree", "image_id", "attempt")},
             "observed_at": datetime.now(timezone.utc).isoformat(), "provider_traffic_generated": 0,
             "read_only": True, "real_orders_sent": after["real_orders_sent"], "host_capacity": capacity,
+            "recovery": {"production_backup_policy": "SUSPENDED" if backups_suspended() else "ENABLED",
+                         "production_restore_state": "NO_VERIFICADO", "rpo_rto_state": "NO_VERIFICADO"},
             "container_probe_sha256": hashlib.sha256(CONTAINER_PROBE.encode()).hexdigest(), "containers": containers}

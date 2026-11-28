@@ -13,6 +13,8 @@ from types import SimpleNamespace
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from itertools import groupby
+from zoneinfo import ZoneInfo
 
 from bs_instrument_contracts import (InstrumentContract, aware_datetime, cash_currency,
                                      decimal_value, register_exact_time_sql,
@@ -765,7 +767,7 @@ class FamilyPaperExecutor:
                     book_at, occurred_at=None, settlement=False, detail=None,
                     max_mark_age_seconds=120, price_kind=None, price_source=None,
                     price_rule=None, _runtime_broker_authority=None,
-                    commit_evidence=None):
+                    commit_evidence=None, cash_guard=None):
         """Persist a fresh mark; settlement=True applies explicit daily variation."""
         _validate_future_contract(contract)
         stamp = aware_datetime(occurred_at or _now())
@@ -844,6 +846,22 @@ class FamilyPaperExecutor:
             if settlement:
                 variation = unrealized
                 realized += variation
+                collateral_before = decimal_value(
+                    _future_position_at(row, stamp, connection=connection)["collateral"],
+                    "garantía reservada", positive=True)
+                required = contract.cash_required(price, qty)
+                delta = required - collateral_before
+                available = None
+                if delta > 0 and cash_guard is not None:
+                    try:
+                        available = decimal_value(cash_guard(connection), "caja PAPER libre") + variation
+                    except ValueError:
+                        # Missing buying-power evidence does not discard the
+                        # variation or prevent a PAPER position from exiting.
+                        available = None
+                funded = available is not None and available >= delta
+                collateral = required if delta <= 0 or funded else collateral_before
+                deficit = required - collateral
                 self.future_event(
                     contract, lifecycle_id=lifecycle_id, event_id=event_id,
                     to_state="DAILY_VARIATION", amount=str(variation),
@@ -857,15 +875,20 @@ class FamilyPaperExecutor:
                             "real_routes_used": []},
                     connection=connection,
                     _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
-                collateral = decimal_value(row["margin_reserved"], "garantía", positive=True) + realized
-                deficit = contract.margin_deficit(collateral, qty, price=price)
                 margin_state = "MARGIN_DEFICIT" if deficit > 0 else "MARGIN_OK"
                 self.future_event(
                     contract, lifecycle_id=lifecycle_id,
                     event_id=f"{event_id}:MARGIN", to_state=margin_state,
+                    amount=str(collateral_before - collateral),
                     occurred_at=stamp.isoformat(),
                     detail={"margin_deficit": str(deficit),
                             "collateral_after_variation": str(collateral),
+                            "margin_accounting_v1": {
+                                "variation_event_id": str(event_id),
+                                "collateral_before": str(collateral_before),
+                                "required": str(required),
+                                "cash_available_after_variation": (None if available is None else str(available)),
+                            },
                             "real_routes_used": []},
                     connection=connection,
                     _financial_authority=_FUTURE_LOCKED_FINANCIAL_EVENT)
@@ -919,6 +942,7 @@ class FamilyPaperExecutor:
         cost = decimal_value(exit_cost, "costo salida", nonnegative=True)
         with self.store.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            register_exact_time_sql(connection)
             prior = connection.execute(
                 "SELECT * FROM paper_family_lifecycle_events WHERE event_id=?",
                 (str(event_id),)).fetchone()
@@ -986,7 +1010,9 @@ class FamilyPaperExecutor:
             net_realized = (gross_realized
                             - decimal_value(row["entry_cost"], "costo entrada", nonnegative=True)
                             - cost)
-            reserve = decimal_value(row["margin_reserved"], "garantía", positive=True)
+            reserve = decimal_value(
+                _future_position_at(row, stamp, connection=connection)["collateral"],
+                "garantía reservada", positive=True)
             terminal = "EXPIRY" if expiry else "CLOSE"
             self.future_event(
                 contract, lifecycle_id=lifecycle_id, event_id=event_id,
@@ -1185,6 +1211,10 @@ def apply_paper_event(store, *, lifecycle_id, event_id, family, instrument,
     delta = decimal_value(amount, "PAPER_LIFECYCLE_AMOUNT_INVALID")
     if detail is not None and not isinstance(detail, dict):
         raise ValueError("PAPER_LIFECYCLE_DETAIL_INVALID")
+    if (family == "FUTUROS" and to_state in {"MARGIN_OK", "MARGIN_DEFICIT"}
+            and (delta or "margin_accounting_v1" in (detail or {}))
+            and _financial_authority is not _FUTURE_LOCKED_FINANCIAL_EVENT):
+        raise ValueError("FUTURES_MARGIN_TRANSFER_REQUIRES_LOCKED_EXECUTOR")
     payload = _canonical_json(detail or {})
     current = connection.execute(
         "SELECT * FROM paper_family_lifecycle WHERE lifecycle_id=?",
@@ -1360,7 +1390,42 @@ def _projection_runtime_context(store, connection):
     return runtime_admission_context(store)
 
 
-def _validate_runtime_future_cash_event(connection, row, amount):
+def _future_margin_transfer(connection, event, amount, collateral, variation, contract, quantity):
+    detail = _projection_json(event["detail_json"])
+    accounting = detail.get("margin_accounting_v1")
+    if accounting is None:
+        # Legacy signals carried no cash and did not change the opening reserve.
+        if amount:
+            raise ValueError("FUTURES_RUNTIME_MARGIN_STATE_CASH_INVALID")
+        return collateral
+    if not isinstance(accounting, dict) or variation is None or contract is None or collateral is None:
+        raise ValueError("FUTURES_MARGIN_TRANSFER_UNRECONCILED")
+    variation_id = variation["event_id"]
+    mark = connection.execute("""SELECT mark_price,observed_at FROM paper_future_marks
+        WHERE event_id=? AND lifecycle_id=? AND is_settlement=1""",
+        (variation_id, event["lifecycle_id"])).fetchone()
+    if (not mark or event["event_id"] != f"{variation_id}:MARGIN"
+            or accounting.get("variation_event_id") != variation_id
+            or utc_microseconds(event["occurred_at"]) != utc_microseconds(variation["occurred_at"])
+            or utc_microseconds(event["occurred_at"]) != utc_microseconds(mark[1])):
+        raise ValueError("FUTURES_MARGIN_TRANSFER_UNRECONCILED")
+    required = contract.cash_required(mark[0], quantity)
+    delta = required - collateral
+    available = accounting.get("cash_available_after_variation")
+    available = decimal_value(available, "caja PAPER libre") if available is not None else None
+    expected = required if delta <= 0 or (available is not None and available >= delta) else collateral
+    deficit = required - expected
+    if (decimal_value(accounting.get("collateral_before"), "garantía previa") != collateral
+            or decimal_value(accounting.get("required"), "garantía requerida") != required
+            or decimal_value(detail.get("collateral_after_variation"), "garantía posterior") != expected
+            or decimal_value(detail.get("margin_deficit"), "déficit de garantía") != deficit
+            or event["to_state"] != ("MARGIN_DEFICIT" if deficit else "MARGIN_OK")
+            or amount != collateral - expected):
+        raise ValueError("FUTURES_MARGIN_TRANSFER_UNRECONCILED")
+    return expected
+
+
+def _validate_runtime_future_cash_event(connection, row, amount, *, collateral=None):
     """Refuse historical runtime buying power without matching financial rows.
 
     Every monetary amount is derived from the immutable OPEN reserve, posted
@@ -1387,8 +1452,7 @@ def _validate_runtime_future_cash_event(connection, row, amount):
             raise ValueError("FUTURES_RUNTIME_MARGIN_CASH_MISMATCH")
         return
     if state in {"MARGIN_OK", "MARGIN_DEFICIT"}:
-        if amount:
-            raise ValueError("FUTURES_RUNTIME_MARGIN_STATE_CASH_INVALID")
+        # The ordered cash projection reconciles the linked transfer.
         return
     try:
         detail = json.loads(row["detail_json"])
@@ -1439,15 +1503,16 @@ def _validate_runtime_future_cash_event(connection, row, amount):
     qty = contract.quantity(row["quantity"])
     if state == "DAILY_VARIATION":
         mark = connection.execute("""SELECT lifecycle_id,mark_price,book_at,observed_at,
-            is_settlement FROM paper_future_marks WHERE event_id=?""",
+            is_settlement,rowid FROM paper_future_marks WHERE event_id=?""",
             (row["event_id"],)).fetchone()
         if not mark or mark[0] != row["lifecycle_id"] or mark[4] != 1:
             raise ValueError("FUTURES_RUNTIME_VARIATION_MARK_MISSING")
         previous = connection.execute("""SELECT mark_price FROM paper_future_marks
             WHERE lifecycle_id=? AND is_settlement=1 AND
-                  rc6_instant_us(observed_at)<rc6_instant_us(?)
-            ORDER BY rc6_instant_us(observed_at) DESC LIMIT 1""",
-            (row["lifecycle_id"], mark[3])).fetchone()
+                (rc6_instant_us(observed_at)<rc6_instant_us(?) OR
+                 (rc6_instant_us(observed_at)=rc6_instant_us(?) AND rowid<?))
+            ORDER BY rc6_instant_us(observed_at) DESC,rowid DESC LIMIT 1""",
+            (row["lifecycle_id"], mark[3], mark[3], mark[5])).fetchone()
         base = previous[0] if previous else row["entry_price"]
         expected = contract.pnl(base, mark[1], qty)
         if (amount != expected
@@ -1465,6 +1530,8 @@ def _validate_runtime_future_cash_event(connection, row, amount):
     # CLOSE/EXPIRY: a real terminal row, explicit fill and same-book mark are
     # required. Exit cash is exactly reserved collateral + PnL - exit cost;
     # never use a caller-provided positive ledger amount as its own proof.
+    if collateral is not None:
+        reserve = collateral
     metadata = json.loads(row["metadata_json"] or "{}")
     try:
         exit_price = decimal_value(detail.get("exit_price"), "precio salida", positive=True)
@@ -1526,16 +1593,34 @@ def future_cash_effect(store, currency, at, *, connection=None, exclusive=False)
       JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
       LEFT JOIN paper_future_positions p ON p.lifecycle_id=e.lifecycle_id
       WHERE e.family='FUTUROS' AND l.family='FUTUROS' AND l.currency=?
-        AND rc6_instant_us(e.occurred_at)""" + operator + "?",
+        AND rc6_instant_us(e.occurred_at)""" + operator + """?
+      ORDER BY e.lifecycle_id,rc6_instant_us(e.occurred_at),e.rowid""",
       (cash_currency(currency), utc_microseconds(point)))
     names = [column[0] for column in rows.description]
     total = Decimal("0")
-    for values in rows:
-        record = dict(zip(names, values))
-        cash = decimal_value(record["amount"], "flujo futuro")
-        if runtime_book:
-            _validate_runtime_future_cash_event(connection, record, cash)
-        total += cash
+    records = (dict(zip(names, values)) for values in rows)
+    for _, history in groupby(records, key=lambda values: values["lifecycle_id"]):
+        collateral = variation = contract = None
+        opened = False
+        for record in history:
+            cash = decimal_value(record["amount"], "flujo futuro")
+            state = record["to_state"]
+            if runtime_book:
+                _validate_runtime_future_cash_event(connection, record, cash, collateral=collateral)
+            if state == "OPEN":
+                opened = True
+            elif state == "MARGIN_RESERVED" and record["position_id"] is not None:
+                collateral = decimal_value(record["margin_reserved"], "garantía inicial", positive=True)
+            elif state == "DAILY_VARIATION":
+                variation = record
+            elif state in {"MARGIN_OK", "MARGIN_DEFICIT"}:
+                if contract is None and record["position_id"] is not None:
+                    contract = future_position_contract(record)
+                collateral = _future_margin_transfer(
+                    connection, record, cash, collateral, variation, contract, record["quantity"])
+            total += cash
+        if runtime_book and (not opened or collateral is None):
+            raise ValueError("FUTURES_RUNTIME_RESERVE_EVENT_REQUIRED")
     return total
 
 
@@ -1721,6 +1806,100 @@ def fund_cash_effect(store, currency, at, *, connection=None, exclusive=False):
     return total
 
 
+def _fund_allocation_value(opening, nav_event, allocation_event, paid):
+    """Read only the exact NAV and units certified in the allocation history."""
+    nav_detail = json.loads(nav_event["detail_json"])
+    allocation_detail = json.loads(allocation_event["detail_json"])
+    if not all("fci_receipt_v1" in detail for detail in (nav_detail, allocation_detail)):
+        return None
+    terms = json.loads(opening["detail_json"])["fund_terms"]
+    identity = [opening["instrument"], "FCI", terms["market"],
+                opening["currency"], terms["settlement"]]
+    class_digest = nav_detail["fci_receipt_attestation"]["claims"]["class_evidence_sha256"]
+    nav, allocation = (
+        _verified_prior_fund_receipt({**dict(event), "detail": detail},
+                                     identity=identity, class_evidence_sha256=class_digest)
+        for event, detail in ((nav_event, nav_detail), (allocation_event, allocation_detail))
+    )
+    nav_at = aware_datetime(nav.nav_effective_at)
+    for event, receipt, source in (
+        (nav_event, nav, "FUND_ADMINISTRATOR_NAV"),
+        (allocation_event, allocation, "BROKER_FUND_ALLOCATION"),
+    ):
+        if (receipt.event_id != event["event_id"] or receipt.kind != event["to_state"]
+                or receipt.currency != opening["currency"]
+                or receipt.class_key != opening["instrument"] or receipt.source_kind != source
+                or not aware_datetime(opening["occurred_at"]) <= nav_at <= aware_datetime(receipt.source_at)
+                <= aware_datetime(receipt.recorded_at) <= aware_datetime(event["occurred_at"])):
+            raise ValueError("FCI_ALLOCATION_RECEIPT_MISMATCH")
+    units = decimal_value(allocation.units, "FCI cuotas", positive=True)
+    price = decimal_value(nav.nav_per_unit, "FCI NAV", positive=True)
+    value = units * price
+    if (allocation.nav_reference != nav.source_reference
+            or aware_datetime(allocation.nav_effective_at) != nav_at
+            or decimal_value(allocation.nav_per_unit, "FCI NAV asignado", positive=True) != price
+            or decimal_value(allocation.cash_amount, "FCI suscripción", positive=True) != paid
+            or value + decimal_value(allocation.explicit_fee, "FCI comisión", nonnegative=True) != paid):
+        raise ValueError("FCI_ALLOCATION_VALUE_MISMATCH")
+    return value, nav_at
+
+
+def fund_risk_snapshot(store, currency, at, *, connection=None, exclusive=False):
+    """FCI assets and PnL as known at the cutoff, without re-crediting cash."""
+    point = aware_datetime(at)
+    if connection is None:
+        ensure_initialized(store)
+        with store.connect() as owned:
+            return fund_risk_snapshot(store, currency, point, connection=owned, exclusive=exclusive)
+    register_exact_time_sql(connection)
+    runtime_book, safety_error = _projection_runtime_context(store, connection)
+    if safety_error:
+        raise ValueError(safety_error)
+    comparison = "<" if exclusive else "<="
+    rows = connection.execute("""SELECT e.*,l.instrument,l.currency
+        FROM paper_family_lifecycle_events e
+        JOIN paper_family_lifecycle l ON l.lifecycle_id=e.lifecycle_id
+        WHERE e.family='FCI' AND l.family='FCI' AND l.currency=?
+          AND rc6_instant_us(e.occurred_at)""" + comparison + """?
+        ORDER BY e.lifecycle_id,rc6_instant_us(e.occurred_at),e.rowid""",
+        (cash_currency(currency), utc_microseconds(point)))
+    amounts = dict.fromkeys(("cash_effect", "committed", "exposure", "redeeming", "realized", "unrealized"),
+                            Decimal("0"))
+    stale = unpriced = False
+    for _, history in groupby(rows, key=lambda row: row["lifecycle_id"]):
+        events = list(history)
+        opening, latest = events[0], events[-1]
+        paid = -decimal_value(opening["amount"], "FCI importe comprometido")
+        state = latest["to_state"]
+        if opening["to_state"] not in {"SUBSCRIBE_REQUESTED", "SUBSCRIBE"} or paid < 0:
+            raise ValueError("FCI_RISK_OPENING_INVALID")
+        amounts["cash_effect"] -= paid
+        if state == "REDEEMED":
+            payout = decimal_value(latest["amount"], "FCI rescate", nonnegative=True)
+            if runtime_book:
+                _verify_fund_redemption_cash(connection, latest, payout)
+            amounts["cash_effect"] += payout
+            amounts["realized"] += payout - paid
+        elif state in {"SETTLED", "REDEEM_REQUESTED"}:
+            by_state = {event["to_state"]: event for event in events}
+            try:
+                allocation = _fund_allocation_value(opening, by_state["NAV_APPLIED"],
+                                                    by_state["SETTLED"], paid)
+            except (KeyError, TypeError, ValueError, ArithmeticError):
+                allocation = None
+            if allocation is None:
+                value, unpriced, stale = paid, True, True
+            else:
+                value, nav_at = allocation
+                tz = ZoneInfo("America/Argentina/Buenos_Aires")
+                stale |= nav_at.astimezone(tz).date() != point.astimezone(tz).date()
+            amounts["redeeming" if state == "REDEEM_REQUESTED" else "exposure"] += value
+            amounts["unrealized"] += value - paid
+        else:
+            amounts["committed"] += paid
+    return {**amounts, "stale": stale, "unpriced": unpriced}
+
+
 FUTURE_PROJECTION_FIELDS = (
     "lifecycle_id", "symbol", "currency", "market", "settlement", "side",
     "quantity", "cash_multiplier", "entry_price", "settlement_base_price",
@@ -1812,21 +1991,32 @@ def _future_position_at(row, point, *, connection, exclusive=False):
         "AND rc6_instant_us(occurred_at)" + operator + "? "
         "ORDER BY rc6_instant_us(occurred_at),event_sequence,event_id",
         (row["lifecycle_id"], cutoff))
-    opening = terminal = None
+    opening = terminal = reservation = None
     metadata = None
     variation = cash_effect = Decimal("0")
+    collateral = decimal_value(row["margin_reserved"], "garantía inicial", positive=True)
+    last_variation = None
     base_price = row["entry_price"]
     for event in events:
         detail = _projection_json(event["detail_json"])
         native = detail.get("book_at", detail.get("opening_book_at"))
         if native is not None and utc_microseconds(native) > utc_microseconds(event["occurred_at"]):
             raise ValueError("FUTURES_EVENT_SOURCE_CLOCK_INVALID")
-        cash_effect += decimal_value(event["amount"], "flujo futuro")
+        cash = decimal_value(event["amount"], "flujo futuro")
+        cash_effect += cash
         if event["to_state"] == "OPEN" and opening is None:
             opening, metadata = event, detail
+        elif event["to_state"] == "MARGIN_RESERVED":
+            if reservation is not None:
+                raise ValueError("FUTURES_MARGIN_DUPLICATE")
+            reservation = event
         elif event["to_state"] == "DAILY_VARIATION":
-            variation += decimal_value(event["amount"], "variación futura")
+            variation += cash
             base_price = detail["settlement_price"]
+            last_variation = event
+        elif event["to_state"] in {"MARGIN_OK", "MARGIN_DEFICIT"}:
+            collateral = _future_margin_transfer(
+                connection, event, cash, collateral, last_variation, contract, row["quantity"])
         elif event["to_state"] in {"CLOSE", "EXPIRY", "ADMIN_CANCEL"}:
             terminal = (event, detail)
     if not opening:
@@ -1847,6 +2037,11 @@ def _future_position_at(row, point, *, connection, exclusive=False):
         (row["lifecycle_id"], cutoff)).fetchone()
     entry = decimal_value(row["entry_price"], "entrada futura", positive=True)
     entry_cost = decimal_value(row["entry_cost"], "costo entrada", nonnegative=True)
+    initial_margin = decimal_value(row["margin_reserved"], "garantía inicial", positive=True)
+    if (reservation is None
+            or utc_microseconds(reservation["occurred_at"]) != utc_microseconds(opening["occurred_at"])
+            or decimal_value(reservation["amount"], "flujo de garantía") != -(initial_margin + entry_cost)):
+        raise ValueError("FUTURES_MARGIN_RESERVATION_UNRECONCILED")
     qty = contract.quantity(row["quantity"])
     mark_price = decimal_value(marks["mark_price"], "mark futuro", positive=True) if marks else entry
     book_at = marks["book_at"] if marks else metadata.get("opening_book_at")
@@ -1872,7 +2067,8 @@ def _future_position_at(row, point, *, connection, exclusive=False):
               "last_book_at": book_at, "last_mark_at": observed_at,
               "unrealized_pnl": str(contract.pnl(entry, mark_price, qty) - variation),
               "realized_pnl": str(variation - entry_cost),
-              "collateral": row["margin_reserved"],
+              "collateral": str(collateral),
+              "margin_deficit": str(max(Decimal("0"), contract.cash_required(base_price, qty) - collateral)),
               "exposure": str(contract.notional(mark_price, qty)),
               "as_of": point.isoformat(), "exclusive": bool(exclusive),
               "reserve_kind": "CONSERVATIVE_PAPER_RESERVE_NOT_BROKER_MARGIN"}
@@ -1890,13 +2086,16 @@ def _future_position_at(row, point, *, connection, exclusive=False):
                           close_reason=FUTURE_ADMIN_CANCEL_REASON,
                           exit_cost='0', variation_realized='0',
                           gross_realized_pnl='0', close_variation_cash='0',
-                          realized_pnl='0', unrealized_pnl='0', collateral='0',
+                          realized_pnl='0', unrealized_pnl='0', collateral='0', margin_deficit='0',
                           exposure='0', admin_reversal_cash=detail['cash_reversal'])
             result['cash_effect'] = str(cash_effect)
             result['metadata_json'] = _canonical_json(metadata)
             return result
         final_variation = decimal_value(detail["final_variation"], "variación cierre")
         exit_cost = decimal_value(detail["exit_cost"], "costo salida", nonnegative=True)
+        if (decimal_value(detail["margin_released"], "garantía devuelta") != collateral
+                or decimal_value(terminal_event["amount"], "flujo cierre") != collateral + final_variation - exit_cost):
+            raise ValueError("FUTURES_TERMINAL_MARGIN_UNRECONCILED")
         gross = variation + final_variation
         net = gross - entry_cost - exit_cost
         metadata.update(realized_pnl=str(net), terminal_state=terminal_event["to_state"])
@@ -1904,7 +2103,7 @@ def _future_position_at(row, point, *, connection, exclusive=False):
                       close_reason=detail["reason"], exit_cost=str(exit_cost),
                       variation_realized=str(gross), gross_realized_pnl=str(gross),
                       close_variation_cash=str(final_variation), realized_pnl=str(net),
-                      unrealized_pnl="0", collateral="0", exposure="0",
+                      unrealized_pnl="0", collateral="0", margin_deficit="0", exposure="0",
                       last_mark_price=detail["exit_price"], last_mark_at=terminal_event["occurred_at"],
                       last_book_at=detail["book_at"])
     result["cash_effect"] = str(cash_effect)
@@ -1925,7 +2124,7 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
                 max_mark_age_seconds=max_mark_age_seconds, exclusive=exclusive)
     local_day = point.astimezone(__import__("zoneinfo").ZoneInfo(
         "America/Argentina/Buenos_Aires")).date()
-    realized = unrealized = collateral = exposure = Decimal("0")
+    realized = unrealized = collateral = exposure = margin_deficit = Decimal("0")
     stale = carry = False
     active_count, mark_timestamps = 0, []
     for row in future_positions(store, currency, connection=connection, as_of=point, exclusive=exclusive):
@@ -1942,7 +2141,8 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
         if row["status"] == "CLOSED":
             continue
         active_count += 1
-        collateral += decimal_value(row["margin_reserved"], "garantía", positive=True)
+        collateral += decimal_value(row["collateral"], "garantía reservada", positive=True)
+        margin_deficit += decimal_value(row["margin_deficit"], "déficit de garantía", nonnegative=True)
         mark_at = aware_datetime(row["last_book_at"], "book futuro") if row["last_book_at"] else None
         marked_at = aware_datetime(row["last_mark_at"])
         if (mark_at is None or utc_microseconds(mark_at) > utc_microseconds(marked_at)
@@ -1955,6 +2155,7 @@ def future_risk_snapshot(store, currency, at, *, connection=None,
         "realized": realized,
         "unrealized": unrealized,
         "collateral": collateral,
+        "margin_deficit": margin_deficit,
         "stale": stale,
         "carry": carry,
         "active_count": active_count,
