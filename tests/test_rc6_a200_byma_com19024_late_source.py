@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 
 import iol_shadow_collector_rc6 as windows
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly
+from rc6_iol_market_gateway import IOLGatewayReferenceClient
 from scripts import rc6_iol_shadow_collect as collector
 from scripts import rc6_source_cycle_dispatch as dispatch
 
@@ -123,7 +124,7 @@ class BymaLateSourceTest(unittest.TestCase):
 
     def test_no_catalog_or_verified_identity_means_no_oauth_construction(self):
         with patch.object(collector, "DEFAULT_DB", str(self.db)), patch.object(
-                collector, "IOLRestReadOnly", side_effect=AssertionError("provider used")):
+                collector, "IOLGatewayReferenceClient", side_effect=AssertionError("provider used")):
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(collector.main(local(2, 17)), 0)
@@ -137,7 +138,8 @@ class BymaLateSourceTest(unittest.TestCase):
 
         def no_network_batch(symbols, client, **kwargs):
             observed.append((list(symbols), type(client).__name__, kwargs.get("root")))
-            self.assertIsInstance(client, IOLRestReadOnly)
+            self.assertIsInstance(client, IOLGatewayReferenceClient)
+            self.assertEqual(client.consumer, "collector")
             self.assertFalse(client.allow_renew)
             return {"symbols": [], "progress": {"ready": 1, "completed": 1}}
 
@@ -152,11 +154,11 @@ class BymaLateSourceTest(unittest.TestCase):
                     "symbols": [], "progress": {"ready": 1, "completed": 1}}), patch.object(
                 collector, "consolidate", return_value={"decision_effect": "OBSERVE_ONLY"}), patch.object(
                 collector.family_reference, "collect", side_effect=AssertionError("family calls not allowed")), patch.object(
-                collector.Identity, "current", return_value=SimpleNamespace(state=self.root)):
+                IOLGatewayReferenceClient, "owner_status", return_value={"authenticated": True}):
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(collector.main(local(2, 17)), 0)
-        self.assertEqual(observed, [(["AAA"], "IOLRestReadOnly", self.market)])
+        self.assertEqual(observed, [(["AAA"], "IOLGatewayReferenceClient", self.market)])
         self.assertIn("LATE_T1_ONLY=true", output.getvalue())
 
     def test_late_oauth_client_denies_refresh_write_and_401_rotation(self):
