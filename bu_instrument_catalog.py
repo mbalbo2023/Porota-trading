@@ -474,7 +474,7 @@ def _candidate_timestamp_is_fresh(value, checked_at, max_age_seconds):
             current = current.replace(tzinfo=ZoneInfo("UTC"))
         age = (current.astimezone(ZoneInfo("UTC"))
                - observed.astimezone(ZoneInfo("UTC"))).total_seconds()
-        return 0 <= age <= int(max_age_seconds)
+        return age >= 0 and (max_age_seconds is None or age <= int(max_age_seconds))
     except (TypeError, ValueError, OverflowError):
         return False
 
@@ -1048,7 +1048,7 @@ def _iol_spot_primary(record):
 
 
 def iol_spot_catalog(store, *, now, identity=None):
-    """Read exact PPI identity; IOL will attest the requested term on the wire."""
+    """Select exact stored keys for requalification against IOL market data."""
     from contextlib import closing
 
     scope = ""
@@ -1078,8 +1078,10 @@ def iol_spot_catalog(store, *, now, identity=None):
     for row in rows:
         record = dict(row)
         key = tuple(record[field] for field in ("ticker", "instrument_type", "market", "currency", "settlement"))
+        # The old catalog date identifies the origin of this key. IOL checks
+        # the current asset, currency and settlement at each market read.
         if key in ambiguities or not _candidate_timestamp_is_fresh(
-                record["last_seen_at"], now.isoformat(), PAPER_PPI_IDENTITY_LKG_SECONDS):
+                record["last_seen_at"], now.isoformat(), None):
             continue
         try:
             record["raw"] = json.loads(record.pop("metadata_json"))
@@ -1132,10 +1134,10 @@ def quote_terms(record, *, now=None, iol_live_settlement=False):
             and not _candidate_timestamp_is_fresh(
                 bridge.get("observed_at"), checked.isoformat(), 86400)):
         reason = "CONTRACT_EVIDENCE_STALE"
-    if not _candidate_timestamp_is_fresh(
-            record.get("last_seen_at"), checked.isoformat(),
-            PAPER_PPI_IDENTITY_LKG_SECONDS):
-        reason = "PPI_FRESHNESS_STALE"
+    identity_age_limit = None if iol_live_settlement else PAPER_PPI_IDENTITY_LKG_SECONDS
+    if not _candidate_timestamp_is_fresh(record.get("last_seen_at"), checked.isoformat(),
+                                         identity_age_limit):
+        reason = "IOL_CATALOG_LINEAGE_CLOCK_INVALID" if iol_live_settlement else "PPI_FRESHNESS_STALE"
     holiday_reason = rc6_underlying_opening_block(record["ticker"], record["instrument_type"])
     if holiday_reason:
         reason = holiday_reason if not reason else f"{reason}; {holiday_reason}"

@@ -1,18 +1,21 @@
 """Read-only IOL market RPCs over the existing RC6 local peer transport."""
 from __future__ import annotations
 
+from collections import Counter, deque
 from datetime import datetime, timezone
 from functools import partial
+from math import ceil
 import os
 import re
 from secrets import token_hex
+from threading import Lock
 import time
 
 from bs_instrument_contracts import aware_datetime
 from iol_rest_readonly_rc6 import IOLRestError, IOLRestReadOnly, SYMBOL
 from iol_shadow_collector_rc6 import CircuitOpenError, RateGovernor
 from rc6_iol_market_data import IOLMarketReader, MARKETS, SPOT, TERMS, read_iol_market_payload
-from rc6_iol_trade_stream import TRADE_EVIDENCE, matched_trade
+from rc6_iol_trade_stream import MAX_TRADES, TRADE_EVIDENCE, TRADE_STATUS, matched_trade
 from rc6_ppi_shared_feed import (
     NATIVE_RPC_WAIT_SECONDS, ReadOnlyUnixFeedClient, ReadOnlyUnixFeedServer,
     SharedFeedUnavailable, _canonical_bytes, _sha,
@@ -28,6 +31,8 @@ ROLE_PRIORITIES = {
 ROLE_ENDPOINTS = {"scanner": frozenset({"asset", "quote", "depth"}),
                   "exit_reader": frozenset({"asset", "depth"})}
 REQUEST_FIELDS = {"op", "consumer", "endpoint", "identity", "priority", "session_generation"}
+SUBSCRIPTION_FIELDS = {"op", "consumer", "identities", "session_generation"}
+PREPARE_TRADES_LIMIT = MAX_TRADES // 2  # A full batch must fit the 4 KiB IPC request.
 _REASON = re.compile(r"IOL_[A-Z0-9_]{1,100}\Z")
 PROFILE_ENV = "POROTA_RC6_MARKET_PROVIDER"
 
@@ -75,6 +80,10 @@ def _identity(value):
     return tuple(value)
 
 
+def _stream_key(identity):
+    return identity[0], MARKETS[identity[2]], TERMS[identity[4]]
+
+
 class IOLMarketGateway(ReadOnlyUnixFeedServer):
     """Keep the REST session and budget in the owner, one endpoint per demand."""
 
@@ -90,6 +99,10 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
             raise ValueError("IOL_GATEWAY_ROLE_SCOPE_REQUIRED")
         self.allowed = {role: frozenset(_identity(key) for key in keys) for role, keys in allowed.items()}
         self._rest = rest
+        self._wire = deque(maxlen=rest.governor.policy.max_calls_per_minute * 2)
+        self._wire_lock = Lock()
+        self._wire_consumer = None
+        rest.wire_observer = self._record_wire
         self.trade_stream = trade_stream
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._generation = token_hex(32)
@@ -104,6 +117,27 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
                 "wire_attempts": self._rest.governor.calls_total,
                 "rate_limited_attempts": self._rest.governor.calls_429}
 
+    def _record_wire(self, endpoint, started, ended, status, body_bytes):
+        with self._wire_lock:
+            self._wire.append((started, ended - started, self._wire_consumer,
+                               endpoint, status, body_bytes))
+
+    def _wire_usage(self):
+        now = time.monotonic()
+        with self._wire_lock:
+            recent = [row for row in self._wire if 0 <= now - row[0] < 60]
+        results = Counter(f"{consumer}/{endpoint}/{status}" for
+                          _, _, consumer, endpoint, status, _ in recent)
+        latencies = sorted(row[1] for row in recent)
+        return {
+            "attempts_last_second": sum(now - row[0] < 1 for row in recent),
+            "attempts_last_minute": len(recent),
+            "http_results": dict(results),
+            "response_body_bytes_read": sum(row[5] or 0 for row in recent),
+            "latency_ms_p50": round(1000 * latencies[ceil(.5 * len(latencies)) - 1], 2) if latencies else None,
+            "latency_ms_p95": round(1000 * latencies[ceil(.95 * len(latencies)) - 1], 2) if latencies else None,
+        }
+
     def _response(self, state, *, wire_calls=0, **fields):
         return {"schema": DATA_SCHEMA, **self._status(), "state": state,
                 "wire_calls": wire_calls, "paper_ready": False, "order_route": "NOT_PRESENT", **fields}
@@ -113,8 +147,9 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
             return self._response("IOL_GATEWAY_UNREGISTERED_CLIENT")
         governor = self._rest.governor
         before = governor.calls_total
+        self._wire_consumer = consumer
         try:
-            trade_key = (identity[0], MARKETS[identity[2]], TERMS[identity[4]])
+            trade_key = _stream_key(identity)
             if endpoint == "quote" and self.trade_stream is not None:
                 self.trade_stream.want(trade_key)
             payload = read_iol_market_payload(self._rest, endpoint, identity)
@@ -124,11 +159,15 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
             if endpoint == "quote":
                 payload = dict(payload)
                 payload.pop(TRADE_EVIDENCE, None)
-                evidence = self.trade_stream.evidence(trade_key) if self.trade_stream else None
-                if matched_trade(evidence, payload, received):
-                    payload[TRADE_EVIDENCE] = {**evidence, "identity": list(identity),
-                                               "gateway_generation": self._generation,
-                                               "quote_received_at": received.isoformat()}
+                payload.pop(TRADE_STATUS, None)
+                if self.trade_stream is not None:
+                    evidence, hold = self.trade_stream.observation(trade_key)
+                    if matched_trade(evidence, payload, received):
+                        payload[TRADE_EVIDENCE] = {**evidence, "identity": list(identity),
+                                                   "gateway_generation": self._generation,
+                                                   "quote_received_at": received.isoformat()}
+                    else:
+                        payload[TRADE_STATUS] = hold or "IOL_TRADE_QUOTE_MISMATCH"
             body = {"endpoint": endpoint, "identity": list(identity),
                     "received_at": received.isoformat(), "payload": payload}
             if len(_canonical_bytes(body)) > 120_000:
@@ -148,15 +187,44 @@ class IOLMarketGateway(ReadOnlyUnixFeedServer):
         except (ValueError, TypeError, OSError):
             return self._response("IOL_GATEWAY_MARKET_PAYLOAD_INVALID",
                                   wire_calls=governor.calls_total-before)
+        finally:
+            self._wire_consumer = None
+
+    def _prepare_trades(self, request, peer_pid):
+        if set(request) != SUBSCRIPTION_FIELDS or request["consumer"] != "scanner":
+            return self._response("IOL_GATEWAY_ROLE_SCOPE_DENIED")
+        if peer_pid is None or not self._role_permitted("scanner", peer_pid):
+            return self._response("IOL_GATEWAY_UNREGISTERED_CLIENT")
+        if request["session_generation"] != self._generation:
+            return self._response("IOL_GATEWAY_OWNER_CHANGED")
+        items = request["identities"]
+        if not isinstance(items, list) or not 0 < len(items) <= PREPARE_TRADES_LIMIT:
+            return self._response("IOL_GATEWAY_SUBSCRIPTION_LIMIT")
+        try:
+            keys = tuple(dict.fromkeys(map(_identity, items)))
+        except ValueError:
+            return self._response("IOL_GATEWAY_EXACT_IDENTITY_REQUIRED")
+        if not self.allowed["scanner"].issuperset(keys):
+            return self._response("IOL_GATEWAY_IDENTITY_SCOPE_DENIED")
+        if self.trade_stream is None:
+            return self._response("IOL_TRADE_STREAM_NOT_READY")
+        stream_keys = tuple(dict.fromkeys(map(_stream_key, keys)))
+        self.trade_stream.want_many(stream_keys)
+        return self._response("OK", scheduled_subscriptions=len(stream_keys))
 
     def dispatch(self, request, *, peer_pid=None):
         if not isinstance(request, dict):
             return self._response("IOL_GATEWAY_REQUEST_DENIED")
         operation = request.get("op")
+        if operation == "iol_prepare_trades":
+            return self._prepare_trades(request, peer_pid)
         if operation in ("register_client", "owner_status"):
             if operation == "register_client" and request.get("consumer") not in ("scanner", "exit_reader"):
                 return self._response("IOL_GATEWAY_ROLE_SCOPE_DENIED")
-            return super().dispatch(request, peer_pid=peer_pid)
+            result = super().dispatch(request, peer_pid=peer_pid)
+            if operation == "owner_status" and result.get("provider") == "IOL_REST":
+                result["wire_usage"] = self._wire_usage()
+            return result
         if operation != "iol_market_read" or set(request) != REQUEST_FIELDS:
             return self._response("IOL_GATEWAY_REQUEST_DENIED")
         role, endpoint, priority = (request[k] for k in ("consumer", "endpoint", "priority"))
@@ -189,6 +257,31 @@ class IOLGatewayClient(ReadOnlyUnixFeedClient):
     def _owner_status_matches_provider(self, response):
         return (response.get("provider") == "IOL_REST" and
                 response.get("wire_budget_attached") is True)
+
+    def prepare_trades(self, identities):
+        if self._pinned_owner is None:
+            raise IOLRestError("IOL_GATEWAY_OWNER_NOT_PINNED")
+        if not 0 < len(identities) <= PREPARE_TRADES_LIMIT:
+            raise IOLRestError("IOL_GATEWAY_SUBSCRIPTION_LIMIT")
+        owner_pid, generation = self._pinned_owner
+        response = self._request({"op": "iol_prepare_trades", "consumer": "scanner",
+            "identities": [list(_identity(key)) for key in identities], "session_generation": generation},
+            require_owner_identity=True)
+        if (response.get("schema") != DATA_SCHEMA or response.get("provider") != "IOL_REST"
+                or type(response.get("wire_calls")) is not int or response["wire_calls"] != 0
+                or response.get("paper_ready") is not False
+                or response.get("order_route") != "NOT_PRESENT"):
+            raise IOLRestError("IOL_GATEWAY_RECEIPT_UNVERIFIED")
+        if (response.get("owner_pid"), response.get("session_generation")) != (owner_pid, generation):
+            raise SharedFeedUnavailable("IOL_GATEWAY_OWNER_CHANGED")
+        count = response.get("scheduled_subscriptions")
+        if response.get("state") != "OK":
+            reason = response.get("state")
+            raise IOLRestError(reason if isinstance(reason, str) and _REASON.fullmatch(reason)
+                               else "IOL_GATEWAY_RECEIPT_UNVERIFIED")
+        if type(count) is not int or not 0 < count <= len(identities):
+            raise IOLRestError("IOL_GATEWAY_RECEIPT_UNVERIFIED")
+        return count
 
     def market_read(self, endpoint, identity, *, consumer, priority):
         if self._pinned_owner is None:
@@ -228,6 +321,11 @@ class IOLGatewayMarketReader:
             raise ValueError("IOL_GATEWAY_ROLE_SCOPE_REQUIRED")
         self.client, self.consumer = client, consumer
         self.trade_clock, self.clock = trade_clock, clock
+
+    def prepare_trades(self, identities):
+        if self.consumer != "scanner":
+            raise IOLRestError("IOL_GATEWAY_ROLE_SCOPE_DENIED")
+        return self.client.prepare_trades(identities)
 
     def observe(self, identity, *, contract=None, priority="DISCOVERY", exit_only=False):
         if exit_only != (self.consumer == "exit_reader"):

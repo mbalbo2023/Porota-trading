@@ -566,9 +566,13 @@ def run_worker(store, stop, *, clock_fn):
                                      code="SWEEP_WINDOW_CLOSED",
                                      detail="PAPER internal EOD cutoff passed; no new attempt")
                 elif iol:
-                    _persist_runtime(store, at=at, state="HOLD",
-                                     code="IOL_REPO_BOOK_CLOCK_UNVERIFIED",
-                                     detail="IOL REST · el libro de referencia carece de reloj del proveedor.")
+                    day = at.astimezone(TZ).date().isoformat()
+                    result = {"status": "HOLD", "code": "IOL_REPO_BOOK_CLOCK_UNVERIFIED",
+                              "source": "IOL_REST"}
+                    _persist_runtime(
+                        store, at=at, state="HOLD", code=result["code"],
+                        request_id=f"paper-caucion-cash-sweep:{day}:ARS:v1", result=result,
+                        detail="Falta un libro ejecutable de cauciones con reloj de origen.")
                 else:
                     day = at.astimezone(TZ).date().isoformat()
                     request_id = f"paper-caucion-cash-sweep:{day}:ARS:v1"
